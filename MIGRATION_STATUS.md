@@ -40,8 +40,8 @@
 * .NET 8/9/10 SDK, SDK закреплён в `global.json` (10.0.401).
 * JDK 25 + Maven 3.9.16 доступны → оракул работает.
 * Сборка: `dotnet build H2Sharp.sln -c Release` — 0 warnings, 0 errors.
-* Тесты: **245 passed, 0 FAILED**: 27 групп против JVM (включая parse-only оркул по
-  319 скриптам H2) и 14 проверок аллокаций/инвариантов.
+* Тесты: **252 passed, 0 FAILED**: 28 групп против JVM (включая parse-only оркул по
+  319 скриптам H2 и 1849 пар типов) и 15 проверок аллокаций/инвариантов.
 * `python tools/regen.py --check` — сгенерированные таблицы соответствуют эталону.
 
 ## Страховка от тихой деградации (сделано)
@@ -215,16 +215,15 @@
 
 ## Следующие шаги (по порядку)
 
-1. **`Value.getHigherOrderKnown`** (219 строк, таблица упорядочивания типов) +
-   **`ExtTypeInfo`** (16) — это ровно то, что нужно следующим. `TypeInfo` не сводим
-   без них: промоушен типов упирается в `Value.getHigherOrderKnown(t1, t2)`.
-   После них — `TypeInfo` (синглтоны, `getTypeInfo`, `getHigherType`, comparability),
-   затем `CompareMode` и конкретные типы значений.
-   Портировать как **свою фазу**, начиная с минимального связного куска
-   (`Value` + скалярные типы), а не с середины.
-2. **`TypeInfo`**: синглтоны (~25), фабрика `getTypeInfo`, `getHigherType`/`getHigherArray`/
-   `getHigherGeometry`/`getHigherRow`, `areSameTypes`, `checkComparable`, `haveSameOrdering`,
-   `toNumericType`. Хорошо проверяется исчерпывающим оркулом: 41×41 пар `getHigherType`.
+1. **`TypeInfo`** (синглтоны ~25, фабрика `getTypeInfo`, `getHigherType`/`getHigherArray`/
+   `getHigherGeometry`/`getHigherRow`, `areSameTypes`, `checkComparable`,
+   `haveSameOrdering`, `toNumericType`) + **`ExtTypeInfo`** (16). Таблица упорядочивания
+   `Value.getHigherOrderKnown` **уже портирована**, так что промоушен типов теперь сводим.
+   Проверяется исчерпывающим оркулом: все 42×42 пары `TypeInfo.getHigherType`
+   (для `getHigherOrder` это уже сделано, 1849 пар).
+2. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
+   `ValueDouble`, `ValueVarchar`, `ValueVarbinary`, `ValueBigint`, `ValueNumeric`,
+   `ValueDecfloat` — этого набора хватает токенизатору).
 3. **`command/Tokenizer.java`** (1460 строк) — лексический слой, зависит от `Token`
    (константы есть), `ParserUtil`, `StringUtils`, `ErrorCode`, `DbException` и пяти типов
    `value`.
