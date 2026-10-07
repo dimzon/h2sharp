@@ -232,7 +232,35 @@ Two traps in that pipeline, both of which produced wrong output before they were
   must stay at or below the lowest key in that table. `CaseFoldingOverrideThresholdsAreExact`
   in `StringUtilsAllocationTests` fails if a regeneration breaks that.
 
-## 10. Deliberate non-port
+## 10. When a hand-written mechanism may be deferred
+
+A hand-written stand-in for an incompatible standard mechanism is a maintenance liability, but
+not all of them cost the same to defer. The rule:
+
+> **Deferring is only free where the wrong answer is never persisted.**
+
+| Kind | Free to defer? | Why |
+|---|---|---|
+| Comparison or lookup whose result is never stored (collation, prefix matching) | yes | Replacing it later touches one method |
+| Anything that feeds persisted metadata (identifier normalisation, stored keys) | no | Already-written databases keep the old normalisation; fixing it later means a migration |
+| Anything that emits externally visible artefacts (URLs, signatures, wire bytes) | no | Already-issued artefacts cannot be reissued |
+
+So when a gap is found, the first question is not "can we approximate this" but "does the
+approximation get written down". If it does, build it properly now, even if the mechanism is
+invasive, and back it with a differential test. If it does not, approximate, pin the
+difference with an explicit test, and record in `MIGRATION_STATUS.md` what would trigger a
+revisit.
+
+Two examples already decided:
+
+* `startsWithIgnoringCase` — deferred, because the result only feeds comparison. Bringing in
+  ICU was measured and would not help: `CompareInfo.Compare` and
+  `CompareInfo.GetStringComparer` agree with the approximation on every probed pair, so the
+  gap is in the platform's collation weights, not in a missing API.
+* `ToUpperEnglish` / `ToLowerEnglish` — not deferred, because identifier names reach page
+  metadata. Hence the generated `Util/CaseFolding.cs`.
+
+## 11. Deliberate non-port
 
 Where a Java construct is clearly a Java-ism with no behavioural content, replace it rather
 than transliterate — but only after confirming no observable difference, and record it in the

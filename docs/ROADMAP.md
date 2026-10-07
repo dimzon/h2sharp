@@ -131,6 +131,11 @@ Facts established against the reference JVM rather than assumed:
   `ru-RU` tailors the Cyrillic pair to be equal. The port follows `CurrentCulture` with
   `IgnoreCase | IgnoreNonSpace`; the residual difference is pinned by a test instead of
   hidden. Both `ru-RU` and `en-US` are run against the JVM.
+  Bringing in ICU does **not** close the gap: `CompareInfo.Compare` and
+  `CompareInfo.GetStringComparer` return the same answers as the current code on every
+  probed pair, so the difference is in the platform's collation weights rather than in a
+  missing API. `System.Globalization.Collator` does not exist in .NET. The revisit
+  triggers are listed in `MIGRATION_STATUS.md`.
 * H2 error codes / catalogue / quoting are all verified differentially; the
   remaining open divergences are listed in `MIGRATION_STATUS.md`.
 * Allocation behaviour of the hot string paths is pinned by
