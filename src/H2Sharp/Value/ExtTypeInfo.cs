@@ -19,13 +19,14 @@ namespace H2Sharp.Values;
 /// The reference declares this as an abstract class implementing HasSQL, whose only member
 /// is a toString that renders the type as SQL. There is no abstract getDeclaredTypeName
 /// here, unlike in the first draft: that method belongs to the SQL rendering path, and the
-/// rendering itself is not ported yet.
+/// rendering itself was not ported when this was written.
 /// </para>
 /// <para>
-/// GetSql is the blocker for the concrete subclasses. It needs TypeInfo.GetSql, and that in
-/// turn needs the DataType registry for the canonical type names and the precision and scale
-/// syntax. So DataType is the next prerequisite, not the ExtTypeInfoEnum and
-/// ExtTypeInfoRow classes that were assumed to be. See MIGRATION_STATUS.md.
+/// The rendering was later ported on TypeInfo, and with it the ENUM and NUMERIC subclasses,
+/// so this class no longer blocks anything. An earlier note here claimed that the base
+/// rendering needed the DataType registry first. That was wrong: the reference renders from
+/// a switch over literal names and takes the rest of the name from Value.GetTypeName, so
+/// DataType is not a prerequisite for it. See MIGRATION_STATUS.md.
 /// </para>
 /// </remarks>
 public abstract class ExtTypeInfo
@@ -35,22 +36,23 @@ public abstract class ExtTypeInfo
     /// </summary>
     /// <remarks>
     /// Virtual rather than abstract for now, and the base implementation fails loudly
-    /// instead of returning something plausible. The reference has this abstract; making it
-    /// so here would force TypeInfo to render SQL before the DataType registry exists, and
-    /// the alternative to inheriting the reference's shape was dropping the array element
-    /// handling from areSameTypes. Failing with a reason is the better of the two, and it
-    /// disappears when DataType is ported and the members become abstract again.
+    /// instead of returning something plausible. The reference has this abstract. Keeping it
+    /// virtual means a subclass that has not been ported yet fails with a reason that names
+    /// the missing piece, rather than the type silently rendering as something else. Every
+    /// ported subclass overrides it, so the failure is unreachable except through a subclass
+    /// that does not exist yet.
     /// </remarks>
     /// <param name="builder">string builder to append to</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the specified builder</returns>
-    /// <exception cref="NotSupportedException">always, until the DataType registry is ported</exception>
+    /// <exception cref="NotSupportedException">
+    /// always, for an extended type whose subclass is not ported
+    /// </exception>
     public virtual StringBuilder GetSql(StringBuilder builder, int sqlFlags)
     {
         throw new NotSupportedException(
-            "SQL rendering of a data type is not ported: it needs the DataType registry, "
-            + "which holds the canonical type names and the precision and scale syntax. "
-            + "See MIGRATION_STATUS.md for the order.");
+            $"The extended type {GetType().Name} is not ported yet, so it cannot render "
+            + "itself as SQL. See MIGRATION_STATUS.md for the order.");
     }
 
     /// <summary>

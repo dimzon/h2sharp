@@ -1014,9 +1014,13 @@ public sealed class TypeInfo : ExtTypeInfo
                 return new TypeInfo(Value.JavaObject, precision, -1, null);
 
             case Value.Enum:
-                // The reference resolves an ExtTypeInfoEnum to its own type; without that
-                // class every enum stays undefined, which is also the reference's answer for
-                // a null extended type.
+                if (extTypeInfo is ExtTypeInfoEnum enumType)
+                {
+                    return enumType.GetEnumType();
+                }
+
+                // With no definition there is nothing to say about the enumerators, so the
+                // type stays the undefined one, which is also what the reference returns.
                 return TypeEnumUndefined;
 
             case Value.Geometry:
