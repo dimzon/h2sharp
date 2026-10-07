@@ -1,0 +1,33 @@
+## .NET
+bin/
+obj/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+.idea/
+
+## Test / coverage
+TestResults/
+*.trx
+*.coverage
+coverage*.xml
+coverage*.json
+
+## Database files produced by H2Sharp during tests
+*.mv.db
+*.trace.db
+*.lock.db
+
+## Reference checkout of H2 (see docs/PORTING.md)
+reference/h2/
+
+## OS
+Thumbs.db
+.DS_Store

@@ -1,0 +1,98 @@
+# H2Sharp roadmap
+
+Status legend: **done** / **in progress** / **todo**
+
+## Phase 0 — Bootstrap — done
+
+* Repository, solution skeleton, `Directory.Build.props` (net8.0 + net10.0,
+  nullable, warnings-as-errors), central package management.
+* Reference H2 checkout pinned in `reference/H2_COMMIT.txt` (H2 2.5.259-SNAPSHOT).
+* `docs/PORTING.md` — porting contract, type mapping, name-collision resolutions.
+* `NOTICE.md`, `LICENSE-H2.txt` — MPL-2.0 OR EPL-1.0, file-level copyleft.
+* CI: build + test on Windows and Linux, plus a differential conformance job.
+* Cross-language oracle harness (`tests/H2Sharp.Tests/Oracle/JavaOracle.cs`) that
+  compiles and runs snippets against the reference JVM and H2 jar.
+
+## Phase 1 — Foundation — in progress
+
+| Java | C# | Status |
+|---|---|---|
+| `util/MathUtils` | `Util/MathUtils.cs` | done |
+| `util/Utils` | `Util/Utils.cs` | done (Java-only members listed in the file header) |
+| `util/Bits` | `Util/Bits.cs` | done (see `docs/notes/uuid-byte-order.md`) |
+| `util/IntArray` | `Util/IntArray.cs` | done |
+| `util/StringUtils` | `Util/StringUtils.cs` | todo (1414 lines) |
+| `util/IOUtils` | `Util/IOUtils.cs` | todo (needs `mvstore/DataUtils`) |
+| `engine/Constants` | `Engine/Constants.cs` | done |
+| `engine/SysProperties` | `Engine/SysProperties.cs` | done |
+| `api/ErrorCode` | `Api/ErrorCode.cs` | todo (2366 lines) |
+| `api/H2SharpApiException` + `message/DbException` | `Api/H2SharpApiException.cs`, `Message/DbException.cs` | todo |
+| `util/ParserUtil` | `Command/ParserUtil.cs` | todo (694 lines of token constants) |
+| `command/Token` | `Command/Token.cs` | todo |
+
+**Note.** H2 2.x deleted the BNF grammar; `org.h2.bnf` is dead code used only by the
+web console. The real parser is recursive descent in `org.h2.command.Parser`
+(374 KB) plus `Tokenizer` (61 KB), `Token`, and `util.ParserUtil`. `Tokenizer`
+depends on `Value*` and therefore lands in phase 3, not phase 1.
+
+## Phase 2 — MVStore — todo
+
+`store/*`, `compress/LZF`, `mvstore/*` including `mvstore/db`, `mvstore/tx`,
+`mvstore/type`. Highest-risk phase: the file format must stay byte-compatible.
+Gate: a database file written by H2Sharp is opened by the reference H2 and vice
+versa (`MVStoreTool` / direct `MVStore.open`).
+
+## Phase 3 — Values and schema — todo
+
+`value/*` (with `H2Decimal` instead of `System.Decimal`), `schema/*`, `table/*`,
+`index/*`.
+
+## Phase 4 — Expressions — todo
+
+`expression/*` including `Function`, aggregates, window functions.
+
+## Phase 5 — Commands and SQL — todo
+
+`command/*`: `Parser`, `Tokenizer`, DDL, DML, `Select`/`Query`, `Explain`.
+
+## Phase 6 — Engine and transactions — todo
+
+`engine/*`: `Database`, `Session`, `SessionLocal`, `Transaction`,
+`TransactionStore`, `UndoLog`, `Locking`, MVCC.
+
+## Phase 7 — Constraints and rights — todo
+
+`constraint/*`, `engine/User`, `Role`, `Right`, `RightOwner`.
+
+## Phase 8 — ADO.NET provider — todo
+
+`DbProviderFactory`, `DbConnection`, `DbCommand`, `DbDataReader`,
+`DbTransaction`, `DbParameter`, `DbException`, connection-string parser
+(accepting both `Data Source=...` and H2-style `jdbc:h2:...` URLs), `GetSchema()`
+over `INFORMATION_SCHEMA`.
+
+## Phase 9 — EF Core provider — todo
+
+`H2Sharp.EntityFrameworkCore`: `ISqlGenerationHelper`, type mappings,
+`IRelationalConnection`, `IMigrationsSqlGenerator`, sequence/identity support.
+
+## Phase 10 — Conformance and polish — todo
+
+Port `h2/src/test/org/h2/test/scripts/*.sql`, add `tests/H2Sharp.Conformance`,
+benchmarks against H2, profiling, MVStore tuning.
+
+---
+
+## Verified behaviour so far
+
+Facts established against the reference JVM rather than assumed:
+
+* `Bits.uuidToBytes` writes the canonical UUID **text** byte order; see
+  `docs/notes/uuid-byte-order.md`. `Guid.ToByteArray()` must not be used.
+* `MathUtils.nextPowerOf2` rejects `x > 0x40000000`, not just negatives.
+* `Utils.sortTopN` places the n **smallest** values (per comparer) in
+  `[from, to)`, ascending — despite its javadoc saying "descending order".
+  Elements outside that range are unspecified and differ run to run in both
+  implementations because the pivot is random.
+* `Integer.decode` semantics for property parsing: `0x`/`#` prefixes are hex, a
+  leading `0` is octal, and surrounding whitespace is rejected.

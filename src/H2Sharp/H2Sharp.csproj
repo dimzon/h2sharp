@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RootNamespace>H2Sharp</RootNamespace>
+    <AssemblyName>H2Sharp</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <Product>H2Sharp</Product>
+    <Description>Embeddable SQL engine for .NET, ported from H2 Database.</Description>
+    <PackageLicenseExpression>MPL-2.0 OR EPL-1.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="H2Sharp.Tests" />
+    <InternalsVisibleTo Include="H2Sharp.Conformance" />
+    <InternalsVisibleTo Include="H2Sharp.EntityFrameworkCore" />
+  </ItemGroup>
+
+</Project>

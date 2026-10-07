@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore H2Sharp.sln
+
+      - name: Build
+        run: dotnet build H2Sharp.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test H2Sharp.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory artifacts/test-results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: artifacts/test-results
+
+  conformance:
+    name: Differential conformance vs reference H2
+    runs-on: ubuntu-latest
+    # Requires JDK to run the reference implementation; skipped when the
+    # reference checkout is absent.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Checkout reference H2
+        run: |
+          git clone --depth 1 https://github.com/h2database/h2database.git reference/h2
+          git -C reference/h2 rev-parse HEAD > reference/H2_COMMIT.txt
+
+      - name: Build reference H2 jar
+        working-directory: reference/h2/h2
+        run: mvn -B -q -DskipTests package
+
+      - name: Restore
+        run: dotnet restore H2Sharp.sln
+
+      - name: Conformance tests
+        env:
+          H2SHARP_REFERENCE_H2_JAR: ${{ github.workspace }}/reference/h2/h2/target/h2-2.5.252.jar
+        run: dotnet test tests/H2Sharp.Conformance/H2Sharp.Conformance.csproj --configuration Release --logger "trx;LogFileName=conformance.trx" --results-directory artifacts/conformance
