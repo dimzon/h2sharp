@@ -20,7 +20,11 @@ using H2Sharp.Message;
 
 namespace H2Sharp.Values;
 
-public static partial class Value
+/// <summary>
+/// How the type numbers order and combine. This is about types, not about values: nothing
+/// here looks at a value, and the file that compares values is Value.Compare.
+/// </summary>
+public abstract partial class Value
 {
     /// <summary>
     /// The group each type belongs to, indexed by the type number. Two types can only be

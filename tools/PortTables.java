@@ -410,7 +410,13 @@ public class PortTables {
                 /// <summary>
                 /// The value abstraction, and the numbers naming its types.
                 /// </summary>
-                public static partial class Value
+                /// <remarks>
+                /// Abstract, because the reference class is abstract and holds instances, and
+                /// partial because the constants here are generated while the surface is
+                /// ported by hand into the Value.Core, Value.Arithmetic, Value.Compare,
+                /// Value.Conversion and Value.Lobs files.
+                /// </remarks>
+                public abstract partial class Value
                 {
                 """);
 
