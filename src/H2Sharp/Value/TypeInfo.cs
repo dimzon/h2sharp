@@ -33,7 +33,7 @@ namespace H2Sharp.Values;
 /// Describes a data type: its value type number, and the precision, scale and extended
 /// information that some types carry.
 /// </summary>
-public sealed class TypeInfo : ExtTypeInfo
+public sealed partial class TypeInfo : ExtTypeInfo
 {
     // The reference reads these from the concrete value classes, which are not ported yet.
     // They are reproduced here so the singletons below are the reference's values rather
@@ -522,13 +522,18 @@ public sealed class TypeInfo : ExtTypeInfo
     public TypeInfo ToNumericType() => valueType switch
     {
         Value.Boolean or Value.Tinyint or Value.Smallint or Value.Integer
-            => new TypeInfo(Value.Numeric, GetDecimalPrecision(), 0, null),
+            => GetTypeInfo(Value.Numeric, GetDecimalPrecision(), 0, null),
         Value.Bigint => TypeNumericBigint,
         Value.Numeric => this,
-        Value.Real => new TypeInfo(Value.Numeric, NumericMaximumScale, NumericMaximumScale / 2, null),
-        Value.Double => new TypeInfo(Value.Numeric, NumericMaximumScale * 2, NumericMaximumScale, null),
-        Value.Decfloat => TypeNumericFloatingPoint,
-        _ => this,
+        // Smallest REAL value is 1.4E-45 with precision 2 and scale 46; largest REAL value
+        // is 3.4028235E+38 with precision 8 and scale -31.
+        Value.Real => GetTypeInfo(Value.Numeric, 85, 46, null),
+        // Smallest DOUBLE value is 4.9E-324 with precision 2 and scale 325; largest DOUBLE
+        // value is 1.7976931348623157E+308 with precision 17 and scale -292.
+        Value.Double => GetTypeInfo(Value.Numeric, 634, 325, null),
+        // Everything else, DECFLOAT and a string among them, is a type with no bound on how
+        // large a number it can hold, so the widest floating point numeric is the answer.
+        _ => TypeNumericFloatingPoint,
     };
 
     /// <summary>
