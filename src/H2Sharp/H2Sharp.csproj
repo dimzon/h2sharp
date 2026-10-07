@@ -18,4 +18,15 @@
     <InternalsVisibleTo Include="H2Sharp.EntityFrameworkCore" />
   </ItemGroup>
 
+  <!--
+    H2's SQL error messages, copied verbatim from
+    reference/h2/h2/src/main/org/h2/res/_messages_*.prop. They are the source of
+    truth for Message/ErrorMessages.cs and must stay byte-identical to H2 so that
+    error text matches. They are resources, not code, so they carry no H2 licence
+    header; see NOTICE.md.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\_messages_*.prop" />
+  </ItemGroup>
+
 </Project>
