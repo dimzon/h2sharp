@@ -212,9 +212,47 @@ That default is what makes a green run easy to over-read, so the conformance job
 | `H2SHARP_REFERENCE_ROOT` | Explicit path to `reference/h2` instead of walking up from the test binaries. |
 | `H2SHARP_REQUIRE_ORACLE` | An unavailable oracle fails instead of skipping. Set it in the job that is supposed to prove Java compatibility. |
 
+### How generators are written
+
+Hard rule, learned the hard way: **one language per pipeline stage, and no intermediate
+format between two languages.**
+
+| Stage | Language | Why |
+|---|---|---|
+| Reading H2's Java | Java, via `JavacTask` and `com.sun.source` | The JDK already contains a complete Java parser. Reading Java with regular expressions means guessing where a comment block starts, and a wrong guess writes a plausible, wrong token table without any error |
+| Writing C# | the same Java tool, emitting text | The facts (names, values, javadoc) and the template live in one place instead of being split between a dumper and a formatter that can disagree |
+| Laying the C# out | `dotnet format`, driven by `.editorconfig` | Layout belongs to the formatter. A generator that also does pretty-printing becomes a second, worse pretty printer |
+
+Concretely, `tools/PortTables.java` does all of it: parse, read the javadoc through
+`DocTrees.getDocCommentTree`, emit `src/H2Sharp/Util/ParserUtil.cs` and
+`src/H2Sharp/Command/Token.cs`. `regen.py` only orchestrates (compile it, run it, format,
+diff); it never touches the contents of a table.
+
+Two things this setup caught that a script would not have:
+
+* An identifier scanner that starts on `isLetter` misses a leading underscore, so `_ROWID_`
+  was split and came out as `_ParserUtil.Rowid`. Use `Character.isJavaIdentifierStart`.
+* The keyword table is keyed by the text in a javadoc (`The token "ALL".`) while the
+  declaration order comes from the source. Reading one from the AST and scraping the other
+  would let them disagree; reading both from the AST makes that impossible.
+
+#### Why not serialise the AST to JSON and generate from Roslyn?
+
+It was evaluated and rejected. It needs the same Java extraction step, plus a schema, plus
+a C# reader, plus Roslyn's `SyntaxFactory` and `Formatter` with an `AdhocWorkspace` to lay
+the result out. That is strictly more machinery for the same output, and it reintroduces
+exactly the two-tool split the rule above exists to prevent: a dumper in one language and an
+emitter in another, joined by a format that has to be kept in sync with both sides.
+
+Roslin earns its place when the job is *analysis or transformation of logic* rather than
+copying a table, for example porting method bodies automatically. If we ever get there, a
+shared structured IR is the right shape and the split is justified, because one
+transpiler has to read Java semantics and write C# semantics. For constants it is not, and
+the trigger to revisit this decision is written down rather than left to memory.
+
 ### Generated tables
-Four files under `src/H2Sharp` are generated and must never be edited by hand:
-`Api/ErrorCode.cs`, `Message/ErrorCodeKind.cs`, `Util/ParserUtil.cs` and
+Five files under `src/H2Sharp` are generated and must never be edited by hand:
+`Api/ErrorCode.cs`, `Message/ErrorCodeKind.cs`, `Util/ParserUtil.cs`, `Command/Token.cs` and
 `Util/CaseFolding.cs`. Regenerate all of them with:
 
 ```sh

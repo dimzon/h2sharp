@@ -30,6 +30,7 @@ GENERATED = [
     pathlib.Path("src/H2Sharp/Message/ErrorCodeKind.cs"),
     pathlib.Path("src/H2Sharp/Util/CaseFolding.cs"),
     pathlib.Path("src/H2Sharp/Util/ParserUtil.cs"),
+    pathlib.Path("src/H2Sharp/Command/Token.cs"),
 ]
 
 
@@ -64,7 +65,26 @@ def h2_jar() -> pathlib.Path:
 def regen_error_codes() -> None:
     run([sys.executable, str(TOOLS / "port_errorcode.py")])
     run([sys.executable, str(TOOLS / "port_dbexception_kind.py")])
-    run([sys.executable, str(TOOLS / "port_parserutil.py")])
+
+
+def regen_token_tables(classes: pathlib.Path) -> None:
+    """ParserUtil and Token, written directly by the Java tool.
+
+    The tool parses the reference with javac's own AST and emits the C# itself; see the
+    "How generators are written" section of docs/PORTING.md for why there is no second
+    language and no intermediate format in this step.
+    """
+    src = REFERENCE / "h2" / "src" / "main"
+    classes.mkdir(parents=True, exist_ok=True)
+    run(["javac", "-d", str(classes), str(TOOLS / "PortTables.java")])
+    run(["java", "-cp", str(classes), "PortTables", str(src), str(ROOT)])
+
+
+def format_generated() -> None:
+    """Layout is `dotnet format`'s job; the generator only emits readable text."""
+    run(["dotnet", "format", str(ROOT / "H2Sharp.sln"),
+         "--include", *[str(p) for p in GENERATED],
+         "--no-restore", "--verbosity", "quiet"])
 
 
 def regen_case_folding(work: pathlib.Path) -> None:
@@ -102,7 +122,10 @@ def main() -> int:
 
     regen_error_codes()
     with tempfile.TemporaryDirectory() as tmp:
-        regen_case_folding(pathlib.Path(tmp))
+        work = pathlib.Path(tmp)
+        regen_token_tables(work / "java")
+        regen_case_folding(work / "java")
+    format_generated()
 
     if args.check:
         changed = run(["git", "diff", "--name-only", "--"] +

@@ -1,0 +1,39 @@
+# EditorConfig drives `dotnet format`, which is the single source of truth for layout.
+# Generated files are written without worrying about indentation or wrapping; the
+# generator emits readable code and the formatter normalises it.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{csproj,props,targets,json,yml,yaml}]
+indent_size = 2
+
+[*.{py,java}]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# Microsoft .NET conventions, which is what the hand written code already follows.
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_space_after_cast = false
+csharp_prefer_braces = true:suggestion
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+dotnet_remove_unnecessary_imports = true
+# Generated files get their line breaks from the generator and their spacing from the
+# formatter; asking the formatter to re-wrap would fight the templates.
+generated_code = false
