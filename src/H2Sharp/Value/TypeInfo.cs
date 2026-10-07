@@ -257,7 +257,7 @@ public sealed class TypeInfo : ExtTypeInfo
     /// <summary>
     /// ROW type without a field list.
     /// </summary>
-    public static readonly TypeInfo TypeRowEmpty = new(Value.Row);
+    public static readonly TypeInfo TypeRowEmpty = new(Value.Row, -1L, -1, new ExtTypeInfoRow([]));
 
     /// <summary>
     /// The fixed type for each value type number, or null where the type needs parameters.
@@ -1060,12 +1060,15 @@ public sealed class TypeInfo : ExtTypeInfo
                 return new TypeInfo(Value.Array, precision, -1, extTypeInfo);
 
             case Value.Row:
-                // The reference requires an ExtTypeInfoRow, which is not ported, so no
-                // extended type can be a row field list yet and any non-null one is
-                // rejected, exactly as the reference rejects a wrong one.
+                if (extTypeInfo is ExtTypeInfoRow rowType)
+                {
+                    return new TypeInfo(Value.Row, -1L, -1, rowType);
+                }
+
+                // The reference requires an ExtTypeInfoRow and rejects anything else, so a
+                // null extended type is a rejection here as well, not a plain row.
                 throw new ArgumentException(
-                    "A ROW type needs its field list as an ExtTypeInfoRow, which is not "
-                    + "ported yet.");
+                    "A ROW type needs its field list as an ExtTypeInfoRow.");
 
             default:
                 return TypeNull;
@@ -1075,7 +1078,18 @@ public sealed class TypeInfo : ExtTypeInfo
     /// <inheritdoc/>
     public override int GetHashCode()
     {
-        return HashCode.Combine(valueType, precision, scale);
+        // The reference formula, not HashCode.Combine: the hash of a type is folded into the
+        // hash of a row and an enum, so a hash that differs between the two languages would
+        // make those hashes differ too. HashCode.Combine is not even stable across runs in
+        // .NET, which would be worse.
+        unchecked
+        {
+            int result = 1;
+            result = (31 * result) + valueType;
+            result = (31 * result) + (int)(precision ^ (long)((ulong)precision >> 32));
+            result = (31 * result) + scale;
+            return (31 * result) + (extTypeInfo?.GetHashCode() ?? 0);
+        }
     }
 
     /// <inheritdoc/>

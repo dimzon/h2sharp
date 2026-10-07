@@ -221,27 +221,65 @@
 `"TIMESTAMP"`, `"ARRAY"`, `"ROW"`), а не обращение к реестру `DataType`. Имена типов приходят
 из уже портированного `Value.getTypeName`. `getSQL` портирован и проверен дифференциально.
 
-1. **`ExtTypeInfoRow`** (117) — последний из самодостаточных подклассов.
-   **`ExtTypeInfoNumeric`** (21), **`IntervalQualifier`** (13 констант) и
-   **`ExtTypeInfoEnum`** (214, из них 195 строк логики) уже портированы.
-   `ExtTypeInfoRow` нужен для рендера `ROW()` (пустой список полей) и для отсортированного
-   поиска по имени поля; на net8 нет `OrderedDictionary<TKey,TValue>`, нужен свой тип.
-   Тесты рендера исключают пока только `ROW`. У `ExtTypeInfoEnum` не портированы две
-   фабрики значений: они возвращают `ValueEnum` и принимают `CastDataProvider`, которых
-   ещё нет, и падают с объяснением.
-2. **`ExtTypeInfoGeometry`** (79) — отдельно и позже: он тянет
-   `org.h2.util.geometry.EWKTUtils`, то есть весь пространственный пакет (~40 классов).
-   Это отдельная история, не «ещё один подкласс».
-3. **`TypeInfo`**: `getHigherType`, `getHigherArray`, `getHigherGeometry`, `getHigherRow`,
+1. **`ExtTypeInfoGeometry`** — единственный непортированный подкласс `ExtTypeInfo`, и он
+   тянет `org.h2.util.geometry.EWKTUtils`, то есть весь пространственный пакет (~40
+   классов). Это отдельная история, не «ещё один подкласс». Остальные портированы:
+   `ExtTypeInfoNumeric`, `IntervalQualifier`, `ExtTypeInfoEnum` (без двух фабрик значений:
+   нет `ValueEnum` и `CastDataProvider`), `ExtTypeInfoRow`.
+
+2. **`TypeInfo`**: `getHigherType`, `getHigherArray`, `getHigherGeometry`, `getHigherRow`,
    `checkComparable`, `haveSameOrdering`.
-4. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
+3. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
    `ValueDouble`, `ValueVarchar`, `ValueVarbinary`, `ValueBigint`, `ValueNumeric`,
    `ValueDecfloat` — этого набора хватает токенизатору).
-5. **`DataType`** (772 строки) — нужен сам по себе для JDBC-типов и `ResultSetMetaData`,
+4. **`DataType`** (772 строки) — нужен сам по себе для JDBC-типов и `ResultSetMetaData`,
    но больше ничего в `TypeInfo` не разблокирует. Механический: статический
    инициализатор на 32 вызовах `add(...)` плюс мелкие фабрики
    `createString`/`createBinary`/`createNumeric`/`createLob`. Идеален для генерации и
    дифференциальной проверки (имена и SQL-алиасы — чистые данные).
+
+### Упорядоченная карта: NuGet не нужен
+
+`ExtTypeInfoRow` хранит поля в `LinkedHashMap`, и первым делом я записал в этот файл, что
+надо писать свою структуру. Проверил, и запись была неверна:
+
+* `OrderedDictionary<TKey, TValue>` есть только с .NET 9 — на net8 компилятор его не
+  находит, значит пришлось бы держать две реализации;
+* `System.Collections.Specialized.OrderedDictionary` есть в BCL на **обоих** таргетах, без
+  пакета. Проверил поведением, а не по документации: порядок вставки сохраняется при
+  повторном `Put` (как `LinkedHashMap`), компараер реально управляет поиском — с
+  `StringComparer.Ordinal` ключи `"a"` и `"A"` это две записи;
+* в NuGet по запросу «ordered dictionary» — только не-Microsoft варианты
+  (`SoftCircuits.OrderedDictionary`, `Scaleout.Collections`, `PowerCollections`), ни один не
+  лучше BCL. В `src/H2Sharp` сейчас **ноль** `PackageReference`, и тащить зависимость в
+  ядро движка ради структуры, которая уже есть в framework, — плохая сделка.
+
+Итог: `Util/OrderedStringMap<TValue>` — тонкая типизированная кожа над BCL-версией. Она
+существует не ради реализации, а ради одного: чтобы `object` и приведения типов остались
+в одном месте, а не расползлись по вызывающим. Ни удаления, ни произвольного компарера —
+этого ничто не использует, а каждая добавленная операция это ещё одно поведение, которое
+надо описать и проверить.
+
+### Хеш типа пришлось сделать джvmовским
+
+`TypeInfo.GetHashCode` был `HashCode.Combine`, и это ломало оркул на строках: хеш строки
+схлопывается в хеш поля, а тот — в хеш типа, а `HashCode.Combine` в .NET ещё и не
+стабилен между запусками. Теперь это формула из эталона: `result = 1; 31*r + valueType;
+31*r + (int)(precision ^ precision>>>32); 31*r + scale; 31*r + hash(ext)`, с
+переполнением как в Java. Тот же приём понадобился в `ExtTypeInfoRow` и
+`ExtTypeInfoEnum` для хеша имён.
+
+### Что вскрыла проверка `ExtTypeInfoRow`
+
+**`TYPE_ROW_EMPTY` — это не просто `new TypeInfo(Value.ROW)`, а строка с пустым
+`ExtTypeInfoRow`.** Именно из-за этого он печатает `ROW()`, а не `ROW`. Наш синглтон был
+без расширенного типа и печатал `ROW` — расхождение было видно только в оркуле рендера.
+
+**Конструктор от позиционного массива переименовывает поля в `C1..Cn`** и берёт первые
+`degree` штук. Проверено для всех степеней, включая ноль.
+
+**`Typed[]` стал `TypeInfo[]`.** Интерфейс `Typed` не портирован, и поле строки может быть
+только типом, так что более широкая сигнатура ничего лишнего бы не пропустила.
 
 ### Что вскрыла проверка `ExtTypeInfoEnum`
 
@@ -300,17 +338,17 @@
 не уникальны по номеру типа. Первые версии теста сравнивали списки позиционно и валили
 прогон на «порядке», а не на содержании. Сравнение идёт через словарь
 `(valueType, precision, scale) -> рендер`, и ошибка выводит обе стороны расшифрованными.
-7. **`command/Tokenizer.java`** (1460 строк) — лексический слой, зависит от `Token`
+5. **`command/Tokenizer.java`** (1460 строк) — лексический слой, зависит от `Token`
    (константы есть), `ParserUtil`, `StringUtils`, `ErrorCode`, `DbException` и пяти типов
    `value`.
-8. **`command/Parser.java`** (8963) — после токенизатора и типов. Проверка — оркул из
+6. **`command/Parser.java`** (8963) — после токенизатора и типов. Проверка — оркул из
    раздела «Parse-only оркул».
-9. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
+7. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
    Остальное в `util` — кэши, которые по принятому решению делаются обычными полями.
-10. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
+8. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
     и наоборот. LZF портировать дословно.
 
-Текущий прогон: **264 теста, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
+Текущий прогон: **267 теста, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
 констант, `TypeInfo` — ядро плюс `getSQL`, `ExtTypeInfo`, `ExtTypeInfoNumeric`.
 
 ## Подводные камни, на которые уже наступали

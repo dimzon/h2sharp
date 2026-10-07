@@ -36,9 +36,7 @@ public sealed class TypeInfoSqlOracleTests
                         if (org.h2.value.TypeInfo.class.isAssignableFrom(f.getType())
                                 && java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
                           org.h2.value.TypeInfo t = (org.h2.value.TypeInfo) f.get(null);
-                          if (t.getValueType() != org.h2.value.Value.ROW) {
-                            sorted.put(f.getName(), t);
-                          }
+                          sorted.put(f.getName(), t);
                         }
                       }
                       for (java.util.Map.Entry<String, org.h2.value.TypeInfo> e : sorted.entrySet()) {
@@ -113,9 +111,6 @@ public sealed class TypeInfoSqlOracleTests
                       int[] scales = new int[] { -1, 0, 1, 6, 9 };
                       for (int i = 0; i < typeCount; i++) {
                         int type = nums[i];
-                        if (type == org.h2.value.Value.ROW) {
-                          continue;
-                        }
                         for (int p = 0; p < precisionCount; p++) {
                           int precision = nums[typeCount + p];
                           for (int s = 0; s < scaleCount; s++) {
@@ -213,33 +208,23 @@ public sealed class TypeInfoSqlOracleTests
     ];
 
     /// <summary>
-    /// The value types excluded from the rendering comparison, with the reason.
+    /// Whether a value type is left out of the rendering comparison.
     /// </summary>
-    /// <remarks>
-    /// ROW renders through its <c>ExtTypeInfoRow</c>, which renders an empty field list as
-    /// <c>()</c>, so the reference prints <c>ROW()</c> where a port without that class prints
-    /// <c>ROW</c>. ExtTypeInfoRow needs an ordered field map and is not ported. It is
-    /// excluded explicitly rather than quietly tolerated, and
-    /// <c>RenderingExcludesExactlyTheUnrenderedTypes</c> keeps the exclusion from growing.
-    /// The interval types used to be excluded here for the same reason and no longer are:
-    /// they render through <c>IntervalQualifier</c>, which is ported.
+/// <remarks>
+    /// Nothing is left out. ROW needed an <c>ExtTypeInfoRow</c> to print its parentheses, and
+    /// the intervals needed <c>IntervalQualifier</c>; both are ported now. The predicate stays
+    /// because an empty exclusion list is worth stating and worth failing on, rather than
+    /// letting a future port quietly widen the comparison.
     /// </remarks>
-    private static bool IsExcluded(int valueType) => valueType is Value.Row;
+    private static bool IsExcluded(int valueType) => false;
 
     [Fact]
-    public void RenderingExcludesExactlyTheUnrenderedTypes()
+    public void RenderingExcludesNothing()
     {
-        // The intervals are back in the comparison, so only ROW is left out: it has exactly
-        // one singleton, the empty row.
-        int excluded = Singletons().Count(static t => IsExcluded(t.GetValueType()));
-        Assert.Equal(1, excluded);
+        Assert.DoesNotContain(Singletons(), static t => IsExcluded(t.GetValueType()));
 
-        // And the exclusion is visible rather than silent: without the extended type the row
-        // renders as a plain name, which is what the reference does not print.
-        Assert.Equal("ROW", TypeInfo.TypeRowEmpty.GetSql(0));
-        Assert.NotEqual("ROW()", TypeInfo.TypeRowEmpty.GetSql(0));
-
-        // The qualifier reached the switch, so an interval now carries its precision.
+        // The two renderings that were wrong before the extended types existed.
+        Assert.Equal("ROW()", TypeInfo.TypeRowEmpty.GetSql(0));
         Assert.Equal("INTERVAL DAY(18)", TypeInfo.TypeIntervalDay.GetSql(0));
     }
 
@@ -380,3 +365,4 @@ public sealed class TypeInfoSqlOracleTests
         }
     }
 }
+
