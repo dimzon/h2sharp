@@ -215,13 +215,23 @@
 
 ## Следующие шаги (по порядку)
 
-1. **`ExtTypeInfoEnum`, `ExtTypeInfoGeometry`, `ExtTypeInfoNumeric`, `ExtTypeInfoRow`** —
-   подклассы `ExtTypeInfo` (в сумме ~390 строк). Они нужны для трёх вещей, и все три
-   отложены именно из-за них: ветки ENUM/GEOMETRY/ARRAY/ROW в
-   `TypeInfo.getTypeInfo(type, precision, scale, ext)`, промоушен
-   `getHigherType`/`getHigherArray`/`getHigherGeometry`/`getHigherRow` и
-   `checkComparable`/`haveSameOrdering` (ветка ROW). Ядро `TypeInfo` уже портировано.
-2. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
+1. **`DataType`** (772 строки) — **это настоящий следующий юнит, а не подклассы
+   `ExtTypeInfo`.** Я ошибся в предыдущей записи. `TypeInfo.getSQL` рендерит тип через
+   реестр `DataType` (канонические имена + синтаксис точности и шкалы), а `ExtTypeInfo`
+   объявляет `getSQL` — значит `TypeInfo`, наследующий `ExtTypeInfo`, обязан его
+   реализовать. Пока нет `DataType`, базовый `GetSql` падает с объяснением, а не
+   возвращает правдоподобную строку.
+   `DataType` механический: статический инициализатор на 32 вызовах `add(...)` плюс
+   мелкие фабрики `createString`/`createBinary`/`createNumeric`/`createLob`. Идеально для
+   генерации и дифференциальной проверки (имена и SQL-алиасы — чистые данные).
+   За ним разблокируются: `TypeInfo.getSQL`, параметризованный `getTypeInfo` (ветки
+   ENUM/GEOMETRY/ARRAY/ROW), `getHigherType` и `checkComparable`/`haveSameOrdering`.
+2. **`ExtTypeInfoEnum`** (195) и **`ExtTypeInfoRow`** (117) — самодостаточны, нужны после
+   `DataType`. **`ExtTypeInfoNumeric`** (21) уже портирован.
+3. **`ExtTypeInfoGeometry`** (79) — отдельно и позже: он тянет
+   `org.h2.util.geometry.EWKTUtils`, то есть весь пространственный пакет (~40 классов).
+   Это отдельная история, не «ещё один подкласс».
+4. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
    `ValueDouble`, `ValueVarchar`, `ValueVarbinary`, `ValueBigint`, `ValueNumeric`,
    `ValueDecfloat` — этого набора хватает токенизатору).
 
@@ -239,6 +249,10 @@
 
 **`areSameTypes` на ARRAY без типа элемента кидает** в обоих движках (каст `null`-ового
 расширенного типа). Харнесс это сначала не моделировал и обрывал прогон на середине.
+
+**`ExtTypeInfo` в Java объявляет только `toString()`, а не `getDeclaredTypeName()`.**
+Моя первая версия выдумала абстрактный `getDeclaredTypeName` — этого в `HasSQL` нет.
+И `TypeInfo` в Java наследует `ExtTypeInfo`, поэтому его `getSQL` тоже тянет `DataType`.
 3. **`command/Tokenizer.java`** (1460 строк) — лексический слой, зависит от `Token`
    (константы есть), `ParserUtil`, `StringUtils`, `ErrorCode`, `DbException` и пяти типов
    `value`.

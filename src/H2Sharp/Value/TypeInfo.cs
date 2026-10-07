@@ -496,11 +496,6 @@ public sealed class TypeInfo : ExtTypeInfo
     /// <returns>the extended type information</returns>
     public ExtTypeInfo? GetExtTypeInfo() => extTypeInfo;
 
-    /// <summary>
-    /// The declared type name, as written in the SQL rather than the canonical one.
-    /// </summary>
-    /// <returns>the declared type name</returns>
-    public override string GetDeclaredTypeName() => Value.GetTypeName(valueType);
 
     /// <summary>
     /// The precision this type needs to hold its values exactly, which differs from the
