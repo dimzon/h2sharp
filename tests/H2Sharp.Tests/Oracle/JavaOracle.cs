@@ -57,7 +57,7 @@ internal static class JavaOracle
             throw new InvalidOperationException("Reference root is not available.");
         }
 
-        string work = PrepareWorkDirectory(className, javaSource, inputs: null);
+        string work = PrepareWorkDirectory(className, javaSource, inputs: null, numbers: null);
         try
         {
             string? javac = FindJavacExecutable();
@@ -101,14 +101,15 @@ internal static class JavaOracle
         string className,
         IReadOnlyList<string> inputs,
         string[]? additionalClassPath = null,
-        string[]? extraJavaArgs = null)
+        string[]? extraJavaArgs = null,
+        IReadOnlyList<int>? numbers = null)
     {
         if (ReferenceRoot is null)
         {
             throw new InvalidOperationException("Reference root is not available.");
         }
 
-        string work = PrepareWorkDirectory(className, javaSource, inputs);
+        string work = PrepareWorkDirectory(className, javaSource, inputs, numbers);
         try
         {
             string javac = FindJavacExecutable() ?? throw new InvalidOperationException("javac not found");
@@ -186,7 +187,7 @@ internal static class JavaOracle
                 .TrimEnd('\n');
 
     private static string PrepareWorkDirectory(
-        string className, string javaSource, IReadOnlyList<string>? inputs)
+        string className, string javaSource, IReadOnlyList<string>? inputs, IReadOnlyList<int>? numbers)
     {
         string work = Path.Combine(
             Path.GetTempPath(), "h2sharp-oracle", Guid.NewGuid().ToString("N"));
@@ -204,6 +205,17 @@ internal static class JavaOracle
 
             File.WriteAllText(
                 Path.Combine(work, "inputs.hex"), payload.ToString(), new UTF8Encoding(false));
+
+            // Numeric parameters live in their own file so a snippet can read them as
+            // int[] without routing them through the string transport.
+            StringBuilder numeric = new();
+            foreach (int value in numbers ?? [])
+            {
+                numeric.Append(value.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            }
+
+            File.WriteAllText(
+                Path.Combine(work, "numbers.txt"), numeric.ToString(), new UTF8Encoding(false));
         }
 
         return work;

@@ -1,23 +1,411 @@
 /*
  * Copyright 2004-2026 H2 Group.
  * Copyright 2026 H2Sharp contributors.
- * Ported from org.h2.util.StringUtils (part 1 of 2).
+ * Ported from org.h2.util.StringUtils.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * Modified: PARTIAL PORT. Only the members needed by already-ported code are here so
- * far; the rest of org.h2.util.StringUtils (1414 lines) follows in the same
- * partial. Do not treat this type as complete - see docs/ROADMAP.md.
+ * Modified: full port. The notable decisions are:
+ *
+ * - toUpperEnglish/toLowerEnglish use Locale.ENGLISH, which is
+ *   ToUpperInvariant()/ToLowerInvariant() in .NET, NOT the current culture.
+ * - startsWithIgnoringCase uses java.text.Collator at PRIMARY strength, which has no
+ *   .NET equivalent. It is implemented with an invariant culture-aware comparison and
+ *   verified against the reference JVM; see StringUtilsOracleTests.
+ * - The SoftReference<softCache> and AtomicReferenceArray<TO_UPPER_CACHE> caches use
+ *   weak/atomic types with no direct counterpart; they are plain fields with
+ *   Interlocked access. These are pure caches, so a weaker memory model is safe.
+ * - appendHex/convertBytesToHex live in H2Sharp.Util.Hex because Message.ErrorMessages
+ *   needs them without pulling in this type.
+ * - URLEncoder is not System.Web.HttpUtility or Uri.EscapeDataString: Java's
+ *   form-urlencoded variant maps a space to '+' and leaves . - * _ alone. That is
+ *   implemented directly in UrlEncode so that SQL URLs stay byte-identical.
  */
 using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Text;
+using System.Threading;
+using H2Sharp.Api;
+using H2Sharp.Message;
 
 namespace H2Sharp.Util;
 
 /// <summary>
 /// A few String-related utility functions.
 /// </summary>
-public static partial class StringUtils
+public static class StringUtils
 {
+    /// <summary>
+    /// The uppercase cache holds 1024 buckets of two strings per bucket.
+    /// </summary>
+    private const int ToUpperCacheLength = 2 * 1024;
+
+    private const int ToUpperCacheMaxEntryLength = 64;
+
+    private static readonly string?[][] ToUpperCache = new string?[ToUpperCacheLength][];
+
+    /// <summary>
+    /// Weakly referenced cache of interned values, recreated at most every 5 seconds.
+    /// </summary>
+    private static string?[]? softCache;
+
+    private static long softCacheCreatedNs;
+
+    /// <summary>
+    /// Lookup table for hex digits; -1 marks a character that is not a hex digit.
+    /// Sized to <c>'f' + 1</c> like H2's, so characters above 'f' fall off the end and
+    /// are caught by the bounds check H2 relies on.
+    /// </summary>
+    private static readonly int[] HexDecode = BuildHexDecode();
+
+    private static int[] BuildHexDecode()
+    {
+        int[] table = new int['f' + 1];
+        Array.Fill(table, -1);
+        for (int i = 0; i <= 9; i++)
+        {
+            table[i + '0'] = i;
+        }
+
+        for (int i = 0; i <= 5; i++)
+        {
+            table[i + 'a'] = i + 10;
+            table[i + 'A'] = i + 10;
+        }
+
+        return table;
+    }
+
+    private static string?[]? GetCache()
+    {
+        string?[]? cache = Volatile.Read(ref softCache);
+        if (cache is not null)
+        {
+            return cache;
+        }
+
+        // create a new cache at most every 5 seconds so that out of memory exceptions
+        // are not delayed
+        long time = Utils.CurrentNanoTime();
+        if (softCacheCreatedNs != 0
+            && time - softCacheCreatedNs < 5_000_000_000L)
+        {
+            return null;
+        }
+
+        try
+        {
+            cache = new string?[Engine.SysProperties.ObjectCacheSize];
+            Volatile.Write(ref softCache, cache);
+            return cache;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref softCacheCreatedNs, Utils.CurrentNanoTime());
+        }
+    }
+
+    /// <summary>
+    /// Convert a string to uppercase using the English locale.
+    /// </summary>
+    /// <remarks>
+    /// Java uses the Unicode <em>full</em> case mapping, .NET the <em>simple</em> one,
+    /// so the differences are applied from H2Sharp.Util.CaseFolding on top of
+    /// <c>ToUpperInvariant</c>. That table is generated from the reference JVM.
+    /// </remarks>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the uppercase text</returns>
+    public static string ToUpperEnglish(string s)
+    {
+        if (s.Length > ToUpperCacheMaxEntryLength)
+        {
+            return ToUpperEnglishCore(s);
+        }
+
+        int index = s.GetHashCode() & (ToUpperCacheLength - 1);
+
+        // A benign race is acceptable here: this is a pure cache, and Java uses an
+        // AtomicReferenceArray only to avoid allocating on contention. C# cannot pass
+        // an array element by ref, so the pair is stored as one immutable value.
+        string?[]? entry = ToUpperCache[index];
+        if (entry is not null && entry[0] == s)
+        {
+            return entry[1]!;
+        }
+
+        string s2 = ToUpperEnglishCore(s);
+        ToUpperCache[index] = [s, s2];
+        return s2;
+    }
+
+    private static string ToUpperEnglishCore(string s)
+    {
+        if (!HasCaseFoldingOverrides(s))
+        {
+            return s.ToUpperInvariant();
+        }
+
+        StringBuilder builder = new(s.Length + 8);
+        for (int i = 0; i < s.Length; i++)
+        {
+            string? extra = CaseFolding.Upper(s[i]);
+            if (extra is null)
+            {
+                builder.Append(char.ToUpperInvariant(s[i]));
+            }
+            else
+            {
+                builder.Append(extra);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Convert a string to lowercase using the English locale.
+    /// </summary>
+    /// <remarks>
+    /// See <see cref="ToUpperEnglish"/>: Java applies the full case mapping, which
+    /// maps U+0130 to "i" plus a combining dot above where .NET maps it to U+0131.
+    /// </remarks>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the lowercase text</returns>
+    public static string ToLowerEnglish(string s)
+    {
+        if (!HasLowerCaseFoldingOverrides(s))
+        {
+            return s.ToLowerInvariant();
+        }
+
+        StringBuilder builder = new(s.Length + 8);
+        for (int i = 0; i < s.Length; i++)
+        {
+            string? extra = CaseFolding.Lower(s[i]);
+            if (extra is null)
+            {
+                builder.Append(char.ToLowerInvariant(s[i]));
+            }
+            else
+            {
+                builder.Append(extra);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Cheap pre-check so that the overwhelmingly common ASCII path avoids building a
+    /// StringBuilder. The lowest code point with a full-mapping override is U+00DF
+    /// (LATIN SMALL LETTER SHARP S), so anything below that is safe.
+    /// </summary>
+    private static bool HasCaseFoldingOverrides(string s)
+    {
+        foreach (char c in s)
+        {
+            if (c >= 0x00DF)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasLowerCaseFoldingOverrides(string s)
+    {
+        foreach (char c in s)
+        {
+            if (c == 0x0130 || c == 0x0304)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Convert a string to a SQL literal. Null is converted to NULL. The text is
+    /// enclosed in single quotes. If there are any special characters, the
+    /// Unicode character string literal is used.
+    /// </summary>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the SQL literal</returns>
+    public static string? QuoteStringSql(string? s)
+        => s is null ? "NULL" : QuoteStringSql(new StringBuilder(s.Length + 2), s).ToString();
+
+    /// <summary>
+    /// Convert a string to a SQL character string literal. Null is converted to
+    /// NULL. If there are any special characters, the Unicode character string
+    /// literal is used.
+    /// </summary>
+    /// <param name="builder">string builder to append result to</param>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the specified string builder</returns>
+    public static StringBuilder QuoteStringSql(StringBuilder builder, string? s)
+        => s is null
+            ? builder.Append("NULL")
+            : QuoteIdentifierOrLiteral(builder, s, '\'');
+
+    /// <summary>
+    /// Decodes a Unicode SQL string.
+    /// </summary>
+    /// <param name="s">the string to decode</param>
+    /// <param name="uencode">the code point of the UENCODE character, or '\\'</param>
+    /// <returns>the decoded string</returns>
+    public static string DecodeUnicodeStringSql(string s, int uencode)
+    {
+        int l = s.Length;
+        StringBuilder builder = new(l);
+        for (int i = 0; i < l;)
+        {
+            int cp = ReadCodePoint(s, ref i);
+            if (cp == uencode)
+            {
+                if (i >= l)
+                {
+                    throw GetFormatException(s, i);
+                }
+
+                cp = ReadCodePoint(s, ref i);
+                if (cp == uencode)
+                {
+                    // already advanced
+                }
+                else
+                {
+                    if (i + 4 > l)
+                    {
+                        throw GetFormatException(s, i);
+                    }
+
+                    char ch = s[i];
+                    int end;
+                    try
+                    {
+                        if (ch == '+')
+                        {
+                            if (i + 7 > l)
+                            {
+                                throw GetFormatException(s, i);
+                            }
+
+                            end = i + 7;
+                            cp = ParseUnsignedInt(s, i + 1, end, 16);
+                        }
+                        else
+                        {
+                            end = i + 4;
+                            cp = ParseUnsignedInt(s, i, end, 16);
+                        }
+                    }
+                    catch (FormatException)
+                    {
+                        throw GetFormatException(s, i);
+                    }
+
+                    i = end;
+                }
+            }
+
+            AppendCodePoint(builder, cp);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Convert a string to a Java literal using the correct escape sequences.
+    /// The literal is not enclosed in double quotes. The result can be used in
+    /// properties files or in Java source code.
+    /// </summary>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the Java representation</returns>
+    public static string JavaEncode(string s)
+    {
+        StringBuilder buff = new(s.Length);
+        JavaEncode(s, buff, forSql: false);
+        return buff.ToString();
+    }
+
+    /// <summary>
+    /// Convert a string to a Java literal using the correct escape sequences.
+    /// The literal is not enclosed in double quotes. The result can be used in
+    /// properties files or in Java source code.
+    /// </summary>
+    /// <param name="s">the text to convert</param>
+    /// <param name="buff">the Java representation to append to</param>
+    /// <param name="forSql">true if we embed this inside a STRINGDECODE SQL command</param>
+    public static void JavaEncode(string s, StringBuilder buff, bool forSql)
+    {
+        int length = s.Length;
+        for (int i = 0; i < length; i++)
+        {
+            char c = s[i];
+            switch (c)
+            {
+                case '\t':
+                    // HT horizontal tab
+                    buff.Append("\\t");
+                    break;
+
+                case '\n':
+                    // LF linefeed
+                    buff.Append("\\n");
+                    break;
+
+                case '\f':
+                    // FF form feed
+                    buff.Append("\\f");
+                    break;
+
+                case '\r':
+                    // CR carriage return
+                    buff.Append("\\r");
+                    break;
+
+                case '"':
+                    // double quote
+                    buff.Append("\\\"");
+                    break;
+
+                case '\'':
+                    // quote. H2 appends one apostrophe when forSql is set and then
+                    // unconditionally appends another, so the result is always ''.
+                    if (forSql)
+                    {
+                        buff.Append('\'');
+                    }
+
+                    buff.Append('\'');
+                    break;
+
+                case '\\':
+                    // backslash
+                    buff.Append("\\\\");
+                    break;
+
+                default:
+                    if (c >= ' ' && c < 0x80)
+                    {
+                        buff.Append(c);
+                    }
+                    else
+                    {
+                        // not supported in properties files
+                        Hex.AppendHex(buff.Append("\\u"), c, 2);
+                    }
+
+                    break;
+            }
+        }
+    }
+
     /// <summary>
     /// Add an asterisk ('[*]') at the given position. This format is used to
     /// show where parsing failed in a statement.
@@ -31,9 +419,1487 @@ public static partial class StringUtils
         {
             int len = s.Length;
             index = Math.Min(index, len);
-            return new StringBuilder(len + 3).Append(s, 0, index).Append("[*]").Append(s, index, len).ToString();
+            return new StringBuilder(len + 3)
+                .Append(s, 0, index)
+                .Append("[*]")
+                .Append(s, index, len)
+                .ToString();
         }
 
         return s;
+    }
+
+    private static H2SharpException GetFormatException(string s, int i)
+        => DbException.Get(ErrorCode.StringFormatError1, AddAsterisk(s, i));
+
+    /// <summary>
+    /// Decode a text that is encoded as a Java string literal. The Java
+    /// properties file format and Java source code format is supported.
+    /// </summary>
+    /// <param name="s">the encoded string</param>
+    /// <returns>the string</returns>
+    public static string JavaDecode(string s)
+    {
+        int length = s.Length;
+        StringBuilder buff = new(length);
+        for (int i = 0; i < length; i++)
+        {
+            char c = s[i];
+            if (c != '\\')
+            {
+                buff.Append(c);
+                continue;
+            }
+
+            if (i + 1 >= s.Length)
+            {
+                throw GetFormatException(s, i);
+            }
+
+            c = s[++i];
+            switch (c)
+            {
+                case 't':
+                    buff.Append('\t');
+                    break;
+
+                case 'r':
+                    buff.Append('\r');
+                    break;
+
+                case 'n':
+                    buff.Append('\n');
+                    break;
+
+                case 'b':
+                    buff.Append('\b');
+                    break;
+
+                case 'f':
+                    buff.Append('\f');
+                    break;
+
+                case '#':
+                    // for properties files
+                    buff.Append('#');
+                    break;
+
+                case '=':
+                    // for properties files
+                    buff.Append('=');
+                    break;
+
+                case ':':
+                    // for properties files
+                    buff.Append(':');
+                    break;
+
+                case '"':
+                    buff.Append('"');
+                    break;
+
+                case '\\':
+                    buff.Append('\\');
+                    break;
+
+                case 'u':
+                {
+                    if (i + 4 >= length)
+                    {
+                        throw GetFormatException(s, i);
+                    }
+
+                    if (!int.TryParse(
+                            s.AsSpan(i + 1, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture,
+                            out int code))
+                    {
+                        throw GetFormatException(s, i);
+                    }
+
+                    i += 4;
+                    buff.Append((char)code);
+                    break;
+                }
+
+                default:
+                    if (c is >= '0' and <= '9' && i + 2 < length)
+                    {
+                        if (!int.TryParse(
+                                s.AsSpan(i, 3), NumberStyles.None, CultureInfo.InvariantCulture, out int octal))
+                        {
+                            throw GetFormatException(s, i);
+                        }
+
+                        i += 2;
+                        buff.Append((char)octal);
+                    }
+                    else
+                    {
+                        throw GetFormatException(s, i);
+                    }
+
+                    break;
+            }
+        }
+
+        return buff.ToString();
+    }
+
+    /// <summary>
+    /// Convert a string to the Java literal and enclose it with double quotes.
+    /// Null will result in "null" (without double quotes).
+    /// </summary>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the Java representation</returns>
+    public static string? QuoteJavaString(string? s)
+    {
+        if (s is null)
+        {
+            return "null";
+        }
+
+        StringBuilder builder = new StringBuilder(s.Length + 2).Append('"');
+        JavaEncode(s, builder, forSql: false);
+        return builder.Append('"').ToString();
+    }
+
+    /// <summary>
+    /// Convert a string array to the Java source code that represents this
+    /// array. Null will be converted to 'null'.
+    /// </summary>
+    /// <param name="array">the string array</param>
+    /// <returns>the Java source code (including new String[]{})</returns>
+    public static string? QuoteJavaStringArray(string?[]? array)
+    {
+        if (array is null)
+        {
+            return "null";
+        }
+
+        StringBuilder buff = new("new String[]{");
+        for (int i = 0; i < array.Length; i++)
+        {
+            if (i > 0)
+            {
+                buff.Append(", ");
+            }
+
+            buff.Append(QuoteJavaString(array[i]));
+        }
+
+        return buff.Append('}').ToString();
+    }
+
+    /// <summary>
+    /// Convert an int array to the Java source code that represents this array.
+    /// Null will be converted to 'null'.
+    /// </summary>
+    /// <param name="array">the int array</param>
+    /// <returns>the Java source code (including new int[]{})</returns>
+    public static string? QuoteJavaIntArray(int[]? array)
+    {
+        if (array is null)
+        {
+            return "null";
+        }
+
+        StringBuilder builder = new("new int[]{");
+        for (int i = 0; i < array.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append(array[i]);
+        }
+
+        return builder.Append('}').ToString();
+    }
+
+    /// <summary>
+    /// Encode the string as a URL, using the same rules as
+    /// java.net.URLEncoder: application/x-www-form-urlencoded, so a space becomes
+    /// '+' and <c>.</c>, <c>-</c>, <c>*</c> and <c>_</c> are left alone.
+    /// </summary>
+    /// <param name="s">the string to encode</param>
+    /// <returns>the encoded string</returns>
+    /// <summary>
+    /// UTF-8 as java.lang.String.getBytes(StandardCharsets.UTF_8) produces it: an
+    /// unpaired surrogate becomes a single '?' rather than U+FFFD, which is what
+    /// .NET's default replacement produces. The percent-escape of that byte is user
+    /// visible in generated URLs, so H2Sharp must match.
+    /// </summary>
+    private static readonly Encoding UrlEncoding = Encoding.GetEncoding(
+        "utf-8",
+        new EncoderReplacementFallback("?"),
+        new DecoderReplacementFallback("?"));
+
+    private static char HexDigit(int nibble) => (char)(nibble < 10 ? '0' + nibble : 'A' + nibble - 10);
+
+    /// <summary>
+    /// Encode the string as a URL.
+    /// </summary>
+    /// <param name="s">the string to encode</param>
+    /// <returns>the encoded string</returns>
+    public static string UrlEncode(string s)
+    {
+        StringBuilder builder = new(s.Length + 16);
+        foreach (byte b in UrlEncoding.GetBytes(s))
+        {
+            char c = (char)b;
+            if ((c >= 'a' && c <= 'z')
+                || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9')
+                || c == '.' || c == '-' || c == '*' || c == '_')
+            {
+                builder.Append(c);
+            }
+            else if (c == ' ')
+            {
+                builder.Append('+');
+            }
+            else
+            {
+                // java.net.URLEncoder emits uppercase percent-escapes; Hex.AppendHex
+                // is lowercase because that is what H2 uses elsewhere.
+                builder.Append('%').Append(HexDigit(b >> 4)).Append(HexDigit(b & 0xF));
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Decode the URL to a string.
+    /// </summary>
+    /// <param name="encoded">the encoded URL</param>
+    /// <returns>the decoded string</returns>
+    public static string UrlDecode(string encoded)
+    {
+        int length = encoded.Length;
+        byte[] buff = new byte[length];
+        int j = 0;
+        for (int i = 0; i < length; i++)
+        {
+            char ch = encoded[i];
+            if (ch == '+')
+            {
+                buff[j++] = (byte)' ';
+            }
+            else if (ch == '%')
+            {
+                if (i + 2 >= length)
+                {
+                    throw new ArgumentException("Truncated escape decoding " + encoded);
+                }
+
+                buff[j++] = (byte)ParseUnsignedInt(encoded, i + 1, i + 3, 16);
+                i += 2;
+            }
+            else if (ch <= 127 && ch >= ' ')
+            {
+                buff[j++] = (byte)ch;
+            }
+            else
+            {
+                throw new ArgumentException("Unexpected char " + (int)ch + " decoding " + encoded);
+            }
+        }
+
+        return Encoding.UTF8.GetString(buff, 0, j);
+    }
+
+    /// <summary>
+    /// Split a string into an array of strings using the given separator. A null
+    /// string will result in a null array, and an empty string in a zero element
+    /// array. A backslash escapes the next character.
+    /// </summary>
+    /// <param name="s">the string to split</param>
+    /// <param name="separatorChar">the separator character</param>
+    /// <param name="trim">whether each element should be trimmed</param>
+    /// <returns>the array list</returns>
+    public static string[]? ArraySplit(string? s, char separatorChar, bool trim)
+    {
+        if (s is null)
+        {
+            return null;
+        }
+
+        int length = s.Length;
+        if (length == 0)
+        {
+            return [];
+        }
+
+        List<string> list = Utils.NewSmallArrayList<string>();
+        StringBuilder buff = new(length);
+        for (int i = 0; i < length; i++)
+        {
+            char c = s[i];
+            if (c == separatorChar)
+            {
+                string e = buff.ToString();
+                list.Add(trim ? e.Trim() : e);
+                buff.Clear();
+            }
+            else if (c == '\\' && i < length - 1)
+            {
+                buff.Append(s[++i]);
+            }
+            else
+            {
+                buff.Append(c);
+            }
+        }
+
+        string last = buff.ToString();
+        list.Add(trim ? last.Trim() : last);
+        return list.ToArray();
+    }
+
+    /// <summary>
+    /// Combine an array of strings to one array using the given separator
+    /// character. A backslash and the separator character and escaped using a
+    /// backslash.
+    /// </summary>
+    /// <param name="list">the string array</param>
+    /// <param name="separatorChar">the separator character</param>
+    /// <returns>the combined string</returns>
+    public static string ArrayCombine(string?[] list, char separatorChar)
+    {
+        StringBuilder builder = new();
+        for (int i = 0; i < list.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(separatorChar);
+            }
+
+            string? s = list[i];
+            if (s is null)
+            {
+                continue;
+            }
+
+            for (int j = 0, length = s.Length; j < length; j++)
+            {
+                char c = s[j];
+                if (c == '\\' || c == separatorChar)
+                {
+                    builder.Append('\\');
+                }
+
+                builder.Append(c);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Creates an XML attribute of the form name="value".
+    /// A single space is prepended to the name, so that multiple attributes can be
+    /// concatenated.
+    /// </summary>
+    /// <param name="name">the attribute name</param>
+    /// <param name="value">the attribute value</param>
+    /// <returns>the attribute</returns>
+    public static string XmlAttr(string name, string value)
+        => " " + name + "=\"" + XmlText(value) + "\"";
+
+    /// <summary>
+    /// Create an XML node with optional attributes and content.
+    /// The data is indented with 4 spaces if it contains a newline character.
+    /// </summary>
+    /// <param name="name">the element name</param>
+    /// <param name="attributes">the attributes (might be null)</param>
+    /// <param name="content">the content (might be null)</param>
+    /// <returns>the node</returns>
+    public static string XmlNode(string name, string? attributes, string? content)
+        => XmlNode(name, attributes, content, indent: true);
+
+    /// <summary>
+    /// Create an XML node with optional attributes and content. The data is
+    /// indented with 4 spaces if it contains a newline character and the indent
+    /// parameter is set to true.
+    /// </summary>
+    /// <param name="name">the element name</param>
+    /// <param name="attributes">the attributes (might be null)</param>
+    /// <param name="content">the content (might be null)</param>
+    /// <param name="indent">whether to indent the content if it contains a newline</param>
+    /// <returns>the node</returns>
+    public static string XmlNode(string name, string? attributes, string? content, bool indent)
+    {
+        StringBuilder builder = new();
+        builder.Append('<').Append(name);
+        if (attributes is not null)
+        {
+            builder.Append(attributes);
+        }
+
+        if (content is null)
+        {
+            return builder.Append("/>\n").ToString();
+        }
+
+        builder.Append('>');
+        if (indent && content.Contains('\n'))
+        {
+            builder.Append('\n');
+            Indent(builder, content, 4, newline: true);
+        }
+        else
+        {
+            builder.Append(content);
+        }
+
+        return builder.Append("</").Append(name).Append(">\n").ToString();
+    }
+
+    /// <summary>
+    /// Indents a string with spaces and appends it to a specified builder.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="s">the string</param>
+    /// <param name="spaces">the number of spaces</param>
+    /// <param name="newline">append a newline if there is none</param>
+    /// <returns>the specified string builder</returns>
+    public static StringBuilder Indent(StringBuilder builder, string s, int spaces, bool newline)
+    {
+        for (int i = 0, length = s.Length; i < length;)
+        {
+            for (int j = 0; j < spaces; j++)
+            {
+                builder.Append(' ');
+            }
+
+            int n = s.IndexOf('\n', i);
+            n = n < 0 ? length : n + 1;
+            builder.Append(s, i, n);
+            i = n;
+        }
+
+        if (newline && !s.EndsWith('\n'))
+        {
+            builder.Append('\n');
+        }
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Escapes a comment. If the data contains '--', it is converted to '- -'.
+    /// The data is indented with 4 spaces if it contains a newline character.
+    /// </summary>
+    /// <param name="data">the comment text</param>
+    /// <returns>&lt;!-- data --&gt;</returns>
+    public static string XmlComment(string data)
+    {
+        int idx = 0;
+        while (true)
+        {
+            idx = data.IndexOf("--", idx, StringComparison.Ordinal);
+            if (idx < 0)
+            {
+                break;
+            }
+
+            data = data[..(idx + 1)] + " " + data[(idx + 1)..];
+        }
+
+        // must have a space at the beginning and at the end, otherwise the data must
+        // not contain '-' as the first/last character
+        if (data.Contains('\n'))
+        {
+            StringBuilder builder = new StringBuilder(data.Length + 18).Append("<!--\n");
+            return Indent(builder, data, 4, newline: true).Append("-->\n").ToString();
+        }
+
+        return "<!-- " + data + " -->\n";
+    }
+
+    /// <summary>
+    /// Converts the data to a CDATA element.
+    /// If the data contains ']]&gt;', it is escaped as a text element.
+    /// </summary>
+    /// <param name="data">the text data</param>
+    /// <returns>&lt;![CDATA[data]]&gt;</returns>
+    public static string XmlCData(string data)
+    {
+        if (data.Contains("]]>", StringComparison.Ordinal))
+        {
+            return XmlText(data);
+        }
+
+        bool newline = data.EndsWith('\n');
+        data = "<![CDATA[" + data + "]]>";
+        return newline ? data + "\n" : data;
+    }
+
+    /// <summary>
+    /// Returns &lt;?xml version="1.0"?&gt;
+    /// </summary>
+    /// <returns>&lt;?xml version="1.0"?&gt;</returns>
+    public static string XmlStartDoc() => "<?xml version=\"1.0\"?>\n";
+
+    /// <summary>
+    /// Escapes an XML text element.
+    /// </summary>
+    /// <param name="text">the text data</param>
+    /// <returns>the escaped text</returns>
+    public static string XmlText(string text) => XmlText(text, escapeNewline: false);
+
+    /// <summary>
+    /// Escapes an XML text element.
+    /// </summary>
+    /// <param name="text">the text data</param>
+    /// <param name="escapeNewline">whether to escape newlines</param>
+    /// <returns>the escaped text</returns>
+    public static string XmlText(string text, bool escapeNewline)
+    {
+        int length = text.Length;
+        StringBuilder buff = new(length);
+        for (int i = 0; i < length; i++)
+        {
+            char ch = text[i];
+            switch (ch)
+            {
+                case '<':
+                    buff.Append("&lt;");
+                    break;
+
+                case '>':
+                    buff.Append("&gt;");
+                    break;
+
+                case '&':
+                    buff.Append("&amp;");
+                    break;
+
+                case '\'':
+                    // &apos; is not valid in HTML
+                    buff.Append("&#39;");
+                    break;
+
+                case '"':
+                    buff.Append("&quot;");
+                    break;
+
+                case '\r':
+                case '\n':
+                    if (escapeNewline)
+                    {
+                        buff.Append("&#x").Append(((int)ch).ToString("x", CultureInfo.InvariantCulture))
+                            .Append(';');
+                    }
+                    else
+                    {
+                        buff.Append(ch);
+                    }
+
+                    break;
+
+                case '\t':
+                    buff.Append(ch);
+                    break;
+
+                default:
+                    if (ch < ' ' || ch > 127)
+                    {
+                        buff.Append("&#x").Append(((int)ch).ToString("x", CultureInfo.InvariantCulture))
+                            .Append(';');
+                    }
+                    else
+                    {
+                        buff.Append(ch);
+                    }
+
+                    break;
+            }
+        }
+
+        return buff.ToString();
+    }
+
+    /// <summary>
+    /// Replace all occurrences of the before string with the after string. Unlike
+    /// <c>string.Replace</c> this method reads before and after as plain strings and
+    /// if before is empty this method returns the original string.
+    /// </summary>
+    /// <param name="s">the string</param>
+    /// <param name="before">the old text</param>
+    /// <param name="after">the new text</param>
+    /// <returns>the string with the before string replaced</returns>
+    public static string ReplaceAll(string s, string before, string after)
+    {
+        int next = s.IndexOf(before, StringComparison.Ordinal);
+        if (next < 0 || before.Length == 0)
+        {
+            return s;
+        }
+
+        StringBuilder buff = new(s.Length - before.Length + after.Length);
+        int index = 0;
+        while (true)
+        {
+            buff.Append(s, index, next).Append(after);
+            index = next + before.Length;
+            next = s.IndexOf(before, index, StringComparison.Ordinal);
+            if (next < 0)
+            {
+                buff.Append(s, index, s.Length);
+                break;
+            }
+        }
+
+        return buff.ToString();
+    }
+
+    /// <summary>
+    /// Enclose a string with double quotes. A double quote inside the string is
+    /// escaped using a double quote.
+    /// </summary>
+    /// <param name="s">the text</param>
+    /// <returns>the double-quoted text</returns>
+    public static string QuoteIdentifier(string s)
+        => QuoteIdentifierOrLiteral(new StringBuilder(s.Length + 2), s, '"').ToString();
+
+    /// <summary>
+    /// Enclose a string with double quotes and append it to the specified
+    /// string builder. A double quote inside the string is escaped using a
+    /// double quote.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="s">the text</param>
+    /// <returns>the specified builder</returns>
+    public static StringBuilder QuoteIdentifier(StringBuilder builder, string s)
+        => QuoteIdentifierOrLiteral(builder, s, '"');
+
+    private static StringBuilder QuoteIdentifierOrLiteral(StringBuilder builder, string s, char q)
+    {
+        int builderLength = builder.Length;
+        builder.Append(q);
+        for (int i = 0, l = s.Length; i < l;)
+        {
+            int cp = ReadCodePoint(s, ref i);
+            if (cp < ' ' || cp > 127)
+            {
+                // need to start from the beginning
+                builder.Length = builderLength;
+                builder.Append("U&").Append(q);
+                for (i = 0; i < l;)
+                {
+                    cp = ReadCodePoint(s, ref i);
+                    if (cp >= ' ' && cp < 127)
+                    {
+                        char ch = (char)cp;
+                        if (ch == q || ch == '\\')
+                        {
+                            builder.Append(ch);
+                        }
+
+                        builder.Append(ch);
+                    }
+                    else if (cp <= 0xFFFF)
+                    {
+                        Hex.AppendHex(builder.Append('\\'), cp, 2);
+                    }
+                    else
+                    {
+                        Hex.AppendHex(builder.Append("\\+"), cp, 3);
+                    }
+                }
+
+                break;
+            }
+
+            if (cp == q)
+            {
+                builder.Append(q);
+            }
+
+            builder.Append((char)cp);
+        }
+
+        return builder.Append(q);
+    }
+
+    /// <summary>
+    /// Check if a String is null or empty.
+    /// </summary>
+    /// <param name="s">the string to check</param>
+    /// <returns>true if it is null or empty</returns>
+    public static bool IsNullOrEmpty([NotNullWhen(false)] string? s) => string.IsNullOrEmpty(s);
+
+    /// <summary>
+    /// Pad a string. This method is used for the SQL function RPAD and LPAD.
+    /// </summary>
+    /// <param name="string">the original string</param>
+    /// <param name="n">the target length</param>
+    /// <param name="padding">the padding string</param>
+    /// <param name="right">true if the padding should be appended at the end</param>
+    /// <returns>the padded string</returns>
+    public static string Pad(string @string, int n, string? padding, bool right)
+    {
+        if (n < 0)
+        {
+            n = 0;
+        }
+
+        if (n < @string.Length)
+        {
+            return @string[..n];
+        }
+
+        if (n == @string.Length)
+        {
+            return @string;
+        }
+
+        int paddingChar;
+        if (padding is null || padding.Length == 0)
+        {
+            paddingChar = ' ';
+        }
+        else
+        {
+            int index = 0;
+            paddingChar = ReadCodePoint(padding, ref index);
+        }
+
+        StringBuilder buff = new StringBuilder(n);
+        n -= @string.Length;
+        if (paddingChar > 0xFFFF)
+        {
+            n >>= 1;
+        }
+
+        if (right)
+        {
+            buff.Append(@string);
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            AppendCodePoint(buff, paddingChar);
+        }
+
+        if (!right)
+        {
+            buff.Append(@string);
+        }
+
+        return buff.ToString();
+    }
+
+    /// <summary>
+    /// Create a new char array and copy all the data. If the size of the array is
+    /// zero, the same array is returned.
+    /// </summary>
+    /// <param name="chars">the char array (might be null)</param>
+    /// <returns>a new char array</returns>
+    public static char[]? CloneCharArray(char[]? chars)
+    {
+        if (chars is null)
+        {
+            return null;
+        }
+
+        int len = chars.Length;
+        if (len == 0)
+        {
+            return chars;
+        }
+
+        return (char[])chars.Clone();
+    }
+
+    /// <summary>
+    /// Trim a character from a string.
+    /// </summary>
+    /// <param name="s">the string</param>
+    /// <param name="leading">if leading characters should be removed</param>
+    /// <param name="trailing">if trailing characters should be removed</param>
+    /// <param name="characters">what to remove, or null for a space</param>
+    /// <returns>the trimmed string</returns>
+    public static string Trim(string s, bool leading, bool trailing, string? characters)
+    {
+        if (characters is null || characters.Length == 0)
+        {
+            return Trim(s, leading, trailing, ' ');
+        }
+
+        int length = characters.Length;
+        if (length == 1)
+        {
+            return Trim(s, leading, trailing, characters[0]);
+        }
+
+        int count = CodePointCount(characters, 0, length);
+        Func<int, bool> test;
+        if (count <= 2)
+        {
+            int index = 0;
+            int cp = ReadCodePoint(characters, ref index);
+            if (count > 1)
+            {
+                int cp2 = ReadCodePoint(characters, ref index);
+                if (cp != cp2)
+                {
+                    test = value => value == cp || value == cp2;
+                }
+                else
+                {
+                    test = value => value == cp;
+                }
+            }
+            else
+            {
+                test = value => value == cp;
+            }
+        }
+        else
+        {
+            HashSet<int> set = [];
+            for (int i = 0; i < characters.Length;)
+            {
+                set.Add(ReadCodePoint(characters, ref i));
+            }
+
+            test = set.Contains;
+        }
+
+        return Trim(s, leading, trailing, test);
+    }
+
+    private static string Trim(string s, bool leading, bool trailing, Func<int, bool> test)
+    {
+        int begin = 0, end = s.Length;
+        if (leading)
+        {
+            while (begin < end && test(ReadCodePointAt(s, begin)))
+            {
+                begin += CodePointLengthAt(s, begin);
+            }
+        }
+
+        if (trailing)
+        {
+            while (end > begin && test(ReadCodePointBefore(s, end)))
+            {
+                end -= CodePointLengthAt(s, end);
+            }
+        }
+
+        // substring() returns self if start == 0 && end == length()
+        return s[begin..end];
+    }
+
+    /// <summary>
+    /// Trim a character from a string.
+    /// </summary>
+    /// <param name="s">the string</param>
+    /// <param name="leading">if leading characters should be removed</param>
+    /// <param name="trailing">if trailing characters should be removed</param>
+    /// <param name="character">what to remove</param>
+    /// <returns>the trimmed string</returns>
+    public static string Trim(string s, bool leading, bool trailing, char character)
+    {
+        int begin = 0, end = s.Length;
+        if (leading)
+        {
+            while (begin < end && s[begin] == character)
+            {
+                begin++;
+            }
+        }
+
+        if (trailing)
+        {
+            while (end > begin && s[end - 1] == character)
+            {
+                end--;
+            }
+        }
+
+        // substring() returns self if start == 0 && end == length()
+        return s[begin..end];
+    }
+
+    /// <summary>
+    /// Trim whitespace from a substring. Equivalent of
+    /// <c>substring(beginIndex).trim()</c>.
+    /// </summary>
+    /// <param name="s">the string</param>
+    /// <param name="beginIndex">start index of the substring (inclusive)</param>
+    /// <returns>trimmed substring</returns>
+    public static string TrimSubstring(string s, int beginIndex)
+        => TrimSubstring(s, beginIndex, s.Length);
+
+    /// <summary>
+    /// Trim whitespace from a substring. Equivalent of
+    /// <c>substring(beginIndex, endIndex).trim()</c>.
+    /// </summary>
+    /// <param name="s">the string</param>
+    /// <param name="beginIndex">start index of the substring (inclusive)</param>
+    /// <param name="endIndex">end index of the substring (exclusive)</param>
+    /// <returns>trimmed substring</returns>
+    public static string TrimSubstring(string s, int beginIndex, int endIndex)
+    {
+        while (beginIndex < endIndex && s[beginIndex] <= ' ')
+        {
+            beginIndex++;
+        }
+
+        while (beginIndex < endIndex && s[endIndex - 1] <= ' ')
+        {
+            endIndex--;
+        }
+
+        return s[beginIndex..endIndex];
+    }
+
+    /// <summary>
+    /// Trim whitespace from a substring and append it to a specified string
+    /// builder. Equivalent of
+    /// <c>builder.append(substring(beginIndex, endIndex).trim())</c>.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="s">the string</param>
+    /// <param name="beginIndex">start index of the substring (inclusive)</param>
+    /// <param name="endIndex">end index of the substring (exclusive)</param>
+    /// <returns>the specified builder</returns>
+    public static StringBuilder TrimSubstring(StringBuilder builder, string s, int beginIndex, int endIndex)
+    {
+        while (beginIndex < endIndex && s[beginIndex] <= ' ')
+        {
+            beginIndex++;
+        }
+
+        while (beginIndex < endIndex && s[endIndex - 1] <= ' ')
+        {
+            endIndex--;
+        }
+
+        return builder.Append(s, beginIndex, endIndex);
+    }
+
+    /// <summary>
+    /// Truncates the specified string to the specified length. This method, unlike
+    /// <c>Substring</c>, doesn't break Unicode code points. If the specified length
+    /// in characters breaks a valid pair of surrogates, the whole pair is not included
+    /// into the result.
+    /// </summary>
+    /// <param name="s">the string to truncate</param>
+    /// <param name="maximumLength">the maximum length in characters</param>
+    /// <returns>the truncated string</returns>
+    public static string TruncateString(string s, int maximumLength)
+    {
+        if (s.Length > maximumLength)
+        {
+            s = maximumLength > 0
+                ? s[..(IsSurrogatePair(s[maximumLength - 1], s[maximumLength])
+                    ? maximumLength - 1
+                    : maximumLength)]
+                : "";
+        }
+
+        return s;
+    }
+
+    /// <summary>
+    /// Get the string from the cache if possible. If the string has not been found,
+    /// it is added to the cache. If there is such a string in the cache, that one is
+    /// returned.
+    /// </summary>
+    /// <param name="s">the original string</param>
+    /// <returns>a string with the same content, if possible from the cache</returns>
+    public static string Cache(string? s)
+    {
+        if (!Engine.SysProperties.ObjectCache)
+        {
+            return s!;
+        }
+
+        if (s is null)
+        {
+            return null!;
+        }
+
+        if (s.Length == 0)
+        {
+            return "";
+        }
+
+        string?[]? cache = GetCache();
+        if (cache is not null)
+        {
+            int index = s.GetHashCode() & (Engine.SysProperties.ObjectCacheSize - 1);
+            string? cached = cache[index];
+            if (s == cached)
+            {
+                return cached;
+            }
+
+            cache[index] = s;
+        }
+
+        return s;
+    }
+
+    /// <summary>
+    /// Clear the cache. This method is used for testing.
+    /// </summary>
+    public static void ClearCache() => Volatile.Write(ref softCache, null);
+
+    /// <summary>
+    /// Parses an unsigned 31-bit integer. Neither - nor + signs are allowed.
+    /// </summary>
+    /// <param name="s">string to parse</param>
+    /// <param name="start">the beginning index, inclusive</param>
+    /// <param name="end">the ending index, exclusive</param>
+    /// <returns>the unsigned int not greater than int.MaxValue</returns>
+    public static int ParseUInt31(string s, int start, int end)
+    {
+        if (end > s.Length || start < 0 || start > end)
+        {
+            throw new IndexOutOfRangeException();
+        }
+
+        if (start == end)
+        {
+            throw new FormatException("");
+        }
+
+        int result = 0;
+        for (int i = start; i < end; i++)
+        {
+            char ch = s[i];
+
+            // Ensure that the character is valid and that multiplication by 10 will be
+            // performed without overflow
+            if (ch is < '0' or > '9' || result > 214_748_364)
+            {
+                throw new FormatException(s[start..end]);
+            }
+
+            result = result * 10 + ch - '0';
+            if (result < 0)
+            {
+                // Overflow
+                throw new FormatException(s[start..end]);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Convert a hex encoded string to a byte array.
+    /// </summary>
+    /// <param name="s">the hex encoded string</param>
+    /// <returns>the byte array</returns>
+    public static byte[] ConvertHexToBytes(string s)
+    {
+        int len = s.Length;
+        if (len % 2 != 0)
+        {
+            throw DbException.Get(ErrorCode.HexStringOdd1, s);
+        }
+
+        len /= 2;
+        byte[] buff = new byte[len];
+        int mask = 0;
+        int[] hex = HexDecode;
+        try
+        {
+            for (int i = 0; i < len; i++)
+            {
+                int d = hex[s[i + i]] << 4 | hex[s[i + i + 1]];
+                mask |= d;
+                buff[i] = (byte)d;
+            }
+        }
+        catch (IndexOutOfRangeException)
+        {
+            throw DbException.Get(ErrorCode.HexStringWrong1, s);
+        }
+
+        if ((mask & ~255) != 0)
+        {
+            throw DbException.Get(ErrorCode.HexStringWrong1, s);
+        }
+
+        return buff;
+    }
+
+    /// <summary>
+    /// Parses a hex encoded string with possible space separators and appends
+    /// the decoded binary string to the specified output stream.
+    /// </summary>
+    /// <param name="baos">the output stream, or null</param>
+    /// <param name="s">the hex encoded string</param>
+    /// <param name="start">the start index</param>
+    /// <param name="end">the end index, exclusive</param>
+    /// <returns>the specified output stream or a new output stream</returns>
+    public static MemoryStream ConvertHexWithSpacesToBytes(
+        MemoryStream? baos, string s, int start, int end)
+    {
+        baos ??= new MemoryStream((end - start) >>> 1);
+        int mask = 0;
+        int[] hex = HexDecode;
+        int i = start;
+        while (true)
+        {
+            // Skip spaces before the first digit. Running out of input here is a clean
+            // end of input, not an error: the trailing mask check below decides.
+            int c1;
+            while (true)
+            {
+                if (i >= end)
+                {
+                    goto done;
+                }
+
+                c1 = s[i++];
+                if (c1 != ' ')
+                {
+                    break;
+                }
+            }
+
+            int c2;
+            while (true)
+            {
+                if (i >= end)
+                {
+                    if (((mask | hex[c1]) & ~255) != 0)
+                    {
+                        throw GetHexStringException(ErrorCode.HexStringWrong1, s, start, end);
+                    }
+
+                    throw GetHexStringException(ErrorCode.HexStringOdd1, s, start, end);
+                }
+
+                c2 = s[i++];
+                if (c2 != ' ')
+                {
+                    break;
+                }
+            }
+
+            int d;
+            try
+            {
+                d = hex[c1] << 4 | hex[c2];
+                mask |= d;
+                baos.WriteByte((byte)d);
+            }
+            catch (IndexOutOfRangeException)
+            {
+                throw GetHexStringException(ErrorCode.HexStringWrong1, s, start, end);
+            }
+        }
+
+    done:
+        if ((mask & ~255) != 0)
+        {
+            throw GetHexStringException(ErrorCode.HexStringWrong1, s, start, end);
+        }
+
+        return baos;
+    }
+
+    private static H2SharpException GetHexStringException(int code, string s, int start, int end)
+        => DbException.Get(code, s[start..end]);
+
+    /// <summary>
+    /// Convert a byte array to a hex encoded string.
+    /// </summary>
+    /// <param name="value">the byte array</param>
+    /// <returns>the hex encoded string</returns>
+    public static string ConvertBytesToHex(byte[] value) => ConvertBytesToHex(value, value.Length);
+
+    /// <summary>
+    /// Convert a byte array to a hex encoded string.
+    /// </summary>
+    /// <param name="value">the byte array</param>
+    /// <param name="len">the number of bytes to encode</param>
+    /// <returns>the hex encoded string</returns>
+    public static string ConvertBytesToHex(byte[] value, int len)
+    {
+        StringBuilder builder = new(len * 2);
+        return ConvertBytesToHex(builder, value, len).ToString();
+    }
+
+    /// <summary>
+    /// Convert a byte array to a hex encoded string and append it to a specified
+    /// string builder.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="value">the byte array</param>
+    /// <returns>the hex encoded string</returns>
+    public static StringBuilder ConvertBytesToHex(StringBuilder builder, byte[] value)
+        => ConvertBytesToHex(builder, value, value.Length);
+
+    /// <summary>
+    /// Convert a byte array to a hex encoded string and append it to a specified
+    /// string builder.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="value">the byte array</param>
+    /// <param name="len">the number of bytes to encode</param>
+    /// <returns>the hex encoded string</returns>
+    public static StringBuilder ConvertBytesToHex(StringBuilder builder, byte[] value, int len)
+        => Hex.AppendBytesHex(builder, value.AsSpan(0, len));
+
+    /// <summary>
+    /// Check if this string is a decimal number.
+    /// </summary>
+    /// <param name="s">the string</param>
+    /// <returns>true if it is</returns>
+    public static bool IsNumber(string s)
+    {
+        int l = s.Length;
+        if (l == 0)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < l; i++)
+        {
+            if (!char.IsDigit(s[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Check if the specified string is empty or contains only whitespace.
+    /// </summary>
+    /// <param name="s">the string</param>
+    /// <returns>whether the specified string is empty or contains only whitespace</returns>
+    public static bool IsWhitespaceOrEmpty(string s)
+    {
+        for (int i = 0, l = s.Length; i < l; i++)
+        {
+            if (s[i] > ' ')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Append a zero-padded number from 00 to 99 to a string builder.
+    /// </summary>
+    /// <param name="builder">the string builder</param>
+    /// <param name="positiveValue">the number to append</param>
+    /// <returns>the specified string builder</returns>
+    public static StringBuilder AppendTwoDigits(StringBuilder builder, int positiveValue)
+    {
+        if (positiveValue < 10)
+        {
+            builder.Append('0');
+        }
+
+        return builder.Append(positiveValue);
+    }
+
+    /// <summary>
+    /// Append a zero-padded number to a string builder.
+    /// </summary>
+    /// <param name="builder">the string builder</param>
+    /// <param name="length">the number of characters to append</param>
+    /// <param name="positiveValue">the number to append</param>
+    /// <returns>the specified string builder</returns>
+    public static StringBuilder AppendZeroPadded(StringBuilder builder, int length, int positiveValue)
+    {
+        string s = positiveValue.ToString(CultureInfo.InvariantCulture);
+        length -= s.Length;
+        for (; length > 0; length--)
+        {
+            builder.Append('0');
+        }
+
+        return builder.Append(s);
+    }
+
+    /// <summary>
+    /// Appends the specified string or its part to the specified builder with
+    /// a maximum builder length limit.
+    /// </summary>
+    /// <param name="builder">the string builder</param>
+    /// <param name="s">the string to append</param>
+    /// <param name="length">the length limit</param>
+    /// <returns>the specified string builder</returns>
+    public static StringBuilder AppendToLength(StringBuilder builder, string s, int length)
+    {
+        int builderLength = builder.Length;
+        if (builderLength < length)
+        {
+            int need = length - builderLength;
+            if (need >= s.Length)
+            {
+                builder.Append(s);
+            }
+            else
+            {
+                builder.Append(s, 0, need);
+            }
+        }
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Escape table or schema patterns used for DatabaseMetaData functions.
+    /// </summary>
+    /// <param name="pattern">the pattern</param>
+    /// <returns>the escaped pattern</returns>
+    public static string? EscapeMetaDataPattern(string? pattern)
+    {
+        if (string.IsNullOrEmpty(pattern))
+        {
+            return pattern;
+        }
+
+        return ReplaceAll(pattern!, "\\", "\\\\");
+    }
+
+    /// <summary>
+    /// Case-sensitive check if a text starts with a prefix.
+    /// It only calls <c>string.StartsWith</c> and is only here for API consistency.
+    /// </summary>
+    /// <param name="text">the full text starting with a prefix</param>
+    /// <param name="prefix">the full text starting with a prefix</param>
+    /// <returns>true only if text starts with the prefix</returns>
+    public static bool StartsWith(string text, string prefix)
+        => text.StartsWith(prefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Case-insensitive check if a text starts with a prefix.
+    /// </summary>
+    /// <remarks>
+    /// H2 uses java.text.Collator at PRIMARY strength, which ignores case and
+    /// accented differences. .NET has no equivalent, so this compares with the
+    /// invariant culture. See StringUtilsOracleTests for the differential coverage.
+    /// </remarks>
+    /// <param name="text">the full text starting with a prefix</param>
+    /// <param name="prefix">the full text starting with a prefix</param>
+    /// <returns>true only if text starts with the prefix</returns>
+    public static bool StartsWithIgnoringCase(string text, string prefix)
+    {
+        if (text.Length < prefix.Length)
+        {
+            return false;
+        }
+
+        return string.Compare(
+            text, 0, prefix, 0, prefix.Length,
+            StringComparison.InvariantCultureIgnoreCase) == 0;
+    }
+
+    /// <summary>
+    /// Reads one code point starting at <paramref name="i"/> and advances it past
+    /// that code point. Mirrors java.lang.String.codePointAt: a valid surrogate pair
+    /// yields the astral code point and advances two characters, an unpaired
+    /// surrogate yields the surrogate code unit itself and advances one character.
+    /// </summary>
+    internal static int ReadCodePoint(string s, ref int i)
+    {
+        int cp = s[i];
+        if (i + 1 < s.Length)
+        {
+            int next = s[i + 1];
+            if (cp >= 0xD800 && cp <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF)
+            {
+                i += 2;
+                return 0x10000 + ((cp - 0xD800) << 10) + (next - 0xDC00);
+            }
+        }
+
+        i += 1;
+        return cp;
+    }
+
+    /// <summary>
+    /// Appends a code point, which may need a surrogate pair.
+    /// </summary>
+    internal static void AppendCodePoint(StringBuilder builder, int cp)
+    {
+        if (cp is > 0xFFFF and <= 0x10FFFF)
+        {
+            int v = cp - 0x10000;
+            builder.Append((char)(0xD800 + (v >> 10)));
+            builder.Append((char)(0xDC00 + (v & 0x3FF)));
+        }
+        else
+        {
+            builder.Append((char)cp);
+        }
+    }
+
+    private static int CodePointCount(string s, int beginIndex, int end)
+    {
+        int count = 0;
+        for (int i = beginIndex; i < end;)
+        {
+            ReadCodePoint(s, ref i);
+            count++;
+        }
+
+        return count;
+    }
+
+    private static int ReadCodePointAt(string s, int index)
+    {
+        int i = index;
+        return ReadCodePoint(s, ref i);
+    }
+
+    private static int ReadCodePointBefore(string s, int index)
+    {
+        if (index > 1
+            && (int)s[index - 1] is >= 0xDC00 and <= 0xDFFF
+            && (int)s[index - 2] is >= 0xD800 and <= 0xDBFF)
+        {
+            return 0x10000 + ((s[index - 2] - 0xD800) << 10) + (s[index - 1] - 0xDC00);
+        }
+
+        return s[index - 1];
+    }
+
+    private static int CodePointLengthAt(string s, int index)
+        => index < s.Length && (int)s[index] is >= 0xD800 and <= 0xDBFF ? 2 : 1;
+
+    private static bool IsSurrogatePair(char first, char second)
+        => (int)first is >= 0xD800 and <= 0xDBFF && (int)second is >= 0xDC00 and <= 0xDFFF;
+
+    private static int ParseUnsignedInt(string s, int start, int end, int radix)
+    {
+        long value = 0;
+        for (int i = start; i < end; i++)
+        {
+            int digit = HexDecode[s[i]];
+            if (digit < 0)
+            {
+                throw new FormatException();
+            }
+
+            value = value * radix + digit;
+            if (value > uint.MaxValue)
+            {
+                throw new OverflowException();
+            }
+        }
+
+        return unchecked((int)value);
     }
 }
