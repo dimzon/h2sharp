@@ -40,8 +40,8 @@
 * .NET 8/9/10 SDK, SDK закреплён в `global.json` (10.0.401).
 * JDK 25 + Maven 3.9.16 доступны → оракул работает.
 * Сборка: `dotnet build H2Sharp.sln -c Release` — 0 warnings, 0 errors.
-* Тесты: **252 passed, 0 FAILED**: 28 групп против JVM (включая parse-only оркул по
-  319 скриптам H2 и 1849 пар типов) и 15 проверок аллокаций/инвариантов.
+* Тесты: **258 passed, 0 FAILED**: 29 групп против JVM (включая parse-only оркул по
+  319 скриптам H2, 1849 пар типов и модель типов) и 16 проверок аллокаций/инвариантов.
 * `python tools/regen.py --check` — сгенерированные таблицы соответствуют эталону.
 
 ## Страховка от тихой деградации (сделано)
@@ -215,15 +215,30 @@
 
 ## Следующие шаги (по порядку)
 
-1. **`TypeInfo`** (синглтоны ~25, фабрика `getTypeInfo`, `getHigherType`/`getHigherArray`/
-   `getHigherGeometry`/`getHigherRow`, `areSameTypes`, `checkComparable`,
-   `haveSameOrdering`, `toNumericType`) + **`ExtTypeInfo`** (16). Таблица упорядочивания
-   `Value.getHigherOrderKnown` **уже портирована**, так что промоушен типов теперь сводим.
-   Проверяется исчерпывающим оркулом: все 42×42 пары `TypeInfo.getHigherType`
-   (для `getHigherOrder` это уже сделано, 1849 пар).
+1. **`ExtTypeInfoEnum`, `ExtTypeInfoGeometry`, `ExtTypeInfoNumeric`, `ExtTypeInfoRow`** —
+   подклассы `ExtTypeInfo` (в сумме ~390 строк). Они нужны для трёх вещей, и все три
+   отложены именно из-за них: ветки ENUM/GEOMETRY/ARRAY/ROW в
+   `TypeInfo.getTypeInfo(type, precision, scale, ext)`, промоушен
+   `getHigherType`/`getHigherArray`/`getHigherGeometry`/`getHigherRow` и
+   `checkComparable`/`haveSameOrdering` (ветка ROW). Ядро `TypeInfo` уже портировано.
 2. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
    `ValueDouble`, `ValueVarchar`, `ValueVarbinary`, `ValueBigint`, `ValueNumeric`,
    `ValueDecfloat` — этого набора хватает токенизатору).
+
+### Что вскрыла проверка `TypeInfo`
+
+**`getPrecision()` и `getScale()` — производные, а не поля.** Первая версия возвращала
+сырое поле и выглядела правдоподобно, но была неверна почти для всех типов: `VARCHAR`
+без параметров должен сообщать `MAX_STRING_LENGTH` (1e9), `CLOB` — `Long.MAX_VALUE`,
+`ROW` — `int.MaxValue`, `ARRAY` — `MAX_ARRAY_CARDINALITY`, а `TIME`/`TIMESTAMP` считают
+точность от шкалы (`8`/`9+s`, `19`/`20+s`). Отсюда ещё: сохранённый «unset»-маркер `-1`
+наружу не виден — типы без шкалы сообщают `0`. Дифференциальный тест это сразу показал.
+
+**Имена синглтонов:** в эталоне `TYPE_ARRAY_UNKNOWN` и `TYPE_ROW_EMPTY`, а не
+`TYPE_ARRAY`/`TYPE_ROW` — пустой массив и пустая строка не считаются полными типами.
+
+**`areSameTypes` на ARRAY без типа элемента кидает** в обоих движках (каст `null`-ового
+расширенного типа). Харнесс это сначала не моделировал и обрывал прогон на середине.
 3. **`command/Tokenizer.java`** (1460 строк) — лексический слой, зависит от `Token`
    (константы есть), `ParserUtil`, `StringUtils`, `ErrorCode`, `DbException` и пяти типов
    `value`.
