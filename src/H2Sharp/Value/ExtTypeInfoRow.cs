@@ -181,9 +181,13 @@ public sealed class ExtTypeInfoRow : ExtTypeInfo
     /// Java's <c>String.hashCode</c>: the UTF-16 code units folded with 31.
     /// </summary>
     /// <remarks>
-    /// The field names go into the hash exactly as the reference puts them there, so the
-    /// .NET randomised string hash cannot be used: the row's hash is part of the type's hash
-    /// and has to be the same number in both languages.
+    /// Not <c>string.GetHashCode()</c>, and this is the part of the hash that actually
+    /// matters: .NET randomises string hashes per process, so a hash built from field names
+    /// would differ between two runs of the same program. Nothing needs to agree with the
+    /// reference's numbers — a hash code is neither persisted nor observed anywhere — but a
+    /// hash that changes per run is not a hash at all, so this is deterministic on purpose.
+    /// The arithmetic is Java's because the reference's own is, and using the same one keeps
+    /// the differential tests able to pin it.
     /// </remarks>
     /// <param name="s">the string</param>
     /// <returns>the Java hash code, with Java's wrapping overflow</returns>

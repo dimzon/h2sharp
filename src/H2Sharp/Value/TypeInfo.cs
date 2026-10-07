@@ -1078,10 +1078,15 @@ public sealed class TypeInfo : ExtTypeInfo
     /// <inheritdoc/>
     public override int GetHashCode()
     {
-        // The reference formula, not HashCode.Combine: the hash of a type is folded into the
-        // hash of a row and an enum, so a hash that differs between the two languages would
-        // make those hashes differ too. HashCode.Combine is not even stable across runs in
-        // .NET, which would be worse.
+        // The reference formula, spelled out rather than HashCode.Combine.
+        //
+        // Matching the reference's number is NOT required: nothing persists a hash code, the
+        // reference never uses a type as a hash key, and Transfer serialises the precision,
+        // the scale and the extended type instead of a hash. What is required is only that
+        // the hash is deterministic and agrees with Equals, so that a type works as a key.
+        // The reference formula is used because it is already known correct and because the
+        // differential tests pin it, which keeps a future rewrite from changing the numbers
+        // under a green suite.
         unchecked
         {
             int result = 1;
