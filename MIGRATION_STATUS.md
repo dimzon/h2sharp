@@ -215,27 +215,51 @@
 
 ## Следующие шаги (по порядку)
 
-1. **`DataType`** (772 строки) — **это настоящий следующий юнит, а не подклассы
-   `ExtTypeInfo`.** Я ошибся в предыдущей записи. `TypeInfo.getSQL` рендерит тип через
-   реестр `DataType` (канонические имена + синтаксис точности и шкалы), а `ExtTypeInfo`
-   объявляет `getSQL` — значит `TypeInfo`, наследующий `ExtTypeInfo`, обязан его
-   реализовать. Пока нет `DataType`, базовый `GetSql` падает с объяснением, а не
-   возвращает правдоподобную строку.
-   `DataType` механический: статический инициализатор на 32 вызовах `add(...)` плюс
-   мелкие фабрики `createString`/`createBinary`/`createNumeric`/`createLob`. Идеально для
-   генерации и дифференциальной проверки (имена и SQL-алиасы — чистые данные).
-   За ним разблокируются: `TypeInfo.getSQL`, параметризованный `getTypeInfo` (ветки
-   ENUM/GEOMETRY/ARRAY/ROW), `getHigherType` и `checkComparable`/`haveSameOrdering`.
-2. **`ExtTypeInfoEnum`** (195) и **`ExtTypeInfoRow`** (117) — самодостаточны, нужны после
-   `DataType`. **`ExtTypeInfoNumeric`** (21) уже портирован.
+**Опровергнуто этой серией: `DataType` не является prerequisite для `TypeInfo.getSQL`.**
+Предыдущая запись утверждала обратное. Она была неверна: `getSQL` в эталоне — это `switch`
+по номеру типа с литеральными строками (`"NUMERIC"`, `"FLOAT"`, `"DECFLOAT"`, `"TIME"`,
+`"TIMESTAMP"`, `"ARRAY"`, `"ROW"`), а не обращение к реестру `DataType`. Имена типов приходят
+из уже портированного `Value.getTypeName`. `getSQL` портирован и проверен дифференциально.
+
+1. **`IntervalQualifier`** (322 строки, 13 констант) — закрытый енум из `org.h2.api`;
+   `getSQL` для всех 13 типов интервалов идёт через
+   `IntervalQualifier.valueOf(valueType - INTERVAL_YEAR).getTypeName(builder, precision,
+   scale, pad)`. До него интервалы рендерятся как голое имя (`INTERVAL DAY` вместо
+   `INTERVAL DAY(18)`). Тесты рендера исключают интервалы явно, с причиной и с проверкой,
+   что исключение не растёт.
+2. **`ExtTypeInfoEnum`** (195) и **`ExtTypeInfoRow`** (117) — самодостаточны.
+   **`ExtTypeInfoNumeric`** (21) уже портирован. `ExtTypeInfoRow` нужен и для рендера
+   `ROW()` (пустой список полей), и для отсортированного поиска по имени поля; на net8
+   нет `OrderedDictionary<TKey,TValue>`, нужен свой тип. Тесты рендера исключают и `ROW`.
 3. **`ExtTypeInfoGeometry`** (79) — отдельно и позже: он тянет
    `org.h2.util.geometry.EWKTUtils`, то есть весь пространственный пакет (~40 классов).
    Это отдельная история, не «ещё один подкласс».
-4. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
+4. **`TypeInfo`**: `getHigherType`, `getHigherArray`, `getHigherGeometry`, `getHigherRow`,
+   `checkComparable`, `haveSameOrdering`.
+5. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
    `ValueDouble`, `ValueVarchar`, `ValueVarbinary`, `ValueBigint`, `ValueNumeric`,
    `ValueDecfloat` — этого набора хватает токенизатору).
+6. **`DataType`** (772 строки) — нужен сам по себе для JDBC-типов и `ResultSetMetaData`,
+   но больше ничего в `TypeInfo` не разблокирует. Механический: статический
+   инициализатор на 32 вызовах `add(...)` плюс мелкие фабрики
+   `createString`/`createBinary`/`createNumeric`/`createLob`. Идеален для генерации и
+   дифференциальной проверки (имена и SQL-алиасы — чистые данные).
 
 ### Что вскрыла проверка `TypeInfo`
+
+**`getSQL` читает сырые поля, а `getPrecision()`/`getScale()` — производные.** Для
+`NUMERIC`/`DECFLOAT`/`CHARACTER`/`BINARY` рендер смотрит на `precision >= 0` и
+`scale >= 0` в поле, тогда как наружу отдаётся производное значение. Из-за этого
+`getTypeInfo(NUMERIC, -1, -1, null)` печатает `NUMERIC`, а одноимённый синглтон
+`TYPE_NUMERIC_SCALE_0` с теми же внешними `(100000, 0)` печатает `NUMERIC(100000, 0)`.
+Дифференциальный тест сетки ловит это сразу; сравнение «на глаз» по внешним параметрам —
+нет.
+
+**У `NUMERIC` три синглтона, у `DECFLOAT` два.** Ключом сравнения в оркуле может быть
+только `(valueType, precision, scale)`: по одному номеру типа синглтон не опознаётся, а
+дефолтная таблица `infos[Value.NUMERIC]` указывает на `_FLOATING_POINT` (шкала 50000),
+тогда как `getTypeInfo(NUMERIC, -1, -1)` возвращает `(100000, 0)`. Это разные значения, и
+подмена одного другим недопустима.
 
 **`getPrecision()` и `getScale()` — производные, а не поля.** Первая версия возвращала
 сырое поле и выглядела правдоподобно, но была неверна почти для всех типов: `VARCHAR`
@@ -252,18 +276,25 @@
 
 **`ExtTypeInfo` в Java объявляет только `toString()`, а не `getDeclaredTypeName()`.**
 Моя первая версия выдумала абстрактный `getDeclaredTypeName` — этого в `HasSQL` нет.
-И `TypeInfo` в Java наследует `ExtTypeInfo`, поэтому его `getSQL` тоже тянет `DataType`.
-3. **`command/Tokenizer.java`** (1460 строк) — лексический слой, зависит от `Token`
+
+### Отдельно: рендер сравнивается по ключу, а не по позиции
+
+Эталон обходит синглтоны в `TreeMap` по имени, у нас они в массиве, а у `NUMERIC` имена
+не уникальны по номеру типа. Первые версии теста сравнивали списки позиционно и валили
+прогон на «порядке», а не на содержании. Сравнение идёт через словарь
+`(valueType, precision, scale) -> рендер`, и ошибка выводит обе стороны расшифрованными.
+7. **`command/Tokenizer.java`** (1460 строк) — лексический слой, зависит от `Token`
    (константы есть), `ParserUtil`, `StringUtils`, `ErrorCode`, `DbException` и пяти типов
    `value`.
-4. **`command/Parser.java`** (8963) — после токенизатора и типов. Проверка — оркул из
+8. **`command/Parser.java`** (8963) — после токенизатора и типов. Проверка — оркул из
    раздела «Parse-only оркул».
-5. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
+9. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
    Остальное в `util` — кэши, которые по принятому решению делаются обычными полями.
-6. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
-   и наоборот. LZF портировать дословно.
+10. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
+    и наоборот. LZF портировать дословно.
 
-Фаза 1 закрыта: **247 тестов, 0 расхождений**. Слой типов начат (`Value` — 57 констант).
+Текущий прогон: **262 теста, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
+констант, `TypeInfo` — ядро плюс `getSQL`, `ExtTypeInfo`, `ExtTypeInfoNumeric`.
 
 ## Подводные камни, на которые уже наступали
 
