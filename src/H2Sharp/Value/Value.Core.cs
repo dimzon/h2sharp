@@ -30,6 +30,7 @@
  */
 using System;
 using System.IO;
+using System.Numerics;
 using System.Text;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -127,6 +128,55 @@ public abstract partial class Value
     /// </summary>
     /// <returns>the double value</returns>
     public virtual double GetDouble() => throw GetUnsupportedException("getDouble");
+
+    /// <summary>
+    /// Get the value as a float.
+    /// </summary>
+    /// <returns>the float value</returns>
+    public virtual float GetFloat() => throw GetUnsupportedException("getFloat");
+
+    /// <summary>
+    /// Get the value as an arbitrary precision integer.
+    /// </summary>
+    /// <returns>the integer value</returns>
+    public virtual BigInteger GetBigInteger()
+        => throw GetUnsupportedException("getBigInteger");
+
+    /// <summary>
+    /// Get the value as an arbitrary precision decimal.
+    /// </summary>
+    /// <remarks>
+    /// The reference returns <c>java.math.BigDecimal</c>, which is unbounded and has its own
+    /// scale and rounding rules. .NET's <see cref="decimal"/> is neither unbounded nor the
+    /// same number format: it holds at most 28 significant digits and rounds on division.
+    /// Every integer up to a long is exact in it, so the accessors that reach it are exact
+    /// today, but the port of NUMERIC must not lean on it. The declaration here says decimal
+    /// rather than pretending, so that whoever ports NUMERIC meets the limit instead of
+    /// discovering it.
+    /// </remarks>
+    /// <returns>the decimal value</returns>
+    public virtual decimal GetDecimal()
+        => throw GetUnsupportedException("getDecimal");
+
+    /// <summary>
+    /// Compare two values of the same type, without the conversion and NULL handling that
+    /// <see cref="Value.Compare.CompareTo(Value?, CastDataProvider?, CompareMode)"/> does.
+    /// </summary>
+    /// <remarks>
+    /// Named CompareTypeSafe rather than CompareTypeSafe with a shorter name because "type safe"
+    /// is the reference's own word for it: the caller has already established that both values
+    /// have the same type, so this must not do any work to find that out or to convert
+    /// anything.
+    /// </remarks>
+    /// <param name="o">the other value, of the same type as this one</param>
+    /// <param name="mode">the compare mode</param>
+    /// <param name="provider">the cast information provider</param>
+    /// <returns>-1 if this value is smaller, 1 if it is larger, 0 if they are equal</returns>
+    public virtual int CompareTypeSafe(
+        Value o,
+        CompareMode mode,
+        H2Sharp.Engine.CastDataProvider? provider)
+        => throw GetUnsupportedException("compareTypeSafe");
 
     /// <summary>
     /// Get the sign of the value, where negative is -1, zero is 0, and positive is 1.

@@ -85,7 +85,7 @@ public static class Bits
         return new Guid(data1, data2, data3, bytes.Slice(8, 8).ToArray());
     }
 
-/// <summary>
+    /// <summary>
     /// Extracts the most significant 64 bits of a UUID, matching
     /// java.util.UUID.getMostSignificantBits().
     /// </summary>
@@ -102,4 +102,54 @@ public static class Bits
     /// <returns>the least significant bits</returns>
     public static long Lsb(Guid uuid)
         => BinaryPrimitives.ReadInt64BigEndian(UuidToBytes(uuid).AsSpan(8, 8));
+
+    /// <summary>
+    /// Reads an int from four bytes in network byte order, matching what
+    /// <c>Bits.INT_VH_BE.get(bytes, offset)</c> does in the reference.
+    /// </summary>
+    /// <remarks>
+    /// The reference uses a <c>VarHandle</c> over a big endian byte array view rather than
+    /// <c>ByteBuffer</c>, which is the same operation without the buffer object. Java's byte
+    /// is signed and this does not care: four bytes are four bytes, and the value is the same
+    /// thirty two bits either way.
+    /// <para>
+    /// This is used everywhere from here on: a value's bytes, the MVStore page format, the
+    /// geometry encoding and the crypto primitives all read and write ints big endian.
+    /// </para>
+    /// </remarks>
+    /// <param name="bytes">the bytes to read from</param>
+    /// <param name="offset">the zero based offset</param>
+    /// <returns>the int</returns>
+    public static int IntFromBigEndian(ReadOnlySpan<byte> bytes, int offset)
+        => BinaryPrimitives.ReadInt32BigEndian(bytes.Slice(offset, 4));
+
+    /// <summary>
+    /// Writes an int as four bytes in network byte order, matching what
+    /// <c>Bits.INT_VH_BE.set(bytes, offset, value)</c> does in the reference.
+    /// </summary>
+    /// <param name="bytes">the bytes to write to</param>
+    /// <param name="offset">the zero based offset</param>
+    /// <param name="value">the int</param>
+    public static void IntToBigEndian(Span<byte> bytes, int offset, int value)
+        => BinaryPrimitives.WriteInt32BigEndian(bytes.Slice(offset, 4), value);
+
+    /// <summary>
+    /// Reads a long from eight bytes in network byte order, matching
+    /// <c>Bits.LONG_VH_BE.get(bytes, offset)</c>.
+    /// </summary>
+    /// <param name="bytes">the bytes to read from</param>
+    /// <param name="offset">the zero based offset</param>
+    /// <returns>the long</returns>
+    public static long LongFromBigEndian(ReadOnlySpan<byte> bytes, int offset)
+        => BinaryPrimitives.ReadInt64BigEndian(bytes.Slice(offset, 8));
+
+    /// <summary>
+    /// Writes a long as eight bytes in network byte order, matching
+    /// <c>Bits.LONG_VH_BE.set(bytes, offset, value)</c>.
+    /// </summary>
+    /// <param name="bytes">the bytes to write to</param>
+    /// <param name="offset">the zero based offset</param>
+    /// <param name="value">the long</param>
+    public static void LongToBigEndian(Span<byte> bytes, int offset, long value)
+        => BinaryPrimitives.WriteInt64BigEndian(bytes.Slice(offset, 8), value);
 }
