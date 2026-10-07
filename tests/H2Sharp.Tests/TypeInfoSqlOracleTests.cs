@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using H2Sharp.Api;
 using H2Sharp.Tests.Oracle;
 using H2Sharp.Values;
 using Xunit;
@@ -35,11 +36,7 @@ public sealed class TypeInfoSqlOracleTests
                         if (org.h2.value.TypeInfo.class.isAssignableFrom(f.getType())
                                 && java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
                           org.h2.value.TypeInfo t = (org.h2.value.TypeInfo) f.get(null);
-                          boolean excluded =
-                              (t.getValueType() >= org.h2.value.Value.INTERVAL_YEAR
-                                  && t.getValueType() <= org.h2.value.Value.INTERVAL_MINUTE_TO_SECOND)
-                              || t.getValueType() == org.h2.value.Value.ROW;
-                          if (!excluded) {
+                          if (t.getValueType() != org.h2.value.Value.ROW) {
                             sorted.put(f.getName(), t);
                           }
                         }
@@ -116,11 +113,7 @@ public sealed class TypeInfoSqlOracleTests
                       int[] scales = new int[] { -1, 0, 1, 6, 9 };
                       for (int i = 0; i < typeCount; i++) {
                         int type = nums[i];
-                        boolean excluded =
-                            (type >= org.h2.value.Value.INTERVAL_YEAR
-                                && type <= org.h2.value.Value.INTERVAL_MINUTE_TO_SECOND)
-                            || type == org.h2.value.Value.ROW;
-                        if (excluded) {
+                        if (type == org.h2.value.Value.ROW) {
                           continue;
                         }
                         for (int p = 0; p < precisionCount; p++) {
@@ -220,37 +213,34 @@ public sealed class TypeInfoSqlOracleTests
     ];
 
     /// <summary>
-    /// The value types excluded from the rendering comparison, with the reason for each.
+    /// The value types excluded from the rendering comparison, with the reason.
     /// </summary>
     /// <remarks>
-    /// The interval types render through
-    /// <c>IntervalQualifier.getTypeName(builder, precision, scale, pad)</c>, so
-    /// <c>INTERVAL DAY(18)</c> carries the precision where a bare type name does not.
-    /// IntervalQualifier is 322 lines of closed enum and is the next unit. ROW renders
-    /// through its <c>ExtTypeInfoRow</c>, which renders an empty field list as <c>()</c>, so
-    /// the reference prints <c>ROW()</c> where a port without that class prints <c>ROW</c>.
-    /// ExtTypeInfoRow needs an ordered field map and is also not ported. Both are excluded
-    /// explicitly rather than quietly tolerated, and
+    /// ROW renders through its <c>ExtTypeInfoRow</c>, which renders an empty field list as
+    /// <c>()</c>, so the reference prints <c>ROW()</c> where a port without that class prints
+    /// <c>ROW</c>. ExtTypeInfoRow needs an ordered field map and is not ported. It is
+    /// excluded explicitly rather than quietly tolerated, and
     /// <c>RenderingExcludesExactlyTheUnrenderedTypes</c> keeps the exclusion from growing.
+    /// The interval types used to be excluded here for the same reason and no longer are:
+    /// they render through <c>IntervalQualifier</c>, which is ported.
     /// </remarks>
-    private static bool IsExcluded(int valueType) => valueType is
-        >= Value.IntervalYear and <= Value.IntervalMinuteToSecond
-        or Value.Row;
+    private static bool IsExcluded(int valueType) => valueType is Value.Row;
 
     [Fact]
     public void RenderingExcludesExactlyTheUnrenderedTypes()
     {
-        // Four of the thirteen interval types have named singletons in the reference; the
-        // other nine are reached only through the factory. ROW has one, the empty row.
+        // The intervals are back in the comparison, so only ROW is left out: it has exactly
+        // one singleton, the empty row.
         int excluded = Singletons().Count(static t => IsExcluded(t.GetValueType()));
-        Assert.Equal(5, excluded);
+        Assert.Equal(1, excluded);
 
-        // And the exclusions are visible rather than silent: without the extended type
-        // these render as a plain name, which is what the reference does not print.
-        Assert.Equal("INTERVAL DAY", TypeInfo.TypeIntervalDay.GetSql(0));
-        Assert.NotEqual("INTERVAL DAY(18)", TypeInfo.TypeIntervalDay.GetSql(0));
+        // And the exclusion is visible rather than silent: without the extended type the row
+        // renders as a plain name, which is what the reference does not print.
         Assert.Equal("ROW", TypeInfo.TypeRowEmpty.GetSql(0));
         Assert.NotEqual("ROW()", TypeInfo.TypeRowEmpty.GetSql(0));
+
+        // The qualifier reached the switch, so an interval now carries its precision.
+        Assert.Equal("INTERVAL DAY(18)", TypeInfo.TypeIntervalDay.GetSql(0));
     }
 
     private static TypeInfo[] RenderableSingletons()
@@ -269,6 +259,81 @@ public sealed class TypeInfoSqlOracleTests
 
         return typeNumbers;
     }
+
+    [JavaOracleFact]
+    public void IntervalQualifiers_MatchReference()
+    {
+        // The rendering of an interval goes through this enum, and the predicates below say
+        // which fields a value carries. The rendering reached through TypeInfo only covers
+        // the "INTERVAL " prefix form, so the predicates and the bare qualifier form are
+        // compared here instead of being trusted.
+        string body = """
+                      int[][] pairs = new int[][] {
+                          { -1, -1 }, { 0, -1 }, { 4, -1 }, { -1, 0 }, { -1, 3 }, { 9, 6 }
+                      };
+                      org.h2.api.IntervalQualifier[] all = org.h2.api.IntervalQualifier.values();
+                      System.out.println(hex(String.valueOf(all.length)));
+                      for (int i = 0; i < all.length; i++) {
+                        org.h2.api.IntervalQualifier q = all[i];
+                        String line = q.toString() + " "
+                            + q.hasYears() + " " + q.hasMonths() + " " + q.hasDays()
+                            + " " + q.hasHours() + " " + q.hasMinutes() + " " + q.hasSeconds()
+                            + " " + q.hasMultipleFields() + " " + q.isYearMonth() + " "
+                            + q.isDayTime();
+                        for (int[] pair : pairs) {
+                          line += " | " + q.getTypeName(pair[0], pair[1]) + " | "
+                              + q.getTypeName(new StringBuilder(), pair[0], pair[1], true);
+                        }
+                        System.out.println(hex(line));
+                      }
+            """;
+
+        List<string> java = OracleRunner.Run([], body).Select(Decode).ToList();
+
+        // The first line is the reference's own member count, so a lost or invented
+        // qualifier shows up as a count difference rather than as a shifted comparison.
+        Assert.Equal("13", java[0]);
+        java.RemoveAt(0);
+        List<string> csharp = [];
+        for (int ordinal = 0; ordinal < 13; ordinal++)
+        {
+            IntervalQualifier qualifier = IntervalQualifiers.ValueOf(ordinal);
+            System.Text.StringBuilder line = new();
+            // q.toString() on the reference side is the qualifier's name with underscores turned into
+        // spaces, not the constant's own name, so that is what is compared. A .NET enum
+        // member cannot print that without an explicit mapping, which is what Name() is.
+        // Java concatenates a boolean as "true"/"false" and .NET as "True"/"False", so the
+        // C# side is formatted rather than appended.
+        _ = line.Append(IntervalQualifiers.Name(qualifier))
+                .Append(' ').Append(J(IntervalQualifiers.HasYears(qualifier)))
+                .Append(' ').Append(J(IntervalQualifiers.HasMonths(qualifier)))
+                .Append(' ').Append(J(IntervalQualifiers.HasDays(qualifier)))
+                .Append(' ').Append(J(IntervalQualifiers.HasHours(qualifier)))
+                .Append(' ').Append(J(IntervalQualifiers.HasMinutes(qualifier)))
+                .Append(' ').Append(J(IntervalQualifiers.HasSeconds(qualifier)))
+                .Append(' ').Append(J(IntervalQualifiers.HasMultipleFields(qualifier)))
+                .Append(' ').Append(J(IntervalQualifiers.IsYearMonth(qualifier)))
+                .Append(' ').Append(J(IntervalQualifiers.IsDayTime(qualifier)));
+            foreach ((int precision, int scale) in new[] { (-1, -1), (0, -1), (4, -1), (-1, 0), (-1, 3), (9, 6) })
+            {
+                _ = line.Append(" | ")
+                    .Append(IntervalQualifiers.GetTypeName(qualifier, precision, scale))
+                    .Append(" | ")
+                    .Append(IntervalQualifiers.AppendTypeName(
+                        qualifier, new System.Text.StringBuilder(), precision, scale, true));
+            }
+
+            csharp.Add(line.ToString());
+        }
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == csharp[i], $"ordinal {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
+    private static string J(bool value) => value ? "true" : "false";
 
     private static string Decode(string hex)
     {

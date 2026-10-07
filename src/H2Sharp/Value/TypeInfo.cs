@@ -706,10 +706,31 @@ public sealed class TypeInfo : ExtTypeInfo
 
                 break;
 
+            case Value.IntervalYear:
+            case Value.IntervalMonth:
+            case Value.IntervalDay:
+            case Value.IntervalHour:
+            case Value.IntervalMinute:
+            case Value.IntervalSecond:
+            case Value.IntervalYearToMonth:
+            case Value.IntervalDayToHour:
+            case Value.IntervalDayToMinute:
+            case Value.IntervalDayToSecond:
+            case Value.IntervalHourToMinute:
+            case Value.IntervalHourToSecond:
+            case Value.IntervalMinuteToSecond:
+                // The reference reaches the qualifier by ordinal offset from INTERVAL_YEAR,
+                // so the cast is only safe because the two enumerations are declared in the
+                // same order.
+                _ = IntervalQualifiers.AppendTypeName(
+                    IntervalQualifiers.ValueOf(valueType - Value.IntervalYear),
+                    builder,
+                    (int)precision,
+                    scale,
+                    false);
+                break;
+
             default:
-                // The interval types need IntervalQualifier, which is not ported yet, and
-                // are named by Value.GetTypeName rather than by the reference's own name
-                // for them, so they land here until that class exists.
                 _ = builder.Append(Value.GetTypeName(valueType));
                 break;
         }

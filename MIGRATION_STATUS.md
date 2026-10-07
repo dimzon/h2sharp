@@ -221,25 +221,20 @@
 `"TIMESTAMP"`, `"ARRAY"`, `"ROW"`), а не обращение к реестру `DataType`. Имена типов приходят
 из уже портированного `Value.getTypeName`. `getSQL` портирован и проверен дифференциально.
 
-1. **`IntervalQualifier`** (322 строки, 13 констант) — закрытый енум из `org.h2.api`;
-   `getSQL` для всех 13 типов интервалов идёт через
-   `IntervalQualifier.valueOf(valueType - INTERVAL_YEAR).getTypeName(builder, precision,
-   scale, pad)`. До него интервалы рендерятся как голое имя (`INTERVAL DAY` вместо
-   `INTERVAL DAY(18)`). Тесты рендера исключают интервалы явно, с причиной и с проверкой,
-   что исключение не растёт.
-2. **`ExtTypeInfoEnum`** (195) и **`ExtTypeInfoRow`** (117) — самодостаточны.
-   **`ExtTypeInfoNumeric`** (21) уже портирован. `ExtTypeInfoRow` нужен и для рендера
-   `ROW()` (пустой список полей), и для отсортированного поиска по имени поля; на net8
-   нет `OrderedDictionary<TKey,TValue>`, нужен свой тип. Тесты рендера исключают и `ROW`.
-3. **`ExtTypeInfoGeometry`** (79) — отдельно и позже: он тянет
+1. **`ExtTypeInfoEnum`** (195) и **`ExtTypeInfoRow`** (117) — самодостаточны.
+   **`ExtTypeInfoNumeric`** (21) и **`IntervalQualifier`** (13 констант, 322 строки) уже
+   портированы. `ExtTypeInfoRow` нужен для рендера `ROW()` (пустой список полей) и для
+   отсортированного поиска по имени поля; на net8 нет `OrderedDictionary<TKey,TValue>`,
+   нужен свой тип. Тесты рендера исключают пока только `ROW`.
+2. **`ExtTypeInfoGeometry`** (79) — отдельно и позже: он тянет
    `org.h2.util.geometry.EWKTUtils`, то есть весь пространственный пакет (~40 классов).
    Это отдельная история, не «ещё один подкласс».
-4. **`TypeInfo`**: `getHigherType`, `getHigherArray`, `getHigherGeometry`, `getHigherRow`,
+3. **`TypeInfo`**: `getHigherType`, `getHigherArray`, `getHigherGeometry`, `getHigherRow`,
    `checkComparable`, `haveSameOrdering`.
-5. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
+4. **`CompareMode`** и конкретные типы значений (`ValueNull`, `ValueInt`, `ValueLong`,
    `ValueDouble`, `ValueVarchar`, `ValueVarbinary`, `ValueBigint`, `ValueNumeric`,
    `ValueDecfloat` — этого набора хватает токенизатору).
-6. **`DataType`** (772 строки) — нужен сам по себе для JDBC-типов и `ResultSetMetaData`,
+5. **`DataType`** (772 строки) — нужен сам по себе для JDBC-типов и `ResultSetMetaData`,
    но больше ничего в `TypeInfo` не разблокирует. Механический: статический
    инициализатор на 32 вызовах `add(...)` плюс мелкие фабрики
    `createString`/`createBinary`/`createNumeric`/`createLob`. Идеален для генерации и
@@ -293,7 +288,7 @@
 10. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
     и наоборот. LZF портировать дословно.
 
-Текущий прогон: **262 теста, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
+Текущий прогон: **263 теста, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
 констант, `TypeInfo` — ядро плюс `getSQL`, `ExtTypeInfo`, `ExtTypeInfoNumeric`.
 
 ## Подводные камни, на которые уже наступали
