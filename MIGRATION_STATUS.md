@@ -27,24 +27,62 @@
 * .NET 8/9/10 SDK, SDK закреплён в `global.json` (10.0.401).
 * JDK 25 + Maven 3.9.16 доступны → оракул работает.
 * Сборка: `dotnet build H2Sharp.sln -c Release` — 0 warnings, 0 errors.
-* Тесты: **197 passed, 7 FAILED** (см. «Известные расхождения» ниже).
+* Тесты: **233 passed, 0 FAILED** (из них 24 группы — дифференциальные против JVM,
+  13 — проверки аллокаций).
 
-## Известные расхождения (НЕ починены)
+## Известные расхождения (осознанные, не чинить)
 
-Все семь — в `StringUtilsOracleTests`. Это не дефекты сборки, а **нереализованные
-части порта `Util/StringUtils`**, которые дифференциальные тесты честно ловят.
-Не «чинить» тесты подгонкой ожиданий — либо чинить код, либо явно перечислить здесь.
+Единственное известное расхождение поведения — `startsWithIgnoringCase`:
 
-| Тест | Что известно |
-|---|---|
-| `Pad_MatchesReferenceJvm` | Расхождение по количеству строк (java=300, csharp=120) — похоже, ошибка в самом Java-сниппете теста, а не в порте. Первым делом проверь индексы в теле `pad`. |
-| `ArrayCombine_MatchesReferenceJvm` | Java-сниппет не компилируется. |
-| `ReplaceAll_MatchesReferenceJvm` | Java-сниппет: `befores`/`afters` разрезаются через `nums[0]`, проверить корректность. |
-| `StartsWithIgnoringCase_MatchesReferenceJvm` | 2 из 21: `("café","CAFÉ")` → Java true, .NET `InvariantCultureIgnoreCase` false; `("İ","ı")` → наоборот. Нужен эквивалент `Collator` с PRIMARY: игнорировать регистр **и** диакритику, но различать İ/ı. |
-| `JavaDecode_MatchesReferenceJvm` | 4 из 365 расхождений — разобрать по конкретным входам. |
-| `DecodeUnicodeStringSql_MatchesReferenceJvm` | 6 из 15. Вероятно, ошибка переноса `i` при `\+`-форме (в Java `i += 7` внутри выражения). |
-| `XmlComment_MatchesReferenceJvm` | 1 из 343: C# бросает исключение там, где Java формирует комментарий. |
+| Что | Java (CLDR) | .NET (BCL) |
+|---|---|---|
+| `Ａ`/`ａ` (полноширинные) | **разные** на PRIMARY | `IgnoreCase` сворачивает → равны |
+| `а`/`А` (кириллица), en-US/root | **разные** на PRIMARY | сворачивает → равны |
+| `а`/`А`, ru-RU | равные (tailoring) | равные — совпадает |
+| `a`/`A`, `e`/`E` | равные | равные |
+| `café`/`cafe` | равные | равные с `IgnoreNonSpace` |
 
+Вывод: PRIMARY в ICU — это **не** «игнорировать регистр». В CLDR root регистровые
+пары кириллицы и полноширинных форм имеют *разные* первичные веса, а тайлоринг
+локали меняет ответ (`ru-RU` отличается от `en-US`/root). Проверено напрямую:
+`Collator.getInstance()` даёт `RuleBasedCollator`; ASCII `a`/`A` → 0, а
+`а`/`А` → 1 (root, en-US, tr-TR) и 0 (ru-RU).
+
+Поэтому порт следует `CultureInfo.CurrentCulture` (а не инвариантной культуре) с
+`IgnoreCase | IgnoreNonSpace`, а расхождение зафиксировано явно в
+`StartsWithIgnoringCase_KnownCollatorDivergences`, а не спрятано. Дифференциальный
+тест гоняет **обе локали** (`-Duser.language=ru/en` + pinned `CurrentCulture`).
+
+Остальное — 0 расхождений на 233 тестах.
+## Производительность и GC pressure
+
+`tests/H2Sharp.Tests/StringUtilsAllocationTests.cs` — 13 тестов на
+`GC.GetAllocatedBytesForCurrentThread`. Границы диапазоном, а не равенством: цель —
+«ровно эта аллокация и больше ничего», без привязки к заголовку объекта.
+
+Найдено и исправлено (замеры до → после, байт на вызов):
+
+| Метод | Было | Стало | Что сделано |
+|---|---|---|---|
+| `Hex.BytesToHex(byte[])` | 32816 | 16408 | `string.Create` напрямую в результат; был `StringBuilder` + его `char[]` |
+| `Hex.AppendBytesHex` | посимвольно | пачками по 64 | stackalloc-буфер + один `Append(span)` |
+| `ToUpperEnglish`/`ToLowerEnglish` | аллокация всегда | 0 | если отображение регистра — тождество, возвращается исходный инстанс (иначе `.ToUpperInvariant()` всегда новый string) |
+| `JavaDecode` | 17656 | 16428 | (а) ранний выход, если нет `\`; (б) ёмкость = длина − число escape'ов |
+| `JavaEncode` | 25920 | ~9400 | подсчёт точной длины одним проходом + батчинг ASCII-прогонов |
+| `Pad` | 2096 | 1048 | заполнение точного буфера вместо `AppendCodePoint` в цикле |
+| `ArrayCombine` | 4464 | 1536 | точный буфер; `string.Create` для длинных списков |
+| `ArraySplit` | ~700 | 472 | подсчёт разделителей → прямой `string[]`, без `List` + `ToArray` |
+| `UrlEncode` | ~500 | 320 | подсчёт точной длины, без эвристики ёмкости |
+
+Общие принципы, которые дальше надо соблюдать:
+* Не увеличивать ёмкость StringBuilder «на глаз»: escape'ы и non-ASCII её ломают,
+  и лишняя ёмкость платится дважды (чанк + итоговый string).
+* Возвращать исходный инстанс, если результат равен входу (строки иммутабельны).
+* Считать проходом, а не `List<T>` + `ToArray()`.
+
+Найденный при этом баг (закреплён `ArraySplit_CountsOnlyUnescapedSeparators`):
+предподсчёт разделителей обязан зеркалить разбор, включая порядок проверок и
+пропуск экранированного символа — иначе массив длиннее нужного.
 ## Установленные факты (не выводить заново!)
 
 Оформлены в `docs/ROADMAP.md` («Verified behaviour») и `docs/notes/`.
@@ -83,13 +121,14 @@
 
 ## Следующие шаги (по порядку)
 
-1. **Починить 7 расхождений выше** — см. таблицу. Это последний незакрытый хвост фазы 1.
-2. **`Command/ParserUtil.cs`** (694 строки констант токенов) + **`Command/Token.cs`**
+1. **`Command/ParserUtil.cs`** (694 строки констант токенов) + **`Command/Token.cs`**
    (чистые константы). Генерировать по образцу `tools/port_errorcode.py`.
-3. **`Util/IOUtils.cs`** — зависит от `mvstore/DataUtils.convertToIOException`,
+2. **`Util/IOUtils.cs`** — зависит от `mvstore/DataUtils.convertToIOException`,
    поэтому это уже фаза 2.
-4. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
+3. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
    и наоборот. LZF портировать дословно.
+
+Фаза 1 (Util/Engine/Api/Message/StringUtils) закрыта: 233 теста, 0 расхождений.
 
 ## Подводные камни, на которые уже наступали
 
@@ -110,6 +149,20 @@
   `IOException1`: `IO` → `Io`.
 * **Не редактируй тестовые файлы регулярками.** Несколько раз ломалось
   частичное применение замен. Правь целиком через write/edit и проверяй сборкой.
+* В Java `StringBuilder.append(s, start, end)` — это **(start, end)**, а в .NET
+  `Append(string, startIndex, count)` — это **(start, count)**. Портировать надо
+  `end - start`. Ошибка выглядит как `ArgumentOutOfRangeException` в самом неожиданном
+  месте; на ней поймались `ReplaceAll`, `AddAsterisk`, `Indent`, `TrimSubString`.
+* `decodeUnicodeStringSQL` в Java читает следующий code point **не двигая** `i`, и
+  только ветка «удвоенного escape» двигает. digits парсятся от `i`, поэтому
+  `s.charAt(i)` проверяется на `+`. Сдвинул индекс «для аккуратности» — получил 6 из 15
+  расхождений.
+* Восьмеричный escape (`\101`) парсится как **base 8**, не как десятичный:
+  `\101` → `'A'`. `int.TryParse` без radix даёт `'e'` (101).
+* `Collator` в JDK 25 — это `RuleBasedCollator` (CLDR), а не старый `RuleBasedCollator`
+  из ICU4J; локаль по умолчанию берётся из категории FORMAT. На этой машине `ru_RU` —
+  и это меняет ответы `startsWithIgnoringCase`.
+* `output.WriteLine` в xUnit виден только при `--logger "console;verbosity=detailed"`.
 
 ## Что НЕ портируется
 

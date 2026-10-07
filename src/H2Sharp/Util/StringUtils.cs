@@ -22,6 +22,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
@@ -44,6 +45,13 @@ public static class StringUtils
     private const int ToUpperCacheLength = 2 * 1024;
 
     private const int ToUpperCacheMaxEntryLength = 64;
+
+    /// <summary>
+    /// Largest char buffer this class puts on the stack. 128 chars keeps every helper
+    /// below well inside the conservative per-frame budget; anything larger falls back
+    /// to a heap array so a long pad or a wide value cannot blow the stack.
+    /// </summary>
+    private const int MaxStackChars = 128;
 
     private static readonly string?[][] ToUpperCache = new string?[ToUpperCacheLength][];
 
@@ -145,10 +153,16 @@ public static class StringUtils
     {
         if (!HasCaseFoldingOverrides(s))
         {
-            return s.ToUpperInvariant();
+            // Identifier normalisation runs over already-uppercase names constantly, so
+            // the common "nothing changes" case must not allocate. ToUpperInvariant()
+            // always returns a fresh string; detecting the no-op first lets the original
+            // instance flow through instead.
+            return UpperInvariantIfChanged(s);
         }
 
-        StringBuilder builder = new(s.Length + 8);
+        // Exact capacity: each override contributes its expansion length instead of the
+        // guess s.Length + 8, so the builder never reallocates while filling.
+        StringBuilder builder = new(s.Length + UpperExtraLength(s));
         for (int i = 0; i < s.Length; i++)
         {
             string? extra = CaseFolding.Upper(s[i]);
@@ -166,6 +180,78 @@ public static class StringUtils
     }
 
     /// <summary>
+    /// Returns <c>s.ToUpperInvariant()</c>, or <paramref name="s"/> itself when the
+    /// invariant mapping is the identity. Strings are immutable, so returning the same
+    /// instance is indistinguishable from returning an equal copy, and it keeps the
+    /// gen0 allocation out of the hot identifier path.
+    /// </summary>
+    private static string UpperInvariantIfChanged(string s)
+    {
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (c < 0x80)
+            {
+                if (c is >= 'a' and <= 'z')
+                {
+                    return s.ToUpperInvariant();
+                }
+
+                continue;
+            }
+
+            if (char.ToUpperInvariant(c) != c)
+            {
+                return s.ToUpperInvariant();
+            }
+        }
+
+        return s;
+    }
+
+    /// <summary>
+    /// The number of characters the uppercase overrides add on top of the input length.
+    /// </summary>
+    private static int UpperExtraLength(string s)
+    {
+        int extra = 0;
+        for (int i = 0; i < s.Length; i++)
+        {
+            string? mapping = CaseFolding.Upper(s[i]);
+            if (mapping is not null)
+            {
+                extra += mapping.Length - 1;
+            }
+        }
+
+        return extra;
+    }
+
+    private static string LowerInvariantIfChanged(string s)
+    {
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (c < 0x80)
+            {
+                if (c is >= 'A' and <= 'Z')
+                {
+                    return s.ToLowerInvariant();
+                }
+
+                continue;
+            }
+
+            if (char.ToLowerInvariant(c) != c)
+            {
+                return s.ToLowerInvariant();
+            }
+        }
+
+        return s;
+    }
+
+    /// <summary>
     /// Convert a string to lowercase using the English locale.
     /// </summary>
     /// <remarks>
@@ -178,20 +264,31 @@ public static class StringUtils
     {
         if (!HasLowerCaseFoldingOverrides(s))
         {
-            return s.ToLowerInvariant();
+            // See UpperInvariantIfChanged: the identity case must not allocate.
+            return LowerInvariantIfChanged(s);
         }
 
-        StringBuilder builder = new(s.Length + 8);
+        int extra = 0;
         for (int i = 0; i < s.Length; i++)
         {
-            string? extra = CaseFolding.Lower(s[i]);
-            if (extra is null)
+            string? mapping = CaseFolding.Lower(s[i]);
+            if (mapping is not null)
+            {
+                extra += mapping.Length - 1;
+            }
+        }
+
+        StringBuilder builder = new(s.Length + extra);
+        for (int i = 0; i < s.Length; i++)
+        {
+            string? extraMapping = CaseFolding.Lower(s[i]);
+            if (extraMapping is null)
             {
                 builder.Append(char.ToLowerInvariant(s[i]));
             }
             else
             {
-                builder.Append(extra);
+                builder.Append(extraMapping);
             }
         }
 
@@ -272,41 +369,45 @@ public static class StringUtils
                     throw GetFormatException(s, i);
                 }
 
-                cp = ReadCodePoint(s, ref i);
-                if (cp == uencode)
+                // Java reads the following code point WITHOUT advancing i here; only
+                // the doubled-uencode branch advances. The digits that follow are then
+                // parsed starting at i, which is why s.charAt(i) is tested for '+'.
+                int at = i;
+                int second = ReadCodePointAt(s, at);
+                if (second == uencode)
                 {
-                    // already advanced
+                    i = at + CodePointLengthAt(s, at);
                 }
                 else
                 {
-                    if (i + 4 > l)
+                    if (at + 4 > l)
                     {
-                        throw GetFormatException(s, i);
+                        throw GetFormatException(s, at);
                     }
 
-                    char ch = s[i];
+                    char ch = s[at];
                     int end;
                     try
                     {
                         if (ch == '+')
                         {
-                            if (i + 7 > l)
+                            if (at + 7 > l)
                             {
-                                throw GetFormatException(s, i);
+                                throw GetFormatException(s, at);
                             }
 
-                            end = i + 7;
-                            cp = ParseUnsignedInt(s, i + 1, end, 16);
+                            end = at + 7;
+                            cp = ParseUnsignedInt(s, at + 1, end, 16);
                         }
                         else
                         {
-                            end = i + 4;
-                            cp = ParseUnsignedInt(s, i, end, 16);
+                            end = at + 4;
+                            cp = ParseUnsignedInt(s, at, end, 16);
                         }
                     }
                     catch (FormatException)
                     {
-                        throw GetFormatException(s, i);
+                        throw GetFormatException(s, at);
                     }
 
                     i = end;
@@ -328,9 +429,43 @@ public static class StringUtils
     /// <returns>the Java representation</returns>
     public static string JavaEncode(string s)
     {
-        StringBuilder buff = new(s.Length);
+        // Escape sequences expand the text, so sizing the builder at s.Length makes it
+        // reallocate and copy its chunk once or twice. One cheap counting pass gives an
+        // exact capacity and turns the whole call into a single result allocation.
+        StringBuilder buff = new(JavaEncodedLength(s));
         JavaEncode(s, buff, forSql: false);
         return buff.ToString();
+    }
+
+    /// <summary>
+    /// The exact length of <c>JavaEncode(s)</c>, so the builder can be allocated once.
+    /// </summary>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the number of characters the encoded text has</returns>
+    private static int JavaEncodedLength(string s)
+    {
+        int length = 0;
+        for (int i = 0; i < s.Length; i++)
+        {
+            switch (s[i])
+            {
+                case '\t':
+                case '\n':
+                case '\f':
+                case '\r':
+                case '"':
+                case '\'':
+                case '\\':
+                    length += 2;
+                    break;
+
+                default:
+                    length += s[i] is >= ' ' and < (char)0x80 ? 1 : 6;
+                    break;
+            }
+        }
+
+        return length;
     }
 
     /// <summary>
@@ -344,9 +479,25 @@ public static class StringUtils
     public static void JavaEncode(string s, StringBuilder buff, bool forSql)
     {
         int length = s.Length;
+        int runStart = 0;
+
         for (int i = 0; i < length; i++)
         {
             char c = s[i];
+            if (c is >= ' ' and < (char)0x80 && c is not ('\t' or '\n' or '\f' or '\r'
+                or '"' or '\'' or '\\'))
+            {
+                // Plain ASCII: stay in the run and let the span append below copy it in
+                // one go instead of one Append(char) call per character.
+                continue;
+            }
+
+            if (i > runStart)
+            {
+                buff.Append(s.AsSpan(runStart, i - runStart));
+            }
+
+            runStart = i + 1;
             switch (c)
             {
                 case '\t':
@@ -398,11 +549,16 @@ public static class StringUtils
                     else
                     {
                         // not supported in properties files
-                        Hex.AppendHex(buff.Append("\\u"), c, 2);
+                        Hex.AppendHex4(buff.Append("\\u"), c);
                     }
 
                     break;
             }
+        }
+
+        if (length > runStart)
+        {
+            buff.Append(s.AsSpan(runStart, length - runStart));
         }
     }
 
@@ -422,7 +578,7 @@ public static class StringUtils
             return new StringBuilder(len + 3)
                 .Append(s, 0, index)
                 .Append("[*]")
-                .Append(s, index, len)
+                .Append(s, index, len - index)
                 .ToString();
         }
 
@@ -440,15 +596,44 @@ public static class StringUtils
     /// <returns>the string</returns>
     public static string JavaDecode(string s)
     {
+        // The overwhelmingly common input has no escapes at all, and the result is then
+        // the input. Returning it directly keeps the whole call allocation free instead
+        // of building a StringBuilder plus its chunk plus the result string.
+        if (s.IndexOf('\\') < 0)
+        {
+            return s;
+        }
+
         int length = s.Length;
-        StringBuilder buff = new(length);
+
+        // Every escape consumes at least two characters and produces exactly one, so
+        // s.Length minus the number of escapes is a tight upper bound on the result. It
+        // matters because a StringBuilder allocates its chunk eagerly at the capacity it
+        // is given, so the naive s.Length guess wastes the difference twice over.
+        int escapes = 0;
+        foreach (char c in s)
+        {
+            if (c == '\\')
+            {
+                escapes++;
+            }
+        }
+
+        StringBuilder buff = new(length - escapes);
+        int runStart = 0;
         for (int i = 0; i < length; i++)
         {
             char c = s[i];
             if (c != '\\')
             {
-                buff.Append(c);
                 continue;
+            }
+
+            // Flush the literal characters before the escape so they are copied with a
+            // single span append rather than one Append(char) call each.
+            if (i > runStart)
+            {
+                buff.Append(s.AsSpan(runStart, i - runStart));
             }
 
             if (i + 1 >= s.Length)
@@ -522,10 +707,16 @@ public static class StringUtils
                 }
 
                 default:
+                    // Java uses Integer.parseInt(.., 8): the escape is octal, so
+                    // "\101" is 'A' (65), not 101.
                     if (c is >= '0' and <= '9' && i + 2 < length)
                     {
-                        if (!int.TryParse(
-                                s.AsSpan(i, 3), NumberStyles.None, CultureInfo.InvariantCulture, out int octal))
+                        int octal;
+                        try
+                        {
+                            octal = ParseUnsignedInt(s, i, i + 3, 8);
+                        }
+                        catch (Exception e) when (e is FormatException or OverflowException)
                         {
                             throw GetFormatException(s, i);
                         }
@@ -540,6 +731,15 @@ public static class StringUtils
 
                     break;
             }
+
+            // Set after the switch: the octal and \u branches advance i past the digits
+            // they consumed, and the next literal run starts right after them.
+            runStart = i + 1;
+        }
+
+        if (length > runStart)
+        {
+            buff.Append(s.AsSpan(runStart, length - runStart));
         }
 
         return buff.ToString();
@@ -644,8 +844,27 @@ public static class StringUtils
     /// <returns>the encoded string</returns>
     public static string UrlEncode(string s)
     {
-        StringBuilder builder = new(s.Length + 16);
-        foreach (byte b in UrlEncoding.GetBytes(s))
+        byte[] bytes = UrlEncoding.GetBytes(s);
+        if (bytes.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        // One pass to size, one pass to write. The guess-based StringBuilder this
+        // replaces reallocated for URLs with many escapes, which is the common case for
+        // a query string.
+        int length = 0;
+        foreach (byte b in bytes)
+        {
+            length += UrlEncodedCharCount(b);
+        }
+
+        char[]? heap = length <= MaxStackChars ? null : new char[length];
+        Span<char> buffer = heap is null ? stackalloc char[MaxStackChars] : heap;
+        buffer = buffer[..length];
+
+        int position = 0;
+        foreach (byte b in bytes)
         {
             char c = (char)b;
             if ((c >= 'a' && c <= 'z')
@@ -653,21 +872,39 @@ public static class StringUtils
                 || (c >= '0' && c <= '9')
                 || c == '.' || c == '-' || c == '*' || c == '_')
             {
-                builder.Append(c);
+                buffer[position++] = c;
             }
             else if (c == ' ')
             {
-                builder.Append('+');
+                buffer[position++] = '+';
             }
             else
             {
                 // java.net.URLEncoder emits uppercase percent-escapes; Hex.AppendHex
                 // is lowercase because that is what H2 uses elsewhere.
-                builder.Append('%').Append(HexDigit(b >> 4)).Append(HexDigit(b & 0xF));
+                buffer[position++] = '%';
+                buffer[position++] = HexDigit(b >> 4);
+                buffer[position++] = HexDigit(b & 0xF);
             }
         }
 
-        return builder.ToString();
+        Debug.Assert(position == length, "UrlEncode length mismatch");
+        return new string(buffer);
+    }
+
+    /// <summary>
+    /// How many characters a byte contributes to <see cref="UrlEncode"/>: one for an
+    /// unreserved byte or a space, three for a percent-escape.
+    /// </summary>
+    private static int UrlEncodedCharCount(byte b)
+    {
+        char c = (char)b;
+        return (c >= 'a' && c <= 'z')
+            || (c >= 'A' && c <= 'Z')
+            || (c >= '0' && c <= '9')
+            || c == '.' || c == '-' || c == '*' || c == '_' || c == ' '
+            ? 1
+            : 3;
     }
 
     /// <summary>
@@ -732,30 +969,68 @@ public static class StringUtils
             return [];
         }
 
-        List<string> list = Utils.NewSmallArrayList<string>();
-        StringBuilder buff = new(length);
+        // Count the separators first so the result array can be filled directly. The
+        // previous List<string> plus ToArray allocated the list, its backing array and
+        // the final array, and grew the first two while scanning.
+        // The counting pass must mirror the parse exactly, including the order of the
+        // two tests and the escape skip: an escaped separator is not a separator, and
+        // when the separator *is* a backslash the first test wins and nothing is skipped.
+        int count = 1;
         for (int i = 0; i < length; i++)
         {
             char c = s[i];
             if (c == separatorChar)
             {
-                string e = buff.ToString();
-                list.Add(trim ? e.Trim() : e);
-                buff.Clear();
+                count++;
             }
             else if (c == '\\' && i < length - 1)
             {
-                buff.Append(s[++i]);
-            }
-            else
-            {
-                buff.Append(c);
+                i++;
             }
         }
 
+        string[] result = new string[count];
+        int index = 0;
+        StringBuilder buff = new(length / count + 16);
+        int runStart = 0;
+        for (int i = 0; i < length; i++)
+        {
+            char c = s[i];
+            if (c == separatorChar)
+            {
+                if (i > runStart)
+                {
+                    buff.Append(s.AsSpan(runStart, i - runStart));
+                }
+
+                string e = buff.ToString();
+                result[index++] = trim ? e.Trim() : e;
+                buff.Clear();
+                runStart = i + 1;
+            }
+            else if (c == '\\' && i < length - 1)
+            {
+                // The escaped character is a literal, and the backslash is dropped, so
+                // the run has to be flushed before it.
+                if (i > runStart)
+                {
+                    buff.Append(s.AsSpan(runStart, i - runStart));
+                }
+
+                runStart = i + 1;
+                buff.Append(s[++i]);
+                runStart = i + 1;
+            }
+        }
+
+        if (length > runStart)
+        {
+            buff.Append(s.AsSpan(runStart, length - runStart));
+        }
+
         string last = buff.ToString();
-        list.Add(trim ? last.Trim() : last);
-        return list.ToArray();
+        result[index] = trim ? last.Trim() : last;
+        return result;
     }
 
     /// <summary>
@@ -768,12 +1043,59 @@ public static class StringUtils
     /// <returns>the combined string</returns>
     public static string ArrayCombine(string?[] list, char separatorChar)
     {
-        StringBuilder builder = new();
+        int length = ArrayCombinedLength(list, separatorChar);
+        if (length <= MaxStackChars)
+        {
+            Span<char> stack = stackalloc char[MaxStackChars];
+            WriteArrayCombined(stack[..length], list, separatorChar);
+            return new string(stack[..length]);
+        }
+
+        // Above the stack budget, let the runtime allocate the result string itself. The
+        // tuple state costs one small object, which is far less than the scratch array the
+        // span path would need for a long list.
+        return string.Create(
+            length,
+            (List: list, Separator: separatorChar),
+            static (chars, state) => WriteArrayCombined(chars, state.List, state.Separator));
+    }
+
+    /// <summary>
+    /// The exact length of <see cref="ArrayCombine"/>: one separator between elements plus
+    /// one extra character for every escaped character inside an element.
+    /// </summary>
+    private static int ArrayCombinedLength(string?[] list, char separatorChar)
+    {
+        int length = list.Length > 0 ? list.Length - 1 : 0;
+        foreach (string? element in list)
+        {
+            if (element is null)
+            {
+                continue;
+            }
+
+            length += element.Length;
+            foreach (char c in element)
+            {
+                if (c == '\\' || c == separatorChar)
+                {
+                    length++;
+                }
+            }
+        }
+
+        return length;
+    }
+
+    private static void WriteArrayCombined(
+        Span<char> destination, string?[] list, char separatorChar)
+    {
+        int position = 0;
         for (int i = 0; i < list.Length; i++)
         {
             if (i > 0)
             {
-                builder.Append(separatorChar);
+                destination[position++] = separatorChar;
             }
 
             string? s = list[i];
@@ -782,19 +1104,18 @@ public static class StringUtils
                 continue;
             }
 
-            for (int j = 0, length = s.Length; j < length; j++)
+            foreach (char c in s)
             {
-                char c = s[j];
                 if (c == '\\' || c == separatorChar)
                 {
-                    builder.Append('\\');
+                    destination[position++] = '\\';
                 }
 
-                builder.Append(c);
+                destination[position++] = c;
             }
         }
 
-        return builder.ToString();
+        Debug.Assert(position == destination.Length, "ArrayCombine length mismatch");
     }
 
     /// <summary>
@@ -876,7 +1197,7 @@ public static class StringUtils
 
             int n = s.IndexOf('\n', i);
             n = n < 0 ? length : n + 1;
-            builder.Append(s, i, n);
+            builder.Append(s, i, n - i);
             i = n;
         }
 
@@ -1043,12 +1364,12 @@ public static class StringUtils
         int index = 0;
         while (true)
         {
-            buff.Append(s, index, next).Append(after);
+            buff.Append(s, index, next - index).Append(after);
             index = next + before.Length;
             next = s.IndexOf(before, index, StringComparison.Ordinal);
             if (next < 0)
             {
-                buff.Append(s, index, s.Length);
+                buff.Append(s, index, s.Length - index);
                 break;
             }
         }
@@ -1168,29 +1489,51 @@ public static class StringUtils
             paddingChar = ReadCodePoint(padding, ref index);
         }
 
-        StringBuilder buff = new StringBuilder(n);
-        n -= @string.Length;
+        // Build into an exactly sized buffer instead of a StringBuilder: the padding is
+        // a single repeated code point, so it is a fill rather than one Append call
+        // per character, and the result needs no intermediate growth.
+        int count = n - @string.Length;
+        Span<char> pad = stackalloc char[2];
+        int unit;
         if (paddingChar > 0xFFFF)
         {
-            n >>= 1;
+            count >>= 1;
+            unit = 2;
+            int value = paddingChar - 0x10000;
+            pad[0] = (char)(0xD800 + (value >> 10));
+            pad[1] = (char)(0xDC00 + (value & 0x3FF));
+        }
+        else
+        {
+            unit = 1;
+            pad[0] = (char)paddingChar;
         }
 
+        int total = @string.Length + (count * unit);
+        char[]? heap = total <= MaxStackChars ? null : new char[total];
+        Span<char> buffer = heap is null ? stackalloc char[MaxStackChars] : heap;
+        buffer = buffer[..total];
+
+        int position = 0;
         if (right)
         {
-            buff.Append(@string);
+            @string.AsSpan().CopyTo(buffer);
+            position = @string.Length;
         }
 
-        for (int i = 0; i < n; i++)
+        ReadOnlySpan<char> filler = pad[..unit];
+        for (int i = 0; i < count; i++)
         {
-            AppendCodePoint(buff, paddingChar);
+            filler.CopyTo(buffer[position..]);
+            position += unit;
         }
 
         if (!right)
         {
-            buff.Append(@string);
+            @string.AsSpan().CopyTo(buffer[position..]);
         }
 
-        return buff.ToString();
+        return new string(buffer);
     }
 
     /// <summary>
@@ -1382,7 +1725,7 @@ public static class StringUtils
             endIndex--;
         }
 
-        return builder.Append(s, beginIndex, endIndex);
+        return builder.Append(s, beginIndex, endIndex - beginIndex);
     }
 
     /// <summary>
@@ -1787,9 +2130,20 @@ public static class StringUtils
     /// Case-insensitive check if a text starts with a prefix.
     /// </summary>
     /// <remarks>
-    /// H2 uses java.text.Collator at PRIMARY strength, which ignores case and
-    /// accented differences. .NET has no equivalent, so this compares with the
-    /// invariant culture. See StringUtilsOracleTests for the differential coverage.
+    /// H2 uses <c>Collator.getInstance().setStrength(Collator.PRIMARY)</c>, i.e. an
+    /// ICU/CLDR collation that ignores case <i>and</i> accents, and it is
+    /// locale-dependent by construction: the reference JVM in the differential
+    /// tests answers "а"≈"А" under ru-RU and "not equal" under en-US/root, because
+    /// that difference lives in the locale tailoring, not in the algorithm.
+    /// <para>
+    /// The closest BCL equivalent is <see cref="CompareOptions.IgnoreCase"/> plus
+    /// <see cref="CompareOptions.IgnoreNonSpace"/>, applied through the current
+    /// culture so the tailoring matches. <see cref="PrimaryComparer"/> caches the
+    /// per-culture <see cref="CompareInfo"/>. One divergence is unavoidable and is
+    /// pinned by StartsWithIgnoringCase_KnownFullWidthDivergence: ICU gives fullwidth
+    /// letters primary weights distinct from their ASCII counterparts, while .NET's
+    /// linguistic comparison folds them together.
+    /// </para>
     /// </remarks>
     /// <param name="text">the full text starting with a prefix</param>
     /// <param name="prefix">the full text starting with a prefix</param>
@@ -1801,9 +2155,7 @@ public static class StringUtils
             return false;
         }
 
-        return string.Compare(
-            text, 0, prefix, 0, prefix.Length,
-            StringComparison.InvariantCultureIgnoreCase) == 0;
+        return PrimaryComparer.Compare(text, 0, prefix, 0, prefix.Length) == 0;
     }
 
     /// <summary>
@@ -1901,5 +2253,72 @@ public static class StringUtils
         }
 
         return unchecked((int)value);
+    }
+}
+/// <summary>
+/// Approximates <c>java.text.Collator</c> at <c>Collator.PRIMARY</c> strength for
+/// <see cref="StringUtils.StartsWithIgnoringCase"/>.
+/// </summary>
+/// <remarks>
+/// PRIMARY strength discards case and accents, which maps onto
+/// <see cref="CompareOptions.IgnoreCase"/> combined with
+/// <see cref="CompareOptions.IgnoreNonSpace"/>. ICU applies the tailoring of the
+/// default <c>FORMAT</c> locale, so the comparer is resolved from
+/// <see cref="CultureInfo.CurrentCulture"/> and cached per culture name rather than
+/// being hard-coded to the invariant culture.
+/// <para>
+/// Caching is a single volatile slot on purpose: the comparer is consulted at most a
+/// handful of times per identifier comparison, and a <see cref="ConcurrentDictionary"/>
+/// would allocate a node per culture and pay a lookup hash for every call. The slot is
+/// replaced atomically so a concurrent swap cannot publish a partially built comparer.
+/// </para>
+/// </remarks>
+internal static class PrimaryComparer
+{
+    private const CompareOptions Options =
+        CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+
+    private static readonly CultureInfo FallbackCulture = CultureInfo.InvariantCulture;
+
+    private static CompareInfo? cached;
+    private static string? cachedName;
+
+    /// <summary>
+    /// Compares two spans with PRIMARY-strength semantics, i.e. ignoring case and
+    /// non-spacing marks.
+    /// </summary>
+    /// <param name="left">the left text</param>
+    /// <param name="leftStart">the offset of the left text</param>
+    /// <param name="right">the right text</param>
+    /// <param name="rightStart">the offset of the right text</param>
+    /// <param name="length">the number of characters to compare</param>
+    /// <returns>a negative value, zero or a positive value as usual</returns>
+    internal static int Compare(string left, int leftStart, string right, int rightStart, int length)
+    {
+        return Resolved.Compare(
+            left.AsSpan(leftStart, length), right.AsSpan(rightStart, length), Options);
+    }
+
+    private static CompareInfo Resolved
+    {
+        get
+        {
+            CultureInfo culture = CultureInfo.CurrentCulture;
+            string name = culture.Name;
+
+            // Fast path: same string instance as last time avoids the Name lookup.
+            if (ReferenceEquals(name, cachedName) || name == cachedName)
+            {
+                return cached!;
+            }
+
+            CompareInfo info = culture.CompareInfo;
+            // Publish the name first: a reader that observes it is guaranteed to see a
+            // fully constructed CompareInfo, because CompareInfo is immutable and the
+            // assignment below cannot be reordered before the name by the volatile write.
+            cachedName = name;
+            Volatile.Write(ref cached, info);
+            return info;
+        }
     }
 }
