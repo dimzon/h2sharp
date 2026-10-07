@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using H2Sharp.Tests.Oracle;
+using static H2Sharp.Tests.Oracle.OracleRunner;
 using H2Sharp.Util;
 using Xunit;
 
@@ -161,12 +162,12 @@ public sealed class StringUtilsOracleTests
                       }
             """;
 
-        List<string> java = Run(inputs, body);
+        List<string> java = OracleRunner.Run(inputs, body);
         List<string> csharp = new(inputs.Count * 2);
         foreach (string s in inputs)
         {
-            csharp.Add(Hex(StringUtils.ToUpperEnglish(s)));
-            csharp.Add(Hex(StringUtils.ToLowerEnglish(s)));
+            csharp.Add(OracleRunner.Hex(StringUtils.ToUpperEnglish(s)));
+            csharp.Add(OracleRunner.Hex(StringUtils.ToLowerEnglish(s)));
         }
 
         AssertSame(java, csharp, "toUpperEnglish/toLowerEnglish");
@@ -218,7 +219,7 @@ public sealed class StringUtilsOracleTests
 
         foreach ((string culture, string java) in locales)
         {
-            List<string> fromJava = Run(
+            List<string> fromJava = OracleRunner.Run(
                 payload, body, extraJavaArgs: java.Split(' '));
             List<string> csharp = new(cases.Length);
 
@@ -327,7 +328,7 @@ string body = """
                       }
             """;
 
-        List<string> java = Run(payload, body, [pairs.Length]);
+        List<string> java = OracleRunner.Run(payload, body, [pairs.Length]);
         List<string> csharp = new(java.Count);
         foreach ((string beforeBefore, string _) in pairs)
         {
@@ -335,7 +336,7 @@ string body = """
             {
                 foreach (string subject in subjects)
                 {
-                    csharp.Add(Hex(StringUtils.ReplaceAll(subject, beforeBefore, afterAfter)));
+                    csharp.Add(OracleRunner.Hex(StringUtils.ReplaceAll(subject, beforeBefore, afterAfter)));
                 }
             }
         }
@@ -352,7 +353,7 @@ string body = """
         List<string> payload = [.. subjects];
         foreach (string? c in characters)
         {
-            payload.Add(c ?? NullMarker);
+            payload.Add(c ?? OracleRunner.NullMarker);
         }
 
         string body = """
@@ -370,16 +371,16 @@ string body = """
                       }
             """;
 
-        List<string> java = Run(payload, body, [subjects.Length, characters.Length]);
+        List<string> java = OracleRunner.Run(payload, body, [subjects.Length, characters.Length]);
 
         List<string> csharp = new(java.Count);
         foreach (string subject in subjects)
         {
             foreach (string? trim in characters)
             {
-                csharp.Add(Hex(StringUtils.Trim(subject, true, true, trim)));
-                csharp.Add(Hex(StringUtils.Trim(subject, true, false, trim)));
-                csharp.Add(Hex(StringUtils.Trim(subject, false, true, trim)));
+                csharp.Add(OracleRunner.Hex(StringUtils.Trim(subject, true, true, trim)));
+                csharp.Add(OracleRunner.Hex(StringUtils.Trim(subject, true, false, trim)));
+                csharp.Add(OracleRunner.Hex(StringUtils.Trim(subject, false, true, trim)));
             }
         }
 
@@ -411,7 +412,7 @@ string body = """
                       }
             """;
 
-        List<string> java = Run(subjects, body, numbers);
+        List<string> java = OracleRunner.Run(subjects, body, numbers);
         List<string> csharp = new(java.Count);
         foreach (string subject in subjects)
         {
@@ -422,7 +423,7 @@ string body = """
                     continue;
                 }
 
-                csharp.Add(Hex(StringUtils.TrimSubstring(subject, begin, end)));
+                csharp.Add(OracleRunner.Hex(StringUtils.TrimSubstring(subject, begin, end)));
             }
         }
 
@@ -444,13 +445,13 @@ string body = """
                       }
             """;
 
-        List<string> java = Run(subjects, body, lengths);
+        List<string> java = OracleRunner.Run(subjects, body, lengths);
         List<string> csharp = new(java.Count);
         foreach (string subject in subjects)
         {
             foreach (int length in lengths)
             {
-                csharp.Add(Hex(StringUtils.TruncateString(subject, length)));
+                csharp.Add(OracleRunner.Hex(StringUtils.TruncateString(subject, length)));
             }
         }
 
@@ -467,7 +468,7 @@ string body = """
         List<string> payload = [.. subjects];
         foreach (string? p in paddings)
         {
-            payload.Add(p ?? NullMarker);
+            payload.Add(p ?? OracleRunner.NullMarker);
         }
 
 string body = """
@@ -485,7 +486,7 @@ string body = """
                       }
             """.Replace("PAD_COUNT", paddings.Length.ToString());
 
-        List<string> java = Run(payload, body, lengths);
+        List<string> java = OracleRunner.Run(payload, body, lengths);
         List<string> csharp = new(java.Count);
         foreach (string subject in subjects)
         {
@@ -493,7 +494,7 @@ string body = """
             {
                 foreach (int length in lengths)
                 {
-                    csharp.Add(Hex(StringUtils.Pad(subject, length, padding, right: true)));
+                    csharp.Add(OracleRunner.Hex(StringUtils.Pad(subject, length, padding, right: true)));
                 }
             }
         }
@@ -521,7 +522,7 @@ string body = """
                       }
             """;
 
-        List<string> java = Run(inputs, body);
+        List<string> java = OracleRunner.Run(inputs, body);
         List<string> csharp = new(java.Count);
         foreach (string s in inputs)
         {
@@ -552,19 +553,19 @@ string body = """
                       }
             """.Replace("VALUES", values.Length.ToString());
 
-        List<string> java = Run([], body, [.. widths, .. values]);
+        List<string> java = OracleRunner.Run([], body, [.. widths, .. values]);
         List<string> csharp = new(java.Count);
         foreach (int width in widths)
         {
             foreach (int value in values)
             {
-                csharp.Add(Hex(StringUtils.AppendZeroPadded(new StringBuilder(), width, value).ToString()));
+                csharp.Add(OracleRunner.Hex(StringUtils.AppendZeroPadded(new StringBuilder(), width, value).ToString()));
             }
         }
 
         foreach (int value in values)
         {
-            csharp.Add(Hex(StringUtils.AppendTwoDigits(new StringBuilder(), value).ToString()));
+            csharp.Add(OracleRunner.Hex(StringUtils.AppendTwoDigits(new StringBuilder(), value).ToString()));
         }
 
         AssertSame(java, csharp, "appendZeroPadded/appendTwoDigits");
@@ -592,7 +593,7 @@ string body = """
                       }
             """;
 
-        List<string> java = Run(inputs, body);
+        List<string> java = OracleRunner.Run(inputs, body);
         List<string> csharp = new(java.Count);
         foreach (string s in inputs)
         {
@@ -633,7 +634,7 @@ string body = """
             """;
 
         List<int> separatorCodes = [.. separators.Select(static c => (int)c)];
-        List<string> java = Run(inputs, body, separatorCodes);
+        List<string> java = OracleRunner.Run(inputs, body, separatorCodes);
         List<string> csharp = new(java.Count);
         foreach (string s in inputs)
         {
@@ -642,7 +643,7 @@ string body = """
                 foreach (bool trim in new[] { false, true })
                 {
                     string[]? parts = StringUtils.ArraySplit(s, separator, trim);
-                    csharp.Add(Hex(parts is null ? "<null>" : string.Join("|", parts)));
+                    csharp.Add(OracleRunner.Hex(parts is null ? "<null>" : string.Join("|", parts)));
                 }
             }
         }
@@ -664,7 +665,7 @@ string?[][] lists =
         List<string> payload = new();
         foreach (string?[] list in lists)
         {
-            payload.AddRange(list.Select(static v => v ?? NullMarker));
+            payload.AddRange(list.Select(static v => v ?? OracleRunner.NullMarker));
         }
 
         string body = """
@@ -682,13 +683,13 @@ string?[][] lists =
                       }
             """.Replace("COUNTS", string.Join(",", lists.Select(static l => l.Length)));
 
-        List<string> java = Run(payload, body, [.. separators.Select(static c => (int)c)]);
+        List<string> java = OracleRunner.Run(payload, body, [.. separators.Select(static c => (int)c)]);
         List<string> csharp = new(java.Count);
         foreach (char separator in separators)
         {
             foreach (string?[] list in lists)
             {
-                csharp.Add(Hex(StringUtils.ArrayCombine(list, separator)));
+                csharp.Add(OracleRunner.Hex(StringUtils.ArrayCombine(list, separator)));
             }
         }
 
@@ -715,7 +716,7 @@ string?[][] lists =
             + "        } catch (RuntimeException e) { System.out.println(\"THROWS\"); }"
             + "      }";
 
-        List<string> java = Run(inputs, body);
+        List<string> java = OracleRunner.Run(inputs, body);
         List<string> actual = new(java.Count);
         foreach (string s in inputs)
         {
@@ -793,102 +794,4 @@ private static string Evaluate(Func<string> call)
         return "=" + builder.ToString();
     }
 
-    /// <summary>
-    /// Stands in for a null argument, which cannot travel through the hex transport.
-    /// The Java side converts the marker back to null.
-    /// </summary>
-    private const string NullMarker = "\u0000<NULL>";
-
-    private static List<string> Run(
-        IReadOnlyList<string> inputs,
-        string body,
-        IReadOnlyList<int>? numbers = null,
-        string[]? extraJavaArgs = null)
-    {
-        if (JavaOracle.H2Jar is null)
-        {
-            throw new InvalidOperationException(
-                "H2 jar not found. Build it with: "
-                + "(cd reference/h2/h2 && mvn -B -q -DskipTests package)");
-        }
-
-        return JavaOracle.OutputLines(
-            JavaOracle.RunWithInputs(
-                JavaProgram(body),
-                "Oracle",
-                inputs,
-                [JavaOracle.H2Jar],
-                extraJavaArgs,
-                numbers: numbers));
-    }
-
-    /// <summary>
-    /// Builds a complete Java program. The body goes inside main, wrapped in a
-    /// try/catch so a Java-side exception is reported as "THROWS" instead of aborting
-    /// the run.
-    ///
-    /// The snippet can read:
-    ///   inputs - the strings from inputs.hex
-    ///   nums   - the integers from numbers.txt
-    /// </summary>
-    private static string JavaProgram(string body) =>
-        """
-        import java.nio.file.Files;
-        import java.nio.file.Path;
-
-        public class Oracle {
-          static final String NULL_MARKER = "\u0000<NULL>";
-          static String[] inputs;
-          static int[] nums;
-
-          public static void main(String[] args) throws Exception {
-            inputs = readInputs();
-            nums = readNumbers();
-            try {
-        BODY
-            } catch (RuntimeException e) {
-              System.out.println("THROWS");
-            }
-          }
-
-          static String nullable(String s) {
-            return s.equals(NULL_MARKER) ? null : s;
-          }
-
-          static String hex(String s) {
-            StringBuilder b = new StringBuilder();
-            for (int i = 0; i < s.length(); i++) {
-              b.append(String.format("%04x", (int) s.charAt(i)));
-            }
-            // The "=" keeps an empty result visible: the harness drops blank lines.
-            return "=" + b.toString();
-          }
-
-          static String[] readInputs() throws Exception {
-            java.util.List<String> lines = Files.readAllLines(Path.of("inputs.hex"));
-            String[] out = new String[lines.size()];
-            for (int i = 0; i < lines.size(); i++) {
-              StringBuilder b = new StringBuilder();
-              String line = lines.get(i);
-              for (int j = 0; j + 3 < line.length(); j += 4) {
-                b.append((char) Integer.parseInt(line.substring(j, j + 4), 16));
-              }
-              out[i] = b.toString();
-            }
-            return out;
-          }
-
-          static int[] readNumbers() throws Exception {
-            if (!Files.exists(Path.of("numbers.txt"))) {
-              return new int[0];
-            }
-            java.util.List<String> lines = Files.readAllLines(Path.of("numbers.txt"));
-            int[] out = new int[lines.size()];
-            for (int i = 0; i < lines.size(); i++) {
-              out[i] = Integer.parseInt(lines.get(i).trim());
-            }
-            return out;
-          }
-        }
-        """.Replace("BODY", body);
 }

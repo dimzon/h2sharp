@@ -209,9 +209,9 @@ That default is what makes a green run easy to over-read, so the conformance job
 
 ### Generated tables
 
-Three files under `src/H2Sharp` are generated and must never be edited by hand:
-`Api/ErrorCode.cs`, `Message/ErrorCodeKind.cs` and `Util/CaseFolding.cs`. Regenerate all of them
-with:
+Four files under `src/H2Sharp` are generated and must never be edited by hand:
+`Api/ErrorCode.cs`, `Message/ErrorCodeKind.cs`, `Util/ParserUtil.cs` and
+`Util/CaseFolding.cs`. Regenerate all of them with:
 
 ```sh
 python tools/regen.py            # rewrite in place

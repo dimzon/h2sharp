@@ -29,6 +29,7 @@ GENERATED = [
     pathlib.Path("src/H2Sharp/Api/ErrorCode.cs"),
     pathlib.Path("src/H2Sharp/Message/ErrorCodeKind.cs"),
     pathlib.Path("src/H2Sharp/Util/CaseFolding.cs"),
+    pathlib.Path("src/H2Sharp/Util/ParserUtil.cs"),
 ]
 
 
@@ -63,6 +64,7 @@ def h2_jar() -> pathlib.Path:
 def regen_error_codes() -> None:
     run([sys.executable, str(TOOLS / "port_errorcode.py")])
     run([sys.executable, str(TOOLS / "port_dbexception_kind.py")])
+    run([sys.executable, str(TOOLS / "port_parserutil.py")])
 
 
 def regen_case_folding(work: pathlib.Path) -> None:
