@@ -53,6 +53,18 @@ public static class StringUtils
     /// </summary>
     private const int MaxStackChars = 128;
 
+    /// <summary>
+    /// Lowest code point that can appear as a key in
+    /// <see cref="CaseFolding.Lower(int)"/>. The pre-check in
+    /// <see cref="HasLowerCaseFoldingOverrides"/> uses it to skip the table entirely for
+    /// the overwhelmingly common ASCII case, so it has to stay in step with the generated
+    /// table: too high and a real override is silently ignored, which is exactly what
+    /// happened when this was a hand-written "0x0130 or 0x0304" check and the table grew
+    /// Unicode 16 entries such as U+1C89 -> U+1C8A. CaseFoldingOverrideThresholdsAreExact
+    /// fails if the table ever grows a key below it.
+    /// </summary>
+    internal const int LowerOverrideThreshold = 0x0130;
+
     private static readonly string?[][] ToUpperCache = new string?[ToUpperCacheLength][];
 
     /// <summary>
@@ -317,7 +329,7 @@ public static class StringUtils
     {
         foreach (char c in s)
         {
-            if (c == 0x0130 || c == 0x0304)
+            if (c >= LowerOverrideThreshold)
             {
                 return true;
             }

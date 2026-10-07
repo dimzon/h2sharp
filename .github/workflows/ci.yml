@@ -34,6 +34,10 @@ jobs:
       - name: Build
         run: dotnet build H2Sharp.sln --configuration Release --no-restore
 
+      # The differential tests live in the same assembly and skip here, because this job
+      # has neither the reference checkout nor a JDK. That is fine for a build gate but
+      # it is NOT evidence of Java compatibility: see the conformance job, which is the
+      # only place that actually compares against the reference implementation.
       - name: Test
         run: dotnet test H2Sharp.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory artifacts/test-results
 
@@ -47,8 +51,6 @@ jobs:
   conformance:
     name: Differential conformance vs reference H2
     runs-on: ubuntu-latest
-    # Requires JDK to run the reference implementation; skipped when the
-    # reference checkout is absent.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,10 +65,22 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Checkout reference H2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The reference must be the pinned revision, not master. Cloning master would let
+      # the oracle drift underneath the tests, which shows up as a mysterious failure (or,
+      # worse, a false pass) with nothing in the log saying the reference had moved.
+      - name: Checkout reference H2 at the pinned revision
         run: |
-          git clone --depth 1 https://github.com/h2database/h2database.git reference/h2
-          git -C reference/h2 rev-parse HEAD > reference/H2_COMMIT.txt
+          set -euo pipefail
+          test -f reference/H2_COMMIT.txt
+          rev="$(tr -d '[:space:]' < reference/H2_COMMIT.txt)"
+          git clone -q https://github.com/h2database/h2database.git reference/h2
+          git -C reference/h2 fetch -q --depth 1 origin "$rev"
+          git -C reference/h2 checkout -q FETCH_HEAD
+          echo "reference/h2 pinned at $rev"
 
       - name: Build reference H2 jar
         working-directory: reference/h2/h2
@@ -75,7 +89,28 @@ jobs:
       - name: Restore
         run: dotnet restore H2Sharp.sln
 
+      # H2SHARP_REQUIRE_ORACLE turns an unusable oracle from a silent skip into a
+      # failure. Without it a broken checkout, a missing jar or a wrong reference root
+      # would report zero differential coverage as a green run.
       - name: Conformance tests
         env:
-          H2SHARP_REFERENCE_H2_JAR: ${{ github.workspace }}/reference/h2/h2/target/h2-2.5.252.jar
-        run: dotnet test tests/H2Sharp.Conformance/H2Sharp.Conformance.csproj --configuration Release --logger "trx;LogFileName=conformance.trx" --results-directory artifacts/conformance
+          H2SHARP_REQUIRE_ORACLE: '1'
+          H2SHARP_REFERENCE_ROOT: ${{ github.workspace }}/reference/h2
+        run: >
+          dotnet test tests/H2Sharp.Tests/H2Sharp.Tests.csproj
+          --configuration Release
+          --logger "trx;LogFileName=conformance.trx"
+          --results-directory artifacts/conformance
+
+      # Util/CaseFolding.cs is a snapshot of one JVM's Unicode tables crossed with one
+      # .NET runtime's tables, and nothing else in the build notices when either moves.
+      # Regenerating and diffing turns that silence into a red build.
+      - name: Generated tables are in sync with the reference
+        run: python tools/regen.py --check
+
+      - name: Upload conformance results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-results
+          path: artifacts/conformance

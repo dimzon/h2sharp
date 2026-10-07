@@ -227,6 +227,45 @@ public sealed class StringUtilsAllocationTests
         Assert.Equal("value", StringUtils.Trim("  value  ", leading: true, trailing: true, ' '));
     }
 
+    /// <summary>
+    /// The uppercase fast path in <c>ToUpperEnglish</c> skips the generated override
+    /// table for code points below a threshold, and the lowercase one does the same.
+    /// Both thresholds have to stay in step with <c>Util/CaseFolding.cs</c>: if the
+    /// table ever gains a key below a threshold, that override is silently ignored.
+    /// This happened once already with the lowercase threshold, which was a hand-written
+    /// "0x0130 or 0x0304" check that the Unicode 16 entries (U+1C89 to U+1C8A and the
+    /// Latin Extended-D pairs) outgrew. Regenerating the table is not supposed to be
+    /// able to reintroduce it.
+    /// </summary>
+    [Fact]
+    public void CaseFoldingOverrideThresholdsAreExact()
+    {
+        const int UpperThreshold = 0x00DF;
+
+        foreach ((string Name, Dictionary<int, string> Table, int Threshold) table in new[]
+                 {
+                     ("UpperExtras", CaseFolding.UpperTable, UpperThreshold),
+                     ("LowerExtras", CaseFolding.LowerTable, StringUtils.LowerOverrideThreshold),
+                 })
+        {
+            Assert.NotEmpty(table.Table);
+
+            int lowest = table.Table.Keys.Min();
+            Assert.True(
+                lowest >= table.Threshold,
+                $"{table.Name} has key U+{lowest:X4}, below the U+{table.Threshold:X4} "
+                + "threshold used by the fast path in StringUtils; raise the threshold or "
+                + "the guard will skip this override.");
+
+            // And the threshold must not be needlessly high either, or the fast path
+            // stops paying for itself.
+            Assert.True(
+                lowest <= table.Threshold + 1,
+                $"{table.Name} lowest key U+{lowest:X4} is far below the "
+                + $"U+{table.Threshold:X4} threshold");
+        }
+    }
+
     [Fact]
     public void StartsWithIgnoringCase_DoesNotAllocatePerCall()
     {

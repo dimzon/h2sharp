@@ -25,20 +25,42 @@ internal static class JavaOracle
     internal static string? ReferenceRoot { get; } = LocateReferenceRoot();
 
     /// <summary>
-    /// True if the reference JVM is usable from this test run.
-    /// </summary>
-    internal static bool IsAvailable => ReferenceRoot is not null && FindJavaExecutable() is not null;
-
-    /// <summary>
     /// Path to the built H2 jar in the reference checkout, if present.
     /// </summary>
     internal static string? H2Jar { get; } = LocateH2Jar();
+
+    /// <summary>
+    /// True when the reference JVM is usable. The built jar is part of the requirement:
+    /// every differential test compares against <c>org.h2</c> classes, so a checkout
+    /// without a jar is not a usable oracle and must not be reported as "skipping".
+    /// </summary>
+    internal static bool IsAvailable =>
+        ReferenceRoot is not null && FindJavaExecutable() is not null && H2Jar is not null;
+
+    /// <summary>
+    /// When this environment variable is set to a non-empty value, an unavailable oracle
+    /// is a hard failure instead of a skip. CI sets it for the conformance job so that a
+    /// broken checkout, a missing JDK or a jar that failed to build can never be mistaken
+    /// for a green run: a silent skip means zero coverage, and zero coverage looks exactly
+    /// like success.
+    /// </summary>
+    internal static bool Required { get; } =
+        Environment.GetEnvironmentVariable("H2SHARP_REQUIRE_ORACLE") is { Length: > 0 } value;
 
     internal static string? SkipReason =>
         IsAvailable ? null
         : ReferenceRoot is null
             ? "reference/h2 is not checked out"
-            : "no java executable on PATH";
+            : FindJavaExecutable() is null
+                ? "no java executable on PATH"
+                : "reference H2 jar is not built (mvn -B -q -DskipTests package in reference/h2/h2)";
+
+    /// <summary>
+    /// The reason an unavailable oracle is a hard failure, or null when it is available.
+    /// </summary>
+    internal static string? RequiredFailureReason =>
+        IsAvailable || !Required ? null
+        : "H2SHARP_REQUIRE_ORACLE is set but the reference JVM is unusable: " + SkipReason;
 
     /// <summary>
     /// Compiles and runs a Java source snippet, returning its stdout.
@@ -303,6 +325,17 @@ internal static class JavaOracle
 
     private static string? LocateReferenceRoot()
     {
+        // An explicit override, so a CI job or a developer with the checkout somewhere
+        // else does not depend on the test binaries sitting under the repository root,
+        // and so the "oracle unusable" path can be exercised deliberately.
+        string? overridden = Environment.GetEnvironmentVariable("H2SHARP_REFERENCE_ROOT");
+        if (!string.IsNullOrEmpty(overridden))
+        {
+            return Directory.Exists(Path.Combine(overridden, "h2", "src", "main"))
+                ? overridden
+                : null;
+        }
+
         DirectoryInfo? dir = new(AppContext.BaseDirectory);
         while (dir is not null)
         {

@@ -191,11 +191,46 @@ Two harnesses, both required:
 The reference Java checkout lives in `reference/h2/` and is git-ignored. Populate it with:
 
 ```sh
-git clone --depth 1 https://github.com/h2database/h2database.git reference/h2
+git clone https://github.com/h2database/h2database.git reference/h2
 git -C reference/h2 rev-parse HEAD > reference/H2_COMMIT.txt
 ```
 
+Clone the pinned revision rather than master when reproducing a run, otherwise the oracle has
+drifted underneath the tests and the diff means nothing. CI does this explicitly.
+
 Conformance tests that need the Java sidecar must skip (not fail) when `reference/h2` is absent.
+That default is what makes a green run easy to over-read, so the conformance job in CI sets
+`H2SHARP_REQUIRE_ORACLE=1`, which turns an unusable oracle into a failure. Environment variables:
+
+| Variable | Effect |
+|---|---|
+| `H2SHARP_REFERENCE_ROOT` | Explicit path to `reference/h2` instead of walking up from the test binaries. |
+| `H2SHARP_REQUIRE_ORACLE` | An unavailable oracle fails instead of skipping. Set it in the job that is supposed to prove Java compatibility. |
+
+### Generated tables
+
+Three files under `src/H2Sharp` are generated and must never be edited by hand:
+`Api/ErrorCode.cs`, `Message/ErrorCodeKind.cs` and `Util/CaseFolding.cs`. Regenerate all of them
+with:
+
+```sh
+python tools/regen.py            # rewrite in place
+python tools/regen.py --check    # rewrite, then fail if anything changed
+```
+
+`--check` compares the working tree against HEAD, so it is only meaningful on a clean tree;
+that is how CI uses it. It needs a JDK and a built reference jar, because the point of the
+`CaseFolding` table is to read Java's Unicode *full* case mapping from the reference JVM and
+diff it against what .NET does.
+
+Two traps in that pipeline, both of which produced wrong output before they were found:
+
+* `tools/CaseProbe` must **not** set `InvariantGlobalization`. Under invariant globalization
+  the runtime uses its own built-in casing table instead of the platform one, and code points
+  the platform maps look unmapped. The probe has to observe the same tables the library runs on.
+* A guard threshold that skips the generated table (see `StringUtils.LowerOverrideThreshold`)
+  must stay at or below the lowest key in that table. `CaseFoldingOverrideThresholdsAreExact`
+  in `StringUtilsAllocationTests` fails if a regeneration breaks that.
 
 ## 10. Deliberate non-port
 

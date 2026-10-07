@@ -63,7 +63,7 @@ internal static class CaseFolding
     /// Maps a code point to its full uppercase expansion, when it differs from the
     /// invariant mapping.
     /// </summary>
-    private static readonly Dictionary<int, string> UpperExtras = new()
+    internal static readonly Dictionary<int, string> UpperTable = new()
     {
 '''
 
@@ -73,7 +73,7 @@ LOWER_MARKER = '''    };
     /// Maps a code point to its full lowercase expansion, when it differs from the
     /// invariant mapping.
     /// </summary>
-    private static readonly Dictionary<int, string> LowerExtras = new()
+    internal static readonly Dictionary<int, string> LowerTable = new()
     {
 '''
 
@@ -86,14 +86,14 @@ TAIL = '''
     /// mapping already matches Java.
     /// </summary>
     internal static string? Upper(int codePoint)
-        => UpperExtras.TryGetValue(codePoint, out string? value) ? value : null;
+        => UpperTable.TryGetValue(codePoint, out string? value) ? value : null;
 
     /// <summary>
     /// Returns the lowercase expansion of a code point, or null when the invariant
     /// mapping already matches Java.
     /// </summary>
     internal static string? Lower(int codePoint)
-        => LowerExtras.TryGetValue(codePoint, out string? value) ? value : null;
+        => LowerTable.TryGetValue(codePoint, out string? value) ? value : null;
 }
 '''
 

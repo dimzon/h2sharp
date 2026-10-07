@@ -146,6 +146,12 @@ public sealed class StringUtilsOracleTests
             "\u0130", "\u0131", "\u01c5", "\u01c6", "\u01c9", "\u01c8", "i\u0307",
             "german", "t\u00fcrk", "dotted I", "I with dot", "\u00df", "\u1e9e",
             "\uD83D\uDE00", "0", "9", "-", "_", "\u0130\u0131", "y", "z",
+
+            // Code points whose case mapping changed between Unicode versions, and the
+            // long s. .NET deliberately keeps U+017F distinct from "S" while Java maps
+            // it, so it is exactly the kind of entry Util/CaseFolding.cs has to carry.
+            "\u017f", "\u019b", "\u0264", "\u1c89", "\u1c8a",
+            "\ua7cb", "\ua7cc", "\ua7cd", "\ua7da", "\ua7db", "\ua7dc",
         ];
 
         string body = """

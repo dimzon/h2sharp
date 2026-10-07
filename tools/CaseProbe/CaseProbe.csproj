@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Dumps, for every code point whose .NET *simple* invariant case mapping is not the
+    identity, the upper and lower results. tools/gen_case_folding.py diffs this against
+    the full mapping produced by the reference JVM (tools/DumpCaseTable.java) and emits
+    src/H2Sharp/Util/CaseFolding.cs from the differences.
+
+    A code point that is absent from this output means .NET leaves it alone, which is
+    what the generator assumes.
+
+    This is a throwaway tool: it must never be referenced by src/ or tests/.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CaseProbe</AssemblyName>
+    <RootNamespace>H2Sharp.Tools.CaseProbe</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!--
+      Globalization is deliberately NOT switched to invariant mode. The library and its
+      tests run under the platform casing tables, and the probe has to see the same ones:
+      with InvariantGlobalization the runtime uses a different, internally built casing
+      table, and code points that the platform maps (the Unicode 16 additions such as
+      U+019B -> U+A7DC) then look unmapped. That produced an override table missing ten
+      entries which the differential test caught immediately.
+    -->
+  </PropertyGroup>
+
+</Project>

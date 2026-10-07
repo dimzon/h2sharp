@@ -37,7 +37,7 @@ internal static class CaseFolding
     /// Maps a code point to its full uppercase expansion, when it differs from the
     /// invariant mapping.
     /// </summary>
-    private static readonly Dictionary<int, string> UpperExtras = new()
+    internal static readonly Dictionary<int, string> UpperTable = new()
     {
 
         [0x00df] = "SS",
@@ -436,7 +436,7 @@ internal static class CaseFolding
     /// Maps a code point to its full lowercase expansion, when it differs from the
     /// invariant mapping.
     /// </summary>
-    private static readonly Dictionary<int, string> LowerExtras = new()
+    internal static readonly Dictionary<int, string> LowerTable = new()
     {
 
         [0x0130] = "i̇",
@@ -736,12 +736,12 @@ internal static class CaseFolding
     /// mapping already matches Java.
     /// </summary>
     internal static string? Upper(int codePoint)
-        => UpperExtras.TryGetValue(codePoint, out string? value) ? value : null;
+        => UpperTable.TryGetValue(codePoint, out string? value) ? value : null;
 
     /// <summary>
     /// Returns the lowercase expansion of a code point, or null when the invariant
     /// mapping already matches Java.
     /// </summary>
     internal static string? Lower(int codePoint)
-        => LowerExtras.TryGetValue(codePoint, out string? value) ? value : null;
+        => LowerTable.TryGetValue(codePoint, out string? value) ? value : null;
 }
