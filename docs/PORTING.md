@@ -183,6 +183,11 @@ A Java class may be marked ported only when:
 Two harnesses, both required:
 
 * **Unit** — `tests/H2Sharp.Tests`. Port `h2/src/test/org/h2/test/Test*.java` where practical.
+  Note that H2 has **no unit tests for the parser at all**: `Parser.java` has none, and
+  `test/coverage/Tokenizer.java` and `test/trace/Parser.java` are helpers that merely
+  share the name. The parser is covered only indirectly, by 320 `.sql` scripts run
+  through `TestScript`. Differential testing against the reference JVM is therefore the
+  only oracle available there.
 * **Conformance** — `tests/H2Sharp.Conformance`. Runs `.sql` scripts. A script and its expected
   output are run against **both** H2Sharp and the reference Java H2; the outputs are normalised
   and compared. This is the primary oracle for the port, because it tests behaviour rather than
@@ -208,7 +213,6 @@ That default is what makes a green run easy to over-read, so the conformance job
 | `H2SHARP_REQUIRE_ORACLE` | An unavailable oracle fails instead of skipping. Set it in the job that is supposed to prove Java compatibility. |
 
 ### Generated tables
-
 Four files under `src/H2Sharp` are generated and must never be edited by hand:
 `Api/ErrorCode.cs`, `Message/ErrorCodeKind.cs`, `Util/ParserUtil.cs` and
 `Util/CaseFolding.cs`. Regenerate all of them with:
@@ -224,13 +228,27 @@ that is how CI uses it. It needs a JDK and a built reference jar, because the po
 diff it against what .NET does.
 
 Two traps in that pipeline, both of which produced wrong output before they were found:
-
 * `tools/CaseProbe` must **not** set `InvariantGlobalization`. Under invariant globalization
   the runtime uses its own built-in casing table instead of the platform one, and code points
   the platform maps look unmapped. The probe has to observe the same tables the library runs on.
 * A guard threshold that skips the generated table (see `StringUtils.LowerOverrideThreshold`)
   must stay at or below the lowest key in that table. `CaseFoldingOverrideThresholdsAreExact`
   in `StringUtilsAllocationTests` fails if a regeneration breaks that.
+
+### Authoring Java tests
+
+Some behaviour has no reference test to port, so the Java side has to be written by us.
+Keep those files in `tests/H2Sharp.Tests/Java/`, compiled and run against the built jar
+through the existing `OracleRunner`; JUnit is not needed for a class with a `main` that
+exits non-zero on failure. Every such file gets a paired .NET test, and the pairing is
+the point: the Java file documents what the reference does, the .NET file asserts we do
+the same.
+
+Exhaustive or generated differential tests (every token x every flag combination, every
+code point) stay in the .NET test project and are never proposed upstream: they are ours
+to regenerate, and their runtime would be a burden in H2's own CI. Only small, cheap,
+upstream-shaped regression tests are candidates for a pull request, and that decision is
+made per test, not per repository.
 
 ## 10. When a hand-written mechanism may be deferred
 
