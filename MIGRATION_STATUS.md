@@ -215,24 +215,27 @@
 
 ## Следующие шаги (по порядку)
 
-1. **Слой типов и `value/*` — вот он настоящий блокер.** `org.h2.value` = 56 файлов,
-   14k строк; `Value.java` (2693) тянет за собой `TypeInfo` (1458), `Transfer` (1294),
-   `DataType` (772), `CompareMode` (252). `Tokenizer` нужен для парсинга литералов
-   (`ValueVarchar`, `ValueVarbinary`, `ValueBigint`, `ValueNumeric`, `ValueDecfloat`),
-   а `Parser.java` импортирует 25 типов `value.*`. То есть `command/Token` НЕ является
-   блокером парсера — им был блокер `Token`, а стал `value`.
+1. **`Value.getHigherOrderKnown`** (219 строк, таблица упорядочивания типов) +
+   **`ExtTypeInfo`** (16) — это ровно то, что нужно следующим. `TypeInfo` не сводим
+   без них: промоушен типов упирается в `Value.getHigherOrderKnown(t1, t2)`.
+   После них — `TypeInfo` (синглтоны, `getTypeInfo`, `getHigherType`, comparability),
+   затем `CompareMode` и конкретные типы значений.
    Портировать как **свою фазу**, начиная с минимального связного куска
    (`Value` + скалярные типы), а не с середины.
-2. **`command/Tokenizer.java`** (1460 строк) — лексический слой, зависит только от
-   `Token` (константы уже есть), `ParserUtil`, `StringUtils`, `ErrorCode`, `DbException`
-   и пяти типов `value`.
-3. **`command/Parser.java`** (8963) — после токенизатора и типов. Проверка — оркул выше.
-4. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
+2. **`TypeInfo`**: синглтоны (~25), фабрика `getTypeInfo`, `getHigherType`/`getHigherArray`/
+   `getHigherGeometry`/`getHigherRow`, `areSameTypes`, `checkComparable`, `haveSameOrdering`,
+   `toNumericType`. Хорошо проверяется исчерпывающим оркулом: 41×41 пар `getHigherType`.
+3. **`command/Tokenizer.java`** (1460 строк) — лексический слой, зависит от `Token`
+   (константы есть), `ParserUtil`, `StringUtils`, `ErrorCode`, `DbException` и пяти типов
+   `value`.
+4. **`command/Parser.java`** (8963) — после токенизатора и типов. Проверка — оркул из
+   раздела «Parse-only оркул».
+5. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
    Остальное в `util` — кэши, которые по принятому решению делаются обычными полями.
-5. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
+6. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
    и наоборот. LZF портировать дословно.
 
-Фаза 1 закрыта: **245 тестов, 0 расхождений**.
+Фаза 1 закрыта: **247 тестов, 0 расхождений**. Слой типов начат (`Value` — 57 констант).
 
 ## Подводные камни, на которые уже наступали
 
