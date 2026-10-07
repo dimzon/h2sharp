@@ -352,9 +352,14 @@ revisit.
 Two examples already decided:
 
 * `startsWithIgnoringCase` — deferred, because the result only feeds comparison. Bringing in
-  ICU was measured and would not help: `CompareInfo.Compare` and
-  `CompareInfo.GetStringComparer` agree with the approximation on every probed pair, so the
-  gap is in the platform's collation weights, not in a missing API.
+   ICU was measured and would not help: `CompareInfo.Compare` and
+   `CompareInfo.GetStringComparer` agree with the approximation on every probed pair.
+   Note that this is a statement about *equality*, and it must not be read as a statement
+   about *order*: a later measurement over 7560 pairs found 2332 disagreements between
+   `java.text.Collator` and `CultureInfo.CompareInfo`, including the case order itself
+   inverting at `TERTIARY` for `en_US`. An explicit collation therefore does not reproduce
+   the reference's ordering, while the default `COLLATION OFF` path, which is a plain
+   `String.compareTo`, does. See "Коллация: измерено" in MIGRATION_STATUS.md.
 * `ToUpperEnglish` / `ToLowerEnglish` — not deferred, because identifier names reach page
   metadata. Hence the generated `Util/CaseFolding.cs`.
 
