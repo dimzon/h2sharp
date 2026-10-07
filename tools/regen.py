@@ -31,6 +31,7 @@ GENERATED = [
     pathlib.Path("src/H2Sharp/Util/CaseFolding.cs"),
     pathlib.Path("src/H2Sharp/Util/ParserUtil.cs"),
     pathlib.Path("src/H2Sharp/Command/Token.cs"),
+    pathlib.Path("src/H2Sharp/Value/Value.cs"),
 ]
 
 

@@ -152,6 +152,23 @@ translation. See `docs/notes/bytebuffer.md` when that file exists.
 * **`Comparable` vs `IComparable<T>`.** Port `compareTo` as `CompareTo(object?)` for value
   types that H2 boxes, `CompareTo(T)` otherwise.
 
+### Namespace identical to a type name
+
+`org.h2.value.Value` transliterates to a namespace `H2Sharp.Value` containing a type
+`Value`, and that does not compile: `Value.Unknown` binds to the namespace, so the compiler
+reports that `Value` is a namespace used like a type. Since every value type in this layer is
+referenced by name, the collision would be everywhere rather than somewhere. The layer lives
+in `H2Sharp.Values` and the class keeps its name, so the cost is one namespace.
+
+Prefer this to renaming the type, which would break the 1:1 rule the whole port depends on.
+
+### Widening Java visibility
+
+C# has no package-private equivalent a library consumer could rely on. Constants that are
+package-private in Java (the `GROUP_*` block in `org.h2.value.Value`) are generated as
+`public const` here, because they are part of the type-number contract and widening them is
+harmless. Document the decision in the generated file's header so it is not mistaken for a
+transliteration slip.
 ## 7. Known name collisions and resolutions
 
 | H2 name | Problem in C# | Resolution |
