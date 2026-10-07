@@ -31,3 +31,5 @@ reference/h2/
 ## OS
 Thumbs.db
 .DS_Store
+# compiled generator tooling
+tools/out/

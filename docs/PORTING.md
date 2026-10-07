@@ -288,6 +288,31 @@ to regenerate, and their runtime would be a burden in H2's own CI. Only small, c
 upstream-shaped regression tests are candidates for a pull request, and that decision is
 made per test, not per repository.
 
+### The parse-only oracle
+
+There is no parser in H2 to port tests from, so the bulk oracle is the reference parser
+itself. `tools/ParseOracle.java` walks all 319 reference `.sql` scripts, splits them and
+reports per statement whether the reference accepted it, which command it produced and the
+round-trip SQL. `ParseOracleTests` pins that baseline; when our parser exists it is compared
+against it.
+
+Two things about this that are easy to get wrong and were:
+
+* **The scripts are not just SQL.** A statement is followed by its expected output as lines
+  starting with `>`, and the harness control lines start with `@` (`@autocommit off`,
+  `@reconnect`). A splitter that does not know this feeds `> ok` into the next statement and
+  makes 96% of the corpus look like a syntax error. Recognise directives only at the start of
+  a line, and never inside a string literal, where a line beginning with `>` is legitimate.
+* **`Session.prepareCommand` parses but still resolves.** The scripts are sequential and
+  nothing is executed, so a statement referencing a table an earlier statement would have
+  created fails with `TableOrViewNotFoundDatabaseEmpty` (42104) — the largest error group by
+  far. A resolution failure means the statement *parsed*. The harness therefore reports a
+  breakdown by code rather than pass/fail.
+
+The splitter lives in the tooling, not in the port, and the corpus is regenerated per run
+rather than committed. A splitter bug then limits coverage instead of producing false
+failures, because both sides consume the same generated statements.
+
 ## 10. When a hand-written mechanism may be deferred
 
 A hand-written stand-in for an incompatible standard mechanism is a maintenance liability, but

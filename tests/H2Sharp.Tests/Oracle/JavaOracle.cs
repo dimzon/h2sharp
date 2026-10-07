@@ -91,7 +91,8 @@ internal static class JavaOracle
             RunProcess(javac, work, CompileArguments(work, className, additionalClassPath));
 
             string java = FindJavaExecutable() ?? throw new InvalidOperationException("java not found");
-            return RunProcess(java, work, RunArguments(work, className, additionalClassPath, extraJavaArgs: null));
+            return RunProcess(java, work, RunArguments(
+                work, className, additionalClassPath, extraJavaArgs: null, programArgs: null));
         }
         finally
         {
@@ -124,7 +125,8 @@ internal static class JavaOracle
         IReadOnlyList<string> inputs,
         string[]? additionalClassPath = null,
         string[]? extraJavaArgs = null,
-        IReadOnlyList<int>? numbers = null)
+        IReadOnlyList<int>? numbers = null,
+        string[]? programArgs = null)
     {
         if (ReferenceRoot is null)
         {
@@ -139,7 +141,9 @@ internal static class JavaOracle
 
             string java = FindJavaExecutable() ?? throw new InvalidOperationException("java not found");
             return RunProcess(
-                java, work, RunArguments(work, className, additionalClassPath, extraJavaArgs));
+                java,
+                work,
+                RunArguments(work, className, additionalClassPath, extraJavaArgs, programArgs));
         }
         finally
         {
@@ -257,8 +261,12 @@ internal static class JavaOracle
         return args.ToArray();
     }
 
-    private static string[] RunArguments(
-        string work, string className, string[]? additionalClassPath, string[]? extraJavaArgs)
+private static string[] RunArguments(
+        string work,
+        string className,
+        string[]? additionalClassPath,
+        string[]? extraJavaArgs,
+        string[]? programArgs)
     {
         List<string> args = new();
         if (extraJavaArgs is { Length: > 0 })
@@ -275,6 +283,14 @@ internal static class JavaOracle
 
         args.Add(string.Join(Path.PathSeparator, classPath));
         args.Add(className);
+
+        // Arguments for main(), which come after the class name. An oracle that reads a
+        // file or a directory needs these; JVM options go in extraJavaArgs instead.
+        if (programArgs is { Length: > 0 })
+        {
+            args.AddRange(programArgs);
+        }
+
         return args.ToArray();
     }
 
