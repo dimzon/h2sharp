@@ -45,9 +45,11 @@ public sealed class CompressLZF : Compressor
     /// This size is not part of the format and not part of any contract. A stream this compressor
     /// writes is valid LZF whatever this is, and any LZF reader expands it; what the size decides
     /// is only how well it compresses and how fast it gets there. Sixty-four kilobytes does not
-    /// fit in a first-level cache, so on data that does not compress this table is what the loop
-    /// waits on — half the slots would fit, at the price of more collisions. It was measured and
-    /// kept at the reference's size; the note in MIGRATION_STATUS.md says what to try next.
+    /// fit in a first-level cache, and on data that does not compress this table is what the loop
+    /// waits on: measured, half the slots are 11% faster there and a quarter are 48% faster, at the
+    /// price of 5% on both the time and the size of text. It is kept at the reference's size on
+    /// purpose — which one wins is a trade of processor time against file size, and that is not
+    /// known until there are real pages to weigh. The measurements are in MIGRATION_STATUS.md.
     /// </remarks>
     private const int HashSize = 1 << 14;
 
