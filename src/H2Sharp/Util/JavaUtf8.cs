@@ -216,6 +216,25 @@ public static class JavaUtf8
     public static byte[] GetBytes(string value)
     {
         int length = value.Length;
+
+        // ASCII has no surrogates in it, so the answer for a string that is entirely ASCII is the
+        // length and the platform's own encoder. That is a vectorised copy where the loop below is
+        // a per character switch, and a string that came out of the database is mostly ASCII.
+        bool ascii = true;
+        for (int i = 0; i < length; i++)
+        {
+            if (value[i] >= 0x80)
+            {
+                ascii = false;
+                break;
+            }
+        }
+
+        if (ascii)
+        {
+            return length == 0 ? [] : Encoding.ASCII.GetBytes(value);
+        }
+
         int needed = 0;
         for (int i = 0; i < length; i++)
         {

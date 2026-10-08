@@ -69,6 +69,13 @@ public abstract class ValueStringBase : Value
     /// a different number on every run, in the reference itself. So a string's hash is not a
     /// reproducible value on either side, and it is deliberately not pinned by the differential
     /// test. Equality, which is what a hash has to agree with, is compared.
+    /// <para>
+    /// It is deliberately not remembered, which was measured rather than assumed: caching it in
+    /// the value looks like what Java does, because a Java <c>String</c> does cache its own hash,
+    /// but it cannot help here. The value cache hashes the value it was just handed, which has
+    /// never computed one, so the field would be zero on every call and the answer would cost
+    /// four bytes per value to save nothing.
+    /// </para>
     /// </remarks>
     public override int GetHashCode()
     {

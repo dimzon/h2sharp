@@ -15,8 +15,17 @@
  * The table itself is held softly. That is the whole point of the design and it is worth being
  * explicit about why, because the alternative looks harmless: a cache that holds strong
  * references to values keeps them alive for as long as the database lives, which for a table
- * of wide strings is unbounded growth the engine can never reclaim. A soft reference lets the
- * collector take the whole table when memory is wanted, and the next value simply rebuilds it.
+ * of wide strings is unbounded growth the engine can never reclaim.
+ *
+ * Java lets the collector drop the table when memory is wanted, with a SoftReference. .NET has
+ * no public soft reference, and the equivalents are worse than useless here: a weak reference
+ * lets the collector drop the table at any moment, which is not "when memory is wanted" but
+ * "whenever", and the reference this port measures against already showed what that costs, since
+ * the table was gone often enough to make the cache pointless. So the same intent is reached the
+ * other way round: the table is bounded by SysProperties.ObjectCacheSize, which is what stops
+ * the growth the soft reference was there to prevent, and Value.ClearCache drops it whenever the
+ * engine does want the memory. The trigger is explicit rather than the collector's, and the
+ * bound is the part that actually matters.
  *
  * The size comes from SysProperties.ObjectCacheSize, which the reference computes from the
  * heap, and the index is the value's hash code masked to it, so the table must be a power of
@@ -34,14 +43,14 @@ namespace H2Sharp.Values;
 public abstract partial class Value
 {
     /// <summary>
-    /// The cache, or null when there is none or the collector has taken it.
+    /// The cache, or null when there is none yet.
     /// </summary>
     /// <remarks>
     /// The reference guards this with a volatile field. That is not needed here: the field is
     /// only ever replaced, never mutated in place, so a reader either sees the old array or the
     /// new one and both are complete. Marking it volatile would buy an ordering nobody needs.
     /// </remarks>
-    private static WeakReference<Value[]>? softCache;
+    private static Value[]? softCache;
 
     /// <summary>
     /// Check if a value is in the cache that is equal to this value. If yes,
@@ -62,11 +71,11 @@ public abstract partial class Value
         }
 
         int size = SysProperties.ObjectCacheSize;
-        Value[] cache = softCache?.TryGetTarget(out Value[]? existing) == true ? existing! : [];
-        if (cache.Length != size)
+        Value[]? cache = softCache;
+        if (cache is null || cache.Length != size)
         {
             cache = new Value[size];
-            softCache = new WeakReference<Value[]>(cache);
+            softCache = cache;
         }
 
         // A direct mapped table, so the mask only works because the size is a power of two.
