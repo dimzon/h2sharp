@@ -127,9 +127,16 @@ public abstract partial class Value
     /// </summary>
     /// <remarks>
     /// The reference falls back to DECFLOAT for any pair that is not two integers or two
-    /// reals, which is why this one is the widest exact type in the numeric family. That
-    /// fallback is not ported: it needs <c>ValueDecfloat</c> and <c>ValueNumeric</c>, and
-    /// until they exist the mixed pairs below throw rather than answer approximately.
+    /// reals, which is why that one is the widest exact type in the numeric family. The
+    /// fallback is not ported: it needs <c>ValueDecfloat</c> and <c>ValueNumeric</c>, and until
+    /// they exist a pair that is neither two integers nor two reals throws rather than answer
+    /// approximately.
+    /// <para>
+    /// The two reals go through <c>GetDouble</c> and then the reference's own
+    /// <c>Double.compare</c>, which is not the same order as .NET's: Java sorts NaN above every
+    /// number and negative zero below positive zero, and a port that used the platform compare
+    /// would answer differently on both.
+    /// </para>
     /// </remarks>
     /// <param name="l">the left value</param>
     /// <param name="r">the right value</param>
@@ -153,9 +160,9 @@ public abstract partial class Value
                 case Value.Bigint:
                     return l.GetLong().CompareTo(r.GetLong());
                 case Value.Real:
-                    return l.GetFloat().CompareTo(r.GetFloat());
+                    return JavaCompareFloat(l.GetFloat(), r.GetFloat());
                 case Value.Double:
-                    return l.GetDouble().CompareTo(r.GetDouble());
+                    return JavaCompareDouble(l.GetDouble(), r.GetDouble());
             }
         }
 
@@ -203,6 +210,78 @@ public abstract partial class Value
     /// <param name="type">the type number</param>
     /// <returns>whether the type is numeric</returns>
     internal static bool IsNumericType(int type) => type >= Value.Tinyint && type <= Value.Decfloat;
+
+    /// <summary>
+    /// Compares two doubles the way Java's <c>Double.compare</c> does.
+    /// </summary>
+    /// <remarks>
+    /// Java sorts NaN above every number and negative zero below positive zero; .NET does the
+    /// opposite on both. The same rule lives in <see cref="ValueDouble"/>, where it is the
+    /// whole of that type's comparison, and it is repeated here because this path compares two
+    /// values that may be of different types and neither of them has to be a double. A shared
+    /// helper would be nicer; it is one screenful of logic and both places say why.
+    /// </remarks>
+    /// <param name="a">the first value</param>
+    /// <param name="b">the second value</param>
+    /// <returns>-1, 0 or 1 as Java's compare answers</returns>
+    private static int JavaCompareDouble(double a, double b)
+    {
+        if (double.IsNaN(a))
+        {
+            return double.IsNaN(b) ? 0 : 1;
+        }
+
+        if (double.IsNaN(b))
+        {
+            return -1;
+        }
+
+        if (a == 0.0)
+        {
+            bool negativeA = double.IsNegative(a), negativeB = double.IsNegative(b);
+            if (negativeA != negativeB)
+            {
+                return negativeA ? -1 : 1;
+            }
+
+            return 0;
+        }
+
+        return a < b ? -1 : a > b ? 1 : 0;
+    }
+
+    /// <summary>
+    /// Compares two floats the way Java's <c>Float.compare</c> does, with the same two rules
+    /// as <see cref="JavaCompareDouble"/>.
+    /// </summary>
+    /// <param name="a">the first value</param>
+    /// <param name="b">the second value</param>
+    /// <returns>-1, 0 or 1 as Java's compare answers</returns>
+    private static int JavaCompareFloat(float a, float b)
+    {
+        if (float.IsNaN(a))
+        {
+            return float.IsNaN(b) ? 0 : 1;
+        }
+
+        if (float.IsNaN(b))
+        {
+            return -1;
+        }
+
+        if (a == 0.0f)
+        {
+            bool negativeA = float.IsNegative(a), negativeB = float.IsNegative(b);
+            if (negativeA != negativeB)
+            {
+                return negativeA ? -1 : 1;
+            }
+
+            return 0;
+        }
+
+        return a < b ? -1 : a > b ? 1 : 0;
+    }
 
     private static NotSupportedException NotPortedConversion(string op, string type)
         => new(

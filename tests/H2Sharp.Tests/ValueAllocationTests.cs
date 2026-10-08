@@ -162,6 +162,53 @@ public sealed class ValueAllocationTests
         Assert.Equal(0, allocated);
     }
 
+    /// <summary>
+    /// Rendering a double allocates the string the formatter returns, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// One string per call, not one per digit count. The search that finds the shortest
+    /// representation used to format a candidate into a fresh string on every step, which came
+    /// to about a kilobyte per number; the guards in JavaNumberFormatAllocationTests hold that
+    /// line, and this one says the whole call still costs one string.
+    /// </remarks>
+    [Fact]
+    public void DoubleRenderingCostsOneString()
+    {
+        StringBuilder reused = new();
+        ValueDouble v = ValueDouble.Get(1.5);
+
+        long allocated = Measure(() =>
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                reused.Clear();
+                _ = v.GetSql(reused, 0);
+            }
+        });
+
+        Assert.InRange(allocated, Count * 32L, Count * 128L);
+    }
+
+    [Fact]
+    public void DoubleArithmeticCostsOneValuePerOperation()
+    {
+        // 1.5 + 1.5 is 3.0, which is not one of the preallocated values, so each operation
+        // builds one. That is the shape of the reference too: arithmetic creates values and the
+        // cache only saves memory when the result repeats.
+        ValueDouble a = ValueDouble.Get(1.5);
+
+        long allocated = Measure(() =>
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                _ = a.Add(a);
+                _ = a.Multiply(a);
+            }
+        });
+
+        Assert.InRange(allocated, Count * 24L, Count * 128L);
+    }
+
     [Fact]
     public void TheCacheAnswersWithTheSameInstance()
     {
