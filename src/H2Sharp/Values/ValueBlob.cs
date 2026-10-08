@@ -1,0 +1,278 @@
+/*
+ * Copyright 2004-2026 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
+ * Initial Developer: H2 Group
+ * Ported from org.h2.value.ValueBlob.
+ * Copyright 2026 H2Sharp contributors.
+ * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
+ *
+ * Modified: the temporary-file and storage paths of the reference are not ported here, because they
+ * need the LOB storage to have an implementation; what is here is the small case and everything a
+ * value answers from it.
+ */
+using System;
+using System.IO;
+using System.Text;
+using H2Sharp.Api;
+using H2Sharp.Engine;
+using H2Sharp.Message;
+using H2Sharp.Store;
+using H2Sharp.Util;
+using H2Sharp.Values.Lobs;
+
+namespace H2Sharp.Values;
+
+/// <summary>
+/// The BINARY LARGE OBJECT type: bytes, of a length the value keeps, wherever the bytes are.
+/// </summary>
+public sealed class ValueBlob : ValueLob
+{
+    /// <summary>
+    /// A BLOB of bytes held somewhere else.
+    /// </summary>
+    /// <param name="lobData">where they are</param>
+    /// <param name="octetLength">how many</param>
+    public ValueBlob(LobData lobData, long octetLength)
+        : base(lobData, octetLength, -1L)
+    {
+    }
+
+    /// <summary>
+    /// A BLOB kept in the value.
+    /// </summary>
+    /// <param name="data">the bytes, which are not copied and must not be changed afterwards</param>
+    /// <returns>the value</returns>
+    public static ValueBlob CreateSmall(byte[] data)
+        => new(new LobDataInMemory(data), data.Length);
+
+
+
+    /// <inheritdoc/>
+    public override int GetValueType() => Value.Blob;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The length in characters is not known until the bytes have been read as text, so it is
+    /// remembered here: the first call decodes, and the rest are free.
+    /// </remarks>
+    public override string GetString()
+    {
+        long p = LobCharLength;
+        if (p >= 0L)
+        {
+            if (p > Constants.MaxStringLength)
+            {
+                throw GetStringTooLong(p);
+            }
+
+            return ReadString((int)p);
+        }
+
+        // One character takes at most three bytes, so more than that many bytes cannot be a string.
+        if (LobOctetLength > Constants.MaxStringLength * 3L)
+        {
+            throw GetStringTooLong(CharLength());
+        }
+
+        string text;
+        if (LobData is LobDataInMemory)
+        {
+            text = IOUtils.StreamEncoding.GetString(((LobDataInMemory)LobData).GetSmall());
+        }
+        else
+        {
+            text = ReadString(int.MaxValue);
+        }
+
+        LobCharLength = p = text.Length;
+        if (p > Constants.MaxStringLength)
+        {
+            throw GetStringTooLong(p);
+        }
+
+        return text;
+    }
+
+    /// <inheritdoc/>
+    protected override byte[]? GetBytesInternal()
+    {
+        if (LobOctetLength > Constants.MaxStringLength)
+        {
+            throw GetBinaryTooLong(LobOctetLength);
+        }
+
+        return ReadBytes((int)LobOctetLength);
+    }
+
+    /// <inheritdoc/>
+    public override Stream GetInputStream() => LobData.GetInputStream(LobOctetLength);
+
+    /// <inheritdoc/>
+    public override Stream GetInputStream(long oneBasedOffset, long length)
+        => RangeInputStream(LobData.GetInputStream(LobOctetLength), oneBasedOffset, length, LobOctetLength);
+
+    /// <inheritdoc/>
+    public override TextReader GetReader(long oneBasedOffset, long length)
+        => RangeReader(GetReader(), oneBasedOffset, length, -1L);
+
+    /// <inheritdoc/>
+    public override int CompareTypeSafe(Value v, CompareMode mode, CastDataProvider? provider)
+    {
+        if (ReferenceEquals(v, this))
+        {
+            return 0;
+        }
+
+        ValueBlob other = (ValueBlob)v;
+        LobData mine = LobData;
+        LobData theirs = other.LobData;
+
+        if (mine.GetType() == theirs.GetType())
+        {
+            // Two values held the same way are compared without reading either one, and two that
+            // name the same thing in the storage are equal without being read at all.
+            if (mine is LobDataInMemory)
+            {
+                return Math.Sign(CompareUnsigned(
+                    ((LobDataInMemory)mine).GetSmall(), ((LobDataInMemory)theirs).GetSmall()));
+            }
+        }
+
+        return Compare(this, other);
+    }
+
+    /// <inheritdoc/>
+    public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
+    {
+        if ((sqlFlags & HasSql.ReplaceLobsForTrace) != 0
+            && (LobData is not LobDataInMemory || LobOctetLength > SysProperties.MaxTraceDataLength))
+        {
+            // The data itself is not put into a trace: what goes in is how long it is and where it
+            // is, which is enough to follow the statement and small enough to read.
+            _ = builder.Append("CAST(REPEAT(CHAR(0), ").Append(LobOctetLength).Append(") AS BINARY VARYING");
+            FormatLobDataComment(builder);
+        }
+        else if ((sqlFlags & (HasSql.ReplaceLobsForTrace | HasSql.NoCasts)) == 0)
+        {
+            _ = Hex.AppendBytesHex(_ = builder.Append("CAST(X'"), GetBytesNoCopy())
+                .Append("' AS BINARY LARGE OBJECT(")
+                .Append(LobOctetLength)
+                .Append("))");
+        }
+        else
+        {
+            _ = Hex.AppendBytesHex(_ = builder.Append("X'"), GetBytesNoCopy()).Append('\'');
+        }
+
+        return builder;
+    }
+
+    /// <inheritdoc/>
+    public override long CharLength()
+    {
+        long p = LobCharLength;
+        if (p >= 0L)
+        {
+            return p;
+        }
+
+        if (LobData is LobDataInMemory inMemory)
+        {
+            p = IOUtils.StreamEncoding.GetString(inMemory.GetSmall()).Length;
+        }
+        else
+        {
+            using TextReader reader = GetReader();
+            p = 0;
+            for (int c; (c = reader.Read()) >= 0;)
+            {
+                p++;
+            }
+        }
+
+        LobCharLength = p;
+        return p;
+    }
+
+    /// <inheritdoc/>
+    public override ValueLob Copy(DataHandler database, int tableId)
+    {
+        if (LobData is not LobDataInMemory)
+        {
+            throw DbException.GetUnsupportedException("Copying a large value needs the LOB storage");
+        }
+
+        return this;
+    }
+
+    /// <inheritdoc/>
+    public override bool ContainsNull() => false;
+
+    private static int Compare(ValueBlob one, ValueBlob other)
+    {
+        long minPrecision = Math.Min(one.LobOctetLength, other.LobOctetLength);
+        try
+        {
+            using Stream oneStream = one.GetInputStream();
+            using Stream otherStream = other.GetInputStream();
+            byte[] oneBuffer = new byte[BlockComparisonSize];
+            byte[] otherBuffer = new byte[BlockComparisonSize];
+            for (; minPrecision >= BlockComparisonSize; minPrecision -= BlockComparisonSize)
+            {
+                if (IOUtils.ReadFully(oneStream, oneBuffer, BlockComparisonSize) != BlockComparisonSize
+                    || IOUtils.ReadFully(otherStream, otherBuffer, BlockComparisonSize) != BlockComparisonSize)
+                {
+                    throw DbException.GetUnsupportedException("Invalid LOB");
+                }
+
+                int comparison = Math.Sign(CompareUnsigned(oneBuffer, otherBuffer));
+                if (comparison != 0)
+                {
+                    return comparison;
+                }
+            }
+
+            for (; ; )
+            {
+                int b1 = oneStream.ReadByte();
+                int b2 = otherStream.ReadByte();
+                if (b1 < 0)
+                {
+                    return b2 < 0 ? 0 : -1;
+                }
+
+                if (b2 < 0)
+                {
+                    return 1;
+                }
+
+                if (b1 != b2)
+                {
+                    return b1 < b2 ? -1 : 1;
+                }
+            }
+        }
+        catch (IOException e)
+        {
+            throw DbException.ConvertIOException(e, "Compare");
+        }
+    }
+
+    /// <summary>
+    /// Java's <c>Arrays.compareUnsigned</c>: the bytes as numbers, the bigger byte the later one.
+    /// </summary>
+    private static int CompareUnsigned(byte[] a, byte[] b)
+    {
+        int length = Math.Min(a.Length, b.Length);
+        for (int i = 0; i < length; i++)
+        {
+            int comparison = a[i].CompareTo(b[i]);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+        }
+
+        return a.Length.CompareTo(b.Length);
+    }
+}

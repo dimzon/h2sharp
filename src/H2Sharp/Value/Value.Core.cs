@@ -93,6 +93,48 @@ public abstract partial class Value
     public virtual TextReader? GetReader() => new StringReader(GetString() ?? string.Empty);
 
     /// <summary>
+    /// Get the value as a reader, starting where and going on for how long.
+    /// </summary>
+    /// <remarks>
+    /// The offsets are the reference's: one means the beginning, so <c>0</c> is refused.
+    /// </remarks>
+    /// <param name="oneBasedOffset">where to start, where one is the first character</param>
+    /// <param name="length">how many characters</param>
+    /// <returns>the reader over that part</returns>
+    /// <exception cref="H2SharpException">if the part is not inside the value</exception>
+    public virtual TextReader GetReader(long oneBasedOffset, long length)
+    {
+        string value = GetString() ?? string.Empty;
+        long zeroBasedOffset = oneBasedOffset - 1;
+        RangeCheck(zeroBasedOffset, length, value.Length);
+        return new StringReader(value.Substring((int)zeroBasedOffset, (int)length));
+    }
+
+    /// <summary>
+    /// Get the value as a stream of bytes.
+    /// </summary>
+    /// <returns>the stream</returns>
+    public virtual Stream GetInputStream()
+        => new MemoryStream(GetBytesNoCopy() ?? [], writable: false);
+
+    /// <summary>
+    /// Get the value as a stream of bytes, starting where and going on for how long.
+    /// </summary>
+    /// <param name="oneBasedOffset">where to start, where one is the first byte</param>
+    /// <param name="length">how many bytes</param>
+    /// <returns>the stream over that part</returns>
+    /// <exception cref="H2SharpException">if the part is not inside the value</exception>
+    public virtual Stream GetInputStream(long oneBasedOffset, long length)
+    {
+        byte[] bytes = GetBytesNoCopy() ?? [];
+        long zeroBasedOffset = oneBasedOffset - 1;
+        RangeCheck(zeroBasedOffset, length, bytes.Length);
+        return new MemoryStream(bytes, (int)zeroBasedOffset, (int)length, writable: false);
+    }
+
+
+
+    /// <summary>
     /// Get the value as a byte array.
     /// </summary>
     /// <returns>the byte array</returns>
