@@ -230,9 +230,9 @@
 2. **`TypeInfo.toDecfloatType`** — его вызывает только `BinaryOperation`, то есть слой
    выражений, а не промоушен. Промоушен и comparability портированы.
 3. **Конкретные типы значений**, в том порядке, в каком они нужны токенизатору:
-   `ValueNull`, `ValueInteger`, `ValueBigint`, `ValueDouble`, `ValueVarchar` и `ValueVarbinary`
-   (портированы), затем `ValueBinary`, `ValueNumeric`, `ValueDecfloat`. Каждый закрывает свою часть
-   `Value.Conversion` и `Value.Lobs` и расширяет `Value.Compare`.
+   `ValueNull`, `ValueInteger`, `ValueBigint`, `ValueDouble`, `ValueVarchar`, `ValueVarbinary`
+   и `ValueBinary` (портированы), затем `ValueNumeric` и `ValueDecfloat`. Каждый закрывает свою
+   часть `Value.Conversion` и `Value.Lobs` и расширяет `Value.Compare`.
 4. **`DataType`** (772 строки) — нужен сам по себе для JDBC-типов и `ResultSetMetaData`,
    но больше ничего в `TypeInfo` не разблокирует. Механический: статический
    инициализатор на 32 вызовах `add(...)` плюс мелкие фабрики
@@ -355,6 +355,23 @@ Schubfach из JDK ради значений, которые не встреча
 **Целочисленный fast-path убран, и это было неверно.** Он казался очевидным: целое в double
 точное, значит его цифры и есть кратчайшие. Но у `10000000.0` кратчайшая форма — одна цифра
 и экспонента 7, а не восемь цифр. Точность ничего не говорит о кратчайшести.
+
+### Что вскрыла проверка `ValueBinary`
+
+**У `BINARY` нет пустого синглтона, а у `VARBINARY` есть.** Длина входит в тип, поэтому пустой
+`BINARY` — это значение, а не «отсутствие значения», и `get([])` идёт через кэш как любое другое.
+Разница видна только здесь, и она неочевидна, потому что обе фабрики выглядят одинаково.
+
+**Гекс-литерал — это `VARBINARY`, поэтому `BINARY` пишет `CAST`.** `CAST(X'4142' AS BINARY(2))`,
+и длина в обёртке — `max(length, 1)`, так что пустое значение печатается как `BINARY(1)`, хотя его
+точность 0. Флаг `NO_CASTS` убирает обёртку: он ставится там, где тип уже известен получателю.
+
+**`HasSQL` в эталоне называется с большой `SQL`.** Ошибка компиляции, а не опечатка: имя класса
+`org.h2.util.HasSQL`, и в C# это `H2Sharp.Util.HasSql`, как и в остальном порту.
+
+Измерения: рендер в переиспользуемый builder — 0 байт, повторный `GetTypeInfo` — 0 байт,
+`GetBytesNoCopy` — 0 байт, `GetBytes` (копия по контракту) — 32 байта, создание значения — 72
+байта, то есть копия массива плюс объект.
 
 ### Что вскрыла проверка `ValueVarbinary`
 
@@ -706,10 +723,10 @@ SRID, а тот тянет весь пространственный пакет.
 8. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
     и наоборот. LZF портировать дословно.
 
-Текущий прогон: **353 теста, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
+Текущий прогон: **358 тестов, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
 констант, `TypeInfo` — ядро плюс `getSQL`, `ExtTypeInfo`, `ExtTypeInfoNumeric`; значения —
-`ValueNull`, `ValueInteger`, `ValueBigint`, `ValueDouble`, `ValueVarchar`, `ValueVarbinary`;
-`JavaUtf8` вместо `Encoding.UTF8` там, где байты приходят из базы.
+`ValueNull`, `ValueInteger`, `ValueBigint`, `ValueDouble`, `ValueVarchar`, `ValueVarbinary`,
+   `ValueBinary`; `JavaUtf8` вместо `Encoding.UTF8` там, где байты приходят из базы.
 
 ## Подводные камни, на которые уже наступали
 

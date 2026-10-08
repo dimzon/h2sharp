@@ -279,6 +279,44 @@ public sealed class ValueAllocationTests
     }
 
     [Fact]
+    public void BinaryValuesRenderAndDescribeThemselvesForFree()
+    {
+        // The same two properties the string values rely on: rendering into a caller's builder
+        // costs nothing, and the type is built once and kept, so asking for the precision again
+        // costs nothing either. Without the second one every print of a BINARY would rebuild its
+        // own TypeInfo.
+        StringBuilder reused = new();
+        Value v = ValueBinary.Get([0x41, 0x42, 0x43]);
+
+        long allocated = Measure(() =>
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                reused.Clear();
+                _ = v.GetSql(reused, 0);
+                _ = v.GetSql(reused, HasSql.NoCasts);
+                _ = v.GetTypeInfo().GetPrecision();
+            }
+        });
+
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void BinaryValuesCostACopyAndAnObject()
+    {
+        // Get clones the array it is handed and then builds the value, so a three byte array
+        // costs one copy and one object. The getter copies again by contract, and the one that
+        // promises not to copies nothing.
+        byte[] source = [0x41, 0x42, 0x43];
+        Value v = ValueVarbinary.Get(source);
+
+        Assert.InRange(MeasurePerCall(() => ValueVarbinary.Get(source)), 56, 96);
+        Assert.InRange(MeasurePerCall(() => v.GetBytes()), 24, 48);
+        Assert.Equal(0, MeasurePerCall(() => v.GetBytesNoCopy()));
+    }
+
+    [Fact]
     public void Utf8CostsTheResultAndNothingElse()
     {
         // Decoding rents its buffer, so what is left is the string the caller asked for: 152 bytes
