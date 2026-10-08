@@ -795,180 +795,195 @@ public static class IntervalUtils
         return negative;
     }
 
+
     /// <summary>
-    /// The years of an interval, which is its leading field when the qualifier has years.
+    /// The years of an interval, which is its leading field when the qualifier has years, and
+    /// nothing at all when it has none.
     /// </summary>
     /// <param name="qualifier">the qualifier</param>
     /// <param name="negative">whether the interval is negative</param>
     /// <param name="leading">the leading field</param>
     /// <param name="remaining">the remaining fields</param>
-    /// <returns>the years</returns>
+    /// <returns>the years, or 0</returns>
     public static long YearsFromInterval(
         IntervalQualifier qualifier, bool negative, long leading, long remaining)
     {
         if (qualifier != IntervalQualifier.Year && qualifier != IntervalQualifier.YearToMonth)
         {
-            throw DbException.GetInvalidValueException("interval", nameof(qualifier));
+            return 0;
         }
 
-        long months = MonthsFromInterval(qualifier, negative, leading, remaining);
-        return months / MonthsPerYear;
+        return negative ? -leading : leading;
     }
 
     /// <summary>
-    /// The months of an interval.
+    /// The months of an interval: the leading field of a MONTH, the remaining half of a
+    /// YEAR TO MONTH, and nothing at all when the qualifier has no months.
     /// </summary>
     /// <param name="qualifier">the qualifier</param>
     /// <param name="negative">whether the interval is negative</param>
     /// <param name="leading">the leading field</param>
     /// <param name="remaining">the remaining fields</param>
-    /// <returns>the months</returns>
+    /// <returns>the months, or 0</returns>
     public static long MonthsFromInterval(
         IntervalQualifier qualifier, bool negative, long leading, long remaining)
     {
-        if (qualifier != IntervalQualifier.Month && qualifier != IntervalQualifier.YearToMonth)
-        {
-            throw DbException.GetInvalidValueException("interval", nameof(qualifier));
-        }
-
         long months;
-        if (qualifier == IntervalQualifier.YearToMonth)
+        if (qualifier == IntervalQualifier.Month)
         {
-            months = (leading * MonthsPerYear) + remaining;
+            months = leading;
+        }
+        else if (qualifier == IntervalQualifier.YearToMonth)
+        {
+            months = remaining;
         }
         else
         {
-            months = leading;
+            return 0;
         }
 
         return negative ? -months : months;
     }
 
     /// <summary>
-    /// The days of an interval.
+    /// The days of an interval: the leading field of every qualifier that has days, because the
+    /// days are the leading field of all four of them.
     /// </summary>
     /// <param name="qualifier">the qualifier</param>
     /// <param name="negative">whether the interval is negative</param>
     /// <param name="leading">the leading field</param>
     /// <param name="remaining">the remaining fields</param>
-    /// <returns>the days</returns>
+    /// <returns>the days, or 0</returns>
     public static long DaysFromInterval(
         IntervalQualifier qualifier, bool negative, long leading, long remaining)
     {
-        if (!IntervalQualifiers.HasDays(qualifier))
+        switch (qualifier)
         {
-            throw DbException.GetInvalidValueException("interval", nameof(qualifier));
+            case IntervalQualifier.Day:
+            case IntervalQualifier.DayToHour:
+            case IntervalQualifier.DayToMinute:
+            case IntervalQualifier.DayToSecond:
+                return negative ? -leading : leading;
+
+            default:
+                return 0;
         }
-
-        long days;
-        if (qualifier == IntervalQualifier.Day)
-        {
-            days = leading;
-        }
-        else
-        {
-            long rest;
-            switch (qualifier)
-            {
-                case IntervalQualifier.DayToHour:
-                    rest = remaining;
-                    break;
-
-                case IntervalQualifier.DayToMinute:
-                    rest = remaining;
-                    break;
-
-                default:
-                    rest = remaining / DateTimeUtils.NanosPerDay;
-                    break;
-            }
-
-            days = (leading * HoursPerDay) + (rest / DateTimeUtils.NanosPerHour);
-        }
-
-        return negative ? -days : days;
     }
 
     /// <summary>
-    /// The hours of an interval.
+    /// The hours of an interval, which are in the remaining half rather than in the leading field
+    /// when the qualifier starts at a day.
     /// </summary>
     /// <param name="qualifier">the qualifier</param>
     /// <param name="negative">whether the interval is negative</param>
     /// <param name="leading">the leading field</param>
     /// <param name="remaining">the remaining fields</param>
-    /// <returns>the hours</returns>
+    /// <returns>the hours, or 0</returns>
     public static long HoursFromInterval(
         IntervalQualifier qualifier, bool negative, long leading, long remaining)
     {
-        if (!IntervalQualifiers.HasHours(qualifier))
+        long hours;
+        switch (qualifier)
         {
-            throw DbException.GetInvalidValueException("interval", nameof(qualifier));
-        }
+            case IntervalQualifier.Hour:
+            case IntervalQualifier.HourToMinute:
+            case IntervalQualifier.HourToSecond:
+                hours = leading;
+                break;
 
-        long hours = qualifier == IntervalQualifier.Hour
-            ? leading
-            : (leading * HoursPerDay) + (remaining / DateTimeUtils.NanosPerHour);
+            case IntervalQualifier.DayToHour:
+                hours = remaining;
+                break;
+
+            case IntervalQualifier.DayToMinute:
+                hours = remaining / 60;
+                break;
+
+            case IntervalQualifier.DayToSecond:
+                hours = remaining / DateTimeUtils.NanosPerHour;
+                break;
+
+            default:
+                return 0;
+        }
 
         return negative ? -hours : hours;
     }
 
     /// <summary>
-    /// The minutes of an interval.
+    /// The minutes of an interval, which are counted off the remaining half when the qualifier
+    /// carries a coarser field above them.
     /// </summary>
     /// <param name="qualifier">the qualifier</param>
     /// <param name="negative">whether the interval is negative</param>
     /// <param name="leading">the leading field</param>
     /// <param name="remaining">the remaining fields</param>
-    /// <returns>the minutes</returns>
+    /// <returns>the minutes, or 0</returns>
     public static long MinutesFromInterval(
         IntervalQualifier qualifier, bool negative, long leading, long remaining)
     {
-        if (!IntervalQualifiers.HasMinutes(qualifier))
+        long minutes;
+        switch (qualifier)
         {
-            throw DbException.GetInvalidValueException("interval", nameof(qualifier));
-        }
+            case IntervalQualifier.Minute:
+            case IntervalQualifier.MinuteToSecond:
+                minutes = leading;
+                break;
 
-        long minutes = qualifier switch
-        {
-            IntervalQualifier.Minute => leading,
-            IntervalQualifier.HourToMinute => (leading * MinutesPerHour) + remaining,
-            IntervalQualifier.DayToMinute => (leading * MinutesPerDay) + remaining,
-            IntervalQualifier.MinuteToSecond =>
-                (leading * MinutesPerHour) + (remaining / DateTimeUtils.NanosPerMinute),
-            IntervalQualifier.HourToSecond =>
-                ((leading * MinutesPerHour) + (remaining / DateTimeUtils.NanosPerMinute)),
-            IntervalQualifier.DayToSecond =>
-                ((leading * MinutesPerDay) + (remaining / DateTimeUtils.NanosPerMinute)),
-            _ => throw DbException.GetInvalidValueException("interval", nameof(qualifier)),
-        };
+            case IntervalQualifier.DayToMinute:
+                minutes = remaining % 60;
+                break;
+
+            case IntervalQualifier.DayToSecond:
+                minutes = remaining / DateTimeUtils.NanosPerMinute % 60;
+                break;
+
+            case IntervalQualifier.HourToMinute:
+                minutes = remaining;
+                break;
+
+            case IntervalQualifier.HourToSecond:
+                minutes = remaining / DateTimeUtils.NanosPerMinute;
+                break;
+
+            default:
+                return 0;
+        }
 
         return negative ? -minutes : minutes;
     }
 
     /// <summary>
-    /// The nanoseconds of an interval.
+    /// The nanoseconds of an interval, which for an interval of seconds include the whole seconds,
+    /// and for the others are the last field of the remaining half alone.
     /// </summary>
     /// <param name="qualifier">the qualifier</param>
     /// <param name="negative">whether the interval is negative</param>
     /// <param name="leading">the leading field</param>
     /// <param name="remaining">the remaining fields</param>
-    /// <returns>the nanoseconds</returns>
+    /// <returns>the nanoseconds, or 0</returns>
     public static long NanosFromInterval(
         IntervalQualifier qualifier, bool negative, long leading, long remaining)
     {
-        if (!IntervalQualifiers.HasSeconds(qualifier))
+        long nanos;
+        switch (qualifier)
         {
-            throw DbException.GetInvalidValueException("interval", nameof(qualifier));
-        }
+            case IntervalQualifier.Second:
+                nanos = (leading * DateTimeUtils.NanosPerSecond) + remaining;
+                break;
 
-        long nanos = qualifier switch
-        {
-            IntervalQualifier.Second => (leading * DateTimeUtils.NanosPerSecond) + remaining,
-            IntervalQualifier.MinuteToSecond => (leading * DateTimeUtils.NanosPerMinute) + remaining,
-            IntervalQualifier.HourToSecond => (leading * DateTimeUtils.NanosPerHour) + remaining,
-            IntervalQualifier.DayToSecond => (leading * DateTimeUtils.NanosPerDay) + remaining,
-            _ => throw DbException.GetInvalidValueException("interval", nameof(qualifier)),
-        };
+            case IntervalQualifier.DayToSecond:
+            case IntervalQualifier.HourToSecond:
+                nanos = remaining % DateTimeUtils.NanosPerMinute;
+                break;
+
+            case IntervalQualifier.MinuteToSecond:
+                nanos = remaining;
+                break;
+
+            default:
+                return 0;
+        }
 
         return negative ? -nanos : nanos;
     }
