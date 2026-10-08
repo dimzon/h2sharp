@@ -274,8 +274,18 @@ public sealed class ValueBigint : Value
     public override double GetDouble() => value;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The sign, not the distance: .NET's <c>Int64.CompareTo</c> answers with the difference between
+    /// the numbers, where Java's <c>Long.compare</c> answers -1, 0 or 1. Subtracting and taking the
+    /// sign would fix that and introduce a worse one, because the difference of two longs overflows
+    /// where it matters most: long.MinValue against -1 wraps to long.MaxValue and answers the wrong
+    /// way round. So the numbers are compared and never subtracted.
+    /// </remarks>
     public override int CompareTypeSafe(Value o, CompareMode mode, CastDataProvider? provider)
-        => value.CompareTo(((ValueBigint)o).value);
+    {
+        long other = ((ValueBigint)o).value;
+        return value < other ? -1 : value > other ? 1 : 0;
+    }
 
     /// <inheritdoc/>
     public override string GetString() => value.ToString(CultureInfo.InvariantCulture);

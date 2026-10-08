@@ -627,7 +627,10 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
             return quotient;
         }
 
-        int half = (remainder << 1).CompareTo(divisor);
+        // A .NET integer compares with the distance between the numbers, so the sign is taken
+        // from it rather than from the comparison itself.
+        BigInteger twice = remainder << 1;
+        int half = twice == divisor ? 0 : twice > divisor ? 1 : -1;
         bool up = mode switch
         {
             RoundingMode.Up => true,

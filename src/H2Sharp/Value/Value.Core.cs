@@ -119,9 +119,27 @@ public abstract partial class Value
     /// Signed, because Java's byte is signed and the two languages do not agree on the range of
     /// their byte: Java's is -128..127, .NET's is 0..255. Using .NET's byte would make the value
     /// for -1 come back as 255, which is the same number and a different value.
+    /// <para>
+    /// The reference answers this by converting to TINYINT and asking that value, so a SMALLINT
+    /// does have a byte and it is the low one. The general conversion machinery is not ported, so
+    /// this is the narrow version of it: the value's own number with the range of a byte checked.
+    /// For the numeric family that is the same answer. For a type whose number is not the value,
+    /// such as a byte array, the general conversion has to arrive before this is exact.
+    /// </para>
     /// </remarks>
     /// <returns>the byte value</returns>
-    public virtual sbyte GetByte() => throw GetUnsupportedException("getByte");
+    /// <exception cref="H2SharpException">if the value does not fit a byte</exception>
+    public virtual sbyte GetByte()
+    {
+        int number = GetInt();
+        if (number is < sbyte.MinValue or > sbyte.MaxValue)
+        {
+            GetNumericValueOutOfRange(number);
+            return 0;
+        }
+
+        return (sbyte)number;
+    }
 
     /// <summary>
     /// Get the value as a 16 bit integer.
@@ -284,6 +302,21 @@ public abstract partial class Value
         => throw DbException.Get(
             ErrorCode.DataConversionError1,
             Value.GetTypeName(GetValueType()) + " to " + Value.GetTypeName(targetType));
+
+    /// <summary>
+    /// Throws the out of range error for a number that does not fit the type asked for.
+    /// </summary>
+    /// <remarks>
+    /// This is a different error from the conversion one and the reference uses it here: converting
+    /// a SMALLINT of 32767 to a TINYINT says that 32767 is out of range, not that a SMALLINT cannot
+    /// become a TINYINT, because it can.
+    /// </remarks>
+    /// <param name="value">the number that did not fit</param>
+    /// <exception cref="H2SharpException">always</exception>
+    protected void GetNumericValueOutOfRange(long value)
+        => throw DbException.Get(
+            ErrorCode.NumericValueOutOfRange1,
+            value.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>
     /// Throws the conversion error for a parameterised target type.
