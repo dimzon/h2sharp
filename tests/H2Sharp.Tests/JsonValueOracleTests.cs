@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using H2Sharp.Api;
 using H2Sharp.Tests.Oracle;
 using H2Sharp.Util;
 using H2Sharp.Util.Json;
@@ -114,6 +115,90 @@ new("string", "🎉"),
                 java[i] == csharp[i],
                 $"line {i}, {Corpus[i].Kind} {Corpus[i].Text}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
         }
+    }
+
+    /// <summary>
+    /// The same corpus written as UTF-8 bytes, against the reference's byte target.
+    /// </summary>
+    /// <remarks>
+    /// The bytes are compared, not the text they spell: this target exists to produce what a stored
+    /// JSON value is, and a base64 of the bytes is the only way to compare that without a text
+    /// round trip that would hide exactly the bugs worth finding.
+    /// </remarks>
+    [JavaOracleFact]
+    public void ByteTargetProducesTheSameBytes()
+    {
+        List<string> java = OracleRunner.Run(
+                [],
+                Declare() + BytesBody,
+                numbers: null,
+                extraJavaArgs: ["-Duser.language=en", "-Duser.country=", "-Duser.variant="],
+                packageName: "org.h2.util.json")
+            .ToList();
+
+        List<string> csharp = [.. Corpus.Select(DescribeBytes)];
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(
+                java[i] == csharp[i],
+                $"line {i}, {Corpus[i].Kind} {Corpus[i].Text}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
+    /// <summary>
+    /// A case written into the byte target, as base64 of the bytes it produced.
+    /// </summary>
+    /// <param name="c">the case</param>
+    /// <returns>the bytes in base64</returns>
+    private static string DescribeBytes(Case c)
+    {
+        JsonByteArrayTarget target = new();
+        Build(c.Kind, c.Text).AddTo(target);
+        return Convert.ToBase64String((byte[])target.GetResult()!);
+    }
+
+    /// <summary>
+    /// An unpaired surrogate cannot be written as UTF-8, and the choice is to fail rather than
+    /// substitute: a substituted character would corrupt a stored value with nothing to show for it.
+    /// </summary>
+    [Fact]
+    public void AnUnpairedSurrogateIsRefusedRatherThanReplaced()
+    {
+        // A high surrogate at the end of the string: nothing follows it to pair with.
+        Assert.Equal(ErrorCode.DataConversionError1, Assert.Throws<H2SharpException>(
+            () => DescribeBytes(new("string", "abc\ud83c"))).H2ErrorCode);
+
+        // A high surrogate followed by something that is not a low surrogate.
+        Assert.Equal(ErrorCode.DataConversionError1, Assert.Throws<H2SharpException>(
+            () => DescribeBytes(new("string", "abc\ud83cdef"))).H2ErrorCode);
+
+        // A low surrogate with nothing before it.
+        Assert.Equal(ErrorCode.DataConversionError1, Assert.Throws<H2SharpException>(
+            () => DescribeBytes(new("string", "abc\udf89"))).H2ErrorCode);
+
+        // The same name as a member name is refused too, which is a separate path through the
+        // encoder and would otherwise go untested.
+        Assert.Equal(ErrorCode.DataConversionError1, Assert.Throws<H2SharpException>(
+            () => DescribeBytes(new("object", "a\ud83c:1"))).H2ErrorCode);
+
+        // A proper pair is not a pair of errors: it is one character, four bytes of UTF-8.
+        byte[] paired = BytesOf(new("string", "🎉"));
+        Assert.Equal(6, paired.Length);
+        Assert.Equal("\"🎉\"", Encoding.UTF8.GetString(paired));
+    }
+
+    /// <summary>
+    /// The bytes a case produces.
+    /// </summary>
+    /// <param name="c">the case</param>
+    /// <returns>the bytes</returns>
+    private static byte[] BytesOf(Case c)
+    {
+        JsonByteArrayTarget target = new();
+        Build(c.Kind, c.Text).AddTo(target);
+        return (byte[])target.GetResult()!;
     }
 
     /// <summary>
@@ -305,6 +390,105 @@ new("string", "🎉"),
 
         return literal.Append('"').ToString();
     }
+
+
+
+    /// <summary>
+    /// The corpus written through the byte target. It builds the same values through the same
+    /// builders as the text one, because duplicating the value construction would give the two
+    /// tests two corpora to drift apart; only the reporting loop differs.
+    /// </summary>
+    private static readonly string BytesBody = """
+                        // The three builders do not call each other, because a Java method may not
+                        // be declared inside another one and the oracle can only add statements.
+                        // That bounds the corpus to one level of nesting, which is all it needs:
+                        // the deeper cases would be testing recursion, not printing.
+                        java.util.function.Function<String, org.h2.util.json.JSONValue> scalar =
+                            part -> {
+                              if (part.equals("null")) {
+                                return org.h2.util.json.JSONNull.NULL;
+                              }
+                              if (part.equals("true")) {
+                                return org.h2.util.json.JSONBoolean.TRUE;
+                              }
+                              return org.h2.util.json.JSONString.class.cast(
+                                  new org.h2.util.json.JSONString(part));
+                            };
+
+                        // A lambda may not name itself, so each recursive builder is held in
+                        // an array of one and reads itself back out of the array.
+                        @SuppressWarnings("unchecked")
+                        java.util.function.Function<String, org.h2.util.json.JSONValue>[] arrayOf =
+                            new java.util.function.Function[1];
+                        @SuppressWarnings("unchecked")
+                        java.util.function.Function<String, org.h2.util.json.JSONValue>[] objectOf =
+                            new java.util.function.Function[1];
+
+                        arrayOf[0] = text -> {
+                          org.h2.util.json.JSONArray a = new org.h2.util.json.JSONArray();
+                          if (!text.isEmpty()) {
+                            for (String part : text.split(";", -1)) {
+                              a.addElement(
+                                  part.startsWith("[")
+                                      ? arrayOf[0].apply(part.substring(1, part.length() - 1))
+                                      : scalar.apply(part));
+                            }
+                          }
+                          return a;
+                        };
+
+                        objectOf[0] = text -> {
+                          org.h2.util.json.JSONObject o = new org.h2.util.json.JSONObject();
+                          if (!text.isEmpty()) {
+                            for (String part : text.split(";", -1)) {
+                              int colon = part.indexOf(':');
+                              String member = part.substring(colon + 1);
+                              o.addMember(part.substring(0, colon),
+                                  member.startsWith("[")
+                                      ? arrayOf[0].apply(member.substring(1, member.length() - 1))
+                                      : member.startsWith("{")
+                                          ? objectOf[0].apply(member.substring(
+                                              1, member.length() - 1))
+                                          : scalar.apply(member));
+                            }
+                          }
+                          return o;
+                        };
+
+                        java.util.function.BiFunction<String, String, org.h2.util.json.JSONValue>
+                            build = (kind, text) -> {
+                              if (kind.equals("null")) {
+                                return org.h2.util.json.JSONNull.NULL;
+                              }
+                              if (kind.equals("true")) {
+                                return org.h2.util.json.JSONBoolean.TRUE;
+                              }
+                              if (kind.equals("false")) {
+                                return org.h2.util.json.JSONBoolean.FALSE;
+                              }
+                              if (kind.equals("string")) {
+                                return new org.h2.util.json.JSONString(text);
+                              }
+                              if (kind.equals("number")) {
+                                return new org.h2.util.json.JSONNumber(
+                                    new java.math.BigDecimal(text));
+                              }
+                              return kind.equals("array")
+                                  ? arrayOf[0].apply(text) : objectOf[0].apply(text);
+                            };
+
+                        for (int i = 0; i < cases.length; i++) {
+                          org.h2.util.json.JSONValue v =
+                              build.apply(cases[i][0], cases[i][1]);
+                          org.h2.util.json.JSONTarget<byte[]> bytes =
+                              new org.h2.util.json.JSONByteArrayTarget();
+                          v.addTo(bytes);
+                          // Base64, because a control character in the answer would otherwise run
+                          // into the line it is reported on.
+                          System.out.println(java.util.Base64.getEncoder().encodeToString(
+                              bytes.getResult()));
+                        }
+              """;
 
     private const string Body = """
                         // The three builders do not call each other, because a Java method may not
