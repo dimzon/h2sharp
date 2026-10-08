@@ -19,6 +19,8 @@ namespace H2Sharp.Tests;
 /// <summary>
 /// Pins the allocation behaviour of the hot string paths.
 /// </summary>
+[Collection(MeasurementCollection.Name)]
+
 public sealed class StringUtilsAllocationTests
 {
     /// <summary>

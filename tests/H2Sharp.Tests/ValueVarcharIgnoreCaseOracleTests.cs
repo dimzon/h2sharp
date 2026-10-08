@@ -29,6 +29,8 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(OracleCollection.Name)]
+
 public sealed class ValueVarcharIgnoreCaseOracleTests
 {
     private static readonly string[] Strings =

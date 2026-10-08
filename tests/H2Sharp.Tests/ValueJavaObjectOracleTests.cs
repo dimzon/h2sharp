@@ -26,6 +26,8 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(OracleCollection.Name)]
+
 public sealed class ValueJavaObjectOracleTests
 {
     private static readonly byte[][] Payloads =

@@ -32,6 +32,8 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(OracleCollection.Name)]
+
 public sealed class ValueNumericOracleTests
 {
     private static readonly string[] Values =

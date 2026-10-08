@@ -28,6 +28,8 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(OracleCollection.Name)]
+
 public sealed class ValueDecfloatOracleTests
 {
     private static readonly string[] Values =

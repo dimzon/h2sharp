@@ -25,6 +25,8 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(OracleCollection.Name)]
+
 public sealed class ValueBinaryOracleTests
 {
     private static readonly byte[][] Arrays =

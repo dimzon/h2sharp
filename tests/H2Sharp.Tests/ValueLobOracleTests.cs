@@ -27,6 +27,8 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(OracleCollection.Name)]
+
 public sealed class ValueLobOracleTests
 {
     private static readonly string[] Texts =

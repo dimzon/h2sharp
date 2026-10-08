@@ -18,6 +18,8 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(MeasurementCollection.Name)]
+
 public sealed class TokenAllocationTests
 {
     private static long Measure(Action action)

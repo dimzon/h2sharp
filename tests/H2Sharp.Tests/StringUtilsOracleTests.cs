@@ -23,6 +23,8 @@ using static H2Sharp.Tests.Oracle.OracleRunner;
 
 namespace H2Sharp.Tests;
 
+[Collection(OracleCollection.Name)]
+
 public sealed class StringUtilsOracleTests
 {
     /// <summary>

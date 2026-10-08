@@ -33,6 +33,8 @@ namespace H2Sharp.Tests;
 /// <summary>
 /// Pins the allocation behaviour of the value layer.
 /// </summary>
+[Collection(MeasurementCollection.Name)]
+
 public sealed class ValueAllocationTests
 {
     private static long Measure(Action action)

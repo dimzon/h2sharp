@@ -21,6 +21,8 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(OracleCollection.Name)]
+
 public sealed class ParserUtilOracleTests
 {
     /// <summary>

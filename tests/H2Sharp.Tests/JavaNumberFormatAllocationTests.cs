@@ -23,6 +23,8 @@ namespace H2Sharp.Tests;
 /// <summary>
 /// Pins the allocation behaviour of the number formatter.
 /// </summary>
+[Collection(MeasurementCollection.Name)]
+
 public sealed class JavaNumberFormatAllocationTests
 {
     /// <summary>
