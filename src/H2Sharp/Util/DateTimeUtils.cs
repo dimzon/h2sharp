@@ -966,7 +966,7 @@ public static class DateTimeUtils
             int timeEnd = FindTimeZone(s, dateEnd, out bool hasTimeZone);
             if (hasTimeZone)
             {
-                throw new NotSupportedException("a timestamp with a time zone");
+                return ParseTimestampWithTimeZone(s, dateEnd, timeEnd, dateValue, provider);
             }
 
             nanos = ParseTimeNanos(s, dateEnd, timeEnd);
@@ -974,7 +974,8 @@ public static class DateTimeUtils
 
         if (withTimeZone)
         {
-            throw new NotSupportedException("a timestamp with a time zone");
+            throw new NotSupportedException(
+                "a timestamp without a time zone written as one that has it");
         }
 
         return Values.ValueTimestamp.FromDateValueAndNanos(dateValue, nanos);
@@ -992,9 +993,22 @@ public static class DateTimeUtils
     public static Values.Value ParseTime(string s, Engine.CastDataProvider? provider, bool withTimeZone)
     {
         int timeEnd = FindTimeZone(s, 0, out bool hasTimeZone);
-        if (hasTimeZone || withTimeZone)
+        if (hasTimeZone)
         {
-            throw new NotSupportedException("a time with a time zone");
+            if (!withTimeZone)
+            {
+                throw new NotSupportedException(
+                    "a time with a time zone written as one that has not got it");
+            }
+
+            long zoned = ParseTimeNanos(s, 0, timeEnd);
+            return Values.ValueTimeTimeZone.FromNanos(zoned, ParseTimeZoneOffset(s, timeEnd));
+        }
+
+        if (withTimeZone)
+        {
+            throw new NotSupportedException(
+                "a time without a time zone written as one that has it");
         }
 
         long nanos = ParseTimeNanos(s, 0, timeEnd);
@@ -1039,5 +1053,104 @@ public static class DateTimeUtils
         }
 
         return s.Length;
+    }
+
+    /// <summary>
+    /// Writes a time zone offset after a time, as <c>+01</c>, <c>+01:30</c> or <c>+01:30:45</c>.
+    /// </summary>
+    /// <remarks>
+    /// The minutes and the seconds are written only when they are not zero, so an offset of whole
+    /// hours has two digits and not six. That is the reference's own rule and it is what a user
+    /// expects to read back; an offset written with zeros in it would parse to the same value and
+    /// print differently, which would make every round trip a difference.
+    /// </remarks>
+    /// <param name="builder">where to write it</param>
+    /// <param name="tz">the offset in seconds</param>
+    /// <returns>the builder</returns>
+    public static StringBuilder AppendTimeZone(StringBuilder builder, int tz)
+    {
+        if (tz < 0)
+        {
+            _ = builder.Append('-');
+            tz = -tz;
+        }
+        else
+        {
+            _ = builder.Append('+');
+        }
+
+        int rem = tz / 3_600;
+        StringUtils.AppendTwoDigits(builder, rem);
+        tz -= rem * 3_600;
+        if (tz != 0)
+        {
+            rem = tz / 60;
+            StringUtils.AppendTwoDigits(_ = builder.Append(':'), rem);
+            tz -= rem * 60;
+            if (tz != 0)
+            {
+                StringUtils.AppendTwoDigits(_ = builder.Append(':'), tz);
+            }
+        }
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Reads the offset written after a time, and answers the value it stands for.
+    /// </summary>
+    private static Values.Value ParseTimestampWithTimeZone(
+        string s, int dateEnd, int timeEnd, long dateValue, Engine.CastDataProvider? provider)
+    {
+        long nanos = ParseTimeNanos(s, dateEnd, timeEnd);
+        return Values.ValueTimestampTimeZone.FromDateValueAndNanos(
+            dateValue, nanos, ParseTimeZoneOffset(s, timeEnd));
+    }
+
+    /// <summary>
+    /// The offset in seconds that is written from <paramref name="start"/> to the end of the text.
+    /// </summary>
+    /// <remarks>
+    /// Three shapes are written: a Z for Greenwich, a signed number of hours with minutes and
+    /// seconds after it, and a name after a space. Only the first two are read here: a name is a
+    /// zone of the operating system's database, which is not something a library should be deciding
+    /// for a literal, and the reference answers a name with the zone the session is in.
+    /// </remarks>
+    private static int ParseTimeZoneOffset(string s, int start)
+    {
+        string zone = s[start..].Trim();
+        if (zone.Length == 0 || zone is "Z" or "z")
+        {
+            return 0;
+        }
+
+        if (zone[0] is not ('+' or '-'))
+        {
+            throw new ArgumentException(s, nameof(s));
+        }
+
+        bool negative = zone[0] == '-';
+        string digits = zone[1..];
+        string[] parts = digits.Split(':');
+        if (parts.Length > 3)
+        {
+            throw new ArgumentException(s, nameof(s));
+        }
+
+        int hours = StringUtils.ParseUInt31(parts[0], 0, parts[0].Length);
+        int minutes = parts.Length > 1 ? StringUtils.ParseUInt31(parts[1], 0, parts[1].Length) : 0;
+        int seconds = parts.Length > 2 ? StringUtils.ParseUInt31(parts[2], 0, parts[2].Length) : 0;
+        if (minutes > 59 || seconds > 59)
+        {
+            throw new ArgumentException(s, nameof(s));
+        }
+
+        int offset = (hours * 3_600) + (minutes * 60) + seconds;
+        if (hours > 18 || (hours == 18 && (minutes > 0 || seconds > 0)))
+        {
+            throw new ArgumentException(s, nameof(s));
+        }
+
+        return negative ? -offset : offset;
     }
 }

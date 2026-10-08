@@ -191,69 +191,157 @@ public sealed class DateTimeValueOracleTests
     }
 
     /// <summary>
-    /// What a time or a timestamp with a zone in it is answered with.
+    /// A time and a timestamp written with a zone, which are two more types and are read with the
+    /// same parsers.
     /// </summary>
     /// <remarks>
-    /// The reference reads <c>10:00:00Z</c> as a TIME WITH TIME ZONE and hands back a value shifted
-    /// into the zone of the session; this port refuses it, because the types that hold a zone are
-    /// not ported and a TIME that silently became a different value would be worse than a refusal.
-    /// The error code is the reference's own code for a constant it cannot read, so a statement that
-    /// has a zone in it fails the same way here and there with the number the user is shown. That is
-    /// asserted below, and the gap is named rather than left to be discovered.
+    /// The comparison that matters here is the one the offset exists for: two values written in
+    /// different zones are the same instant when their times and offsets agree, and the corpus has a
+    /// pair of those, together with a pair that differ by an hour and a pair whose local time is
+    /// near midnight, which is where a comparison that forgot to borrow a day would answer a day
+    /// wrong.
     /// </remarks>
     [JavaOracleFact]
-    public void ATimeWithAZoneIsRefusedHereWithTheCodeTheReferenceGivesForABadConstant()
+    public void TimesAndTimestampsWithAZoneMatchTheReference()
     {
-        string[] texts =
-        [
-            "10:00:00Z", "10:00:00+01", "10:00:00 Europe/Berlin", "2000-01-02 10:00:00Z",
-            "2000-01-02 10:00:00+01:00", "2000-01-02 10:00:00 UTC",
-        ];
-
         List<string> java = OracleRunner.Run(
                 [],
                 """
-                String[] texts = {"10:00:00Z", "10:00:00+01", "10:00:00 Europe/Berlin",
-                    "2000-01-02 10:00:00Z", "2000-01-02 10:00:00+01:00", "2000-01-02 10:00:00 UTC"};
-                for (String s : texts) {
-                  try {
-                    org.h2.value.ValueTime.parse(s, null);
-                    System.out.println("READ");
-                  } catch (org.h2.message.DbException e) {
-                    System.out.println("ERR " + e.getErrorCode());
-                  } catch (RuntimeException e) {
-                    System.out.println("OTHER " + e.getClass().getSimpleName());
-                  }
+                String[] times = {"10:00:00Z", "10:00:00+01", "10:00:00-05:30", "10:00:00+01:00",
+                    "10:00:00.5+02", "23:59:59.999999999Z", "00:00:00+05:45"};
+                org.h2.value.CompareMode mode = org.h2.value.CompareMode.getInstance(null, 0);
+                for (String s : times) {
+                  org.h2.value.ValueTimeTimeZone v = org.h2.value.ValueTimeTimeZone.parse(s, null);
+                  StringBuilder b = new StringBuilder();
+                  b.append(v.getNanos()).append('|');
+                  b.append(v.getTimeZoneOffsetSeconds()).append('|');
+                  b.append(v.getString()).append('|');
+                  b.append(v.getSQL(new StringBuilder(), 0)).append('|');
+                  b.append(v.getType().getSQL(0)).append('|');
+                  b.append(v.getValueType()).append('|');
+                  b.append(v.getMemory()).append('|');
+                  b.append(v.equals(org.h2.value.ValueTimeTimeZone.parse(s, null))).append('|');
+                  b.append(v.compareTo(org.h2.value.ValueTimeTimeZone.fromNanos(
+                      36000000000000L, 0), null, mode));
+                  System.out.println(hex(b.toString()));
+                }
+                String[] stamps = {"2000-01-02 10:00:00Z", "2000-01-02 10:00:00+01",
+                    "2000-01-02 23:59:59.999999999-08", "0001-01-01 00:00:00Z",
+                    "9999-12-31 23:59:59Z", "1970-01-01 00:00:00+00:30"};
+                for (String s : stamps) {
+                  org.h2.value.ValueTimestampTimeZone v =
+                      org.h2.value.ValueTimestampTimeZone.parse(s, null);
+                  StringBuilder b = new StringBuilder();
+                  b.append(v.getDateValue()).append('|');
+                  b.append(v.getTimeNanos()).append('|');
+                  b.append(v.getTimeZoneOffsetSeconds()).append('|');
+                  b.append(v.getString()).append('|');
+                  b.append(v.getISOString()).append('|');
+                  b.append(v.getSQL(new StringBuilder(), 0)).append('|');
+                  b.append(v.getType().getSQL(0)).append('|');
+                  b.append(v.getValueType()).append('|');
+                  b.append(v.getMemory()).append('|');
+                  b.append(v.equals(org.h2.value.ValueTimestampTimeZone.parse(s, null))).append('|');
+                  b.append(v.compareTo(org.h2.value.ValueTimestampTimeZone.fromDateValueAndNanos(
+                      org.h2.util.DateTimeUtils.dateValue(1970, 1, 1), 0, 0), null, mode));
+                  System.out.println(hex(b.toString()));
                 }
                 """,
                 extraJavaArgs: ["-Duser.language=en", "-Dfile.encoding=UTF-8"])
-            .Select(line => line.TrimStart('='))
+            .Select(line => Decode(line))
             .ToList();
 
-        // The reference reads every one of them, into a value of a type this port does not have, and
-        // this port refuses every one of them with the code it gives a constant it cannot read. The
-        // two answers are not equal and are not meant to be: what is checked here is that the
-        // reference really does read them, so that the refusal below is a known gap and not a claim
-        // that such a text is nonsense.
-        // Two of the six are read by the reference, into a type this port does not have; the other
-        // four are refused there with the same code this port refuses them with. The two answers are
-        // not equal and are not meant to be, and the reference's side is what makes the difference a
-        // known gap rather than a claim that all six texts are nonsense.
-        Assert.Equal(texts.Length, java.Count);
-        Assert.Equal("READ", java[0]);
-        Assert.Equal("READ", java[1]);
-        for (int i = 2; i < java.Count; i++)
+        string[] timeTexts =
+        [
+            "10:00:00Z", "10:00:00+01", "10:00:00-05:30", "10:00:00+01:00",
+            "10:00:00.5+02", "23:59:59.999999999Z", "00:00:00+05:45",
+        ];
+        string[] stampTexts =
+        [
+            "2000-01-02 10:00:00Z", "2000-01-02 10:00:00+01", "2000-01-02 23:59:59.999999999-08",
+            "0001-01-01 00:00:00Z", "9999-12-31 23:59:59Z", "1970-01-01 00:00:00+00:30",
+        ];
+
+        List<string> csharp = [];
+        foreach (string text in timeTexts)
         {
-            Assert.Equal("ERR " + ErrorCode.InvalidDatetimeConstant2, java[i]);
+            csharp.Add(DescribeTimeTz(text));
         }
 
-        foreach (string text in texts)
+        foreach (string text in stampTexts)
         {
-            H2SharpException error = Assert.Throws<H2SharpException>(() => ValueTime.Parse(text, null));
-            Assert.Equal(ErrorCode.InvalidDatetimeConstant2, error.H2ErrorCode);
+            csharp.Add(DescribeTimestampTz(text));
+        }
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(
+                java[i] == csharp[i],
+                $"line {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
         }
     }
 
+    /// <summary>
+    /// The same instant written two ways, which is what an offset is for.
+    /// </summary>
+    [Fact]
+    public void TwoZonesThatNameTheSameInstantCompareEqual()
+    {
+        CompareMode mode = CompareMode.GetInstance(null, 0);
+        Value utc = ValueTimeTimeZone.FromNanos(36_000_000_000_000L, 0);
+        Value berlin = ValueTimeTimeZone.FromNanos(39_600_000_000_000L, 3_600);
+
+        Assert.Equal(0, utc.CompareTypeSafe(berlin, mode, null));
+        Assert.Equal(0, berlin.CompareTypeSafe(utc, mode, null));
+        Assert.Equal(0, ValueTimeTimeZone.FromNanos(0, 0).CompareTypeSafe(
+            ValueTimeTimeZone.FromNanos(3_600_000_000_000L, 3_600), mode, null));
+
+        // 10:00 at Greenwich and 11:00 at +01:00 are the same moment. An offset of eighteen hours is
+        // the largest there is.
+        Assert.Equal(18 * 3_600, ValueTimeTimeZone.FromNanos(0, 18 * 3_600).GetTimeZoneOffsetSeconds());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => ValueTimeTimeZone.FromNanos(0, 18 * 3_600 + 1));
+    }
+
+    private static string DescribeTimeTz(string text)
+    {
+        ValueTimeTimeZone v = ValueTimeTimeZone.Parse(text, null);
+        return string.Join(
+            "|",
+            v.GetNanos(),
+            v.GetTimeZoneOffsetSeconds(),
+            v.GetString(),
+            v.GetSql(new StringBuilder(), 0).ToString(),
+            v.GetTypeInfo().GetSql(0).ToString(),
+            v.GetValueType(),
+            v.GetMemory(),
+            v.Equals(ValueTimeTimeZone.Parse(text, null)) ? "true" : "false",
+            v.CompareTypeSafe(
+                ValueTimeTimeZone.FromNanos(36_000_000_000_000L, 0), CompareMode.GetInstance(null, 0), null));
+    }
+
+    private static string DescribeTimestampTz(string text)
+    {
+        ValueTimestampTimeZone v = ValueTimestampTimeZone.Parse(text, null);
+        return string.Join(
+            "|",
+            v.GetDateValue(),
+            v.GetTimeNanos(),
+            v.GetTimeZoneOffsetSeconds(),
+            v.GetString(),
+            v.GetIsoString(),
+            v.GetSql(new StringBuilder(), 0).ToString(),
+            v.GetTypeInfo().GetSql(0).ToString(),
+            v.GetValueType(),
+            v.GetMemory(),
+            v.Equals(ValueTimestampTimeZone.Parse(text, null)) ? "true" : "false",
+            v.CompareTypeSafe(
+                ValueTimestampTimeZone.FromDateValueAndNanos(
+                    DateTimeUtils.DateValue(1970, 1, 1), 0, 0),
+                CompareMode.GetInstance(null, 0),
+                null));
+    }
     private static string DescribeDate(string text)
     {
         Value v;
