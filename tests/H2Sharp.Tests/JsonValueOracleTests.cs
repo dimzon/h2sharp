@@ -50,9 +50,14 @@ new("string", "line\nbreak\ttab"),
         new("string", "\u0001"),
         new("string", "\u001f"),
         new("string", "\u007f"),
+        new("string", "\u0085"),
+        new("string", "\u00a0"),
+        new("string", "\u2028\u2029"),
         new("string", "привет"),
         new("string", "日本語"),
 new("string", "🎉"),
+        new("string", "a🎉b\u0001c"),
+        new("string", "a<b>&c+d`e"),
         new("string", "\u00a0"),
 
         // Numbers: the exponent is where the two renderings differ.
@@ -63,8 +68,13 @@ new("string", "🎉"),
         new("number", "0.1"),
         new("number", "100"),
         new("number", "1E10"),
+        new("number", "1e5"),
+        new("number", "1E-10"),
+        new("number", "-0"),
+        new("number", "1.50"),
         new("number", "1.5E-10"),
         new("number", "123456789012345678901234567890"),
+        new("number", "1234567890123456789012345678901234567890"),
 
         // Arrays, including the empty one and nesting.
         new("array", ""),
@@ -104,6 +114,59 @@ new("string", "🎉"),
                 java[i] == csharp[i],
                 $"line {i}, {Corpus[i].Kind} {Corpus[i].Text}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
         }
+    }
+
+    /// <summary>
+    /// The same corpus through the writer that goes to <c>Utf8JsonWriter</c>, compared both with
+    /// the reference and with the target that writes every character itself.
+    /// </summary>
+    /// <remarks>
+    /// The second comparison is the one that matters for maintenance. The reference column says
+    /// the text is right today; the <see cref="JsonStringTarget"/> column says the two ways of
+    /// producing it still agree with each other, so a future change to the encoder fails here
+    /// rather than in whatever reads a JSON column.
+    /// </remarks>
+    [JavaOracleFact]
+    public void TheStandardWriterProducesTheSameText()
+    {
+        List<string> java = OracleRunner.Run(
+                [],
+                Declare() + Body,
+                numbers: null,
+                extraJavaArgs: ["-Duser.language=en", "-Duser.country=", "-Duser.variant="],
+                packageName: "org.h2.util.json")
+            .ToList();
+
+        List<string> viaStj = [.. Corpus.Select(c => Render(new JsonStjTarget(), c))];
+        List<string> viaOwn = [.. Corpus.Select(c => Render(new JsonStringTarget(), c))];
+
+        Assert.Equal(java.Count, viaStj.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(
+                java[i] == viaStj[i],
+                $"reference, line {i}, {Corpus[i].Kind} {Corpus[i].Text}:\n  java:   {java[i]}\n  stj:    {viaStj[i]}");
+            Assert.True(
+                viaOwn[i] == viaStj[i],
+                $"targets differ, line {i}, {Corpus[i].Kind} {Corpus[i].Text}:\n  own:    {viaOwn[i]}\n  stj:    {viaStj[i]}");
+        }
+    }
+
+    /// <summary>
+    /// A case, written into a target, in both renderings.
+    /// </summary>
+    /// <param name="plain">the target for ordinary output</param>
+    /// <param name="c">the case</param>
+    /// <returns>the plain and ASCII renderings</returns>
+    private static string Render(JsonTarget plain, Case c)
+    {
+        string text;
+        Build(c.Kind, c.Text).AddTo(plain);
+        text = (string)plain.GetResult()!;
+
+        JsonTarget ascii = plain is JsonStjTarget ? new JsonStjTarget(true) : new JsonStringTarget(true);
+        Build(c.Kind, c.Text).AddTo(ascii);
+        return text + " / " + ascii.GetResult();
     }
 
     private static string Describe(Case c)

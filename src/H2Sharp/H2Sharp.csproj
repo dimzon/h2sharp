@@ -10,6 +10,13 @@
     <Description>Embeddable SQL engine for .NET, ported from H2 Database.</Description>
     <PackageLicenseExpression>MPL-2.0 OR EPL-1.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!--
+      JavaScriptEncoder.TryEncodeUnicodeScalar is the one place H2's escaping rules can be handed
+      to Utf8JsonWriter, and its signature uses char*. The alternative is hand-writing every
+      string, which is what this replaced.
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
