@@ -40,11 +40,11 @@
 * .NET 8/9/10 SDK, SDK закреплён в `global.json` (10.0.401).
 * JDK 25 + Maven 3.9.16 доступны → оракул работает.
 * Сборка: `dotnet build H2Sharp.sln -c Release` — 0 warnings, 0 errors.
-* Тесты: **416 passed, 0 FAILED**: 40 групп против JVM (включая parse-only оркул по
+* Тесты: **419 passed, 0 FAILED**: 43 группы против JVM (включая parse-only оркул по
   319 скриптам H2, 1849 пар типов, модель типов, сверку таблицы токенов, корпус DECFLOAT,
   все 0x110000 кодовых точек `Character`, токенизатор на 139 операторах × 3 режимах,
-  арифметику дат на 16 000 датах и корпус DATE/TIME/TIMESTAMP) и 27 проверок
-  аллокаций/инвариантов.
+  арифметику дат на 16 000 датах, корпус DATE/TIME/TIMESTAMP и полный каталог типов)
+  и 27 проверок аллокаций/инвариантов.
 * `python tools/regen.py --check` — сгенерированные таблицы соответствуют эталону.
 
 ## Страховка от тихой деградации (сделано)
@@ -1021,15 +1021,28 @@ SRID, а тот тянет весь пространственный пакет.
    Ловушка, на которую наступили три раза за один файл: **`FormatException` в .NET наследует
    `SystemException`, а не `ArgumentException`**, так что `catch (ArgumentException)` не ловит
    отказ `StringUtils.ParseUInt31`, который эталон ловит как `NumberFormatException`.
-8. **`command/Parser.java`** (8963) — теперь единственный гейт: `Tokenizer` есть, `DateTimeUtils`
-   есть, `ValueDate`/`ValueTime`/`ValueTimestamp` есть. Осталось перед ним: `ValueInterval`,
-   типы с зоной, `DataType`.
-9. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
+9. **`DataType`** (827 строк) — **портирован** (`Value/DataType.cs`): полный каталог имён
+   типов и их пределов, включая строки для типов, чьи значения ещё не портированы
+   (`CLOB`, `BLOB`, `UUID`, `ENUM`, `GEOMETRY`, `JSON`, `ARRAY`, `ROW`, `INTERVAL`,
+   `TIME/TIMESTAMP WITH TIME ZONE`, `JAVA_OBJECT`) — каталог с дырами парсеру не нужен,
+   он спрашивает «это имя — тип?». Ширины непортированных типов взяты из их объявлений
+   в эталоне и лежат во вложенном классе `DataType.Widths`; оракул читает их обратно
+   из таблицы эталона, поэтому цифра не поедет молча.
+   **Отображение на `SqlDbType` — решение порта, а не перенос**: JDBC `Types` и .NET
+   `SqlDbType` — разные перечисления. `NULL→Variant`, `BLOB→Image`, `ARRAY→Structured`,
+   `NUMERIC`/`DECFLOAT`→`Decimal` (в .NET нет «numeric, но не decimal»), `TIME WITH TIME
+   ZONE→DateTimeOffset`. Числа не сравниваются с эталонными, сравниваются имена и пределы.
+   `getTypeByName(name, mode)` требует непустой `Mode` — с `null` эталон падает с NPE
+   (это нашло тест, а не чтение).
+10. **`command/Parser.java`** (8963) — теперь главный гейт: `Tokenizer` есть, `DateTimeUtils`
+   есть, `ValueDate`/`ValueTime`/`ValueTimestamp` есть, `DataType` есть. Осталось перед ним:
+   `ValueInterval` (+ `IntervalUtils`), типы с зоной, `ExtTypeInfo*` для остальных типов.
+11. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
    Остальное в `util` — кэши, которые по принятому решению делаются обычными полями.
-10. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
+12. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
     и наоборот. LZF портировать дословно.
 
-Текущий прогон: **416 тестов, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
+Текущий прогон: **419 тестов, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
 констант, `TypeInfo` — ядро плюс `getSQL`, `ExtTypeInfo`, `ExtTypeInfoNumeric`; значения —
 `ValueNull`, `ValueInteger`, `ValueBigint`, `ValueDouble`, `ValueVarchar`, `ValueVarbinary`,
    `ValueBinary`, `ValueChar`; `JavaUtf8` вместо `Encoding.UTF8` там, где байты приходят из базы.
