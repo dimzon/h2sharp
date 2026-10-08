@@ -275,7 +275,7 @@ public static class DateTimeUtils
     /// <summary>
     /// Reads the digits after the point of a time.
     /// </summary>
-    private static int ParseNanos(string s, int start, int end)
+    internal static int ParseNanos(string s, int start, int end)
     {
         if (start >= end)
         {
