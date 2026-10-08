@@ -348,6 +348,31 @@ public sealed class ValueAllocationTests
     }
 
     [Fact]
+    public void WholeNumericValuesRenderForFree()
+    {
+        // The reference builds the plain string and then asks it whether it has a point in it,
+        // which costs a string per value on the path a result set takes for every row. The question
+        // has an answer without the string: the plain form has a point exactly when the scale is
+        // positive. So a whole number, which is the case that gets a CAST, renders into a caller's
+        // builder for nothing.
+        StringBuilder reused = new();
+        Value whole = ValueNumeric.Get(BigDecimal.Parse("42"));
+
+        Assert.Equal(0, Measure(() =>
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                reused.Clear();
+                _ = whole.GetSql(reused, 0);
+            }
+        }));
+
+        // A value with a fractional part prints as it is, and that string has to be built.
+        Value fractional = ValueNumeric.Get(BigDecimal.Parse("1.5"));
+        Assert.True(MeasurePerCall(() => fractional.GetSql(reused, 0)) > 0);
+    }
+
+    [Fact]
     public void Utf8CostsTheResultAndNothingElse()
     {
         // Decoding rents its buffer, so what is left is the string the caller asked for: 152 bytes

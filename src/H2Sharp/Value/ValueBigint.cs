@@ -265,7 +265,7 @@ public sealed class ValueBigint : Value
     public override BigInteger GetBigInteger() => new(value);
 
     /// <inheritdoc/>
-    public override decimal GetDecimal() => value;
+    public override H2Sharp.Util.BigDecimal GetBigDecimal() => H2Sharp.Util.BigDecimal.FromLong(value);
 
     /// <inheritdoc/>
     public override float GetFloat() => value;

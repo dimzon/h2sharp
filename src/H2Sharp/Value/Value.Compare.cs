@@ -134,8 +134,9 @@ public abstract partial class Value
     /// The reference falls back to DECFLOAT for any pair that is not two integers or two
     /// reals, which is why that one is the widest exact type in the numeric family. The
     /// fallback is not ported: it needs <c>ValueDecfloat</c> and <c>ValueNumeric</c>, and until
-    /// they exist a pair that is neither two integers nor two reals throws rather than answer
-    /// approximately.
+    /// they exist a pair that is neither two integers nor two reals is compared as decimals, which
+    /// is the one answer that does not have to choose a scale first. A pair that needs DECFLOAT,
+    /// which is where the reference would go for two arbitrary precision values, still throws.
     /// <para>
     /// The two reals go through <c>GetDouble</c> and then the reference's own
     /// <c>Double.compare</c>, which is not the same order as .NET's: Java sorts NaN above every
@@ -164,6 +165,12 @@ public abstract partial class Value
                     return Math.Sign(l.GetInt() - (long)r.GetInt());
                 case Value.Bigint:
                     return l.GetLong().CompareTo(r.GetLong());
+                case Value.Numeric:
+                    // Everything that is not two integers or two reals lands here, and the
+                    // reference compares the two as decimals rather than widening one of them:
+                    // a REAL compared with a NUMERIC is decided at the NUMERIC's scale, so
+                    // 0.1 and a REAL nearest to it are equal.
+                    return l.GetBigDecimal().CompareTo(r.GetBigDecimal());
                 case Value.Real:
                     return JavaCompareFloat(l.GetFloat(), r.GetFloat());
                 case Value.Double:

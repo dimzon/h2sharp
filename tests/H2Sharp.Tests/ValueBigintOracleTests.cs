@@ -201,7 +201,7 @@ public sealed class ValueBigintOracleTests
             .Append(a.GetLong()).Append('|')
             .Append(a.GetInt()).Append('|')
             .Append(a.GetBigInteger().ToString(CultureInfo.InvariantCulture)).Append('|')
-            .Append(a.GetDecimal().ToString(CultureInfo.InvariantCulture)).Append('|')
+            .Append(a.GetBigDecimal().ToString()).Append('|')
             .Append(JavaNumberFormat.FloatToString(a.GetFloat())).Append('|')
             .Append(JavaNumberFormat.DoubleToString(a.GetDouble())).Append('|')
             .Append(a.GetHashCode()).Append('|')

@@ -160,7 +160,7 @@ public sealed class ValueIntegerOracleTests
             .Append(a.GetInt()).Append('|')
             .Append(a.GetLong()).Append('|')
             .Append(a.GetBigInteger().ToString(CultureInfo.InvariantCulture)).Append('|')
-            .Append(FormatDecimal(a.GetDecimal())).Append('|')
+            .Append(Truncate(a.GetBigDecimal())).Append('|')
             .Append(a.GetHashCode()).Append('|')
             .Append(a.GetSignum()).Append('|')
             .Append(a.GetMemory()).Append('|')
@@ -243,8 +243,13 @@ public sealed class ValueIntegerOracleTests
     /// scale, so the text is compared as the number and the scale together rather than as the
     /// exact rendering.
     /// </remarks>
-    private static string FormatDecimal(decimal d)
-        => decimal.Truncate(d).ToString(CultureInfo.InvariantCulture);
+    /// <remarks>
+    /// The reference asks for a decimal and prints the whole part of it, which is the value itself
+    /// for a type that holds only integers. With the port's own decimal the same question is asked
+    /// of a value that could in principle have a scale, so the truncation is explicit.
+    /// </remarks>
+    private static string Truncate(H2Sharp.Util.BigDecimal d)
+        => d.SetScale(0, H2Sharp.Util.RoundingMode.Down).ToPlainString();
 
     private static string Hex(byte[]? bytes)
     {

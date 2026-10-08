@@ -194,8 +194,7 @@ public sealed class ValueInteger : Value
     public override BigInteger GetBigInteger() => new(value);
 
     /// <inheritdoc/>
-    public override decimal GetDecimal()
-        => (decimal)value;
+    public override H2Sharp.Util.BigDecimal GetBigDecimal() => H2Sharp.Util.BigDecimal.FromLong(value);
 
     /// <inheritdoc/>
     public override float GetFloat() => value;

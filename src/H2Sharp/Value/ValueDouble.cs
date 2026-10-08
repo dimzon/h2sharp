@@ -197,13 +197,14 @@ public sealed class ValueDouble : Value
     /// implies. Returning <c>(decimal)value</c> would quietly give a different number, so this
     /// throws until NUMERIC brings a real arbitrary precision decimal with it.
     /// </remarks>
+    /// <remarks>
+    /// A double is turned into the shortest decimal that reads back as the same double, which is
+    /// what the reference's <c>doubleValue</c> hands to a decimal and what the JVM prints for a
+    /// double. It is not the shortest decimal that keeps the number, since no such decimal has
+    /// the same value.
+    /// </remarks>
     /// <returns>the decimal value</returns>
-    /// <exception cref="NotSupportedException">always, see the remarks</exception>
-    public override decimal GetDecimal()
-        => throw new NotSupportedException(
-            "A double as an exact decimal needs BigDecimal, which .NET's decimal is not: it "
-            + "holds 28 digits and rounds where BigDecimal takes the shortest decimal form. "
-            + "See MIGRATION_STATUS.md for the NUMERIC work that brings one.");
+    public override H2Sharp.Util.BigDecimal GetBigDecimal() => H2Sharp.Util.BigDecimal.Parse(JavaNumberFormat.DoubleToString(value));
 
     /// <inheritdoc/>
     public override float GetFloat() => (float)value;

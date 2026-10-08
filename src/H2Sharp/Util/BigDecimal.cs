@@ -86,6 +86,25 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     public int Scale => scale;
 
     /// <summary>
+    /// A value of an integer, which is a decimal whose scale is zero.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>valueOf</c> and <c>new BigDecimal(BigInteger)</c>, which the values of
+    /// the integral types hand over. An integer has no scale of its own and inventing one is how a
+    /// NUMERIC column ends up printing a decimal point it was never given.
+    /// </remarks>
+    /// <param name="value">the integer</param>
+    /// <returns>the value</returns>
+    public static BigDecimal FromLong(long value) => new(new BigInteger(value), 0);
+
+    /// <summary>
+    /// A value of an arbitrary precision integer, which is a decimal whose scale is zero.
+    /// </summary>
+    /// <param name="value">the integer</param>
+    /// <returns>the value</returns>
+    public static BigDecimal FromBigInteger(BigInteger value) => new(value, 0);
+
+    /// <summary>
     /// Reads a decimal from text.
     /// </summary>
     /// <remarks>

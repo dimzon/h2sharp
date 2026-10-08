@@ -164,17 +164,15 @@ public abstract partial class Value
     /// Get the value as an arbitrary precision decimal.
     /// </summary>
     /// <remarks>
-    /// The reference returns <c>java.math.BigDecimal</c>, which is unbounded and has its own
-    /// scale and rounding rules. .NET's <see cref="decimal"/> is neither unbounded nor the
-    /// same number format: it holds at most 28 significant digits and rounds on division.
-    /// Every integer up to a long is exact in it, so the accessors that reach it are exact
-    /// today, but the port of NUMERIC must not lean on it. The declaration here says decimal
-    /// rather than pretending, so that whoever ports NUMERIC meets the limit instead of
-    /// discovering it.
+    /// This used to hand back a .NET <see cref="decimal"/> with a note that NUMERIC would have to
+    /// do better, and that note has been paid off: <see cref="H2Sharp.Util.BigDecimal"/> is the
+    /// port of <c>java.math.BigDecimal</c> and it is what the reference's own name refers to, so
+    /// the declaration is the same. .NET's decimal stays out of it: it holds at most 28 significant
+    /// digits and rounds on division, and NUMERIC(38, 10) is a real column type.
     /// </remarks>
     /// <returns>the decimal value</returns>
-    public virtual decimal GetDecimal()
-        => throw GetUnsupportedException("getDecimal");
+    public virtual H2Sharp.Util.BigDecimal GetBigDecimal()
+        => throw GetUnsupportedException("getBigDecimal");
 
     /// <summary>
     /// Compare two values of the same type, without the conversion and NULL handling that
