@@ -317,6 +317,37 @@ public sealed class ValueAllocationTests
     }
 
     [Fact]
+    public void CharComparisonsOnlyPayForThePaddingTheyDrop()
+    {
+        // A CHAR without padding costs nothing to compare: the trimming finds nothing to cut and
+        // hands back the same string. A CHAR with padding costs one substring per side, which is
+        // what the reference does too, because its conversion to CHAR does the same substring
+        // before the two values are put side by side. Comparing a CHAR against a VARCHAR pays for
+        // both sides, since both have to become CHAR first.
+        CompareMode off = CompareMode.GetInstance(null, 0);
+        Value plain = ValueChar.Get("abc");
+        Value padded = ValueChar.Get("abc   ");
+
+        Assert.Equal(0, MeasurePerCall(() => plain.CompareTo(plain, null, off)));
+        Assert.InRange(MeasurePerCall(() => plain.CompareTo(padded, null, off)), 24, 48);
+        Assert.InRange(
+            MeasurePerCall(() => padded.CompareTo(ValueVarchar.Get("abc"), null, off)), 48, 96);
+
+        // Rendering and describing stay free, like every other type.
+        StringBuilder reused = new();
+        Assert.Equal(0, Measure(() =>
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                reused.Clear();
+                _ = plain.GetSql(reused, 0);
+                _ = plain.GetSql(reused, HasSql.NoCasts);
+                _ = plain.GetTypeInfo().GetPrecision();
+            }
+        }));
+    }
+
+    [Fact]
     public void Utf8CostsTheResultAndNothingElse()
     {
         // Decoding rents its buffer, so what is left is the string the caller asked for: 152 bytes

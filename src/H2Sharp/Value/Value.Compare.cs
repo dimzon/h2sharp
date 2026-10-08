@@ -116,7 +116,12 @@ public abstract partial class Value
                 }
             }
 
-            throw NotPortedConversion("compare", Value.GetTypeName(dataType));
+            // The reference converts both sides to the type the comparison is going to be made
+            // in, and then compares. Converting rather than adjusting the comparison is the whole
+            // point: a CHAR compared against a longer string has to drop that string's padding
+            // before the two are put side by side, and the side that asks cannot be the one that
+            // does it.
+            (l, r) = ConvertToForComparison(l, r, dataType, provider);
         }
 
         return l.CompareTypeSafe(r, compareMode, provider);
