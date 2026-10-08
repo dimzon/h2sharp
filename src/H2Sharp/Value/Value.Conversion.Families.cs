@@ -131,7 +131,7 @@ public abstract partial class Value
                 or IntervalDayToMinute or IntervalDayToSecond or IntervalHourToMinute
                 or IntervalHourToSecond or IntervalMinuteToSecond
                 => ConvertToIntervalDayTimeType(targetType, conversionMode, column),
-            JavaObject => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
+            JavaObject => ConvertToJavaObject(targetType, conversionMode, column),
             Enum => ConvertToEnum((ExtTypeInfoEnum)targetType.GetExtTypeInfo()!, provider),
             Geometry => ConvertToGeometryType(targetType),
             Json => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
@@ -836,6 +836,51 @@ public abstract partial class Value
             default:
                 throw GetDataConversionErrorException(Enum);
         }
+    }
+
+    /// <summary>
+    /// Converts this value to a JAVA_OBJECT value. May not be called on a NULL value.
+    /// </summary>
+    /// <remarks>
+    /// A JAVA_OBJECT is a byte string, so it comes from the other byte-string types and from
+    /// nothing else: there is no serializer here and none is asked for. The reference's
+    /// <c>getJavaObjectSerializer</c> belongs to storing an object that came from a client, not
+    /// to this conversion, and a conversion that needed it would be a different question.
+    /// </remarks>
+    /// <param name="targetType">the type of the returned value</param>
+    /// <param name="conversionMode">conversion mode</param>
+    /// <param name="column">the column, for the error message</param>
+    /// <returns>the JAVA_OBJECT value</returns>
+    public ValueJavaObject ConvertToJavaObject(TypeInfo targetType, int conversionMode, object? column)
+    {
+        ValueJavaObject v;
+        switch (GetValueType())
+        {
+            case JavaObject:
+                v = (ValueJavaObject)this;
+                break;
+
+            case Binary:
+            case Varbinary:
+            case Blob:
+                // No copy, and not a clone either: the object is the same array the source
+                // value held, which is what the reference's getNoCopy says too.
+                v = ValueJavaObject.GetNoCopy(GetBytesNoCopy()!);
+                break;
+
+            case Null:
+                throw DbException.GetInternalError();
+
+            default:
+                throw GetDataConversionErrorException(JavaObject);
+        }
+
+        if (conversionMode != ConvertTo && v.GetBytesNoCopy()!.Length > targetType.GetPrecision())
+        {
+            throw v.GetValueTooLongException(targetType, column);
+        }
+
+        return v;
     }
 
     /// <summary>
