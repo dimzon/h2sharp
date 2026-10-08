@@ -96,10 +96,14 @@ public sealed class ValueNumericOracleTests
         Assert.Equal(-1, numeric.CompareTo(ValueNumeric.Get(BigDecimal.Parse("0.11")), null, off));
         Assert.NotEqual(0, ValueInteger.Get(1).CompareTo(ValueNumeric.Get(BigDecimal.Parse("1.5")), null, off));
 
-        // A NUMERIC and a DOUBLE are not compared here: their pair is promoted to DOUBLE, whose
-        // rounding rule for 0.1 the ported formatter covers separately. DECFLOAT is not ported, so
-        // that pair is still refused, which is the state this leaves the numeric family in.
-        Assert.Throws<NotSupportedException>(() => numeric.CompareTo(ValueDouble.Get(0.1), null, off));
+        // A NUMERIC against a DOUBLE is promoted to DOUBLE and compared as two doubles, so 0.1 and the
+        // double nearest to it are the same number. Where a pair is not two numbers at all, the
+        // reference compares two DECFLOATs, and that is now ported: a NUMERIC against a VARCHAR
+        // answers rather than refusing. Both answers were read off the JVM, not assumed — the
+        // first surprised this test, which had expected them to differ.
+        Assert.Equal(0, numeric.CompareTo(ValueDouble.Get(0.1), null, off));
+        Assert.Equal(0, numeric.CompareTo(ValueVarchar.Get("0.1"), null, off));
+        Assert.Equal(-1, numeric.CompareTo(ValueVarchar.Get("0.2"), null, off));
     }
 
     private static string Describe(string text)

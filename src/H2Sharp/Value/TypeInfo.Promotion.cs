@@ -212,6 +212,41 @@ public sealed partial class TypeInfo
     }
 
     /// <summary>
+    /// Get the higher data type of all values, which is how an ARRAY without a declared
+    /// component type decides what its elements have in common.
+    /// </summary>
+    /// <remarks>
+    /// The reference takes <c>Typed[]</c> and asks each value for its own type. This takes the
+    /// values, because a <c>Value</c> already is one and nothing here would accept a type
+    /// instead. The rest of the method is <see cref="GetHigherType(TypeInfo[])"/>, which asks
+    /// the same question of a list of types that the caller already has.
+    /// </remarks>
+    /// <param name="values">the values</param>
+    /// <returns>the higher data type</returns>
+    /// <exception cref="H2SharpException">
+    /// if the list mixes an unknown type with NULL, or the types cannot be combined
+    /// </exception>
+    public static TypeInfo GetHigherType(Value[] values)
+    {
+        int cardinality = values.Length;
+        if (cardinality == 0)
+        {
+            return TypeNull;
+        }
+
+        // Asking every value for its type costs one virtual call per element, and a list of
+        // values is always asked once, so the array is built rather than the loop being
+        // unrolled around it.
+        TypeInfo[] types = new TypeInfo[cardinality];
+        for (int i = 0; i < cardinality; i++)
+        {
+            types[i] = values[i].GetTypeInfo();
+        }
+
+        return GetHigherType(types);
+    }
+
+    /// <summary>
     /// Checks whether two specified types are comparable and throws an exception
     /// otherwise.
     /// </summary>

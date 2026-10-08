@@ -375,12 +375,38 @@ public abstract partial class Value
             value.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>
+    /// The conversion error for one value failing to become the type another value has.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>getDataConversionError</c> is package private, so a comparison may
+    /// raise it about the *other* value: comparing an ARRAY with a ROW reports what the ROW
+    /// could not become. C# will not let a <c>protected</c> member be reached through another
+    /// instance of the base class, so this takes both values and says the same thing.
+    /// </remarks>
+    /// <param name="v">the value that could not become the target type</param>
+    /// <param name="targetType">the type it could not become</param>
+    /// <returns>the error, which is not thrown by this method</returns>
+    internal static Exception GetDataConversionErrorException(Value v, int targetType)
+        => DbException.Get(
+            ErrorCode.DataConversionError1,
+            GetTypeName(v.GetValueType()) + " to " + GetTypeName(targetType));
+
+    /// <summary>
     /// Throws the conversion error for a parameterised target type.
     /// </summary>
     /// <param name="targetType">the type the value could not become</param>
     /// <exception cref="H2SharpException">always</exception>
     protected void GetDataConversionError(TypeInfo targetType)
-        => throw DbException.Get(
+        => throw GetDataConversionErrorException(targetType);
+
+    /// <summary>
+    /// The conversion error for a parameterised target type, for a caller whose signature has to
+    /// give a value back after it.
+    /// </summary>
+    /// <param name="targetType">the type the value could not become</param>
+    /// <returns>the error, which is not thrown by this method</returns>
+    protected Exception GetDataConversionErrorException(TypeInfo targetType)
+        => DbException.Get(
             ErrorCode.DataConversionError1,
             Value.GetTypeName(GetValueType()) + " to " + targetType.GetTraceSql());
 

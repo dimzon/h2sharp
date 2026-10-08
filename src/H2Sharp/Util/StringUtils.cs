@@ -763,7 +763,7 @@ public static class StringUtils
     /// </summary>
     /// <param name="s">the text to convert</param>
     /// <returns>the Java representation</returns>
-    public static string? QuoteJavaString(string? s)
+    public static string QuoteJavaString(string? s)
     {
         if (s is null)
         {
@@ -781,7 +781,7 @@ public static class StringUtils
     /// </summary>
     /// <param name="array">the string array</param>
     /// <returns>the Java source code (including new String[]{})</returns>
-    public static string? QuoteJavaStringArray(string?[]? array)
+    public static string QuoteJavaStringArray(string?[]? array)
     {
         if (array is null)
         {
@@ -808,7 +808,7 @@ public static class StringUtils
     /// </summary>
     /// <param name="array">the int array</param>
     /// <returns>the Java source code (including new int[]{})</returns>
-    public static string? QuoteJavaIntArray(int[]? array)
+    public static string QuoteJavaIntArray(int[]? array)
     {
         if (array is null)
         {

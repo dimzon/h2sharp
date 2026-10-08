@@ -324,6 +324,12 @@ public sealed class ValueAllocationTests
         // what the reference does too, because its conversion to CHAR does the same substring
         // before the two values are put side by side. Comparing a CHAR against a VARCHAR pays for
         // both sides, since both have to become CHAR first.
+        //
+        // The last bound is 128 rather than the 96 this test used to allow, and the difference is
+        // real rather than noise: a VARCHAR is now converted to a CHAR by the general conversion
+        // family, which builds a new ValueChar, where the earlier narrow conversion returned the
+        // value it was handed. The reference builds the new value too, so the old bound was
+        // measuring a shortcut that the reference does not take.
         CompareMode off = CompareMode.GetInstance(null, 0);
         Value plain = ValueChar.Get("abc");
         Value padded = ValueChar.Get("abc   ");
@@ -331,7 +337,7 @@ public sealed class ValueAllocationTests
         Assert.Equal(0, MeasurePerCall(() => plain.CompareTo(plain, null, off)));
         Assert.InRange(MeasurePerCall(() => plain.CompareTo(padded, null, off)), 24, 48);
         Assert.InRange(
-            MeasurePerCall(() => padded.CompareTo(ValueVarchar.Get("abc"), null, off)), 48, 96);
+            MeasurePerCall(() => padded.CompareTo(ValueVarchar.Get("abc"), null, off)), 96, 144);
 
         // Rendering and describing stay free, like every other type.
         StringBuilder reused = new();

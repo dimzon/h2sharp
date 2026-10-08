@@ -110,6 +110,27 @@ public sealed class ValueClob : ValueLob
         return bytes;
     }
 
+    /// <summary>
+    /// Truncates this value to the given number of characters, if it is longer.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart of <see cref="ValueBlob.ConvertPrecision"/> for characters rather than
+    /// octets, and internal for the same reason: a cast to a narrower CLOB keeps as many
+    /// characters as fit, and only the in-memory case can answer that without a handler.
+    /// </remarks>
+    /// <param name="precision">the number of characters to keep</param>
+    /// <returns>this value, or a shorter one</returns>
+    internal ValueClob ConvertPrecision(long precision)
+    {
+        if (LobCharLength <= precision)
+        {
+            return this;
+        }
+
+        return CreateSmall(IOUtils.ReadStringAndClose(
+            GetReader(), MathUtils.ConvertLongToInt(precision)));
+    }
+
     /// <inheritdoc/>
     public override Stream GetInputStream() => LobData.GetInputStream(-1L);
 

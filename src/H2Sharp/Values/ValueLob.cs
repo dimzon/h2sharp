@@ -41,7 +41,7 @@ public abstract class ValueLob : Value
     /// <summary>
     /// The bytes, or wherever they are.
     /// </summary>
-    protected readonly LobData LobData;
+    internal readonly LobData LobData;
 
     /// <summary>
     /// How many bytes.

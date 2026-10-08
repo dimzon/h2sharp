@@ -497,6 +497,29 @@ public sealed partial class TypeInfo : ExtTypeInfo
     /// <returns>the extended type information</returns>
     public ExtTypeInfo? GetExtTypeInfo() => extTypeInfo;
 
+    /// <summary>
+    /// The precision as it was declared, without the defaults a type applies to itself.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>getDeclaredPrecision</c> exists because a row that reorders its fields
+    /// has to rebuild its type and copy two numbers across without a type applying its own
+    /// defaults on the way. <see cref="GetPrecision"/> would hand back a rounded or defaulted
+    /// value instead of the declared one, and the rebuilt type would then not be the one that
+    /// was asked for.
+    /// </remarks>
+    /// <returns>the declared precision</returns>
+    public long GetDeclaredPrecision() => precision;
+
+    /// <summary>
+    /// The scale as it was declared, without the defaults a type applies to itself.
+    /// </summary>
+    /// <remarks>
+    /// For the same reason as <see cref="GetDeclaredPrecision"/>: a rebuilt row type copies
+    /// this across unchanged, and <see cref="GetScale"/> would decide it again.
+    /// </remarks>
+    /// <returns>the declared scale</returns>
+    public int GetDeclaredScale() => scale;
+
 
     /// <summary>
     /// The precision this type needs to hold its values exactly, which differs from the

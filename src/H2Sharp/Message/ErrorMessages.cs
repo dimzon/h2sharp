@@ -269,8 +269,9 @@ public static class ErrorMessages
             else
             {
                 // java.text.MessageFormat renders a null argument as the text "null";
-                // StringBuilder.Append(object) would render it as nothing.
-                result.Append(arguments[index]?.ToString() ?? "null");
+                // StringBuilder.Append(object) would render it as nothing, so the argument
+                // goes through AppendJ, which is that one difference written down once.
+                result.AppendJ(arguments[index]?.ToString());
             }
         }
 

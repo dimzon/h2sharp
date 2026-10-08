@@ -121,7 +121,15 @@ public abstract partial class Value
             // point: a CHAR compared against a longer string has to drop that string's padding
             // before the two are put side by side, and the side that asks cannot be the one that
             // does it.
-            (l, r) = ConvertToForComparison(l, r, dataType, provider);
+            //
+            // This is the general conversion and not the narrow one that used to be here, and
+            // the difference is not a matter of taste: the reference calls convertTo, and a
+            // narrower stand-in answers a different question for every pair the narrow one does
+            // not know. An ARRAY of INTEGER compared with an ARRAY of VARCHAR reaches the
+            // conversion through here, one element at a time, and an INTEGER against a VARCHAR
+            // is a conversion the general family does and the narrow one refused.
+            l = l.ConvertToForComparison(dataType, provider);
+            r = r.ConvertToForComparison(dataType, provider);
         }
 
         return l.CompareTypeSafe(r, compareMode, provider);
@@ -178,11 +186,19 @@ public abstract partial class Value
             }
         }
 
-        throw new NotSupportedException(
-            $"Comparing {Value.GetTypeName(leftType)} with {Value.GetTypeName(rightType)} needs "
-            + "the DECFLOAT conversion, which is not ported yet. See MIGRATION_STATUS.md.")
-        {
-        };
+        // A pair that is not two numbers — an INTEGER and a VARCHAR, say — is compared as two
+        // DECFLOATs. That is the reference's answer and it is the only one available: DECFLOAT
+        // is the widest exact numeric type, so anything of any family reaches it, and a string
+        // parses into one. The switch above cannot answer for such a pair, and refusing here
+        // would make the whole type system refuse a comparison the engine is expected to make.
+        //
+        // The reference passes a null compare mode here and so, in effect, does this: the
+        // comparison is between two decimals, and a compare mode decides nothing about decimals.
+        // The default mode is passed rather than a nullable parameter, because making the
+        // parameter nullable would have touched all twenty-four overrides to accept a value
+        // none of them reads.
+        return l.ConvertToDecfloat(null, ConvertTo).CompareTypeSafe(
+            r.ConvertToDecfloat(null, ConvertTo), CompareMode.GetInstance(null, 0), null);
     }
 
     /// <summary>
@@ -196,7 +212,13 @@ public abstract partial class Value
     /// 0 if both values are equal, -1 if this value is smaller, 1 if other value is larger,
     /// <see cref="int.MinValue"/> if order is not defined due to NULL comparison
     /// </returns>
-    public int CompareWithNull(
+    /// <remarks>
+    /// Not <c>final</c> in the reference, and that matters: <c>ValueCollectionBase</c>
+    /// overrides it, because a comparison between two values of different collections is
+    /// decided field by field and cannot go through the promotion this method would do. A
+    /// scalar value has no reason to answer differently from the base and does not.
+    /// </remarks>
+    public virtual int CompareWithNull(
         Value? v,
         bool forEquality,
         CastDataProvider? provider,

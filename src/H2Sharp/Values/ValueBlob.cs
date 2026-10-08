@@ -104,6 +104,28 @@ public sealed class ValueBlob : ValueLob
         return ReadBytes((int)LobOctetLength);
     }
 
+    /// <summary>
+    /// Truncates this value to the given number of octets, if it is longer.
+    /// </summary>
+    /// <remarks>
+    /// Internal rather than private because <c>Value.ConvertTo</c> calls it for a cast: casting
+    /// to a narrower BINARY keeps as much as fits, and this is where "keeps as much as fits" is
+    /// decided. Only the in-memory case is answered, because a value held elsewhere would need
+    /// the handler to write a new one.
+    /// </remarks>
+    /// <param name="precision">the number of octets to keep</param>
+    /// <returns>this value, or a shorter one</returns>
+    internal ValueBlob ConvertPrecision(long precision)
+    {
+        if (LobOctetLength <= precision)
+        {
+            return this;
+        }
+
+        return CreateSmall(IOUtils.ReadBytesAndClose(
+            GetInputStream(), MathUtils.ConvertLongToInt(precision)));
+    }
+
     /// <inheritdoc/>
     public override Stream GetInputStream() => LobData.GetInputStream(LobOctetLength);
 

@@ -14,19 +14,44 @@ using H2Sharp.Util;
 namespace H2Sharp.Engine;
 
 /// <summary>
+/// How a CHAR value is padded, which decides whether a conversion to CHAR pads it or trims it.
+/// </summary>
+public enum CharPadding
+{
+    /// <summary>
+    /// CHAR values are always right-padded with spaces.
+    /// </summary>
+    Always,
+
+    /// <summary>
+    /// Spaces are trimmed from the right side of CHAR values, but CHAR values in result sets are
+    /// right-padded with spaces to the declared length.
+    /// </summary>
+    InResultSets,
+
+    /// <summary>
+    /// Spaces are trimmed from the right side of CHAR values.
+    /// </summary>
+    Never,
+}
+
+/// <summary>
 /// The compatibility mode a database runs in, which decides how a statement is read rather than
 /// what it means.
 /// </summary>
 /// <remarks>
-/// The reference carries 59 flags and this carries the five that the tokenizer reads. They are the
-/// five places where the same characters mean different things in different databases, and every
-/// other flag belongs to a feature that is not ported yet; a flag nobody reads is a flag nobody
-/// can test. The flag arrives with the feature that needs it, the same way
-/// <see cref="CastDataProvider"/> carries one member of the reference's five for the same reason.
+/// The reference carries 59 flags and this carries the seven that something reads. Five of them
+/// are read by the tokenizer and are the places where the same characters mean different things in
+/// different databases; the other two are read by the conversion family, which is where a CHAR is
+/// padded and where a NUMERIC's scale is reduced. Every other flag belongs to a feature that is
+/// not ported yet; a flag nobody reads is a flag nobody can test. A flag arrives with the feature
+/// that needs it, the same way <see cref="CastDataProvider"/> carries one member of the
+/// reference's five for the same reason.
 /// <para>
 /// The table below is the reference's own, read off the static initialiser: for each mode, which of
-/// the five are on. It is worth having in full even though only the tokenizer reads it, because
-/// "which mode turns this on" is the question that every future feature starts with.
+/// the seven are on. It is worth having in full even though only the tokenizer and the conversion
+/// family read it, because "which mode turns this on" is the question that every future feature
+/// starts with.
 /// </para>
 /// </remarks>
 public sealed class Mode
@@ -118,6 +143,17 @@ public sealed class Mode
     public bool MinusIsExcept { get; }
 
     /// <summary>
+    /// Whether a CHAR value is padded out to its declared length, which decides whether a
+    /// conversion to CHAR restores the padding or trims it.
+    /// </summary>
+    public CharPadding CharPadding { get; }
+
+    /// <summary>
+    /// Whether a conversion may reduce a NUMERIC's scale, or has to leave it as it is.
+    /// </summary>
+    public bool ConvertOnlyToSmallerScale { get; }
+
+    /// <summary>
     /// The name of the mode, as it is written in a URL.
     /// </summary>
     public string Name { get; }
@@ -127,7 +163,15 @@ public sealed class Mode
     /// </summary>
     public ModeEnum Enum { get; }
 
-    private Mode(ModeEnum modeEnum, bool pound, bool zeroExIsBinary, bool squareBrackets, bool limit, bool minusIsExcept)
+    private Mode(
+        ModeEnum modeEnum,
+        bool pound,
+        bool zeroExIsBinary,
+        bool squareBrackets,
+        bool limit,
+        bool minusIsExcept,
+        CharPadding charPadding = CharPadding.Always,
+        bool convertOnlyToSmallerScale = false)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -136,6 +180,8 @@ public sealed class Mode
         SquareBracketQuotedNames = squareBrackets;
         Limit = limit;
         MinusIsExcept = minusIsExcept;
+        CharPadding = charPadding;
+        ConvertOnlyToSmallerScale = convertOnlyToSmallerScale;
     }
 
     /// <summary>
@@ -183,10 +229,13 @@ public sealed class Mode
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false),
-            ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false),
-            ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false),
-            ["ORACLE"] = new(ModeEnum.Oracle, true, false, false, false, true),
-            ["POSTGRESQL"] = new(ModeEnum.PostgreSql, false, false, false, true, false),
+            ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never),
+            ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never),
+            ["ORACLE"] = new(
+                ModeEnum.Oracle, true, false, false, false, true,
+                CharPadding.Always, convertOnlyToSmallerScale: true),
+            ["POSTGRESQL"] = new(
+                ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets),
         };
 
         return modes.ToFrozenDictionary(StringComparer.Ordinal);

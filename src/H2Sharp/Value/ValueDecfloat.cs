@@ -60,6 +60,18 @@ public sealed class ValueDecfloat : ValueBigDecimalBase
     {
     }
 
+    /// <summary>
+    /// The decimal this value holds, or null for one of the three that are not numbers.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads its own <c>value</c> field from <c>Value.convertToDecfloat</c>,
+    /// which is another class in the same package, so package visibility is enough there and
+    /// private is enough here. This is the accessor that replaces that visibility: it says the
+    /// same thing and keeps the field private.
+    /// </remarks>
+    /// <returns>the decimal, or null</returns>
+    internal BigDecimal? GetDecimalValue() => value;
+
     /// <inheritdoc/>
     public override string? GetString()
     {

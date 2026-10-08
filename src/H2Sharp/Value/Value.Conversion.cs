@@ -1,20 +1,17 @@
 /*
  * Copyright 2004-2026 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
- * Initial Developer: H2 Group
  * Ported from org.h2.value.Value.
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * The part of the reference's convertTo that the comparison needs.
+ * The one-argument convertTo, which is what a comparison calls.
  *
- * The reference has one convertTo with three modes, CONVERT_TO, CAST_TO and ASSIGN_TO, and a long
- * switch over every type. Only the string and byte array families are ported so far, so this is
- * the narrow version of it: given the type the comparison is going to happen in, put both values
- * into it and hand them back. The general method arrives with the remaining types, and when it
- * does this is where its mode parameter will live.
+ * This used to hold a narrow stand-in that knew three families of types and refused the rest.
+ * The narrow version is gone: the general conversion family is in Value.Conversion.Families.cs
+ * now, so this is the same dispatch the reference has, and a comparison reaches exactly the
+ * conversion a cast would.
  */
-using System;
 using H2Sharp.Engine;
 
 namespace H2Sharp.Values;
@@ -26,96 +23,74 @@ namespace H2Sharp.Values;
 public abstract partial class Value
 {
     /// <summary>
-    /// Puts both values into the type their comparison is going to be made in.
+    /// Convert a value to the specified type without taking scale and precision into account.
+    /// </summary>
+    /// <param name="targetType">the type of the returned value</param>
+    /// <returns>the converted value</returns>
+    public Value ConvertToForComparison(int targetType) => ConvertToForComparison(targetType, null);
+
+    /// <summary>
+    /// Convert a value to the specified type without taking scale and precision into account.
     /// </summary>
     /// <remarks>
-    /// The bytes of the two binary types are the same bytes, so nothing has to happen there; the
-    /// string types do have to be changed, because the conversion to a fixed length type drops
-    /// trailing spaces and that is the difference between 'a' and 'a ' being equal.
+    /// The reference's <c>convertTo(int, provider)</c>, which a comparison calls. It is a
+    /// separate method from the three-argument one for two reasons that are both about the
+    /// collection types: an ARRAY has no component type to convert to, and a ROW has no field
+    /// names to convert by, so those two targets ask for the value as a collection rather than
+    /// for a collection of a given shape. Every other target has a single type to ask for and
+    /// goes through the general conversion in <see cref="ConvertToValue"/>.
     /// </remarks>
-    /// <param name="l">the left value</param>
-    /// <param name="r">the right value</param>
-    /// <param name="dataType">the type number both values are converted to</param>
+    /// <param name="targetType">the type of the returned value</param>
     /// <param name="provider">the cast information provider</param>
-    /// <returns>both values, converted</returns>
-    private static (Value Left, Value Right) ConvertToForComparison(
-        Value l,
-        Value r,
-        int dataType,
-        CastDataProvider? provider)
+    /// <returns>the converted value</returns>
+    public Value ConvertToForComparison(int targetType, CastDataProvider? provider)
     {
-        switch (dataType)
+        switch (targetType)
         {
-            case Char:
-                return (ConvertToChar(l), ConvertToChar(r));
-            case Varchar:
-            case VarcharIgnorecase:
-                return (ConvertToVarchar(l), ConvertToVarchar(r));
-            case Binary:
-            case Varbinary:
-                return (ConvertToBinary(l), ConvertToBinary(r));
+            case Array:
+                return ConvertToAnyArray(provider);
+
+            case Row:
+                return ConvertToAnyRow();
+
             default:
-                throw NotPortedConversion("compare", GetTypeName(dataType));
+                return ConvertToValue(TypeInfo.GetTypeInfo(targetType), provider, ConvertTo, null);
         }
     }
 
     /// <summary>
-    /// Converts a value to CHARACTER, which is to say: drops the trailing spaces that the padding
-    /// of a fixed length type consists of.
+    /// Converts this value to an ARRAY of any component type, which is what a comparison needs:
+    /// there is no target element type to ask for, only a question of whether the two values are
+    /// the same shape.
     /// </summary>
-    /// <param name="v">the value</param>
-    /// <returns>the value as a CHAR</returns>
-    private static Value ConvertToChar(Value v)
+    /// <remarks>
+    /// The reference's <c>convertToAnyArray</c>. A scalar becomes a one element ARRAY of itself,
+    /// with the component type taken from that value's own type — so a BLOB becomes an ARRAY of
+    /// BLOB, not of VARBINARY. That is not the same as <see cref="Value.ConvertToValue(TypeInfo,
+    /// CastDataProvider?, int, object?)"/>'s ARRAY branch, which does convert a BLOB to a
+    /// VARBINARY element; here there is no target element type at all, so the value keeps its
+    /// own. The two answers differ, and the reference has both.
+    /// </remarks>
+    /// <param name="provider">the cast information provider</param>
+    /// <returns>the value as an ARRAY</returns>
+    public ValueArray ConvertToAnyArray(CastDataProvider? provider)
     {
-        if (v.GetValueType() == Char)
+        if (GetValueType() == Array)
         {
-            return v;
+            return (ValueArray)this;
         }
 
-        string? s = v.GetString();
-        if (s is null)
-        {
-            throw NotPortedConversion("convert", GetTypeName(v.GetValueType()));
-        }
-
-        int end = s.Length;
-        while (end > 0 && s[end - 1] == ' ')
-        {
-            end--;
-        }
-
-        return end == s.Length ? ValueChar.Get(s) : ValueChar.Get(s[..end]);
+        return ValueArray.Get(GetTypeInfo(), [this], provider);
     }
 
     /// <summary>
-    /// Converts a value to VARCHAR, which every string value already is.
+    /// Converts this value to a ROW of any field types.
     /// </summary>
-    /// <param name="v">the value</param>
-    /// <returns>the value as a VARCHAR</returns>
-    private static Value ConvertToVarchar(Value v)
-    {
-        int valueType = v.GetValueType();
-        if (valueType == Varchar || valueType == Char)
-        {
-            return v;
-        }
-
-        throw NotPortedConversion("convert", GetTypeName(valueType));
-    }
-
-    /// <summary>
-    /// Converts a value to a byte array type, which every byte array value already is.
-    /// </summary>
-    /// <param name="v">the value</param>
-    /// <returns>the value as a binary value</returns>
-    private static Value ConvertToBinary(Value v)
-    {
-        int valueType = v.GetValueType();
-        if (valueType == Binary || valueType == Varbinary)
-        {
-            return v;
-        }
-
-        throw NotPortedConversion("convert", GetTypeName(valueType));
-    }
+    /// <remarks>
+    /// The reference's <c>convertToAnyRow</c>. A value that is not already a ROW becomes a ROW of
+    /// one field holding it, which is what makes a row comparable with the scalar it is.
+    /// </remarks>
+    /// <returns>the value as a ROW</returns>
+    public ValueRow ConvertToAnyRow()
+        => GetValueType() == Row ? (ValueRow)this : ValueRow.Get([this]);
 }

@@ -104,6 +104,18 @@ public sealed class ExtTypeInfoRow : ExtTypeInfo
     /// <returns>the fields, in order</returns>
     public IEnumerable<KeyValuePair<string, TypeInfo>> GetFields() => fields.Entries;
 
+    /// <summary>
+    /// How many fields this row type has.
+    /// </summary>
+    /// <remarks>
+    /// The reference asks <c>getFields().size()</c>, which for a <c>LinkedHashMap</c> is a
+    /// constant lookup. So is this one, but only because it is written this way: counting
+    /// <see cref="GetFields"/> instead would walk the whole map, and this is asked on every
+    /// construction of a typed row to check that the type and the values agree.
+    /// </remarks>
+    /// <returns>the number of fields</returns>
+    public int FieldCount => fields.Count;
+
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
     {
