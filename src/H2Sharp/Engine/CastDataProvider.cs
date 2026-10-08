@@ -12,16 +12,17 @@ namespace H2Sharp.Engine;
 /// Provides information for type casts and comparison operations.
 /// </summary>
 /// <remarks>
-/// Only one of the reference's five members is declared here. The other four answer
-/// <c>currentTimestamp</c>, <c>currentTimeZone</c>, <c>getMode</c> and
-/// <c>getJavaObjectSerializer</c>, and each of those returns a type that is not ported yet:
-/// a timestamp with a zone, a time zone provider, the database mode and the Java object
-/// serializer. Declaring members that cannot be implemented would make every implementor
-/// stub four methods it cannot answer, and a value class should not have to think about a
-/// timestamp it will never ask for.
+/// Two of the reference's five members are declared here. The other three answer
+/// <c>currentTimestamp</c>, <c>currentTimeZone</c> and <c>getJavaObjectSerializer</c>, and each of
+/// those returns a type that is not ported yet: a timestamp with a zone, a time zone provider and
+/// the Java object serializer. Declaring members that cannot be implemented would make every
+/// implementor stub three methods it cannot answer, and a value class should not have to think
+/// about a timestamp it will never ask for.
 /// <para>
-/// The one that is declared is <see cref="ZeroBasedEnums"/>, because enum conversion asks it
-/// and that conversion is ported. The rest arrive with the conversions that need them.
+/// <see cref="ZeroBasedEnums"/> is declared because enum conversion asks it and that conversion is
+/// ported. <see cref="GetMode"/> is declared because the tokenizer asks it, and the tokenizer reads
+/// five flags of the mode; <see cref="Mode"/> carries those five and no others, so what a
+/// implementor has to answer is a question it can answer.
 /// </para>
 /// </remarks>
 public interface CastDataProvider
@@ -31,4 +32,12 @@ public interface CastDataProvider
     /// </summary>
     /// <returns>are ENUM values 0-based</returns>
     bool ZeroBasedEnums();
+
+    /// <summary>
+    /// The compatibility mode statements are read in, which is how <c>#</c> becomes part of a name,
+    /// how <c>0x1A</c> becomes a string of bytes, how <c>[Test]</c> becomes a quoted name, and how
+    /// <c>LIMIT</c> and <c>MINUS</c> become keywords instead of names.
+    /// </summary>
+    /// <returns>the mode of this provider</returns>
+    Mode GetMode();
 }

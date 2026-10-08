@@ -184,39 +184,49 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
 
         int digitCount = first;
         int intDigits = 0;
-        while (i < n && char.IsAsciiDigit(text[i]))
+        while (i < n)
         {
-            digits[digitCount++] = text[i];
+            int value = JavaCharacter.DigitValue(text[i]);
+            if (value < 0)
+            {
+                break;
+            }
+
+            // The value goes into the buffer rather than the character, because a digit is not
+            // necessarily a character from '0' to '9': the JDK reads a decimal written with
+            // Arabic-Indic digits as the number they stand for, and the buffer is handed to the
+            // platform's own radix conversion, which knows nothing but '0' to '9'.
+            digits[digitCount++] = (char)('0' + value);
             i++;
             intDigits++;
         }
 
         int fracDigits = 0;
-        bool point = false;
         if (i < n && text[i] == '.')
         {
-            point = true;
             i++;
-            while (i < n && char.IsAsciiDigit(text[i]))
+            while (i < n)
             {
-                digits[digitCount++] = text[i];
+                int value = JavaCharacter.DigitValue(text[i]);
+                if (value < 0)
+                {
+                    break;
+                }
+
+                digits[digitCount++] = (char)('0' + value);
                 i++;
                 fracDigits++;
             }
         }
 
-        // A point with no digits after it is not a number, and neither is a point on its own: the
-        // JDK refuses "1." as surely as it refuses ".", where a permissive reading would call the
-        // first one the whole number and the second one zero.
+        // The grammar is Sign? (Digits? '.' Digits? | Digits) Exponent?, so what it asks for is one
+        // digit somewhere and not a point on its own. "1." and "1.e5" are numbers to the JDK, and
+        // an earlier version of this file refused both because a point with nothing after it reads
+        // like a mistake; the tokenizer oracle found it, on "SELECT 1.", where the reference reads
+        // a NUMERIC of one and this port called it a syntax error.
         if (intDigits == 0 && fracDigits == 0)
         {
             errorPosition = i;
-            return false;
-        }
-
-        if (point && fracDigits == 0)
-        {
-            errorPosition = i - 1;
             return false;
         }
 
@@ -237,11 +247,17 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
             int exponentStart = i;
             long exponent = 0;
             bool exponentTooLarge = false;
-            while (i < n && char.IsAsciiDigit(text[i]))
+            while (i < n)
             {
+                int digit = JavaCharacter.DigitValue(text[i]);
+                if (digit < 0)
+                {
+                    break;
+                }
+
                 if (exponent < MaxExponent)
                 {
-                    exponent = (exponent * 10) + (text[i] - '0');
+                    exponent = (exponent * 10) + digit;
                 }
                 else
                 {

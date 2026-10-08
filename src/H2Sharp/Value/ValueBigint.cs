@@ -38,6 +38,16 @@ public sealed class ValueBigint : Value
     public const int Precision = 64;
 
     /// <summary>
+    /// The largest long, as a big integer.
+    /// </summary>
+    /// <remarks>
+    /// The tokenizer needs the number rather than the value, because a literal too wide for a long
+    /// is compared against it before it is decided to be a NUMERIC, and comparing a big integer to
+    /// a value would be comparing a number to itself.
+    /// </remarks>
+    public static readonly BigInteger MaxBi = new(long.MaxValue);
+
+    /// <summary>
     /// The approximate precision in decimal digits.
     /// </summary>
     public const int DecimalPrecision = 19;

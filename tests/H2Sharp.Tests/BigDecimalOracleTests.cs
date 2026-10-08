@@ -54,13 +54,36 @@ public sealed class BigDecimalOracleTests
     ];
 
     /// <summary>
-    /// Values that must be refused, with the position the JDK blames.
+    /// Values that must be refused.
     /// </summary>
+    /// <remarks>
+    /// This list is compared with the JDK and not asserted here. It was once a plain list of
+    /// assertions about this port, and it held "1." on the strength of a comment in the parser that
+    /// said the JDK refused it; the JDK does not, and the tokenizer oracle found the difference on
+    /// <c>SELECT 1.</c>. A list of what must be refused is a claim about the reference, so it is
+    /// checked against the reference: the two sides are asked the same question and the answers
+    /// have to be the same.
+    /// </remarks>
     private static readonly string[] Rejected =
     [
         "", " ", "abc", "1.2.3", "1,2", " 1", "1 ", "NaN", "Infinity", "-Infinity", "0x10",
-        "1e", "1e+", "1e-", "E1", "E", "1E1e1", "--1", "+-1", "1-", ".", "-.", "..", "1.",
-        "١٢٣", "1d", "1f", "1D", "1F", "1_0",
+        "1e", "1e+", "1e-", "E1", "E", "1E1e1", "--1", "+-1", "1-", ".", "-.", "..",
+        "1d", "1f", "1D", "1F", "1_0",
+    ];
+
+    /// <summary>
+    /// Values that look refused and are not, because the grammar allows a point with nothing after
+    /// it and a point with nothing before it.
+    /// </summary>
+    private static readonly string[] Accepted =
+    [
+        "1.", "+1.", "-1.", ".5", "-.5", "+.5", "1.e5", ".5e2", "1.5E+3", ".0", "0.",
+
+        // The digits are not the ASCII ten. The JDK reads a decimal with Character.digit, which
+        // is every character of the category DECIMAL_DIGIT_NUMBER, so this is one hundred and
+        // twenty three and not a piece of text to refuse. It was on the refused list until the
+        // differential version of that list asked the JDK about it.
+        "١٢٣", "١٢٣.٤٥", "٣e١",
     ];
 
     [JavaOracleFact]
@@ -86,6 +109,53 @@ public sealed class BigDecimalOracleTests
     /// <summary>
     /// The JDK refuses what it refuses, and .NET's parser would not have refused most of it.
     /// </summary>
+    [JavaOracleFact]
+    public void TheJdkAndThisPortRefuseTheSameText()
+    {
+        // Both lists at once, so that a value which moved from one to the other cannot hide: the
+        // JDK is asked about every one of them and the answer has to be what this port does.
+        string[] all = [.. Rejected, .. Accepted];
+
+        List<string> java = OracleRunner.Run(
+                all,
+                """
+                for (int i = 0; i < inputs.length; i++) {
+                  try {
+                    java.math.BigDecimal b = new java.math.BigDecimal(inputs[i]);
+                    System.out.println("OK " + b.toString());
+                  } catch (NumberFormatException e) {
+                    System.out.println("REFUSED");
+                  }
+                }
+                """,
+                extraJavaArgs: ["-Duser.language=en"])
+            .Select(line => line.Trim())
+            .ToList();
+
+        Assert.Equal(all.Length, java.Count);
+        for (int i = 0; i < all.Length; i++)
+        {
+            // The harness prefixes every line with '=' so that an empty line is a visible
+            // difference; the prefix is not part of the answer.
+            string answer = java[i].StartsWith('=') ? java[i][1..] : java[i];
+            bool parsed = BigDecimal.TryParse(all[i], out BigDecimal? result, out _);
+            if (answer.StartsWith("OK ", StringComparison.Ordinal))
+            {
+                Assert.True(parsed, $"the JDK reads '{all[i]}' as {answer[3..]} and this port refuses it");
+                Assert.Equal(answer[3..], result!.ToString());
+            }
+            else
+            {
+                Assert.False(parsed, $"this port reads '{all[i]}' and the JDK says '{answer}'");
+                Assert.Null(result);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A refusal is a refusal with an exception, because that is what every caller of the parse
+    /// catches, and a parse that returns null instead would move the exception into every caller.
+    /// </summary>
     [Fact]
     public void RefusedTextIsRefusedHereToo()
     {
@@ -94,6 +164,12 @@ public sealed class BigDecimalOracleTests
             Assert.False(BigDecimal.TryParse(text, out BigDecimal? result, out _), $"accepted '{text}'");
             Assert.Null(result);
             Assert.Throws<FormatException>(() => BigDecimal.Parse(text));
+        }
+
+        foreach (string text in Accepted)
+        {
+            Assert.True(BigDecimal.TryParse(text, out BigDecimal? result, out _), $"refused '{text}'");
+            Assert.NotNull(result);
         }
     }
 

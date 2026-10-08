@@ -339,6 +339,15 @@ internal static class JavaOracle
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
+
+            // The JVM is told to write UTF-8, and it is read as UTF-8. Without this the output is
+            // read in whatever encoding the console of the machine happens to use, which on a
+            // Russian machine turns every non-ASCII character of the reference's answer into two
+            // characters of nonsense: a mojibake that looks like a difference in the port and is
+            // only a difference in the pipe. The snippets that transport text as hex are ASCII and
+            // are not affected either way.
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
         };
         foreach (string argument in arguments)
         {

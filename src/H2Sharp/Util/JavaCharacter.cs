@@ -183,7 +183,7 @@ public static class JavaCharacter
     /// </summary>
     /// <param name="c">the character</param>
     /// <returns>true if the character is a digit</returns>
-    public static bool IsDigit(char c) => c is >= '0' and <= '9';
+    public static bool IsDigit(char c) => c is >= '0' and <= '9' || CharUnicodeInfo.GetDecimalDigitValue(c) >= 0;
 
     /// <summary>
     /// Whether the code point is a decimal digit.
@@ -193,6 +193,34 @@ public static class JavaCharacter
     public static bool IsDigit(int codePoint)
         => codePoint is >= '0' and <= '9'
             || CategoryOf(codePoint) == UnicodeCategory.DecimalDigitNumber;
+
+    /// <summary>
+    /// The digit the character stands for, from 0 to 9, or -1 when it is not a digit.
+    /// </summary>
+    /// <param name="c">the character</param>
+    /// <returns>the value of the digit, or -1</returns>
+    /// <remarks>
+    /// This is Character.digit(c, 10), which the JDK uses to read a decimal literal, and it is
+    /// wider than the range '0' to '9': every character of the category DECIMAL_DIGIT_NUMBER is a
+    /// digit, so the number one hundred and twenty three written in Arabic-Indic digits is a
+    /// decimal to the JDK and not a piece of text to be refused. This port once accepted only the
+    /// ASCII ten, and the difference was found by a decimal parse oracle rather than by reading the
+    /// specification, which is the argument for having that oracle.
+    /// </remarks>
+    public static int DigitValue(char c)
+        => c is >= '0' and <= '9' ? c - '0' : CharUnicodeInfo.GetDecimalDigitValue(c);
+
+    /// <summary>
+    /// The digit the code point stands for, from 0 to 9, or -1 when it is not a digit.
+    /// </summary>
+    /// <param name="codePoint">the code point</param>
+    /// <returns>the value of the digit, or -1</returns>
+    public static int DigitValue(int codePoint)
+        => codePoint is >= '0' and <= '9'
+            ? codePoint - '0'
+            : codePoint is >= 0 and <= 0xFFFF
+                ? CharUnicodeInfo.GetDecimalDigitValue((char)codePoint)
+                : (int)Rune.GetNumericValue((Rune)codePoint);
 
     /// <summary>
     /// The Unicode category of a character.
