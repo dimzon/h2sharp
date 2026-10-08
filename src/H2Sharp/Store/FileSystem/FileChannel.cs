@@ -100,3 +100,105 @@ public abstract class FileChannel : IDisposable
     {
     }
 }
+
+/// <summary>
+/// A stream over one open file channel, for the callers that want a stream and not a channel.
+/// </summary>
+/// <remarks>
+/// One stream for every file system, so that there is a single answer to where a read stops and
+/// where a write ends. Closing the stream closes the handle and not the file: the file is what the
+/// database opens next, and on the disk it is the same.
+/// </remarks>
+internal sealed class FileChannelStream : Stream
+{
+    private readonly FileChannel channel;
+
+    private readonly bool ownsChannel;
+
+    private bool closed;
+
+    /// <summary>
+    /// A stream over a channel.
+    /// </summary>
+    /// <param name="channel">the open file</param>
+    /// <param name="ownsChannel">
+    /// whether closing the stream closes the file too. It does for a stream handed out by
+    /// <see cref="FilePath.NewInputStream"/> and <see cref="FilePath.NewOutputStream"/>, which are
+    /// the whole of the handle the caller was given; it does not for a stream reached through a
+    /// channel, where the caller holds the channel and closes it itself.
+    /// </param>
+    internal FileChannelStream(FileChannel channel, bool ownsChannel = false)
+    {
+        this.channel = channel;
+        this.ownsChannel = ownsChannel;
+    }
+
+    /// <inheritdoc/>
+    public override bool CanRead => !closed;
+
+    /// <inheritdoc/>
+    public override bool CanSeek => !closed;
+
+    /// <inheritdoc/>
+    public override bool CanWrite => !closed;
+
+    /// <inheritdoc/>
+    public override long Length => channel.Length;
+
+    /// <inheritdoc/>
+    public override long Position
+    {
+        get => channel.Position;
+        set => channel.Position = value;
+    }
+
+    /// <inheritdoc/>
+    public override void Flush() => channel.Flush(flushToDisk: false);
+
+    /// <inheritdoc/>
+    public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+    /// <inheritdoc/>
+    public override int Read(Span<byte> buffer) => channel.Read(buffer);
+
+    /// <inheritdoc/>
+    public override void Write(byte[] buffer, int offset, int count) => Write(buffer.AsSpan(offset, count));
+
+    /// <inheritdoc/>
+    public override void Write(ReadOnlySpan<byte> buffer) => channel.Write(buffer);
+
+    /// <inheritdoc/>
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        long target = origin switch
+        {
+            SeekOrigin.Begin => offset,
+            SeekOrigin.Current => channel.Position + offset,
+            SeekOrigin.End => channel.Length + offset,
+            _ => throw new ArgumentOutOfRangeException(nameof(origin)),
+        };
+
+        if (target < 0)
+        {
+            throw new IOException("Negative position: " + target);
+        }
+
+        channel.Position = target;
+        return target;
+    }
+
+    /// <inheritdoc/>
+    public override void SetLength(long value) => channel.SetLength(value);
+
+    /// <inheritdoc/>
+    protected override void Dispose(bool disposing)
+    {
+        closed = true;
+        if (disposing && ownsChannel)
+        {
+            channel.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+}

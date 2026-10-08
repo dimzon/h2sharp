@@ -342,7 +342,7 @@ public sealed class MemoryFilePath : FilePath
         }
 
         /// <inheritdoc/>
-        public override Stream Stream => new MemoryFileStream(this);
+        public override Stream Stream => new FileChannelStream(this);
 
         /// <inheritdoc/>
         public override void SetLength(long value) => file.SetLength(value);
@@ -368,89 +368,6 @@ public sealed class MemoryFilePath : FilePath
         /// </remarks>
         public override void Flush(bool flushToDisk)
         {
-        }
-    }
-
-    /// <summary>
-    /// A stream over one handle of an in-memory file, for the callers that want a stream and not a
-    /// channel.
-    /// </summary>
-    private sealed class MemoryFileStream : Stream
-    {
-        private readonly MemoryFileChannel channel;
-
-        private bool closed;
-
-        internal MemoryFileStream(MemoryFileChannel channel) => this.channel = channel;
-
-        /// <inheritdoc/>
-        public override bool CanRead => !closed;
-
-        /// <inheritdoc/>
-        public override bool CanSeek => !closed;
-
-        /// <inheritdoc/>
-        public override bool CanWrite => !closed;
-
-        /// <inheritdoc/>
-        public override long Length => channel.Length;
-
-        /// <inheritdoc/>
-        public override long Position
-        {
-            get => channel.Position;
-            set => channel.Position = value;
-        }
-
-        /// <inheritdoc/>
-        public override void Flush()
-        {
-        }
-
-        /// <inheritdoc/>
-        public override int Read(byte[] buffer, int offset, int count)
-            => Read(buffer.AsSpan(offset, count));
-
-        /// <inheritdoc/>
-        public override int Read(Span<byte> buffer) => channel.Read(buffer);
-
-        /// <inheritdoc/>
-        public override void Write(byte[] buffer, int offset, int count)
-            => Write(buffer.AsSpan(offset, count));
-
-        /// <inheritdoc/>
-        public override void Write(ReadOnlySpan<byte> buffer) => channel.Write(buffer);
-
-        /// <inheritdoc/>
-        public override long Seek(long offset, SeekOrigin origin)
-        {
-            long target = origin switch
-            {
-                SeekOrigin.Begin => offset,
-                SeekOrigin.Current => channel.Position + offset,
-                SeekOrigin.End => channel.Length + offset,
-                _ => throw new ArgumentOutOfRangeException(nameof(origin)),
-            };
-
-            if (target < 0)
-            {
-                throw new IOException("Negative position: " + target);
-            }
-
-            channel.Position = target;
-            return target;
-        }
-
-        /// <inheritdoc/>
-        public override void SetLength(long value) => channel.SetLength(value);
-
-        /// <inheritdoc/>
-        protected override void Dispose(bool disposing)
-        {
-            // Closing a stream closes the handle, not the file: the file is what the database opens
-            // next, and on the disk it is the same.
-            closed = true;
-            base.Dispose(disposing);
         }
     }
 }

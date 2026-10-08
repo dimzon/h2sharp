@@ -60,11 +60,17 @@ public abstract class FilePath
 
         // The reference finds its other file systems by reflection over a list of class names, and
         // quietly skips the ones that are not in the build. Here they are listed, and the ones that
-        // are not ported yet are simply absent: the split file, the compressing file and the
-        // encrypted ones. Note that "mem" is not among them and is not a scheme of ours either:
-        // "mem:" is how an in-memory database is written, and that belongs to the database. The
-        // file system that keeps files in memory answers to "memFS", as it does in the reference.
+        // are not ported yet are simply absent: the compressing file and the encrypted ones. Note
+        // that "mem" is not among them and is not a scheme of ours either: "mem:" is how an
+        // in-memory database is written, and that belongs to the database. The file system that
+        // keeps files in memory answers to "memFS", as it does in the reference.
         _ = Providers.TryAdd("memFS", new MemoryFilePath());
+
+        // The splitting file system is its own, because the path of one part is not the path of the
+        // file: a database that is too large for one file is written as "db.mv.db", "db.mv.db.1.part"
+        // and so on, and the store sees one file where the disk has several.
+        SplitFilePath split = new();
+        _ = Providers.TryAdd(split.GetScheme(), split);
     }
 
     /// <summary>
@@ -190,13 +196,18 @@ public abstract class FilePath
     /// A stream to read the file through.
     /// </summary>
     /// <returns>the stream, positioned at the beginning</returns>
-    public Stream NewInputStream() => Open("r").Stream;
+    public Stream NewInputStream()
+        => new FileChannelStream(Open("r"), ownsChannel: true);
 
     /// <summary>
     /// A stream to write the file through, either adding to what is there or starting over.
     /// </summary>
     /// <param name="append">true to keep the contents and write after them</param>
     /// <returns>the stream</returns>
+    /// <remarks>
+    /// The stream owns the file it was handed: closing it closes the handle, which is what a caller
+    /// that was given a stream rather than a channel expects.
+    /// </remarks>
     public Stream NewOutputStream(bool append)
     {
         FileChannel channel = Open(append ? "rws" : "rw");
@@ -210,7 +221,7 @@ public abstract class FilePath
             channel.SetLength(0);
         }
 
-        return channel.Stream;
+        return new FileChannelStream(channel, ownsChannel: true);
     }
 
     /// <summary>
