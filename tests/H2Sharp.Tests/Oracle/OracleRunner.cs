@@ -42,6 +42,32 @@ internal static class OracleRunner
         string body,
         IReadOnlyList<int>? numbers = null,
         string[]? extraJavaArgs = null)
+        => Run(inputs, body, numbers, extraJavaArgs, null);
+
+    /// <summary>
+    /// Runs a snippet and returns its output lines.
+    /// </summary>
+    /// <remarks>
+    /// The package exists for the few snippets that must reach a member the reference keeps
+    /// package-private — the JSON value classes, whose constructors are not public, are the
+    /// reason it is here at all. Everything else uses the overload without it and stays in the
+    /// default package, where nothing of the reference is reachable by accident.
+    /// </remarks>
+    /// <param name="inputs">strings passed as UTF-16 code units in hex; null cannot be
+    /// transported, use <see cref="NullMarker"/></param>
+    /// <param name="body">Java statements placed inside main</param>
+    /// <param name="numbers">ints passed as numbers.txt, for snippets that cannot use
+    /// collection initialisers</param>
+    /// <param name="extraJavaArgs">extra JVM arguments, e.g. -Duser.language=en</param>
+    /// <param name="packageName">the package to generate the class in, or null for none</param>
+    /// <returns>the output lines, each prefixed with '=' by the Java helper so that an
+    /// empty result survives</returns>
+    internal static List<string> Run(
+        IReadOnlyList<string> inputs,
+        string body,
+        IReadOnlyList<int>? numbers,
+        string[]? extraJavaArgs,
+        string? packageName)
     {
         if (JavaOracle.H2Jar is null)
         {
@@ -52,12 +78,14 @@ internal static class OracleRunner
 
         return JavaOracle.OutputLines(
             JavaOracle.RunWithInputs(
-                Program(body),
+                Program(body, packageName),
                 ClassName,
                 inputs,
                 [JavaOracle.H2Jar],
                 extraJavaArgs,
-                numbers));
+                numbers,
+                programArgs: null,
+                packageName));
     }
 
     /// <summary>
@@ -99,8 +127,11 @@ internal static class OracleRunner
     ///   nullable(String) - turns <see cref="NullMarker"/> back into null
     ///   hex(String)      - UTF-16 code units as hex, '=' prefixed
     /// </summary>
-    private static string Program(string body) =>
-        """
+    private static string Program(string body, string? packageName)
+    {
+        string declaration = packageName is null ? string.Empty : $"package {packageName};{Environment.NewLine}{Environment.NewLine}";
+        return declaration
+            + """
         import java.nio.file.Files;
         import java.nio.file.Path;
 
@@ -110,6 +141,12 @@ internal static class OracleRunner
           static int[] nums;
 
           public static void main(String[] args) throws Exception {
+            // The default encoding of the console is whatever the machine says, and a snippet
+            // that prints non-ASCII text would be compared against a mangled answer rather
+            // than against ours. Writing UTF-8 explicitly is what makes a printed string
+            // comparable at all.
+            System.setOut(new java.io.PrintStream(
+                new java.io.FileOutputStream(java.io.FileDescriptor.out), true, "UTF-8"));
             inputs = readInputs();
             nums = readNumbers();
             try {
@@ -158,5 +195,7 @@ internal static class OracleRunner
             return out;
           }
         }
-        """.Replace("BODY", body);
+        """
+            .Replace("BODY", body);
+    }
 }

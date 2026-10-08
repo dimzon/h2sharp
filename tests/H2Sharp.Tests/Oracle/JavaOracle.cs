@@ -92,7 +92,7 @@ internal static class JavaOracle
 
             string java = FindJavaExecutable() ?? throw new InvalidOperationException("java not found");
             return RunProcess(java, work, RunArguments(
-                work, className, additionalClassPath, extraJavaArgs: null, programArgs: null));
+                work, className, additionalClassPath, extraJavaArgs: null, programArgs: null, packageName: null));
         }
         finally
         {
@@ -126,7 +126,8 @@ internal static class JavaOracle
         string[]? additionalClassPath = null,
         string[]? extraJavaArgs = null,
         IReadOnlyList<int>? numbers = null,
-        string[]? programArgs = null)
+        string[]? programArgs = null,
+        string? packageName = null)
     {
         if (ReferenceRoot is null)
         {
@@ -143,7 +144,7 @@ internal static class JavaOracle
             return RunProcess(
                 java,
                 work,
-                RunArguments(work, className, additionalClassPath, extraJavaArgs, programArgs));
+                RunArguments(work, className, additionalClassPath, extraJavaArgs, programArgs, packageName));
         }
         finally
         {
@@ -266,7 +267,8 @@ internal static class JavaOracle
             string className,
             string[]? additionalClassPath,
             string[]? extraJavaArgs,
-            string[]? programArgs)
+            string[]? programArgs,
+            string? packageName)
     {
         List<string> args = new();
         if (extraJavaArgs is { Length: > 0 })
@@ -282,7 +284,10 @@ internal static class JavaOracle
         }
 
         args.Add(string.Join(Path.PathSeparator, classPath));
-        args.Add(className);
+
+        // A generated class in a package is run by its qualified name; the compiled class file
+        // lands under the package directory, which is what makes this necessary.
+        args.Add(packageName is null ? className : packageName + "." + className);
 
         // Arguments for main(), which come after the class name. An oracle that reads a
         // file or a directory needs these; JVM options go in extraJavaArgs instead.
