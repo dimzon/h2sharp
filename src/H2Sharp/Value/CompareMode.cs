@@ -16,7 +16,7 @@
  *
  * What is here is exact and complete for the default: a compare mode is a name and a
  * strength, two are equal when those match, and with COLLATION OFF, which is the default,
- * the comparison is String.compareTo, which is string.CompareOrdinal here. A mode that asks
+ * the comparison is String.compareTo, which StringUtils.CompareJava reproduces. A mode that asks
  * for a real collator fails with that reason rather than quietly comparing ordinally, since
  * quietly comparing ordinally would produce a plausible wrong answer.
  *
@@ -173,14 +173,13 @@ public class CompareMode
     {
         if (ignoreCase)
         {
-            // String.compareToIgnoreCase folds with both cases, which StringUtils.ToUpperEnglish
-            // reproduces exactly, and the reference takes this same path when the collator's
-            // strength is below SECONDARY.
-            return string.CompareOrdinal(
-                StringUtils.ToUpperEnglish(a), StringUtils.ToUpperEnglish(b));
+            // String.compareToIgnoreCase folds with both cases, which ToUpperEnglish reproduces
+            // exactly, and the reference takes this same path when the collator's strength is
+            // below SECONDARY. The magnitude is the same difference of code units.
+            return StringUtils.CompareJava(StringUtils.ToUpperEnglish(a), StringUtils.ToUpperEnglish(b));
         }
 
-        return string.CompareOrdinal(a, b);
+        return StringUtils.CompareJava(a, b);
     }
 
     /// <inheritdoc/>

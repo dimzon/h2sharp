@@ -1459,6 +1459,36 @@ public static class StringUtils
     }
 
     /// <summary>
+    /// Compares two strings the way Java's <c>String.compareTo</c> does.
+    /// </summary>
+    /// <remarks>
+    /// Java returns the difference of the first two differing UTF-16 code units, and the
+    /// difference of the lengths when one string is a prefix of the other; .NET's
+    /// <see cref="string.CompareOrdinal(string, string)"/> returns only a sign. The sign is all
+    /// a comparison needs, but the magnitude is what the reference hands out, and it can be
+    /// observed: an empty string against <c>abc</c> is -3 in Java and -1 here.
+    /// </remarks>
+    /// <param name="a">the first string</param>
+    /// <param name="b">the second string</param>
+    /// <returns>
+    /// the difference of the first differing code units, or of the lengths if one string is a
+    /// prefix of the other
+    /// </returns>
+    public static int CompareJava(string a, string b)
+    {
+        int shared = Math.Min(a.Length, b.Length);
+        for (int i = 0; i < shared; i++)
+        {
+            char ca = a[i], cb = b[i];
+            if (ca != cb)
+            {
+                return ca - cb;
+            }
+        }
+
+        return a.Length - b.Length;
+    }
+    /// <summary>
     /// Check if a String is null or empty.
     /// </summary>
     /// <param name="s">the string to check</param>

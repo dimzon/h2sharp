@@ -210,6 +210,61 @@ public sealed class ValueAllocationTests
     }
 
     [Fact]
+    public void StringParsingAllocatesNothing()
+    {
+        // The string is already built by the time anything asks to convert it, and converting it
+        // must not allocate: this is the path a WHERE clause on a numeric column takes for every
+        // row that reaches it.
+        Value v = ValueVarchar.Get("42");
+
+        long allocated = Measure(() =>
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                _ = v.GetInt();
+                _ = v.GetLong();
+                _ = v.GetDouble();
+            }
+        });
+
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void StringValuesCostOneObjectBeforeTheCache()
+    {
+        // The same shape as the bigint case: a candidate is built and only then offered to the
+        // cache, so a repeated literal still costs one object. Recorded rather than improved.
+        long allocated = Measure(() =>
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                _ = ValueVarchar.Get("42");
+            }
+        });
+
+        Assert.InRange(allocated, Count * 16L, Count * 64L);
+    }
+
+    [Fact]
+    public void StringRenderingAllocatesNothing()
+    {
+        StringBuilder reused = new();
+        Value v = ValueVarchar.Get("a short literal");
+
+        long allocated = Measure(() =>
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                reused.Clear();
+                _ = v.GetSql(reused, 0);
+            }
+        });
+
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
     public void TheCacheAnswersWithTheSameInstance()
     {
         // Not an allocation test, but the property the cache exists for: equal values are the

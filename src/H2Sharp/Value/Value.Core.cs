@@ -32,6 +32,7 @@ using System;
 using System.IO;
 using System.Numerics;
 using System.Text;
+using H2Sharp.Api;
 using H2Sharp.Message;
 using H2Sharp.Util;
 
@@ -110,6 +111,23 @@ public abstract partial class Value
     /// <returns>the boolean value</returns>
     public virtual bool GetBoolean()
         => throw GetUnsupportedException("getBoolean");
+
+    /// <summary>
+    /// Get the value as a byte.
+    /// </summary>
+    /// <remarks>
+    /// Signed, because Java's byte is signed and the two languages do not agree on the range of
+    /// their byte: Java's is -128..127, .NET's is 0..255. Using .NET's byte would make the value
+    /// for -1 come back as 255, which is the same number and a different value.
+    /// </remarks>
+    /// <returns>the byte value</returns>
+    public virtual sbyte GetByte() => throw GetUnsupportedException("getByte");
+
+    /// <summary>
+    /// Get the value as a 16 bit integer.
+    /// </summary>
+    /// <returns>the short value</returns>
+    public virtual short GetShort() => throw GetUnsupportedException("getShort");
 
     /// <summary>
     /// Get the value as an integer.
@@ -253,6 +271,31 @@ public abstract partial class Value
     /// <seealso cref="GetBoolean"/>
     /// <seealso cref="IsTrue"/>
     public bool IsFalse() => !ReferenceEquals(this, ValueNull.Instance) && !GetBoolean();
+
+    /// <summary>
+    /// Throws the conversion error the reference reports when a value cannot become the
+    /// requested type.
+    /// </summary>
+    /// <remarks>
+    /// Returns nothing rather than an exception, because the reference's method throws from
+    /// inside rather than returning one, and every call site writes it as a throw.
+    /// </remarks>
+    /// <param name="targetType">the type the value could not become</param>
+    /// <exception cref="H2SharpException">always</exception>
+    protected void GetDataConversionError(int targetType)
+        => throw DbException.Get(
+            ErrorCode.DataConversionError1,
+            Value.GetTypeName(GetValueType()) + " to " + Value.GetTypeName(targetType));
+
+    /// <summary>
+    /// Throws the conversion error for a parameterised target type.
+    /// </summary>
+    /// <param name="targetType">the type the value could not become</param>
+    /// <exception cref="H2SharpException">always</exception>
+    protected void GetDataConversionError(TypeInfo targetType)
+        => throw DbException.Get(
+            ErrorCode.DataConversionError1,
+            Value.GetTypeName(GetValueType()) + " to " + targetType.GetTraceSql());
 
     /// <summary>
     /// Append the SQL representation of this value to a string builder.
