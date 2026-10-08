@@ -1097,6 +1097,63 @@ public static class DateTimeUtils
     }
 
     /// <summary>
+    /// The name of a time zone that is nothing but this offset, as a zone would be written.
+    /// </summary>
+    /// <remarks>
+    /// The seconds part is written only when it is not zero, which is what makes the name of a
+    /// whole-minute offset the short one (<c>GMT+03:00</c>) and the name of an offset with
+    /// seconds the long one. A reader parses both back to the same offset, so neither spelling
+    /// is wrong; they are just not the same text, and the text is what a zone is named by.
+    /// </remarks>
+    /// <param name="offsetSeconds">the offset in seconds</param>
+    /// <returns>the zone name</returns>
+    public static string TimeZoneNameFromOffsetSeconds(int offsetSeconds)
+    {
+        if (offsetSeconds == 0)
+        {
+            return "UTC";
+        }
+
+        StringBuilder builder = new(12);
+        _ = builder.Append("GMT");
+        if (offsetSeconds < 0)
+        {
+            _ = builder.Append('-');
+            offsetSeconds = -offsetSeconds;
+        }
+        else
+        {
+            _ = builder.Append('+');
+        }
+
+        StringUtils.AppendTwoDigits(builder, offsetSeconds / 3_600);
+        offsetSeconds %= 3_600;
+        _ = builder.Append(':');
+        StringUtils.AppendTwoDigits(builder, offsetSeconds / 60);
+        offsetSeconds %= 60;
+        if (offsetSeconds != 0)
+        {
+            _ = builder.Append(':');
+            StringUtils.AppendTwoDigits(builder, offsetSeconds);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Seconds since EPOCH of a moment that is written as a local date and time and a zone
+    /// offset.
+    /// </summary>
+    /// <param name="dateValue">the date value</param>
+    /// <param name="timeNanos">nanoseconds since midnight, in the local time</param>
+    /// <param name="offsetSeconds">the zone offset in seconds</param>
+    /// <returns>seconds since EPOCH, in UTC</returns>
+    public static long GetEpochSeconds(long dateValue, long timeNanos, int offsetSeconds)
+        => (AbsoluteDayFromDateValue(dateValue) * SecondsPerDay)
+        + (timeNanos / NanosPerSecond)
+        - offsetSeconds;
+
+    /// <summary>
     /// Reads the offset written after a time, and answers the value it stands for.
     /// </summary>
     private static Values.Value ParseTimestampWithTimeZone(

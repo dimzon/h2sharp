@@ -121,10 +121,10 @@ public abstract partial class Value
             Double => ConvertToDoubleType(),
             Decfloat => ConvertToDecfloat(targetType, conversionMode),
             Date => ConvertToDateType(provider),
-            Time => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
-            TimeTz => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
-            Timestamp => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
-            TimestampTz => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
+            Time => ConvertToTimeType(targetType, provider, conversionMode),
+            TimeTz => ConvertToTimeTimeZoneType(targetType, provider, conversionMode),
+            Timestamp => ConvertToTimestampType(targetType, provider, conversionMode),
+            TimestampTz => ConvertToTimestampTimeZoneType(targetType, provider, conversionMode),
             IntervalYear or IntervalMonth or IntervalYearToMonth
                 => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
             IntervalDay or IntervalHour or IntervalMinute or IntervalSecond or IntervalDayToHour
@@ -1013,6 +1013,22 @@ public abstract partial class Value
             case Timestamp:
                 return ValueDate.FromDateValue(((ValueTimestamp)this).GetDateValue());
 
+            case TimestampTz:
+                {
+                    // A TIMESTAMP WITH TIME ZONE carries an instant and a zone, and a DATE is a
+                    // reading with no zone, so the instant has to be moved into the reader's zone
+                    // first. Doing it the other way round — dropping the zone and keeping the
+                    // written date — would be a different date whenever the two zones differ, which
+                    // is most of the time.
+                    ValueTimestampTimeZone ts = (ValueTimestampTimeZone)this;
+                    long timeNanos = ts.GetTimeNanos();
+                    long epochSeconds = DateTimeUtils.GetEpochSeconds(
+                        ts.GetDateValue(), timeNanos, ts.GetTimeZoneOffsetSeconds());
+                    return ValueDate.FromDateValue(DateTimeUtils.DateValueFromLocalSeconds(
+                        epochSeconds
+                        + RequireProvider(provider).CurrentTimeZone().GetTimeZoneOffsetUtc(epochSeconds)));
+                }
+
             case Varchar:
             case VarcharIgnorecase:
             case Char:
@@ -1024,6 +1040,387 @@ public abstract partial class Value
             default:
                 throw GetDataConversionErrorException(Date);
         }
+    }
+
+    /// <summary>
+    /// The provider, insisting on one.
+    /// </summary>
+    /// <remarks>
+    /// A conversion that has to know the reader's zone cannot answer without a provider, and the
+    /// reference passes the provider straight through and lets the null become a failure deeper
+    /// down. Failing here instead says which thing was missing, which is the difference between
+    /// a message that names the cause and one that names a consequence.
+    /// </remarks>
+    /// <param name="provider">the provider, which may be null</param>
+    /// <returns>the provider</returns>
+    /// <exception cref="H2SharpException">if there is no provider</exception>
+    private static CastDataProvider RequireProvider(CastDataProvider? provider)
+        => provider ?? throw DbException.GetInternalError(
+            "A conversion between date and time types needs a cast data provider for the current "
+            + "timestamp and the current time zone, and there is none.");
+
+    /// <summary>
+    /// Removes the helper that answered "the time of day in the value's own zone": nothing
+    /// called it. The reference has no such method either, and the reason it is written here is
+    /// that the one method it does have, <see cref="GetLocalTimeNanos"/>, casts to a
+    /// TIME WITH TIME ZONE and is only correct for that one type — which is exactly the mistake
+    /// the differential test caught when two branches were merged into one.
+    /// </summary>
+    private ValueTime ConvertToTimeType(TypeInfo targetType, CastDataProvider? provider, int conversionMode)
+    {
+        ValueTime v;
+        switch (GetValueType())
+        {
+            case Time:
+                v = (ValueTime)this;
+                break;
+
+            case TimeTz:
+                v = ValueTime.FromNanos(GetLocalTimeNanos(provider));
+                break;
+
+            case Timestamp:
+                v = ValueTime.FromNanos(((ValueTimestamp)this).GetTimeNanos());
+                break;
+
+            case TimestampTz:
+                {
+                    // The instant is moved into the reader's zone before the time of day is taken,
+                    // which is the whole difference between a TIME WITH TIME ZONE and a TIME.
+                    ValueTimestampTimeZone ts = (ValueTimestampTimeZone)this;
+                    long timeNanos = ts.GetTimeNanos();
+                    long epochSeconds = DateTimeUtils.GetEpochSeconds(
+                        ts.GetDateValue(), timeNanos, ts.GetTimeZoneOffsetSeconds());
+                    v = ValueTime.FromNanos(
+                        DateTimeUtils.NanosFromLocalSeconds(
+                            epochSeconds
+                            + RequireProvider(provider).CurrentTimeZone().GetTimeZoneOffsetUtc(epochSeconds))
+                        + (timeNanos % DateTimeUtils.NanosPerSecond));
+                    break;
+                }
+
+            case Varchar:
+            case VarcharIgnorecase:
+            case Char:
+                v = (ValueTime)ValueTime.Parse((GetString() ?? string.Empty).Trim(), provider);
+                break;
+
+            case Null:
+                throw DbException.GetInternalError();
+
+            default:
+                throw GetDataConversionErrorException(Time);
+        }
+
+        return ConvertToTimeScale(v, targetType, conversionMode);
+    }
+
+    private ValueTime ConvertToTimeScale(ValueTime v, TypeInfo targetType, int conversionMode)
+    {
+        if (conversionMode == ConvertTo)
+        {
+            return v;
+        }
+
+        int targetScale = targetType.GetScale();
+        if (targetScale < ValueTime.MaximumScale)
+        {
+            long n = v.GetNanos();
+            long n2 = DateTimeUtils.ConvertScale(n, targetScale, DateTimeUtils.NanosPerDay);
+            if (n2 != n)
+            {
+                v = ValueTime.FromNanos(n2);
+            }
+        }
+
+        return v;
+    }
+
+    private ValueTimeTimeZone ConvertToTimeTimeZoneType(
+        TypeInfo targetType, CastDataProvider? provider, int conversionMode)
+    {
+        ValueTimeTimeZone v;
+        switch (GetValueType())
+        {
+            case TimeTz:
+                v = (ValueTimeTimeZone)this;
+                break;
+
+            // A TIME has no zone, so it is given the reader's offset at the reader's current
+            // timestamp — which is a real answer and not a guess, because "now" is the only
+            // instant a TIME can be said to belong to.
+            case Time:
+                v = ValueTimeTimeZone.FromNanos(
+                    ((ValueTime)this).GetNanos(),
+                    RequireProvider(provider).CurrentTimestamp().GetTimeZoneOffsetSeconds());
+                break;
+
+            case Timestamp:
+                {
+                    ValueTimestamp ts = (ValueTimestamp)this;
+                    long timeNanos = ts.GetTimeNanos();
+                    v = ValueTimeTimeZone.FromNanos(
+                        timeNanos,
+                        RequireProvider(provider).CurrentTimeZone().GetTimeZoneOffsetLocal(
+                            ts.GetDateValue(), timeNanos));
+                    break;
+                }
+
+            case TimestampTz:
+                {
+                    ValueTimestampTimeZone ts = (ValueTimestampTimeZone)this;
+                    v = ValueTimeTimeZone.FromNanos(ts.GetTimeNanos(), ts.GetTimeZoneOffsetSeconds());
+                    break;
+                }
+
+            case Varchar:
+            case VarcharIgnorecase:
+            case Char:
+                v = (ValueTimeTimeZone)ValueTimeTimeZone.Parse((GetString() ?? string.Empty).Trim(), provider);
+                break;
+
+            case Null:
+                throw DbException.GetInternalError();
+
+            default:
+                throw GetDataConversionErrorException(TimeTz);
+        }
+
+        if (conversionMode == ConvertTo)
+        {
+            return v;
+        }
+
+        int targetScale = targetType.GetScale();
+        if (targetScale < ValueTime.MaximumScale)
+        {
+            long n = v.GetNanos();
+            long n2 = DateTimeUtils.ConvertScale(n, targetScale, DateTimeUtils.NanosPerDay);
+            if (n2 != n)
+            {
+                v = ValueTimeTimeZone.FromNanos(n2, v.GetTimeZoneOffsetSeconds());
+            }
+        }
+
+        return v;
+    }
+
+    private ValueTimestamp ConvertToTimestampType(
+        TypeInfo targetType, CastDataProvider? provider, int conversionMode)
+    {
+        ValueTimestamp v;
+        switch (GetValueType())
+        {
+            case Timestamp:
+                v = (ValueTimestamp)this;
+                break;
+
+            // A TIME has no date, so it gets the reader's date today. This is the one
+            // conversion in the family whose answer depends on when it is run, and it is
+            // written that way in the reference too. The two are not the same case: a TIME has
+            // no zone to move, while a TIME WITH TIME ZONE is an instant and has to be put
+            // into the reader's zone before its time of day can be taken. Merging them is
+            // what the differential test caught, and it is why they are separate here.
+            case Time:
+                v = ValueTimestamp.FromDateValueAndNanos(
+                    RequireProvider(provider).CurrentTimestamp().GetDateValue(),
+                    ((ValueTime)this).GetNanos());
+                break;
+
+            case TimeTz:
+                v = ValueTimestamp.FromDateValueAndNanos(
+                    RequireProvider(provider).CurrentTimestamp().GetDateValue(),
+                    GetLocalTimeNanos(provider));
+                break;
+
+            case Date:
+                // A DATE has no time of day, and the reference comments on it: scale is always 0.
+                return ValueTimestamp.FromDateValueAndNanos(((ValueDate)this).GetDateValue(), 0);
+
+            case TimestampTz:
+                {
+                    ValueTimestampTimeZone ts = (ValueTimestampTimeZone)this;
+                    long timeNanos = ts.GetTimeNanos();
+                    long epochSeconds = DateTimeUtils.GetEpochSeconds(
+                        ts.GetDateValue(), timeNanos, ts.GetTimeZoneOffsetSeconds());
+                    epochSeconds += RequireProvider(provider).CurrentTimeZone()
+                        .GetTimeZoneOffsetUtc(epochSeconds);
+                    v = ValueTimestamp.FromDateValueAndNanos(
+                        DateTimeUtils.DateValueFromLocalSeconds(epochSeconds),
+                        DateTimeUtils.NanosFromLocalSeconds(epochSeconds)
+                        + (timeNanos % DateTimeUtils.NanosPerSecond));
+                    break;
+                }
+
+            case Varchar:
+            case VarcharIgnorecase:
+            case Char:
+                v = (ValueTimestamp)ValueTimestamp.Parse((GetString() ?? string.Empty).Trim(), provider);
+                break;
+
+            case Null:
+                throw DbException.GetInternalError();
+
+            default:
+                throw GetDataConversionErrorException(Timestamp);
+        }
+
+        return ConvertToTimestampScale(v, targetType, conversionMode);
+    }
+
+    private ValueTimestamp ConvertToTimestampScale(
+        ValueTimestamp v, TypeInfo targetType, int conversionMode)
+    {
+        if (conversionMode == ConvertTo)
+        {
+            return v;
+        }
+
+        int targetScale = targetType.GetScale();
+        if (targetScale >= ValueTimestamp.MaximumScale)
+        {
+            return v;
+        }
+
+        long dv = v.GetDateValue();
+        long n = v.GetTimeNanos();
+
+        // The range is the day rather than the whole long when the date is the largest one
+        // there is: rounding up there would carry into a year the type cannot hold.
+        long n2 = DateTimeUtils.ConvertScale(
+            n,
+            targetScale,
+            dv == DateTimeUtils.MaxDateValue ? DateTimeUtils.NanosPerDay : long.MaxValue);
+        if (n2 == n)
+        {
+            return v;
+        }
+
+        // Truncating the scale can push the time of day past midnight, which carries into the
+        // date rather than wrapping.
+        if (n2 >= DateTimeUtils.NanosPerDay)
+        {
+            n2 -= DateTimeUtils.NanosPerDay;
+            dv = DateTimeUtils.IncrementDateValue(dv);
+        }
+
+        return ValueTimestamp.FromDateValueAndNanos(dv, n2);
+    }
+
+    private ValueTimestampTimeZone ConvertToTimestampTimeZoneType(
+        TypeInfo targetType, CastDataProvider? provider, int conversionMode)
+    {
+        ValueTimestampTimeZone v;
+        switch (GetValueType())
+        {
+            case TimestampTz:
+                v = (ValueTimestampTimeZone)this;
+                break;
+
+            case Time:
+                {
+                    long dateValue = RequireProvider(provider).CurrentTimestamp().GetDateValue();
+                    long timeNanos = ((ValueTime)this).GetNanos();
+                    v = ValueTimestampTimeZone.FromDateValueAndNanos(
+                        dateValue,
+                        timeNanos,
+                        RequireProvider(provider).CurrentTimeZone().GetTimeZoneOffsetLocal(
+                            dateValue, timeNanos));
+                    break;
+                }
+
+            case TimeTz:
+                {
+                    ValueTimeTimeZone t = (ValueTimeTimeZone)this;
+                    v = ValueTimestampTimeZone.FromDateValueAndNanos(
+                        RequireProvider(provider).CurrentTimestamp().GetDateValue(),
+                        t.GetNanos(),
+                        t.GetTimeZoneOffsetSeconds());
+                    break;
+                }
+
+            case Date:
+                {
+                    long dateValue = ((ValueDate)this).GetDateValue();
+                    return ValueTimestampTimeZone.FromDateValueAndNanos(
+                        dateValue, 0L,
+                        RequireProvider(provider).CurrentTimeZone().GetTimeZoneOffsetLocal(dateValue, 0L));
+                }
+
+            case Timestamp:
+                {
+                    ValueTimestamp ts = (ValueTimestamp)this;
+                    long dateValue = ts.GetDateValue();
+                    long timeNanos = ts.GetTimeNanos();
+                    v = ValueTimestampTimeZone.FromDateValueAndNanos(
+                        dateValue,
+                        timeNanos,
+                        RequireProvider(provider).CurrentTimeZone().GetTimeZoneOffsetLocal(
+                            dateValue, timeNanos));
+                    break;
+                }
+
+            case Varchar:
+            case VarcharIgnorecase:
+            case Char:
+                v = (ValueTimestampTimeZone)ValueTimestampTimeZone.Parse(
+                    (GetString() ?? string.Empty).Trim(), provider);
+                break;
+
+            case Null:
+                throw DbException.GetInternalError();
+
+            default:
+                throw GetDataConversionErrorException(TimestampTz);
+        }
+
+        if (conversionMode == ConvertTo)
+        {
+            return v;
+        }
+
+        int targetScale = targetType.GetScale();
+        if (targetScale >= ValueTimestamp.MaximumScale)
+        {
+            return v;
+        }
+
+        long dv = v.GetDateValue();
+        long n = v.GetTimeNanos();
+        long n2 = DateTimeUtils.ConvertScale(
+            n,
+            targetScale,
+            dv == DateTimeUtils.MaxDateValue ? DateTimeUtils.NanosPerDay : long.MaxValue);
+        if (n2 == n)
+        {
+            return v;
+        }
+
+        if (n2 >= DateTimeUtils.NanosPerDay)
+        {
+            n2 -= DateTimeUtils.NanosPerDay;
+            dv = DateTimeUtils.IncrementDateValue(dv);
+        }
+
+        return ValueTimestampTimeZone.FromDateValueAndNanos(dv, n2, v.GetTimeZoneOffsetSeconds());
+    }
+
+    /// <summary>
+    /// The time of day of a TIME WITH TIME ZONE as the reader's zone sees it.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>getLocalTimeNanos</c>: a TIME WITH TIME ZONE is an instant, and the
+    /// reader is somewhere, so the two are subtracted and the result normalised into a day.
+    /// </remarks>
+    /// <param name="provider">the cast information provider</param>
+    /// <returns>nanoseconds since midnight, in the reader's zone</returns>
+    private long GetLocalTimeNanos(CastDataProvider? provider)
+    {
+        ValueTimeTimeZone ts = (ValueTimeTimeZone)this;
+        int localOffset = RequireProvider(provider).CurrentTimestamp().GetTimeZoneOffsetSeconds();
+        return DateTimeUtils.NormalizeNanosOfDay(
+            ts.GetNanos()
+            + ((long)(localOffset - ts.GetTimeZoneOffsetSeconds()) * DateTimeUtils.NanosPerSecond));
     }
 
     private Value ConvertToGeometryType(TypeInfo targetType)

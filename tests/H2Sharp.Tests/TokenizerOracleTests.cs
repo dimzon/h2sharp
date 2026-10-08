@@ -431,10 +431,16 @@ public sealed class TokenizerOracleTests
     /// The tokenizer only asks its provider for the mode, so a provider that answers with the
     /// regular mode is a complete one.
     /// </summary>
+    private static readonly TestCastDataProvider Provider = new();
+
     private sealed class TestProvider : CastDataProvider
     {
         public bool ZeroBasedEnums() => true;
 
         public Mode GetMode() => Mode.GetRegular();
+
+        public ValueTimestampTimeZone CurrentTimestamp() => Provider.CurrentTimestamp();
+
+        public TimeZoneProvider CurrentTimeZone() => Provider.CurrentTimeZone();
     }
 }
