@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,7 @@ import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.DocTrees;
@@ -60,8 +62,16 @@ public class PortTables {
     /** One `static final int` declaration, with the javadoc that documents it. */
     private record Constant(String Name, String Expression, String Summary, String TokenText) {}
 
-    /** What was found in one Java source file. */
-    private record Parsed(List<Constant> Constants, Map<String, String> MapEntries) {}
+    /**
+     * What was found in one Java source file.
+     *
+     * <p>The token texts are read out of the reference's own table rather than out of the javadoc
+     * beside each number: the table is what the reference looks words up in, and the two are not
+     * the same thing. A parameter prints as a question mark, and its javadoc says only "Token
+     * with parameter", so a table written from the comments has no question mark in it.
+     */
+    private record Parsed(List<Constant> Constants, Map<String, String> MapEntries,
+            List<String> TokenTexts) {}
 
     public static void main(String[] args) throws IOException {
         if (args.length != 2) {
@@ -74,7 +84,9 @@ public class PortTables {
 
         generateParserUtil(parse(source.resolve("org/h2/util/ParserUtil.java")),
                 repo.resolve("src/H2Sharp/Util/ParserUtil.cs"));
-        generateToken(parse(source.resolve("org/h2/command/Token.java")),
+        generateToken(
+                parse(source.resolve("org/h2/util/ParserUtil.java")),
+                parse(source.resolve("org/h2/command/Token.java")),
                 repo.resolve("src/H2Sharp/Command/Token.cs"));
         generateValueTypes(parse(source.resolve("org/h2/value/Value.java")),
                 repo.resolve("src/H2Sharp/Value/Value.cs"));
@@ -104,6 +116,7 @@ public class PortTables {
             // A LinkedHashMap keeps the reference's declaration order for diagnostics while
             // the duplicate check below stays order independent.
             Map<String, String> entries = new LinkedHashMap<>();
+            List<String> tokenTexts = new ArrayList<>();
 
             new TreePathScanner<Void, Void>() {
                 @Override
@@ -119,6 +132,25 @@ public class PortTables {
                                 oneLine(node.getInitializer().toString()),
                                 summary(docs, path, node.getName().toString()),
                                 tokenText(docs, path)));
+                    }
+
+                    // Token.TOKENS is the table of texts, one entry per token number.
+                    if (flags.contains(Modifier.STATIC) && flags.contains(Modifier.FINAL)
+                            && "String[]".equals(node.getType().toString())
+                            && node.getInitializer() instanceof NewArrayTree array) {
+                        for (Tree element : array.getInitializers()) {
+                            if (element instanceof LiteralTree literal
+                                    && literal.getKind() == Tree.Kind.NULL_LITERAL) {
+                                tokenTexts.add(null);
+                            } else if (element instanceof LiteralTree literal
+                                    && literal.getKind() == Tree.Kind.STRING_LITERAL) {
+                                tokenTexts.add(String.valueOf(literal.getValue()));
+                            } else {
+                                throw new IllegalStateException(
+                                        "TOKENS holds something that is not a string literal: "
+                                                + element);
+                            }
+                        }
                     }
 
                     return super.visitVariable(node, unused);
@@ -160,7 +192,7 @@ public class PortTables {
                         "no constants found in " + file + "; the reference layout changed");
             }
 
-            return new Parsed(constants, entries);
+            return new Parsed(constants, entries, tokenTexts);
         }
     }
 
@@ -330,7 +362,7 @@ public class PortTables {
         write(destination, out.toString());
     }
 
-    private static void generateToken(Parsed parsed, Path destination) {
+    private static void generateToken(Parsed keywords, Parsed parsed, Path destination) {
         Set<String> local = names(parsed);
 
         StringBuilder out = new StringBuilder();
@@ -342,11 +374,9 @@ public class PortTables {
                  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
                  * Modified: generated by tools/PortTables.java; do not edit by hand.
                  *
-                 * Constants only. The reference class is an abstract token whose value()
-                 * builds org.h2.value.Value instances, and the Value layer is not ported
-                 * yet, so the class body is deferred rather than half transliterated. The
-                 * dependency order is recorded in MIGRATION_STATUS.md: the Value layer is
-                 * the gate for both Tokenizer and Parser.
+                 * The constants and the token text table only. The class body is hand written in
+                 * Token.Body.cs, so this part stays the numbers and the names, which are what the
+                 * parser switches on and what a table cannot be trusted to be reshaped by hand.
                  *
                  * The numbering continues Util/ParserUtil.cs and is a contract: the parser
                  * switches on these values, so they are transcribed from the reference
@@ -357,9 +387,10 @@ public class PortTables {
                 namespace H2Sharp.Command;
 
                 /// <summary>
-                /// Token type constants for the parser.
+                /// A token of a parsed statement: the constants of the kinds of token, the text
+                /// each kind is written as, and the body in Token.Body.cs.
                 /// </summary>
-                public static partial class Token
+                public abstract partial class Token
                 {
                 """);
 
@@ -367,8 +398,123 @@ public class PortTables {
             appendConstant(out, constant, expression(constant.Expression(), local, "ParserUtil"));
         }
 
+        appendTokenTexts(out, keywords, parsed);
+
         out.append("}\n");
         write(destination, out.toString());
+    }
+
+    /**
+     * Writes the text of each kind of token, in the same order as the numbers.
+     *
+     * <p>The reference keeps a parallel array of strings and its own javadoc says what every one of
+     * them is, so the table comes from the comments rather than from a second pass over the source:
+     * one list of tokens, and a change to a keyword cannot leave the text behind.
+     */
+    private static void appendTokenTexts(StringBuilder out, Parsed keywords, Parsed parsed) {
+        // The table is indexed by token number, so the numbers decide the order and not the order
+        // of the declarations. That matters because a number can be declared twice: FIRST_KEYWORD
+        // and LAST_KEYWORD are the first and the last keyword under another name, and writing a
+        // row for each name would push every later row one place along and print "=" as "&".
+        // The numbering also runs on from ParserUtil's keywords into Token's own constants, so both
+        // files are resolved into one map before a single row is written.
+        Map<String, Integer> numbers = new HashMap<>();
+        Map<Integer, List<String>> names = new HashMap<>();
+        int last = -1;
+        for (Constant constant : keywords.Constants()) {
+            last = record(constant, numbers, names, last);
+        }
+        for (Constant constant : parsed.Constants()) {
+            last = record(constant, numbers, names, last);
+        }
+
+        // Two independent things have to agree for the table to mean anything: the numbers the
+        // constants resolve to, and the length of the reference's table. A table one entry short
+        // would otherwise be written out and every token after the gap would print as the wrong
+        // thing, silently, which is the one failure this whole exercise is about.
+        List<String> texts = parsed.TokenTexts();
+        if (texts.size() != last + 1) {
+            throw new IllegalStateException("the reference's table holds " + texts.size()
+                    + " texts but its numbers run to " + last);
+        }
+
+        out.append("""
+                    /// <summary>
+                    /// The text of every kind of token, in the order of the numbers above.
+                    /// </summary>
+                    /// <remarks>
+                    /// A kind that is not written as itself, UNUSED, KEYWORD, IDENTIFIER, a
+                    /// parameter and the end of input, has no text; the reference's table says so
+                    /// with nulls and so does this one, because a token that is not a token has
+                    /// nothing to print.
+                    /// </remarks>
+                    internal static readonly string?[] Tokens = [
+                """);
+
+        for (int number = 0; number <= last; number++) {
+            List<String> declared = names.get(number);
+            out.append("    ").append(quote(texts.get(number)))
+                    .append(", // ")
+                    .append(declared == null ? "Unused" : String.join(", ", declared))
+                    .append("\n");
+        }
+
+        System.out.println("token texts: " + (last + 1) + " kinds");
+        out.append("];\n");
+    }
+
+    /**
+     * Resolves one declaration to its number, and remembers it as the owner of that number.
+     *
+     * @return the number of the declaration
+     */
+    private static int record(Constant constant, Map<String, Integer> numbers,
+            Map<Integer, List<String>> names, int last) {
+        String expression = constant.Expression().trim();
+        Integer number;
+        if (expression.endsWith("+ 1")) {
+            number = resolve(expression.substring(0, expression.length() - 3).trim(), numbers) + 1;
+        } else {
+            number = resolve(expression, numbers);
+        }
+        if (number == null) {
+            throw new IllegalStateException(
+                    "cannot resolve " + constant.Name() + " = " + expression + " to a number");
+        }
+
+        numbers.put(constant.Name(), number.intValue());
+        names.computeIfAbsent(number, key -> new ArrayList<>()).add(constant.Name());
+        return Math.max(last, number.intValue());
+    }
+
+    /** A declaration's expression is a number or the name of one; the first three are numbers. */
+    private static Integer resolve(String expression, Map<String, Integer> numbers) {
+        Integer number = numbers.get(expression);
+        if (number != null) {
+            return number;
+        }
+        try {
+            return Integer.valueOf(expression);
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("cannot resolve " + expression + " to a number", e);
+        }
+    }
+
+    /**
+     * One entry of the table as C# source: a quoted string, or null for a kind that has none.
+     *
+     * <p>A C# string literal and a Java one are not the same for a few characters, and a
+     * keyword is printed in the middle of a statement, so an operator written with an angle
+     * bracket or an ampersand has to be escaped rather than pasted.
+     */
+    private static String quote(String text) {
+        if (text == null) {
+            return "null";
+        }
+        return "\"" + text
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                + "\"";
     }
 
     /**

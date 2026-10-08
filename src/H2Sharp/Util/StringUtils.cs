@@ -2306,7 +2306,12 @@ public static class StringUtils
         long value = 0;
         for (int i = start; i < end; i++)
         {
-            int digit = HexDecode[s[i]];
+            // The table stops at 'f', and the reference asks Integer.parseUnsignedInt, which
+            // refuses any character that is not a digit and reports it as a format error. Without
+            // the length test a character outside the table is an index out of range instead,
+            // and the caller turns that into nothing at all.
+            char c = s[i];
+            int digit = c < HexDecode.Length ? HexDecode[c] : -1;
             if (digit < 0)
             {
                 throw new FormatException();
