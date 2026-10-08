@@ -224,6 +224,86 @@ public sealed class JavaCharacterOracleTests
         return b.ToString();
     }
 
+    /// <summary>
+    /// The case of a character, for every character of the basic multilingual plane.
+    /// </summary>
+    /// <remarks>
+    /// The whole plane rather than a sample, because these two mappings are the same everywhere
+    /// except in a dozen places, and a sample has no way of finding those places: they are the
+    /// dotless i of the Turkish, the Latin small letter l with a tail, and the Latin capital letters
+    /// that were once digraphs.
+    /// </remarks>
+    [JavaOracleFact]
+    public void TheCaseOfACharacterMatchesTheJdkForEveryCharacter()
+    {
+        List<string> java = OracleRunner.Run(
+                [],
+                """
+                StringBuilder b = new StringBuilder(0x10000);
+                for (int c = 0; c <= 0xFFFF; c++) {
+                  if (c >= 0xD800 && c <= 0xDFFF) {
+                    continue;
+                  }
+                  b.append((char) Character.toUpperCase((char) c));
+                  b.append((char) Character.toLowerCase((char) c));
+                }
+                System.out.println(hex(b.toString()));
+                """,
+                extraJavaArgs: ["-Duser.language=en"])
+            .Select(Decode)
+            .ToList();
+
+        Assert.Single(java);
+        Assert.True(java[0] == PackedCase(), DescribeFirstCaseDifference(java[0], PackedCase()));
+    }
+
+    /// <summary>
+    /// The same two answers for every character, two code units each.
+    /// </summary>
+    /// <returns>the packed answers</returns>
+    private static string PackedCase()
+    {
+        StringBuilder packed = new(0x10000);
+        for (int c = 0; c <= 0xFFFF; c++)
+        {
+            if (c >= 0xD800 && c <= 0xDFFF)
+            {
+                continue;
+            }
+
+            _ = packed.Append(JavaCharacter.ToUpperCase((char)c)).Append(JavaCharacter.ToLowerCase((char)c));
+        }
+
+        return packed.ToString();
+    }
+
+    private static string DescribeFirstCaseDifference(string java, string csharp)
+    {
+        int shared = Math.Min(java.Length, csharp.Length);
+        for (int codePoint = 0; codePoint <= 0xFFFF; codePoint++)
+        {
+            if (codePoint >= 0xD800 && codePoint <= 0xDFFF)
+            {
+                continue;
+            }
+
+            // Every character contributes two code units, and the surrogates none.
+            int i = codePoint < 0xD800 ? codePoint * 2 : (codePoint - 0x800) * 2;
+            if (i + 1 >= shared)
+            {
+                break;
+            }
+
+            if (java[i] != csharp[i] || java[i + 1] != csharp[i + 1])
+            {
+                return $"U+{codePoint:X4}: java upper {java[i]:x4} lower {java[i + 1]:x4}, "
+                    + $"port upper {csharp[i]:x4} lower {csharp[i + 1]:x4}";
+            }
+        }
+
+        return $"lengths differ: java {java.Length}, port {csharp.Length}";
+    }
+
     private static string Decode(string hex)
     {
         string only = hex.TrimStart('=');

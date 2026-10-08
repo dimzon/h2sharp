@@ -114,7 +114,11 @@ public abstract class ValueBytesBase : Value
     public sealed override byte[]? GetBytesNoCopy() => value;
 
     /// <inheritdoc/>
-    public sealed override int GetMemory() => value.Length + 24;
+    /// <remarks>
+    /// Not sealed, because the reference does not seal it either: a GEOMETRY counts twenty bytes per
+    /// byte of geometry rather than one, so its own value is twenty times this.
+    /// </remarks>
+    public override int GetMemory() => value.Length + 24;
 
     /// <inheritdoc/>
     /// <remarks>

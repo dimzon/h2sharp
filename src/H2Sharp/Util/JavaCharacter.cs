@@ -223,6 +223,55 @@ public static class JavaCharacter
     public static bool IsLetter(int codePoint) => IsLetterCategory(CategoryOf(codePoint));
 
     /// <summary>
+    /// The upper case of a character, as <c>java.lang.Character.toUpperCase</c> gives it.
+    /// </summary>
+    /// <remarks>
+    /// Not the same answer as <see cref="char.ToUpperInvariant"/> in twelve places, and the two runtimes
+    /// do not merely disagree about which is right: .NET folds the case the way Unicode's case
+    /// folding table says and the JDK maps it the way Unicode's character database says, and for a
+    /// character that has a full folding but no simple one they end up with different answers. The
+    /// twelve are tabulated below and are checked, like everything else in this file, against the
+    /// reference for every character of the basic multilingual plane.
+    ///
+    /// This is what the reference's own <c>regionMatches(true, ...)</c> compares with, and the
+    /// EWKT reader needs it to spell out that its words are read without regard to case: the ordinal
+    /// comparison of .NET takes the dotless i for nothing at all, where the reference takes it for
+    /// an i.
+    /// </remarks>
+    /// <param name="c">the character</param>
+    /// <returns>the upper case of the character</returns>
+    public static char ToUpperCase(char c) => c switch
+    {
+        '\u0131' => 'I',                 // the dotless i is an upper case I to the JDK
+        '\u019B' => '\uA7DC',
+        '\u0264' => '\uA7CB',
+        '\u1C8A' => '\u1C89',
+        '\uA7CD' => '\uA7CC',
+        '\uA7DB' => '\uA7DA',
+        _ => char.ToUpperInvariant(c),
+    };
+
+    /// <summary>
+    /// The lower case of a character, as <c>java.lang.Character.toLowerCase</c> gives it.
+    /// </summary>
+    /// <remarks>
+    /// The same twelve places, half of them for the lower case, and for the same reason as
+    /// <see cref="ToUpperCase(char)"/>.
+    /// </remarks>
+    /// <param name="c">the character</param>
+    /// <returns>the lower case of the character</returns>
+    public static char ToLowerCase(char c) => c switch
+    {
+        '\u0130' => 'i',                 // and the dotted I is a lower case i to the JDK
+        '\u1C89' => '\u1C8A',
+        '\uA7CB' => '\u0264',
+        '\uA7CC' => '\uA7CD',
+        '\uA7DA' => '\uA7DB',
+        '\uA7DC' => '\u019B',
+        _ => char.ToLowerInvariant(c),
+    };
+
+    /// <summary>
     /// Whether the character is a decimal digit.
     /// </summary>
     /// <param name="c">the character</param>
