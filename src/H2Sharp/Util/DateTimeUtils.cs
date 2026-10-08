@@ -922,4 +922,122 @@ public static class DateTimeUtils
         => i >= 0 && i < 100
             ? builder.Append((char)(i / 10 + '0')).Append((char)(i % 10 + '0'))
             : builder.Append(i.ToString(CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// Reads a timestamp written as a date and a time, and answers the value it stands for.
+    /// </summary>
+    /// <remarks>
+    /// The date and the time are separated by a space or, for the ISO shape, by a T. A text with a
+    /// time zone in it is refused: the reference answers with a TIMESTAMP WITH TIME ZONE, and the
+    /// types that hold a zone are not ported yet. The same is true of DB2's shape, where a dash
+    /// separates them, because that is a flag of the compatibility mode and this class carries only
+    /// the five flags the tokenizer reads.
+    /// </remarks>
+    /// <param name="s">the text</param>
+    /// <param name="provider">where the mode comes from</param>
+    /// <param name="withTimeZone">whether the result should carry a zone</param>
+    /// <returns>the timestamp</returns>
+    /// <exception cref="ArgumentException">if the text is not a timestamp</exception>
+    /// <exception cref="NotSupportedException">if a zone is asked for or written</exception>
+    public static Values.Value ParseTimestamp(string s, Engine.CastDataProvider? provider, bool withTimeZone)
+    {
+        int dateEnd = s.IndexOf(' ');
+        if (dateEnd < 0)
+        {
+            dateEnd = s.IndexOf('T');
+        }
+
+        int timeStart;
+        if (dateEnd < 0)
+        {
+            dateEnd = s.Length;
+            timeStart = -1;
+        }
+        else
+        {
+            timeStart = dateEnd + 1;
+        }
+
+        long dateValue = ParseDateValue(s, 0, dateEnd);
+        long nanos = 0;
+        if (timeStart >= 0)
+        {
+            dateEnd++;
+            int timeEnd = FindTimeZone(s, dateEnd, out bool hasTimeZone);
+            if (hasTimeZone)
+            {
+                throw new NotSupportedException("a timestamp with a time zone");
+            }
+
+            nanos = ParseTimeNanos(s, dateEnd, timeEnd);
+        }
+
+        if (withTimeZone)
+        {
+            throw new NotSupportedException("a timestamp with a time zone");
+        }
+
+        return Values.ValueTimestamp.FromDateValueAndNanos(dateValue, nanos);
+    }
+
+    /// <summary>
+    /// Reads a time written with an optional time zone, and answers the value it stands for.
+    /// </summary>
+    /// <param name="s">the text</param>
+    /// <param name="provider">where the mode comes from</param>
+    /// <param name="withTimeZone">whether the result should carry a zone</param>
+    /// <returns>the time</returns>
+    /// <exception cref="ArgumentException">if the text is not a time</exception>
+    /// <exception cref="NotSupportedException">if a zone is asked for or written</exception>
+    public static Values.Value ParseTime(string s, Engine.CastDataProvider? provider, bool withTimeZone)
+    {
+        int timeEnd = FindTimeZone(s, 0, out bool hasTimeZone);
+        if (hasTimeZone || withTimeZone)
+        {
+            throw new NotSupportedException("a time with a time zone");
+        }
+
+        long nanos = ParseTimeNanos(s, 0, timeEnd);
+        return Values.ValueTime.FromNanos(nanos);
+    }
+
+    /// <summary>
+    /// Where the time ends and whether there is a time zone after it.
+    /// </summary>
+    /// <remarks>
+    /// A zone is a Z at the end, an offset beginning with a plus or a minus, or a name after a
+    /// space. The search starts at <paramref name="start"/> rather than at the beginning because a
+    /// timestamp has a date in front of it, and a dash inside the date must not be read as the sign
+    /// of an offset.
+    /// </remarks>
+    private static int FindTimeZone(string s, int start, out bool hasTimeZone)
+    {
+        hasTimeZone = false;
+        if (s.EndsWith("Z", StringComparison.Ordinal))
+        {
+            hasTimeZone = true;
+            return s.Length - 1;
+        }
+
+        int timeZoneStart = s.IndexOf('+', start);
+        if (timeZoneStart < 0)
+        {
+            timeZoneStart = s.IndexOf('-', start);
+        }
+
+        if (timeZoneStart >= 0)
+        {
+            hasTimeZone = true;
+            return timeZoneStart > 0 && s[timeZoneStart - 1] == ' ' ? timeZoneStart - 1 : timeZoneStart;
+        }
+
+        timeZoneStart = s.IndexOf(' ', start);
+        if (timeZoneStart > 0)
+        {
+            hasTimeZone = true;
+            return timeZoneStart;
+        }
+
+        return s.Length;
+    }
 }

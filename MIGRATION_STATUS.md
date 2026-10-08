@@ -40,10 +40,11 @@
 * .NET 8/9/10 SDK, SDK закреплён в `global.json` (10.0.401).
 * JDK 25 + Maven 3.9.16 доступны → оракул работает.
 * Сборка: `dotnet build H2Sharp.sln -c Release` — 0 warnings, 0 errors.
-* Тесты: **412 passed, 0 FAILED**: 36 групп против JVM (включая parse-only оркул по
+* Тесты: **416 passed, 0 FAILED**: 40 групп против JVM (включая parse-only оркул по
   319 скриптам H2, 1849 пар типов, модель типов, сверку таблицы токенов, корпус DECFLOAT,
-  все 0x110000 кодовых точек `Character`, токенизатор на 139 операторах × 3 режимах и
-  арифметику дат на 16 000 датах) и 27 проверок аллокаций/инвариантов.
+  все 0x110000 кодовых точек `Character`, токенизатор на 139 операторах × 3 режимах,
+  арифметику дат на 16 000 датах и корпус DATE/TIME/TIMESTAMP) и 27 проверок
+  аллокаций/инвариантов.
 * `python tools/regen.py --check` — сгенерированные таблицы соответствуют эталону.
 
 ## Страховка от тихой деградации (сделано)
@@ -1010,16 +1011,25 @@ SRID, а тот тянет весь пространственный пакет.
    (3) **мой `ParseUInt31` был шестнадцатеричным** — в `DateTimeUtils` нужен десятичный, и он
    уже был в `StringUtils`; я написал второй. Правило на будущее: перед тем как писать
    вспомогательный метод, искать его в уже портированном классе.
-7. **`command/Parser.java`** (8963) — теперь единственный гейт: нужен `Tokenizer` (есть),
-   `DateTimeUtils` (есть) и типы значений. Проверка — оркул из раздела «Parse-only оркул».
-   Перед парсером нужны `ValueDate`/`ValueTime`/`ValueTimestamp`/`ValueInterval`, `DataType`,
-   и методы `DateTimeUtils.parseTimestamp`/`parseTime`, которые возвращают `Value`.
-8. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
+8. **`ValueDate`, `ValueTime`, `ValueTimestamp`** — **портированы** (462 строки эталона).
+   `DateTimeUtils.ParseTimestamp`/`ParseTime` портированы **без зоны**: текст с зоной
+   (`10:00:00Z`) отвергается, потому что типы с зоной (`ValueTimeTimeZone`,
+   `ValueTimestampTimeZone`) ещё не портированы, а тихо вернуть другое значение хуже отказа.
+   Это **зафиксированный разрыв**: `ATimeWithAZoneIsRefusedHereWithTheCodeTheReferenceGives...`
+   проверяет, что эталон такие тексты читает (в два из шести случаев — остальные он тоже
+   отвергает с 22007), а порт отвергает все с 22007.
+   Ловушка, на которую наступили три раза за один файл: **`FormatException` в .NET наследует
+   `SystemException`, а не `ArgumentException`**, так что `catch (ArgumentException)` не ловит
+   отказ `StringUtils.ParseUInt31`, который эталон ловит как `NumberFormatException`.
+8. **`command/Parser.java`** (8963) — теперь единственный гейт: `Tokenizer` есть, `DateTimeUtils`
+   есть, `ValueDate`/`ValueTime`/`ValueTimestamp` есть. Осталось перед ним: `ValueInterval`,
+   типы с зоной, `DataType`.
+9. **`Util/IOUtils.cs`, `ByteUtils.cs`** — самодостаточны, нужны для MVStore (фаза 3).
    Остальное в `util` — кэши, которые по принятому решению делаются обычными полями.
-9. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
+10. **Фаза 2 — MVStore.** Гейт: файл, записанный H2Sharp, открывается эталонным H2
     и наоборот. LZF портировать дословно.
 
-Текущий прогон: **412 тестов, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
+Текущий прогон: **416 тестов, 0 расхождений** на net8 и net10. Слой типов: `Value` — 57
 констант, `TypeInfo` — ядро плюс `getSQL`, `ExtTypeInfo`, `ExtTypeInfoNumeric`; значения —
 `ValueNull`, `ValueInteger`, `ValueBigint`, `ValueDouble`, `ValueVarchar`, `ValueVarbinary`,
    `ValueBinary`, `ValueChar`; `JavaUtf8` вместо `Encoding.UTF8` там, где байты приходят из базы.
