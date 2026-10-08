@@ -261,12 +261,12 @@ internal static class JavaOracle
         return args.ToArray();
     }
 
-private static string[] RunArguments(
-        string work,
-        string className,
-        string[]? additionalClassPath,
-        string[]? extraJavaArgs,
-        string[]? programArgs)
+    private static string[] RunArguments(
+            string work,
+            string className,
+            string[]? additionalClassPath,
+            string[]? extraJavaArgs,
+            string[]? programArgs)
     {
         List<string> args = new();
         if (extraJavaArgs is { Length: > 0 })

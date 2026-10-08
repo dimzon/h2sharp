@@ -59,7 +59,7 @@ public sealed class MessageFormatOracleTests
             + string.Join("\n", mismatches.Take(60)));
     }
 
-[Fact]
+    [Fact]
     public void Format_AgreesWithOracleOnKnownAwkwardPatterns()
     {
         // A selection of the behaviours the exhaustive test pins down, recorded so

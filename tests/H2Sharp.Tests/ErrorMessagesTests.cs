@@ -116,14 +116,14 @@ public sealed class ErrorMessagesTests
     public void Translate_WithoutParameters_ReturnsTemplate()
         => Assert.Equal("No data is available", ErrorMessages.Translate("02000"));
 
-[Theory]
+    [Theory]
     [InlineData("{0}", "a")]
     [InlineData("a{0}b{1}c", "aab1c")]
     [InlineData("no placeholders", "no placeholders")]
     [InlineData("''{0}''", "'a'")]
     [InlineData("}", "}")]
     public void Format_MatchesMessageFormatQuotingRules(string pattern, string expected)
-        => Assert.Equal(expected, ErrorMessages.Format(pattern, "a", 1, 2));
+            => Assert.Equal(expected, ErrorMessages.Format(pattern, "a", 1, 2));
 
     [Fact]
     public void Format_ThrowsOnBadPatternLikeJavaMessageFormat()

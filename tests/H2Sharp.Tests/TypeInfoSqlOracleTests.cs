@@ -210,7 +210,7 @@ public sealed class TypeInfoSqlOracleTests
     /// <summary>
     /// Whether a value type is left out of the rendering comparison.
     /// </summary>
-/// <remarks>
+    /// <remarks>
     /// Nothing is left out. ROW needed an <c>ExtTypeInfoRow</c> to print its parentheses, and
     /// the intervals needed <c>IntervalQualifier</c>; both are ported now. The predicate stays
     /// because an empty exclusion list is worth stating and worth failing on, rather than
@@ -285,20 +285,20 @@ public sealed class TypeInfoSqlOracleTests
             IntervalQualifier qualifier = IntervalQualifiers.ValueOf(ordinal);
             System.Text.StringBuilder line = new();
             // q.toString() on the reference side is the qualifier's name with underscores turned into
-        // spaces, not the constant's own name, so that is what is compared. A .NET enum
-        // member cannot print that without an explicit mapping, which is what Name() is.
-        // Java concatenates a boolean as "true"/"false" and .NET as "True"/"False", so the
-        // C# side is formatted rather than appended.
-        _ = line.Append(IntervalQualifiers.Name(qualifier))
-                .Append(' ').Append(J(IntervalQualifiers.HasYears(qualifier)))
-                .Append(' ').Append(J(IntervalQualifiers.HasMonths(qualifier)))
-                .Append(' ').Append(J(IntervalQualifiers.HasDays(qualifier)))
-                .Append(' ').Append(J(IntervalQualifiers.HasHours(qualifier)))
-                .Append(' ').Append(J(IntervalQualifiers.HasMinutes(qualifier)))
-                .Append(' ').Append(J(IntervalQualifiers.HasSeconds(qualifier)))
-                .Append(' ').Append(J(IntervalQualifiers.HasMultipleFields(qualifier)))
-                .Append(' ').Append(J(IntervalQualifiers.IsYearMonth(qualifier)))
-                .Append(' ').Append(J(IntervalQualifiers.IsDayTime(qualifier)));
+            // spaces, not the constant's own name, so that is what is compared. A .NET enum
+            // member cannot print that without an explicit mapping, which is what Name() is.
+            // Java concatenates a boolean as "true"/"false" and .NET as "True"/"False", so the
+            // C# side is formatted rather than appended.
+            _ = line.Append(IntervalQualifiers.Name(qualifier))
+                    .Append(' ').Append(J(IntervalQualifiers.HasYears(qualifier)))
+                    .Append(' ').Append(J(IntervalQualifiers.HasMonths(qualifier)))
+                    .Append(' ').Append(J(IntervalQualifiers.HasDays(qualifier)))
+                    .Append(' ').Append(J(IntervalQualifiers.HasHours(qualifier)))
+                    .Append(' ').Append(J(IntervalQualifiers.HasMinutes(qualifier)))
+                    .Append(' ').Append(J(IntervalQualifiers.HasSeconds(qualifier)))
+                    .Append(' ').Append(J(IntervalQualifiers.HasMultipleFields(qualifier)))
+                    .Append(' ').Append(J(IntervalQualifiers.IsYearMonth(qualifier)))
+                    .Append(' ').Append(J(IntervalQualifiers.IsDayTime(qualifier)));
             foreach ((int precision, int scale) in new[] { (-1, -1), (0, -1), (4, -1), (-1, 0), (-1, 3), (9, 6) })
             {
                 _ = line.Append(" | ")

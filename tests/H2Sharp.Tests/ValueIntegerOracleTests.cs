@@ -265,11 +265,11 @@ public sealed class ValueIntegerOracleTests
     private static string J(bool value) => value ? "true" : "false";
 
     /// <remarks>
-/// The reference appends its trace to every exception message, as " [code-id]", and the id
-/// is a counter this port does not have. The pattern is matched anywhere in the line and not
-/// only at the end, because a message that goes through the comparison of two integers ends
-/// up in the middle of a line of several answers.
-/// </remarks>
+    /// The reference appends its trace to every exception message, as " [code-id]", and the id
+    /// is a counter this port does not have. The pattern is matched anywhere in the line and not
+    /// only at the end, because a message that goes through the comparison of two integers ends
+    /// up in the middle of a line of several answers.
+    /// </remarks>
     private static readonly System.Text.RegularExpressions.Regex TraceSuffix =
         new(@"\s\[\d+-\d+\]", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 

@@ -23,7 +23,7 @@ namespace H2Sharp.Tests;
 
 public sealed class ExtTypeInfoEnumOracleTests
 {
-/// <summary>
+    /// <summary>
     /// The definitions tried, and the order they are tried in.
     /// </summary>
     /// <remarks>
@@ -134,7 +134,7 @@ public sealed class ExtTypeInfoEnumOracleTests
         }
     }
 
-private static string Render(string?[]? labels)
+    private static string Render(string?[]? labels)
     {
         // A null list is a case of its own: the reference rejects it as an empty enum, so
         // it must be passed through as null rather than normalised to an empty array.

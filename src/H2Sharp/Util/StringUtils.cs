@@ -700,23 +700,23 @@ public static class StringUtils
                     break;
 
                 case 'u':
-                {
-                    if (i + 4 >= length)
                     {
-                        throw GetFormatException(s, i);
-                    }
+                        if (i + 4 >= length)
+                        {
+                            throw GetFormatException(s, i);
+                        }
 
-                    if (!int.TryParse(
-                            s.AsSpan(i + 1, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture,
-                            out int code))
-                    {
-                        throw GetFormatException(s, i);
-                    }
+                        if (!int.TryParse(
+                                s.AsSpan(i + 1, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture,
+                                out int code))
+                        {
+                            throw GetFormatException(s, i);
+                        }
 
-                    i += 4;
-                    buff.Append((char)code);
-                    break;
-                }
+                        i += 4;
+                        buff.Append((char)code);
+                        break;
+                    }
 
                 default:
                     // Java uses Integer.parseInt(.., 8): the escape is octal, so

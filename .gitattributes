@@ -1,0 +1,14 @@
+# Line endings are LF everywhere, which is what .editorconfig asks for and what the formatter
+# then leaves alone. Without this rule git stores whatever an editor happened to write, so a
+# file saved once on Windows keeps its CRLF forever and every formatting run rewrites all of its
+# lines, which is a diff nobody can read.
+* text=auto eol=lf
+
+# Not text: normalisation would corrupt them.
+*.pyc binary
+*.class binary
+*.jar binary
+
+# Generated Java the porting tools run: kept in the repository so a build needs no toolchain,
+# but nobody writes them by hand.
+tools/out/** -text

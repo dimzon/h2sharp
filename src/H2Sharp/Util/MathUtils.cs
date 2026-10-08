@@ -231,7 +231,7 @@ public static class MathUtils
     /// Get a cryptographically secure pseudo random long value.
     /// </summary>
     /// <returns>the random long value</returns>
-public static long SecureRandomLong()
+    public static long SecureRandomLong()
     {
         Span<byte> buffer = stackalloc byte[8];
         RandomNumberGenerator.Fill(buffer);
@@ -256,7 +256,7 @@ public static long SecureRandomLong()
             len = 1;
         }
 
-byte[] buff = new byte[len];
+        byte[] buff = new byte[len];
         RandomNumberGenerator.Fill(buff);
         return buff;
     }

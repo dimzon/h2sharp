@@ -33,3 +33,5 @@ Thumbs.db
 .DS_Store
 # compiled generator tooling
 tools/out/
+__pycache__/
+*.pyc

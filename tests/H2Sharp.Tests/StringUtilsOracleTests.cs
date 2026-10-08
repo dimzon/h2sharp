@@ -17,9 +17,9 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using H2Sharp.Tests.Oracle;
-using static H2Sharp.Tests.Oracle.OracleRunner;
 using H2Sharp.Util;
 using Xunit;
+using static H2Sharp.Tests.Oracle.OracleRunner;
 
 namespace H2Sharp.Tests;
 
@@ -312,7 +312,7 @@ public sealed class StringUtilsOracleTests
 
         payload.AddRange(subjects);
 
-string body = """
+        string body = """
                       int half = nums[0];
                       int subjectStart = half * 2;
                       for (int bi = 0; bi < half; bi++) {
@@ -471,7 +471,7 @@ string body = """
             payload.Add(p ?? OracleRunner.NullMarker);
         }
 
-string body = """
+        string body = """
                       int padCount = PAD_COUNT;
                       int subjectCount = inputs.length - padCount;
                       for (int si = 0; si < subjectCount; si++) {
@@ -538,7 +538,7 @@ string body = """
         int[] values = [0, 1, 9, 10, 99, 100, 12345];
         int[] widths = [1, 2, 5, 8];
 
-string body = """
+        string body = """
                       int widthCount = nums.length - VALUES;
                       for (int w = 0; w < widthCount; w++) {
                         for (int vi = 0; vi < VALUES; vi++) {
@@ -654,9 +654,9 @@ string body = """
     [JavaOracleFact]
     public void ArrayCombine_MatchesReferenceJvm()
     {
-string?[][] lists =
-        [
-            [], ["a"], ["a", "b"], ["a", null, "b"], ["a\\b", "c,d"], ["", "x"],
+        string?[][] lists =
+                [
+                    [], ["a"], ["a", "b"], ["a", null, "b"], ["a\\b", "c,d"], ["", "x"],
         ];
         char[] separators = [',', ';', '\\'];
 
@@ -726,7 +726,7 @@ string?[][] lists =
         AssertSame(java, actual, label + "/" + method);
     }
 
-/// <summary>
+    /// <summary>
     /// Identity: the delegate returns the raw value and CompareSimple hex-encodes it.
     /// </summary>
     private static Func<string, string> HexOf(Func<string, string> call) => call;
@@ -752,7 +752,7 @@ string?[][] lists =
             + string.Join("\n", mismatches.Take(25)));
     }
 
-private static string Evaluate(Func<string> call)
+    private static string Evaluate(Func<string> call)
     {
         try
         {
