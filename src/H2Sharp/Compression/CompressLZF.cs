@@ -41,6 +41,14 @@ public sealed class CompressLZF : Compressor
     /// How many slots the hash table has: a trade between collisions, which cost compression, and
     /// speed, which is what fits in a cache.
     /// </summary>
+    /// <remarks>
+    /// This size is not part of the format and not part of any contract. A stream this compressor
+    /// writes is valid LZF whatever this is, and any LZF reader expands it; what the size decides
+    /// is only how well it compresses and how fast it gets there. Sixty-four kilobytes does not
+    /// fit in a first-level cache, so on data that does not compress this table is what the loop
+    /// waits on — half the slots would fit, at the price of more collisions. It was measured and
+    /// kept at the reference's size; the note in MIGRATION_STATUS.md says what to try next.
+    /// </remarks>
     private const int HashSize = 1 << 14;
 
     /// <summary>
