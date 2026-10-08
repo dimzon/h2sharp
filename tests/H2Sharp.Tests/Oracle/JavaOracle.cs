@@ -308,6 +308,31 @@ internal static class JavaOracle
 
     private static string RunProcess(string fileName, string workingDirectory, string[] arguments)
     {
+        // A JVM that is started while the machine is busy occasionally fails to get off the
+        // ground, and it did so in about one run in five on a loaded machine, which is a test
+        // infrastructure failure and not a difference between the two implementations. So a process
+        // that exits non-zero is started again once and the second failure is the one reported. A
+        // snippet that does not compile is retried too, which costs one extra launch to no purpose,
+        // but a compiled snippet whose output differs from the port's is never retried: it is
+        // compared, not run again.
+        InvalidOperationException? last = null;
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                return RunOnce(fileName, workingDirectory, arguments);
+            }
+            catch (InvalidOperationException e) when (e.Message.Contains("exited with", StringComparison.Ordinal))
+            {
+                last = e;
+            }
+        }
+
+        throw last!;
+    }
+
+    private static string RunOnce(string fileName, string workingDirectory, string[] arguments)
+    {
         ProcessStartInfo psi = new(fileName)
         {
             WorkingDirectory = workingDirectory,

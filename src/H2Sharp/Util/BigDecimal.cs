@@ -350,6 +350,345 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     }
 
     /// <summary>
+    /// The sum of two values, exactly, with no precision to lose.
+    /// </summary>
+    /// <remarks>
+    /// The two scales are made equal first by extending the coarser one, which keeps the result
+    /// exact: a decimal never has to round to be added. A sum of zero is the one place the JDK
+    /// reaches for a rule of its own, and the rule is that the zero keeps the coarser of the two
+    /// scales, so 1.5 + (-1.50) is 0.00 and not 0.
+    /// </remarks>
+    /// <param name="other">the value to add</param>
+    /// <returns>the sum</returns>
+    public BigDecimal Add(BigDecimal other)
+    {
+        if (scale == other.scale)
+        {
+            BigInteger same = unscaledValue + other.unscaledValue;
+            return same.IsZero ? ZeroWithScale(scale) : new BigDecimal(same, scale);
+        }
+
+        BigDecimal coarser = scale > other.scale ? this : other;
+        BigDecimal finer = scale > other.scale ? other : this;
+
+        // A finer value of zero adds nothing, and saying so matters more than it looks: the scales
+        // can differ by billions of digits in values that arrive from a hostile literal, and
+        // extending a zero by 10 to the two billionth power is not an answer anybody wants.
+        if (finer.unscaledValue.IsZero)
+        {
+            return coarser;
+        }
+
+        long difference = (long)coarser.scale - finer.scale;
+        BigInteger extended = BigInteger.Multiply(finer.unscaledValue, BigInteger.Pow(Ten, (int)difference));
+        BigInteger total = coarser.unscaledValue + extended;
+        return total.IsZero ? ZeroWithScale(coarser.scale) : new BigDecimal(total, coarser.scale);
+    }
+    /// <summary>
+    /// The difference of two values, exactly.
+    /// </summary>
+    /// <param name="other">the value to subtract</param>
+    /// <returns>the difference</returns>
+    public BigDecimal Subtract(BigDecimal other) => Add(other.Negate());
+
+    /// <summary>
+    /// The product of two values, exactly.
+    /// </summary>
+    /// <remarks>
+    /// The scales add, because the unscaled values do: that is what the shape of the number means.
+    /// Nothing here can overflow, which is the whole reason a decimal is not a double.
+    /// </remarks>
+    /// <param name="other">the value to multiply by</param>
+    /// <returns>the product</returns>
+    public BigDecimal Multiply(BigDecimal other)
+        => new(BigInteger.Multiply(unscaledValue, other.unscaledValue), scale + other.scale);
+
+    /// <summary>
+    /// A zero of the given scale, which is what the JDK hands back where a sum of two values is
+    /// zero.
+    /// </summary>
+    /// <param name="zeroScale">the scale of the zero</param>
+    /// <returns>the zero</returns>
+    private static BigDecimal ZeroWithScale(int zeroScale)
+        => zeroScale == 0 ? Zero : new BigDecimal(BigInteger.Zero, zeroScale);
+    /// <summary>
+    /// This value with the given scale, keeping as many digits as it can.
+    /// </summary>
+    /// <remarks>
+    /// Making the scale smaller drops digits, and those are rounded by the mode rather than cut,
+    /// because a decimal that quietly loses a digit is not a decimal. Making it larger only adds
+    /// zeros.
+    /// <para>
+    /// The JDK rounds the magnitude and restores the sign afterwards, which is what makes CEILING
+    /// round a negative value downwards and HALF_UP send -0.5 away from zero rather than towards
+    /// the even digit zero. Both behaviours are visible in the answers and neither follows from
+    /// looking at the digits.
+    /// </para>
+    /// </remarks>
+    /// <param name="newScale">the scale to give the value</param>
+    /// <param name="mode">what to do with the digits that do not fit</param>
+    /// <returns>the value at the new scale</returns>
+    /// <exception cref="ArithmeticException">
+    /// if the mode is <see cref="RoundingMode.Unnecessary"/> and digits would be lost
+    /// </exception>
+    public BigDecimal SetScale(int newScale, RoundingMode mode)
+    {
+        if (newScale == scale)
+        {
+            return this;
+        }
+
+        if (newScale > scale)
+        {
+            return new BigDecimal(BigInteger.Multiply(unscaledValue, BigInteger.Pow(Ten, newScale - scale)), newScale);
+        }
+
+        BigInteger divisor = BigInteger.Pow(Ten, scale - newScale);
+        bool negative = unscaledValue.Sign < 0;
+        BigInteger magnitude = RoundMagnitude(
+            BigInteger.Abs(unscaledValue), divisor, MagnitudeMode(mode, negative));
+        return new BigDecimal(negative ? BigInteger.Negate(magnitude) : magnitude, newScale);
+    }
+
+    /// <summary>
+    /// The quotient of two values, given to the scale asked for and rounded by the mode.
+    /// </summary>
+    /// <remarks>
+    /// The scale is the number of digits wanted after the point, so a division cannot be asked for
+    /// a scale it does not need: the JDK answers the whole quotient and throws the digits away when
+    /// the mode is UNNECESSARY.
+    /// </remarks>
+    /// <param name="divisor">the value to divide by</param>
+    /// <param name="quotientScale">the scale of the quotient</param>
+    /// <param name="mode">what to do with the digits that do not fit</param>
+    /// <returns>the quotient</returns>
+    /// <exception cref="ArithmeticException">if the divisor is zero</exception>
+    /// <exception cref="ArithmeticException">
+    /// if the mode is <see cref="RoundingMode.Unnecessary"/> and digits would be lost
+    /// </exception>
+    public BigDecimal Divide(BigDecimal divisor, int quotientScale, RoundingMode mode)
+    {
+        if (divisor.unscaledValue.IsZero)
+        {
+            throw new DivideByZeroException();
+        }
+
+        BigInteger numerator = BigInteger.Abs(unscaledValue);
+        BigInteger denominator = BigInteger.Abs(divisor.unscaledValue);
+        bool negative = unscaledValue.Sign * divisor.unscaledValue.Sign < 0;
+
+        // The quotient as a number is (unscaled / unscaled) shifted by the difference of the two
+        // scales, so a quotient at the scale asked for is that shift plus the scale asked for.
+        // Getting this wrong is not a rounding question at all: 1.5 divided by 2 at a scale of 0 is
+        // 0.75 rounded to nothing, and a shift that forgot the scales would answer 8.
+        long shift = (long)quotientScale - scale + divisor.scale;
+        BigInteger magnitude;
+        if (shift >= 0)
+        {
+            // The quotient at that scale is one multiplication and one division rather than a
+            // division that produces an endless decimal and a second pass over it.
+            magnitude = RoundMagnitude(
+                BigInteger.Multiply(numerator, BigInteger.Pow(Ten, (int)shift)),
+                denominator,
+                MagnitudeMode(mode, negative));
+        }
+        else
+        {
+            magnitude = RoundMagnitude(
+                numerator,
+                BigInteger.Multiply(denominator, BigInteger.Pow(Ten, (int)-shift)),
+                MagnitudeMode(mode, negative));
+        }
+
+        int sign = unscaledValue.Sign * divisor.unscaledValue.Sign;
+        return new BigDecimal(sign < 0 ? BigInteger.Negate(magnitude) : magnitude, quotientScale);
+    }
+
+    /// <summary>
+    /// What is left of this value after dividing it by the divisor and keeping the whole part of
+    /// the quotient.
+    /// </summary>
+    /// <remarks>
+    /// The remainder is this value minus the whole part of the quotient times the divisor, and the
+    /// scale of the answer follows from that rather than from the divisor: a remainder that is not
+    /// zero keeps the scale of the subtraction, so 1 modulo 3E-10 is 1E-10 and 1.2340 modulo 0.10
+    /// is 0.0340. A remainder of zero is the one case the JDK decides on its own, and it gives
+    /// back the scale of this value: 1.5 modulo 1E-10 is 0.0 rather than 0.0000000000, and 1 modulo
+    /// 1E-10 is 0.
+    /// </remarks>
+    /// <param name="divisor">the value to divide by</param>
+    /// <returns>the remainder, which takes the sign of this value</returns>
+    /// <exception cref="ArithmeticException">if the divisor is zero</exception>
+    public BigDecimal Remainder(BigDecimal divisor)
+    {
+        if (divisor.unscaledValue.IsZero)
+        {
+            throw new DivideByZeroException();
+        }
+
+        BigDecimal remainder = Subtract(divisor.Multiply(DivideTruncated(divisor)));
+        return remainder.unscaledValue.IsZero ? ZeroWithScale(scale) : remainder;
+    }
+
+    /// <summary>
+    /// The quotient with every digit after the point cut off, which is what the remainder needs.
+    /// </summary>
+    /// <remarks>
+    /// The cut is towards zero, so that a remainder takes the sign of the value it was cut from,
+    /// which is what the JDK's remainder does and what a query with a negative dividend expects.
+    /// The scales are part of the division here for the same reason they are part of the rounding
+    /// one: 1.5 divided by 2 has no whole part, and a division of the unscaled values alone would
+    /// say it had seven.
+    /// </remarks>
+    /// <param name="divisor">the value to divide by</param>
+    /// <returns>the quotient, cut at the point</returns>
+    private BigDecimal DivideTruncated(BigDecimal divisor)
+    {
+        BigInteger numerator = BigInteger.Abs(unscaledValue);
+        BigInteger denominator = BigInteger.Abs(divisor.unscaledValue);
+        long shift = (long)divisor.scale - scale;
+        BigInteger whole = shift >= 0
+            ? BigInteger.Divide(BigInteger.Multiply(numerator, BigInteger.Pow(Ten, (int)shift)), denominator)
+            : BigInteger.Divide(numerator, BigInteger.Multiply(denominator, BigInteger.Pow(Ten, (int)-shift)));
+
+        int sign = unscaledValue.Sign * divisor.unscaledValue.Sign;
+        return new BigDecimal(sign < 0 ? BigInteger.Negate(whole) : whole, 0);
+    }
+
+    /// <summary>
+    /// The mode to apply to the magnitude of a value that is being rounded.
+    /// </summary>
+    /// <remarks>
+    /// Only two modes depend on the sign, and both because they name a direction on the number
+    /// line rather than a direction in the digits. A ceiling of -0.5 is 0, and 0 is the smaller
+    /// magnitude, so on the magnitude a ceiling of a negative value rounds down; a floor of -0.5
+    /// is -1, and that is the larger magnitude, so it rounds up. Everything else means the same
+    /// thing whichever side of zero the value is on: HALF_UP sends -0.5 away from zero, not to the
+    /// even digit zero.
+    /// </remarks>
+    /// <param name="mode">the mode the value asks for</param>
+    /// <param name="negative">whether the value is negative</param>
+    /// <returns>the mode to apply to its magnitude</returns>
+    private static RoundingMode MagnitudeMode(RoundingMode mode, bool negative)
+    {
+        if (!negative)
+        {
+            return mode;
+        }
+
+        return mode switch
+        {
+            RoundingMode.Ceiling => RoundingMode.Down,
+            RoundingMode.Floor => RoundingMode.Up,
+            _ => mode,
+        };
+    }
+
+    /// <summary>
+    /// Divides a magnitude by another, rounding the part that is left by the mode.
+    /// </summary>
+    /// <remarks>
+    /// The comparison of twice the remainder with the divisor is what decides a half, and every
+    /// half rule in the JDK is that one comparison: exactly half is the boundary and each mode says
+    /// which side of it to fall on, with HALF_EVEN asking whether the digit kept is even.
+    /// </remarks>
+    /// <param name="dividend">the magnitude to divide</param>
+    /// <param name="divisor">the magnitude to divide by</param>
+    /// <param name="mode">what to do with the part that is left</param>
+    /// <returns>the quotient, rounded</returns>
+    /// <exception cref="ArithmeticException">
+    /// if the mode is <see cref="RoundingMode.Unnecessary"/> and something is left over
+    /// </exception>
+    private static BigInteger RoundMagnitude(BigInteger dividend, BigInteger divisor, RoundingMode mode)
+    {
+        BigInteger quotient = BigInteger.Divide(dividend, divisor);
+        BigInteger remainder = dividend - (quotient * divisor);
+        if (remainder.IsZero)
+        {
+            return quotient;
+        }
+
+        int half = (remainder << 1).CompareTo(divisor);
+        bool up = mode switch
+        {
+            RoundingMode.Up => true,
+            RoundingMode.Down => false,
+
+            // The value is a magnitude, so a ceiling is up and a floor is down whatever the sign
+            // of the original was.
+            RoundingMode.Ceiling => true,
+            RoundingMode.Floor => false,
+
+            RoundingMode.HalfUp => half >= 0,
+            RoundingMode.HalfDown => half > 0,
+            RoundingMode.HalfEven => half > 0 || (half == 0 && (!quotient.IsEven)),
+
+            _ => throw new ArithmeticException("Rounding necessary"),
+        };
+
+        return up ? quotient + BigInteger.One : quotient;
+    }
+
+    /// <summary>
+    /// This value written out in full, with every zero the scale stands for written out too, so
+    /// that 1E+100 is a hundred and one digits rather than an exponent.
+    /// </summary>
+    /// <remarks>
+    /// This is what the reference prints a NUMERIC as, and it is a different method from the
+    /// general one: a value has to come back out of a query as a number a person can read, and a
+    /// store's own values are read far more often than they are written.
+    /// </remarks>
+    public string ToPlainString()
+    {
+        string digits = BigInteger.Abs(unscaledValue).ToString(CultureInfo.InvariantCulture);
+
+        // A zero keeps a positive scale, because the zeros after the point are part of how it was
+        // written, and drops a negative one: the zeros of 0E+10 stand for nothing, so writing them
+        // out would say the number had eleven digits when it has one.
+        if (unscaledValue.IsZero)
+        {
+            return scale <= 0 ? "0" : "0." + new string('0', scale);
+        }
+
+        if (scale == 0)
+        {
+            return unscaledValue.Sign < 0 ? "-" + digits : digits;
+        }
+
+        StringBuilder b = new(digits.Length + Math.Max(scale, 0) + 2);
+        if (unscaledValue.Sign < 0)
+        {
+            _ = b.Append('-');
+        }
+
+        if (scale < 0)
+        {
+            // The zeros of a negative scale are zeros of the value, and in plain form they are
+            // written out after the digits rather than left to an exponent.
+            return b.Append(digits).Append('0', -scale).ToString();
+        }
+
+        if (digits.Length > scale)
+        {
+            return b.Append(digits, 0, digits.Length - scale)
+                .Append('.')
+                .Append(digits, digits.Length - scale, scale)
+                .ToString();
+        }
+
+        return b.Append("0.").Append('0', scale - digits.Length).Append(digits).ToString();
+    }
+
+    /// <summary>
+    /// This value as a double, rounded to the nearest double the way the JDK rounds it.
+    /// </summary>
+    /// <remarks>
+    /// Both platforms convert decimal text to a double by rounding to nearest and breaking a tie
+    /// towards the even value, so handing the plain form to the platform's own converter is the
+    /// same answer as the JDK's own arithmetic and it costs nothing to write.
+    /// </remarks>
+    public double ToDouble() => double.Parse(ToPlainString(), NumberStyles.Float, CultureInfo.InvariantCulture);
+    /// <summary>
     /// Compares two values numerically, so that a scale makes no difference: 1.0 and 1.00 are the
     /// same number even though they are not the same value.
     /// </summary>
