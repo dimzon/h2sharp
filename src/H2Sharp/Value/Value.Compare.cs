@@ -236,7 +236,7 @@ public abstract partial class Value
     /// <param name="a">the first value</param>
     /// <param name="b">the second value</param>
     /// <returns>-1, 0 or 1 as Java's compare answers</returns>
-    private static int JavaCompareDouble(double a, double b)
+    internal static int JavaCompareDouble(double a, double b)
     {
         if (double.IsNaN(a))
         {
@@ -248,18 +248,28 @@ public abstract partial class Value
             return -1;
         }
 
-        if (a == 0.0)
+        // The value decides first, and the sign decides only when the values are equal, which is
+        // how a negative zero comes out below a positive one without any other pair being affected.
+        // Testing the sign before the value is the mistake: it answers for a zero and a non zero
+        // without looking at the second of them, so a zero compared with anything but a zero came
+        // out equal to it.
+        if (a < b)
         {
-            bool negativeA = double.IsNegative(a), negativeB = double.IsNegative(b);
-            if (negativeA != negativeB)
-            {
-                return negativeA ? -1 : 1;
-            }
+            return -1;
+        }
 
+        if (a > b)
+        {
+            return 1;
+        }
+
+        bool negativeA = double.IsNegative(a), negativeB = double.IsNegative(b);
+        if (negativeA == negativeB)
+        {
             return 0;
         }
 
-        return a < b ? -1 : a > b ? 1 : 0;
+        return negativeA ? -1 : 1;
     }
 
     /// <summary>
@@ -269,7 +279,7 @@ public abstract partial class Value
     /// <param name="a">the first value</param>
     /// <param name="b">the second value</param>
     /// <returns>-1, 0 or 1 as Java's compare answers</returns>
-    private static int JavaCompareFloat(float a, float b)
+    internal static int JavaCompareFloat(float a, float b)
     {
         if (float.IsNaN(a))
         {
@@ -281,18 +291,25 @@ public abstract partial class Value
             return -1;
         }
 
-        if (a == 0.0f)
+        // Same order of decisions as JavaCompareDouble, and the same reason: the value first, the
+        // sign only when the values are equal.
+        if (a < b)
         {
-            bool negativeA = float.IsNegative(a), negativeB = float.IsNegative(b);
-            if (negativeA != negativeB)
-            {
-                return negativeA ? -1 : 1;
-            }
+            return -1;
+        }
 
+        if (a > b)
+        {
+            return 1;
+        }
+
+        bool negativeA = float.IsNegative(a), negativeB = float.IsNegative(b);
+        if (negativeA == negativeB)
+        {
             return 0;
         }
 
-        return a < b ? -1 : a > b ? 1 : 0;
+        return negativeA ? -1 : 1;
     }
 
     private static NotSupportedException NotPortedConversion(string op, string type)

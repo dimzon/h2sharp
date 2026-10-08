@@ -373,6 +373,23 @@ public sealed class ValueAllocationTests
     }
 
     [Fact]
+    public void RealArithmeticCostsOneObjectAndComparisonCostsNothing()
+    {
+        // A float arithmetic operation answers a fresh value, which the cache may or may not have,
+        // so it costs one object; the comparison decides on the bits and the signs and allocates
+        // nothing at all.
+        Value a = ValueReal.Get(1.5f);
+        Value b = ValueReal.Get(2.5f);
+        CompareMode off = CompareMode.GetInstance(null, 0);
+
+        Assert.Equal(0, MeasurePerCall(() => a.CompareTo(b, null, off)));
+        Assert.InRange(MeasurePerCall(() => a.Add(b)), 16, 48);
+        Assert.InRange(MeasurePerCall(() => a.Divide(b, TypeInfo.TypeReal)), 16, 48);
+        Assert.InRange(MeasurePerCall(() => a.Modulus(b)), 16, 48);
+        Assert.Equal(0, MeasurePerCall(() => a.GetHashCode()));
+    }
+
+    [Fact]
     public void Utf8CostsTheResultAndNothingElse()
     {
         // Decoding rents its buffer, so what is left is the string the caller asked for: 152 bytes
