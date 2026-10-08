@@ -173,10 +173,11 @@ public class CompareMode
     {
         if (ignoreCase)
         {
-            // String.compareToIgnoreCase folds with both cases, which ToUpperEnglish reproduces
-            // exactly, and the reference takes this same path when the collator's strength is
-            // below SECONDARY. The magnitude is the same difference of code units.
-            return StringUtils.CompareJava(StringUtils.ToUpperEnglish(a), StringUtils.ToUpperEnglish(b));
+            // The reference hands this straight to String.compareToIgnoreCase, which folds case per
+            // code unit and answers with the difference of the lower-cased pair. Folding to upper case
+            // and subtracting gives the same sign and a different number, which is observable, so this
+            // is the JDK's own two-step walk rather than a string comparison dressed up as one.
+            return StringUtils.CompareJavaIgnoreCase(a, b);
         }
 
         return StringUtils.CompareJava(a, b);

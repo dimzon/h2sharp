@@ -1513,6 +1513,64 @@ public static class StringUtils
 
         return a.Length - b.Length;
     }
+
+    /// <summary>
+    /// Java's <c>String.compareToIgnoreCase</c>: the case-folded comparison, with the magnitude
+    /// the reference returns.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>CompareJava</c> over the upper-cased strings, which is what this was at first, and
+    /// which gets the sign right and the number wrong: comparing <c>" abc"</c> with <c>"AbC"</c>
+    /// the reference answers -65, the difference of the space and the lower-cased <c>a</c>,
+    /// while the difference of the space and the upper-cased <c>A</c> is -33.
+    /// <para>
+    /// The algorithm is the JDK's, and the order of its three steps is what decides the
+    /// number. Where the characters differ it takes the upper case first; if that makes them
+    /// equal it carries on as if they matched. Otherwise it takes the lower case <em>of the
+    /// upper-cased pair</em>, and returns the difference of that — and this is not the same as
+    /// lower-casing the original: for the Turkish dotless i against <c>A</c> the reference answers
+    /// <c>'i' - 'a'</c>, which is 8, where lower-casing the original would answer
+    /// <c>'ı' - 'a'</c>, which is 208.
+    /// </para>
+    /// <para>
+    /// Characters are compared one UTF-16 unit at a time, as the JDK does: a supplementary
+    /// character is two units here and two there, and neither side forms a code point.
+    /// </para>
+    /// </remarks>
+    /// <param name="a">the first string</param>
+    /// <param name="b">the second string</param>
+    /// <returns>
+    /// the difference of the first differing pair, folded, or of the lengths if one string is
+    /// a prefix of the other
+    /// </returns>
+    public static int CompareJavaIgnoreCase(string a, string b)
+    {
+        int shared = Math.Min(a.Length, b.Length);
+        for (int i = 0; i < shared; i++)
+        {
+            char ca = a[i], cb = b[i];
+            if (ca == cb)
+            {
+                continue;
+            }
+
+            char ua = JavaCharacter.ToUpperCase(ca);
+            char ub = JavaCharacter.ToUpperCase(cb);
+            if (ua == ub)
+            {
+                continue;
+            }
+
+            char la = JavaCharacter.ToLowerCase(ua);
+            char lb = JavaCharacter.ToLowerCase(ub);
+            if (la != lb)
+            {
+                return la - lb;
+            }
+        }
+
+        return a.Length - b.Length;
+    }
     /// <summary>
     /// Check if a String is null or empty.
     /// </summary>

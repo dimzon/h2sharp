@@ -98,6 +98,19 @@ public abstract class ValueStringBase : Value
     /// <inheritdoc/>
     public sealed override string GetString() => value;
 
+    /// <summary>
+    /// The text of another string value, for a subclass that has to compare itself with it.
+    /// </summary>
+    /// <remarks>
+    /// C# will not let a subclass read this field through a qualifier typed as the base class, while
+    /// Java allows exactly what the reference writes. Rather than widen the field to
+    /// <c>protected internal</c> — which would make it visible to the whole assembly for one call —
+    /// the base hands the text out here.
+    /// </remarks>
+    /// <param name="v">the other string value</param>
+    /// <returns>its text</returns>
+    protected static string TextOf(ValueStringBase v) => v.value;
+
     /// <inheritdoc/>
     /// <inheritdoc/>
     /// <remarks>
