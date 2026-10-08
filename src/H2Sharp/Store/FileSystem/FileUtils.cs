@@ -115,4 +115,98 @@ public static class FileUtils
     /// environment's temporary directory.
     /// </remarks>
     public static string TempDirectory => Path.GetTempPath();
+
+    /// <summary>
+    /// Open a file for random access.
+    /// </summary>
+    /// <param name="fileName">the file</param>
+    /// <param name="mode">the access mode</param>
+    /// <returns>the open file</returns>
+    public static FileChannel Open(string fileName, string mode) => FilePath.Get(fileName).Open(mode);
+
+    /// <summary>
+    /// Whether something is at the given path.
+    /// </summary>
+    /// <param name="fileName">the path</param>
+    /// <returns>true if it is there</returns>
+    public static bool Exists(string fileName) => FilePath.Get(fileName).Exists();
+
+    /// <summary>
+    /// Whether the file may be written to.
+    /// </summary>
+    /// <param name="fileName">the path</param>
+    /// <returns>true if it may</returns>
+    public static bool CanWrite(string fileName) => FilePath.Get(fileName).CanWrite();
+
+    /// <summary>
+    /// The directory a file is in.
+    /// </summary>
+    /// <param name="fileName">the file</param>
+    /// <returns>the directory, or null when the name has none</returns>
+    public static FilePath? GetParent(string fileName) => FilePath.Get(fileName).GetParent();
+
+    /// <summary>
+    /// Create a directory and whatever is above it, and do nothing if it is already there.
+    /// </summary>
+    /// <remarks>
+    /// The reference's own <c>createDirectories</c> creates the whole chain, unlike its
+    /// <c>FilePath.createDirectory</c>, which requires the parent to exist; the difference matters
+    /// because the store calls this one before opening a file in a directory that may be missing.
+    /// </remarks>
+    /// <param name="directory">the directory, or null for the current one</param>
+    public static void CreateDirectories(string? directory)
+    {
+        if (string.IsNullOrEmpty(directory))
+        {
+            return;
+        }
+
+        DiskFilePath path = (DiskFilePath)FilePath.Get(directory);
+        if (!path.Exists())
+        {
+            _ = System.IO.Directory.CreateDirectory(path.SystemName);
+        }
+    }
+
+    /// <summary>
+    /// Read exactly as many bytes as asked for, and fail if they are not there.
+    /// </summary>
+    /// <remarks>
+    /// "Exactly" is the point: the store reads whole blocks and treats a short read as damage, while
+    /// a plain <c>Read</c> that returns what it found would hand it half a page and call that a
+    /// page.
+    /// </remarks>
+    /// <param name="channel">the open file</param>
+    /// <param name="destination">where to read</param>
+    /// <exception cref="IOException">if the file ends first</exception>
+    public static void ReadFully(FileChannel channel, Span<byte> destination)
+    {
+        int at = 0;
+        while (at < destination.Length)
+        {
+            int read = channel.Read(destination[at..]);
+            if (read <= 0)
+            {
+                throw new EndOfStreamException("Read " + destination.Length + " bytes at " + at);
+            }
+
+            at += read;
+        }
+    }
+
+    /// <summary>
+    /// Write exactly as many bytes as given, and fail if they did not all go.
+    /// </summary>
+    /// <param name="channel">the open file</param>
+    /// <param name="source">what to write</param>
+    /// <exception cref="IOException">if it did not all go</exception>
+    public static void WriteFully(FileChannel channel, ReadOnlySpan<byte> source)
+    {
+        int at = 0;
+        while (at < source.Length)
+        {
+            channel.Write(source[at..]);
+            at += source.Length;
+        }
+    }
 }
