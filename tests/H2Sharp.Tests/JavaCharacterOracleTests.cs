@@ -134,6 +134,96 @@ public sealed class JavaCharacterOracleTests
                 (bits & 8) == 0 ? null : "whitespace",
             }.Where(static name => name is not null));
 
+    /// <summary>
+    /// The code point at a place in a string, for every place of every corpus string, against the
+    /// JDK's own <c>String.codePointAt</c>.
+    /// </summary>
+    /// <remarks>
+    /// The corpus is where the answers differ: a plain character, a pair, a leading half with
+    /// nothing after it, a leading half followed by an ordinary character, a trailing half on its
+    /// own, and an empty string. The port assembles the pair by arithmetic rather than by
+    /// <c>char.ConvertToUtf32</c>, so this is what proves the two ways agree.
+    /// </remarks>
+    [JavaOracleFact]
+    public void TheCodePointsMatchTheJdkForEveryPlace()
+    {
+        List<string> java = OracleRunner.Run(
+                Corpus,
+                """
+                StringBuilder line = new StringBuilder();
+                for (int i = 0; i < inputs.length; i++) {
+                  String s = inputs[i];
+                  line.setLength(0);
+                  for (int at = 0; at < s.length(); at++) {
+                    line.append((char) s.codePointAt(at));
+                  }
+                  System.out.println(hex(line.toString()));
+                }
+                """,
+                extraJavaArgs: ["-Duser.language=en"])
+            .Select(Decode)
+            .ToList();
+
+        List<string> csharp = [.. Corpus.Select(PackedCodePoints)];
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(
+                java[i] == csharp[i],
+                $"\"{Corpus[i]}\":\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
+    /// <summary>
+    /// What the port does where the JDK would throw or is asked for a place past the end.
+    /// </summary>
+    [Fact]
+    public void ThePortAnswersWhereTheJdkHasNothingToAnswer()
+    {
+        // A leading half with no trailing half after it answers itself, and so does a leading half before
+        // an ordinary character and a trailing half on its own.
+        Assert.Equal(0xD83D, JavaCharacter.CodePointAt("a\uD83D", 1));
+        Assert.Equal(0xD83D, JavaCharacter.CodePointAt("a\uD83Db", 1));
+        Assert.Equal(0x1F600, JavaCharacter.CodePointAt("a\U0001F600b", 1));
+        Assert.Equal(0xDE00, JavaCharacter.CodePointAt("\U0001F600", 1));
+        Assert.Equal('b', JavaCharacter.CodePointAt("a\U0001F600b", 3));
+        Assert.Equal('a', JavaCharacter.CodePointAt("a\U0001F600b", 0));
+
+        // A place past the end is refused by the indexer, as it always was: the port never reached
+        // past the end itself, where the reference does and answers what its own string holds.
+        Assert.Throws<IndexOutOfRangeException>(() => JavaCharacter.CodePointAt("abc", 3));
+        Assert.Throws<IndexOutOfRangeException>(() => JavaCharacter.CodePointAt(string.Empty, 0));
+    }
+
+    private static readonly List<string> Corpus =
+    [
+        "abc",
+        "a\U0001F600",
+        "a\U0001F600b",
+        "\U0001F600",
+        "\U0001F600\U0001F600",
+        "a\uD83D",
+        "a\uD83D\U0001F600",
+        "\U0001F600abc",
+        "имя_столбца",
+        "Ω≈ç√",
+        "a\uD83Db",
+        "\uD83D",
+        "",
+    ];
+
+    private static string PackedCodePoints(string s)
+    {
+        StringBuilder b = new(s.Length);
+        for (int i = 0; i < s.Length; i++)
+        {
+            _ = b.Append((char)JavaCharacter.CodePointAt(s, i));
+        }
+
+        return b.ToString();
+    }
+
     private static string Decode(string hex)
     {
         string only = hex.TrimStart('=');
