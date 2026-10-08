@@ -89,13 +89,15 @@ public abstract partial class Value
                 return CompareNumeric(l, r, leftType, rightType, dataType);
             }
 
+            // Two ENUMs are compared as their ordinals, but the ordinals are only comparable once both
+            // are in the same list, so the list of whichever side is an ENUM wins and the other
+            // side is looked up in it again. This used to refuse, which made ENUM the one
+            // numeric type the comparison could not answer for.
             if (dataType == Value.Enum)
             {
-                throw new NotSupportedException(
-                    "Comparing two ENUM values needs the ENUM conversion, which is not ported "
-                    + "yet. See MIGRATION_STATUS.md.")
-                {
-                };
+                ExtTypeInfoEnum enumerators = ExtTypeInfoEnum.GetEnumeratorsForBinaryOperation(l, r);
+                return Math.Sign(l.ConvertToEnum(enumerators, provider).GetInt()
+                    - r.ConvertToEnum(enumerators, provider).GetInt());
             }
 
             if (dataType <= Value.Blob)

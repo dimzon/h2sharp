@@ -132,7 +132,7 @@ public abstract partial class Value
                 or IntervalHourToSecond or IntervalMinuteToSecond
                 => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
             JavaObject => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
-            Enum => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
+            Enum => ConvertToEnum((ExtTypeInfoEnum)targetType.GetExtTypeInfo()!, provider),
             Geometry => ConvertToGeometryType(targetType),
             Json => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
             Uuid => ConvertToUuidType(),
@@ -596,7 +596,7 @@ public abstract partial class Value
         }
     }
 
-    private ValueInteger ConvertToIntType(object? column)
+    internal ValueInteger ConvertToIntType(object? column)
     {
         int valueType = GetValueType();
         if (valueType == Integer)
@@ -781,6 +781,61 @@ public abstract partial class Value
         }
 
         return v;
+    }
+
+    /// <summary>
+    /// Converts this value to an ENUM value of the given list. May not be called on a NULL value.
+    /// </summary>
+    /// <remarks>
+    /// An ENUM is reached from a number or from a label, and nothing else: a boolean is not an
+    /// enum even where one of the labels reads TRUE, because the reference does not list BOOLEAN
+    /// here and a port that added it would accept a conversion the engine refuses.
+    /// <para>
+    /// An ENUM converting to an ENUM with the same list is itself and is returned as it is. A
+    /// different list means the label has to be looked up again, because the ordinals of two
+    /// lists have nothing to do with each other.
+    /// </para>
+    /// </remarks>
+    /// <param name="extTypeInfo">the target list of enumerators</param>
+    /// <param name="provider">the cast information provider</param>
+    /// <returns>the ENUM value</returns>
+    public ValueEnum ConvertToEnum(ExtTypeInfoEnum extTypeInfo, CastDataProvider? provider)
+    {
+        switch (GetValueType())
+        {
+            case Enum:
+                {
+                    ValueEnum v = (ValueEnum)this;
+                    if (extTypeInfo.Equals(v.GetEnumerators()))
+                    {
+                        return v;
+                    }
+
+                    // A different list: the label is what travels, and the new list decides the
+                    // ordinal. A label the new list does not have is an error there, which is the
+                    // reference's answer too.
+                    return extTypeInfo.GetValue(v.GetString() ?? string.Empty, provider);
+                }
+
+            case Tinyint:
+            case Smallint:
+            case Integer:
+            case Bigint:
+            case Numeric:
+            case Decfloat:
+                return extTypeInfo.GetValue(GetInt(), provider);
+
+            case Varchar:
+            case VarcharIgnorecase:
+            case Char:
+                return extTypeInfo.GetValue(GetString() ?? string.Empty, provider);
+
+            case Null:
+                throw DbException.GetInternalError();
+
+            default:
+                throw GetDataConversionErrorException(Enum);
+        }
     }
 
     /// <summary>

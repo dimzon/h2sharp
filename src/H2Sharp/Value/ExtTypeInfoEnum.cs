@@ -7,6 +7,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System;
+using System.Globalization;
 using System.Text;
 using H2Sharp.Api;
 using H2Sharp.Engine;
@@ -113,22 +114,122 @@ public sealed class ExtTypeInfoEnum : ExtTypeInfo
     /// <summary>
     /// Get <c>ValueEnum</c> instance for an ordinal.
     /// </summary>
+    /// <remarks>
+    /// Whether an enum starts at 0 or at 1 is a property of the connection, not of the list,
+    /// so it is asked of the provider: the same <c>ENUM('A', 'B')</c> is stored as 1 and 2 by
+    /// one client and as 0 and 1 by another. Without a provider the reference counts from 1, and
+    /// so does this.
+    /// </remarks>
     /// <param name="ordinal">ordinal value of an enum</param>
+    /// <param name="provider">the cast information provider, which decides whether enums are 0-based</param>
     /// <returns><c>ValueEnum</c> instance</returns>
-    /// <exception cref="NotSupportedException">always, <c>ValueEnum</c> is not ported</exception>
-    public object GetValue(int ordinal)
-        => throw new NotSupportedException(
-            "An enum value needs ValueEnum, which is not ported yet.");
+    /// <exception cref="H2SharpException">if the ordinal is out of range</exception>
+    public ValueEnum GetValue(int ordinal, CastDataProvider? provider)
+    {
+        string label;
+        if (provider is null || !provider.ZeroBasedEnums())
+        {
+            if (ordinal < 1 || ordinal > enumerators.Length)
+            {
+                throw DbException.Get(
+                    ErrorCode.EnumValueNotPermitted,
+                    GetTraceSql(),
+                    ordinal.ToString(CultureInfo.InvariantCulture));
+            }
+
+            label = enumerators[ordinal - 1]!;
+        }
+        else
+        {
+            if (ordinal < 0 || ordinal >= enumerators.Length)
+            {
+                throw DbException.Get(
+                    ErrorCode.EnumValueNotPermitted,
+                    GetTraceSql(),
+                    ordinal.ToString(CultureInfo.InvariantCulture));
+            }
+
+            label = enumerators[ordinal]!;
+        }
+
+        return new ValueEnum(this, label, ordinal);
+    }
 
     /// <summary>
     /// Get <c>ValueEnum</c> instance for a label string.
     /// </summary>
     /// <param name="label">label string</param>
+    /// <param name="provider">the cast information provider, which decides whether enums are 0-based</param>
     /// <returns><c>ValueEnum</c> instance</returns>
-    /// <exception cref="NotSupportedException">always, <c>ValueEnum</c> is not ported</exception>
-    public object GetValue(string label)
-        => throw new NotSupportedException(
-            "An enum value needs ValueEnum, which is not ported yet.");
+    /// <exception cref="H2SharpException">if the label is not one of the enumerators</exception>
+    public ValueEnum GetValue(string label, CastDataProvider? provider)
+        => GetValueOrNull(label, provider)
+        ?? throw DbException.Get(ErrorCode.EnumValueNotPermitted, GetTraceSql(), label);
+
+    /// <summary>
+    /// Get <c>ValueEnum</c> instance for a label string, or null if the label is not one of the
+    /// enumerators.
+    /// </summary>
+    /// <remarks>
+    /// Matching is against the cleaned labels, so a label written with surrounding quotes or
+    /// spaces finds the same enumerator. That is the reference's <c>sanitize</c>, and it is why
+    /// this returns null instead of throwing: a caller that wants a value or an error asks for
+    /// <see cref="GetValue(string, CastDataProvider?)"/>, and a caller that wants to know
+    /// whether a label belongs to this list asks here.
+    /// </remarks>
+    /// <param name="label">label string</param>
+    /// <param name="provider">the cast information provider, which decides whether enums are 0-based</param>
+    /// <returns><c>ValueEnum</c> instance, or null</returns>
+    public ValueEnum? GetValueOrNull(string label, CastDataProvider? provider)
+    {
+        string? l = Sanitize(label);
+        if (l is not null)
+        {
+            for (int i = 0, ordinal = provider is null || !provider.ZeroBasedEnums() ? 1 : 0;
+                i < cleaned.Length;
+                i++, ordinal++)
+            {
+                if (string.Equals(l, cleaned[i], StringComparison.Ordinal))
+                {
+                    return new ValueEnum(this, enumerators[i]!, ordinal);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The enumerator list to compare a binary operation in, which is the list of whichever
+    /// side is an ENUM.
+    /// </summary>
+    /// <remarks>
+    /// Two ENUMs of different lists are compared by putting both into one of the lists — the
+    /// left one's — which re-derives the right one's ordinal from its label. That is the
+    /// reference's answer and it is the only one available: ordinals of two lists have nothing
+    /// to do with each other, so the two have to agree on which list is being spoken.
+    /// </remarks>
+    /// <param name="left">left (first) operand</param>
+    /// <param name="right">right (second) operand</param>
+    /// <returns>enumerators from the left or the right value</returns>
+    /// <exception cref="H2SharpException">if neither value is an ENUM</exception>
+    public static ExtTypeInfoEnum GetEnumeratorsForBinaryOperation(Value left, Value right)
+    {
+        if (left.GetValueType() == Value.Enum)
+        {
+            return ((ValueEnum)left).GetEnumerators();
+        }
+
+        if (right.GetValueType() == Value.Enum)
+        {
+            return ((ValueEnum)right).GetEnumerators();
+        }
+
+        throw DbException.Get(
+            ErrorCode.UnknownDataType1,
+            "type1=" + left.GetValueType().ToString(CultureInfo.InvariantCulture)
+            + ", type2=" + right.GetValueType().ToString(CultureInfo.InvariantCulture));
+    }
 
     /// <inheritdoc/>
     public override int GetHashCode()
