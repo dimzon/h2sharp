@@ -21,17 +21,17 @@ namespace H2Sharp.Values;
 public sealed class ValueNumeric : ValueBigDecimalBase
 {
     /// <summary>
-    /// The value zero.
+    /// The Number zero.
     /// </summary>
     public static readonly ValueNumeric Zero = new(BigDecimal.Zero);
 
     /// <summary>
-    /// The value one.
+    /// The Number one.
     /// </summary>
     public static readonly ValueNumeric One = new(BigDecimal.One);
 
     /// <summary>
-    /// The default scale for a NUMERIC value.
+    /// The default scale for a NUMERIC Number.
     /// </summary>
     public const int DefaultScale = 0;
 
@@ -41,13 +41,13 @@ public sealed class ValueNumeric : ValueBigDecimalBase
     public const int MaximumScale = 100_000;
 
     /// <summary>
-    /// The largest value a long can hold, as a decimal, which is where the printed form of a NUMERIC
+    /// The largest Number a long can hold, as a decimal, which is where the printed form of a NUMERIC
     /// stops needing a CAST.
     /// </summary>
     private static readonly BigDecimal MaxLongDecimal = BigDecimal.FromLong(long.MaxValue);
 
     /// <summary>
-    /// The smallest value a long can hold, as a decimal.
+    /// The smallest Number a long can hold, as a decimal.
     /// </summary>
     private static readonly BigDecimal MinLongDecimal = BigDecimal.FromLong(long.MinValue);
 
@@ -69,10 +69,10 @@ public sealed class ValueNumeric : ValueBigDecimalBase
     /// <remarks>
     /// A NUMERIC prints as a plain number, never with an exponent: it comes back to the user as
     /// something to read rather than as something to be parsed again. The reference writes the
-    /// scale out in full for the same reason, and a value with a negative scale prints the zeros
+    /// scale out in full for the same reason, and a Number with a negative scale prints the zeros
     /// that the scale stands for.
     /// </remarks>
-    public override string? GetString() => value.ToPlainString();
+    public override string? GetString() => Number.ToPlainString();
 
     /// <inheritdoc/>
     /// <remarks>
@@ -84,38 +84,90 @@ public sealed class ValueNumeric : ValueBigDecimalBase
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
     {
         // The reference builds the plain string first and asks it whether it has a point in it.
-        // That question has an answer without building it: the plain form of a value has a point
+        // That question has an answer without building it: the plain form of a Number has a point
         // exactly when its scale is positive, since a scale of zero writes the digits and a
         // negative one writes the digits and the zeros the scale stands for. So the common path,
         // which is a whole number that fits a long, costs nothing but the builder.
         if ((sqlFlags & HasSql.NoCasts) == 0
-            && value.Scale <= 0
-            && value.CompareTo(MaxLongDecimal) <= 0
-            && value.CompareTo(MinLongDecimal) >= 0)
+            && Number.Scale <= 0
+            && Number.CompareTo(MaxLongDecimal) <= 0
+            && Number.CompareTo(MinLongDecimal) >= 0)
         {
-            return builder.Append("CAST(").Append(value)
+            return builder.Append("CAST(").Append(Number)
                 .Append(" AS NUMERIC(")
-                .Append(value.Precision().ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .Append(Number.Precision().ToString(System.Globalization.CultureInfo.InvariantCulture))
                 .Append("))");
         }
 
-        return builder.Append(value.ToPlainString());
+        return builder.Append(Number.ToPlainString());
     }
 
     /// <inheritdoc/>
     public override int GetValueType() => Value.Numeric;
 
-    /// <inheritdoc/>
-    public override Value Add(Value v) => Get(value.Add(((ValueNumeric)v).value));
+    /// <summary>
+    /// The Number. The field is null only because DECFLOAT has three values that are not
+    /// numbers; a NUMERIC has none of them, so this is where that is said once.
+    /// </summary>
+    private BigDecimal Number => value!;
 
     /// <inheritdoc/>
-    public override Value Subtract(Value v) => Get(value.Subtract(((ValueNumeric)v).value));
+    public override TypeInfo GetTypeInfo()
+    {
+        TypeInfo? cached = type;
+        if (cached is null)
+        {
+            type = cached = new TypeInfo(Value.Numeric, Number.Precision(), Number.Scale, null);
+        }
+
+        return cached;
+    }
 
     /// <inheritdoc/>
-    public override Value Negate() => Get(value.Negate());
+    public override int GetSignum() => Number.Signum();
 
     /// <inheritdoc/>
-    public override Value Multiply(Value v) => Get(value.Multiply(((ValueNumeric)v).value));
+    public override BigDecimal GetBigDecimal() => Number;
+
+    /// <inheritdoc/>
+    public override double GetDouble() => Number.ToDouble();
+
+    /// <inheritdoc/>
+    public override float GetFloat() => (float)Number.ToDouble();
+
+    /// <inheritdoc/>
+    public sealed override bool Equals(object? other)
+        => other is not null
+            && GetType() == other.GetType()
+            && Number.Equals(((ValueNumeric)other).Number);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The reference mixes in <c>getClass().hashCode()</c>, which in Java is an identity hash and
+    /// differs on every run, so it is not a reproducible number on either side and is not pinned by
+    /// the differential test. Equality, which is what a hash has to agree with, is compared.
+    /// </remarks>
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            int classHash = GetType().GetHashCode();
+            int decimalHash = Number.GetHashCode();
+            return classHash * 31 + decimalHash;
+        }
+    }
+
+    /// <inheritdoc/>
+    public override Value Add(Value v) => Get(Number.Add(((ValueNumeric)v).Number));
+
+    /// <inheritdoc/>
+    public override Value Subtract(Value v) => Get(Number.Subtract(((ValueNumeric)v).Number));
+
+    /// <inheritdoc/>
+    public override Value Negate() => Get(Number.Negate());
+
+    /// <inheritdoc/>
+    public override Value Multiply(Value v) => Get(Number.Multiply(((ValueNumeric)v).Number));
 
     /// <inheritdoc/>
     /// <remarks>
@@ -128,39 +180,39 @@ public sealed class ValueNumeric : ValueBigDecimalBase
     /// <returns>the result</returns>
     public override Value Divide(Value v, TypeInfo quotientType)
     {
-        BigDecimal divisor = ((ValueNumeric)v).value;
+        BigDecimal divisor = ((ValueNumeric)v).Number;
         if (divisor.Signum() == 0)
         {
             throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
         }
 
-        return Get(value.Divide(divisor, quotientType.GetScale(), RoundingMode.HalfDown));
+        return Get(Number.Divide(divisor, quotientType.GetScale(), RoundingMode.HalfDown));
     }
 
     /// <inheritdoc/>
     public override Value Modulus(Value v)
     {
-        BigDecimal divisor = ((ValueNumeric)v).value;
+        BigDecimal divisor = ((ValueNumeric)v).Number;
         if (divisor.Signum() == 0)
         {
             throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
         }
 
-        return Get(value.Remainder(divisor));
+        return Get(Number.Remainder(divisor));
     }
 
     /// <inheritdoc/>
     public override int CompareTypeSafe(Value o, CompareMode mode, CastDataProvider? provider)
-        => value.CompareTo(((ValueNumeric)o).value);
+        => Number.CompareTo(((ValueNumeric)o).Number);
 
     /// <inheritdoc/>
-    public override int GetMemory() => value.Precision() + 120;
+    public override int GetMemory() => Number.Precision() + 120;
 
     /// <summary>
-    /// Get or create a NUMERIC value for the given decimal.
+    /// Get or create a NUMERIC Number for the given decimal.
     /// </summary>
     /// <param name="dec">the decimal</param>
-    /// <returns>the value</returns>
+    /// <returns>the Number</returns>
     public static ValueNumeric Get(BigDecimal dec)
     {
         if (BigDecimal.Zero.Equals(dec))
@@ -177,23 +229,23 @@ public sealed class ValueNumeric : ValueBigDecimalBase
     }
 
     /// <summary>
-    /// Get or create a NUMERIC value for the given decimal, normalising a negative scale to zero.
+    /// Get or create a NUMERIC Number for the given decimal, normalising a negative scale to zero.
     /// </summary>
     /// <remarks>
-    /// A scale below zero says the value has zeros the unscaled value does not have, which is not a
+    /// A scale below zero says the Number has zeros the unscaled Number does not have, which is not a
     /// scale a NUMERIC can be declared with. Normalising means rounding the zeros away, which is
     /// exact, so nothing is lost on the way.
     /// </remarks>
     /// <param name="dec">the decimal, whose scale may be negative</param>
-    /// <returns>the value</returns>
+    /// <returns>the Number</returns>
     public static ValueNumeric GetAnyScale(BigDecimal dec)
         => dec.Scale < 0 ? Get(dec.SetScale(0, RoundingMode.Unnecessary)) : Get(dec);
 
     /// <summary>
-    /// Get or create a NUMERIC value for the given integer.
+    /// Get or create a NUMERIC Number for the given integer.
     /// </summary>
     /// <param name="bigInteger">the integer</param>
-    /// <returns>the value</returns>
+    /// <returns>the Number</returns>
     public static ValueNumeric Get(BigInteger bigInteger)
     {
         if (bigInteger.IsZero)

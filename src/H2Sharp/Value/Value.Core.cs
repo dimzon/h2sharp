@@ -299,7 +299,21 @@ public abstract partial class Value
     /// <param name="targetType">the type the value could not become</param>
     /// <exception cref="H2SharpException">always</exception>
     protected void GetDataConversionError(int targetType)
-        => throw DbException.Get(
+        => throw GetDataConversionErrorException(targetType);
+
+    /// <summary>
+    /// The conversion error, for a caller whose signature has to give a value back after it.
+    /// </summary>
+    /// <remarks>
+    /// The reference has one method that throws, and a caller whose method must return something
+    /// throws it directly from inside a branch. Writing <c>throw GetDataConversionErrorException</c>
+    /// says the same thing without a second copy of the message, and without inventing a value to
+    /// satisfy the compiler on a path that is never taken.
+    /// </remarks>
+    /// <param name="targetType">the type the value could not become</param>
+    /// <returns>the error, which is not thrown by this method</returns>
+    protected Exception GetDataConversionErrorException(int targetType)
+        => DbException.Get(
             ErrorCode.DataConversionError1,
             Value.GetTypeName(GetValueType()) + " to " + Value.GetTypeName(targetType));
 

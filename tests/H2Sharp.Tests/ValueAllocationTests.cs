@@ -390,6 +390,40 @@ public sealed class ValueAllocationTests
     }
 
     [Fact]
+    public void DecfloatComparisonsCostNothingAndItsValuesAreKept()
+    {
+        // A DECFLOAT compares on the decimals themselves, so a comparison allocates nothing. An
+        // operation answers a value the cache may or may not have, which is one object, and zero
+        // and one are kept, so the two values a loop divides by cost nothing at all.
+        Value a = ValueDecfloat.Get(BigDecimal.Parse("1.5"));
+        Value b = ValueDecfloat.Get(BigDecimal.Parse("2.5"));
+        CompareMode off = CompareMode.GetInstance(null, 0);
+        TypeInfo quotientType = new(Value.Decfloat, 34, 0, null);
+
+        Assert.Equal(0, MeasurePerCall(() => a.CompareTo(b, null, off)));
+        Assert.Equal(0, MeasurePerCall(() => ValueDecfloat.PositiveInfinity.CompareTo(ValueDecfloat.NegativeInfinity, null, off)));
+        // An operation is the value it answers, plus the decimal it built to answer it: 112 bytes
+        // for a sum of two decimals, and the same for a difference and a product.
+        Assert.InRange(MeasurePerCall(() => a.Add(b)), 96, 512);
+        // A division costs about ten times that, and the difference is the decimal work rather
+        // than the value: it works out the scale of the quotient out of the precision and the
+        // scale of both operands and then divides to it, which builds several BigIntegers. The
+        // reference does the same arithmetic with the same library underneath, so the range is
+        // wide on purpose: what it guards is a division that stopped being one, not its exact cost.
+        Assert.InRange(MeasurePerCall(() => a.Divide(b, quotientType)), 512, 4096);
+        // The decimal is parsed outside the loop: parsing is the expensive part of writing this
+        // line. A value that is kept, zero and one, costs nothing; any other costs the object the
+        // reference builds before the cache answers, one object of 32 bytes.
+        BigDecimal spelled = BigDecimal.Parse("1.500");
+        BigDecimal plain = BigDecimal.Parse("1.5");
+        Assert.Equal(0, MeasurePerCall(() => ValueDecfloat.Get(BigDecimal.Zero)));
+        Assert.Equal(0, MeasurePerCall(() => ValueDecfloat.Get(BigDecimal.One)));
+        Assert.InRange(MeasurePerCall(() => ValueDecfloat.Get(plain)), 24, 48);
+        Assert.True(MeasurePerCall(() => ValueDecfloat.Get(spelled)) > 0);
+        Assert.Equal(0, MeasurePerCall(() => a.GetSignum()));
+    }
+
+    [Fact]
     public void Utf8CostsTheResultAndNothingElse()
     {
         // Decoding rents its buffer, so what is left is the string the caller asked for: 152 bytes
