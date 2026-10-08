@@ -136,6 +136,84 @@ public sealed class ValueInterval : Value
         return true;
     }
 
+    /// <summary>
+    /// Converts this value to the type a target asks for, truncating or refusing by the target's
+    /// scale and precision.
+    /// </summary>
+    /// <remarks>
+    /// This is the scale half of a conversion to a narrower INTERVAL: the remaining fields are
+    /// rounded to the declared scale, and if rounding them up carries into the leading field —
+    /// 59.9996 seconds at scale 2 is a minute, not 59.99 — the leading field takes the carry and
+    /// the rest starts again at zero. An interval whose type has no fractional field at all is
+    /// not converted but refused, which is the <c>convertScale</c> label in the reference: there
+    /// is nothing to scale.
+    /// </remarks>
+    /// <param name="targetType">the type to convert to</param>
+    /// <param name="column">the column, for the error message</param>
+    /// <returns>the converted value</returns>
+    /// <exception cref="H2SharpException">if the leading field is wider than the target allows</exception>
+    internal ValueInterval SetPrecisionAndScale(TypeInfo targetType, object? column)
+    {
+        int targetScale = targetType.GetScale();
+        ValueInterval v = this;
+
+        if (targetScale < MaximumScale)
+        {
+            long range;
+            switch (valueType)
+            {
+                case Value.IntervalSecond:
+                    range = DateTimeUtils.NanosPerSecond;
+                    break;
+
+                case Value.IntervalDayToSecond:
+                    range = DateTimeUtils.NanosPerDay;
+                    break;
+
+                case Value.IntervalHourToSecond:
+                    range = DateTimeUtils.NanosPerHour;
+                    break;
+
+                case Value.IntervalMinuteToSecond:
+                    range = DateTimeUtils.NanosPerMinute;
+                    break;
+
+                default:
+                    range = 0;
+                    break;
+            }
+
+            // Zero means the type has no fractional field, and the reference leaves the label
+            // rather than scaling by nothing. Written as a range of zero rather than as an
+            // early return so the carry below is not duplicated.
+            if (range != 0)
+            {
+                long l = leading;
+                long r = DateTimeUtils.ConvertScale(
+                    remaining,
+                    targetScale,
+                    l == 999_999_999_999_999_999L ? range : long.MaxValue);
+                if (r != remaining)
+                {
+                    if (r >= range)
+                    {
+                        l++;
+                        r -= range;
+                    }
+
+                    v = From(GetQualifier(), IsNegative(), l, r);
+                }
+            }
+        }
+
+        if (!v.CheckPrecision(targetType.GetPrecision()))
+        {
+            throw v.GetValueTooLongException(targetType, column);
+        }
+
+        return v;
+    }
+
     /// <inheritdoc/>
     public override string? GetString()
         => IntervalUtils

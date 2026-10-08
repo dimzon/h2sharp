@@ -126,11 +126,11 @@ public abstract partial class Value
             Timestamp => ConvertToTimestampType(targetType, provider, conversionMode),
             TimestampTz => ConvertToTimestampTimeZoneType(targetType, provider, conversionMode),
             IntervalYear or IntervalMonth or IntervalYearToMonth
-                => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
+                => ConvertToIntervalYearMonthType(targetType, conversionMode, column),
             IntervalDay or IntervalHour or IntervalMinute or IntervalSecond or IntervalDayToHour
                 or IntervalDayToMinute or IntervalDayToSecond or IntervalHourToMinute
                 or IntervalHourToSecond or IntervalMinuteToSecond
-                => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
+                => ConvertToIntervalDayTimeType(targetType, conversionMode, column),
             JavaObject => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
             Enum => ConvertToEnum((ExtTypeInfoEnum)targetType.GetExtTypeInfo()!, provider),
             Geometry => ConvertToGeometryType(targetType),
@@ -1066,6 +1066,228 @@ public abstract partial class Value
     /// TIME WITH TIME ZONE and is only correct for that one type — which is exactly the mistake
     /// the differential test caught when two branches were merged into one.
     /// </summary>
+    private ValueInterval ConvertToIntervalYearMonthType(
+        TypeInfo targetType, int conversionMode, object? column)
+    {
+        int targetValueType = targetType.GetValueType();
+        ValueInterval v = ConvertToIntervalYearMonth(targetValueType, column);
+        if (conversionMode != ConvertTo && !v.CheckPrecision(targetType.GetPrecision()))
+        {
+            throw v.GetValueTooLongException(targetType, column);
+        }
+
+        return v;
+    }
+
+    private ValueInterval ConvertToIntervalYearMonth(int targetType, object? column)
+    {
+        long leading;
+        switch (GetValueType())
+        {
+            case Tinyint:
+            case Smallint:
+            case Integer:
+                leading = GetInt();
+                break;
+
+            case Bigint:
+                leading = GetLong();
+                break;
+
+            case Real:
+            case Double:
+            case Numeric:
+            case Decfloat:
+                // A year-month target reads the number of months rather than years, so a real
+                // or a decimal is multiplied out before anything else looks at it.
+                if (targetType == IntervalYearToMonth)
+                {
+                    return IntervalUtils.IntervalFromAbsolute(
+                        IntervalQualifier.YearToMonth,
+                        GetBigDecimal().Multiply(BigDecimal.FromLong(12))
+                            .SetScale(0, RoundingMode.HalfUp)
+                            .UnscaledValue);
+                }
+
+                leading = GetValueType() is Real or Double
+                    ? ConvertToLongChecked(GetDouble(), column)
+                    : ConvertToLongChecked(GetBigDecimal(), column);
+                break;
+
+            case Varchar:
+            case VarcharIgnorecase:
+            case Char:
+                {
+                    string s = GetString() ?? string.Empty;
+                    try
+                    {
+                        return (ValueInterval)IntervalUtils
+                            .ParseFormattedInterval(
+                                IntervalQualifiers.ValueOf(targetType - IntervalYear), s)
+                            .ConvertToForComparison(targetType);
+                    }
+                    catch (Exception)
+                    {
+                        // Every failure of the parse becomes the same error, including the ones that
+                        // are not ours: a text that is not a number at all reaches here as a
+                        // FormatException from the framework, and the reference catches every
+                        // exception for the same reason and answers with one error. Catching only
+                        // our own would let a malformed interval escape as a bare FormatException.
+                        throw DbException.Get(ErrorCode.InvalidDatetimeConstant2, s);
+                    }
+                }
+
+            case IntervalYear:
+            case IntervalMonth:
+            case IntervalYearToMonth:
+                return IntervalUtils.IntervalFromAbsolute(
+                    IntervalQualifiers.ValueOf(targetType - IntervalYear),
+                    IntervalUtils.IntervalToAbsolute((ValueInterval)this));
+
+            case Null:
+                throw DbException.GetInternalError();
+
+            default:
+                throw GetDataConversionErrorException(targetType);
+        }
+
+        bool negative = false;
+        if (leading < 0)
+        {
+            negative = true;
+            leading = -leading;
+        }
+
+        return ValueInterval.From(IntervalQualifiers.ValueOf(targetType - IntervalYear), negative, leading, 0L);
+    }
+
+    private ValueInterval ConvertToIntervalDayTimeType(
+        TypeInfo targetType, int conversionMode, object? column)
+    {
+        ValueInterval v = ConvertToIntervalDayTime(targetType.GetValueType(), column);
+        if (conversionMode != ConvertTo)
+        {
+            v = v.SetPrecisionAndScale(targetType, column);
+        }
+
+        return v;
+    }
+
+    private ValueInterval ConvertToIntervalDayTime(int targetType, object? column)
+    {
+        long leading;
+        switch (GetValueType())
+        {
+            case Tinyint:
+            case Smallint:
+            case Integer:
+                leading = GetInt();
+                break;
+
+            case Bigint:
+                leading = GetLong();
+                break;
+
+            case Real:
+            case Double:
+            case Numeric:
+            case Decfloat:
+                // Anything finer than a minute cannot come from a plain number, because the
+                // number would have to be scaled by the number of units in the target's
+                // smallest field, and only a type with a fractional field has one.
+                if (targetType > IntervalMinute)
+                {
+                    return ConvertToIntervalDayTime(GetBigDecimal(), targetType);
+                }
+
+                leading = GetValueType() is Real or Double
+                    ? ConvertToLongChecked(GetDouble(), column)
+                    : ConvertToLongChecked(GetBigDecimal(), column);
+                break;
+
+            case Varchar:
+            case VarcharIgnorecase:
+            case Char:
+                {
+                    string s = GetString() ?? string.Empty;
+                    try
+                    {
+                        return (ValueInterval)IntervalUtils
+                            .ParseFormattedInterval(
+                                IntervalQualifiers.ValueOf(targetType - IntervalYear), s)
+                            .ConvertToForComparison(targetType);
+                    }
+                    catch (Exception)
+                    {
+                        // Every failure of the parse becomes the same error, including the ones that
+                        // are not ours: a text that is not a number at all reaches here as a
+                        // FormatException from the framework, and the reference catches every
+                        // exception for the same reason and answers with one error. Catching only
+                        // our own would let a malformed interval escape as a bare FormatException.
+                        throw DbException.Get(ErrorCode.InvalidDatetimeConstant2, s);
+                    }
+                }
+
+            case IntervalDay:
+            case IntervalHour:
+            case IntervalMinute:
+            case IntervalSecond:
+            case IntervalDayToHour:
+            case IntervalDayToMinute:
+            case IntervalDayToSecond:
+            case IntervalHourToMinute:
+            case IntervalHourToSecond:
+            case IntervalMinuteToSecond:
+                return IntervalUtils.IntervalFromAbsolute(
+                    IntervalQualifiers.ValueOf(targetType - IntervalYear),
+                    IntervalUtils.IntervalToAbsolute((ValueInterval)this));
+
+            case Null:
+                throw DbException.GetInternalError();
+
+            default:
+                throw GetDataConversionErrorException(targetType);
+        }
+
+        bool negative = false;
+        if (leading < 0)
+        {
+            negative = true;
+            leading = -leading;
+        }
+
+        return ValueInterval.From(IntervalQualifiers.ValueOf(targetType - IntervalYear), negative, leading, 0L);
+    }
+
+    /// <summary>
+    /// Turns a number of units into an interval of a target type whose smallest field is a
+    /// fraction of a second.
+    /// </summary>
+    /// <remarks>
+    /// The number is scaled by how many of the target's smallest units are in one, and rounded
+    /// to a whole number of them. A target with no fractional field is refused here rather than
+    /// guessed at, because there is no multiplier that would make it one.
+    /// </remarks>
+    /// <param name="bigDecimal">the number</param>
+    /// <param name="targetType">the type number to convert to</param>
+    /// <returns>the interval</returns>
+    private ValueInterval ConvertToIntervalDayTime(BigDecimal bigDecimal, int targetType)
+    {
+        long multiplier = targetType switch
+        {
+            IntervalSecond => DateTimeUtils.NanosPerSecond,
+            IntervalDayToHour or IntervalDayToMinute or IntervalDayToSecond
+                => DateTimeUtils.NanosPerDay,
+            IntervalHourToMinute or IntervalHourToSecond => DateTimeUtils.NanosPerHour,
+            IntervalMinuteToSecond => DateTimeUtils.NanosPerMinute,
+            _ => throw GetDataConversionErrorException(targetType),
+        };
+
+        return IntervalUtils.IntervalFromAbsolute(
+            IntervalQualifiers.ValueOf(targetType - IntervalYear),
+            bigDecimal.Multiply(BigDecimal.FromLong(multiplier)).SetScale(0, RoundingMode.HalfUp).UnscaledValue);
+    }
+
     private ValueTime ConvertToTimeType(TypeInfo targetType, CastDataProvider? provider, int conversionMode)
     {
         ValueTime v;
