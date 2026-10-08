@@ -38,6 +38,9 @@ public sealed class ValueVarcharOracleTests
         "0", "1", "-1", "0.0", "007", "1e5", "1E-5", "+5", " 42 ",
         "1.5e400", "99999999999999999999", "127", "128", "-128", "-129",
         "1.0", "-1.0", "0.1", "NaN", "Infinity", "abc def", "", "0x10", "1d",
+        // A surrogate without its partner cannot be encoded at all, and the two platforms put
+        // different bytes in its place: the reference writes '?', .NET the replacement character.
+        "\uD800", "\uDC00", "a\uD800b", "\uD800\uD800", "\uDBFF\uDFFF",
     ];
 
     [JavaOracleFact]
@@ -162,7 +165,8 @@ public sealed class ValueVarcharOracleTests
                           "true", "TRUE", "t", "Y", "yes", "false", "F", "n", "NO",
                           "0", "1", "-1", "0.0", "007", "1e5", "1E-5", "+5", " 42 ",
                           "1.5e400", "99999999999999999999", "127", "128", "-128", "-129",
-                          "1.0", "-1.0", "0.1", "NaN", "Infinity", "abc def", "", "0x10", "1d"
+                          "1.0", "-1.0", "0.1", "NaN", "Infinity", "abc def", "", "0x10", "1d",
+                          "\uD800", "\uDC00", "a\uD800b", "\uD800\uD800", "\uDBFF\uDFFF"
                       };
 
             """;

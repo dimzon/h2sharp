@@ -24,6 +24,7 @@
 using System;
 using System.Globalization;
 using System.Text;
+using H2Sharp.Util;
 using H2Sharp.Values;
 using Xunit;
 
@@ -59,6 +60,19 @@ public sealed class ValueAllocationTests
 
         return smallest;
     }
+
+    /// <summary>
+    /// What one call costs, measured over <see cref="Count"/> calls.
+    /// </summary>
+    /// <param name="action">the call to measure</param>
+    /// <returns>the number of bytes per call</returns>
+    private static long MeasurePerCall(Action action) => Measure(() =>
+    {
+        for (int i = 0; i < Count; i++)
+        {
+            action();
+        }
+    }) / Count;
 
     private const int Count = 100_000;
 
@@ -262,6 +276,35 @@ public sealed class ValueAllocationTests
         });
 
         Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void Utf8CostsTheResultAndNothingElse()
+    {
+        // Decoding rents its buffer, so what is left is the string the caller asked for: 152 bytes
+        // for 64 characters, whatever the bytes held. Before the buffer was rented this was 416 for
+        // anything that was not pure ASCII, because the StringBuilder allocated alongside the
+        // result.
+        byte[] ascii = new byte[64];
+        byte[] broken = new byte[64];
+        for (int i = 0; i < 64; i++)
+        {
+            ascii[i] = (byte)('a' + i % 26);
+            broken[i] = ascii[i];
+        }
+
+        broken[20] = 0xED;
+        broken[21] = 0xA0;
+        broken[22] = 0x80;
+
+        int resultBytes = 24 + 64 * 2;
+        Assert.Equal(resultBytes, MeasurePerCall(() => JavaUtf8.GetString(ascii)));
+        Assert.Equal(resultBytes, MeasurePerCall(() => JavaUtf8.GetString(broken)));
+
+        // Encoding counts first and allocates once, which is why an ASCII string costs its own
+        // array and not a rounded up one.
+        string text = new('a', 43);
+        Assert.InRange(MeasurePerCall(() => JavaUtf8.GetBytes(text)), 64, 96);
     }
 
     [Fact]

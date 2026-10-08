@@ -12,6 +12,7 @@ using System.Text;
 using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Message;
+using H2Sharp.Util;
 
 namespace H2Sharp.Values;
 
@@ -91,7 +92,13 @@ public abstract class ValueStringBase : Value
     public sealed override string GetString() => value;
 
     /// <inheritdoc/>
-    public sealed override byte[]? GetBytes() => Encoding.UTF8.GetBytes(value);
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The bytes have to be the reference's bytes: a string holding a surrogate without a partner
+    /// is text the reference encodes as '?', and .NET would encode the replacement character
+    /// instead. See <see cref="JavaUtf8"/>.
+    /// </remarks>
+    public sealed override byte[]? GetBytes() => JavaUtf8.GetBytes(value);
 
     /// <inheritdoc/>
     /// <remarks>
