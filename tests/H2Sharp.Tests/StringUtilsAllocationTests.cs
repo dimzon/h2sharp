@@ -22,12 +22,24 @@ namespace H2Sharp.Tests;
 public sealed class StringUtilsAllocationTests
 {
     /// <summary>
-    /// Runs the action once to force any lazy statics, then measures the allocations of
-    /// the second run on the current thread.
+    /// Runs the action a few times to force any lazy statics and to get past the point where the
+    /// runtime promotes the method to its better-compiled version, then measures the allocations of
+    /// one more run on the current thread.
     /// </summary>
+    /// <remarks>
+    /// The extra runs are not politeness: with tiered compilation a method is recompiled after a
+    /// number of calls, and a measurement that happens to land on the call that triggers it is a
+    /// measurement of the compilation rather than of the method. Since the assertions here are "this
+    /// many bytes and no other", and one of them is zero, that call is the difference between a test
+    /// that says something and a test that says something about the runtime's mood.
+    /// </remarks>
     private static long Measure(Action action)
     {
-        action();
+        for (int i = 0; i < 3; i++)
+        {
+            action();
+        }
+
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
