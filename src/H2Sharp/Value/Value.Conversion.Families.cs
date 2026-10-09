@@ -1807,14 +1807,39 @@ public abstract partial class Value
             return (ValueGeometry)this;
         }
 
-        // Only the string family parses into a geometry: the reference does not convert a BLOB
-        // to one, because a geometry is text with a type, not bytes.
+        Value result;
         switch (GetValueType())
         {
+            case Binary:
+            case Varbinary:
+            case Blob:
+                result = ValueGeometry.GetFromEWKB(GetBytesNoCopy()!);
+                break;
+
+            case Json:
+                {
+                    // The SRID has to come from the target type: a GeoJSON document carries no
+                    // coordinate reference of its own, so without a target that names one the
+                    // geometry comes out with none.
+                    int srid = (targetType.GetExtTypeInfo() as ExtTypeInfoGeometry)?.GetSrid() ?? 0;
+                    try
+                    {
+                        result = ValueGeometry.Get(GeoJsonUtils.GeoJsonToEwkb(GetBytesNoCopy()!, srid));
+                    }
+                    catch (Exception ex) when (ex is not H2SharpException)
+                    {
+                        throw DbException.Get(ErrorCode.DataConversionError1, GetTraceSql());
+                    }
+
+                    break;
+                }
+
             case Varchar:
             case VarcharIgnorecase:
             case Char:
-                return ValueGeometry.Get(GetString() ?? string.Empty);
+            case Clob:
+                result = ValueGeometry.Get(GetString() ?? string.Empty);
+                break;
 
             case Null:
                 throw DbException.GetInternalError();
@@ -1822,6 +1847,30 @@ public abstract partial class Value
             default:
                 throw GetDataConversionErrorException(Geometry);
         }
+
+        // A target that names a geometry type or an SRID is a claim about what the result has to be,
+        // and the result does not get to disagree. The reference checks it after the conversion and
+        // not before, which is why a JSON document adopts the target SRID while a binary value is
+        // left with the one it came with and then refused for not matching.
+        if (targetType.GetExtTypeInfo() is ExtTypeInfoGeometry target)
+        {
+            ValueGeometry geometry = (ValueGeometry)result;
+            int? srid = target.GetSrid();
+            if ((target.GetTypeAndDimensionSystem() != 0
+                    && geometry.GetTypeAndDimensionSystem() != target.GetTypeAndDimensionSystem())
+                || (srid is not null && geometry.GetSrid() != srid.Value))
+            {
+                throw DbException.Get(
+                    ErrorCode.DataConversionError1,
+                    ExtTypeInfoGeometry
+                        .ToSql(new StringBuilder(), geometry.GetTypeAndDimensionSystem(), geometry.GetSrid())
+                        .Append(" -> ")
+                        .Append(target.GetSql(new StringBuilder(), HasSql.TraceSqlFlags))
+                        .ToString());
+            }
+        }
+
+        return result;
     }
 
     private ValueUuid ConvertToUuidType()

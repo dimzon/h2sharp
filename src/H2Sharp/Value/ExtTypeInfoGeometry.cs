@@ -24,7 +24,7 @@ public sealed class ExtTypeInfoGeometry : ExtTypeInfo
 
     private readonly int? srid;
 
-    private static StringBuilder ToSql(StringBuilder builder, int type, int? srid)
+    internal static StringBuilder ToSql(StringBuilder builder, int type, int? srid)
     {
         if (type == 0 && srid is null)
         {

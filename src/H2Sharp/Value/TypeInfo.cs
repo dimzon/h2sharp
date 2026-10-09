@@ -1052,10 +1052,12 @@ public sealed partial class TypeInfo : ExtTypeInfo
                 return TypeEnumUndefined;
 
             case Value.Geometry:
-                if (extTypeInfo is not null)
+                if (extTypeInfo is ExtTypeInfoGeometry)
                 {
-                    throw new ArgumentException(
-                        "A GEOMETRY type with extended parameters needs ExtTypeInfoGeometry.");
+                    // A geometry type with an SRID in it is a different type from the plain one, and
+                    // it has to be a real instance rather than the shared TYPE_GEOMETRY: the SRID is
+                    // what convertToGeometry reads to give a JSON document a coordinate reference.
+                    return new TypeInfo(Value.Geometry, -1L, -1, extTypeInfo);
                 }
 
                 return TypeGeometry;
