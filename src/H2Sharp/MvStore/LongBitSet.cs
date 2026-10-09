@@ -244,6 +244,56 @@ internal sealed class LongBitSet
         return -1;
     }
 
+    /// <summary>
+    /// A set holding the bits of these bytes, read as little endian longs.
+    /// </summary>
+    /// <remarks>
+    /// This is what the chunk occupancy is stored as: the whole block of pages as one hex value.
+    /// Trailing zero bytes carry no information and are not part of the set, so a block with its last
+    /// page deleted stores one byte fewer than a full one.
+    /// </remarks>
+    /// <param name="bytes">the bytes, lowest bit first</param>
+    /// <returns>the set</returns>
+    internal static LongBitSet ValueOf(byte[] bytes)
+    {
+        LongBitSet set = new();
+        int whole = bytes.Length / sizeof(long);
+        for (int i = 0; i < whole; i++)
+        {
+            set.words[i] = BitConverter.ToInt64(bytes, i * sizeof(long));
+        }
+
+        if ((bytes.Length & 7) != 0)
+        {
+            long last = 0;
+            for (int i = whole * sizeof(long); i < bytes.Length; i++)
+            {
+                last |= (long)bytes[i] << (8 * (i - (whole * sizeof(long))));
+            }
+
+            set.words[whole] = last;
+        }
+
+        return set;
+    }
+
+    /// <summary>
+    /// The bits as bytes, lowest bit first, without trailing zero bytes.
+    /// </summary>
+    /// <returns>the bytes</returns>
+    internal byte[] ToByteArray()
+    {
+        int used = (Length + 7) / 8;
+        byte[] result = new byte[used];
+        for (int i = 0; i < used; i++)
+        {
+            long word = words[i / 8];
+            result[i] = (byte)((word >> (8 * (i & 7))) & 0xff);
+        }
+
+        return result;
+    }
+
     private void EnsureCapacity(int bits)
     {
         int needed = (bits >> 6) + 1;
