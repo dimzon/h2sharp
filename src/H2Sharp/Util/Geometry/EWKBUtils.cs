@@ -228,8 +228,12 @@ public static class EWKBUtils
         {
             string hex = Hex.BytesToHex(ewkb);
             int at = offset * 2;
+
+            // The reference passes the end of the range, and this counts characters from the start.
+            // Same three arguments, different meaning, and the difference is an exception instead of
+            // a message at the exact moment something else is already wrong.
             return new StringBuilder(hex.Length + 3)
-                .Append(hex, 0, at).Append("<*>").Append(hex, at, hex.Length)
+                .Append(hex, 0, at).Append("<*>").Append(hex, at, hex.Length - at)
                 .ToString();
         }
     }

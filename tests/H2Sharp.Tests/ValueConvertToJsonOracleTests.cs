@@ -17,6 +17,7 @@ using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Tests.Oracle;
 using H2Sharp.Util;
+using H2Sharp.Util.Geometry;
 using H2Sharp.Util.Json;
 using H2Sharp.Values;
 using Xunit;
@@ -78,6 +79,19 @@ public sealed class ValueConvertToJsonOracleTests
         ("array with string", () => Arr(ValueVarchar.Get("x"), ValueBoolean.True), "org.h2.value.ValueArray.get(new org.h2.value.Value[] { org.h2.value.ValueVarchar.get(\"x\"), org.h2.value.ValueBoolean.TRUE }, null)"),
         ("array with json", () => Arr(ValueJson.FromJson("{\"a\":1}")), "org.h2.value.ValueArray.get(new org.h2.value.Value[] { org.h2.value.ValueJson.fromJson(\"{\\\"a\\\":1}\") }, null)"),
         ("array nested", () => Arr(Arr(ValueInteger.Get(1))), "org.h2.value.ValueArray.get(new org.h2.value.Value[] { org.h2.value.ValueArray.get(new org.h2.value.Value[] { org.h2.value.ValueInteger.get(1) }, null) }, null)"),
+
+        // GEOMETRY needs the geometry package, and the one thing it needs from it is the GeoJSON
+        // writer. A point and a collection are enough to tell a writer that works from one that
+        // writes the right bytes for the wrong shape.
+        ("geometry point", () => Geom("POINT(1 2)"), "org.h2.value.ValueGeometry.getFromEWKB(Runner.ewkb(\"POINT(1 2)\"))"),
+        ("geometry point z", () => Geom("POINT Z(1 2 3)"), "org.h2.value.ValueGeometry.getFromEWKB(Runner.ewkb(\"POINT Z(1 2 3)\"))"),
+        ("geometry point empty", () => Geom("POINT EMPTY"), "org.h2.value.ValueGeometry.getFromEWKB(Runner.ewkb(\"POINT EMPTY\"))"),
+        ("geometry point big", () => Geom("POINT(1e300 -1e-300)"), "org.h2.value.ValueGeometry.getFromEWKB(Runner.ewkb(\"POINT(1e300 -1e-300)\"))"),
+        ("geometry srid", () => Geom("SRID=4326;POINT(1 2)"), "org.h2.value.ValueGeometry.getFromEWKB(Runner.ewkb(\"SRID=4326;POINT(1 2)\"))"),
+        ("geometry linestring", () => Geom("LINESTRING(1 2,3 4)"), "org.h2.value.ValueGeometry.getFromEWKB(Runner.ewkb(\"LINESTRING(1 2,3 4)\"))"),
+        ("geometry polygon", () => Geom("POLYGON((1 2,3 4,5 6,1 2))"), "org.h2.value.ValueGeometry.getFromEWKB(Runner.ewkb(\"POLYGON((1 2,3 4,5 6,1 2))\"))"),
+        ("geometry collection", () => Geom("GEOMETRYCOLLECTION(POINT(1 2),LINESTRING(3 4,5 6))"), "org.h2.value.ValueGeometry.getFromEWKB(Runner.ewkb(\"GEOMETRYCOLLECTION(POINT(1 2),LINESTRING(3 4,5 6))\"))"),
+        ("geometry m", () => Geom("POINT M(1 2 3)"), "org.h2.value.ValueGeometry.getFromEWKB(Runner.ewkb(\"POINT M(1 2 3)\"))"),
     ];
 
     [JavaOracleFact]
@@ -131,6 +145,9 @@ public sealed class ValueConvertToJsonOracleTests
 
     private static byte[] Utf8(string text) => new UTF8Encoding(false).GetBytes(text);
 
+    /// <summary>A geometry value built the way a column would hold it, from EWKT.</summary>
+    private static Value Geom(string ewkt) => ValueGeometry.GetFromEWKB(EWKTUtils.EWKT2EWKB(ewkt));
+
     /// <summary>The text as UTF-16 units in hex: one unit is one column of the answer.</summary>
     private static string Hex(string text)
     {
@@ -167,8 +184,12 @@ b.append(String.format("%04x", (int) text.charAt(i)));
 return b.toString();
 }
 
+static byte[] ewkb(String ewkt) {
+  return org.h2.util.geometry.EWKTUtils.ewkt2ewkb(ewkt);
+}
+
 static void out(String name, java.util.function.Supplier<org.h2.value.Value> factory) {
-String result;
+    String result;
 try {
 org.h2.value.Value value = factory.get();
 org.h2.value.ValueJson json =

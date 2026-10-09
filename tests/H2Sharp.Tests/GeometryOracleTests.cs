@@ -44,6 +44,15 @@ public sealed class GeometryOracleTests
         "POINT Z(1 2 3)",
         "POINT ZM(1 2 3 4)",
         "POINT M(1 2 3)",
+
+        // A coordinate large or small enough to be written by Double.toString in the exponent form,
+        // which the EWKT writer cuts apart. Without these the cut is never taken and the bug it
+        // hides is never reached.
+        "POINT(1e300 -1e-300)",
+        "POINT(1e21 1e-7)",
+        "POINT(1e100 1e-100)",
+        "LINESTRING(1e300 1e-300, 1 2)",
+        "POLYGON((1e300 1e-300, 1e300 1, 1 1, 1e300 1e-300))",
         "SRID=4326;POINT(1 2)",
         "SRID=4326;POINT Z(1 2 3)",
         "SRID=-1;POINT(0 0)",

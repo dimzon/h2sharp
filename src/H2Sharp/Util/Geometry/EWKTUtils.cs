@@ -245,7 +245,9 @@ public static class EWKTUtils
             }
             else
             {
-                _ = output.Append(s, 0, at).Append(s, at + 2, s.Length);
+                // The reference ends the range at the length of the text. This counts characters
+                // from the start, so the count is what is left after where the range begins.
+                _ = output.Append(s, 0, at).Append(s, at + 2, s.Length - at - 2);
             }
         }
     }
@@ -619,7 +621,7 @@ public static class EWKTUtils
 
         public override string ToString()
             => new StringBuilder(ewkt.Length + 3)
-                .Append(ewkt, 0, offset).Append("<*>").Append(ewkt, offset, ewkt.Length)
+                .Append(ewkt, 0, offset).Append("<*>").Append(ewkt, offset, ewkt.Length - offset)
                 .ToString();
     }
 

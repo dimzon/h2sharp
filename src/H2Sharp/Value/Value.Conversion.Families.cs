@@ -24,6 +24,7 @@ using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
+using H2Sharp.Util.Geometry;
 using H2Sharp.Util.Json;
 using H2Sharp.Values.Lobs;
 
@@ -959,11 +960,12 @@ public abstract partial class Value
                 v = ValueJson.Get(((ValueTimestampTimeZone)this).GetIsoString());
                 break;
             case Geometry:
-                // GeoJsonUtils is not ported: it is a writer over the EWKB reader and a projection
-                // table, and guessing at it here would mean inventing a format. A geometry to a
-                // JSON conversion fails until then, which is the honest answer and not a silent
-                // wrong one.
-                throw NotPortedConversion("convert", "GEOMETRY to JSON");
+                {
+                    ValueGeometry vg = (ValueGeometry)this;
+                    v = ValueJson.GetInternal(
+                        GeoJsonUtils.EwkbToGeoJson(vg.GetBytesNoCopy()!, vg.GetDimensionSystem()));
+                    break;
+                }
 
             case Array:
                 {
