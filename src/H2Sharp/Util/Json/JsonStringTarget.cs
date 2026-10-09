@@ -35,6 +35,11 @@ public sealed class JsonStringTarget : JsonTarget<string>
     private const byte Array = 2;
 
     /// <summary>
+    /// The capacity a target starts with when the caller has no better guess.
+    /// </summary>
+    internal const int DefaultCapacity = 1024;
+
+    /// <summary>
     /// Encodes a JSON string and appends it to the specified string builder.
     /// </summary>
     /// <param name="builder">the string builder to append to</param>
@@ -130,8 +135,23 @@ public sealed class JsonStringTarget : JsonTarget<string>
     /// whether all non-printable, non-ASCII characters, and <c>'</c> characters should be escaped
     /// </param>
     public JsonStringTarget(bool asciiPrintableOnly)
+        : this(asciiPrintableOnly, DefaultCapacity)
     {
-        builder = new StringBuilder();
+    }
+
+    /// <summary>
+    /// Creates a target that writes everything and expects roughly so many characters.
+    /// </summary>
+    /// <param name="asciiPrintableOnly">
+    /// whether all non-printable, non-ASCII characters, and <c>'</c> characters should be escaped
+    /// </param>
+    /// <param name="initialCapacity">
+    /// the expected size. A builder that starts small and doubles its way to a document size
+    /// reallocates at every step, and that copying is a large part of the cost of printing
+    /// </param>
+    public JsonStringTarget(bool asciiPrintableOnly, int initialCapacity)
+    {
+        builder = new StringBuilder(initialCapacity > 0 ? initialCapacity : DefaultCapacity);
         stack = [];
         this.asciiPrintableOnly = asciiPrintableOnly;
     }

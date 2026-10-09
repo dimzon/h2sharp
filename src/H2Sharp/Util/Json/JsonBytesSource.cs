@@ -64,7 +64,7 @@ public sealed class JsonBytesSource : JsonTextSource
     /// </summary>
     /// <param name="bytes">source representation</param>
     /// <returns>normalized representation</returns>
-    public static byte[] Normalize(byte[] bytes) => Parse(bytes, new JsonByteArrayTarget());
+    public static byte[] Normalize(byte[] bytes) => Parse(bytes, new JsonByteArrayTarget(bytes.Length));
 
     /// <summary>
     /// UTF-32 in either order. .NET has no named instances for the two orders, and its

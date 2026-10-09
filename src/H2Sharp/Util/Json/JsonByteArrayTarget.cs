@@ -51,6 +51,25 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
     private const byte Array = 2;
 
     /// <summary>
+    /// How many bytes are gathered before the buffer is handed to the stream.
+    /// </summary>
+    /// <remarks>
+    /// One <c>WriteByte</c> per character is a virtual call per character, and a JSON string is
+    /// mostly ordinary ASCII. Gathering the runs and writing them once is the difference between a
+    /// virtual call per character and one per buffer.
+    /// </remarks>
+    private const int BufferSize = 256;
+
+    /// <summary>
+    /// The capacity a target starts with when the caller has no better guess.
+    /// </summary>
+    /// <remarks>
+    /// A stream that starts empty and doubles its way to a document size copies itself once per
+    /// doubling, and that copying showed up as the largest single cost in the profile.
+    /// </remarks>
+    internal const int DefaultCapacity = 1024;
+
+    /// <summary>
     /// Encodes a JSON string and appends it to the specified stream.
     /// </summary>
     /// <param name="stream">the stream to append to</param>
@@ -59,31 +78,41 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
     /// <exception cref="H2SharpException">the string contains an unpaired surrogate</exception>
     public static MemoryStream EncodeString(MemoryStream stream, string s)
     {
-        stream.WriteByte((byte)'"');
+        Span<byte> buffer = stackalloc byte[BufferSize];
+        int buffered = 0;
+
+        buffer[buffered++] = (byte)'"';
         for (int i = 0, length = s.Length; i < length; i++)
         {
             char c = s[i];
             switch (c)
             {
                 case '\b':
+                    Flush(stream, buffer, ref buffered);
                     WriteAscii(stream, "\\b");
                     break;
                 case '\t':
+                    Flush(stream, buffer, ref buffered);
                     WriteAscii(stream, "\\t");
                     break;
                 case '\f':
+                    Flush(stream, buffer, ref buffered);
                     WriteAscii(stream, "\\f");
                     break;
                 case '\n':
+                    Flush(stream, buffer, ref buffered);
                     WriteAscii(stream, "\\n");
                     break;
                 case '\r':
+                    Flush(stream, buffer, ref buffered);
                     WriteAscii(stream, "\\r");
                     break;
                 case '"':
+                    Flush(stream, buffer, ref buffered);
                     WriteAscii(stream, "\\\"");
                     break;
                 case '\\':
+                    Flush(stream, buffer, ref buffered);
                     WriteAscii(stream, "\\\\");
                     break;
                 default:
@@ -91,21 +120,28 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
                     {
                         // The only escapes left are the control characters, and they always have
                         // four digits after the backslash.
+                        Flush(stream, buffer, ref buffered);
                         WriteAscii(stream, "\\u00");
                         stream.WriteByte((byte)Hex[(c >> 4) & 0xf]);
                         stream.WriteByte((byte)Hex[c & 0xf]);
                     }
                     else if (c < 0x80)
                     {
-                        stream.WriteByte((byte)c);
+                        buffer[buffered++] = (byte)c;
+                        if (buffered == buffer.Length)
+                        {
+                            Flush(stream, buffer, ref buffered);
+                        }
                     }
                     else if (c < 0x800)
                     {
+                        Flush(stream, buffer, ref buffered);
                         stream.WriteByte((byte)(0xc0 | c >> 6));
                         stream.WriteByte((byte)(0x80 | c & 0x3f));
                     }
                     else if (!char.IsSurrogate(c))
                     {
+                        Flush(stream, buffer, ref buffered);
                         stream.WriteByte((byte)(0xe0 | c >> 12));
                         stream.WriteByte((byte)(0x80 | c >> 6 & 0x3f));
                         stream.WriteByte((byte)(0x80 | c & 0x3f));
@@ -122,6 +158,7 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
                         }
 
                         int uc = char.ConvertToUtf32(c, c2);
+                        Flush(stream, buffer, ref buffered);
                         stream.WriteByte((byte)(0xf0 | uc >> 18));
                         stream.WriteByte((byte)(0x80 | uc >> 12 & 0x3f));
                         stream.WriteByte((byte)(0x80 | uc >> 6 & 0x3f));
@@ -132,6 +169,7 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
             }
         }
 
+        Flush(stream, buffer, ref buffered);
         stream.WriteByte((byte)'"');
         return stream;
     }
@@ -144,6 +182,21 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
     /// <param name="s">the string</param>
     /// <returns>the string, or its beginning</returns>
     private static string Truncate(string s) => s.Length > 80 ? s[..80] + "..." : s;
+
+    /// <summary>
+    /// Hands the gathered characters to the stream.
+    /// </summary>
+    /// <param name="stream">the stream</param>
+    /// <param name="buffer">the gather buffer</param>
+    /// <param name="buffered">how much of it is in use, reset here</param>
+    private static void Flush(MemoryStream stream, Span<byte> buffer, ref int buffered)
+    {
+        if (buffered > 0)
+        {
+            stream.Write(buffer[..buffered]);
+            buffered = 0;
+        }
+    }
 
     private static void WriteAscii(MemoryStream stream, string ascii)
     {
@@ -165,8 +218,20 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
     /// Creates a new target.
     /// </summary>
     public JsonByteArrayTarget()
+        : this(DefaultCapacity)
     {
-        stream = new MemoryStream();
+    }
+
+    /// <summary>
+    /// Creates a new target that expects roughly so many bytes.
+    /// </summary>
+    /// <param name="initialCapacity">
+    /// the expected size. Normalizing a document produces something close to what went in, so
+    /// passing the input length skips the doubling entirely
+    /// </param>
+    public JsonByteArrayTarget(int initialCapacity)
+    {
+        stream = new MemoryStream(initialCapacity > 0 ? initialCapacity : DefaultCapacity);
         stack = [];
     }
 

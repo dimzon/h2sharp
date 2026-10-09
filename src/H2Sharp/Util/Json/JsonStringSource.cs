@@ -33,9 +33,17 @@ public sealed class JsonStringSource : JsonTextSource
     /// <summary>
     /// Converts a string into normalized JSON representation.
     /// </summary>
+    /// <remarks>
+    /// The target is sized from the input, because normalizing a document produces something close
+    /// to what went in and a stream that has to double its way there copies itself at every step.
+    /// The hint is a byte count and not a character count: the target writes UTF-8, so a document
+    /// with any non-ASCII text in it is longer in bytes than in characters, and a hint that comes up
+    /// short does not save anything — it just moves the doubling to a larger size.
+    /// </remarks>
     /// <param name="string">source representation</param>
     /// <returns>normalized representation</returns>
-    public static byte[] Normalize(string @string) => Parse(@string, new JsonByteArrayTarget());
+    public static byte[] Normalize(string @string) =>
+        Parse(@string, new JsonByteArrayTarget(Encoding.UTF8.GetByteCount(@string)));
 
     private readonly string text;
 
