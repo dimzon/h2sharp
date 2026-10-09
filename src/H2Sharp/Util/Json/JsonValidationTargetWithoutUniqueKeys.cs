@@ -174,14 +174,14 @@ public sealed class JsonValidationTargetWithoutUniqueKeys : JsonValidationTarget
     /// An unfinished container is an error, and so is nothing at all: the reference answers both the
     /// same way, and a null result would read as "a valid document of no particular kind".
     /// </remarks>
-    public override object? GetResult()
+    protected override JsonItemType GetTypedResult()
     {
         if (stack.Count != 0 || type is null)
         {
             throw new InvalidOperationException();
         }
 
-        return type;
+        return type.Value;
     }
 
     /// <summary>

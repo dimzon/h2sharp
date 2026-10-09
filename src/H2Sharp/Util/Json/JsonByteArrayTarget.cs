@@ -33,7 +33,7 @@ namespace H2Sharp.Util.Json;
 /// corrupt a JSON column without a trace.
 /// </para>
 /// </remarks>
-public sealed class JsonByteArrayTarget : JsonTarget
+public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
 {
     /// <summary>
     /// The hex characters.
@@ -313,7 +313,7 @@ public sealed class JsonByteArrayTarget : JsonTarget
     /// An unfinished container is an error, and so is no output at all: the reference answers both
     /// with the same exception, and an empty result would be a valid-looking empty document.
     /// </remarks>
-    public override object? GetResult()
+    protected override byte[]? GetTypedResult()
     {
         if (stack.Count != 0 || stream.Length == 0)
         {

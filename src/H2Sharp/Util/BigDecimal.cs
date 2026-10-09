@@ -116,12 +116,28 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     /// </remarks>
     /// <param name="text">the text</param>
     /// <exception cref="FormatException">if the text is not a decimal</exception>
-    public static BigDecimal Parse(string text)
+    public static BigDecimal Parse(string text) => Parse(text.AsSpan(), text);
+
+    /// <summary>
+    /// Reads a decimal from part of a larger text, without copying that part out first.
+    /// </summary>
+    /// <remarks>
+    /// A caller that has found a number inside something longer — the JSON parser, which has
+    /// measured the extent of the literal without moving it — has a span, not a string. Handing it
+    /// one and having it allocate would undo the measurement, so the whole grammar below works on a
+    /// span and the string overload is the one that pays for a copy. Only the failure message needs
+    /// a real string, and only on a path that is already throwing.
+    /// </remarks>
+    /// <param name="text">the span holding the decimal</param>
+    /// <param name="forMessage">the text as a string, used only to report a failure</param>
+    /// <returns>the value</returns>
+    /// <exception cref="FormatException">if the span is not a decimal</exception>
+    public static BigDecimal Parse(ReadOnlySpan<char> text, string forMessage)
     {
         if (!TryParse(text, out BigDecimal? result, out int errorPosition))
         {
             throw new FormatException(
-                text
+                forMessage
                 + (errorPosition >= 0
                     ? " at position " + errorPosition.ToString(CultureInfo.InvariantCulture)
                     : string.Empty));
@@ -143,10 +159,20 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     /// <param name="errorPosition">where the text went wrong, or -1 when it was empty</param>
     /// <returns>whether the text is a decimal</returns>
     public static bool TryParse(string text, out BigDecimal? result, out int errorPosition)
+        => TryParse(text.AsSpan(), out result, out errorPosition);
+
+    /// <summary>
+    /// Reads a decimal from part of a larger text, saying where it went wrong instead of throwing.
+    /// </summary>
+    /// <param name="text">the span holding the decimal</param>
+    /// <param name="result">the value, when the text is a decimal</param>
+    /// <param name="errorPosition">where the text went wrong, or -1 when it was empty</param>
+    /// <returns>whether the text is a decimal</returns>
+    public static bool TryParse(ReadOnlySpan<char> text, out BigDecimal? result, out int errorPosition)
     {
         result = null;
         errorPosition = 0;
-        if (string.IsNullOrEmpty(text))
+        if (text.IsEmpty)
         {
             errorPosition = -1;
             return false;
@@ -275,13 +301,15 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
 
             if (exponentTooLarge || exponent > MaxScale)
             {
-                throw new FormatException(text);
+                // Only a failing path needs a real string for the message.
+                throw new FormatException(text.ToString());
             }
 
             scale = negativeExponent ? scale + (int)exponent : scale - (int)exponent;
             if (scale is > MaxScale or < MinScale)
             {
-                throw new FormatException(text);
+                // Only a failing path needs a real string for the message.
+                throw new FormatException(text.ToString());
             }
         }
 

@@ -5,7 +5,6 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
-
 namespace H2Sharp.Util.Json;
 
 /// <summary>
@@ -16,6 +15,13 @@ namespace H2Sharp.Util.Json;
 /// is only being told a value does not care about them, and one that is being parsed needs both:
 /// "is a name expected" is what tells an object from an array, and "is a comma expected" is what
 /// tells the parser that the previous value has ended.
+/// <para>
+/// This is the untyped half, and it exists because the reference's <c>JSONTarget&lt;?&gt;</c> has no
+/// equivalent in C#. There is no wildcard, so a target that does not care what it produces — a value
+/// writing itself into whatever target it is given, a parser talking to whatever target it was handed
+/// — has to be able to name a type. Naming <see cref="object"/> is the closest thing, and
+/// <see cref="JsonTarget{R}"/> is the half that knows.
+/// </para>
 /// </remarks>
 public abstract class JsonTarget
 {
@@ -89,4 +95,35 @@ public abstract class JsonTarget
     /// </summary>
     /// <returns>the result</returns>
     public abstract object? GetResult();
+}
+
+/// <summary>
+/// A JSON output target whose result is known at compile time.
+/// </summary>
+/// <typeparam name="R">the type of the result</typeparam>
+/// <remarks>
+/// Forwarding rather than hiding is the whole point: a hidden member would be a null waiting to
+/// happen for anything reaching the target through <see cref="JsonTarget"/>.
+/// </remarks>
+public abstract class JsonTarget<R> : JsonTarget
+{
+    /// <summary>
+    /// Returns the result, with its type.
+    /// </summary>
+    /// <returns>the result</returns>
+    /// <remarks>
+    /// The same member as <see cref="JsonTarget.GetResult"/>, reachable with the type attached. It is
+    /// not an override because the base one has to return <see cref="object"/> for the sake of the
+    /// parsing loop; a caller that knows the type should not have to cast what it wrote.
+    /// </remarks>
+    public R? Result => GetTypedResult();
+
+    /// <summary>
+    /// Returns the result.
+    /// </summary>
+    /// <returns>the result</returns>
+    protected abstract R? GetTypedResult();
+
+    /// <inheritdoc/>
+    public sealed override object? GetResult() => GetTypedResult();
 }

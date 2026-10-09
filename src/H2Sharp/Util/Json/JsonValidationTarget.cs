@@ -17,6 +17,6 @@ namespace H2Sharp.Util.Json;
 /// "this text". <see cref="Value"/> is reserved and never returned here — a validator does not tell
 /// a caller that the document was a bare value, only that it was not valid JSON to begin with.
 /// </remarks>
-public abstract class JsonValidationTarget : JsonTarget
+public abstract class JsonValidationTarget : JsonTarget<JsonItemType>
 {
 }

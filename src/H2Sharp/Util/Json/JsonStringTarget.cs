@@ -17,7 +17,7 @@ namespace H2Sharp.Util.Json;
 /// <summary>
 /// JSON string target: writes the value as text.
 /// </summary>
-public sealed class JsonStringTarget : JsonTarget
+public sealed class JsonStringTarget : JsonTarget<string>
 {
     /// <summary>
     /// The hex characters.
@@ -277,7 +277,7 @@ public sealed class JsonStringTarget : JsonTarget
     public override bool IsValueSeparatorExpected() => needSeparator;
 
     /// <inheritdoc/>
-    public override object? GetResult() => builder.ToString();
+    protected override string? GetTypedResult() => builder.ToString();
 
     /// <summary>
     /// The innermost open object or array, or zero when there is none.

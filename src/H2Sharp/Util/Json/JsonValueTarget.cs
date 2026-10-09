@@ -24,7 +24,7 @@ namespace H2Sharp.Util.Json;
 /// member to a map. A caller that wants the first match asks for it, and a caller that wants to
 /// reject duplicates uses a validation target instead of finding out afterwards which one this is.
 /// </remarks>
-public sealed class JsonValueTarget : JsonTarget
+public sealed class JsonValueTarget : JsonTarget<JsonValue>
 {
     /// <summary>
     /// The open containers, outermost first.
@@ -208,7 +208,7 @@ public sealed class JsonValueTarget : JsonTarget
     public override bool IsValueSeparatorExpected() => needSeparator;
 
     /// <inheritdoc/>
-    public override object? GetResult()
+    protected override JsonValue? GetTypedResult()
     {
         if (stack.Count != 0 || result is null)
         {

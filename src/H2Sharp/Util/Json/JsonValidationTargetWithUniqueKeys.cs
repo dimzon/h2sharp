@@ -232,13 +232,13 @@ public sealed class JsonValidationTargetWithUniqueKeys : JsonValidationTarget
     public override bool IsValueSeparatorExpected() => needSeparator;
 
     /// <inheritdoc/>
-    public override object? GetResult()
+    protected override JsonItemType GetTypedResult()
     {
         if (names.Count != 0 || type is null)
         {
             throw new InvalidOperationException();
         }
 
-        return type;
+        return type.Value;
     }
 }

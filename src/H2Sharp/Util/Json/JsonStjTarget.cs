@@ -30,7 +30,7 @@ namespace H2Sharp.Util.Json;
 /// the order it is given. The reference keeps them too, and an object model built on a dictionary
 /// would have quietly dropped them.
 /// </remarks>
-public sealed class JsonStjTarget : JsonTarget
+public sealed class JsonStjTarget : JsonTarget<string>
 {
     /// <summary>
     /// A JSON object.
@@ -221,7 +221,7 @@ public sealed class JsonStjTarget : JsonTarget
     public override bool IsValueSeparatorExpected() => needSeparator;
 
     /// <inheritdoc/>
-    public override object? GetResult()
+    protected override string? GetTypedResult()
     {
         writer.Flush();
         return Encoding.UTF8.GetString(stream.ToArray());
