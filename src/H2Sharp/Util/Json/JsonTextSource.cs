@@ -51,6 +51,11 @@ public abstract class JsonTextSource
     /// <summary>
     /// Parse the text and write it to the output.
     /// </summary>
+    internal void ParseText() => Parse();
+
+    /// <summary>
+    /// Parse the text and write it to the output.
+    /// </summary>
     protected void Parse()
     {
         bool comma = false;

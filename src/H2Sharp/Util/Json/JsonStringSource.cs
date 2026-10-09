@@ -43,7 +43,11 @@ public sealed class JsonStringSource : JsonTextSource
 
     private int index;
 
-    private JsonStringSource(string @string, JsonTarget target)
+    /// <remarks>
+    /// Internal because <see cref="JsonBytesSource"/> needs it: a recognised charset decodes to a
+    /// string and reuses this source, exactly as the reference does from inside its own package.
+    /// </remarks>
+    internal JsonStringSource(string @string, JsonTarget target)
         : base(target)
     {
         this.text = @string;
