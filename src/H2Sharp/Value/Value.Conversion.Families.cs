@@ -24,6 +24,7 @@ using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
+using H2Sharp.Util.Json;
 using H2Sharp.Values.Lobs;
 
 namespace H2Sharp.Values;
@@ -61,6 +62,19 @@ public abstract partial class Value
     /// <returns>the converted value</returns>
     public Value CastToValue(TypeInfo targetType, CastDataProvider? provider)
         => ConvertToValue(targetType, provider, CastTo, null);
+
+    /// <summary>
+    /// Convert a value to the specified type without taking scale and precision into account.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>convertTo(TypeInfo)</c>. Its name is kept and so is its body: C# cannot
+    /// declare a method called <c>ConvertTo</c> next to the <see cref="ConvertTo"/> constant, which
+    /// is why the constant-carrying conversions elsewhere in this file are spelled out in full.
+    /// </remarks>
+    /// <param name="targetType">the type of the returned value</param>
+    /// <returns>the converted value</returns>
+    public Value ConvertToType(TypeInfo targetType)
+        => ConvertToValue(targetType, null, ConvertTo, null);
 
     /// <summary>
     /// Cast a value to the specified type for assignment. The scale is set if applicable, and if
@@ -134,7 +148,7 @@ public abstract partial class Value
             JavaObject => ConvertToJavaObject(targetType, conversionMode, column),
             Enum => ConvertToEnum((ExtTypeInfoEnum)targetType.GetExtTypeInfo()!, provider),
             Geometry => ConvertToGeometryType(targetType),
-            Json => throw NotPortedConversion("convert", GetTypeName(targetValueType)),
+            Json => ConvertToJson(targetType, conversionMode, column),
             Uuid => ConvertToUuidType(),
             Array => ConvertToArrayType(targetType, provider, conversionMode, column),
             Row => ConvertToRow(targetType, provider, conversionMode, column),
@@ -873,6 +887,100 @@ public abstract partial class Value
 
             default:
                 throw GetDataConversionErrorException(JavaObject);
+        }
+
+        if (conversionMode != ConvertTo && v.GetBytesNoCopy()!.Length > targetType.GetPrecision())
+        {
+            throw v.GetValueTooLongException(targetType, column);
+        }
+
+        return v;
+    }
+
+    /// <summary>
+    /// Converts this value to a JSON value. May not be called on a NULL value.
+    /// </summary>
+    /// <remarks>
+    /// Every source type has a different answer here, and the answers are not interchangeable: a
+    /// number becomes a number, a string becomes a string, and bytes are <b>parsed</b> rather than
+    /// encoded, on the assumption that a binary value holding JSON is JSON. That assumption is the
+    /// reference's and it is worth stating out loud — a BLOB of anything else is not a string, it is
+    /// an error, and this is the method where a user finds out.
+    /// </remarks>
+    /// <param name="targetType">the type of the returned value</param>
+    /// <param name="conversionMode">conversion mode</param>
+    /// <param name="column">the column, for the error message</param>
+    /// <returns>the JSON value</returns>
+    public ValueJson ConvertToJson(TypeInfo targetType, int conversionMode, object? column)
+    {
+        ValueJson v;
+        switch (GetValueType())
+        {
+            case Json:
+                v = (ValueJson)this;
+                break;
+            case Boolean:
+                v = ValueJson.Get(GetBoolean());
+                break;
+            case Tinyint:
+            case Smallint:
+            case Integer:
+                v = ValueJson.Get(GetInt());
+                break;
+            case Bigint:
+                v = ValueJson.Get(GetLong());
+                break;
+            case Real:
+            case Double:
+            case Numeric:
+            case Decfloat:
+                v = ValueJson.Get(GetBigDecimal());
+                break;
+            case Binary:
+            case Varbinary:
+            case Blob:
+                v = ValueJson.FromJson(GetBytesNoCopy()!);
+                break;
+            case Char:
+            case Varchar:
+            case Clob:
+            case VarcharIgnorecase:
+            case Date:
+            case Time:
+            case TimeTz:
+            case Enum:
+            case Uuid:
+                v = ValueJson.Get(GetString()!);
+                break;
+            case Timestamp:
+                v = ValueJson.Get(((ValueTimestamp)this).GetIsoString());
+                break;
+            case TimestampTz:
+                v = ValueJson.Get(((ValueTimestampTimeZone)this).GetIsoString());
+                break;
+            case Geometry:
+                // GeoJsonUtils is not ported: it is a writer over the EWKB reader and a projection
+                // table, and guessing at it here would mean inventing a format. A geometry to a
+                // JSON conversion fails until then, which is the honest answer and not a silent
+                // wrong one.
+                throw NotPortedConversion("convert", "GEOMETRY to JSON");
+
+            case Array:
+                {
+                    using System.IO.MemoryStream stream = new();
+                    stream.WriteByte((byte)'[');
+                    foreach (Value e in ((ValueArray)this).GetList())
+                    {
+                        JsonConstructorUtils.JsonArrayAppend(stream, e, 0);
+                    }
+
+                    stream.WriteByte((byte)']');
+                    v = ValueJson.GetInternal(stream.ToArray());
+                    break;
+                }
+
+            default:
+                throw GetDataConversionErrorException(Json);
         }
 
         if (conversionMode != ConvertTo && v.GetBytesNoCopy()!.Length > targetType.GetPrecision())
