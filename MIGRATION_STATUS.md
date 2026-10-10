@@ -485,12 +485,13 @@ Java-имена и разрешать их: получился бы файл, к
   формы геометрии, регистр каждого символа BMP, UUID, сжатие LZF побайтово и через поток,
   VARCHAR_IGNORECASE, разбор путей файловой системы, файл магазина, значения LOB, значения ARRAY
   и ROW, значения ENUM, часовые пояса, конверсии между типами даты и времени, конверсии в
-  INTERVAL, значения JAVA_OBJECT) и 27 проверок аллокаций/инвариантов; плюс **83 passed,
+  INTERVAL, значения JAVA_OBJECT) и 27 проверок аллокаций/инвариантов; плюс **86 passed,
   0 FAILED** в `H2Sharp.MvStore.Tests` — ядро `Page`/`MVMap`/`MVStore` in-memory, полное
   файловое ядро `FileStore`/`RandomAccessStore`/`SingleFileStore`/`SFChunk` с родными
-  `org.h2.test.store` тестами как драйверами, и пакет транзакций `tx` (`TransactionStore`,
+  `org.h2.test.store` тестами как драйверами, пакет транзакций `tx` (`TransactionStore`,
   `TransactionMap`, `Transaction`) с родным `TestTransactionStore` плюс регрессионным
-  `TestTxRegression`.
+  `TestTxRegression`, и файловые инструменты (`MVStoreTool` + `TestMVStoreTool`) с
+  пространственным индексом (`MVRTreeMap`, `SpatialDataType`).
 * `python tools/regen.py --check` — сгенерированные таблицы соответствуют эталону.
 
 ## Страховка от тихой деградации (сделано)
@@ -2954,8 +2955,30 @@ SRID другой. То же самое с типом: «POINT» в целево
    `memFS:` — удаление было no-op, и каждый сид дочитывал 500 операций предыдущего. В эталоне
    `FileUtils.delete` scheme-aware; наш `DeleteFile` теперь тоже (через `FilePath`).
 
-Не портировано и ждёт своего владельца:
-`MVStoreTool` beyond минимума, `OffHeapStore`/`AppendOnlyMultiFileStore`/`MFChunk`.
+Не портировано и осознанно пропущено: `OffHeapStore`/`AppendOnlyMultiFileStore`/`MFChunk`
+(мёртвые бэкенды, ноль ссылок) и `main` у `MVStoreTool` (CLI).
+
+### Инструменты файла и r-tree: `MVStoreTool`, `MVRTreeMap`, `SpatialDataType`
+
+`MVStoreTool` допортирован до `dump`/`info`/`rollback`/`repair`/`compact`/`compactCleanUp`
+(`main` пропущен — CLI-харнеса в библиотеке нет), драйвер — родной `TestMVStoreTool`
+(compact/dump/rollback). Заодно приехал `rtree`: `MVRTreeMap`, `SpatialDataType`,
+`Spatial`, `DefaultSpatial` (публичный, в отличие от эталона: тесту нужен
+пространственный ключ, а `SpatialKey` наследуется от движкового `Value`, которого нет).
+Стало **86/86** в `H2Sharp.MvStore.Tests`, **599/599** в `H2Sharp.Tests`.
+
+Что пришлось решить:
+
+| Место | Решение |
+|---|---|
+| `FileChannel` без позиционного I/O | Наш канал читает по своей позиции (`save/seek/restore`), а эталон — по абсолютной. Под параллельным копированием (`Parallel.ForEach` в `Compact`) потоки увозили друг другу позицию и читали чужое — фантомные `File corrupted` с ASCII-мусором. Лечится локом на канал (`SyncRoot`) внутри `ReadFully`/`WriteFully`: затрагивает и фонописатель, который раньше мог так же рвать чужие чтения |
+| Жадный `GenericDataType` | Читал `buff.Length - position` — весь остаток буфера вместе со слаком страницы. Каждое поколение compact дописывало слак в блоб (+6 байт на страницу, +1 блок на файл за поколение). Граница `end` в `Page.Read` существовала, но типам не передавалась — теперь слайсится; заодно починены значения (`ReadPayLoad`) |
+| `Float.MIN_VALUE` | В Java это минимальный положительный, не самый отрицательный: здесь `float.Epsilon` (квадратичный сплит) |
+| `MVRTreeMap` | Почти всё нужное уже было (`GetChildPageCount` — `virtual`, `Remove` стал `virtual`); `Builder` — `new`-тень `ValueType` (базовый не виртуальный) |
+| `assertEquals(s1, s2)` в тесте | Нетипизированного open нет (и не будет — см. стирание в tx): ветка по имени (`rtree*` → `MVRTreeMap`, остальное → int/string, как и создано) |
+| `OffHeapStore`/`AppendOnlyMultiFileStore`/`MFChunk` | Не портируются: в `src` ноль ссылок, движок их не использует (только `SingleFileStore`). Мёртвые бэкенды |
+
+**Побочный улов static Compact:** первое поколение пишет один чанк на всё (все карты копируются в память, один коммит) — это нормально; запись newest-чанка в layout by design отстаёт на один стор (см. `SaveRecentChunksInLayout`), и файлы без `chunk.*` открываются по заголовку с полным сканом.
 
 ### `tx`: транзакции поверх стирания типов
 

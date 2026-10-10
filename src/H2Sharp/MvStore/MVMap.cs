@@ -517,7 +517,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
     /// <summary>
     /// Drops a key, answering the previous value, if any.
     /// </summary>
-    public V? Remove(object? key) => Operate((K)key!, default, DecisionMaker<V>.RemoveDecision());
+    public virtual V? Remove(object? key) => Operate((K)key!, default, DecisionMaker<V>.RemoveDecision());
 
     /// <summary>
     /// Stores a value only when the key is absent, answering the value already there, if any.

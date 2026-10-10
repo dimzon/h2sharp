@@ -35,6 +35,19 @@ namespace H2Sharp.Store.FileSystem;
 /// </remarks>
 public abstract class FileChannel : IDisposable
 {
+    private readonly object syncRoot = new();
+
+    /// <summary>
+    /// The lock guarding positional access to this channel.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads and writes at absolute positions, which are atomic by nature. This
+    /// channel reads at its own position instead, so every save-seek-use-restore sequence must
+    /// hold this lock, or concurrent readers and writers garble each other into phantom
+    /// "file corrupted" errors. The store's parallel copy was the first to trip over it.
+    /// </remarks>
+    internal object SyncRoot => syncRoot;
+
     /// <summary>
     /// How long the file is.
     /// </summary>

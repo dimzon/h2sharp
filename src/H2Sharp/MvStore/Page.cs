@@ -528,7 +528,7 @@ public abstract class Page<K, V> : IPage
             end = expanded.Length;
         }
 
-        map.KeyType.Read(buffer.AsSpan(), keys, keyCount, ref position);
+        map.KeyType.Read(buffer.AsSpan(0, end), keys, keyCount, ref position);
         if (IsLeaf())
         {
             ReadPayLoad(buffer, ref position, end);
@@ -1527,7 +1527,7 @@ public abstract class Page<K, V> : IPage
         {
             int keyCount = GetKeyCount();
             values = CreateValueStorage(keyCount);
-            map.ValueType.Read(buffer.AsSpan(), values, keyCount, ref position);
+            map.ValueType.Read(buffer.AsSpan(0, end), values, keyCount, ref position);
         }
 
         protected override void WriteValues(WriteBuffer buff)

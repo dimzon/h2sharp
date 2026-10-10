@@ -490,42 +490,48 @@ public static class DataUtils
     /// <exception cref="EndOfStreamException">the file ended first</exception>
     public static void ReadFully(FileChannel file, long pos, Memory<byte> dst)
     {
-        long saved = file.Position;
-        try
+        // The position save and restore below must be atomic against other threads using the
+        // same channel: without the lock, two interleaved reads seek each other away and come
+        // back with each other's bytes.
+        lock (file.SyncRoot)
         {
-            file.Position = pos;
-            int read = 0;
-            while (read < dst.Length)
-            {
-                int len = file.Read(dst.Span[read..]);
-                if (len <= 0)
-                {
-                    throw new EndOfStreamException();
-                }
-
-                read += len;
-            }
-        }
-        catch (IOException e)
-        {
-            long size;
+            long saved = file.Position;
             try
             {
-                size = file.Length;
-            }
-            catch (IOException)
-            {
-                size = -1;
-            }
+                file.Position = pos;
+                int read = 0;
+                while (read < dst.Length)
+                {
+                    int len = file.Read(dst.Span[read..]);
+                    if (len <= 0)
+                    {
+                        throw new EndOfStreamException();
+                    }
 
-            throw NewMvStoreException(
-                ErrorReadingFailed,
-                "Reading from file {0} failed at {1} (length {2}), read {3}, remaining {4}",
-                file, pos, size, dst.Length, 0, e);
-        }
-        finally
-        {
-            file.Position = saved;
+                    read += len;
+                }
+            }
+            catch (IOException e)
+            {
+                long size;
+                try
+                {
+                    size = file.Length;
+                }
+                catch (IOException)
+                {
+                    size = -1;
+                }
+
+                throw NewMvStoreException(
+                    ErrorReadingFailed,
+                    "Reading from file {0} failed at {1} (length {2}), read {3}, remaining {4}",
+                    file, pos, size, dst.Length, 0, e);
+            }
+            finally
+            {
+                file.Position = saved;
+            }
         }
     }
 
@@ -542,22 +548,26 @@ public static class DataUtils
     /// <param name="src">what to write</param>
     public static void WriteFully(FileChannel file, long pos, ReadOnlyMemory<byte> src)
     {
-        long saved = file.Position;
-        try
+        // See ReadFully: the seek and the write are one atomic step per channel.
+        lock (file.SyncRoot)
         {
-            file.Position = pos;
-            file.Write(src.Span);
-        }
-        catch (IOException e)
-        {
-            throw NewMvStoreException(
-                ErrorWritingFailed,
-                "Writing to {0} failed; length {1} at {2}",
-                file, src.Length, pos, e);
-        }
-        finally
-        {
-            file.Position = saved;
+            long saved = file.Position;
+            try
+            {
+                file.Position = pos;
+                file.Write(src.Span);
+            }
+            catch (IOException e)
+            {
+                throw NewMvStoreException(
+                    ErrorWritingFailed,
+                    "Writing to {0} failed; length {1} at {2}",
+                    file, src.Length, pos, e);
+            }
+            finally
+            {
+                file.Position = saved;
+            }
         }
     }
 
