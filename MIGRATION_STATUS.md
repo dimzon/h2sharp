@@ -3245,6 +3245,35 @@ big-endian, своя UTF-8 в `writeStringWithoutLength` (без проверо�
 `H2Sharp.Data.Tests` 7/9 (красные 2 Dapper, падают на `prepareCommand`), `H2Sharp.Engine.Tests`
 0/7 — красные по замыслу.
 
+### Готовый конформанс-набор ADO.NET вместо наших ожиданий
+
+`tests/H2Sharp.Data.Tests/AdoNetSpecificationTests.cs` наследует **чужой** набор
+`AdoNet.Specification.Tests` (MIT): фикстура плюс шесть баз — command, connection, parameter,
+reader, transaction, factory. Смысл ровно тот, что у портированных тестов эталона, только
+строже: ADO.NET не имеет формальной спецификации провайдеров, и этот набор — её заменитель,
+написанный не нами. Наше собственное ожидание может случайно совпасть с нашей же реализацией;
+чужое — нет.
+
+**Выбор версии оказался содержательным, а не формальным.** `1.0.0` сидит на xunit 2, но в ней
+нет `ParameterTestBase`, `TransactionTestBase` и `DbProviderFactoryTestBase` — то есть ровно
+того, что провайдер проверяет сильнее всего. `3.0.0-beta.1` содержит всё, но тянет **xunit.v3**
+и падает на `CS0433: FactAttribute exists in both xunit.core and xunit.v3.core`. Рабочая версия —
+`2.0.0-beta.1`: полный состав **и** xunit 2.9.2. Это записано в `ADO_NET_TESTS.md`, потому что
+выглядит как деталь пакета, а меняет половину покрытия.
+
+**Что было нужно, чтобы набор подключился:** `H2ProviderFactory` (`Instance`,
+`CreateConnection`/`CreateCommand`/`CreateParameter`/`CreateConnectionStringBuilder`;
+`CreateDataAdapter` и `CreateCommandBuilder` отказывают, `CanCreate*` отвечают честно) и
+`H2ConnectionStringBuilder`, который принимает и `Data Source=mem:x`, и `jdbc:h2:mem:x` —
+две записи одного и того же, потому что одна пришла из кода на JDBC, другая из кода на ADO.NET.
+
+**Сразу после подключения: 291 тест, 72 зелёных, 219 красных.** Зелёные — всё, что не
+требует SQL: параметры, их коллекция, свойства соединения, фабрика. Красные разложены так:
+reader 129, command 43, connection 15, parameter 15, transaction 11, factory 4, и 2 Dapper-гейта.
+129 красных ридера — это один отсутствующий тип (`H2DataReader`), а не 129 ошибок: ридер
+нельзя написать, пока у запроса нет результата. Ничего не отключено «на потом» намеренно:
+пропущенный тест — это тест, который так и останется пропущенным.
+
 ### Покрытие (замерено, догонять позже)
 
 Замер: оба сьюта, Debug (`coverlet.collector`, `--collect:"XPlat Code Coverage"`; в Release

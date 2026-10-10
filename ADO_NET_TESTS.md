@@ -5,7 +5,9 @@
 Отсортировано по полезности для `H2Sharp.Data`.
 
 Текущее состояние слоя в этом репозитории: `src/H2Sharp/Data/` — `H2Command.cs`, `H2Connection.cs`,
-`H2Parameter.cs` (включая `H2ParameterCollection`), `H2Transaction.cs`.
+`H2Parameter.cs` (включая `H2ParameterCollection`), `H2Transaction.cs`, `H2ProviderFactory.cs`,
+`H2ConnectionStringBuilder.cs`.
+Набор уже подключён — см. раздел «Состояние на момент подключения» в конце документа.
 
 ---
 
@@ -185,28 +187,37 @@ public sealed class H2CommandTests : CommandTestBase<H2FactoryFixture>
 
 ---
 
-## Текущее состояние слоя (зафиксировано при написании документа)
+## Состояние на момент подключения (проверено, а не предположено)
 
-Что уже есть в `src/H2Sharp/Data/`:
+Набор подключён: `tests/H2Sharp.Data.Tests/AdoNetSpecificationTests.cs`, пакет
+`AdoNet.Specification.Tests` **2.0.0-beta.1**.
+
+**Версия важна, и это выяснилось при подключении, а не из документа.**
+
+| Версия | xunit | Что в ней |
+|---|---|---|
+| `1.0.0` | xunit 2 | Только `CommandTestBase`, `ConnectionTestBase`, `DataReaderTestBase` — **`ParameterTestBase`, `TransactionTestBase`, `DbProviderFactoryTestBase` отсутствуют** |
+| `2.0.0-beta.1` | xunit 2 | Полный набор баз, включая `ParameterTestBase` — **совместима с нашим xunit 2.9.2** |
+| `3.0.0-beta.1` | **xunit.v3** | Полный набор, но тянет `xunit.v3` и конфликтует с xunit 2 на уровне типов (`CS0433: FactAttribute exists in both xunit.core and xunit.v3.core`) |
+
+То есть документ выше, перечисляя состав из README, описывает 3.x, а для этого репозитория
+подходит 2.0.0-beta.1: полный состав **и** xunit 2. Переход на 3.x — это отдельное решение
+(миграция всех тестовых проектов на xunit v3), а не деталь версии пакета.
+
+**Что дало подключение:** 291 тест, из них **72 проходят уже сейчас** (параметры,
+коллекция параметров, свойства соединения, фабрика — всё, что не требует выполнения SQL),
+219 красные и разложены так: reader 129, command 43, connection 15, parameter 15,
+transaction 11, factory 4, плюс 2 Dapper-гейта.
+
+**Что было нужно добавить для подключения:**
 
 | Тип | Состояние |
 |---|---|
-| `H2Connection` | `ConnectionString`, `State`, `Open`, `Close`, `CreateDbCommand` — реализованы. `Database`, `DataSource`, `ServerVersion`, `ChangeDatabase`, `BeginDbTransaction` — `TODOException` |
-| `H2Command` | Все свойства реализованы, `Prepare`/`Cancel` — no-op, `CreateDbParameter` работает. `ExecuteCore` доходит до `Session.PrepareCommand` и бросает `TODOException` |
-| `H2Parameter` + `H2ParameterCollection` | Реализованы |
-| `H2Transaction` | Есть, используется в `H2Command.DbTransaction` |
-| `H2ProviderFactory` | **Отсутствует** — блокер для варианта 1 |
-| `H2DataReader` | **Отсутствует** — `ExecuteDbDataReader` не может быть реализован |
+| `H2ProviderFactory` | **Добавлен.** `Instance`, `CreateConnection`/`CreateCommand`/`CreateParameter`/`CreateConnectionStringBuilder`; `CreateDataAdapter` и `CreateCommandBuilder` отказывают, `CanCreate*` отвечают честно |
+| `H2ConnectionStringBuilder` | **Добавлен.** Принимает и `Data Source=mem:x`, и `jdbc:h2:mem:x`, `ToH2ConnectionString()` приводит к URL, который понимает `ConnectionInfo` |
+| `H2DataReader` | **Отсутствует** — `ExecuteDbDataReader` отказывает. Это 129 красных тестов: ридер нельзя написать, пока нет результата запроса |
+| Фикстура `H2FactoryFixture` | Реализует `IDbFactoryFixture` + `ISelectValueFixture` + `IDeleteFixture` (последние два нужны `DataReaderTestBase<T>`) |
 
-### Блокеры перед запуском тестов
-
-Сборка `src/H2Sharp/H2Sharp.csproj` сейчас падает (12 ошибок на net8.0 + net10.0) —
-исправить нужно до того, как любой из наборов вообще запустится:
-
-| Файл:строка | Ошибка |
-|---|---|
-| `H2Command.cs:146` | `CS0029: Cannot implicitly convert type 'int' to 'DbDataReader'` — `ExecuteDbDataReader` возвращает `ExecuteCore()` (int). Нужен `H2DataReader` |
-| `H2Command.cs:46` | `CS8765` — `CommandText` setter теряет `[AllowNull]` из базового `DbCommand` |
-| `H2Command.cs:184,189`, `H2Connection.cs:129,176` | `CS0104: 'DbException' is an ambiguous reference between 'H2Sharp.Message.DbException' and 'System.Data.Common.DbException'` — нужен явный `using` alias или полное имя |
-
-Проверка: `dotnet build src/H2Sharp/H2Sharp.csproj`
+**Ошибки из раздела ниже уже неактуальны** — они были исправлены при подключении:
+`ExecuteDbDataReader` больше не возвращает `int`, `[AllowNull]` на `CommandText` восстановлен,
+`DbException` разрешён алиасом `H2DbException`. Сборка проходит с 0 warnings / 0 errors.

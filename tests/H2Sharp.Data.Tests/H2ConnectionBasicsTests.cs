@@ -28,7 +28,7 @@ using Xunit;
 
 namespace H2Sharp.Data.Tests;
 
-public sealed class H2ConnectionTests
+public sealed class H2ConnectionBasicsTests
 {
     [Fact]
     public void TheConstructorOverloadTakesTheConnectionString()
