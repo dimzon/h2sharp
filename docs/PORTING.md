@@ -51,6 +51,12 @@ New files that have no Java counterpart write `Ported from: (new file, no Java c
 ## 3. Namespaces and type names
 
 * Namespace mirrors the Java package: `org.h2.mvstore` -> `H2Sharp.MvStore`.
+* **One exception, and it is not a mirror at all:** `H2Sharp.Data` is the ADO.NET provider's
+  namespace — `H2Connection`, `H2Command`, `H2DataReader`, `H2Transaction`, `H2Parameter`,
+  `H2Factory`. No Java package corresponds to it, because H2 reaches a caller through JDBC
+  and this is what that job looks like on the .NET side. Types carry the `H2` prefix rather
+  than their bare ADO names so that a file importing both this namespace and
+  `System.Data.Common` does not end up with two things called `Connection`.
 * Class names keep the H2 spelling verbatim, including H2's compact forms:
   `MVStore`, `MVMap`, `BTree`, `ValueVarchar`, `CreateTableAsSelect`.
 * When .NET already defines a colliding name, rename with an explicit suffix and say so in

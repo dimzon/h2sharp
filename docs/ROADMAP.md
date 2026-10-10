@@ -98,10 +98,15 @@ it exercises tables, primary/secondary/spatial indexes, and LOB storage together
 
 ## Phase 8 — ADO.NET provider — todo
 
-`DbProviderFactory`, `DbConnection`, `DbCommand`, `DbDataReader`,
-`DbTransaction`, `DbParameter`, `DbException`, connection-string parser
-(accepting both `Data Source=...` and H2-style `jdbc:h2:...` URLs), `GetSchema()`
-over `INFORMATION_SCHEMA`.
+`H2Sharp.Data`: `H2Connection` (started — the type and its refusals, no engine behind it),
+`H2Factory` (`DbProviderFactory`), `H2Command`, `H2Parameter`, `H2DataReader`,
+`H2Transaction`, `H2Batch`, connection-string parser (accepting both
+`Data Source=...` and H2-style `jdbc:h2:...` URLs), `GetSchema()` over
+`INFORMATION_SCHEMA`.
+Tests live in their own project, `tests/H2Sharp.Data.Tests`, and the gate is Dapper:
+`DapperSmokeTests` drives an in-memory database end to end over `IDbConnection`
+(open, create, insert, update, select, delete), so the provider is measured against a real
+micro-ORM rather than against itself.
 
 ## Phase 9 — EF Core provider — todo
 
