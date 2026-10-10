@@ -485,10 +485,12 @@ Java-имена и разрешать их: получился бы файл, к
   формы геометрии, регистр каждого символа BMP, UUID, сжатие LZF побайтово и через поток,
   VARCHAR_IGNORECASE, разбор путей файловой системы, файл магазина, значения LOB, значения ARRAY
   и ROW, значения ENUM, часовые пояса, конверсии между типами даты и времени, конверсии в
-  INTERVAL, значения JAVA_OBJECT) и 27 проверок аллокаций/инвариантов; плюс **63 passed,
-  0 FAILED** в `H2Sharp.MvStore.Tests` — ядро `Page`/`MVMap`/`MVStore` in-memory и полное
+  INTERVAL, значения JAVA_OBJECT) и 27 проверок аллокаций/инвариантов; плюс **83 passed,
+  0 FAILED** в `H2Sharp.MvStore.Tests` — ядро `Page`/`MVMap`/`MVStore` in-memory, полное
   файловое ядро `FileStore`/`RandomAccessStore`/`SingleFileStore`/`SFChunk` с родными
-  `org.h2.test.store` тестами как драйверами.
+  `org.h2.test.store` тестами как драйверами, и пакет транзакций `tx` (`TransactionStore`,
+  `TransactionMap`, `Transaction`) с родным `TestTransactionStore` плюс регрессионным
+  `TestTxRegression`.
 * `python tools/regen.py --check` — сгенерированные таблицы соответствуют эталону.
 
 ## Страховка от тихой деградации (сделано)
@@ -2952,5 +2954,70 @@ SRID другой. То же самое с типом: «POINT» в целево
    `memFS:` — удаление было no-op, и каждый сид дочитывал 500 операций предыдущего. В эталоне
    `FileUtils.delete` scheme-aware; наш `DeleteFile` теперь тоже (через `FilePath`).
 
-Не портировано и ждёт своего владельца: `TransactionStore`/`TransactionMap` (tx-пакет),
+Не портировано и ждёт своего владельца:
 `MVStoreTool` beyond минимума, `OffHeapStore`/`AppendOnlyMultiFileStore`/`MFChunk`.
+
+### `tx`: транзакции поверх стирания типов
+
+Портированы целиком, 1:1 по структуре: `TransactionStore` (1067), `TransactionMap` (1172),
+`Transaction` (805), `TxDecisionMaker` + `CommitDecisionMaker` + `RollbackDecisionMaker`,
+`Record`, `Snapshot`, `VersionedValueCommitted`/`Uncommitted`/`Type`, `VersionedBitSet`,
+`BitSetHelper`, `IsolationLevel`. Драйвер — родной `TestTransactionStore` (минус
+`testCompareWithPostgreSQL`: ему нужен живой PostgreSQL по JDBC), плюс свой
+`TestTxRegression` на три ловушки, которые встретились только здесь. Стало **83/83** в
+`H2Sharp.MvStore.Tests`, **599/599** в `H2Sharp.Tests` без регрессий.
+
+Главное решение — **все версионные карты объектные**: `MVMap<object,
+VersionedValue<object>>`. В Java стирание позволяет одному undo-логу, одному коммиту и
+одному откату обслуживать карты с любыми `K`/`V`; в C# инвариантность это запрещает, и
+единственная честная альтернатива стиранию — те же объекты. Явные типы в `openMap` при этом
+игнорируются для построения карты (регистрируются как раньше): порядки чисел и строк под
+`ObjectDataType` те же, тесты проверяют поведение, а не байты, а reopen идёт через те же
+дефолты с обеих сторон. Записано в коде.
+
+Остальное, всё помечено в коде:
+
+| Место | Решение |
+|---|---|
+| `V?`/`K?`/`X?` на открытых параметрах | Схлопываются (никакого `Nullable` в рантайме): отсутствие значимого типа читается как default. Границы итераторов — `object?` (null — это отсутствие границы, а 0 — настоящий ключ) |
+| `(V?)null` | Падает с NPE (unbox null), где Java отвечает null: все граничные касты идут через `TransactionStore.Unbox` |
+| `? value : default` со struct | Даёт не-null default, а не null: методы записей возвращают через `if/return null` |
+| `offered value`/`lastValue` | `object?`, а не `V?`: удаление — это настоящий null, а не `default(V)` (иначе remove писал бы 0 и `sizeAsLong` считал бы лишнее) |
+| `ContainsKey` | По самой записи (всегда ссылочный тип), а не по значению |
+| `CommitDecisionMaker` | Page-level `Decide` стал `virtual` в `MVMap` — единственное расширение ядра ради tx |
+| `VersionedValue.GetCurrentValue/GetCommittedValue` | Стали `virtual` (были рабочим трюком слоя значений) |
+| `AtomicLong` | Плюс `GetAndIncrement`/`DecrementAndGet` для счётчика лога |
+| `MVMap.CloneIt`/`BasicBuilder.Create` | Стали `virtual` для `TMVMap`/`TxMapBuilder` |
+| `IsolationLevel` | Минимальный enum в `Tx` (нужны только уровни и `allowNonRepeatableRead`); настоящий придёт с движком |
+| `computeIfPresent` | Default-метод `java.util.Map`, написан руками |
+| `Task`/`CountDownLatch`/`AtomicInteger` в тестах | `Thread`/`CountdownEvent`/`Interlocked` в файле теста |
+| Кросс-процессный лок, backup, rtree-ветка билдера | Как раньше: не enforced / нет в `IFileStore` / пропущена |
+
+**Три бага, которые нашлись по дороге:**
+
+1. `FlushAppendBuffer` возвращал протухший залоченный рут вместо обновлённого (в эталоне —
+   переприсваивание). Первый `Operate` после append-буфера шёл по пустому листу и ничего не
+   находил; промежуточное чтение маскировало, потому что тоже флашило. Поймалось минимальной
+   репрой (два put и голый rollback) после того, как Debug упёрся в соседний ассерт про
+   счётчик.
+2. `BitSetHelper.Flip` через `Array.Resize`: без изменения размера это no-op, и `^=` мутировал
+   общий массив, ломая иммутабельность `VersionedBitSet` — под конкурентными begin/commit
+   id дублировались и `EndTransaction` упирался в `original.Get(txId)`. В однопоточном —
+   тишина. `Arrays.copyOf` в эталоне копирует всегда; здесь теперь тоже всегда.
+3. `MetaType.Read` не резолвил имена из текущей сборки (`Type.GetType` без assembly) и падал
+   на типах без поля `Instance` (`NullReferenceException` вместо конструкции). Нужен
+   `testTwoPhaseCommit`: реестр типов переоткрывает файл. Починен фолбэком на текущую сборку
+   и веткой `Activator`.
+
+**Про Debug и ассерты — отдельно, потому что это про процесс.** Тесты гонялись в Release, а
+ассерты там вырезаны вместе с аргументами (`Debug.Assert(iterator.MoveNext())` из прошлого
+раза — тот же класс). Теперь правило: сьют `H2Sharp.MvStore.Tests` зелёный и в Debug, и в
+Release (83/83 в обоих). Debug поймал и протухший рут, и `Flip`, и половину tx-багов выше —
+то, что Release проглатывал. Плюс поставлен `coverlet.collector` в оба тестовых проекта
+(`--collect:"XPlat Code Coverage"` работает, проверено на одном тесте).
+
+Порт теста `TestTransactionStore` — один к одному, с поправками на платформу: `V?` значимых
+типов читается как default (0 вместо null, как и оговорено стеной `K?`), итераторы — через
+`HasNext`/`Next`, `getChanges` — через `IEnumerator`, `entrySet` — через `IEnumerable`.
+Единственная правка смысла: в `testSingleConnection` четвёртый блок в порте ждал `"World"`
+после закоммиченного `remove("2")` — в эталоне там `assertNull`, исправлено по эталону.

@@ -43,6 +43,16 @@ internal sealed class AtomicLong
     internal long IncrementAndGet() => Interlocked.Increment(ref value);
 
     /// <summary>
+    /// Adds one, answering the previous value.
+    /// </summary>
+    internal long GetAndIncrement() => Interlocked.Increment(ref value) - 1;
+
+    /// <summary>
+    /// Subtracts one, answering the new value.
+    /// </summary>
+    internal long DecrementAndGet() => Interlocked.Decrement(ref value);
+
+    /// <summary>
     /// Adds the delta, answering the new value.
     /// </summary>
     internal long AddAndGet(long delta) => Interlocked.Add(ref value, delta);

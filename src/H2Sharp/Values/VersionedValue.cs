@@ -63,11 +63,11 @@ public abstract class VersionedValue<T>
     /// The value as it is now.
     /// </summary>
     /// <returns>this</returns>
-    public T GetCurrentValue() => (T)(object)this;
+    public virtual T GetCurrentValue() => (T)(object)this;
 
     /// <summary>
     /// The value as it was committed.
     /// </summary>
     /// <returns>this</returns>
-    public T GetCommittedValue() => (T)(object)this;
+    public virtual T GetCommittedValue() => (T)(object)this;
 }

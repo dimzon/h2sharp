@@ -157,7 +157,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
     /// <summary>
     /// A copy sharing the root, for the caller to turn read-only.
     /// </summary>
-    protected MVMap<K, V> CloneIt() => new MVMap<K, V>(this);
+    protected virtual MVMap<K, V> CloneIt() => new MVMap<K, V>(this);
 
     /// <summary>
     /// The layout key the root position of a map is stored under.
@@ -1320,6 +1320,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
                     rootReference.UpdatePageAndLockedStatus(page, preLocked || IsPersistent(), remainingBuffer);
                 if (updated is not null)
                 {
+                    rootReference = updated;
                     // should always be the case, except for spurious failure?
                     locked = preLocked || IsPersistent();
                     if (IsPersistent() && tip is not null)
@@ -1795,7 +1796,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
         }
 
         /// <inheritdoc/>
-        public M Create(MVStore store, IDictionary<string, object?> config)
+        public virtual M Create(MVStore store, IDictionary<string, object?> config)
         {
             if (GetKeyType() is null)
             {
@@ -2168,7 +2169,7 @@ public abstract class DecisionMaker<V>
     /// Anything else is a new leaf whose index field carries the unsaved memory, for the caller to
     /// pick up — an odd channel, but it is the reference's own.
     /// </remarks>
-    public CursorPos<K, V>? Decide<K>(CursorPos<K, V>? tip, K key, V? providedValue)
+    public virtual CursorPos<K, V>? Decide<K>(CursorPos<K, V>? tip, K key, V? providedValue)
     {
         Page<K, V> p = tip!.page;
         Debug.Assert(p.IsLeaf());

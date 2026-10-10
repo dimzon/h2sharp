@@ -93,17 +93,35 @@ public sealed class MetaType<D> : BasicDataType<DataType<object>>
                 return (DataType<object>)cached;
             }
 
-            System.Type clazz = System.Type.GetType(className, throwOnError: true)!;
-            bool singleton = false;
-            object obj;
-            try
+            // Type.GetType only resolves assembly-qualified names and system types; the names
+            // written here are plain .NET full names of this assembly's types.
+            System.Type? clazz = System.Type.GetType(className, throwOnError: false)
+                ?? System.Reflection.Assembly.GetExecutingAssembly().GetType(className);
+            if (clazz is null)
             {
-                obj = clazz.GetField("Instance", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
-                singleton = true;
+                throw new TypeLoadException("Can not load data type " + className);
             }
-            catch (System.Reflection.TargetException)
+
+            bool singleton = false;
+            object? obj = clazz.GetField("Instance",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)?.GetValue(null);
+            if (obj is null)
             {
-                obj = Activator.CreateInstance(clazz)!;
+                try
+                {
+                    obj = Activator.CreateInstance(clazz)!;
+                }
+                catch (Exception e) when (e is MissingMethodException
+                    or MemberAccessException
+                    or System.Reflection.TargetInvocationException)
+                {
+                    exceptionHandler?.Invoke(e);
+                    throw new InvalidOperationException(e.Message, e);
+                }
+            }
+            else
+            {
+                singleton = true;
             }
 
             if (obj is StatefulDataType<D>.Factory factory)
@@ -124,6 +142,7 @@ public sealed class MetaType<D> : BasicDataType<DataType<object>>
             or MissingMemberException
             or TypeLoadException
             or ArgumentException
+            or InvalidCastException
             or System.Security.SecurityException)
         {
             exceptionHandler?.Invoke(e);
