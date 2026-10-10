@@ -27,6 +27,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace H2Sharp.Util;
 
@@ -750,6 +751,42 @@ public static class Utils
 
             queue.Add(action);
         }
+
+        /// <summary>
+        /// Submits work and answers a task for it. Unlike <see cref="Execute"/>, a failure of
+        /// the work faults the task instead of being logged: the waiter owns the error, the way
+        /// a <c>Future.get()</c> caller owns the <c>ExecutionException</c> in the reference.
+        /// </summary>
+        /// <param name="action">the work</param>
+        /// <exception cref="InvalidOperationException">if the executor is shut down</exception>
+        public Task Submit(Action action)
+        {
+            if (shutdown)
+            {
+                throw new InvalidOperationException("Executor '" + name + "' is shut down.");
+            }
+
+            var completion = new TaskCompletionSource<object?>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            queue.Add(() =>
+            {
+                try
+                {
+                    action();
+                    completion.SetResult(null);
+                }
+                catch (Exception e)
+                {
+                    completion.SetException(e);
+                }
+            });
+            return completion.Task;
+        }
+
+        /// <summary>
+        /// How many submitted actions are still waiting for the worker.
+        /// </summary>
+        public int PendingCount => queue.Count;
 
         /// <summary>
         /// Stops accepting new work and lets queued work finish.

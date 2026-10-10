@@ -1,5 +1,7 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using H2Sharp.Util;
@@ -605,6 +607,119 @@ public abstract class Chunk
     public override string ToString() => AsString() + (Buffer is null ? "" : ", buf");
 
     /// <summary>
+    /// Reads a page of data, retrying when the chunk moves under the read.
+    /// </summary>
+    /// <remarks>
+    /// The block is read before the page and compared afterwards: a chunk moved by another
+    /// thread in between is noticed and the read repeats. When the chunk was just serialized
+    /// and not saved yet, the page comes from its in-memory image instead of the file.
+    /// </remarks>
+    internal byte[] ReadBufferForPage(FileStore store, int offset, long pos)
+    {
+        Debug.Assert(IsAllocated() || Buffer != null);
+        while (true)
+        {
+            long originalBlock = Block;
+            try
+            {
+                long filePos = originalBlock * FileStore.BlockSize;
+                long maxPos = filePos + (long)Len * FileStore.BlockSize;
+                filePos += offset;
+                if (filePos < 0)
+                {
+                    throw DataUtils.NewMvStoreException(
+                        DataUtils.ErrorFileCorrupt,
+                        "Negative position {0}; p={1}, c={2}", filePos, pos, this);
+                }
+
+                int length = DataUtils.GetPageMaxLength(pos);
+                if (length == DataUtils.PageLarge)
+                {
+                    // read the first bytes to figure out actual length
+                    length = BinaryPrimitives.ReadInt32BigEndian(
+                        ReadFully(store, filePos, 128).AsSpan(0, 4));
+                    // pageNo is deliberately not included into length to preserve compatibility
+                    length += 4;
+                }
+
+                length = (int)Math.Min(maxPos - filePos, length);
+                if (length < 0)
+                {
+                    throw DataUtils.NewMvStoreException(DataUtils.ErrorFileCorrupt,
+                        "Illegal page length {0} reading at {1}; max pos {2} ", length, filePos, maxPos);
+                }
+
+                byte[]? buffer = Buffer;
+                byte[] buff = buffer == null
+                    ? ReadFully(store, filePos, length)
+                    : buffer.AsSpan(offset, length).ToArray();
+
+                if (originalBlock == Block)
+                {
+                    return buff;
+                }
+            }
+            catch (MvStoreException)
+            {
+                if (originalBlock == Block)
+                {
+                    throw;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads the table of contents, retrying when the chunk moves under the read.
+    /// </summary>
+    internal long[] ReadToC(FileStore store)
+    {
+        Debug.Assert(IsAllocated() || Buffer != null);
+        Debug.Assert(TocPos > 0);
+        long[] toc = new long[PageCount];
+        while (true)
+        {
+            long originalBlock = Block;
+            try
+            {
+                byte[]? buffer = Buffer;
+                if (buffer == null)
+                {
+                    int length = PageCount * 8;
+                    long filePos = originalBlock * FileStore.BlockSize + TocPos;
+                    byte[] bytes = ReadFully(store, filePos, length);
+                    for (int i = 0; i < toc.Length; i++)
+                    {
+                        toc[i] = BinaryPrimitives.ReadInt64BigEndian(bytes.AsSpan(i * 8, 8));
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < toc.Length; i++)
+                    {
+                        toc[i] = BinaryPrimitives.ReadInt64BigEndian(buffer.AsSpan(TocPos + i * 8, 8));
+                    }
+                }
+
+                if (originalBlock == Block)
+                {
+                    return toc;
+                }
+            }
+            catch (MvStoreException)
+            {
+                if (originalBlock == Block)
+                {
+                    throw;
+                }
+            }
+        }
+    }
+
+    private byte[] ReadFully(FileStore store, long filePos, int length)
+        => store.ReadFully(this, filePos, length);
+
+    /// <summary>
     /// Orders chunks by where they sit in the file.
     /// </summary>
     /// <remarks>
@@ -634,7 +749,7 @@ public abstract class Chunk
         }
     }
 
-    private static Dictionary<string, object?> ToValues(IDictionary<string, string> map)
+    internal static Dictionary<string, object?> ToValues(IDictionary<string, string> map)
     {
         Dictionary<string, object?> values = new(StringComparer.Ordinal);
         foreach (KeyValuePair<string, string> entry in map)

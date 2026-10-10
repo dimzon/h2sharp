@@ -610,7 +610,8 @@ public class ObjectDataType : BasicDataType<object?>
         {
         }
 
-        public override int Compare(object? a, object? b) => ((float)a!).CompareTo((float)b!);
+        public override int Compare(object? a, object? b)
+            => CompareFloat((float)a!, (float)b!);
 
         public override int GetMemory(object? obj) => 24;
 
@@ -663,7 +664,8 @@ public class ObjectDataType : BasicDataType<object?>
         {
         }
 
-        public override int Compare(object? a, object? b) => ((double)a!).CompareTo((double)b!);
+        public override int Compare(object? a, object? b)
+            => CompareDouble((double)a!, (double)b!);
 
         public override int GetMemory(object? obj) => 30;
 
@@ -886,7 +888,15 @@ public class ObjectDataType : BasicDataType<object?>
         {
         }
 
-        public override int Compare(object? a, object? b) => ((Guid)a!).CompareTo((Guid)b!);
+        public override int Compare(object? a, object? b)
+        {
+            // Java orders by signed most bits, then signed least bits. Guid.CompareTo orders the
+            // trailing bytes unsigned, which disagrees exactly when their signs differ.
+            Guid ga = (Guid)a!;
+            Guid gb = (Guid)b!;
+            int c = Util.Bits.Msb(ga).CompareTo(Util.Bits.Msb(gb));
+            return c != 0 ? c : Util.Bits.Lsb(ga).CompareTo(Util.Bits.Lsb(gb));
+        }
 
         public override int GetMemory(object? obj) => 40;
 
@@ -989,7 +999,10 @@ public class ObjectDataType : BasicDataType<object?>
             }
             else
             {
-                foreach (object? x in (object?[])obj)
+                // A value-type array (DateTime, Guid, decimal and the nullable kinds) does not
+                // convert to object?[], so the elements go one by one through GetValue, which
+                // boxes them. That is what Array.get does on the reference side.
+                foreach (object? x in array)
                 {
                     if (x is not null)
                     {
@@ -1052,11 +1065,9 @@ public class ObjectDataType : BasicDataType<object?>
             }
             else
             {
-                object?[] aValues = (object?[])aArray;
-                object?[] bValues = (object?[])bArray;
                 for (int i = 0; i < len; i++)
                 {
-                    int compared = elementType.Compare(aValues[i], bValues[i]);
+                    int compared = elementType.Compare(aArray.GetValue(i), bArray.GetValue(i));
                     if (compared != 0)
                     {
                         return compared;
@@ -1134,6 +1145,10 @@ public class ObjectDataType : BasicDataType<object?>
                         {
                             _ = buff.PutDouble(((double[])obj)[i]);
                         }
+                        else if (component == typeof(sbyte))
+                        {
+                            _ = buff.Put((byte)((sbyte[])obj)[i]);
+                        }
                         else
                         {
                             _ = buff.PutLong(((long[])obj)[i]);
@@ -1153,12 +1168,11 @@ public class ObjectDataType : BasicDataType<object?>
                 StringDataType.Instance.Write(buff, name);
             }
 
-            object?[] values = (object?[])obj;
-            int total = values.Length;
+            int total = array.Length;
             _ = buff.PutVarInt(total);
-            foreach (object? x in values)
+            for (int i = 0; i < total; i++)
             {
-                elementType.Write(buff, x);
+                elementType.Write(buff, array.GetValue(i));
             }
         }
 
@@ -1169,10 +1183,19 @@ public class ObjectDataType : BasicDataType<object?>
         {
             if (tag != TypeArray)
             {
-                return ReadBytes(buff, ref position, tag - TagByteArray015);
+                // A short byte array carries no class id; like every other byte array on disk it is
+                // Java's signed bytes, which are sbyte here.
+                byte[] raw = ReadBytes(buff, ref position, tag - TagByteArray015);
+                sbyte[] signed = new sbyte[raw.Length];
+                for (int i = 0; i < raw.Length; i++)
+                {
+                    signed[i] = (sbyte)raw[i];
+                }
+
+                return signed;
             }
 
-            int component = buff[position++];
+            int component = (sbyte)buff[position++];
             System.Type clazz;
             if (component == -1)
             {
@@ -1190,7 +1213,6 @@ public class ObjectDataType : BasicDataType<object?>
             try
             {
                 Array result = Array.CreateInstance(clazz, len);
-                object?[]? boxed = clazz.IsPrimitive ? null : new object?[len];
                 for (int i = 0; i < len; i++)
                 {
                     if (clazz == typeof(bool))
@@ -1237,11 +1259,11 @@ public class ObjectDataType : BasicDataType<object?>
                     }
                     else
                     {
-                        boxed![i] = elementType.Read(buff, ref position);
+                        result.SetValue(elementType.Read(buff, ref position), i);
                     }
                 }
 
-                return boxed ?? (object)result;
+                return result;
             }
             catch (Exception e) when (e is not MvStoreException)
             {
@@ -1273,14 +1295,23 @@ public class ObjectDataType : BasicDataType<object?>
                 return ((int[])a)[i].CompareTo(((int[])b)[i]);
             }
 
+            if (component == typeof(sbyte))
+            {
+                // Java's byte arrays order unsigned (compareNotNull masks with 255), while its
+                // byte scalars order signed: [1] sorts before [-1] here, as byte[] does there.
+                int av = ((sbyte[])a)[i] & 0xFF;
+                int bv = ((sbyte[])b)[i] & 0xFF;
+                return av == bv ? 0 : av > bv ? 1 : -1;
+            }
+
             if (component == typeof(float))
             {
-                return ((float[])a)[i].CompareTo(((float[])b)[i]);
+                return CompareFloat(((float[])a)[i], ((float[])b)[i]);
             }
 
             if (component == typeof(double))
             {
-                return ((double[])a)[i].CompareTo(((double[])b)[i]);
+                return CompareDouble(((double[])a)[i], ((double[])b)[i]);
             }
 
             return ((long[])a)[i].CompareTo(((long[])b)[i]);
@@ -1395,6 +1426,47 @@ public class ObjectDataType : BasicDataType<object?>
         return (long)((v << 32) | (v >> 32));
     }
 
+    private static int CompareFloat(float a, float b)
+    {
+        // Java's Float.compare: -0.0 sorts below 0.0 and every NaN is one canonical NaN.
+        // CompareTo calls both zero, which would collapse two values the ordering keeps apart.
+        if (a < b)
+        {
+            return -1;
+        }
+
+        if (a > b)
+        {
+            return 1;
+        }
+
+        int aBits = float.IsNaN(a) ? CanonicalFloatNaNBits : BitConverter.SingleToInt32Bits(a);
+        int bBits = float.IsNaN(b) ? CanonicalFloatNaNBits : BitConverter.SingleToInt32Bits(b);
+        return aBits == bBits ? 0 : aBits < bBits ? -1 : 1;
+    }
+
+    private static int CompareDouble(double a, double b)
+    {
+        // Java's Double.compare, same three rules as CompareFloat.
+        if (a < b)
+        {
+            return -1;
+        }
+
+        if (a > b)
+        {
+            return 1;
+        }
+
+        long aBits = double.IsNaN(a) ? CanonicalDoubleNaNBits : BitConverter.DoubleToInt64Bits(a);
+        long bBits = double.IsNaN(b) ? CanonicalDoubleNaNBits : BitConverter.DoubleToInt64Bits(b);
+        return aBits == bBits ? 0 : aBits < bBits ? -1 : 1;
+    }
+
+    private const int CanonicalFloatNaNBits = 0x7FC00000;
+
+    private const long CanonicalDoubleNaNBits = 0x7FF8000000000000L;
+
     private static int BitLength(BigInteger value)
     {
         if (value.IsZero)
@@ -1424,15 +1496,12 @@ public class ObjectDataType : BasicDataType<object?>
 
     private static byte[] ToBigEndian(BigInteger value)
     {
+        // Minimal two's complement big-endian, sign byte included, exactly what BigInteger
+        // writes on disk: stripping a leading zero would flip the sign on the way back and
+        // differ from the reference byte for byte.
         byte[] little = value.ToByteArray();
         Array.Reverse(little);
-        int first = 0;
-        while (first < little.Length - 1 && little[first] == 0)
-        {
-            first++;
-        }
-
-        return little[first..];
+        return little;
     }
 
     private static BigInteger FromBigEndian(byte[] bytes)
@@ -1441,4 +1510,36 @@ public class ObjectDataType : BasicDataType<object?>
         Array.Reverse(little);
         return new BigInteger(little);
     }
+}
+
+/// <summary>
+/// The auto-detecting object type, fixed to one element type.
+/// </summary>
+/// <remarks>
+/// The reference has no such class: its one ObjectDataType serves every map through erasure, and
+/// an unchecked cast hides that a map of integers is really holding objects. C# generics are
+/// invariant, so that cast is a runtime failure here instead of a silent one, and a map opened
+/// without explicit types — the reference default — needs a type that truly is a
+/// <see cref="DataType{T}"/> of its keys. This is that type: every operation boxes into the
+/// shared engine and, on the way back, unboxes, so the bytes on disk are exactly the engine's.
+/// </remarks>
+/// <typeparam name="T">the element type</typeparam>
+public sealed class ObjectDataType<T> : BasicDataType<T>
+{
+    private static readonly ObjectDataType Engine = new();
+
+    /// <inheritdoc/>
+    public override T[] CreateStorage(int size) => new T[size];
+
+    /// <inheritdoc/>
+    public override int GetMemory(T obj) => Engine.GetMemory(obj);
+
+    /// <inheritdoc/>
+    public override void Write(WriteBuffer buff, T obj) => Engine.Write(buff, obj);
+
+    /// <inheritdoc/>
+    public override T Read(Span<byte> buff, ref int position) => (T)Engine.Read(buff, ref position)!;
+
+    /// <inheritdoc/>
+    public override int Compare(T? a, T? b) => Engine.Compare(a, b);
 }

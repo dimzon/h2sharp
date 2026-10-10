@@ -221,7 +221,7 @@ public sealed class StreamStoreOracleTests
         try
         {
             int len;
-            while ((len = source.Read(buffer, 0, buffer.Length)) >= 0)
+            while ((len = source.Read(buffer, 0, buffer.Length)) > 0)
             {
                 collected.Write(buffer, 0, len);
             }
@@ -243,7 +243,7 @@ public sealed class StreamStoreOracleTests
         {
             long s = Skip(source, skip);
             int len;
-            while ((len = source.Read(buffer, 0, buffer.Length)) >= 0)
+            while ((len = source.Read(buffer, 0, buffer.Length)) > 0)
             {
                 collected.Write(buffer, 0, len);
             }
@@ -278,7 +278,7 @@ public sealed class StreamStoreOracleTests
         while (skipped < count)
         {
             int len = source.Read(discard, 0, (int)Math.Min(discard.Length, count - skipped));
-            if (len < 0)
+            if (len <= 0)
             {
                 break;
             }

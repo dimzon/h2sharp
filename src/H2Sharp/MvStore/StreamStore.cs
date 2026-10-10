@@ -592,6 +592,18 @@ public sealed class StreamStore
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
         /// <summary>
+        /// Exhausts the stream, which is what closing means here: the reference sets the id
+        /// buffer and the position past the end, and every later read answers -1.
+        /// </summary>
+        public override void Close()
+        {
+            buffer = null;
+            position = limit;
+            pos = length;
+            base.Close();
+        }
+
+        /// <summary>
         /// The single byte read and the skip are not declared here. The reference overrides them on
         /// InputStream, but the ones on <see cref="System.IO.Stream"/> are not virtual and cannot be,
         /// and its own do exactly what the reference does: the single byte read goes through
@@ -626,7 +638,10 @@ public sealed class StreamStore
 
                     if (buffer is null)
                     {
-                        return -1;
+                        // The reference answers -1 here; System.IO.Stream answers 0 at the end,
+                        // and the base ReadByte and Read(Span) depend on it: they turn 0 into -1
+                        // and a short read themselves, but pass a -1 through as a byte.
+                        return 0;
                     }
                 }
 

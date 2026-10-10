@@ -477,12 +477,18 @@ Java-имена и разрешать их: получился бы файл, к
 * .NET 8/9/10 SDK, SDK закреплён в `global.json` (10.0.401).
 * JDK 25 + Maven 3.9.16 доступны → оракул работает.
 * Сборка: `dotnet build H2Sharp.sln -c Release` — 0 warnings, 0 errors.
-* Тесты: **573 passed, 0 FAILED**: 69 группы против JVM (включая parse-only оркул по
-  319 скриптам H2, 1849 пар типов, модель типов, сверку таблицы токенов, корпус DECFLOAT,
-  все 0x110000 кодовых точек `Character`, токенизатор на 139 операторах × 3 режимах,
-  арифметику дат на 16 000 датах, корпус DATE/TIME/TIMESTAMP, полный каталог типов,
-  все 23 фабрики и 7 геттеров полей API-интервала, кодпоинты для каждой позиции каждой строки корпуса, формы геометрии, регистр каждого символа BMP, UUID, сжатие LZF побайтово и через поток, VARCHAR_IGNORECASE, разбор путей файловой системы, файл магазина, значения LOB, значения ARRAY и ROW, значения ENUM, часовые пояса, конверсии между типами даты и времени, конверсии в INTERVAL, значения JAVA_OBJECT)
-  и 27 проверок аллокаций/инвариантов.
+* Тесты: **599 passed, 0 FAILED** в `H2Sharp.Tests`: 69 групп против JVM (включая parse-only
+  оракул по 319 скриптам H2, 1849 пар типов, модель типов, сверку таблицы токенов, корпус
+  DECFLOAT, все 0x110000 кодовых точек `Character`, токенизатор на 139 операторах × 3 режимах,
+  арифметику дат на 16 000 датах, корпус DATE/TIME/TIMESTAMP, полный каталог типов, все 23
+  фабрики и 7 геттеров полей API-интервала, кодпоинты для каждой позиции каждой строки корпуса,
+  формы геометрии, регистр каждого символа BMP, UUID, сжатие LZF побайтово и через поток,
+  VARCHAR_IGNORECASE, разбор путей файловой системы, файл магазина, значения LOB, значения ARRAY
+  и ROW, значения ENUM, часовые пояса, конверсии между типами даты и времени, конверсии в
+  INTERVAL, значения JAVA_OBJECT) и 27 проверок аллокаций/инвариантов; плюс **63 passed,
+  0 FAILED** в `H2Sharp.MvStore.Tests` — ядро `Page`/`MVMap`/`MVStore` in-memory и полное
+  файловое ядро `FileStore`/`RandomAccessStore`/`SingleFileStore`/`SFChunk` с родными
+  `org.h2.test.store` тестами как драйверами.
 * `python tools/regen.py --check` — сгенерированные таблицы соответствуют эталону.
 
 ## Страховка от тихой деградации (сделано)
@@ -2901,3 +2907,50 @@ SRID другой. То же самое с типом: «POINT» в целево
 
 `fulltext`, `security`/encryption, `server` (TCP + веб-консоль), `tools`, `jmx`,
 `jdbc`, `jdbcx`, `org.h2.bnf` (мёртвый код). Причины — в PORTING.md.
+
+### `FileStore`: файл, который ждали 35 тестов
+
+Заглушка `FileStore.cs` (все члены — `TODOException`) держала 35 красных фактов в
+`H2Sharp.MvStore.Tests`. Портированы целиком, 1:1 по структуре: `FileStore`/`FileStore<C>`
+(~2600 строк), `RandomAccessStore` (838), `SingleFileStore` (248), `SFChunk` (37), плюс
+читающая половина `Chunk` (`ReadBufferForPage`/`ReadToC` с retry по переезду чанка).
+Стало **63/63** в `H2Sharp.MvStore.Tests`, **599/599** в `H2Sharp.Tests` без регрессий.
+
+Что пришлось решить, всё помечено в коде:
+
+| Место | Решение |
+|---|---|
+| `Chunk<C>` self-type | Чанк у нас не generic; `SFChunk : Chunk`, `FileStore<C>` с `C : Chunk`, единственный инстанс — `Chunk` |
+| `ReadFully`/`WriteFully` через `ByteBuffer` | `byte[]` + `WriteBuffer.GetBuffer()` (живой backing array — чанк патчится in place); лимиты через `Limit()` |
+| `ReentrantLock` | Свой на `Monitor` (реентерабельный + `IsEntered`); `lock` не умеет unlock-relock в `Store()` |
+| `ThreadPoolExecutor` + `Future` | `BackgroundExecutor.Submit` → `Task` (ошибка — вейтеру через TCS, не в лог) + `PendingCount`; `future.get()` → `GetAwaiter().GetResult()` (разворачивает, не `AggregateException`) |
+| `PriorityBlockingQueue<RemovedPageInfo>` | `PriorityQueue<RemovedPageInfo, long>` + lock; приоритет — версия |
+| Приоритетные очереди (`findOldChunks`, `findChunksToMove`) | Min-heap с негированными приоритетами: голова — наименее желаемый, как `poll()` в эталоне |
+| `CacheLongKeyLIRS<Page<?,?>>` | `CacheLongKeyLIRS<object>` + `IPage` (без типов виден только identity/size/bytes); `Page<K,V> : IPage` явными реализациями |
+| `getMap(mapId)` без типов для compaction | `IAnyMap.MapRewritePage` + `MVStore.GetAnyMap` (аддитивно; единственный реализатор `IAnyMap` — `MVMap`) |
+| `FileLock` на канале | Нет в нашей абстракции канала осознанно; same-process исключение — статический реестр открытых имён (ровно это проверяет `TestConcurrentOpen`); cross-process не enforced, записано |
+| Шифрование (`FileEncrypt`) | Не портируется; `Open` с ключом отказывает `UnsupportedFormat`; тесты `TestEncryptedFile`/`TestNewerWriteVersion` приватны, удалить в конце |
+| `backup(ZipOutputStream)` | Нет в `IFileStore`, никто не зовёт — пропущен |
+| `BackgroundWriterThread` | `Thread` + `Monitor.Wait/PulseAll` вместо `wait/notify`; `IsBackgroundThread` — сравнение `Thread`, как в эталоне |
+| `nanoTime`/`yield`/`gc()` | `Stopwatch.GetTimestamp`/`Thread.Yield`/`GC.Collect` |
+
+**Три бага, которые нашлись по дороге (два в старом коде, один в тесте):**
+
+1. `CacheLongKeyLIRS(Config)` звал `SetMaxMemory` до `Clear()` — сегментов ещё нет, NRE на
+   первом же файловом открытии. Порядок перевёрнут; раньше не падало, потому что конструктор
+   через `Config` никто не вызывал.
+2. `LongBitSet.ValueOf` не ростил `words` — чанк с occupancy длиннее 8 байт ронял reopen
+   (`TestWriteBuffer`, `TestBtreeStore`). Пустой массив — пустое множество, как
+   `BitSet.valueOf(new byte[0])`.
+3. Порт `TestMeta` ждал `[data]` на пустом сторе — в эталоне там `[]`, `[data]` только после
+   `openMap`. Исправлен тест, не прод.
+4. Своя: `Debug.Assert(iterator.MoveNext())` в `CompactMoveChunks` — в Release вызов вырезан
+   вместе с ассертом, итератор не сдвинут → NRE. В эталоне `next()` вне ассерта; так и здесь.
+
+**Ложный след: `TestMapFile` после `compactFile`.** Падал на первом же op нового сида —
+   store не был пустым. `StoreTestBase.DeleteFile` шёл через `System.IO`, а тест открывает
+   `memFS:` — удаление было no-op, и каждый сид дочитывал 500 операций предыдущего. В эталоне
+   `FileUtils.delete` scheme-aware; наш `DeleteFile` теперь тоже (через `FilePath`).
+
+Не портировано и ждёт своего владельца: `TransactionStore`/`TransactionMap` (tx-пакет),
+`MVStoreTool` beyond минимума, `OffHeapStore`/`AppendOnlyMultiFileStore`/`MFChunk`.

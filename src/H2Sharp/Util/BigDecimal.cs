@@ -803,7 +803,10 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
             int rightAdjusted = other.AdjustedExponent();
             if (leftAdjusted != rightAdjusted)
             {
-                return leftAdjusted < rightAdjusted ? -1 : 1;
+                // A larger adjusted exponent is a larger magnitude, which is the larger value
+                // only when both are positive: for two negatives it is the smaller one.
+                int magnitude = leftAdjusted < rightAdjusted ? -1 : 1;
+                return unscaledValue.Sign < 0 ? -magnitude : magnitude;
             }
         }
 

@@ -257,6 +257,10 @@ internal sealed class LongBitSet
     internal static LongBitSet ValueOf(byte[] bytes)
     {
         LongBitSet set = new();
+        if (bytes.Length != 0)
+        {
+            set.EnsureCapacity(bytes.Length * 8 - 1);
+        }
         int whole = bytes.Length / sizeof(long);
         for (int i = 0; i < whole; i++)
         {

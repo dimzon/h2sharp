@@ -314,6 +314,14 @@ public sealed class WriteBuffer
     /// <returns>what was written</returns>
     public byte[] ToArray() => buffer[..position];
 
+    /// <summary>
+    /// The live backing array, not a copy. The chunk image is patched in place after
+    /// serialization (header at the front, footer at the back), so the store keeps this array
+    /// rather than a snapshot of it.
+    /// </summary>
+    /// <returns>the backing array; only <c>[0, Limit())</c> holds the chunk</returns>
+    internal byte[] GetBuffer() => buffer;
+
     private byte[] EnsureCapacity(int len)
     {
         if (limit - position < len)
