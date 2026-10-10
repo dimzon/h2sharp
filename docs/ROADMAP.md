@@ -59,8 +59,15 @@ it needs `Value` (done) *and* `Session` (phase 6), so it moves with the table en
 
 `value/*` remainder (`Transfer`, `lob/*`, `CharsetCollator`, `CompareModeIcu4J`),
 `schema/*`, `table/*`, `index/*`, `mvstore/db/*`. Order is dependency-driven:
+**next up is step 2**, the session-free core of `table/`.
 
-1. `value/` remainder — no new dependencies, closes the value layer for real.
+1. `value/` remainder — **done for what is portable**: `CharsetCollator` and the
+   `CHARSET_` branch of `CompareModeDefault` (the only collation whose weights are
+   the platform's own bytes, so it is exact; see MIGRATION_STATUS.md). Left, and
+   why: `DEFAULT_`/`ICU4J_` collations need `java.text.Collator` weights, measured
+   and not reproducible; `Transfer` needs `Session` and `DataHandler`; `lob/*`
+   needs `DataHandler`; `ValueToObjectConverter`/`2` need the JDBC types, which
+   arrive with the provider.
 2. `table/` session-free core: `Column`, `IndexColumn`, `ColumnResolver` and friends.
 3. `index/` session-free core: `IndexType`, `IndexSort`, remaining cursors.
 4. `mvstore/db/*` against the above (`ValueDataType`, then `MVTable` + indexes).

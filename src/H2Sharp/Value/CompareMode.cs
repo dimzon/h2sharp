@@ -20,9 +20,10 @@
  * for a real collator fails with that reason rather than quietly comparing ordinally, since
  * quietly comparing ordinally would produce a plausible wrong answer.
  *
- * CharsetCollator is not here either, though it would be exact: it compares bytes in a named
- * encoding and involves no platform weights. It arrives with the string value type, which is
- * its only user.
+ * CharsetCollator is carried as its own class, and GetInstance wires the
+ * CHARSET_ branch through CompareModeDefault: a charset collator compares
+ * encoded bytes and involves no platform weights, so that branch is exact.
+ * The locale and ICU4J branches stay unported for the measured reason above.
  */
 using System;
 using H2Sharp.Util;
@@ -106,6 +107,14 @@ public class CompareMode
         if (name is null || name == Off)
         {
             return new CompareMode(name, strength);
+        }
+
+        // CompareModeDefault only carries the CHARSET_ branch: a charset collator
+        // compares encoded bytes, so no platform weights are involved and the port
+        // is exact. Every other name still fails below with the measured reason.
+        if (name.StartsWith(Charset, StringComparison.Ordinal))
+        {
+            return new CompareModeDefault(name, strength);
         }
 
         throw new NotSupportedException(
