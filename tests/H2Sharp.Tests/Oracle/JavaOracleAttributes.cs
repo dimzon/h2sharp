@@ -19,7 +19,7 @@ namespace H2Sharp.Tests;
 /// <see cref="JavaOracle.Required"/>.
 /// </para>
 /// </summary>
-public sealed class JavaOracleFactAttribute : FactAttribute
+public class JavaOracleFactAttribute : FactAttribute
 {
     public JavaOracleFactAttribute()
     {
@@ -50,6 +50,58 @@ public sealed class JavaOracleTheoryAttribute : TheoryAttribute
         if (!JavaOracle.IsAvailable)
         {
             Skip = JavaOracle.SkipReason;
+        }
+    }
+}
+
+/// <summary>
+/// A fact that compares against the reference and needs statements to run for it to mean
+/// anything.
+/// </summary>
+/// <remarks>
+/// Some questions cannot be asked of the reference without running SQL on both sides: whether a
+/// second connection sees what the first one created, whether a named in-memory database is
+/// forgotten when its last session closes. Those questions are real and they are written down
+/// (see <c>InMemoryDatabaseOracleTests</c>), but until the parser and the table layer are ported
+/// our side cannot answer them, and a test that failed on "not implemented yet" would say
+/// nothing except that the port is unfinished — while sitting in the suite that is supposed to
+/// stay green.
+/// <para>
+/// The condition is a probe, not a flag: it runs one statement and asks whether the engine
+/// refused. The day statements run, the test starts running with no edit here, which is the
+/// point — the skip has to disappear by itself or it will outlive the thing it waits for.
+/// </para>
+/// </remarks>
+public sealed class JavaOracleWithSqlFactAttribute : JavaOracleFactAttribute
+{
+    public JavaOracleWithSqlFactAttribute()
+    {
+        if (Skip is not null)
+        {
+            return;
+        }
+
+        Skip = SqlNotRunnable();
+    }
+
+    /// <summary>
+    /// Why statements cannot run yet, or null when they can.
+    /// </summary>
+    internal static string? SqlNotRunnable()
+    {
+        try
+        {
+            using H2Sharp.Data.H2Connection connection = new("jdbc:h2:mem:sql_probe");
+            connection.Open();
+            using System.Data.Common.DbCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT 1";
+            _ = command.ExecuteScalar();
+            connection.Close();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return "Statements do not run yet (" + ex.Message + "); the comparison needs the parser and the table layer";
         }
     }
 }

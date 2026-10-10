@@ -1,0 +1,247 @@
+/*
+ * Copyright 2004-2026 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
+ * Initial Developer: H2 Group
+ * Ported from org.h2.engine.Database.
+ * Copyright 2026 H2Sharp contributors.
+ * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
+ *
+ * Partially ported, in the order the connection path needs: what a database *is* while there is
+ * nothing in it yet — its name, whether it is memory, the object id counter, and the rule that
+ * an in-memory database disappears when its last session closes. Everything that needs the
+ * storage layer (the store, the meta table, the writer thread, the object registry lookup) is
+ * stubbed and refuses.
+ *
+ * The close rule is the part worth having first, because it is observable without a single
+ * table: two connections to the same "jdbc:h2:mem:x" see one database, and after the second of
+ * them closes, a new connection finds nothing. A port that kept the registry entry forever would
+ * still answer every query correctly and would leak a database per name for the life of the
+ * process — which is exactly the kind of thing a test that only creates tables never notices.
+ *
+ * Object ids are allocated here and nowhere else, and the counter starts where the reference's
+ * does. A database whose first user takes id 0 and whose first table takes a later one is what
+ * the reference produces; a port that starts the counter at 1 would agree on every query and
+ * disagree with every file written from it.
+ */
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using H2Sharp.Message;
+using H2Sharp.Util;
+
+namespace H2Sharp.Engine;
+
+/// <summary>
+/// A database.
+/// </summary>
+public sealed partial class Database
+{
+    /// <summary>
+    /// The first object id handed out. The reference allocates the meta table and its index
+    /// before anything a user can name, so user objects start above them.
+    /// </summary>
+    private const int FirstObjectId = 3;
+
+    private readonly ConnectionInfo connectionInfo;
+
+    private readonly string name;
+
+    private readonly bool memory;
+
+    private readonly List<SessionLocal> sessions = [];
+
+    private readonly object syncRoot = new();
+
+    private int objectId;
+
+    private long modificationMetaId;
+
+    private bool closing;
+
+    /// <summary>
+    /// Opens a database.
+    /// </summary>
+    /// <param name="connectionInfo">the connection information</param>
+    public Database(ConnectionInfo connectionInfo)
+    {
+        this.connectionInfo = connectionInfo;
+        name = connectionInfo.GetName();
+        memory = !connectionInfo.IsPersistent();
+        objectId = FirstObjectId;
+    }
+
+    /// <summary>
+    /// Gets the connection information this database was opened with.
+    /// </summary>
+    /// <returns>the connection information</returns>
+    public ConnectionInfo GetConnectionInfo()
+    {
+        return connectionInfo;
+    }
+
+    /// <summary>
+    /// Gets the database name.
+    /// </summary>
+    /// <returns>the name</returns>
+    public string GetName()
+    {
+        return name;
+    }
+
+    /// <summary>
+    /// Whether this database is in memory.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsMemory()
+    {
+        return memory;
+    }
+
+    /// <summary>
+    /// Allocates a new object id.
+    /// </summary>
+    /// <returns>the id</returns>
+    public int AllocateObjectId()
+    {
+        lock (syncRoot)
+        {
+            return objectId++;
+        }
+    }
+
+    /// <summary>
+    /// Gets the current modification meta id.
+    /// </summary>
+    /// <returns>the id</returns>
+    public long GetModificationMetaId()
+    {
+        lock (syncRoot)
+        {
+            return modificationMetaId;
+        }
+    }
+
+    /// <summary>
+    /// Gets the next modification meta id, marking the database as changed.
+    /// </summary>
+    /// <returns>the id</returns>
+    public long GetNextModificationMetaId()
+    {
+        lock (syncRoot)
+        {
+            return ++modificationMetaId;
+        }
+    }
+
+    /// <summary>
+    /// Gets the trace object for the given module.
+    /// </summary>
+    /// <remarks>
+    /// Refuses for now, because the reference's trace is a module id plus a writer and this
+    /// assembly has the interface but no writer yet (the reference's TraceSystem is not ported).
+    /// Returning a trace that writes nowhere would be a working trace that tells nobody
+    /// anything, which is worse than refusing: a caller that debugs with it would find silence
+    /// where the reference writes lines.
+    /// </remarks>
+    /// <param name="module">the module name</param>
+    /// <returns>the trace</returns>
+    public Trace GetTrace(string module)
+        => throw new TODOException("Database.getTrace: no TraceWriter is ported yet");
+
+    /// <summary>
+    /// Adds a session, so the database knows it is in use.
+    /// </summary>
+    /// <param name="session">the session</param>
+    public void AddSession(SessionLocal session)
+    {
+        lock (syncRoot)
+        {
+            sessions.Add(session);
+        }
+    }
+
+    /// <summary>
+    /// Called when the database has been opened, to start whatever it runs in the background.
+    /// </summary>
+    public void Opened()
+    {
+    }
+
+    /// <summary>
+    /// Gets the number of open sessions.
+    /// </summary>
+    /// <returns>the number of sessions</returns>
+    public int GetSessionCount()
+    {
+        lock (syncRoot)
+        {
+            return sessions.Count;
+        }
+    }
+
+    /// <summary>
+    /// Removes a session, and closes the database when it was the last one.
+    /// </summary>
+    /// <remarks>
+    /// The reference closes an in-memory database here rather than waiting for a shutdown, and
+    /// that is what makes "mem:" a name for a lifetime rather than for a file's lifetime. The
+    /// persistent case keeps the database open, which is why a file database can be closed and
+    /// reopened with its contents intact.
+    /// </remarks>
+    /// <param name="session">the session to remove</param>
+    /// <returns>whether the database was closed</returns>
+    public bool RemoveSession(SessionLocal session)
+    {
+        lock (syncRoot)
+        {
+            _ = sessions.Remove(session);
+            if (sessions.Count == 0 && memory)
+            {
+                closing = true;
+                Close();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether this database is closing or closed.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsClosing()
+    {
+        lock (syncRoot)
+        {
+            return closing;
+        }
+    }
+
+    /// <summary>
+    /// Closes the database.
+    /// </summary>
+    public void Close()
+    {
+        lock (syncRoot)
+        {
+            if (closing)
+            {
+                return;
+            }
+
+            closing = true;
+        }
+    }
+
+    /// <summary>
+    /// Throws if the database is closed.
+    /// </summary>
+    public void CheckClosed()
+    {
+        if (IsClosing())
+        {
+            throw DbException.Get(Api.ErrorCode.DatabaseIsClosed, name);
+        }
+    }
+}

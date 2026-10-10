@@ -23,6 +23,8 @@ using System;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using H2Sharp.Engine;
+using H2DbException = H2Sharp.Message.DbException;
 
 namespace H2Sharp.Data;
 
@@ -32,6 +34,10 @@ namespace H2Sharp.Data;
 public sealed class H2Connection : DbConnection
 {
     private string connectionString = string.Empty;
+
+    private SessionLocal? session;
+
+    private string? openedDatabaseName;
 
     /// <summary>
     /// Creates a connection with no connection string.
@@ -88,27 +94,62 @@ public sealed class H2Connection : DbConnection
     public override string ServerVersion => throw new TODOException("H2Connection.ServerVersion: no engine yet");
 
     /// <summary>
-    /// Gets the state of the connection, which is <see cref="ConnectionState.Closed"/>
-    /// for the whole life of this type so far.
+    /// Gets the state of the connection.
     /// </summary>
-    public override ConnectionState State => ConnectionState.Closed;
+    public override ConnectionState State => session is null ? ConnectionState.Closed : ConnectionState.Open;
 
     /// <summary>
-    /// Opens the connection.
-    /// </summary>
-    public override void Open() => throw new TODOException("H2Connection.Open");
-
-    /// <summary>
-    /// Closes the connection.
+    /// Gets the database this connection is attached to, or null while closed.
     /// </summary>
     /// <remarks>
-    /// Does not refuse, and that is the one member that is allowed to be a no-op: there is
-    /// never an open connection to close, and State says so. A refusal here would make
-    /// <c>using</c> — which disposes, which closes — throw on a connection that was never
-    /// open, and a trap like that teaches callers to avoid disposing.
+    /// Not the <c>Database</c> property above, which answers the *name* of the current database
+    /// as ADO.NET defines it. The type here is <c>H2Sharp.Engine.Database</c>, and a property of
+    /// that name cannot say so: inside this class the word binds to the type, not to the member.
+    /// </remarks>
+    public Engine.Database? CurrentDatabase => session?.GetDatabase();
+
+    /// <summary>
+    /// Gets the session this connection runs statements on, or null while closed.
+    /// </summary>
+    internal SessionLocal? Session => session;
+
+    /// <summary>
+    /// Opens the connection: parses the connection string and gets a session on the database it
+    /// names.
+    /// </summary>
+    /// <remarks>
+    /// Opening twice is refused rather than ignored, and that is the reference's rule: a second
+    /// open on an open connection would hand out a second session, and the close of either one
+    /// would then take the database away from the other.
+    /// </remarks>
+    public override void Open()
+    {
+        if (session is not null)
+        {
+            throw H2DbException.FromUser("08003", "The connection is already open");
+        }
+
+        ConnectionInfo connectionInfo = new(connectionString);
+        session = H2Sharp.Engine.Engine.OpenSession(connectionInfo);
+        openedDatabaseName = connectionInfo.GetName();
+    }
+
+    /// <summary>
+    /// Closes the connection, and gives the session back.
+    /// </summary>
+    /// <remarks>
+    /// Closing twice, or closing one that was never open, does nothing — which is what makes
+    /// <c>using</c> safe and what keeps a database alive until its *last* session is gone.
     /// </remarks>
     public override void Close()
     {
+        SessionLocal? current = session;
+        session = null;
+        current?.Close();
+        if (openedDatabaseName is not null && H2Sharp.Engine.Engine.RemoveIfClosed(openedDatabaseName))
+        {
+            openedDatabaseName = null;
+        }
     }
 
     /// <summary>
@@ -127,5 +168,14 @@ public sealed class H2Connection : DbConnection
     /// <summary>
     /// Creates a command for this connection.
     /// </summary>
-    protected override DbCommand CreateDbCommand() => throw new TODOException("H2Connection.CreateDbCommand");
+    protected override DbCommand CreateDbCommand()
+    {
+        SessionLocal? current = session;
+        if (current is null)
+        {
+            throw H2DbException.FromUser("08003", "The connection is closed");
+        }
+
+        return new H2Command { Connection = this };
+    }
 }

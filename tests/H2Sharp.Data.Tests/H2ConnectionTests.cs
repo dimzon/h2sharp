@@ -2,20 +2,22 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * The ADO.NET connection, before there is an engine to connect to.
+ * The ADO.NET connection, and the in-memory database it opens.
  *
  * There is nothing to compare against the reference here — the reference reaches a caller
  * through JDBC, and this type has no Java counterpart — so the test is about the shape of the
- * refusal rather than its wording. What matters is that every member that would need a
- * database says so instead of answering: a provider that reports a server version, a database
- * name or a data source it never connected to would be believed.
+ * refusal rather than its wording: every member that would need the engine says so instead of
+ * answering. A provider that reports a server version, a database name or a data source it never
+ * connected to would be believed.
  *
- * Two things are pinned here that look like trivia and are not. The constructor refuses a null
+ * Three things are pinned here that look like trivia and are not. The constructor refuses a null
  * connection string while the property accepts it, because null in a constructor argument is a
  * programming error and null through ADO.NET's [AllowNull] property is the documented way to
- * say "back to the default". And Close does not refuse, because disposing closes, so a refusal
- * would make every `using` over a connection that was never opened throw — which teaches
- * callers to avoid disposing rather than to trust the type.
+ * say "back to the default". Close does not refuse, because disposing closes, so a refusal would
+ * make every `using` over a connection throw. And a named in-memory database is shared between
+ * connections and disappears with the last of them, while an unnamed one belongs to the
+ * connection that asked for it — the rule the whole `mem:` scheme exists for, and the one a test
+ * that only ever opens one connection would never see.
  */
 using System;
 using System.Data;
@@ -47,26 +49,123 @@ public sealed class H2ConnectionTests
     }
 
     [Fact]
-    public void ItIsAlwaysClosed()
+    public void ItIsOpenOnlyBetweenOpenAndClose()
     {
-        using H2Connection connection = new("Data Source=/tmp/db");
+        H2Connection connection = new("jdbc:h2:mem:states");
         Assert.Equal(ConnectionState.Closed, connection.State);
+
+        connection.Open();
+        Assert.Equal(ConnectionState.Open, connection.State);
+
+        // Opening an open connection hands out a second session, and the close of either would
+        // take the database from the other. The reference refuses, so this does.
+        Assert.Throws<H2SharpException>(() => connection.Open());
+
         connection.Close();
         Assert.Equal(ConnectionState.Closed, connection.State);
+
+        // Closing again, or closing one that was never open, does nothing: that is what makes
+        // `using` safe.
+        connection.Close();
+        new H2Connection("jdbc:h2:mem:never_opened").Close();
     }
 
     [Fact]
-    public void EverythingThatNeedsAnEngineRefuses()
+    public void ANamedInMemoryDatabaseIsSharedAndThenForgotten()
     {
-        using H2Connection connection = new("Data Source=/tmp/db");
+        using H2Connection first = new("jdbc:h2:mem:shared");
+        using H2Connection second = new("jdbc:h2:mem:shared");
+        first.Open();
+        second.Open();
 
-        Assert.Throws<TODOException>(() => connection.Open());
-        Assert.Throws<TODOException>(() => _ = connection.Database);
-        Assert.Throws<TODOException>(() => _ = connection.DataSource);
-        Assert.Throws<TODOException>(() => _ = connection.ServerVersion);
-        Assert.Throws<TODOException>(() => connection.ChangeDatabase("other"));
-        Assert.Throws<TODOException>(() => connection.BeginTransaction());
-        Assert.Throws<TODOException>(() => connection.CreateCommand());
+        // The same database, not two with the same name: the reference keys open databases by
+        // name, and a port that forgot the registry would answer the same to every query and
+        // leak a database per name.
+        Assert.Same(first.CurrentDatabase, second.CurrentDatabase);
+
+        // An unnamed in-memory database is the other case, and the one a test that always uses a
+        // name never reaches: it is not entered into the registry, so two connections to it get
+        // two databases.
+        using H2Connection unnamedFirst = new("jdbc:h2:mem:");
+        using H2Connection unnamedSecond = new("jdbc:h2:mem:");
+        unnamedFirst.Open();
+        unnamedSecond.Open();
+        Assert.NotSame(unnamedFirst.CurrentDatabase, unnamedSecond.CurrentDatabase);
+    }
+
+    [Fact]
+    public void TheDatabaseGoesAwayWithItsLastSession()
+    {
+        string name = "mem:gone_when_closed";
+        H2Connection first = new("jdbc:h2:" + name);
+        first.Open();
+        H2Sharp.Engine.Database? database = first.CurrentDatabase;
+        Assert.NotNull(database);
+
+        H2Connection second = new("jdbc:h2:" + name);
+        second.Open();
+        Assert.Same(database, second.CurrentDatabase);
+        second.Close();
+
+        // One session still uses it.
+        Assert.Equal(1, database.GetSessionCount());
+        first.Close();
+
+        // The last one went, so the database is closed and the name is free again. A new
+        // connection to the same name therefore gets a new, empty database rather than the old
+        // one — which for "mem:" is the whole difference between a name and a file.
+        Assert.True(database.IsClosing());
+        H2Connection third = new("jdbc:h2:" + name);
+        third.Open();
+        try
+        {
+            Assert.NotSame(database, third.CurrentDatabase);
+        }
+        finally
+        {
+            third.Close();
+        }
+    }
+
+    [Fact]
+    public void EverythingThatIsNotPortedYetRefuses()
+    {
+        using H2Connection connection = new("jdbc:h2:mem:refusals");
+        connection.Open();
+        try
+        {
+            Assert.Throws<TODOException>(() => _ = connection.Database);
+            Assert.Throws<TODOException>(() => _ = connection.DataSource);
+            Assert.Throws<TODOException>(() => _ = connection.ServerVersion);
+            Assert.Throws<TODOException>(() => connection.ChangeDatabase("other"));
+            Assert.Throws<TODOException>(() => connection.BeginTransaction());
+        }
+        finally
+        {
+            connection.Close();
+        }
+    }
+
+    [Fact]
+    public void ACommandNeedsAnOpenConnection()
+    {
+        using H2Connection connection = new("jdbc:h2:mem:commands");
+        Assert.Throws<H2SharpException>(() => _ = connection.CreateCommand());
+
+        connection.Open();
+        try
+        {
+            using DbCommand command = connection.CreateCommand();
+            Assert.NotNull(command);
+            command.CommandText = "SELECT 1";
+
+            // Running it is where the parser is missing, and it says so rather than pretending.
+            Assert.Throws<TODOException>(() => _ = command.ExecuteNonQuery());
+        }
+        finally
+        {
+            connection.Close();
+        }
     }
 
     [Fact]
