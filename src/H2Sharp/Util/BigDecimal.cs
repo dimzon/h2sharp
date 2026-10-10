@@ -68,7 +68,16 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     /// </summary>
     public static readonly BigDecimal TenValue = new(BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One, 0);
 
-    private BigDecimal(BigInteger unscaled, int scale)
+    /// <summary>
+    /// A decimal from its two halves, as the store format keeps them.
+    /// </summary>
+    /// <remarks>
+    /// Internal rather than private because the store's object serializer reads and writes a decimal
+    /// split this way, and it is the only caller that needs a value put together from parts.
+    /// </remarks>
+    /// <param name="unscaled">the unscaled value</param>
+    /// <param name="scale">the scale</param>
+    internal BigDecimal(BigInteger unscaled, int scale)
     {
         unscaledValue = unscaled;
         this.scale = scale;
