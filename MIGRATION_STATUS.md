@@ -3178,6 +3178,37 @@ big-endian, своя UTF-8 в `writeStringWithoutLength` (без проверо�
 тип `H2Sharp.Store.Data` внутри `namespace H2Sharp.*`, и тест компилируется только с
 алиасом `using PageData = H2Sharp.Store.Data;`.
 
+### Индексы: настоящие порты поверх стабов и «путеводная звезда» из родных тестов
+
+Стратегия до Dapper-гейта зафиксирована: **стабы с `TODOException`, чтобы дерево собиралось, и
+порт родных тестов эталона как путеводная звезда.** Стаб ничего не изобретает — иначе появился
+бы второй движок под именами эталона и позеленел бы мимо порта.
+
+Портировано по-настоящему (360 строк, замкнуто оракулом в `IndexTypeOracleTests`):
+`engine/NullsDistinct`, `index/IndexSort`, `index/IndexType`. Плюс стабы `index/Index`,
+`table`-слой (`Column`, `IndexColumn`, `TableFilter`, `Table`, `IndexCursor`, `IndexCondition`)
+и пустая `engine/SessionLocal` — та самая, которую подписывает весь движок.
+
+**Одна деталь в `IndexType` не переносится mechanically.** `createUnique` сворачивает
+`ALL_DISTINCT` в `DISTINCT` для одного столбца: при одном столбце разница наблюдаема только
+когда весь ключ null, и H2 решил, что это обычный `DISTINCT`. Место, где эта правка видна, —
+печатная SQL (`UNIQUE NULLS ...`), поэтому тест спрашивает её с флагом и без: подпись-предикаты
+прошла бы и с выброшенным сворачиванием.
+
+**Коллизия «тип `Index` в неймспейсе `H2Sharp.Index`» — не гипотеза, а факт** (это ровно тот
+случай, который описан в `PORTING.md` §3): компилятор принимает `Index` только как тип, и
+поэтому `using`-алиасы понадобятся в местах использования, как и сделано для `FileStore`.
+
+**Путеводная звезда: `tests/H2Sharp.Engine.Tests/TestIndex.cs`** — порт `org.h2.test.db.TestIndex`
+(портированы `testOrderIndex`, `testIndexTypes`, `testErrorMessage`). JDBC-поверхность отображена
+на провайдерную член в член, SQL перенесён посимвольно — «причесанный» тест проверял бы
+причесанный SQL. Сейчас 7 тестов красные все одинаково: `TODOException: H2Connection.CreateDbCommand`.
+Это и есть список работ: каждый следующий порт гасит своё предложение красного списка.
+
+Состояние по сьюитам: `H2Sharp.Tests` **608/608**, `H2Sharp.MvStore.Tests` **86/86**,
+`H2Sharp.Data.Tests` 4/6 (зелёные — проверки формы `H2Connection`, красные — два Dapper),
+`H2Sharp.Engine.Tests` 0/7 (красные по замыслу, это звезда).
+
 ### Покрытие (замерено, догонять позже)
 
 Замер: оба сьюта, Debug (`coverlet.collector`, `--collect:"XPlat Code Coverage"`; в Release
