@@ -39,17 +39,38 @@ web console. The real parser is recursive descent in `org.h2.command.Parser`
 (374 KB) plus `Tokenizer` (61 KB), `Token`, and `util.ParserUtil`. `Tokenizer`
 depends on `Value*` and therefore lands in phase 3, not phase 1.
 
-## Phase 2 — MVStore — todo
+## Phase 2 — MVStore — done
 
-`store/*`, `compress/LZF`, `mvstore/*` including `mvstore/db`, `mvstore/tx`,
-`mvstore/type`. Highest-risk phase: the file format must stay byte-compatible.
-Gate: a database file written by H2Sharp is opened by the reference H2 and vice
-versa (`MVStoreTool` / direct `MVStore.open`).
+`store/*`, `compress/*`, `mvstore/*` including `mvstore/tx`, `mvstore/type`,
+`mvstore/rtree`, `MVStoreTool`. Highest-risk phase: the file format must stay
+byte-compatible.
+Gate (closed): a database file written by H2Sharp opens in the reference H2 and vice
+versa — `tests/H2Sharp.Tests/MvStoreFileCompatTests.cs` dumps plain maps both ways
+(ints with removals, unicode strings, a 100 KB value, boundary longs) and diffs them.
+Deliberate skips (see MIGRATION_STATUS.md): `OffHeapStore`/`AppendOnlyMultiFileStore`/
+`MFChunk` (dead backends, zero references), `MVStoreTool.main` (CLI), encryption
+(`FileEncrypt`; `TestEncryptedFile`/`TestNewerWriteVersion` stay private until deletion),
+`TestTransactionStore.testCompareWithPostgreSQL` (needs live PostgreSQL), `SpatialKey`
+(engine `Value` subclass; tests use `DefaultSpatial`).
+Not in this phase after all: `mvstore/db/*` (MVTable, indexes, Store, ValueDataType) —
+it needs `Value` (done) *and* `Session` (phase 6), so it moves with the table engine.
 
-## Phase 3 — Values and schema — todo
+## Phase 3 — Values and schema — next
 
-`value/*` (with `H2Decimal` instead of `System.Decimal`), `schema/*`, `table/*`,
-`index/*`.
+`value/*` remainder (`Transfer`, `lob/*`, `CharsetCollator`, `CompareModeIcu4J`),
+`schema/*`, `table/*`, `index/*`, `mvstore/db/*`. Order is dependency-driven:
+
+1. `value/` remainder — no new dependencies, closes the value layer for real.
+2. `table/` session-free core: `Column`, `IndexColumn`, `ColumnResolver` and friends.
+3. `index/` session-free core: `IndexType`, `IndexSort`, remaining cursors.
+4. `mvstore/db/*` against the above (`ValueDataType`, then `MVTable` + indexes).
+   `MVTable`/`Store` need `Session`, which arrives as the minimal surface phase 6
+   can provide early (the same trick as `ResultInterface` needing one `Session`
+   method, not twenty).
+5. `schema/*` last — it needs `Database`.
+
+Gate: `TestMVTableEngine` (the reference's 57 KB table-engine suite) ported and green;
+it exercises tables, primary/secondary/spatial indexes, and LOB storage together.
 
 ## Phase 4 — Expressions — todo
 

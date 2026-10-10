@@ -3044,3 +3044,48 @@ Release (83/83 в обоих). Debug поймал и протухший рут, 
 `HasNext`/`Next`, `getChanges` — через `IEnumerator`, `entrySet` — через `IEnumerable`.
 Единственная правка смысла: в `testSingleConnection` четвёртый блок в порте ждал `"World"`
 после закоммиченного `remove("2")` — в эталоне там `assertNull`, исправлено по эталону.
+
+### Гейт фазы 2: кросс-открытие файлов (закрыт)
+
+`tests/H2Sharp.Tests/MvStoreFileCompatTests.cs`: корпус (ints с удалениями, unicode-строки,
+100 КБ значение, граничные long, несколько коммитов) пишется один раз нами и один раз
+эталоном; обе стороны дампят оба файла (`==map==` + `=hexkey==hexvalue` построчно) и дампы
+сравниваются. 265 строк с каждой стороны, сошлись в обе стороны с первого зелёного прогона.
+Покрывает только plain maps — версионные (tx) карты используют .NET-имена в реестре типов
+и осознанно не кросс-совместимы.
+
+### Покрытие (замерено, догонять позже)
+
+Замер: оба сьюта, Debug (`coverlet.collector`, `--collect:"XPlat Code Coverage"`; в Release
+инлайнинг мажет строки, поэтому только Debug). Суммарно по строкам: **80.2%**
+(26403/32936).
+
+| Область | Покрытие |
+|---|---|
+| Api | 95.4% |
+| Command | 90.0% |
+| Compression | 78.9% |
+| Engine | 83.3% |
+| Index | 100% (4 курсора — всё, что там есть) |
+| Message | 56.3% |
+| MvStore | 78.0% |
+| Result | 85.0% |
+| Store | 82.0% |
+| Util | 84.1% |
+| Value | 77.5% |
+| Values | 63.8% |
+
+Ядро (`MVStore` 82, `MVMap` 89–96, `Page` 92–97, `FileStore` 77–90, `Chunk` 86, курсоры 91+,
+`RootReference` 99) закрыто плотно. Догонять при случае, по убыванию пользы:
+
+1. `MVStoreTool.Info` (0/76), `Repair` (0/29), `CompactCleanUp` (0/18) — `Dump`/`Rollback`
+   покрыты, остальное нет.
+2. `TransactionMap`: `PutIfAbsent`, `PutCommitted`, `Append`, `IsSameTransaction`,
+   `IsDeletedByCurrentTransaction`, repeatable-размер; `TransactionStore.Close`,
+   `EndLeftoverTransactions`, `CollectUndoLogRootReferences`.
+3. `RTree`: курсоры (`FetchNext`/`HasNext`/`Next` — 0), квадратичный сплит (0/67),
+   `IsOverlap`/`IsInside`/`Compare`.
+4. `TxDecisionMaker.IsRepeatedOperation` (leftover-путь), `VersionedValueType.Equals`,
+   `Snapshot.GetHashCode`, `BitSetHelper.Length`.
+5. Зеркально-мёртвое (так же и в эталоне, не чинить): `CommitDecisionMaker.SelectValue` —
+   недостижим, т.к. page-level `Decide` перекрыт.
