@@ -120,6 +120,15 @@ public sealed class SessionLocal
         => throw new TODOException("SessionLocal.compareWithNull");
 
     /// <summary>
+    /// Whether two values are equal, where NULL equals NULL.
+    /// </summary>
+    /// <param name="left">the left value</param>
+    /// <param name="right">the right value</param>
+    /// <returns>true if they are equal</returns>
+    public bool AreEqual(Values.Value left, Values.Value right)
+        => throw new TODOException("SessionLocal.areEqual");
+
+    /// <summary>
     /// Gets the database mode, which decides how identifiers and aliases are spelled.
     /// </summary>
     public Mode GetMode()

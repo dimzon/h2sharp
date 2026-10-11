@@ -30,7 +30,7 @@ namespace H2Sharp.Expressions;
 /// <summary>
 /// A constant value of a known type.
 /// </summary>
-public sealed class ValueExpression : Expression
+public class ValueExpression : Expression
 {
     /// <summary>The literal NULL.</summary>
     public static readonly ValueExpression Null = new(ValueNull.Instance);
@@ -43,7 +43,11 @@ public sealed class ValueExpression : Expression
 
     private readonly Value value;
 
-    private ValueExpression(Value value)
+    /// <summary>
+    /// Creates an expression for the given value.
+    /// </summary>
+    /// <param name="value">the value</param>
+    protected ValueExpression(Value value)
     {
         this.value = value;
     }
