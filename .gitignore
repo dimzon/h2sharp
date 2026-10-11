@@ -35,3 +35,9 @@ Thumbs.db
 tools/out/
 __pycache__/
 *.pyc
+
+# scratch files a test run writes when its output is redirected
+/t.txt
+/te.txt
+/tmp*.txt
+/TestResults/
