@@ -3652,6 +3652,30 @@ Prepared  (что сделал парсер)          Command  (что держ�
 эталон и посмотреть, что там в и той же версии. H2 1.x и 2.5.x здесь расходятся, и память
 об одной версии молча производит код другой.
 
+### Порядок DDL-слоя, который видно из цепочки наследования
+
+`DefineCommand` и `SchemaCommand` портированы. За ними по эталону идут
+`CommandWithColumns` → `CreateTable`, и там цепочка уходит в классы, которых у нас нет:
+
+| Что нужно | Что требуется под ним | Есть? |
+|---|---|---|
+| `CommandWithColumns` | `Sequence`, `CreateIndex`, `AlterTableAddConstraint` | нет |
+| `CreateTable` | `CommandWithColumns`, `Schema` | частично |
+| `DropTable` | `ConstraintActionType` | нет |
+
+**Почему не досочинял.** `CommandWithColumns.addConstraintCommand` отличает первичный ключ по
+типу ограничения и отбрасывает `CreateIndex` перед приведением типа, а `SetPrimaryKey` решает,
+заменяет ли новый PRIMARY KEY предыдущий (первый выигрывает, если только новый не
+самоссылающийся). Чтобы написать это по-настоящему, нужны `Sequence`, `CreateIndex`,
+`AlterTableAddConstraint` и `ConstraintActionType`. Дописать их как `object` или «на глаз» —
+значит придумать типы, а это ровно то, за что меня справедливо одёрнули двумя заходами раньше.
+Поэтому `CommandWithColumns` и `CreateTable` в этом заходе **не оставлены**: дерево зелёное,
+а два портированных класса — честные.
+
+**Плюс вскрытая деталь про `Parameter`**: в эталоне он `implements ParameterInterface`, поэтому
+`ParameterInterface.GetType()` пришлось назвать `GetTypeInfo()` — в C# член с именем `GetType`
+обязан возвращать `System.Type`. Это язык, а не вкусовое решение.
+
 ### Покрытие (замерено, догонять позже)
 
 Замер: оба сьюта, Debug (`coverlet.collector`, `--collect:"XPlat Code Coverage"`; в Release
