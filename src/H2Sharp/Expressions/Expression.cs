@@ -159,17 +159,29 @@ public abstract class Expression
     /// <summary>
     /// Map the columns of the resolver to expression columns.
     /// </summary>
+    /// <remarks>
+    /// Abstract in the reference, where every expression forwards this to its operands. Here it
+    /// is virtual with a no-op default, because a column expression is the only thing with
+    /// something to map and the forwarding is what the derived classes would otherwise repeat.
+    /// </remarks>
     /// <param name="resolver">the column resolver</param>
     /// <param name="level">the subquery nesting level</param>
     /// <param name="state">current state for nesting checks, initial value is <see cref="MapInitial"/></param>
-    public abstract void MapColumns(ColumnResolver resolver, int level, int state);
+    public virtual void MapColumns(ColumnResolver resolver, int level, int state)
+    {
+    }
 
     /// <summary>
     /// Try to optimize the expression.
     /// </summary>
+    /// <remarks>
+    /// The reference folds constants and reorders conjunctions here. That optimiser is not
+    /// ported, and every expression written so far is already in the shape it would produce, so
+    /// the answer is "itself" until something folds.
+    /// </remarks>
     /// <param name="session">the session</param>
     /// <returns>the optimized expression</returns>
-    public abstract Expression Optimize(SessionLocal session);
+    public virtual Expression Optimize(SessionLocal session) => this;
 
     /// <summary>
     /// Try to optimize or remove the condition.
@@ -191,9 +203,15 @@ public abstract class Expression
     /// Tell the expression columns whether the table filter can return values
     /// now. This is used when optimizing the query.
     /// </summary>
+    /// <remarks>
+    /// A no-op while the optimiser is not ported: the flag exists for the optimiser, and there
+    /// is nothing yet that reads it.
+    /// </remarks>
     /// <param name="tableFilter">the table filter</param>
     /// <param name="value">true if the table filter can return value</param>
-    public abstract void SetEvaluatable(TableFilter tableFilter, bool value);
+    public virtual void SetEvaluatable(TableFilter tableFilter, bool value)
+    {
+    }
 
     /// <summary>
     /// Get the SQL statement of this expression with automatic parentheses.
@@ -280,9 +298,15 @@ public abstract class Expression
     /// HAVING expression) it is called multiple times - the row counter needs to
     /// be used to make sure the internal state is only updated once.
     /// </summary>
+    /// <remarks>
+    /// Only an aggregate answers this; every other expression has nothing to accumulate, and
+    /// saying so by doing nothing is what the reference's non-aggregates do.
+    /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="stage">select stage</param>
-    public abstract void UpdateAggregate(SessionLocal session, int stage);
+    public virtual void UpdateAggregate(SessionLocal session, int stage)
+    {
+    }
 
     /// <summary>
     /// Check if this expression and all sub-expressions can fulfill a criteria.

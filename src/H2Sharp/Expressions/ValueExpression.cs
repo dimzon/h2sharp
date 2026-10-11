@@ -74,6 +74,19 @@ public class ValueExpression : Expression
         return value;
     }
 
+    /// <summary>
+    /// Gets the value this expression stands for, without a session.
+    /// </summary>
+    /// <remarks>
+    /// Only a literal has a value that needs no run behind it. Every other expression has to ask
+    /// the session it is being read in, and one that asks is a bug in the parser, not a value.
+    /// </remarks>
+    /// <returns>the value</returns>
+    public Value GetValueFromLiteral()
+    {
+        return GetValue(null!);
+    }
+
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo()
     {
