@@ -70,6 +70,25 @@ public sealed class Tokenizer
     }
 
     /// <summary>
+    /// Splits a statement into tokens. The entry point the tests use, with the fold and the
+    /// non-keyword set of the default mode, so that a test does not have to know them.
+    /// </summary>
+    /// <param name="sql">the statement</param>
+    /// <param name="stopOnCloseParen">whether to stop at the first closing parenthesis</param>
+    /// <param name="parameters">the parameters the statement names, and the count is written back</param>
+    /// <param name="provider">where the mode comes from</param>
+    /// <returns>the tokens, the last of which is the end of input</returns>
+    internal static List<Token> TokenizeForTest(
+        string sql,
+        bool stopOnCloseParen,
+        BitArray parameters,
+        CastDataProvider provider)
+    {
+        Tokenizer tokenizer = new(provider, identifiersToUpper: true, identifiersToLower: false, nonKeywords: null);
+        return tokenizer.Tokenize(sql, stopOnCloseParen, parameters);
+    }
+
+    /// <summary>
     /// Reads a statement into tokens.
     /// </summary>
     /// <param name="sql">the statement</param>
@@ -149,6 +168,10 @@ public sealed class Tokenizer
                     }
                     else
                     {
+                        // A bare question mark: numbered in the order it is read. A parameter
+                        // written by name comes through as an At token followed by the name as an
+                        // identifier — that is how this tokenizer spells "@Age", and the parser
+                        // binds the two.
                         token = new Token.ParameterToken(i, 0);
                     }
 
