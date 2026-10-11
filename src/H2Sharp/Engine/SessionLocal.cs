@@ -38,6 +38,23 @@ public sealed class SessionLocal
     private readonly Dictionary<string, Values.Value> parameters = [];
 
     /// <summary>
+    /// Gets the transaction this session is working on, or null when it has none.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>Session.getTransaction()</c>. The transaction belongs to the session
+    /// rather than to the caller that happens to be writing: a table that took one from its
+    /// argument would read and write on a different transaction than the statement is on, and the
+    /// row it wrote would be invisible to the statement that wrote it.
+    /// </remarks>
+    public MvStore.Tx.Transaction? Transaction { get; set; }
+
+    /// <summary>
+    /// The scope that owns the transaction above, when one is open. A table restores it when its
+    /// statement is done, so that nested work on the same session does not lose it.
+    /// </summary>
+    internal object? TransactionScope { get; set; }
+
+    /// <summary>
     /// Gets the value of a column of the row the session is reading.
     /// </summary>
     /// <remarks>

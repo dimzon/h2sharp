@@ -116,7 +116,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
             row.SetKey(row.GetValue(mainIndexColumn)!.GetLong());
         }
 
-        TransactionMap<long, SearchRow> map = GetMap(session);
+        TransactionMap<long, SearchRow> map = GetMap(session.Transaction);
         long rowKey = row.GetKey();
         try
         {
@@ -154,7 +154,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// <inheritdoc/>
     public override void Remove(SessionLocal session, Row row)
     {
-        TransactionMap<long, SearchRow> map = GetMap(session);
+        TransactionMap<long, SearchRow> map = GetMap(session.Transaction);
         Row? existing;
         try
         {
@@ -182,7 +182,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
             throw DbException.GetInternalError(key + " != " + newRow.GetKey());
         }
 
-        TransactionMap<long, SearchRow> map = GetMap(session);
+        TransactionMap<long, SearchRow> map = GetMap(session.Transaction);
         object? existing;
         try
         {
@@ -228,8 +228,60 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     public override void AddBufferedRows(List<string> bufferNames)
         => throw new TODOException("MVPrimaryIndex.addBufferedRows");
 
-    private TransactionMap<long, SearchRow> GetMap(SessionLocal? session)
-        => dataMap;
+    /// <summary>
+    /// Reads the row stored under the given key, on the given transaction.
+    /// </summary>
+    /// <param name="transaction">the transaction to read on</param>
+    /// <param name="key">the key</param>
+    /// <returns>the row, or null when there is none</returns>
+    public SearchRow? GetRowForKey(Transaction? transaction, long key)
+    {
+        return GetMap(transaction).Get(key);
+    }
+
+    /// <summary>
+    /// Every row, in key order, on the given transaction.
+    /// </summary>
+    /// <remarks>
+    /// In key order because that is the order the map stores them in. A scan that returned rows
+    /// in any other order would answer a question with no ORDER BY differently from one call to
+    /// the next, and nothing in the result would show it.
+    /// </remarks>
+    /// <param name="transaction">the transaction to read on</param>
+    /// <returns>the rows</returns>
+    public IEnumerable<SearchRow> Scan(Transaction? transaction)
+    {
+        foreach (KeyValuePair<long, SearchRow> entry in GetMap(transaction).EntrySet())
+        {
+            yield return entry.Value;
+        }
+    }
+
+    /// <summary>
+    /// The number of rows in this index.
+    /// </summary>
+    /// <remarks>
+    /// Counted on the given transaction rather than on a session, because a row count is asked
+    /// of a table by anything that opened it and does not necessarily have a session; the
+    /// reference reaches the same number through the database's own session.
+    /// </remarks>
+    /// <param name="transaction">the transaction to read on</param>
+    /// <returns>the row count</returns>
+    public long GetRowCount(Transaction transaction)
+    {
+        return dataMap.GetInstance(transaction).SizeAsLong();
+    }
+
+    private TransactionMap<long, SearchRow> GetMap(Transaction? transaction)
+    {
+        if (transaction is null)
+        {
+            throw new TODOException(
+                "MVPrimaryIndex: the session has no transaction; a statement opens one before it writes");
+        }
+
+        return dataMap.GetInstance(transaction);
+    }
 
     /// <summary>
     /// The last key of the underlying map, whatever version it belongs to. The map stores
