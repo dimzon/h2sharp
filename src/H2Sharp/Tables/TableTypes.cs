@@ -140,6 +140,15 @@ public class Column
     /// <param name="sqlFlags">the SQL flags</param>
     /// <returns>the SQL</returns>
     public string GetSql(int sqlFlags)
+                => throw new TODOException("Column.getSQL");
+
+    /// <summary>
+    /// Appends the SQL definition of this column.
+    /// </summary>
+    /// <param name="builder">the builder</param>
+    /// <param name="sqlFlags">formatting flags</param>
+    /// <returns>the builder</returns>
+    public virtual StringBuilder GetSql(StringBuilder builder, int sqlFlags)
         => throw new TODOException("Column.getSQL");
 }
 
@@ -193,6 +202,40 @@ public class IndexColumn
     public int GetSortOrder()
     {
         return ascending ? ASCENDING : DESCENDING;
+    }
+
+    /// <summary>
+    /// Writes a range of index columns, each qualified by its table when the index spans more
+    /// than one.
+    /// </summary>
+    /// <param name="builder">the builder</param>
+    /// <param name="columns">the columns</param>
+    /// <param name="from">the first position</param>
+    /// <param name="to">the position after the last</param>
+    /// <param name="sqlFlags">formatting flags</param>
+    /// <returns>the builder</returns>
+    public static StringBuilder WriteColumns(
+        StringBuilder builder,
+        IndexColumn[] columns,
+        int from,
+        int to,
+        int sqlFlags)
+    {
+        for (int i = from; i < to; i++)
+        {
+            if (i > from)
+            {
+                _ = builder.Append(", ");
+            }
+
+            _ = columns[i].GetColumn().GetSql(builder, sqlFlags);
+            if (!columns[i].IsAscending())
+            {
+                _ = builder.Append(" DESC");
+            }
+        }
+
+        return builder;
     }
 
     /// <summary>Ascending sort order.</summary>
@@ -368,6 +411,19 @@ public abstract class Table
         => null;
 
     /// <summary>
+    /// Gets the schema this table belongs to.
+    /// </summary>
+    public virtual Schemas.Schema? GetSchema()
+        => null;
+
+    /// <summary>
+    /// Removes an index from this table.
+    /// </summary>
+    /// <param name="index">the index to remove</param>
+    public virtual void RemoveIndex(Indexes.Index index)
+        => throw new TODOException("Table.removeIndex");
+
+    /// <summary>
     /// Gets the table type.
     /// </summary>
     public abstract int GetTableType();
@@ -453,6 +509,14 @@ public abstract class Table
     /// <param name="sqlFlags">the SQL flags</param>
     /// <returns>the SQL</returns>
     public abstract string GetSql(int sqlFlags);
+
+    /// <summary>
+    /// Appends the SQL for this table with the given flags.
+    /// </summary>
+    /// <param name="builder">the builder</param>
+    /// <param name="sqlFlags">the SQL flags</param>
+    /// <returns>the builder</returns>
+    public abstract StringBuilder GetSql(StringBuilder builder, int sqlFlags);
 
     /// <summary>
     /// Drops all rows of this table.

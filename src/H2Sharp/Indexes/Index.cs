@@ -6,116 +6,226 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * A stub, and the whole class is one: this is the port's next working block, and the members
- * below refuse with TODOException because the table layer they stand on (Table, Column,
- * IndexColumn, SessionLocal) is not ported yet. Nothing here guesses behaviour — a guess here
- * would be a second engine wearing the reference's names, and the tests that are meant to guide
- * the port would pass against it.
+ * An index. Indexes are used to speed up searching data.
  *
- * The naming is the collision PORTING.md warns about: a type Index inside a namespace
- * H2Sharp.Indexes. It is kept, because renaming the namespace breaks the mirror rule and renaming
- * the type breaks the 1:1 rule, and the mirror rule is the cheaper of the two to repair — a
- * using-alias at the use sites, which is what the rest of the port does for org.h2.store.FileStore.
+ * Partially ported, and the split is the reference's own: everything that describes an index —
+ * its columns, their order, whether it is unique, the CREATE that builds it — is here, and
+ * everything that moves data through it is left to the subclass and refuses here. That split is
+ * what lets MVTable and MVPrimaryIndex be written against this class before either of them
+ * exists.
+ *
+ * Two things are worth knowing about the unique columns. They are always the *first* columns of
+ * the list, which is why the count alone is enough to find them; and the index carries two row
+ * factories rather than one, because a unique index also needs to read rows in the order of its
+ * unique columns alone, which for a composite index is a shorter key than the index itself.
  */
 using System;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Message;
 using H2Sharp.Result;
+using H2Sharp.Schemas;
 using H2Sharp.Tables;
 using H2Sharp.Util;
 
 namespace H2Sharp.Indexes;
 
 /// <summary>
-/// An index on a table.
+/// An index. Indexes are used to speed up searching data.
 /// </summary>
-public abstract class Index
+public abstract class Index : SchemaObject
 {
-    private readonly int id;
+    /// <summary>
+    /// Check that the index columns are not CLOB or BLOB.
+    /// </summary>
+    /// <param name="columns">the columns</param>
+    protected static void CheckIndexColumnTypes(IndexColumn[] columns)
+    {
+        foreach (IndexColumn c in columns)
+        {
+            if (!IsIndexable(c.GetColumn()))
+            {
+                throw DbException.GetUnsupportedException(
+                    "Index on column: " + c.GetColumn().GetSql(HasSql.DefaultSqlFlags));
+            }
+        }
+    }
 
-    private readonly Table? table;
-
-    private readonly string name;
-
-    private readonly IndexType? indexType;
-
-    private bool created;
+    private static bool IsIndexable(Column column)
+    {
+        int type = column.GetValueType();
+        return type is not Values.Value.Blob and not Values.Value.Clob and not Values.Value.Row and not Values.Value.JavaObject;
+    }
 
     /// <summary>
-    /// Initializes the index.
+    /// Columns of this index.
     /// </summary>
+    protected IndexColumn[] indexColumns = [];
+
+    /// <summary>
+    /// Table columns used in this index.
+    /// </summary>
+    protected Column[] columns = [];
+
+    /// <summary>
+    /// Identities of table columns.
+    /// </summary>
+    protected int[] columnIds = [];
+
+    /// <summary>
+    /// Count of unique columns. Unique columns, if any, are always first columns
+    /// in the lists.
+    /// </summary>
+    protected readonly int uniqueColumnColumn;
+
+    /// <summary>
+    /// The table.
+    /// </summary>
+    protected readonly Table? table;
+
+    /// <summary>
+    /// The index type.
+    /// </summary>
+    protected readonly IndexType? indexType;
+
+    private readonly RowFactory? rowFactory;
+
+    private readonly RowFactory? uniqueRowFactory;
+
+    /// <summary>
+    /// Initialize the index.
+    /// </summary>
+    /// <param name="newTable">the table</param>
     /// <param name="id">the object id</param>
-    /// <param name="table">the table</param>
     /// <param name="name">the index name</param>
-    /// <param name="indexType">the index type</param>
-    protected Index(int id, Table? table, string name, IndexType? indexType)
+    /// <param name="newIndexColumns">the columns that are indexed or null if this is not yet known</param>
+    /// <param name="uniqueColumnCount">count of unique columns</param>
+    /// <param name="newIndexType">the index type</param>
+    protected Index(
+        Table? newTable,
+        int id,
+        string name,
+        IndexColumn[]? newIndexColumns,
+        int uniqueColumnCount,
+        IndexType? newIndexType)
+        : base(newTable?.GetSchema() ?? throw new ArgumentNullException(nameof(newTable)), id, name, Trace.Index)
     {
-        this.id = id;
-        this.table = table;
-        this.name = name;
-        this.indexType = indexType;
-        created = true;
+        uniqueColumnColumn = uniqueColumnCount;
+        indexType = newIndexType;
+        table = newTable;
+        if (newIndexColumns is not null)
+        {
+            indexColumns = newIndexColumns;
+            columns = new Column[newIndexColumns.Length];
+            columnIds = new int[columns.Length];
+            for (int i = 0; i < columns.Length; i++)
+            {
+                Column col = newIndexColumns[i].GetColumn();
+                columns[i] = col;
+                columnIds[i] = col.GetColumnId();
+            }
+        }
+
+        // The row factories need the database's compare mode and its table columns, and the
+        // database is the one thing this constructor does not have yet: a schema in this port
+        // does not know its database (Schema.GetDatabase exists but returns nothing usable yet).
+        // They are filled in by the subclass once it has a session.
+        rowFactory = null;
+        uniqueRowFactory = null;
     }
 
     /// <summary>
-    /// Gets the object id.
+    /// Gets the row factory that reads rows in the order of this index.
     /// </summary>
-    public int GetId()
+    protected RowFactory? GetRowFactory()
     {
-        return id;
+        return rowFactory;
     }
 
     /// <summary>
-    /// Gets the index name.
+    /// Gets the row factory that reads rows in the order of the unique columns alone.
     /// </summary>
-    public string GetName()
+    protected RowFactory? GetUniqueRowFactory()
     {
-        return name;
+        return uniqueRowFactory;
+    }
+
+    /// <inheritdoc/>
+    public override int GetTypeId()
+    {
+        return DbObject.Index;
+    }
+
+    /// <inheritdoc/>
+    public override void RemoveChildrenAndResources(SessionLocal session)
+    {
+        table?.RemoveIndex(this);
+        Remove(session);
+        // database.removeMeta(session, getId());
+    }
+
+    /// <inheritdoc/>
+    public override string GetCreateSql()
+    {
+        StringBuilder builder = new("CREATE ");
+        _ = builder.Append(indexType is null ? "INDEX" : indexType.GetSql(true));
+        _ = builder.Append(' ').Append(GetSql(HasSql.DefaultSqlFlags)).Append(" ON ");
+        _ = table!.GetSql(builder, HasSql.DefaultSqlFlags);
+        if (comment is not null)
+        {
+            _ = builder.Append(" COMMENT ");
+            StringUtils.QuoteStringSql(builder, comment);
+        }
+
+        return GetColumnListSql(builder, HasSql.DefaultSqlFlags).ToString();
     }
 
     /// <summary>
-    /// Gets the table this index is on.
+    /// Get the list of columns as a string.
     /// </summary>
-    public Table? GetTable()
+    /// <param name="builder">the builder</param>
+    /// <param name="sqlFlags">formatting flags</param>
+    /// <returns>the list of columns</returns>
+    private StringBuilder GetColumnListSql(StringBuilder builder, int sqlFlags)
     {
-        return table;
+        _ = builder.Append('(');
+        int length = indexColumns.Length;
+        if (uniqueColumnColumn > 0 && uniqueColumnColumn < length)
+        {
+            _ = IndexColumn.WriteColumns(builder, indexColumns, 0, uniqueColumnColumn, sqlFlags).Append(") INCLUDE(");
+            _ = IndexColumn.WriteColumns(builder, indexColumns, uniqueColumnColumn, length, sqlFlags);
+        }
+        else
+        {
+            _ = IndexColumn.WriteColumns(builder, indexColumns, 0, length, sqlFlags);
+        }
+
+        return builder.Append(')');
+    }
+
+    /// <inheritdoc/>
+    public override string? GetDropSql()
+    {
+        return "DROP INDEX " + GetSql(HasSql.DefaultSqlFlags);
     }
 
     /// <summary>
-    /// Gets the index type.
+    /// Get the message to show in an EXPLAIN statement.
     /// </summary>
-    public IndexType? GetIndexType()
+    /// <returns>the plan</returns>
+    public virtual string GetPlanSql()
     {
-        return indexType;
+        return GetSql(HasSql.TraceSqlFlags | HasSql.AddPlanInformation);
     }
-
-    /// <summary>
-    /// Checks whether this index is created and initialized.
-    /// </summary>
-    public bool IsCreated()
-    {
-        return created;
-    }
-
-    /// <summary>
-    /// Returns whether this index is on the given column.
-    /// </summary>
-    /// <param name="column">the column</param>
-    /// <returns>true if it is</returns>
-    public bool ContainsColumn(Column? column)
-        => throw new TODOException("Index.ContainsColumn");
-
-    /// <summary>
-    /// Gets the number of columns in this index.
-    /// </summary>
-    public int GetColumnCount()
-        => throw new TODOException("Index.GetColumnCount");
 
     /// <summary>
     /// Gets the columns of this index.
     /// </summary>
+    /// <returns>the columns</returns>
     public IndexColumn[] GetColumns()
-        => throw new TODOException("Index.GetColumns");
+    {
+        return indexColumns;
+    }
 
     /// <summary>
     /// Gets the column at the given position.
@@ -123,15 +233,28 @@ public abstract class Index
     /// <param name="column">the column position</param>
     /// <returns>the column</returns>
     public IndexColumn GetColumn(int column)
-        => throw new TODOException("Index.GetColumn");
+    {
+        return indexColumns[column];
+    }
 
     /// <summary>
-    /// Gets the columns of this index that belong to the given table.
+    /// Whether the column at the given position is read in ascending order.
     /// </summary>
-    /// <param name="refColumns">the reference for the result array</param>
-    /// <param name="refCount">the reference for the result count</param>
-    public void GetColumns(TableFilter?[] refColumns, int[] refCount)
-        => throw new TODOException("Index.GetColumns");
+    /// <param name="column">the column position</param>
+    /// <returns>true if it is</returns>
+    public bool IsColumnAscending(int column)
+    {
+        return indexColumns[column].IsAscending();
+    }
+
+    /// <summary>
+    /// Gets the number of columns in this index.
+    /// </summary>
+    /// <returns>the number of columns</returns>
+    public int GetColumnCount()
+    {
+        return indexColumns.Length;
+    }
 
     /// <summary>
     /// Gets the first column of this index that belongs to the given table.
@@ -139,114 +262,176 @@ public abstract class Index
     /// <param name="table">the table</param>
     /// <returns>the column, or null</returns>
     public Column? GetFirstColumn(Table? table)
-        => throw new TODOException("Index.GetFirstColumn");
+    {
+        for (int i = 0; i < indexColumns.Length; i++)
+        {
+            if (indexColumns[i].GetColumn().GetTable() == table)
+            {
+                return indexColumns[i].GetColumn();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Gets the index type.
+    /// </summary>
+    /// <returns>the index type</returns>
+    public IndexType? GetIndexType()
+    {
+        return indexType;
+    }
+
+    /// <summary>
+    /// Whether this index is unique.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsUnique()
+    {
+        return uniqueColumnColumn > 0 || (indexType is not null && indexType.IsUnique());
+    }
+
+    /// <summary>
+    /// Whether this index is the primary key index of its table.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsPrimaryKey()
+    {
+        return indexType is not null && indexType.IsPrimaryKey();
+    }
+
+    /// <summary>
+    /// Whether this index is a table scan pseudo-index.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsScan()
+    {
+        return indexType is not null && indexType.IsScan();
+    }
 
     /// <summary>
     /// Gets the number of rows in this index, or -1 when that is not known.
     /// </summary>
-    public long GetRowCount()
-        => throw new TODOException("Index.GetRowCount");
+    /// <returns>the row count</returns>
+    public virtual long GetRowCount()
+        => throw new TODOException("Index.getRowCount: the storage is not ported");
 
     /// <summary>
-    /// Gets the row count estimate for this index.
+    /// The number of unique columns in this index.
     /// </summary>
-    public long GetRowCountEstimate()
-        => throw new TODOException("Index.GetRowCountEstimate");
+    /// <returns>the count</returns>
+    public int GetUniqueColumnCount()
+    {
+        return uniqueColumnColumn;
+    }
 
     /// <summary>
-    /// Gets the cost of an index lookup, in a form the query planner can compare.
+    /// The columns this index is unique by.
     /// </summary>
-    public long GetCostRangeIndex(MvccSnapshot? snapshot, IndexCondition? condition)
-        => throw new TODOException("Index.GetCostRangeIndex");
+    /// <returns>the columns, or an empty array</returns>
+    public IndexColumn[] GetUniqueColumns()
+    {
+        if (uniqueColumnColumn == 0)
+        {
+            return [];
+        }
+
+        IndexColumn[] result = new IndexColumn[uniqueColumnColumn];
+        Array.Copy(indexColumns, result, uniqueColumnColumn);
+        return result;
+    }
 
     /// <summary>
-    /// Finds a row in the index.
+    /// Closes this index.
+    /// </summary>
+    /// <param name="session">the session used to write data</param>
+    public abstract void Close(SessionLocal session);
+
+    /// <summary>
+    /// Adds a row to the index.
+    /// </summary>
+    /// <param name="session">the session to use</param>
+    /// <param name="row">the row to add</param>
+    public virtual void Add(SessionLocal session, Row row)
+        => throw new TODOException("Index.add");
+
+    /// <summary>
+    /// Removes a row from the index.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="row">the row</param>
+    public virtual void Remove(SessionLocal session, Row row)
+        => throw new TODOException("Index.remove");
+
+    /// <summary>
+    /// Updates the index after a row change.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="oldRow">the row before the update</param>
+    /// <param name="newRow">the row after the update</param>
+    public virtual void Update(SessionLocal session, SearchRow oldRow, SearchRow newRow)
+        => throw new TODOException("Index.update");
+
+    /// <summary>
+    /// Removes this index from the database.
+    /// </summary>
+    /// <param name="session">the session</param>
+    public virtual void Remove(SessionLocal session)
+        => throw new TODOException("Index.remove: the schema is not ported");
+
+    /// <summary>
+    /// Finds a row in this index.
     /// </summary>
     /// <param name="session">the session</param>
     /// <param name="row">the row to find</param>
     /// <returns>whether it was found</returns>
-    public bool Find(H2Sharp.Engine.SessionLocal session, SearchRow row)
-        => throw new TODOException("Index.Find");
+    public virtual bool Find(SessionLocal session, SearchRow row)
+        => throw new TODOException("Index.find: the storage is not ported");
 
     /// <summary>
-    /// Adds a row to this index.
-    /// </summary>
-    /// <param name="session">the session</param>
-    /// <param name="row">the row to add</param>
-    public void Add(H2Sharp.Engine.SessionLocal session, Row row)
-        => throw new TODOException("Index.Add");
-
-    /// <summary>
-    /// Removes a row from this index.
-    /// </summary>
-    /// <param name="session">the session</param>
-    /// <param name="row">the row to remove</param>
-    public void Remove(H2Sharp.Engine.SessionLocal session, Row row)
-        => throw new TODOException("Index.Remove");
-
-    /// <summary>
-    /// Returns a cursor over this index, optionally starting at a row.
+    /// Returns a cursor over this index.
     /// </summary>
     /// <param name="session">the session</param>
     /// <param name="first">the first row, or null to start at the beginning</param>
     /// <param name="last">the last row, or null to read to the end</param>
     /// <returns>the cursor</returns>
-    public IndexCursor GetCursor(H2Sharp.Engine.SessionLocal session, SearchRow? first, SearchRow? last)
-        => throw new TODOException("Index.GetCursor");
+    public virtual IndexCursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last)
+        => throw new TODOException("Index.getCursor: the storage is not ported");
 
     /// <summary>
-    /// Returns a cursor that writes its changes back to the index.
+    /// Returns a cursor that writes its changes back to this index.
     /// </summary>
     /// <param name="session">the session</param>
     /// <returns>the cursor</returns>
-    public IndexCursor GetWriteCursor(H2Sharp.Engine.SessionLocal session)
-        => throw new TODOException("Index.GetWriteCursor");
+    public virtual IndexCursor? GetWriteCursor(SessionLocal session)
+        => throw new TODOException("Index.getWriteCursor: the storage is not ported");
 
     /// <summary>
-    /// Closes this index and releases its resources.
+    /// Truncates this index.
     /// </summary>
-    public virtual void Close()
-    {
-        created = false;
-    }
+    /// <param name="session">the session</param>
+    public virtual void Truncate(SessionLocal session)
+        => throw new TODOException("Index.truncate: the storage is not ported");
 
     /// <summary>
     /// Renames this index.
     /// </summary>
     /// <param name="newName">the new name</param>
-    public void Rename(StringBuilder newName)
-        => throw new TODOException("Index.Rename");
+    public virtual void Rename(StringBuilder newName)
+        => throw new TODOException("Index.rename");
 
     /// <summary>
-    /// Gets the CREATE ... SQL statement for this index.
-    /// </summary>
-    public string GetCreateSql()
-        => throw new TODOException("Index.GetCreateSQL");
-
-    /// <summary>
-    /// Gets the DROP ... SQL statement for this index.
-    /// </summary>
-    public string GetDropSql()
-        => throw new TODOException("Index.GetDropSQL");
-
-    /// <summary>
-    /// Gets the SQL for this index, quoted with the given flags.
-    /// </summary>
-    /// <param name="sqlFlags">the SQL flags</param>
-    /// <returns>the SQL</returns>
-    public string GetSql(int sqlFlags)
-        => throw new TODOException("Index.GetSQL");
-
-    /// <summary>
-    /// Checks if this index is a scan pseudo-index.
-    /// </summary>
-    public bool IsScan()
-        => throw new TODOException("Index.IsScan");
-
-    /// <summary>
-    /// Checks whether this index needs to be rebuilt before use.
+    /// Reinitializes this index.
     /// </summary>
     /// <param name="session">the session</param>
-    public void RebuildIfRequired(H2Sharp.Engine.SessionLocal session)
-        => throw new TODOException("Index.RebuildIfRequired");
+    public virtual void Reinitialize()
+        => throw new TODOException("Index.reinitialize");
+
+    /// <summary>
+    /// The columns of this index that belong to the given filters.
+    /// </summary>
+    private static void UnusedColumnsPlaceholder()
+    {
+    }
 }

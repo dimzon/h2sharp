@@ -119,6 +119,9 @@ public sealed class SchemaRegistryTests
 
         public override string GetSql(int sqlFlags) => name;
 
+        public override System.Text.StringBuilder GetSql(System.Text.StringBuilder builder, int sqlFlags)
+            => builder.Append(name);
+
         public override void Truncate(SessionLocal session) => throw new TODOException("TestTable holds nothing");
 
         public override void RemoveChildrenAndResources(SessionLocal session)
