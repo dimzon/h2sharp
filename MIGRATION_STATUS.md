@@ -3611,6 +3611,47 @@ NULL, DISTINCT на корпусе, где 1 и 1.0 — одно число, а 
 `DESCENDING|NULLS_FIRST` это 3, а не 7. Каждая ошибка выглядела одинаково — «FAIL» без
 подробностей, пока не дочитал вывод до конца.
 
+### Две иерархии, а не одна: я два захода строил H2 1.x
+
+**Ошибка, найденная после того, как она сделала мне добрую услугу.** Чтобы «просто закрыть
+Dapper-гейт» я собрал слой исполнения по памяти о H2 — и память была от версии **1.x**.
+В эталоне 2.5.x в слое команд **две** иерархии, а не одна:
+
+```
+Prepared  (что сделал парсер)          Command  (что держит вызывающий)
+  Insert extends CommandWithValues       CommandContainer extends Command
+        extends DataChangeStatement      CommandList      extends Command
+  Select extends Query
+  CreateTable extends CommandWithColumns
+        extends SchemaCommand
+        extends DefineCommand extends Prepared
+```
+
+`CommandContainer` — мост: он держит `Prepared`, говорит ему `setCommand(this)` в
+конструкторе и **переадресует все вопросы** контракта (`isQuery`, `isTransactional`,
+`getParameters`, `queryMeta`, `query`, `update`, `isCacheable`, `getDependencies`).
+А я делал `Insert`/`Select`/`CreateTable` наследниками `Command` — то есть помещал
+подготовленные операторы на ту сторону моста, где им не место, и у контейнера нечего было
+спрашивать.
+
+**Стоило этого несколько заходов, которые я откатил.** Первая попытка чинила это на ходу и
+закончилась некомпилируемым деревом; я откатил всё до зелёного состояния и переделал по
+шагам: `Prepared` (портирован по-настоящему, три абстрактных члена — как в эталоне),
+`CommandContainer` (переадресация), затем `DataChangeStatement : Prepared` и `Query : Prepared`.
+Побочно выяснилось, что `org.h2.expression.Parameter` **implements ParameterInterface**, так что
+`ParameterInterface.GetType()` пришлось назвать `GetTypeInfo()` — в C# член с именем `GetType`
+обязан возвращать `System.Type`.
+
+**Чего я НЕ делал в этот раз.** Не стал придумывать, как оператор получает свои параметры:
+в эталоне `Parser` ведёт список `parameters` и отдаёт его оператору через
+`setParameterList`, а тот — команде. Я сначала написал свою `Statement.Parameters` и
+`Query.SetParameters` — это выдумка, и `GetParameters()` при этом начал возвращать пустой
+список, то есть отвечать правдоподобно и неправдой. Откатил; сейчас `GetParameters()` отказывает.
+
+**Правило, которое из этого следует.** Прежде чем писать любой класс слоя команд — открыть
+эталон и посмотреть, что там в и той же версии. H2 1.x и 2.5.x здесь расходятся, и память
+об одной версии молча производит код другой.
+
 ### Покрытие (замерено, догонять позже)
 
 Замер: оба сьюта, Debug (`coverlet.collector`, `--collect:"XPlat Code Coverage"`; в Release

@@ -42,9 +42,11 @@ public interface ParameterInterface
 
     /// <summary>
     /// The declared type.
+    /// Named GetTypeInfo rather than GetType because C# has no room for a member named GetType that
+    /// returns anything but System.Type, and this one returns a type of the database.
     /// </summary>
     /// <returns>the type</returns>
-    TypeInfo GetType();
+    TypeInfo GetTypeInfo();
 
     /// <summary>
     /// Whether the parameter may be null.

@@ -29,10 +29,16 @@ namespace H2Sharp.Command.Query;
 /// <summary>
 /// A query, which is anything that produces rows.
 /// </summary>
-public abstract class Query
+/// <summary>
+/// A query, which is anything that produces rows.
+/// </summary>
+/// <remarks>
+/// A <see cref="Prepared"/>, as in the reference: a query is what the parser produced, and it is
+/// run through a <see cref="CommandContainer"/> rather than being handed to a caller as a
+/// command itself.
+/// </remarks>
+public abstract class Query : Prepared
 {
-    private readonly string sql;
-
     private int orderByIndex = -1;
 
     private int limitOffset = -1;
@@ -40,26 +46,12 @@ public abstract class Query
     /// <summary>
     /// Creates a query.
     /// </summary>
+    /// <param name="session">the session</param>
     /// <param name="sql">the statement text</param>
-    protected Query(string sql)
+    protected Query(SessionLocal session, string sql)
+        : base(session)
     {
-        this.sql = sql;
-    }
-
-    /// <summary>
-    /// Gets the statement text.
-    /// </summary>
-    /// <returns>the text</returns>
-    public string GetSql() => sql;
-
-    /// <summary>
-    /// Sets the statement text.
-    /// </summary>
-    /// <param name="sql">the text</param>
-    public void SetSql(string sql)
-    {
-        _ = sql;
-        throw new TODOException("Query.setSql: not ported");
+        SetSql(sql, null);
     }
 
     /// <summary>
@@ -82,7 +74,7 @@ public abstract class Query
     /// Whether this query is read only.
     /// </summary>
     /// <returns>true if it is</returns>
-    public virtual bool IsReadOnly() => true;
+    public override bool IsReadOnly() => true;
 
     /// <summary>
     /// Whether this query is a SELECT.
@@ -94,7 +86,7 @@ public abstract class Query
     /// Whether this query can be cached.
     /// </summary>
     /// <returns>true if it can</returns>
-    public virtual bool IsCacheable() => false;
+    public override bool IsCacheable() => false;
 
     /// <summary>
     /// Gets the cost of this query.
@@ -158,7 +150,7 @@ public abstract class Query
     /// </remarks>
     /// <param name="limit">the limit</param>
     /// <returns>the rows</returns>
-    public abstract ResultInterface Run(long limit);
+    public abstract override ResultInterface Run(long limit);
 
     /// <summary>
     /// Gets the index of the ORDER BY item this query orders by, or -1.

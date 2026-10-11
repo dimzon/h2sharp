@@ -31,14 +31,24 @@ namespace H2Sharp.Command.Dml;
 /// <summary>
 /// A statement that changes rows: INSERT, UPDATE or DELETE.
 /// </summary>
-public abstract class DataChangeStatement : Command
+/// <summary>
+/// A statement that changes rows: INSERT, UPDATE or DELETE.
+/// </summary>
+/// <remarks>
+/// A <see cref="Prepared"/>, as in the reference, and not a <see cref="Command"/>: the reference
+/// has two hierarchies here and this is the other one. A prepared statement is what the parser
+/// produced; a command is what a caller holds and runs; <see cref="CommandContainer"/> joins them
+/// by holding one of these and asking it. Making these three commands instead would put them on
+/// the wrong side of that join, and the container would have nothing to ask.
+/// </remarks>
+public abstract class DataChangeStatement : Prepared
 {
     /// <summary>
     /// Creates the statement.
     /// </summary>
     /// <param name="session">the session</param>
     protected DataChangeStatement(SessionLocal session)
-        : base(session, string.Empty)
+        : base(session)
     {
     }
 
@@ -47,7 +57,7 @@ public abstract class DataChangeStatement : Command
     /// query. The reference calls this from the constructor of each subclass; here it is called
     /// by whoever prepares the statement, because the parsing that fills it is not ported.
     /// </summary>
-    public virtual void Prepare()
+    public override void Prepare()
         => throw new TODOException("DataChangeStatement.prepare: the commands are not ported");
 
     /// <summary>
@@ -75,9 +85,6 @@ public abstract class DataChangeStatement : Command
     /// <inheritdoc/>
     public override bool IsCacheable() => false;
 
-    /// <inheritdoc/>
-    public override List<Expressions.ParameterInterface> GetParameters()
-        => throw new TODOException("DataChangeStatement.getParameters: not ported");
 
     /// <summary>
     /// Runs the statement and answers the number of rows it changed.
@@ -112,7 +119,7 @@ public abstract class DataChangeStatement : Command
     /// Collects the objects this statement depends on.
     /// </summary>
     /// <param name="dependencies">the set to add to</param>
-    public abstract void CollectDependencies(HashSet<DbObject> dependencies);
+    public abstract override void CollectDependencies(HashSet<DbObject> dependencies);
 
     /// <summary>
     /// Appends the plan of this statement, as EXPLAIN prints it.
@@ -120,7 +127,7 @@ public abstract class DataChangeStatement : Command
     /// <param name="builder">the builder</param>
     /// <param name="sqlFlags">the SQL flags</param>
     /// <returns>the builder</returns>
-    public abstract StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags);
+    public abstract override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags);
 
     /// <summary>
     /// Locks the row the condition selects and rechecks the condition under the lock, so that a

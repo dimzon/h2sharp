@@ -59,25 +59,11 @@ public sealed class Delete : FilteredDataChangeStatement
     public override void CollectDependencies(HashSet<DbObject> dependencies)
         => throw new TODOException("Delete.collectDependencies: not ported");
 
-    /// <inheritdoc/>
-    public override bool IsReadOnly() => false;
+
+
+
+
 
     /// <inheritdoc/>
-    public override ResultWithGeneratedKeys UpdateRows(object generatedKeysRequest)
-        => throw new TODOException("Delete.update(generatedKeysRequest): not ported");
-
-    /// <inheritdoc/>
-    public override ResultInterface Query(long maxrows)
-        => throw new TODOException("Delete.query: a delete is not a query");
-
-    /// <inheritdoc/>
-    public override ISet<DbObject> GetDependencies()
-        => throw new TODOException("Delete.getDependencies: not ported");
-
-    /// <inheritdoc/>
-    public override void InvalidateCachedResult(Table reason)
-        => throw new TODOException("Delete.invalidateCachedResult: not ported");
-
-    /// <inheritdoc/>
-    protected override bool IsRetryable() => true;
+    public override bool IsRetryable() => true;
 }

@@ -36,7 +36,17 @@ namespace H2Sharp.Expressions;
 /// <summary>
 /// A parameter of a prepared statement.
 /// </summary>
-public sealed class Parameter : Expression
+/// <summary>
+/// A parameter of a statement by position. It is a <see cref="ParameterInterface"/> in the
+/// reference, and it is here too: the command layer hands its parameters to a caller to fill
+/// in, and that only works if a parameter can be named as what it is rather than as an
+/// expression.
+/// </summary>
+/// <remarks>
+/// The port of <c>org.h2.expression.Parameter</c>, which in the reference extends
+/// <c>Operation0</c> and implements <c>ParameterInterface</c>.
+/// </remarks>
+public sealed class Parameter : Expression, ParameterInterface
 {
     private Value? value;
 

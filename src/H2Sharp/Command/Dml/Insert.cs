@@ -43,17 +43,10 @@ public sealed class Insert : CommandWithValues
     }
 
     /// <summary>
-    /// Gets the command that is this statement's parent, for the reference's bookkeeping.
-    /// </summary>
-    /// <returns>the parent command</returns>
-    public Command? GetCommand()
-        => throw new TODOException("Insert.getCommand: not ported");
-
-    /// <summary>
     /// Sets the command that is this statement's parent.
     /// </summary>
     /// <param name="command">the parent command</param>
-    public void SetCommand(Command command)
+    public new void SetCommand(Command command)
         => throw new TODOException("Insert.setCommand: not ported");
 
     /// <inheritdoc/>
@@ -153,25 +146,11 @@ public sealed class Insert : CommandWithValues
     public override void CollectDependencies(HashSet<DbObject> dependencies)
         => throw new TODOException("Insert.collectDependencies: not ported");
 
-    /// <inheritdoc/>
-    public override bool IsReadOnly() => false;
+
+
+
+
 
     /// <inheritdoc/>
-    public override ResultWithGeneratedKeys UpdateRows(object generatedKeysRequest)
-        => throw new TODOException("Insert.update(generatedKeysRequest): not ported");
-
-    /// <inheritdoc/>
-    public override ResultInterface Query(long maxrows)
-        => throw new TODOException("Insert.query: an insert is not a query");
-
-    /// <inheritdoc/>
-    public override ISet<DbObject> GetDependencies()
-        => throw new TODOException("Insert.getDependencies: not ported");
-
-    /// <inheritdoc/>
-    public override void InvalidateCachedResult(Table reason)
-        => throw new TODOException("Insert.invalidateCachedResult: not ported");
-
-    /// <inheritdoc/>
-    protected override bool IsRetryable() => true;
+    public override bool IsRetryable() => true;
 }

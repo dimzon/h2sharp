@@ -73,25 +73,11 @@ public sealed class Update : FilteredDataChangeStatement
     public Insert? GetOnDuplicateKeyInsert()
         => throw new TODOException("Update.getOnDuplicateKeyInsert: not ported");
 
-    /// <inheritdoc/>
-    public override bool IsReadOnly() => false;
+
+
+
+
 
     /// <inheritdoc/>
-    public override ResultWithGeneratedKeys UpdateRows(object generatedKeysRequest)
-        => throw new TODOException("Update.update(generatedKeysRequest): not ported");
-
-    /// <inheritdoc/>
-    public override ResultInterface Query(long maxrows)
-        => throw new TODOException("Update.query: an update is not a query");
-
-    /// <inheritdoc/>
-    public override ISet<DbObject> GetDependencies()
-        => throw new TODOException("Update.getDependencies: not ported");
-
-    /// <inheritdoc/>
-    public override void InvalidateCachedResult(Table reason)
-        => throw new TODOException("Update.invalidateCachedResult: not ported");
-
-    /// <inheritdoc/>
-    protected override bool IsRetryable() => true;
+    public override bool IsRetryable() => true;
 }
