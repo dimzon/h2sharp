@@ -91,12 +91,16 @@ public sealed class ValueDataType : BasicDataType<Value>
     private const byte BigintNeg = 67;
 
     /// <summary>
-    /// VARCHAR of 0..31 characters: the tag carries the length. The short VARCHAR_IGNORECASE
-    /// forms are one block up, and their payload is already folded.
+    /// VARCHAR of 0..31 characters: the tag carries the length. There is no short form for
+    /// VARCHAR_IGNORECASE — the reference does not fold the text on the way in either.
     /// </summary>
     private const int Varchar0To31 = 68;
 
-    private const int VarcharIgnoreCase0To31 = 100;
+    /// <summary>
+    /// VARBINARY of 0..31 bytes: the tag carries the length, and 132/133 below this block were
+    /// SPATIAL_KEY_2D and CUSTOM_DATA_TYPE in older versions.
+    /// </summary>
+    private const int Varbinary0To31 = 100;
 
     private readonly CastDataProvider? provider;
 
@@ -299,17 +303,25 @@ public sealed class ValueDataType : BasicDataType<Value>
             case Value.Real:
                 {
                     float x = v.GetFloat();
-                    if (x == 0 && !float.IsNegative(x))
-                    {
-                        buff.Put(Real0To1);
-                    }
-                    else if (x == 1)
+                    if (x == 1.0f)
                     {
                         buff.Put((byte)(Real0To1 + 1));
                     }
                     else
                     {
-                        buff.Put(Real).PutFloat(x);
+                        // The bits are reversed and written as a var int, not as four bytes: the
+                        // most significant byte of a float is its sign and exponent, so most floats
+                        // have few significant *trailing* bits and the var int is short. 1.5 is
+                        // three bytes on disk instead of five.
+                        int f = BitConverter.SingleToInt32Bits(x);
+                        if (f == ValueReal.ZeroBits)
+                        {
+                            buff.Put(Real0To1);
+                        }
+                        else
+                        {
+                            buff.Put(Real).PutVarInt((int)ReverseBits((uint)f));
+                        }
                     }
 
                     break;
@@ -318,17 +330,21 @@ public sealed class ValueDataType : BasicDataType<Value>
             case Value.Double:
                 {
                     double x = v.GetDouble();
-                    if (x == 0 && !double.IsNegative(x))
-                    {
-                        buff.Put(Double0To1);
-                    }
-                    else if (x == 1)
+                    if (x == 1.0d)
                     {
                         buff.Put((byte)(Double0To1 + 1));
                     }
                     else
                     {
-                        buff.Put(Double).PutDouble(x);
+                        long d = BitConverter.DoubleToInt64Bits(x);
+                        if (d == ValueDouble.ZeroBits)
+                        {
+                            buff.Put(Double0To1);
+                        }
+                        else
+                        {
+                            buff.Put(Double).PutVarLong((long)ReverseBits((ulong)d));
+                        }
                     }
 
                     break;
@@ -337,18 +353,19 @@ public sealed class ValueDataType : BasicDataType<Value>
             case Value.Varchar:
             case Value.VarcharIgnorecase:
                 {
+                    // Only VARCHAR has a short form: the reference stores VARCHAR_IGNORECASE with its
+                    // own tag and an explicit length, and it stores the text **as it is** — the
+                    // folding is a comparison rule, not a storage one. A block of short forms for
+                    // VARCHAR_IGNORECASE would also land on 100, which is VARBINARY's.
                     string s = v.GetString() ?? string.Empty;
                     int len = s.Length;
-                    bool ignoreCase = type == Value.VarcharIgnorecase;
-                    if (len < 32)
+                    if (type == Value.Varchar && len < 32)
                     {
-                        buff.Put((byte)((ignoreCase ? VarcharIgnoreCase0To31 : Varchar0To31) + len));
-                        string payload = ignoreCase ? s.ToUpperInvariant() : s;
-                        buff.PutStringData(payload, payload.Length);
+                        buff.Put((byte)(Varchar0To31 + len)).PutStringData(s, len);
                     }
                     else
                     {
-                        buff.Put(ignoreCase ? (byte)VarcharIgnoreCase : Varchar);
+                        buff.Put(type == Value.Varchar ? Varchar : VarcharIgnoreCase);
                         WriteString(buff, s);
                     }
 
@@ -356,11 +373,28 @@ public sealed class ValueDataType : BasicDataType<Value>
                 }
 
             case Value.Varbinary:
+                {
+                    // VARBINARY has a short form from 100 up, and unlike BINARY it is a plain block of
+                    // bytes with no length repeated. This is also where the block I had once given to
+                    // VARCHAR_IGNORECASE actually belongs.
+                    byte[] bytes = v.GetBytesNoCopy() ?? [];
+                    int len = bytes.Length;
+                    if (len < 32)
+                    {
+                        buff.Put((byte)(Varbinary0To31 + len)).Put(bytes, 0, len);
+                    }
+                    else
+                    {
+                        buff.Put(Varbinary).PutVarInt(len).Put(bytes, 0, len);
+                    }
+
+                    break;
+                }
+
             case Value.Binary:
                 {
                     byte[] bytes = v.GetBytesNoCopy() ?? [];
-                    buff.Put(type == Value.Varbinary ? Varbinary : (byte)Binary);
-                    buff.PutVarInt(bytes.Length).Put(bytes, 0, bytes.Length);
+                    buff.Put(Binary).PutVarInt(bytes.Length).Put(bytes, 0, bytes.Length);
                     break;
                 }
 
@@ -389,14 +423,11 @@ public sealed class ValueDataType : BasicDataType<Value>
 
             case Value.Uuid:
                 {
-                    buff.Put(Uuid);
-                    Span<byte> bytes = stackalloc byte[16];
-                    if (!((ValueUuid)v).GetUuid().TryWriteBytes(bytes, bigEndian: true, out _))
-                    {
-                        throw new InvalidOperationException("The UUID cannot be written");
-                    }
-
-                    buff.Put(bytes.ToArray());
+                    // Two longs as eight raw bytes each, high then low. Not the var int trick the
+                    // numeric types use: a UUID is always sixteen bytes whatever the value, so there
+                    // is nothing to compress.
+                    ValueUuid uuid = (ValueUuid)v;
+                    buff.Put(Uuid).PutLong(uuid.GetHigh()).PutLong(uuid.GetLow());
                     break;
                 }
 
@@ -459,6 +490,45 @@ public sealed class ValueDataType : BasicDataType<Value>
             default:
                 throw new ArgumentException("Unsupported value type " + type, nameof(v));
         }
+    }
+
+    /// <summary>
+    /// Java's <c>Integer.reverse</c>: the bits of a value in the opposite order.
+    /// </summary>
+    /// <remarks>
+    /// The reference writes a float or a double as its *bit pattern*, reversed, as a var int —
+    /// the point being that a float's significant bits are its trailing ones, so a common value
+    /// costs three bytes instead of five. The reversal is what makes that true, and it is not
+    /// a byte swap: every bit moves, which is why this is spelled out rather than delegated to
+    /// whatever the platform calls it.
+    /// </remarks>
+    /// <param name="value">the bits</param>
+    /// <returns>the bits in reverse order</returns>
+    private static uint ReverseBits(uint value)
+    {
+        uint result = 0;
+        for (int i = 0; i < 32; i++)
+        {
+            result = (result << 1) | ((value >> i) & 1);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Java's <c>Long.reverse</c>: the bits of a value in the opposite order.
+    /// </summary>
+    /// <param name="value">the bits</param>
+    /// <returns>the bits in reverse order</returns>
+    private static ulong ReverseBits(ulong value)
+    {
+        ulong result = 0;
+        for (int i = 0; i < 64; i++)
+        {
+            result = (result << 1) | ((value >> i) & 1);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -563,12 +633,8 @@ public sealed class ValueDataType : BasicDataType<Value>
                 }
 
             case Real:
-                {
-                    float f = BitConverter.Int32BitsToSingle((buff[position] << 24) | (buff[position + 1] << 16)
-                        | (buff[position + 2] << 8) | buff[position + 3]);
-                    position += 4;
-                    return ValueReal.Get(f);
-                }
+                return ValueReal.Get(BitConverter.Int32BitsToSingle(
+                    (int)ReverseBits((uint)DataUtils.ReadVarInt(buff, ref position))));
 
             case Real0To1:
                 return ValueReal.Get(0f);
@@ -577,16 +643,8 @@ public sealed class ValueDataType : BasicDataType<Value>
                 return ValueReal.Get(1f);
 
             case Double:
-                {
-                    long bits = 0;
-                    for (int i = 0; i < 8; i++)
-                    {
-                        bits = (bits << 8) | buff[position + i];
-                    }
-
-                    position += 8;
-                    return ValueDouble.Get(BitConverter.Int64BitsToDouble(bits));
-                }
+                return ValueDouble.Get(BitConverter.Int64BitsToDouble(
+                    (long)ReverseBits((ulong)DataUtils.ReadVarLong(buff, ref position))));
 
             case Double0To1:
                 return ValueDouble.Get(0d);
@@ -618,11 +676,9 @@ public sealed class ValueDataType : BasicDataType<Value>
                 }
 
             case Uuid:
-                {
-                    Guid uuid = new(buff.Slice(position, 16));
-                    position += 16;
-                    return ValueUuid.Get(uuid);
-                }
+                return ValueUuid.Get(
+                    ReadFixedLong(buff, ref position),
+                    ReadFixedLong(buff, ref position));
 
             case Array:
                 throw new TODOException("ValueDataType.read: ARRAY");
@@ -664,9 +720,12 @@ public sealed class ValueDataType : BasicDataType<Value>
                         return ValueVarchar.Get(ReadStringData(buff, ref position, type - Varchar0To31));
                     }
 
-                    if (type >= VarcharIgnoreCase0To31 && type < VarcharIgnoreCase0To31 + 32)
+                    if (type >= Varbinary0To31 && type < Varbinary0To31 + 32)
                     {
-                        return ValueVarcharIgnoreCase.Get(ReadStringData(buff, ref position, type - VarcharIgnoreCase0To31));
+                        int len = type - Varbinary0To31;
+                        byte[] bytes = buff.Slice(position, len).ToArray();
+                        position += len;
+                        return ValueVarbinary.Get(bytes);
                     }
 
                     if (type is Varchar or VarcharIgnoreCase)
@@ -678,6 +737,45 @@ public sealed class ValueDataType : BasicDataType<Value>
                     throw new ArgumentException("Unknown value type tag " + type);
                 }
         }
+    }
+
+    /// <summary>
+    /// Reads back what <see cref="WriteLong"/> wrote: the tag is implied by the value, so the
+    /// reader has to know which of the three forms it is looking at from the byte pattern.
+    /// </summary>
+    private static long ReadLong(Span<byte> buff, ref int position)
+    {
+        int tag = buff[position] & 255;
+        if (tag == BigintNeg)
+        {
+            _ = position++;
+            return -DataUtils.ReadVarLong(buff, ref position);
+        }
+
+        if (tag >= Bigint0To7 && tag < Bigint0To7 + 8)
+        {
+            _ = position++;
+            return tag - Bigint0To7;
+        }
+
+        _ = position++;
+        return DataUtils.ReadVarLong(buff, ref position);
+    }
+
+    /// <summary>
+    /// Reads eight raw bytes as a long, big endian — the shape <see cref="WriteBuffer.PutLong"/>
+    /// writes, which is what a UUID's halves are stored in.
+    /// </summary>
+    private static long ReadFixedLong(Span<byte> buff, ref int position)
+    {
+        long result = 0;
+        for (int i = 0; i < 8; i++)
+        {
+            result = (result << 8) | buff[position + i];
+        }
+
+        position += 8;
+        return result;
     }
 
     private static string ReadString(Span<byte> buff, ref int position)
@@ -705,7 +803,9 @@ public sealed class ValueDataType : BasicDataType<Value>
     private static byte[] ReadBytes(Span<byte> buff, ref int position)
     {
         int len = DataUtils.ReadVarInt(buff, ref position);
-        return buff.Slice(position, len).ToArray();
+        byte[] bytes = buff.Slice(position, len).ToArray();
+        position += len;
+        return bytes;
     }
 
     private static long ReadTimestampTime(Span<byte> buff, ref int position)

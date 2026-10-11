@@ -249,9 +249,18 @@ public sealed class ValueUuid : Value
         return Get(bytes.ToArray());
     }
 
-    /// <inheritdoc/>
-    public override bool Equals(object? other)
-        => other is ValueUuid v && high == v.high && low == v.low;
+    /// <summary>
+    /// The most significant half, which is how a UUID is stored: two longs, high then low, and
+    /// the row format writes them in that shape.
+    /// </summary>
+    /// <returns>the high half</returns>
+    public long GetHigh() => high;
+
+    /// <summary>
+    /// The least significant half.
+    /// </summary>
+    /// <returns>the low half</returns>
+    public long GetLow() => low;
 
     /// <summary>
     /// The UUID as the platform spells it.
@@ -277,17 +286,9 @@ public sealed class ValueUuid : Value
             (byte)(low >> 8),
             (byte)low);
 
-    /// <summary>
-    /// The most significant half.
-    /// </summary>
-    /// <returns>the high half</returns>
-    public long GetHigh() => high;
-
-    /// <summary>
-    /// The least significant half.
-    /// </summary>
-    /// <returns>the low half</returns>
-    public long GetLow() => low;
+    /// <inheritdoc/>
+    public override bool Equals(object? other)
+        => other is ValueUuid v && high == v.high && low == v.low;
 
     /// <inheritdoc/>
     public override long CharLength() => DisplaySize;
