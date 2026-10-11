@@ -25,6 +25,7 @@ using H2Sharp;
 using H2Sharp.Engine;
 using H2Sharp.Schemas;
 using H2Sharp.Tables;
+using Index = H2Sharp.Indexes.Index;
 using Xunit;
 
 namespace H2Sharp.Engine.Tests;

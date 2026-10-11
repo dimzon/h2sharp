@@ -17,6 +17,7 @@ using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Result;
 using H2Sharp.Values;
+using Index = H2Sharp.Indexes.Index;
 
 namespace H2Sharp.Tables;
 
