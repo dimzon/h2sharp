@@ -21,137 +21,6 @@ using Index = H2Sharp.Indexes.Index;
 
 namespace H2Sharp.Tables;
 
-/// <summary>
-/// A column of a table or an index.
-/// </summary>
-public class Column
-{
-    /// <summary>Nullability is not known.</summary>
-    public const int NullableUnknown = 0;
-
-    /// <summary>The column is nullable.</summary>
-    public const int NullableYes = 1;
-
-    /// <summary>The column is not nullable.</summary>
-    public const int NullableNo = 2;
-
-    private readonly Table table;
-
-    private readonly int columnId;
-
-    private readonly string name;
-
-    /// <summary>
-    /// Creates a column.
-    /// </summary>
-    /// <param name="table">the table</param>
-    /// <param name="columnId">the column id</param>
-    /// <param name="name">the column name</param>
-    protected Column(Table table, int columnId, string name)
-    {
-        this.table = table;
-        this.columnId = columnId;
-        this.name = name;
-    }
-
-    /// <summary>
-    /// Gets the table this column belongs to.
-    /// </summary>
-    public Table GetTable()
-    {
-        return table;
-    }
-
-    /// <summary>
-    /// Gets the column id.
-    /// </summary>
-    public int GetColumnId()
-    {
-        return columnId;
-    }
-
-    /// <summary>
-    /// Gets the column name.
-    /// </summary>
-    public string GetName()
-    {
-        return name;
-    }
-
-    /// <summary>
-    /// Gets the value type of this column.
-    /// </summary>
-    public int GetValueType()
-        => throw new TODOException("Column.getValueType");
-
-    /// <summary>
-    /// Gets the type information of this column.
-    /// </summary>
-    public TypeInfo GetTypeInfo()
-        => throw new TODOException("Column.getType");
-
-    /// <summary>
-    /// Gets the schema name of the table this column belongs to, or null.
-    /// </summary>
-    public string? GetSchemaName()
-        => table.GetSchemaName();
-
-    /// <summary>
-    /// Gets the type name of this column.
-    /// </summary>
-    public string GetTypeName()
-        => throw new TODOException("Column.getTypeName");
-
-    /// <summary>
-    /// Gets the declared precision of this column.
-    /// </summary>
-    public int GetPrecision()
-        => throw new TODOException("Column.getPrecision");
-
-    /// <summary>
-    /// Gets the declared scale of this column.
-    /// </summary>
-    public int GetScale()
-        => throw new TODOException("Column.getScale");
-
-    /// <summary>
-    /// Gets the nullability of this column as the reference's three-valued answer: unknown,
-    /// yes or no. It is three-valued because an expression that has not been mapped yet cannot
-    /// say, and "cannot say" must not collapse into "no" or an insert would be refused.
-    /// </summary>
-    public int IsNullable()
-        => throw new TODOException("Column.isNullable");
-
-    /// <summary>
-    /// Whether this column is part of the primary key.
-    /// </summary>
-    public bool IsPrimaryKey()
-        => throw new TODOException("Column.isPrimaryKey");
-
-    /// <summary>
-    /// Renames this column.
-    /// </summary>
-    /// <param name="newName">the new name</param>
-    public void Rename(StringBuilder newName)
-        => throw new TODOException("Column.rename");
-
-    /// <summary>
-    /// Gets the SQL for this column.
-    /// </summary>
-    /// <param name="sqlFlags">the SQL flags</param>
-    /// <returns>the SQL</returns>
-    public string GetSql(int sqlFlags)
-                => throw new TODOException("Column.getSQL");
-
-    /// <summary>
-    /// Appends the SQL definition of this column.
-    /// </summary>
-    /// <param name="builder">the builder</param>
-    /// <param name="sqlFlags">formatting flags</param>
-    /// <returns>the builder</returns>
-    public virtual StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => throw new TODOException("Column.getSQL");
-}
 
 /// <summary>
 /// An index column: a column plus the sort direction it is read in.
@@ -404,6 +273,13 @@ public abstract class Table
     /// Gets the table name.
     /// </summary>
     public abstract string GetTableName();
+
+    /// <summary>
+    /// Gets the object id of this table, or -1 when it has none yet.
+    /// </summary>
+    /// <returns>the object id</returns>
+    public virtual int GetId()
+        => throw new TODOException("Table.getId");
 
     /// <summary>
     /// Gets the schema name of this table, or null when it has none.
