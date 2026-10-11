@@ -28,8 +28,30 @@ public sealed class ValueRow : ValueCollectionBase
 
     private TypeInfo? type;
 
-    private ValueRow(TypeInfo? type, Value[] list)
-        : base(list)
+    /// <summary>
+    /// Replaces a null with the NULL value.
+    /// </summary>
+    /// <remarks>
+    /// A row never holds a null: NULL is a value in this engine, not the absence of one, and a
+    /// row that held a real null would fail its own comparison and its own hash. So a list that
+    /// arrives from a statement being built is normalized once, here, rather than every time
+    /// something reads the row.
+    /// </remarks>
+    /// <param name="list">the values</param>
+    /// <returns>the same values, with no nulls in them</returns>
+    private static Value[] Normalize(Value?[] list)
+    {
+        Value[] values = new Value[list.Length];
+        for (int i = 0; i < list.Length; i++)
+        {
+            values[i] = list[i] ?? ValueNull.Instance;
+        }
+
+        return values;
+    }
+
+    private ValueRow(TypeInfo? type, Value?[] list)
+        : base(Normalize(list))
     {
         int degree = list.Length;
         if (degree > Constants.MaxColumns)
@@ -58,7 +80,21 @@ public sealed class ValueRow : ValueCollectionBase
     /// </summary>
     /// <param name="list">the value array</param>
     /// <returns>the value</returns>
-    public static ValueRow Get(Value[] list) => new(null, list);
+    public static ValueRow Get(Value?[] list) => new(null, list);
+
+    /// <summary>
+    /// Makes a row of values out of a list that may hold nulls.
+    /// </summary>
+    /// <remarks>
+    /// A second entry point rather than a nullable parameter on the first: a row read out of
+    /// storage never holds a null — NULL is <see cref="ValueNull.Instance"/> there — while a row
+    /// a statement is still building does, and the two are different things to the caller. A
+    /// caller that passes a null here gets the NULL value's behaviour through the row, not a
+    /// null-pointer exception from a method that promised a row.
+    /// </remarks>
+    /// <param name="list">the values</param>
+    /// <returns>the row</returns>
+    public static ValueRow GetNullable(Value?[] list) => new(null, list);
 
     /// <summary>
     /// Get or create a typed row value for the given value array. Do not clone the data.

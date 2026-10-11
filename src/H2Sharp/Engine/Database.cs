@@ -59,6 +59,42 @@ public sealed partial class Database
     private bool closing;
 
     /// <summary>
+    /// How many rows a result may hold in memory before it spills. The reference's default,
+    /// from its MAX_MEMORY_ROWS setting.
+    /// </summary>
+    private int maxMemoryRows = 40_000;
+
+    /// <summary>
+    /// Where a NULL goes when a statement did not say. LOW, because the reference starts there
+    /// and every answer about ordering before a caller sets it comes from this field.
+    /// </summary>
+    private DefaultNullOrdering defaultNullOrdering = DefaultNullOrdering.LOW;
+
+    /// <summary>
+    /// Gets where a NULL goes when a statement did not say.
+    /// </summary>
+    /// <returns>the ordering</returns>
+    public DefaultNullOrdering GetDefaultNullOrdering()
+    {
+        lock (syncRoot)
+        {
+            return defaultNullOrdering;
+        }
+    }
+
+    /// <summary>
+    /// Sets where a NULL goes when a statement did not say.
+    /// </summary>
+    /// <param name="ordering">the ordering</param>
+    public void SetDefaultNullOrdering(DefaultNullOrdering ordering)
+    {
+        lock (syncRoot)
+        {
+            defaultNullOrdering = ordering;
+        }
+    }
+
+    /// <summary>
     /// Opens a database.
     /// </summary>
     /// <param name="connectionInfo">the connection information</param>
@@ -95,6 +131,53 @@ public sealed partial class Database
     public bool IsMemory()
     {
         return memory;
+    }
+
+    /// <summary>
+    /// Whether this database is on disk.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsPersistent()
+    {
+        return !memory;
+    }
+
+    /// <summary>
+    /// Whether this database may not be written to.
+    /// </summary>
+    /// <remarks>
+    /// A database can be opened read only from the connection string, and nothing writes to it
+    /// while that holds — including spilling a result to disk, which is why the result asks this
+    /// before deciding how many rows to keep in memory. The flag is not ported from the
+    /// connection string yet, so it refuses rather than answering "no" for every database: a
+    /// caller that believed it was writable would spill results nobody had asked it to.
+    /// </summary>
+    /// <returns>true if it is read only</returns>
+    public bool IsReadOnly()
+        => throw new TODOException("Database.isReadOnly: the connection string setting is not ported");
+
+    /// <summary>
+    /// Gets the number of rows a result may hold in memory before it is written to disk.
+    /// </summary>
+    /// <returns>the number of rows</returns>
+    public int GetMaxMemoryRows()
+    {
+        lock (syncRoot)
+        {
+            return maxMemoryRows;
+        }
+    }
+
+    /// <summary>
+    /// Sets the number of rows a result may hold in memory before it is written to disk.
+    /// </summary>
+    /// <param name="value">the number of rows</param>
+    public void SetMaxMemoryRows(int value)
+    {
+        lock (syncRoot)
+        {
+            maxMemoryRows = value;
+        }
     }
 
     /// <summary>

@@ -95,6 +95,20 @@ public abstract class ValueLob : Value
     /// <returns>the copy, or this value when it needs none</returns>
     public abstract ValueLob Copy(DataHandler database, int tableId);
 
+    /// <summary>
+    /// Gives this lob a lifetime that outlives the statement that read it.
+    /// </summary>
+    /// <remarks>
+    /// The reference copies a lob that lives in the database into the result's own storage, and
+    /// returns itself when the lob is a memory one or the storage is read only. The storage it
+    /// would copy into is not ported — a lob has no home here but in memory — so this refuses
+    /// rather than returning itself and letting a result hold a reference to storage that may be
+    /// gone by the time the caller reads the row.
+    /// </remarks>
+    /// <returns>the lob to put in the result</returns>
+    public virtual ValueLob CopyToResult()
+        => throw new TODOException("ValueLob.copyToResult: lob storage is not ported");
+
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo()
     {

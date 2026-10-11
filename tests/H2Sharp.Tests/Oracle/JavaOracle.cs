@@ -14,6 +14,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace H2Sharp.Tests.Oracle;
 
@@ -365,9 +366,18 @@ internal static class JavaOracle
             throw new InvalidOperationException("Could not start " + fileName);
         }
 
-        string stdout = process.StandardOutput.ReadToEnd();
-        string stderr = process.StandardError.ReadToEnd();
+        // Both streams are read at once, and this is not an optimisation. A compiler that has
+        // many errors to report writes them all to stderr, and the pipe behind that stream holds
+        // about 64 KB: once it is full the compiler waits for a reader that is not coming, while
+        // this process waits for the compiler. That is a deadlock, and it looks like a test that
+        // never finishes rather than like the syntax error that caused it — which is the worst
+        // way for it to appear, because the error that would have explained it is the one that
+        // never got printed.
+        Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> stderrTask = process.StandardError.ReadToEndAsync();
         process.WaitForExit();
+        string stdout = stdoutTask.GetAwaiter().GetResult();
+        string stderr = stderrTask.GetAwaiter().GetResult();
 
         if (process.ExitCode != 0)
         {

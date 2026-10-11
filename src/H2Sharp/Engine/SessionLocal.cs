@@ -220,13 +220,50 @@ public sealed class SessionLocal : Session
         => throw new TODOException("SessionLocal.compareWithNull");
 
     /// <summary>
+    /// Compares two values with the current comparison mode. The values may have different data
+    /// types, including NULL.
+    /// </summary>
+    /// <remarks>
+    /// The session is the one that knows how to compare, so it is passed to the value: a value
+    /// that had to convert the other to its own type would answer wrongly for two different
+    /// types. It is also what the reference hands a TreeMap as its comparator, which is how rows
+    /// are found in a DISTINCT result.
+    /// </remarks>
+    /// <param name="left">the left value</param>
+    /// <param name="right">the right value</param>
+    /// <returns>0 if both values are equal, -1 if the first value is smaller, 1 otherwise</returns>
+    public int Compare(Values.Value left, Values.Value right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        return left.CompareTo(right, this.CastDataProvider, GetCompareMode());
+    }
+
+    /// <summary>
+    /// Gets how this session compares values.
+    /// </summary>
+    /// <returns>the compare mode</returns>
+    public Values.CompareMode GetCompareMode()
+    {
+        return CompareMode;
+    }
+
+    /// <summary>
     /// Whether two values are equal, where NULL equals NULL.
     /// </summary>
+    /// <remarks>
+    /// Not Equals: 0.0 is not equal to 0.00, and a distinct result that answered that question
+    /// with Equals would keep both and drop nothing.
+    /// </remarks>
     /// <param name="left">the left value</param>
     /// <param name="right">the right value</param>
     /// <returns>true if they are equal</returns>
     public bool AreEqual(Values.Value left, Values.Value right)
-        => throw new TODOException("SessionLocal.areEqual");
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        return left.CompareTo(right, this, GetCompareMode()) == 0;
+    }
 
     /// <summary>
     /// Gets the database mode, which decides how identifiers and aliases are spelled.

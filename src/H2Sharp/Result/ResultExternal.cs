@@ -17,21 +17,21 @@ public interface ResultExternal
     /// Get the next row from the result.
     /// </summary>
     /// <returns>the next row or null</returns>
-    Value[]? Next();
+    Value?[] Next();
 
     /// <summary>
     /// Add a row to this object.
     /// </summary>
     /// <param name="values">the row to add</param>
     /// <returns>the new number of rows in this object</returns>
-    int AddRow(Value[] values);
+    int AddRow(Value?[] values);
 
     /// <summary>
     /// Add a number of rows to the result.
     /// </summary>
     /// <param name="rows">the list of rows to add</param>
     /// <returns>the new number of rows in this object</returns>
-    int AddRows(IEnumerable<Value[]> rows);
+    int AddRows(IEnumerable<Value?[]> rows);
 
     /// <summary>
     /// Close this object and delete the temporary file.
@@ -43,14 +43,14 @@ public interface ResultExternal
     /// </summary>
     /// <param name="values">the row</param>
     /// <returns>the new row count</returns>
-    int RemoveRow(Value[] values);
+    int RemoveRow(Value?[] values);
 
     /// <summary>
     /// Check if the given row exists in this object.
     /// </summary>
     /// <param name="values">the row</param>
     /// <returns>true if it exists</returns>
-    bool Contains(Value[] values);
+    bool Contains(Value?[] values);
 
     /// <summary>
     /// Create a shallow copy of this object if possible.

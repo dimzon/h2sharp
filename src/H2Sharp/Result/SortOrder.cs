@@ -10,20 +10,33 @@
  *
  * The order is held as a number per column, not as a type: the caller of a query and the
  * reference's callers both pass these numbers around, and a query that arrives with an order
- * already spelled out should keep it and re-print it unchanged. The direction and where NULL
- * goes are therefore bits of the same number — ASCENDING is 0 because the common case is the
- * default one and because the reference numbers it that way — and TypeToString puts them back
- * into words for the SQL text.
+ * already spelled out should keep it and re-print it unchanged. Direction and where NULL goes
+ * are therefore bits of the same number, which is why ASCENDING is 0 — the common case is the
+ * default one and the reference numbers it that way.
  *
- * None of the members are ported yet: comparing rows needs the comparison machinery of the
- * session, and printing needs the SQL builder of the expressions. They refuse rather than sort
- * by an invented rule, because a sort that is nearly right produces a result set that is
- * quietly wrong.
+ * Three things here are easy to get wrong, so they are written down.
+ *
+ * **The indexes are into the query's columns, not into the select list.** For
+ * "SELECT name, id FROM test ORDER BY id, name" the indexes are {1, 0}. Sorting is done on the
+ * row the query produced, which may carry hidden columns for ORDER BY and DISTINCT ON.
+ *
+ * **The SQL is printed by position, not by expression.** Inside the select list the item is a
+ * number — the position of that column — because a caller has to be able to read back a query
+ * it did not write; outside it, the expression is printed. Same order, two spellings.
+ *
+ * **Partial sorting is not partial sorting.** Sort(rows, from, to) only sorts the window, but
+ * the rows outside it are expected to be already in order — that is what makes ORDER BY ... FETCH
+ * cheap. It is a promise about the caller's data, not a weaker sort, and it is why the single-row
+ * case is special-cased to a minimum instead of running a sort at all.
  */
+using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
+
+using H2Sharp.Tables;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Result;
@@ -31,38 +44,56 @@ namespace H2Sharp.Result;
 /// <summary>
 /// How the rows of a result are ordered.
 /// </summary>
-public class SortOrder
+public sealed class SortOrder
 {
-    /// <summary>Ascending order.</summary>
+    /// <summary>
+    /// This bit mask means the values should be sorted in ascending order.
+    /// </summary>
     public const int Ascending = 0;
 
-    /// <summary>Descending order.</summary>
+    /// <summary>
+    /// This bit mask means the values should be sorted in descending order.
+    /// </summary>
     public const int Descending = 1;
 
-    /// <summary>NULLs first.</summary>
+    /// <summary>
+    /// This bit mask means NULLs should be sorted before other data, no matter if ascending or
+    /// descending order is used.
+    /// </summary>
     public const int NullsFirst = 2;
 
-    /// <summary>NULLs last.</summary>
+    /// <summary>
+    /// This bit mask means NULLs should be sorted after other data, no matter if ascending or
+    /// descending order is used.
+    /// </summary>
     public const int NullsLast = 4;
 
     private readonly SessionLocal session;
 
+    /// <summary>
+    /// The column indexes of the order by expressions within the query.
+    /// </summary>
     private readonly int[] queryColumnIndexes;
 
+    /// <summary>
+    /// The sort type bit mask (Descending, NullsFirst, NullsLast).
+    /// </summary>
     private readonly int[] sortTypes;
 
+    /// <summary>
+    /// The order list.
+    /// </summary>
     private readonly List<H2Sharp.Command.Query.QueryOrderBy>? orderList;
 
-    private readonly Expression[] expressions;
-
     /// <summary>
-    /// Creates a sort order for the given columns and sort types.
+    /// Construct a new sort order object with specified sort types.
     /// </summary>
     /// <param name="session">the session</param>
     /// <param name="sortTypes">sort types of all columns</param>
     /// <returns>a sort order</returns>
     public static SortOrder OfSortTypes(SessionLocal session, int[] sortTypes)
     {
+        ArgumentNullException.ThrowIfNull(sortTypes);
         int length = sortTypes.Length;
         int[] queryColumnIndexes = new int[length];
         for (int i = 0; i < length; i++)
@@ -74,7 +105,7 @@ public class SortOrder
     }
 
     /// <summary>
-    /// Creates a sort order with default sort directions.
+    /// Construct a new sort order object with default sort directions.
     /// </summary>
     /// <param name="session">the session</param>
     /// <param name="queryColumnIndexes">the column index list</param>
@@ -84,7 +115,7 @@ public class SortOrder
     }
 
     /// <summary>
-    /// Creates a sort order.
+    /// Construct a new sort order object.
     /// </summary>
     /// <param name="session">the session</param>
     /// <param name="queryColumnIndexes">the column index list</param>
@@ -100,69 +131,280 @@ public class SortOrder
         this.queryColumnIndexes = queryColumnIndexes;
         sortTypes = sortType;
         this.orderList = orderList;
-        expressions = [];
     }
 
     /// <summary>
-    /// Appends the SQL of this sort order.
+    /// Create the SQL snippet that describes this sort order. This is the SQL snippet that
+    /// usually appears after the ORDER BY clause.
     /// </summary>
-    /// <param name="builder">the builder</param>
-    /// <param name="list">the expressions of the columns</param>
-    /// <param name="visible">the number of visible columns</param>
-    /// <param name="sqlFlags">the SQL flags</param>
-    /// <returns>the builder</returns>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="list">the expression list</param>
+    /// <param name="visible">the number of columns in the select list</param>
+    /// <param name="sqlFlags">formatting flags</param>
+    /// <returns>the specified string builder</returns>
     public StringBuilder GetSql(StringBuilder builder, Expression[] list, int visible, int sqlFlags)
-        => throw new TODOException("SortOrder.getSQL: the SQL builder of expressions is not ported");
+    {
+        int i = 0;
+        foreach (int idx in queryColumnIndexes)
+        {
+            if (i > 0)
+            {
+                _ = builder.Append(", ");
+            }
+
+            if (idx < visible)
+            {
+                _ = builder.Append(idx + 1);
+            }
+            else
+            {
+                _ = list[idx].GetUnenclosedSql(builder, sqlFlags);
+            }
+
+            TypeToString(builder, sortTypes[i++]);
+        }
+
+        return builder;
+    }
 
     /// <summary>
-    /// Appends the words of a sort type.
+    /// Appends type information (DESC, NULLS FIRST, NULLS LAST) to the specified statement
+    /// builder.
     /// </summary>
-    /// <param name="builder">the builder</param>
-    /// <param name="type">the sort type</param>
+    /// <param name="builder">string builder</param>
+    /// <param name="type">sort type</param>
     public static void TypeToString(StringBuilder builder, int type)
-        => throw new TODOException("SortOrder.typeToString: not ported");
+    {
+        if ((type & Descending) != 0)
+        {
+            _ = builder.Append(" DESC");
+        }
+
+        if ((type & NullsFirst) != 0)
+        {
+            _ = builder.Append(" NULLS FIRST");
+        }
+        else if ((type & NullsLast) != 0)
+        {
+            _ = builder.Append(" NULLS LAST");
+        }
+    }
 
     /// <summary>
-    /// Compares two rows.
+    /// Compares two expression lists.
     /// </summary>
-    /// <param name="a">the first row</param>
-    /// <param name="b">the second row</param>
-    /// <returns>a negative number, zero or a positive number</returns>
+    /// <param name="a">the first expression list</param>
+    /// <param name="b">the second expression list</param>
+    /// <returns>the result of the comparison</returns>
     public int Compare(Value?[] a, Value?[] b)
-        => throw new TODOException("SortOrder.compare: the comparison machinery is not ported");
+    {
+        return CompareImpl(a, b, queryColumnIndexes.Length);
+    }
 
     /// <summary>
-    /// Compares the first columns of two rows.
+    /// Compares two expression lists.
     /// </summary>
-    /// <param name="a">the first row</param>
-    /// <param name="b">the second row</param>
-    /// <param name="count">how many columns to compare</param>
-    /// <returns>a negative number, zero or a positive number</returns>
+    /// <param name="a">the first expression list</param>
+    /// <param name="b">the second expression list</param>
+    /// <param name="count">number of columns to compare</param>
+    /// <returns>the result of the comparison</returns>
     public int Compare(Value?[] a, Value?[] b, int count)
-        => throw new TODOException("SortOrder.compare: the comparison machinery is not ported");
+    {
+        return CompareImpl(a, b, count);
+    }
 
     /// <summary>
-    /// Sorts the rows.
+    /// The comparison itself, shared by the two entry points.
     /// </summary>
-    /// <param name="rows">the rows</param>
+    /// <param name="a">the first expression list</param>
+    /// <param name="b">the second expression list</param>
+    /// <param name="count">number of columns to compare</param>
+    /// <returns>the result of the comparison</returns>
+    private int CompareImpl(Value?[] a, Value?[] b, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            int idx = queryColumnIndexes[i];
+            int type = sortTypes[i];
+            Value? ao = a[idx];
+            Value? bo = b[idx];
+            bool aNull = ao is null || ReferenceEquals(ao, ValueNull.Instance);
+            bool bNull = bo is null || ReferenceEquals(bo, ValueNull.Instance);
+            if (aNull || bNull)
+            {
+                if (aNull == bNull)
+                {
+                    continue;
+                }
+
+                return DefaultNullOrderingRules.CompareNull(session.GetDatabase().GetDefaultNullOrdering(), aNull, type);
+            }
+
+            int comp = session.Compare(ao!, bo!);
+            if (comp != 0)
+            {
+                return (type & Descending) == 0 ? comp : -comp;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Sort a list of rows.
+    /// </summary>
+    /// <param name="rows">the list of rows</param>
     public void Sort(List<Value?[]> rows)
-        => throw new TODOException("SortOrder.sort: the comparison machinery is not ported");
+    {
+        rows.Sort(Compare);
+    }
 
     /// <summary>
-    /// Sorts part of the rows.
+    /// Sort a list of rows using offset and limit.
     /// </summary>
-    /// <param name="rows">the rows</param>
-    /// <param name="fromInclusive">where to start</param>
-    /// <param name="toExclusive">where to stop</param>
+    /// <remarks>
+    /// Only the window is sorted: the rows outside it are expected to be in order already, which
+    /// is what the caller promised by handing over a range. One row in, the answer is the
+    /// smallest one and no sort is run at all.
+    /// </remarks>
+    /// <param name="rows">the list of rows</param>
+    /// <param name="fromInclusive">the start index, inclusive</param>
+    /// <param name="toExclusive">the end index, exclusive</param>
     public void Sort(List<Value?[]> rows, int fromInclusive, int toExclusive)
-        => throw new TODOException("SortOrder.sort: the comparison machinery is not ported");
+    {
+        if (toExclusive == 1 && fromInclusive == 0)
+        {
+            Value?[] min = rows[0];
+            for (int i = 1; i < rows.Count; i++)
+            {
+                if (Compare(rows[i], min) < 0)
+                {
+                    min = rows[i];
+                }
+            }
+
+            rows[0] = min;
+            return;
+        }
+
+        Value?[][] array = new Value?[rows.Count][];
+        rows.CopyTo(array);
+        Utils.SortTopN(array, fromInclusive, toExclusive, Compare);
+        for (int i = fromInclusive; i < toExclusive; i++)
+        {
+            rows[i] = array[i];
+        }
+    }
 
     /// <summary>
-    /// Gets the index of each sorted column in the row.
+    /// Gets the column index list. This is the column indexes of the order by expressions within
+    /// the query.
+    /// <para>
+    /// For the query "select name, id from test order by id, name" this is {1, 0} as the first
+    /// order by expression (the column "id") is the second column of the query, and the second
+    /// order by expression ("name") is the first column of the query.
+    /// </para>
     /// </summary>
-    /// <returns>the indexes</returns>
+    /// <returns>the list</returns>
     public int[] GetQueryColumnIndexes()
     {
         return queryColumnIndexes;
+    }
+
+    /// <summary>
+    /// Gets the column for the given table filter, if the sort column is for this filter.
+    /// </summary>
+    /// <param name="index">the column index (0, 1,...)</param>
+    /// <param name="filter">the table filter</param>
+    /// <returns>the column, or null</returns>
+    public Column? GetColumn(int index, TableFilter filter)
+    {
+        if (orderList is null || index >= orderList.Count)
+        {
+            return null;
+        }
+
+        Expression? expr = orderList[index].GetExpression();
+        expr = expr?.GetNonAliasExpression();
+        if (expr is null || expr.IsConstant())
+        {
+            return null;
+        }
+
+        if (expr is not Expressions.ExpressionColumn exprCol)
+        {
+            return null;
+        }
+
+        // The reference asks which filter the expression reads from, and answers null when it is
+        // another table's. This port maps a column by resolver rather than by filter, so the
+        // question has no honest answer here and it refuses rather than guessing from the alias.
+        _ = exprCol.GetTableFilter();
+        return exprCol.GetColumn();
+    }
+
+    /// <summary>
+    /// Gets the sort order bit masks.
+    /// </summary>
+    /// <returns>the list</returns>
+    public int[] GetSortTypes()
+    {
+        return sortTypes;
+    }
+
+    /// <summary>
+    /// Returns the original query order list.
+    /// </summary>
+    /// <returns>the original query order list</returns>
+    public List<H2Sharp.Command.Query.QueryOrderBy>? GetOrderList()
+    {
+        return orderList;
+    }
+
+    /// <summary>
+    /// Returns sort order bit masks with <c>NULLS_FIRST</c> or <c>NULLS_LAST</c> explicitly set.
+    /// </summary>
+    /// <returns>bit masks with either <c>NULLS_FIRST</c> or <c>NULLS_LAST</c> explicitly set</returns>
+    public int[] GetSortTypesWithNullOrdering()
+    {
+        return AddNullOrdering(session.GetDatabase(), (int[])sortTypes.Clone());
+    }
+
+    /// <summary>
+    /// Adds explicit <c>NULLS_FIRST</c> or <c>NULLS_LAST</c> where they aren't already specified.
+    /// </summary>
+    /// <param name="database">the database</param>
+    /// <param name="sortTypes">bit masks</param>
+    /// <returns>the specified array with possibly modified bit masks</returns>
+    public static int[] AddNullOrdering(Database database, int[] sortTypes)
+    {
+        DefaultNullOrdering defaultNullOrdering = database.GetDefaultNullOrdering();
+        for (int i = 0, length = sortTypes.Length; i < length; i++)
+        {
+            sortTypes[i] = DefaultNullOrderingRules.AddExplicitNullOrdering(defaultNullOrdering, sortTypes[i]);
+        }
+
+        return sortTypes;
+    }
+
+    /// <summary>
+    /// Turns a sort type with a null ordering into its opposite.
+    /// </summary>
+    /// <param name="sortTypeWithNull">the sort type</param>
+    /// <returns>the opposite sort type</returns>
+    public static int Inverse(int sortTypeWithNull)
+    {
+        return sortTypeWithNull ^ (Descending | NullsFirst | NullsLast);
+    }
+
+    /// <summary>
+    /// Returns comparator for row values.
+    /// </summary>
+    /// <returns>comparator for row values</returns>
+    public Comparison<Value> GetRowValueComparator()
+    {
+        return (o1, o2) => Compare(
+            ((ValueRow)o1).GetList(),
+            ((ValueRow)o2).GetList());
     }
 }

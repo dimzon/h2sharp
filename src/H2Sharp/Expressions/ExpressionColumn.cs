@@ -71,6 +71,34 @@ public sealed class ExpressionColumn : Expression
         this.queryLevel = queryLevel;
     }
 
+    /// <summary>
+    /// Gets the column this expression reads.
+    /// </summary>
+    /// <remarks>
+    /// Null until the expression has been mapped, and null after it has been mapped to an alias
+    /// and a name rather than to a column — see <see cref="GetTableFilter"/> for why that
+    /// difference is in the design and not an omission.
+    /// </remarks>
+    /// <returns>the column, or null</returns>
+    public Column? GetColumn()
+    {
+        return column;
+    }
+
+    /// <summary>
+    /// Gets the table filter this expression reads from.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps the filter on the expression, because a query can name the same table
+    /// twice and a column reference has to say which of them it means. Here a column is mapped
+    /// through a resolver instead of a filter, so this has nothing to answer with and refuses:
+    /// answering the *first* filter, or comparing aliases, would look like the reference's rule
+    /// and quietly disagree with it wherever a self-join appears.
+    /// </remarks>
+    /// <returns>the table filter</returns>
+    public TableFilter? GetTableFilter()
+        => throw new TODOException("ExpressionColumn.getTableFilter: this port maps by resolver, not by filter");
+
     /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
     {

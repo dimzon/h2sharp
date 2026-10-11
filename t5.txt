@@ -1,0 +1,18 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  H2Sharp -> C:\Work\h2sharp\artifacts\bin\H2Sharp\debug_net10.0\H2Sharp.dll
+  H2Sharp.Tests -> C:\Work\h2sharp\artifacts\bin\H2Sharp.Tests\debug\H2Sharp.Tests.dll
+Test run for C:\Work\h2sharp\artifacts\bin\H2Sharp.Tests\debug\H2Sharp.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+  Failed H2Sharp.Tests.LocalResultOracleTests.SortedRows_MatchesReference [872 ms]
+  Error Message:
+   line 28:
+  java:   type=3
+  csharp: type=5
+  Stack Trace:
+     at H2Sharp.Tests.LocalResultOracleTests.AssertSame(List`1 java, List`1 csharp) in C:\Work\h2sharp\tests\H2Sharp.Tests\LocalResultOracleTests.cs:line 253
+   at H2Sharp.Tests.LocalResultOracleTests.SortedRows_MatchesReference() in C:\Work\h2sharp\tests\H2Sharp.Tests\LocalResultOracleTests.cs:line 146
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 3 s - H2Sharp.Tests.dll (net10.0)
