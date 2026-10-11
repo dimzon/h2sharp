@@ -101,6 +101,31 @@ public sealed class SessionLocal
     }
 
     /// <summary>
+    /// Gets the column resolver for the given table alias.
+    /// </summary>
+    /// <param name="alias">the table alias</param>
+    /// <returns>the resolver, or null when this query has no table by that alias</returns>
+    public H2Sharp.Tables.ColumnResolver? GetResolver(string alias)
+        => throw new TODOException("SessionLocal.getResolver: the query layer is not ported");
+
+    /// <summary>
+    /// Compares two values, answering the SQL rule for NULL: a comparison with NULL is
+    /// unknown unless the mode says otherwise, and unknown sorts before everything.
+    /// </summary>
+    /// <param name="left">the left value</param>
+    /// <param name="right">the right value</param>
+    /// <param name="ignoreCase">whether case is ignored</param>
+    /// <returns>-1, 0 or 1</returns>
+    public int CompareWithNull(Values.Value left, Values.Value right, bool ignoreCase)
+        => throw new TODOException("SessionLocal.compareWithNull");
+
+    /// <summary>
+    /// Gets the database mode, which decides how identifiers and aliases are spelled.
+    /// </summary>
+    public Mode GetMode()
+        => throw new TODOException("SessionLocal.getMode: Mode is not ported");
+
+    /// <summary>
     /// Prepares a command for execution.
     /// </summary>
     /// <param name="sql">the SQL</param>
@@ -124,13 +149,13 @@ public sealed class SessionLocal
     /// Checks whether this session may read the given table.
     /// </summary>
     /// <param name="table">the table</param>
-    public void CheckReadRight(Index.Table? table)
+    public void CheckReadRight(H2Sharp.Tables.Table? table)
         => throw new TODOException("SessionLocal.checkReadRight");
 
     /// <summary>
     /// Checks whether this session may modify the given table.
     /// </summary>
     /// <param name="table">the table</param>
-    public void CheckRight(Index.Table? table)
+    public void CheckRight(H2Sharp.Tables.Table? table)
         => throw new TODOException("SessionLocal.checkRight");
 }

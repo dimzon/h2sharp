@@ -20,7 +20,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using H2Sharp.Engine;
-using H2Sharp.Index;
+using H2Sharp.Indexes;
 using H2Sharp.Tests.Oracle;
 using Xunit;
 

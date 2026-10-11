@@ -18,13 +18,22 @@ using H2Sharp.Engine;
 using H2Sharp.Result;
 using H2Sharp.Values;
 
-namespace H2Sharp.Index;
+namespace H2Sharp.Tables;
 
 /// <summary>
 /// A column of a table or an index.
 /// </summary>
 public class Column
 {
+    /// <summary>Nullability is not known.</summary>
+    public const int NullableUnknown = 0;
+
+    /// <summary>The column is nullable.</summary>
+    public const int NullableYes = 1;
+
+    /// <summary>The column is not nullable.</summary>
+    public const int NullableNo = 2;
+
     private readonly Table table;
 
     private readonly int columnId;
@@ -75,6 +84,18 @@ public class Column
         => throw new TODOException("Column.getValueType");
 
     /// <summary>
+    /// Gets the type information of this column.
+    /// </summary>
+    public TypeInfo GetTypeInfo()
+        => throw new TODOException("Column.getType");
+
+    /// <summary>
+    /// Gets the schema name of the table this column belongs to, or null.
+    /// </summary>
+    public string? GetSchemaName()
+        => table.GetSchemaName();
+
+    /// <summary>
     /// Gets the type name of this column.
     /// </summary>
     public string GetTypeName()
@@ -93,9 +114,11 @@ public class Column
         => throw new TODOException("Column.getScale");
 
     /// <summary>
-    /// Whether this column may be null.
+    /// Gets the nullability of this column as the reference's three-valued answer: unknown,
+    /// yes or no. It is three-valued because an expression that has not been mapped yet cannot
+    /// say, and "cannot say" must not collapse into "no" or an insert would be refused.
     /// </summary>
-    public bool IsNullable()
+    public int IsNullable()
         => throw new TODOException("Column.isNullable");
 
     /// <summary>
@@ -182,7 +205,7 @@ public class IndexColumn
 /// <summary>
 /// A filter on a table, which is a table plus the state of the current row.
 /// </summary>
-public sealed class TableFilter
+public class TableFilter
 {
     private readonly Table table;
 
@@ -193,6 +216,26 @@ public sealed class TableFilter
     public TableFilter(Table table)
     {
         this.table = table;
+    }
+
+    /// <summary>
+    /// Adds a condition to this filter that can be evaluated without reading a row.
+    /// </summary>
+    /// <param name="condition">the condition</param>
+    /// <param name="isEvaluable">whether the condition is evaluatable</param>
+    /// <returns>this filter</returns>
+    public virtual TableFilter AddFilterCondition(Expressions.Expression condition, bool isEvaluable)
+    {
+        return this;
+    }
+
+    /// <summary>
+    /// Gets the columns of the table this filter reads.
+    /// </summary>
+    /// <returns>the columns</returns>
+    public virtual Column[] GetColumns()
+    {
+        return table.GetColumns();
     }
 
     /// <summary>
@@ -317,6 +360,12 @@ public abstract class Table
     /// Gets the table name.
     /// </summary>
     public abstract string GetTableName();
+
+    /// <summary>
+    /// Gets the schema name of this table, or null when it has none.
+    /// </summary>
+    public virtual string? GetSchemaName()
+        => null;
 
     /// <summary>
     /// Gets the table type.

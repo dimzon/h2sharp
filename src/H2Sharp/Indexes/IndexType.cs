@@ -26,7 +26,7 @@ using System;
 using System.Text;
 using H2Sharp.Engine;
 
-namespace H2Sharp.Index;
+namespace H2Sharp.Indexes;
 
 /// <summary>
 /// Represents information about the properties of an index.

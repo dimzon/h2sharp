@@ -2,7 +2,7 @@ using System.Text;
 using H2Sharp.Message;
 using H2Sharp.Values;
 
-namespace H2Sharp.Expression;
+namespace H2Sharp.Expressions;
 
 /// <summary>
 /// A parameter of a prepared statement, as the tracing layer sees it.

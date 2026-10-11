@@ -2,7 +2,7 @@ using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Values;
 
-namespace H2Sharp.Index;
+namespace H2Sharp.Indexes;
 
 /// <summary>
 /// The cursor implementation for the DUAL index.

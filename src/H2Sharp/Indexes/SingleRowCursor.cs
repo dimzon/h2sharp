@@ -1,7 +1,7 @@
 using H2Sharp.Message;
 using H2Sharp.Result;
 
-namespace H2Sharp.Index;
+namespace H2Sharp.Indexes;
 
 /// <summary>
 /// A cursor with at most one row.

@@ -13,7 +13,7 @@
  */
 using System;
 
-namespace H2Sharp.Index;
+namespace H2Sharp.Indexes;
 
 /// <summary>
 /// Index-sorting information.

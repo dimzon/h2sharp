@@ -13,7 +13,7 @@
  * the port would pass against it.
  *
  * The naming is the collision PORTING.md warns about: a type Index inside a namespace
- * H2Sharp.Index. It is kept, because renaming the namespace breaks the mirror rule and renaming
+ * H2Sharp.Indexes. It is kept, because renaming the namespace breaks the mirror rule and renaming
  * the type breaks the 1:1 rule, and the mirror rule is the cheaper of the two to repair — a
  * using-alias at the use sites, which is what the rest of the port does for org.h2.store.FileStore.
  */
@@ -21,9 +21,10 @@ using System;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Result;
+using H2Sharp.Tables;
 using H2Sharp.Util;
 
-namespace H2Sharp.Index;
+namespace H2Sharp.Indexes;
 
 /// <summary>
 /// An index on a table.

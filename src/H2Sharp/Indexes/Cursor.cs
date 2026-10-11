@@ -1,6 +1,6 @@
 using H2Sharp.Result;
 
-namespace H2Sharp.Index;
+namespace H2Sharp.Indexes;
 
 /// <summary>
 /// A cursor is a helper object to iterate through an index.

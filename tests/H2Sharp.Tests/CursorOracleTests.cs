@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using H2Sharp.Index;
+using H2Sharp.Indexes;
 using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Tests.Oracle;
