@@ -145,10 +145,10 @@ public sealed class MVTableTests : IDisposable
         Assert.NotNull(table.GetPrimaryKey());
         Assert.Contains("CREATE TABLE", table.GetCreateSql(), StringComparison.Ordinal);
 
-        // The column names appear in the DDL, but their *types* do not: what a column prints is
-        // the Value layer's business, and it is currently wrong for VARCHAR (see
-        // MIGRATION_STATUS.md). Asserting it here would make this test red for something that is
-        // not the table's doing, and it would hide the real defect behind a test about storage.
+        // "CHARACTER VARYING", not "VARCHAR": the name table is the reference's, and the
+        // reference prints the SQL-standard spelling. A test that looked for "VARCHAR" here
+        // would fail on a correct implementation.
+        Assert.Contains("CHARACTER VARYING", table.GetCreateSql(), StringComparison.Ordinal);
     }
 
     private static Row Row(int id, string name)

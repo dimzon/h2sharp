@@ -19,13 +19,14 @@ using H2Sharp.Result;
 using H2Sharp.Tables;
 using H2Sharp.Values;
 using H2Sharp.Api;
+using H2Sharp.Command;
 
 namespace H2Sharp.Engine;
 
 /// <summary>
 /// A session in a local (in-process) database.
 /// </summary>
-public sealed class SessionLocal
+public sealed class SessionLocal : Session
 {
     private readonly Database database;
 
@@ -161,7 +162,7 @@ public sealed class SessionLocal
     /// Whether this session is closed.
     /// </summary>
     /// <returns>true if it is</returns>
-    public bool IsClosed()
+    public override bool IsClosed()
     {
         return closed;
     }
@@ -169,7 +170,7 @@ public sealed class SessionLocal
     /// <summary>
     /// Closes the session, and the database with it when it was the last session.
     /// </summary>
-    public void Close()
+    public override void Close()
     {
         if (closed)
         {
@@ -230,16 +231,23 @@ public sealed class SessionLocal
     /// <summary>
     /// Gets the database mode, which decides how identifiers and aliases are spelled.
     /// </summary>
-    public Mode GetMode()
+    public override Mode GetMode()
         => throw new TODOException("SessionLocal.getMode: Mode is not ported");
 
     /// <summary>
     /// Prepares a command for execution.
     /// </summary>
+    /// <remarks>
+    /// The reference reads the first word and hands the text to the command for that word, which
+    /// parses it itself: <c>prepareCommand</c> is a dispatch over statement kinds, not a
+    /// statement tree. Those commands — <c>Insert</c>, <c>Select</c>, <c>CreateTable</c> — are
+    /// not ported yet, so this refuses. It says so rather than answering with a parsed tree of
+    /// its own shape, because a caller would then depend on a shape the reference does not have.
+    /// </remarks>
     /// <param name="sql">the SQL</param>
     /// <returns>the prepared command</returns>
-    public object PrepareCommand(string sql)
-        => throw new TODOException("SessionLocal.prepareCommand: the parser is not ported");
+    public override H2Sharp.Command.CommandInterface PrepareCommand(string sql)
+        => throw new TODOException("SessionLocal.prepareCommand: the commands are not ported");
 
     /// <summary>
     /// Gets the current timestamp of this session.
@@ -250,7 +258,7 @@ public sealed class SessionLocal
     /// <summary>
     /// Whether this session is in autocommit mode.
     /// </summary>
-    public bool GetAutoCommit()
+    public override bool GetAutoCommit()
         => throw new TODOException("SessionLocal.getAutoCommit");
 
     /// <summary>
@@ -266,4 +274,141 @@ public sealed class SessionLocal
     /// <param name="table">the table</param>
     public void CheckRight(H2Sharp.Tables.Table? table)
         => throw new TODOException("SessionLocal.checkRight");
+
+    /// <summary>
+    /// Gets the data handler of this session's database.
+    /// </summary>
+    /// <returns>the data handler</returns>
+    public override H2Sharp.Store.DataHandler GetDataHandler()
+        => throw new TODOException("SessionLocal.getDataHandler: Database.getDataHandler is not ported");
+
+    /// <summary>
+    /// Gets the names of the cluster servers.
+    /// </summary>
+    /// <returns>the cluster servers</returns>
+    public override List<string> GetClusterServers()
+        => throw new TODOException("SessionLocal.getClusterServers");
+
+    /// <inheritdoc/>
+    public override H2Sharp.Message.Trace GetTrace()
+        => throw new TODOException("SessionLocal.getTrace: the trace system has no writer yet");
+
+    /// <summary>
+    /// Whether this session has a pending transaction.
+    /// </summary>
+    /// <returns>true if it has</returns>
+    public override bool HasPendingTransaction()
+        => throw new TODOException("SessionLocal.hasPendingTransaction");
+
+    /// <summary>
+    /// Cancels the statement being run.
+    /// </summary>
+    public override void Cancel()
+        => throw new TODOException("SessionLocal.cancel");
+
+    /// <summary>
+    /// Sets whether each statement commits by itself.
+    /// </summary>
+    /// <param name="autoCommit">the new value</param>
+    public override void SetAutoCommit(bool autoCommit)
+        => throw new TODOException("SessionLocal.setAutoCommit");
+
+    /// <summary>
+    /// Adds a lob that lives as long as this session does.
+    /// </summary>
+    /// <param name="v">the value</param>
+    /// <returns>the value that was added</returns>
+    public override Values.ValueLob AddTemporaryLob(Values.ValueLob v)
+        => throw new TODOException("SessionLocal.addTemporaryLob");
+
+    /// <summary>
+    /// Whether this is a remote session. It is not: there is no wire protocol in this port.
+    /// </summary>
+    /// <returns>false</returns>
+    public override bool IsRemote() => false;
+
+    /// <summary>
+    /// Sets the schema that unqualified names are read from.
+    /// </summary>
+    /// <param name="schema">the schema name</param>
+    public override void SetCurrentSchemaName(string schema)
+        => throw new TODOException("SessionLocal.setCurrentSchemaName: Schema is not ported");
+
+    /// <summary>
+    /// Gets the schema that unqualified names are read from.
+    /// </summary>
+    /// <returns>the schema name</returns>
+    public override string GetCurrentSchemaName()
+        => throw new TODOException("SessionLocal.getCurrentSchemaName: Schema is not ported");
+
+    /// <summary>
+    /// Sets the network connection information.
+    /// </summary>
+    /// <param name="networkConnectionInfo">the connection information</param>
+    public override void SetNetworkConnectionInfo(object networkConnectionInfo)
+        => throw new TODOException("SessionLocal.setNetworkConnectionInfo");
+
+    /// <summary>
+    /// Gets the isolation level of the transaction.
+    /// </summary>
+    /// <returns>the isolation level</returns>
+    public override int GetIsolationLevel()
+        => throw new TODOException("SessionLocal.getIsolationLevel");
+
+    /// <summary>
+    /// Sets the isolation level of the transaction.
+    /// </summary>
+    /// <param name="isolationLevel">the isolation level</param>
+    public override void SetIsolationLevel(int isolationLevel)
+        => throw new TODOException("SessionLocal.setIsolationLevel");
+
+    /// <summary>
+    /// Gets the settings that do not change while the database is open.
+    /// </summary>
+    /// <returns>the settings</returns>
+    public override object GetStaticSettings()
+        => throw new TODOException("SessionLocal.getStaticSettings");
+
+    /// <summary>
+    /// Gets the settings that may change while the database is open.
+    /// </summary>
+    /// <returns>the settings</returns>
+    public override object GetDynamicSettings()
+        => throw new TODOException("SessionLocal.getDynamicSettings");
+
+    /// <summary>
+    /// Gets the object that builds the metadata of this database.
+    /// </summary>
+    /// <returns>the meta object</returns>
+    public override object GetDatabaseMeta()
+        => throw new TODOException("SessionLocal.getDatabaseMeta");
+
+    /// <summary>
+    /// Whether this is an old information schema.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public override bool IsOldInformationSchema()
+        => throw new TODOException("SessionLocal.isOldInformationSchema");
+
+    /// <summary>
+    /// Gets the current timestamp, which is fixed for the length of one statement or
+    /// transaction.
+    /// </summary>
+    /// <returns>the current timestamp</returns>
+    public override Values.ValueTimestampTimeZone CurrentTimestamp()
+        => CastDataProvider.CurrentTimestamp();
+
+    /// <summary>
+    /// Gets the current time zone.
+    /// </summary>
+    /// <returns>the time zone</returns>
+    public override Util.TimeZoneProvider CurrentTimeZone()
+        => CastDataProvider.CurrentTimeZone();
+
+    /// <summary>
+    /// Whether ENUM values are 0-based.
+    /// </summary>
+    /// <returns>true if they are</returns>
+    public override bool ZeroBasedEnums()
+        => CastDataProvider.ZeroBasedEnums();
 }
