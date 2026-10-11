@@ -38,16 +38,16 @@ namespace H2Sharp.Schemas;
 /// <summary>
 /// A schema as created by the SQL statement CREATE SCHEMA.
 /// </summary>
-public sealed class Schema
+/// <remarks>
+/// A <see cref="DbObject"/> as in the reference, which is what gives it an object id, a place in
+/// the database's object table, and — the reason it matters here — <c>getSQL</c>: an object that
+/// belongs to a schema prints its name qualified by it, and a schema that is not itself an object
+/// has nothing to print that qualification with.
+/// </remarks>
+public sealed class Schema : DbObject
 {
     private readonly ConcurrentDictionary<string, Table> tablesAndViews =
         new(StringComparer.OrdinalIgnoreCase);
-
-    private readonly Database database;
-
-    private readonly int id;
-
-    private readonly string schemaName;
 
     private readonly bool system;
 
@@ -61,35 +61,33 @@ public sealed class Schema
     /// <param name="schemaName">the schema name</param>
     /// <param name="system">whether this is a system schema (such a schema cannot be dropped)</param>
     public Schema(Database database, int id, string schemaName, bool system)
+        : base(database, id, schemaName, Trace.Schema)
     {
-        this.database = database;
-        this.id = id;
-        this.schemaName = schemaName;
         this.system = system;
     }
 
     /// <summary>
     /// Gets the database this schema belongs to.
     /// </summary>
-    public Database GetDatabase()
+    public new Database GetDatabase()
     {
-        return database;
+        return base.GetDatabase()!;
     }
 
     /// <summary>
     /// Gets the object id.
     /// </summary>
-    public int GetId()
+    public new int GetId()
     {
-        return id;
+        return base.GetId();
     }
 
     /// <summary>
     /// Gets the schema name.
     /// </summary>
-    public string GetName()
+    public new string GetName()
     {
-        return schemaName;
+        return base.GetName()!;
     }
 
     /// <summary>
@@ -98,8 +96,40 @@ public sealed class Schema
     /// <returns>the schema name</returns>
     public string GetSchemaName()
     {
-        return schemaName;
+        return GetName();
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A system schema is created by the database itself and has no statement that makes it, so
+    /// there is nothing to print for one. That null is not an oversight to be filled in later:
+    /// it is what tells INFORMATION_SCHEMA and a dump that this schema was never written by
+    /// anybody.
+    /// </remarks>
+    public override string GetCreateSql()
+    {
+        if (system)
+        {
+            return null!;
+        }
+
+        return "CREATE SCHEMA IF NOT EXISTS " + GetSql(0) + " AUTHORIZATION "
+            + GetOwnerName();
+    }
+
+    /// <inheritdoc/>
+    public override int GetTypeId() => DbObject.Schema;
+
+    /// <inheritdoc/>
+    public override void RemoveChildrenAndResources(SessionLocal session)
+        => throw new TODOException("Schema.removeChildrenAndResources: the schema holds more than tables");
+
+    /// <summary>
+    /// The name of the user that owns this schema.
+    /// </summary>
+    /// <returns>the owner name</returns>
+    private string GetOwnerName()
+        => throw new TODOException("Schema.getCreateSQL: the owner of a schema is not ported");
 
     /// <summary>
     /// Whether this is a system schema.

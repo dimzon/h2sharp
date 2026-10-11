@@ -8,28 +8,37 @@
  *
  * Any database object that is stored in a schema.
  *
- * The class exists for one reason: the name of an object is only unique *inside* a schema, so the
- * qualified name is what has to be printed and what a catalog query has to match. Everything
- * else is DbObject's.
+ * It is a thin class and it exists for one reason: an object has to know both which schema it
+ * belongs to and which database that schema is in, and its parent already knows the database
+ * because the id is allocated by it. Passing the database up from the schema is what lets the two
+ * agree — a second way to learn which database an object is in would eventually disagree with
+ * the first.
+ *
+ * It also prints its own name qualified by the schema. That is the only difference in printing,
+ * and it is the reason the method is overridden rather than left to the parent: a name that
+ * printed as "S.T" for an object created inside schema S would be a name that only works while
+ * S is the current one.
  */
 using System.Text;
+using H2Sharp.Engine;
+using H2Sharp.Message;
 
 namespace H2Sharp.Schemas;
 
 /// <summary>
-/// Any database object that is stored in a schema.
+/// An object that is stored in a schema.
 /// </summary>
-public abstract class SchemaObject : Engine.DbObject
+public abstract class SchemaObject : DbObject
 {
     private readonly Schema schema;
 
     /// <summary>
-    /// Initialize some attributes of this object.
+    /// Creates the object.
     /// </summary>
     /// <param name="newSchema">the schema</param>
     /// <param name="id">the object id</param>
     /// <param name="name">the name</param>
-    /// <param name="traceModule">the trace module</param>
+    /// <param name="traceModuleId">the trace module id</param>
     protected SchemaObject(Schema newSchema, int id, string name, int traceModuleId)
         : base(newSchema.GetDatabase(), id, name, traceModuleId)
     {
@@ -37,24 +46,18 @@ public abstract class SchemaObject : Engine.DbObject
     }
 
     /// <summary>
-    /// Get the schema in which this object is defined.
+    /// Gets the schema this object is defined in.
     /// </summary>
     /// <returns>the schema</returns>
-    public Schema GetSchema()
-    {
-        return schema;
-    }
+    public Schema GetSchema() => schema;
 
     /// <inheritdoc/>
-    public override string GetSql(int sqlFlags)
-    {
-        return GetSql(new StringBuilder(), sqlFlags).ToString();
-    }
+    public override string GetSql(int sqlFlags) => GetSql(new StringBuilder(), sqlFlags).ToString();
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
     {
-        _ = Util.ParserUtil.QuoteIdentifier(builder, schema.GetName(), sqlFlags).Append('.');
+        _ = schema.GetSql(builder, sqlFlags).Append('.');
         return base.GetSql(builder, sqlFlags);
     }
 }
