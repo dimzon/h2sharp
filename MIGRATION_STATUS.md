@@ -3676,6 +3676,32 @@ Prepared  (что сделал парсер)          Command  (что держ�
 `ParameterInterface.GetType()` пришлось назвать `GetTypeInfo()` — в C# член с именем `GetType`
 обязан возвращать `System.Type`. Это язык, а не вкусовое решение.
 
+### Заглушки DDL: интерфейс из эталона, тела — TODOException
+
+По правилу «сначала интерфейс из эталона, потом тела» добавлены:
+
+| Класс | Откуда | Что внутри |
+|---|---|---|
+| `ConstraintActionType` | `org.h2.constraint` | пять значений + `IsNoActionOrRestrict`/`GetSqlName` — **в отдельном классе**, потому что в C# у enum не может быть методов |
+| `AlterTable` | `ddl.AlterTable` | имя таблицы, `IF EXISTS`, `update()` финальный и общий, `update(Table)` абстрактный |
+| `AlterTableAddConstraint` | `ddl.AlterTableAddConstraint` | вид ограничения числом в конструкторе (это и есть «одно выражение, пять ограничений»), действия для delete/update, самоссылаемость |
+| `CreateIndex` | `ddl.CreateIndex` | четыре вида индекса тремя флагами, `IF EXISTS`/`IF NOT EXISTS` |
+
+**Две вещи, которые вскрылись по дороге и стоят запомнить.**
+
+* **`GetSqlName` — не то же, что имя элемента.** `NO_ACTION` печатается как `NO ACTION`, и
+  `SET_NULL` как `SET NULL`. Если бы элемент печатался своим именем, DDL с ограничением был бы
+  синтаксически неверен посреди оператора.
+* **У нашего `DbObject` база — `Database`, а у эталона — `Schema`.** В эталоне есть
+  `SchemaObject`, который и передаёт `schema.getDatabase()` в `DbObject`. Поэтому `Sequence`
+  (которому нужен родитель `SchemaObject`) **не оставлен**: без `SchemaObject` он либо не
+  собирается, либо пришлось бы подставить `Database` и получить класс с другой формой.
+  Это следующий шаг, а не «заглушка на минутку».
+
+**И ещё одно совпадение имён.** Класс `Sequence` положил в `H2Sharp.Schemas`, а не в
+`H2Sharp.Schema`: пространство `H2Sharp.Schema` перебивает имя типа `Schema` во всех файлах,
+которые его используют. Ровно та же коллизия, что была с `Mode`.
+
 ### Покрытие (замерено, догонять позже)
 
 Замер: оба сьюта, Debug (`coverlet.collector`, `--collect:"XPlat Code Coverage"`; в Release
