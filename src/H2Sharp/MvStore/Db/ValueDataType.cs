@@ -1,0 +1,724 @@
+/*
+ * Copyright 2004-2026 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
+ * Initial Developer: H2 Group
+ * Ported from org.h2.mvstore.db.ValueDataType.
+ * Copyright 2026 H2Sharp contributors.
+ * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
+ *
+ * A row type: how a value is written into a page and read back.
+ *
+ * This is bytes on disk, and every byte here is a decision someone made to save a byte.
+ *
+ * A type tag, but small and common values have *no* payload after the tag: FALSE is one byte
+ * (64), TRUE is one byte (65), and integers 0..15 are one byte each because the tag itself is
+ * biased by the value (32 + x). A column of small integers costs one byte per row.
+ *
+ * Negative numbers get their own tag rather than a sign bit. INT_NEG (66) is followed by the
+ * absolute value, so -1 costs two bytes and 1 costs one. Sign-magnitude would make 1 cost two.
+ * BIGINT has the same trick one size up (0..7 inline), NUMERIC and REAL one size up again.
+ *
+ * The tags are numbers with holes in them (18, 23, 29..31, 49..55, 61, 69..99, 101..133) and the
+ * holes are not an accident to tidy: 132 was SPATIAL_KEY_2D, 133 was CUSTOM_DATA_TYPE, and a file
+ * written by a version that used them must still be readable. That is why the reference comments
+ * them and why the comment is kept here.
+ *
+ * The kinds ported so far are the scalar ones: boolean, the numeric family, strings, binaries,
+ * dates and times, char and uuid. ARRAY, ROW, INTERVAL, JSON, LOB, GEOGRAPHY and JAVA_OBJECT
+ * refuse — and they refuse *inside the switch*, on both sides, so an unported kind cannot be
+ * written by accident and then read back as something else.
+ */
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using System.Text;
+using H2Sharp.Engine;
+using H2Sharp.MvStore;
+using H2Sharp.MvStore.Type;
+using H2Sharp.Result;
+using H2Sharp.Util;
+using H2Sharp.Store;
+using H2Sharp.Values;
+
+namespace H2Sharp.MvStore.Db;
+
+/// <summary>
+/// A row type.
+/// </summary>
+public sealed class ValueDataType : BasicDataType<Value>
+{
+    private const byte Null = 0;
+    private const byte Tinyint = 2;
+    private const byte Smallint = 3;
+    private const byte Integer = 4;
+    private const byte Bigint = 5;
+    private const byte Numeric = 6;
+    private const byte Double = 7;
+    private const byte Real = 8;
+    private const byte Time = 9;
+    private const byte Date = 10;
+    private const byte Timestamp = 11;
+    private const byte Varbinary = 12;
+    private const byte Varchar = 13;
+    private const byte VarcharIgnoreCase = 14;
+    private const byte Blob = 15;
+    private const byte Clob = 16;
+    private const byte Array = 17;
+    private const byte JavaObject = 19;
+    private const byte Uuid = 20;
+    private const byte Char = 21;
+    private const byte Geometry = 22;
+    private const byte Enum = 25;
+    private const byte Interval = 26;
+    private const byte Row = 27;
+    /// <summary>
+    /// The BINARY tag. It is not a byte: the reference declares it as an int because its
+    /// number is 137, and a byte would not hold it — which is why the type here is int and not
+    /// byte like the tags above.
+    /// </summary>
+    private const int Binary = 137;
+
+    private const byte Int0To15 = 32;
+    private const byte Bigint0To7 = 48;
+    private const byte Numeric0To1 = 56;
+    private const byte NumericSmall0 = 58;
+    private const byte NumericSmall = 59;
+    private const byte Double0To1 = 60;
+    private const byte Real0To1 = 62;
+    private const byte BooleanFalse = 64;
+    private const byte BooleanTrue = 65;
+    private const byte IntNeg = 66;
+    private const byte BigintNeg = 67;
+
+    /// <summary>
+    /// VARCHAR of 0..31 characters: the tag carries the length. The short VARCHAR_IGNORECASE
+    /// forms are one block up, and their payload is already folded.
+    /// </summary>
+    private const int Varchar0To31 = 68;
+
+    private const int VarcharIgnoreCase0To31 = 100;
+
+    private readonly CastDataProvider? provider;
+
+    private readonly CompareMode compareMode;
+
+    private readonly DataHandler? handler;
+
+    private readonly int[]? sortTypes;
+
+    private RowFactory? rowFactory;
+
+    /// <summary>
+    /// Creates the type.
+    /// </summary>
+    /// <param name="provider">where casts come from</param>
+    /// <param name="compareMode">how values are compared</param>
+    /// <param name="handler">where LOBs live</param>
+    /// <param name="sortTypes">the sort order of each column, or null</param>
+    public ValueDataType(CastDataProvider? provider, CompareMode compareMode, DataHandler? handler, int[]? sortTypes)
+    {
+        this.provider = provider;
+        this.compareMode = compareMode;
+        this.handler = handler;
+        this.sortTypes = sortTypes;
+    }
+
+    /// <summary>
+    /// Gets the row factory that builds rows while reading.
+    /// </summary>
+    public RowFactory? GetRowFactory()
+    {
+        return rowFactory;
+    }
+
+    /// <summary>
+    /// Sets the row factory that builds rows while reading.
+    /// </summary>
+    /// <param name="rowFactory">the row factory</param>
+    public void SetRowFactory(RowFactory? rowFactory)
+    {
+        this.rowFactory = rowFactory;
+    }
+
+    /// <inheritdoc/>
+    public override Value[] CreateStorage(int size)
+    {
+        return new Value[size];
+    }
+
+    /// <inheritdoc/>
+    public override int Compare(Value? one, Value? two)
+    {
+        if (ReferenceEquals(one, two))
+        {
+            return 0;
+        }
+
+        if (one is null || two is null)
+        {
+            return one is null ? -1 : 1;
+        }
+
+        if (one is SearchRow rowOne && two is SearchRow rowTwo)
+        {
+            return CompareRows(rowOne, rowTwo);
+        }
+
+        return CompareValues(one, two, Ascending);
+    }
+
+    private int CompareRows(SearchRow a, SearchRow b)
+    {
+        if (ReferenceEquals(a, b))
+        {
+            return 0;
+        }
+
+        int[]? indexes = rowFactory?.GetIndexes();
+        if (indexes is null)
+        {
+            int len = a.GetColumnCount();
+            for (int i = 0; i < len; i++)
+            {
+                int comp = CompareValues(a.GetValue(i), b.GetValue(i), sortTypes![i]);
+                if (comp != 0)
+                {
+                    return comp;
+                }
+            }
+
+            return 0;
+        }
+
+        for (int i = 0; i < indexes.Length; i++)
+        {
+            int index = indexes[i];
+            Value? v1 = a.GetValue(index);
+            Value? v2 = b.GetValue(index);
+            if (v1 is null || v2 is null)
+            {
+                // can't compare further
+                break;
+            }
+
+            int comp = CompareValues(v1, v2, sortTypes![i]);
+            if (comp != 0)
+            {
+                return comp;
+            }
+        }
+
+        // The row key is the tie-breaker: two rows whose index columns are all equal are still
+        // different rows, and the storage layer must be able to tell them apart.
+        return a.GetKey().CompareTo(b.GetKey());
+    }
+
+    /// <summary>
+    /// Ascending sort type. <c>result.SortOrder</c> is not ported yet, and the two constants are
+    /// plain numbers, so the name is spelled out here rather than guessed at a use site.
+    /// </summary>
+    internal const int Ascending = 0;
+
+    /// <summary>Descending sort type.</summary>
+    internal const int Descending = 1;
+
+    /// <summary>
+    /// Compares two values.
+    /// </summary>
+    /// <param name="a">the first value</param>
+    /// <param name="b">the second value</param>
+    /// <param name="sortType">0 ascending, 1 descending</param>
+    /// <returns>negative, zero or positive</returns>
+    public int CompareValues(Value? a, Value? b, int sortType)
+    {
+        if (a is null || a is ValueNull)
+        {
+            // NULL values are smaller than any other value
+            return b is null || b is ValueNull ? 0 : -1;
+        }
+
+        if (b is null || b is ValueNull)
+        {
+            return 1;
+        }
+
+        // The provider is null here because a stored value never needs a cast to be compared: both
+        // sides come from the same column, so the types already agree.
+        int result = a.CompareTo(b, provider, compareMode);
+        return sortType == Descending ? -result : result;
+    }
+
+    /// <inheritdoc/>
+    public override void Write(WriteBuffer buff, Value v)
+    {
+        if (v is null || v is ValueNull)
+        {
+            buff.Put(Null);
+            return;
+        }
+
+        int type = v.GetValueType();
+        switch (type)
+        {
+            case Value.Boolean:
+                buff.Put(v.GetBoolean() ? BooleanTrue : BooleanFalse);
+                break;
+
+            case Value.Tinyint:
+                buff.Put(Tinyint).Put((byte)v.GetByte());
+                break;
+
+            case Value.Smallint:
+                buff.Put(Smallint).PutShort(v.GetShort());
+                break;
+
+            case Value.Enum:
+            case Value.Integer:
+                {
+                    int x = v.GetInt();
+                    if (x < 0)
+                    {
+                        buff.Put(IntNeg).PutVarInt(-x);
+                    }
+                    else if (x < 16)
+                    {
+                        buff.Put((byte)(Int0To15 + x));
+                    }
+                    else
+                    {
+                        buff.Put(type == Value.Integer ? Integer : Enum).PutVarInt(x);
+                    }
+
+                    break;
+                }
+
+            case Value.Bigint:
+                WriteLong(buff, v.GetLong());
+                break;
+
+            case Value.Real:
+                {
+                    float x = v.GetFloat();
+                    if (x == 0 && !float.IsNegative(x))
+                    {
+                        buff.Put(Real0To1);
+                    }
+                    else if (x == 1)
+                    {
+                        buff.Put((byte)(Real0To1 + 1));
+                    }
+                    else
+                    {
+                        buff.Put(Real).PutFloat(x);
+                    }
+
+                    break;
+                }
+
+            case Value.Double:
+                {
+                    double x = v.GetDouble();
+                    if (x == 0 && !double.IsNegative(x))
+                    {
+                        buff.Put(Double0To1);
+                    }
+                    else if (x == 1)
+                    {
+                        buff.Put((byte)(Double0To1 + 1));
+                    }
+                    else
+                    {
+                        buff.Put(Double).PutDouble(x);
+                    }
+
+                    break;
+                }
+
+            case Value.Varchar:
+            case Value.VarcharIgnorecase:
+                {
+                    string s = v.GetString() ?? string.Empty;
+                    int len = s.Length;
+                    bool ignoreCase = type == Value.VarcharIgnorecase;
+                    if (len < 32)
+                    {
+                        buff.Put((byte)((ignoreCase ? VarcharIgnoreCase0To31 : Varchar0To31) + len));
+                        string payload = ignoreCase ? s.ToUpperInvariant() : s;
+                        buff.PutStringData(payload, payload.Length);
+                    }
+                    else
+                    {
+                        buff.Put(ignoreCase ? (byte)VarcharIgnoreCase : Varchar);
+                        WriteString(buff, s);
+                    }
+
+                    break;
+                }
+
+            case Value.Varbinary:
+            case Value.Binary:
+                {
+                    byte[] bytes = v.GetBytesNoCopy() ?? [];
+                    buff.Put(type == Value.Varbinary ? Varbinary : (byte)Binary);
+                    buff.PutVarInt(bytes.Length).Put(bytes, 0, bytes.Length);
+                    break;
+                }
+
+            case Value.Char:
+                {
+                    buff.Put(Char);
+                    WriteString(buff, v.GetString() ?? string.Empty);
+                    break;
+                }
+
+            case Value.Date:
+                buff.Put(Date).PutVarInt((int)((ValueDate)v).GetDateValue());
+                break;
+
+            case Value.Time:
+                WriteTimestampTime(buff.Put(Time), ((ValueTime)v).GetNanos());
+                break;
+
+            case Value.Timestamp:
+                {
+                    ValueTimestamp ts = (ValueTimestamp)v;
+                    WriteTimestampTime(buff.Put(Timestamp), DateTimeUtils.GetEpochSeconds(ts.GetDateValue(), ts.GetTimeNanos(), 0)
+                        * 1_000_000_000L + (ts.GetTimeNanos() % 1_000_000_000L));
+                    break;
+                }
+
+            case Value.Uuid:
+                {
+                    buff.Put(Uuid);
+                    Span<byte> bytes = stackalloc byte[16];
+                    if (!((ValueUuid)v).GetUuid().TryWriteBytes(bytes, bigEndian: true, out _))
+                    {
+                        throw new InvalidOperationException("The UUID cannot be written");
+                    }
+
+                    buff.Put(bytes.ToArray());
+                    break;
+                }
+
+            case Value.Numeric:
+                {
+                    BigDecimal x = v.GetBigDecimal();
+                    if (x.Signum() == 0)
+                    {
+                        buff.Put(Numeric0To1);
+                    }
+                    else if (x.CompareTo(BigDecimal.One) == 0)
+                    {
+                        buff.Put((byte)(Numeric0To1 + 1));
+                    }
+                    else
+                    {
+                        int scale = x.Scale;
+                        BigInteger b = x.UnscaledValue;
+                        int bits = (int)b.GetBitLength();
+                        if (bits <= 63)
+                        {
+                            if (scale == 0)
+                            {
+                                buff.Put(NumericSmall0).PutVarLong((long)b);
+                            }
+                            else
+                            {
+                                buff.Put(NumericSmall).PutVarInt(scale).PutVarLong((long)b);
+                            }
+                        }
+                        else
+                        {
+                            byte[] bytes = b.ToByteArray();
+                            buff.Put(Numeric).PutVarInt(scale).PutVarInt(bytes.Length).Put(bytes, 0, bytes.Length);
+                        }
+                    }
+
+                    break;
+                }
+
+            case Value.Array:
+                throw new TODOException("ValueDataType.write: ARRAY");
+
+            case Value.Row:
+                throw new TODOException("ValueDataType.write: ROW");
+
+            case Value.IntervalMinuteToSecond:
+                throw new TODOException("ValueDataType.write: INTERVAL");
+
+            case Value.Blob:
+            case Value.Clob:
+                throw new TODOException("ValueDataType.write: LOB");
+
+            case Value.Geometry:
+                throw new TODOException("ValueDataType.write: GEOMETRY");
+
+            case Value.JavaObject:
+                throw new TODOException("ValueDataType.write: JAVA_OBJECT");
+
+            default:
+                throw new ArgumentException("Unsupported value type " + type, nameof(v));
+        }
+    }
+
+    /// <summary>
+    /// Writes a long with the same tricks as the integer: negative gets its own tag, 0..7 inline.
+    /// </summary>
+    /// <param name="buff">the buffer</param>
+    /// <param name="x">the value</param>
+    public static void WriteLong(WriteBuffer buff, long x)
+    {
+        if (x < 0)
+        {
+            buff.Put(BigintNeg).PutVarLong(-x);
+        }
+        else if (x < 8)
+        {
+            buff.Put((byte)(Bigint0To7 + x));
+        }
+        else
+        {
+            buff.Put(Bigint).PutVarLong(x);
+        }
+    }
+
+    private static void WriteString(WriteBuffer buff, string s)
+    {
+        int len = s.Length;
+        buff.PutVarInt(len).PutStringData(s, len);
+    }
+
+    private static void WriteTimestampTime(WriteBuffer buff, long nanos)
+    {
+        long millis = nanos / 1_000_000L;
+        buff.PutVarLong(millis).PutVarInt((int)(nanos - millis * 1_000_000L));
+    }
+
+    /// <inheritdoc/>
+    public override Value Read(Span<byte> buff, ref int position)
+    {
+        int type = buff[position++] & 255;
+        switch (type)
+        {
+            case Null:
+                return ValueNull.Instance;
+
+            case BooleanTrue:
+                return ValueBoolean.True;
+
+            case BooleanFalse:
+                return ValueBoolean.False;
+
+            case IntNeg:
+                return ValueInteger.Get(-DataUtils.ReadVarInt(buff, ref position));
+
+            case Integer:
+                return ValueInteger.Get(DataUtils.ReadVarInt(buff, ref position));
+
+            case Enum:
+                // The ordinal is on disk but the list of labels is not: an ENUM needs its
+                // enumerator set to become a value, and that comes from the column type, which
+                // the row reader is not given here. The reference reads it through the row
+                // factory for the same reason.
+                throw new TODOException("ValueDataType.read: ENUM needs the enumerator list");
+
+            case BigintNeg:
+                return ValueBigint.Get(-DataUtils.ReadVarLong(buff, ref position));
+
+            case Bigint:
+                return ValueBigint.Get(DataUtils.ReadVarLong(buff, ref position));
+
+            case Tinyint:
+                return ValueTinyint.Get((sbyte)buff[position++]);
+
+            case Smallint:
+                {
+                    short s = (short)((buff[position] << 8) | buff[position + 1]);
+                    position += 2;
+                    return ValueSmallint.Get(s);
+                }
+
+            case Numeric0To1:
+                return ValueNumeric.Zero;
+
+            case Numeric0To1 + 1:
+                return ValueNumeric.One;
+
+            case NumericSmall0:
+                return ValueNumeric.Get(BigDecimal.FromLong(DataUtils.ReadVarLong(buff, ref position)));
+
+            case NumericSmall:
+                {
+                    int scale = DataUtils.ReadVarInt(buff, ref position);
+                    return ValueNumeric.Get(new BigDecimal(DataUtils.ReadVarLong(buff, ref position), scale));
+                }
+
+            case Numeric:
+                {
+                    int scale = DataUtils.ReadVarInt(buff, ref position);
+                    int len = DataUtils.ReadVarInt(buff, ref position);
+                    BigInteger b = new(buff.Slice(position, len));
+                    position += len;
+                    return ValueNumeric.Get(new BigDecimal(b, scale));
+                }
+
+            case Real:
+                {
+                    float f = BitConverter.Int32BitsToSingle((buff[position] << 24) | (buff[position + 1] << 16)
+                        | (buff[position + 2] << 8) | buff[position + 3]);
+                    position += 4;
+                    return ValueReal.Get(f);
+                }
+
+            case Real0To1:
+                return ValueReal.Get(0f);
+
+            case Real0To1 + 1:
+                return ValueReal.Get(1f);
+
+            case Double:
+                {
+                    long bits = 0;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        bits = (bits << 8) | buff[position + i];
+                    }
+
+                    position += 8;
+                    return ValueDouble.Get(BitConverter.Int64BitsToDouble(bits));
+                }
+
+            case Double0To1:
+                return ValueDouble.Get(0d);
+
+            case Double0To1 + 1:
+                return ValueDouble.Get(1d);
+
+            case Varbinary:
+                return ValueVarbinary.Get(ReadBytes(buff, ref position));
+
+            case Binary:
+                return ValueBinary.Get(ReadBytes(buff, ref position));
+
+            case Char:
+                return ValueChar.Get(ReadString(buff, ref position));
+
+            case Date:
+                return ValueDate.FromDateValue(DataUtils.ReadVarInt(buff, ref position));
+
+            case Time:
+                return ValueTime.FromNanos(ReadTimestampTime(buff, ref position));
+
+            case Timestamp:
+                {
+                    long nanos = ReadTimestampTime(buff, ref position);
+                    long seconds = nanos / 1_000_000_000L;
+                    return ValueTimestamp.FromDateValueAndNanos(
+                        DateTimeUtils.DateValueFromLocalSeconds(seconds), (int)(nanos % 1_000_000_000L));
+                }
+
+            case Uuid:
+                {
+                    Guid uuid = new(buff.Slice(position, 16));
+                    position += 16;
+                    return ValueUuid.Get(uuid);
+                }
+
+            case Array:
+                throw new TODOException("ValueDataType.read: ARRAY");
+
+            case Row:
+                throw new TODOException("ValueDataType.read: ROW");
+
+            case Interval:
+                throw new TODOException("ValueDataType.read: INTERVAL");
+
+            case Blob:
+            case Clob:
+                throw new TODOException("ValueDataType.read: LOB");
+
+            case Geometry:
+                throw new TODOException("ValueDataType.read: GEOMETRY");
+
+            case JavaObject:
+                throw new TODOException("ValueDataType.read: JAVA_OBJECT");
+
+            default:
+                {
+                    // The compressed forms carry their value in the tag, and every one of them is a
+                    // range rather than a value: INTEGER 0..15 is 32..47, BIGINT 0..7 is 48..55,
+                    // VARCHAR under 32 characters is 68..99, VARCHAR_IGNORECASE the same is
+                    // 100..131. NUMERIC and the reals are single cases and are handled above.
+                    if (type >= Int0To15 && type < Int0To15 + 16)
+                    {
+                        return ValueInteger.Get(type - Int0To15);
+                    }
+
+                    if (type >= Bigint0To7 && type < Bigint0To7 + 8)
+                    {
+                        return ValueBigint.Get(type - Bigint0To7);
+                    }
+
+                    if (type >= Varchar0To31 && type < Varchar0To31 + 32)
+                    {
+                        return ValueVarchar.Get(ReadStringData(buff, ref position, type - Varchar0To31));
+                    }
+
+                    if (type >= VarcharIgnoreCase0To31 && type < VarcharIgnoreCase0To31 + 32)
+                    {
+                        return ValueVarcharIgnoreCase.Get(ReadStringData(buff, ref position, type - VarcharIgnoreCase0To31));
+                    }
+
+                    if (type is Varchar or VarcharIgnoreCase)
+                    {
+                        string s = ReadString(buff, ref position);
+                        return type == Varchar ? ValueVarchar.Get(s) : ValueVarcharIgnoreCase.Get(s);
+                    }
+
+                    throw new ArgumentException("Unknown value type tag " + type);
+                }
+        }
+    }
+
+    private static string ReadString(Span<byte> buff, ref int position)
+    {
+        int len = DataUtils.ReadVarInt(buff, ref position);
+        return ReadStringData(buff, ref position, len);
+    }
+
+    private static string ReadStringData(Span<byte> buff, ref int position, int len)
+    {
+        // The payload is one byte per character, written by PutStringData: a character that does
+        // not fit was replaced on the way in, so the bytes read back are exactly what was
+        // stored and nothing is re-encoded here.
+        string result = string.Empty;
+        int start = position;
+        position += len;
+        foreach (byte b in buff[start..position])
+        {
+            result += (char)b;
+        }
+
+        return result;
+    }
+
+    private static byte[] ReadBytes(Span<byte> buff, ref int position)
+    {
+        int len = DataUtils.ReadVarInt(buff, ref position);
+        return buff.Slice(position, len).ToArray();
+    }
+
+    private static long ReadTimestampTime(Span<byte> buff, ref int position)
+    {
+        long millis = DataUtils.ReadVarLong(buff, ref position);
+        int nanos = DataUtils.ReadVarInt(buff, ref position);
+        return millis * 1_000_000L + nanos;
+    }
+
+    /// <inheritdoc/>
+    public override int GetMemory(Value obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        return obj.GetMemory();
+    }
+}

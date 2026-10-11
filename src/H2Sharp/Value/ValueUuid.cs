@@ -226,6 +226,30 @@ public sealed class ValueUuid : Value
     public sealed override int GetHashCode() => (int)((high >> 32) ^ high ^ (low >> 32) ^ low);
 
     /// <inheritdoc/>
+    /// <summary>
+    /// Get or create a UUID value for the given UUID.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>ValueUuid.get(UUID)</c>, which takes the platform's UUID and takes it
+    /// apart the same way <see cref="GetUuid"/> puts it back together. It is not a convenience
+    /// wrapper: the UUID class keeps the number as two longs in *Java's* byte order, so a Guid
+    /// that went in through <see cref="Get(byte[])"/> and came out through here would be a
+    /// different UUID with the same text.
+    /// </remarks>
+    /// <param name="uuid">the UUID</param>
+    /// <returns>the value</returns>
+    public static ValueUuid Get(Guid uuid)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        if (!uuid.TryWriteBytes(bytes, bigEndian: true, out _))
+        {
+            throw new ArgumentException("The UUID cannot be written", nameof(uuid));
+        }
+
+        return Get(bytes.ToArray());
+    }
+
+    /// <inheritdoc/>
     public override bool Equals(object? other)
         => other is ValueUuid v && high == v.high && low == v.low;
 
