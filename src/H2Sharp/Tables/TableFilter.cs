@@ -1339,9 +1339,18 @@ public class TableFilter : ColumnResolver
         return c is not null && commonJoinColumnsToExclude is not null && commonJoinColumnsToExclude.Contains(c);
     }
 
-    /// <summary>
-    /// Gets the session this filter runs on.
-    /// </summary>
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The derived name when the filter has one, the table's own otherwise. A view's columns
+    /// hide the table's behind them: answering with the table's name when the view renamed the
+    /// column would name something the query cannot see.
+    /// </remarks>
+    public string GetColumnName(Column column)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        Dictionary<Column, string>? map = derivedColumnMap;
+        return map is not null && map.TryGetValue(column, out string? name) ? name : column.GetName();
+    }
     /// <returns>the session</returns>
     public SessionLocal GetSession() => session;
 

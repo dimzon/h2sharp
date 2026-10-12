@@ -401,6 +401,13 @@ public sealed class TableFilterTests
             filter.SetDerivedColumns(["X", "Y"]);
             Assert.True(filter.HasDerivedColumnList());
 
+            // A derived name hides the table's own: the view renamed the column, and answering
+            // with the table's name would name something the query cannot see. Without a list,
+            // the table's name is the only answer there is.
+            Tables.Column[] columns = table.GetColumns();
+            Assert.Equal("X", filter.GetColumnName(columns[0]));
+            Assert.Equal("Y", filter.GetColumnName(columns[1]));
+
             // Finding by those names is FindColumn's own member, and it needs the database's
             // identifier comparison plus the table's own lookup -- neither of which is ported.
             // What is asserted here is the list itself: it is accepted exactly when it names
