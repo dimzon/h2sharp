@@ -609,6 +609,42 @@ public class TableFilter : ColumnResolver
         }
     }
 
+    /// <summary>
+    /// Creates the index conditions of the join condition, here and everywhere it reaches.
+    /// </summary>
+    /// <remarks>
+    /// The condition is optimized first, because an index condition is only worth creating for
+    /// a condition in the shape the index understands — and an unoptimized condition would
+    /// create lookups for comparisons the scan would have answered cheaper. The nested join is
+    /// asked with the same condition since it names columns of both sides, and the join after
+    /// it, so that every filter holds the conditions it can serve.
+    /// </remarks>
+    public void CreateIndexConditions()
+    {
+        if (joinCondition is not null)
+        {
+            joinCondition = joinCondition.OptimizeCondition(GetSession());
+            if (joinCondition is not null)
+            {
+                joinCondition.CreateIndexConditions(GetSession(), this);
+                if (nestedJoin is not null)
+                {
+                    joinCondition.CreateIndexConditions(GetSession(), nestedJoin);
+                }
+            }
+        }
+
+        if (join is not null)
+        {
+            join.CreateIndexConditions();
+        }
+
+        if (nestedJoin is not null)
+        {
+            nestedJoin.CreateIndexConditions();
+        }
+    }
+
     /// <returns>the session</returns>
     public SessionLocal GetSession() => session;
 

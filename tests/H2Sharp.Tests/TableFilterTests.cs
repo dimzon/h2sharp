@@ -243,6 +243,47 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void CreatingIndexConditionsWalksTheWholeChain()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // The join condition is optimized first and then asked to create its index
+            // conditions here, on the nested join and on the join -- so that every filter holds
+            // the conditions it can serve. A plain comparison creates none (that is
+            // Comparison's own member, and it is not ported), so what is asserted is the walk:
+            // it reaches every filter of the chain without breaking it.
+            Tables.TableFilter a = new(session, table, "A", rightsChecked: true, null, 0, null);
+            Tables.TableFilter b = new(session, table, "B", rightsChecked: true, null, 1, null);
+            a.AddJoin(
+                b, outer: false,
+                H2Sharp.Expressions.ValueExpression.Get(H2Sharp.Values.ValueBoolean.Get(true)));
+
+            Tables.TableFilter nested = new(session, table, "N", rightsChecked: true, null, 2, null);
+            b.SetNestedJoin(nested);
+
+            a.CreateIndexConditions();
+
+            List<string> seen = [];
+            a.Visit(new AliasCollector(seen));
+            Assert.Equal(["A", "B", "N"], seen);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void AnOuterFilterReachedFromInsideIsSkipped()
     {
         SessionLocal session = NewSession();
