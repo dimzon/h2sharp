@@ -228,6 +228,12 @@ public abstract class Index : SchemaObject
     }
 
     /// <summary>
+    /// Gets the table this index belongs to.
+    /// </summary>
+    /// <returns>the table</returns>
+    public Table? GetTable() => table;
+
+    /// <summary>
     /// Finds the position of a column in this index.
     /// </summary>
     /// <remarks>

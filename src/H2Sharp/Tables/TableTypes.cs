@@ -18,6 +18,7 @@ using H2Sharp.Engine;
 using H2Sharp.Result;
 using H2Sharp.Values;
 using Index = H2Sharp.Indexes.Index;
+using ResultCursor = H2Sharp.Indexes.Cursor;
 
 namespace H2Sharp.Tables;
 
@@ -120,6 +121,49 @@ public class IndexColumn
 /// </summary>
 public abstract class IndexCursor
 {
+    private H2Sharp.Indexes.Index? index;
+
+    private bool reverse;
+
+    private Table? table;
+
+    private IndexColumn?[]? indexColumns;
+
+    /// <summary>
+    /// Sets the index this cursor walks, and how.
+    /// </summary>
+    /// <remarks>
+    /// The columns are re-mapped against the index on every call, because the same cursor may be
+    /// pointed at another index between two runs and the masks it answered with belong to the old
+    /// one. A column the index does not keep is left null rather than failed on: the planner
+    /// already decided this index can serve the condition, and a column missing here means the
+    /// plan was built on an index that has since lost a column, which is the database changing
+    /// under the statement rather than a mistake in the plan.
+    /// </remarks>
+    /// <param name="index">the index</param>
+    /// <param name="reverse">whether to walk it backwards</param>
+    public void SetIndex(H2Sharp.Indexes.Index index, bool reverse)
+    {
+        ArgumentNullException.ThrowIfNull(index);
+        this.index = index;
+        this.reverse = reverse;
+        table = index.GetTable();
+        Column[] columns = table?.GetColumns() ?? [];
+        indexColumns = new IndexColumn?[columns.Length];
+        IndexColumn[]? idxCols = index.GetColumns();
+        if (idxCols is not null)
+        {
+            for (int i = 0, len = columns.Length; i < len; i++)
+            {
+                int idx = index.GetColumnIndex(columns[i]);
+                if (idx >= 0)
+                {
+                    indexColumns[i] = idxCols[idx];
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// Whether the given index can serve an IN condition over the given columns.
     /// </summary>
