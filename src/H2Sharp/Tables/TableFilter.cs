@@ -573,6 +573,42 @@ public class TableFilter : ColumnResolver
             on.MapColumns(f, 0, Expression.MapInitial);
         }
     }
+    /// <summary>
+    /// Maps the join condition's columns against the filters they name.
+    /// </summary>
+    /// <remarks>
+    /// An outer filter reached from the inside is skipped, because its columns belong to rows
+    /// the inner side never sees: mapping them would bind a name to a column of a row that does
+    /// not exist yet. The nested join and the join are mapped after, in that order, since a name
+    /// inside the condition may belong to either side and both have to be asked.
+    /// </remarks>
+    /// <param name="resolver">where unqualified names are looked up</param>
+    /// <param name="level">the query level</param>
+    /// <param name="outer">whether this call comes from outside the join</param>
+    public void MapColumns(ColumnResolver resolver, int level, bool outer)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        if (!outer && joinOuter)
+        {
+            return;
+        }
+
+        if (joinCondition is not null)
+        {
+            joinCondition.MapColumns(resolver, level, Expressions.Expression.MapInitial);
+        }
+
+        if (nestedJoin is not null)
+        {
+            nestedJoin.MapColumns(resolver, level, outer);
+        }
+
+        if (join is not null)
+        {
+            join.MapColumns(resolver, level, outer);
+        }
+    }
+
     /// <returns>the session</returns>
     public SessionLocal GetSession() => session;
 

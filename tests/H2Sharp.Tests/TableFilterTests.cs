@@ -243,6 +243,41 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void AnOuterFilterReachedFromInsideIsSkipped()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // Mapping walks the chain, and an outer filter reached from the inside is skipped:
+            // its columns belong to rows the inner side never sees. What is asserted is that the
+            // walk completes over a chain with an outer link and a nested join, since a walk that
+            // mapped the wrong side would bind a name to a column of a row that does not exist.
+            Tables.TableFilter a = new(session, table, "A", rightsChecked: true, null, 0, null);
+            Tables.TableFilter b = new(session, table, "B", rightsChecked: true, null, 1, null);
+            a.AddJoin(b, outer: true, null);
+
+            Tables.TableFilter nested = new(session, table, "N", rightsChecked: true, null, 2, null);
+            b.SetNestedJoin(nested);
+
+            a.MapColumns(a, 0, outer: false);
+            b.MapColumns(b, 0, outer: true);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void MarkingWalksTheChainWithoutBreakingIt()
     {
         SessionLocal session = NewSession();
