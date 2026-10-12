@@ -239,6 +239,13 @@ public sealed class TableFilterTests
             filter.AddFilterCondition(first, isJoin: false);
             filter.AddFilterCondition(second, isJoin: false);
             filter.AddFilterCondition(first, isJoin: true);
+
+            // The two piles read back separately: what was added as a filter is a filter, and
+            // what was added as a join is a join. A test that only added one would never see
+            // whether the other pile stayed empty -- and it is the empty pile that proves they
+            // do not mix.
+            Assert.NotNull(filter.GetFilterCondition());
+            Assert.NotNull(filter.GetJoinCondition());
         }
         finally
         {

@@ -277,6 +277,24 @@ public class TableFilter : ColumnResolver
     }
 
     /// <summary>
+    /// Gets the condition this filter joins on.
+    /// </summary>
+    /// <remarks>
+    /// It is kept apart from the filter condition because the two are answered at different
+    /// moments: the join decides which rows pair up, the filter which of the pairs survive. A
+    /// caller that wants "the condition" without saying which one would get an answer that is
+    /// true for the wrong half of the question.
+    /// </remarks>
+    /// <returns>the join condition, or null</returns>
+    public Expression? GetJoinCondition() => joinCondition;
+
+    /// <summary>
+    /// Gets the condition this filter filters by.
+    /// </summary>
+    /// <returns>the filter condition, or null</returns>
+    public Expression? GetFilterCondition() => filterCondition;
+
+    /// <summary>
     /// Joins another filter to this one.
     /// </summary>
     /// <remarks>
@@ -437,8 +455,23 @@ public class TableFilter : ColumnResolver
     public SessionLocal GetSession() => session;
 
     /// <summary>
-    /// Sets the session this filter runs on.
+    /// Whether this filter is used in the plan.
     /// </summary>
+    /// <remarks>
+    /// A filter that no plan uses is a table the query named and never read — which is legal SQL
+    /// and a wasted scan, and the planner is the one that decides. Until it does, every filter
+    /// is unused, and that is the honest default rather than a guess about the query.
+    /// </remarks>
+    /// <returns>true if it is used</returns>
+    public bool IsUsed() => used;
+
+    /// <summary>
+    /// Sets whether this filter is used in the plan.
+    /// </summary>
+    /// <param name="used">true when the plan uses it</param>
+    public void SetUsed(bool used) => this.used = used;
+
+    private bool used;
     /// <param name="s">the session</param>
     public void SetSession(SessionLocal s)
     {
