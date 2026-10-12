@@ -595,6 +595,42 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void ParsingJoinsWithoutMeasuring()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // PreparePlan in parse mode builds the fake plan and joins the filters, but measures
+            // nothing and prepares nothing: a view parsed now runs later, against tables that
+            // may have changed since. What is asserted is the chain -- the top filter is where
+            // the scan would start, and the second filter hangs off it.
+            H2Sharp.Command.Query.Select select = new(session);
+            Tables.TableFilter a = new(session, table, "A", rightsChecked: true, null, 0, null);
+            Tables.TableFilter b = new(session, table, "B", rightsChecked: true, null, 1, null);
+            select.AddTableFilter(a, isTop: true);
+            select.AddTableFilter(b, isTop: true);
+
+            _ = select.PreparePlan(parse: true);
+
+            Assert.Same(a, select.GetTopFilter());
+            Assert.Same(b, a.GetJoin());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void HintsAreKeptNotApplied()
     {
         SessionLocal session = NewSession();

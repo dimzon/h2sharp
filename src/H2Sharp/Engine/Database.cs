@@ -135,6 +135,33 @@ public sealed partial class Database
     }
 
     /// <summary>
+    /// Whether two identifiers name the same thing.
+    /// </summary>
+    /// <remarks>
+    /// Exact match first, because that is the common case and the fast one; case-insensitive
+    /// only when the database was opened that way. The fold is Java's English one rather than
+    /// .NET's, for the same reason it is everywhere else names are compared: the two runtimes
+    /// fold different letters, and an identifier that matched here and not on the JVM would be
+    /// a table found in one runtime and missing in the other.
+    /// </remarks>
+    /// <param name="a">the first name</param>
+    /// <param name="b">the second name</param>
+    /// <returns>true when they name the same thing</returns>
+    public bool EqualsIdentifiers(string a, string b)
+    {
+        return string.Equals(a, b, StringComparison.Ordinal)
+            || (caseInsensitiveIdentifiers
+                && Util.StringUtils.ToUpperEnglish(a).Equals(Util.StringUtils.ToUpperEnglish(b), StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Whether identifiers compare without case. False, as in the reference, where it comes
+    /// from the database settings: the settings object is not ported, so the default is
+    /// written here and EqualsIdentifiers reads it.
+    /// </summary>
+    private readonly bool caseInsensitiveIdentifiers = false;
+
+    /// <summary>
     /// Gets the schemas of this database.
     /// </summary>
     /// <returns>the schemas</returns>

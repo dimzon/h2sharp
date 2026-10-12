@@ -25,11 +25,15 @@
  *
  * Not ported: every member refuses.
  */
+using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Expressions.Conditions;
+using H2Sharp.Message;
 using H2Sharp.Expressions;
 using H2Sharp.Result;
+
 using H2Sharp.Tables;
 using H2Sharp.Values;
 
@@ -70,7 +74,13 @@ public sealed class Select : Query
 
     private string? forUpdate;
 
-    private TableFilter[]? filters = [];
+    private readonly List<TableFilter> filters = [];
+
+    private readonly List<TableFilter> topFilters = [];
+
+    private Expression? condition;
+
+    private TableFilter? topTableFilter;
 
     /// <summary>
     /// Creates the statement for a session.
@@ -187,7 +197,14 @@ public sealed class Select : Query
 
     /// <summary>Sets the table filters of the plan.</summary>
     /// <param name="filters">the filters</param>
-    public void SetFilters(TableFilter[]? filters) => this.filters = filters;
+    public void SetFilters(TableFilter[]? filters)
+    {
+        this.filters.Clear();
+        if (filters is not null)
+        {
+            this.filters.AddRange(filters);
+        }
+    }
 
     /// <summary>Sets the expressions this statement selects.</summary>
     /// <param name="expressions">the expressions</param>
@@ -206,8 +223,123 @@ public sealed class Select : Query
     public void SetIsDistinct(bool isDistinct) => this.isDistinct = isDistinct;
 
     /// <summary>
-    /// Gets the session this statement runs on.
+    /// Adds a table filter to this query.
     /// </summary>
+    /// <remarks>
+    /// Two filters with the same alias are refused, unless neither has one: tables without
+    /// aliases may share a name across schemas, and an alias is a promise that the name means
+    /// one table. That promise is checked here, when the filter arrives, rather than when the
+    /// query runs — by then the query would have read rows it cannot tell apart.
+    /// </remarks>
+    /// <param name="filter">the filter</param>
+    /// <param name="isTop">whether it reads a top-level table</param>
+    public void AddTableFilter(TableFilter filter, bool isTop)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        Database db = session.GetDatabase();
+        string alias = filter.GetTableAlias();
+        foreach (TableFilter f in filters)
+        {
+            // Tables without aliases are not checked, they may have the same name in different schemas
+            if ((filter.HasAlias() || f.HasAlias()) && db.EqualsIdentifiers(alias, f.GetTableAlias()))
+            {
+                throw DbException.Get(Api.ErrorCode.DuplicateTableAlias1, alias);
+            }
+        }
+
+        filters.Add(filter);
+        if (isTop)
+        {
+            topFilters.Add(filter);
+        }
+    }
+
+    /// <summary>
+    /// Adds a condition to the list of conditions.
+    /// </summary>
+    /// <remarks>
+    /// The first one is kept as written and every later one ANDs onto it, for the same reason
+    /// the filter keeps one condition per row: there is one WHERE clause, and two conditions on
+    /// one row are true together or not at all.
+    /// </remarks>
+    /// <param name="cond">the condition to add</param>
+    public void AddCondition(Expression cond)
+    {
+        ArgumentNullException.ThrowIfNull(cond);
+        condition = condition is null
+            ? cond
+            : new ConditionAndOr(ConditionAndOr.And, cond, condition);
+    }
+
+    /// <summary>
+    /// Gets the condition of the WHERE clause.
+    /// </summary>
+    /// <returns>the condition, or null</returns>
+    public Expression? GetCondition() => condition;
+
+    /// <summary>
+    /// Builds the plan and marks everything in it evaluatable.
+    /// </summary>
+    /// <remarks>
+    /// The index conditions are created first, because the plan is priced on lookups and there
+    /// is nothing to price before they exist. Then the optimizer picks the order, the top
+    /// filter is where the scan starts, and everything is marked evaluatable — except when this
+    /// is only parsing a view, in which case the filters are joined but never prepared: a view
+    /// parsed now runs later, against tables that may have changed since.
+    /// </remarks>
+    /// <param name="parse">whether this is only parsing, without running</param>
+    /// <returns>the cost of the plan</returns>
+    public double PreparePlan(bool parse)
+    {
+        List<TableFilter> topArray = [.. topFilters];
+        foreach (TableFilter t in topArray)
+        {
+            t.CreateIndexConditions();
+            t.SetFullCondition(condition);
+        }
+
+        Optimizer optimizer = new([.. topArray], condition, session);
+        optimizer.Optimize(parse, isSelectCommand: true);
+        topTableFilter = optimizer.GetTopFilter();
+        double planCost = optimizer.GetCost();
+
+        SetEvaluatableRecursive(topTableFilter);
+
+        if (!parse)
+        {
+            topTableFilter!.Prepare();
+        }
+
+        return planCost;
+    }
+
+    /// <summary>
+    /// Marks a filter and everything under it as evaluatable.
+    /// </summary>
+    /// <param name="f">the filter, or null</param>
+    private void SetEvaluatableRecursive(TableFilter? f)
+    {
+        for (; f is not null; f = f.GetJoin())
+        {
+            f.SetEvaluatable(f, true);
+            if (condition is not null)
+            {
+                condition.SetEvaluatable(f, true);
+            }
+
+            TableFilter? n = f.GetNestedJoin();
+            if (n is not null)
+            {
+                SetEvaluatableRecursive(n);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the filter the whole plan hangs off.
+    /// </summary>
+    /// <returns>the top filter, or null before the plan is built</returns>
+    public TableFilter? GetTopFilter() => topTableFilter;
     /// <returns>the session</returns>
     public new SessionLocal GetSession() => session;
 
