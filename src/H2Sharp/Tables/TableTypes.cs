@@ -535,6 +535,135 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
     /// <summary>
     /// Builds a search row for a spatial bound.
     /// </summary>
+    private int inListIndex;
+
+    /// <summary>
+    /// Skips to the next row if one is available.
+    /// </summary>
+    /// <remarks>
+    /// A cursor that has none starts one, and a cursor that is spent is dropped before the next
+    /// is asked for: holding a spent cursor would answer the same last row twice, and starting
+    /// a new one while the old still stands would read two scans as one.
+    /// </remarks>
+    /// <returns>true if another row is available</returns>
+    public bool Next()
+    {
+        while (true)
+        {
+            if (cursor is null)
+            {
+                NextCursor();
+                if (cursor is null)
+                {
+                    return false;
+                }
+            }
+
+            if (cursor.Next())
+            {
+                return true;
+            }
+
+            cursor = null;
+        }
+    }
+
+    /// <summary>
+    /// Points the cursor at the next entry of the IN list or result.
+    /// </summary>
+    /// <remarks>
+    /// NULL entries are skipped without asking: NULL never matches, so starting a scan for one
+    /// would read rows no answer can come from. The list and the result are exclusive — a cursor
+    /// holds one — because an IN over a list and an IN over a query at once would need two
+    /// positions, and there is one.
+    /// </remarks>
+    private void NextCursor()
+    {
+        if (inList is not null)
+        {
+            while (inListIndex < inList.Length)
+            {
+                Values.Value? v = inList[inListIndex++];
+                if (!ReferenceEquals(v, Values.ValueNull.Instance))
+                {
+                    Find(v!);
+                    break;
+                }
+            }
+        }
+        else if (inResult is not null)
+        {
+            while (inResult.Next())
+            {
+                Values.Value? v = inResult.CurrentRow()[0];
+                if (!ReferenceEquals(v, Values.ValueNull.Instance))
+                {
+                    if (inColumn is Column[] columns)
+                    {
+                        v = Column.Convert(session?.CastDataProvider, columns, (Values.ValueRow)v!);
+                    }
+                    else
+                    {
+                        v = ((Column)inColumn!).Convert(session?.CastDataProvider, v!);
+                    }
+
+                    Find(v!);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Points the scan at one value of the IN list.
+    /// </summary>
+    /// <remarks>
+    /// A compound value is converted to the columns' types first, because a list read from
+    /// storage holds values as they were written and the index keeps them as its columns do: an
+    /// unconverted value would miss rows whose stored form differs. A single value goes through
+    /// its column for the same reason.
+    /// </remarks>
+    /// <param name="v">the value</param>
+    private void Find(Values.Value v)
+    {
+        ArgumentNullException.ThrowIfNull(v);
+        if (inColumn is Column[] columns)
+        {
+            Values.ValueRow converted = Column.Convert(session?.CastDataProvider, columns, (Values.ValueRow)v);
+            Values.Value[] values = converted.GetList();
+            for (int i = columns.Length; --i >= 0;)
+            {
+                start?.SetValue(columns[i].GetColumnId(), values[i]);
+            }
+        }
+        else
+        {
+            Column column = (Column)inColumn!;
+            v = column.Convert(session?.CastDataProvider, v);
+            int id = column.GetColumnId();
+            start?.SetValue(id, v);
+        }
+
+        cursor = index?.GetCursor(session!, start, start);
+    }
+
+    /// <summary>
+    /// Skips to the previous row if one is available.
+    /// </summary>
+    /// <remarks>
+    /// It throws, and that is the answer rather than a stub: the reference throws an internal
+    /// error here because a cursor that prepared forward bounds cannot walk them backwards. A
+    /// Previous that answered would walk bounds built for the other direction.
+    /// </remarks>
+    /// <returns>nothing, it throws</returns>
+    public bool Previous()
+    {
+        throw DbException.GetInternalError(ToString() ?? "IndexCursor");
+    }
+
+    /// <summary>
+    /// Builds a search row for a spatial bound.
+    /// </summary>
     /// <remarks>
     /// Not ported. An object that must overlap two others must overlap their union, not their
     /// intersection — which needs the geometry envelope, and there is no geometry here to take
@@ -644,27 +773,6 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
     /// <returns>the search row</returns>
     public Result.SearchRow? GetSearchRow()
         => throw new TODOException("IndexCursor.getSearchRow: the walk is not ported");
-
-    /// <summary>
-    /// Skips to the next row if one is available.
-    /// </summary>
-    /// <remarks>
-    /// Not ported. It is the walk itself, and a Next that answered true without moving would be
-    /// the result set that never ends from above.
-    /// </remarks>
-    /// <returns>true if another row is available</returns>
-    public bool Next()
-        => throw new TODOException("IndexCursor.next: the walk is not ported");
-
-    /// <summary>
-    /// Skips to the previous row if one is available. No filtering is made here.
-    /// </summary>
-    /// <remarks>
-    /// Not ported, for the same reason as <see cref="Next"/>.
-    /// </remarks>
-    /// <returns>true if another row is available</returns>
-    public bool Previous()
-        => throw new TODOException("IndexCursor.previous: the walk is not ported");
 
     /// <summary>
     /// Inserts a row through this cursor.

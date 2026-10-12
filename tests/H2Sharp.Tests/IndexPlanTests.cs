@@ -84,6 +84,71 @@ public sealed class IndexPlanTests
     }
 
     [Fact]
+    public void AnEmptyPrepareWalksNowhere()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T", [id], store, persistData: false);
+            id.SetTable(table, 0);
+
+            // A cursor prepared with no conditions has no bounds and no list: there is nothing
+            // to walk, so Next answers false instead of starting a scan it was never given.
+            // Previous is not a walk at all -- the reference throws an internal error, because
+            // bounds prepared forward cannot be walked backwards.
+            Tables.IndexCursor cursor = new();
+            cursor.Prepare(session, []);
+            Assert.False(cursor.IsAlwaysFalse());
+            Assert.False(cursor.Next());
+            Assert.ThrowsAny<Exception>(() => cursor.Previous());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void AnAlwaysFalseConditionEmptiesTheResult()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T", [id], store, persistData: false);
+            id.SetTable(table, 0);
+
+            Tables.TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
+            var column = new H2Sharp.Expressions.ExpressionColumn(
+                id, filter, 0);
+            var condition = H2Sharp.Indexes.IndexCondition.Get(
+                H2Sharp.Expressions.Conditions.Comparison.False,
+                column,
+                H2Sharp.Expressions.ValueExpression.Get(H2Sharp.Values.ValueBoolean.Get(false)));
+
+            Tables.IndexCursor cursor = new();
+            cursor.Prepare(session, [condition]);
+            Assert.True(cursor.IsAlwaysFalse());
+            Assert.False(cursor.Next());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void AnInOverTwoColumnsNeedsThoseTwoInThatOrder()
     {
         SessionLocal session = NewSession();
