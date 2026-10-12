@@ -30,6 +30,7 @@
 using System;
 using System.Collections.Generic;
 using H2Sharp.Engine;
+using H2Sharp.Message;
 using H2Sharp.Expressions;
 using H2Sharp.Expressions.Conditions;
 using H2Sharp.Result;
@@ -670,6 +671,84 @@ public class TableFilter : ColumnResolver
     /// </remarks>
     /// <returns>the hints, or null when the caller allowed everything</returns>
     public IndexHints? GetIndexHints() => indexHints;
+
+    /// <summary>
+    /// The columns two sides of a NATURAL join or USING share, and what replaces them.
+    /// </summary>
+    /// <remarks>
+    /// A dictionary rather than the reference's linked map, and the difference is on record:
+    /// the reference iterates it in the order the columns were added, which is the order a
+    /// NATURAL join's select list prints them in. Until that list is built, no reader depends
+    /// on the order, and a reader that does will have to revisit this choice.
+    /// </remarks>
+    private Dictionary<Column, Column>? commonJoinColumns;
+
+    private TableFilter? commonJoinColumnsFilter;
+
+    private List<Column>? commonJoinColumnsToExclude;
+
+    /// <summary>
+    /// Adds a column shared by a NATURAL join or USING, and what replaces it.
+    /// </summary>
+    /// <remarks>
+    /// The first call also fixes which filter the replacements come from, and every later call
+    /// must name the same one: a shared column replaced by two different filters is two
+    /// different columns, and the assert that catches it is the reference's, kept as an
+    /// explicit check rather than a debug-only one.
+    /// </remarks>
+    /// <param name="leftColumn">the shared column</param>
+    /// <param name="replacementColumn">what replaces it</param>
+    /// <param name="replacementFilter">where the replacement comes from</param>
+    public void AddCommonJoinColumns(Column leftColumn, Column replacementColumn, TableFilter replacementFilter)
+    {
+        ArgumentNullException.ThrowIfNull(leftColumn);
+        ArgumentNullException.ThrowIfNull(replacementColumn);
+        ArgumentNullException.ThrowIfNull(replacementFilter);
+        if (commonJoinColumns is null)
+        {
+            commonJoinColumns = [];
+            commonJoinColumnsFilter = replacementFilter;
+        }
+        else if (!ReferenceEquals(commonJoinColumnsFilter, replacementFilter))
+        {
+            throw DbException.GetInternalError("common join columns from two filters");
+        }
+
+        commonJoinColumns[leftColumn] = replacementColumn;
+    }
+
+    /// <summary>
+    /// Adds a column to exclude from the shared columns.
+    /// </summary>
+    /// <param name="columnToExclude">the column to exclude</param>
+    public void AddCommonJoinColumnToExclude(Column columnToExclude)
+    {
+        ArgumentNullException.ThrowIfNull(columnToExclude);
+        commonJoinColumnsToExclude ??= [];
+        commonJoinColumnsToExclude.Add(columnToExclude);
+    }
+
+    /// <summary>
+    /// Returns the shared columns and their replacements.
+    /// </summary>
+    /// <returns>the map, or null when there is none</returns>
+    public Dictionary<Column, Column>? GetCommonJoinColumns() => commonJoinColumns;
+
+    /// <summary>
+    /// Returns the filter the replacements come from.
+    /// </summary>
+    /// <returns>the filter, or null when there is none</returns>
+    public TableFilter? GetCommonJoinColumnsFilter() => commonJoinColumnsFilter;
+
+    /// <summary>
+    /// Whether the column is excluded from the shared columns.
+    /// </summary>
+    /// <param name="c">the column</param>
+    /// <returns>true when it is excluded</returns>
+    public bool IsCommonJoinColumnToExclude(Column? c)
+    {
+        return c is not null && commonJoinColumnsToExclude is not null && commonJoinColumnsToExclude.Contains(c);
+    }
 
     /// <returns>the session</returns>
     public SessionLocal GetSession() => session;

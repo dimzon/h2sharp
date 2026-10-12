@@ -327,6 +327,52 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void SharedColumnsFixTheirFilterOnFirstUse()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T", [id], store, persistData: false);
+            id.SetTable(table, 0);
+
+            Tables.TableFilter left = new(session, table, "L", rightsChecked: true, null, 0, null);
+            Tables.TableFilter right = new(session, table, "R", rightsChecked: true, null, 1, null);
+            Tables.TableFilter other = new(session, table, "X", rightsChecked: true, null, 2, null);
+
+            // Nothing shared yet: the map and the filter are both null rather than empty, because
+            // "no shared columns" is an answer and an empty map would make every reader iterate
+            // it to learn the same thing.
+            Assert.Null(left.GetCommonJoinColumns());
+            Assert.Null(left.GetCommonJoinColumnsFilter());
+            Assert.False(left.IsCommonJoinColumnToExclude(id));
+
+            // The first call fixes which filter the replacements come from, and a second filter
+            // naming itself is refused: one shared column replaced by two filters is two
+            // different columns, and the reference catches it with an assert.
+            left.AddCommonJoinColumns(id, id, right);
+            Assert.Same(right, left.GetCommonJoinColumnsFilter());
+            Assert.Same(id, left.GetCommonJoinColumns()![id]);
+            Assert.ThrowsAny<Exception>(() => left.AddCommonJoinColumns(id, id, other));
+
+            // Excluding a column is separate from sharing it: the map keeps the entry, and the
+            // exclusion only says not to use it.
+            left.AddCommonJoinColumnToExclude(id);
+            Assert.True(left.IsCommonJoinColumnToExclude(id));
+            Assert.False(left.IsCommonJoinColumnToExclude(null));
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void HintsAreKeptNotApplied()
     {
         SessionLocal session = NewSession();
