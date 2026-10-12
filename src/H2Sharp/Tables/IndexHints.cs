@@ -34,17 +34,30 @@ public sealed class IndexHints
     private readonly List<string> allowedIndexes;
 
     /// <summary>
-    /// The same names, for lookup. Built once rather than on every call: a hint is asked about
-    /// every candidate index, and allocating a set per question would make the answer cost more
-    /// than the question. The list above keeps the order the names were written in; this keeps
-    /// the fold, because H2 folds every name before it compares it.
+    /// The same names, folded and ready to compare.
     /// </summary>
+    /// <remarks>
+    /// Built once rather than on every call: a hint is asked about every candidate index, and
+    /// allocating a set per question would make the answer cost more than the question. The list
+    /// above keeps the order the names were written in; this one keeps them folded, because the
+    /// fold is the only comparison H2 knows.
+    ///
+    /// Folded with the English rules of the solution rather than compared with
+    /// <c>StringComparer.OrdinalIgnoreCase</c>. Java and .NET fold different letters: the
+    /// reference compares names the way Java does, and a .NET comparison would answer "same"
+    /// where the JVM answers "different" and the other way round, exactly on the names where
+    /// the two runtimes fold differently.
+    /// </remarks>
     private readonly HashSet<string> allowedIndexSet;
 
     private IndexHints(List<string> allowedIndexes)
     {
         this.allowedIndexes = allowedIndexes;
-        allowedIndexSet = new(allowedIndexes, StringComparer.OrdinalIgnoreCase);
+        allowedIndexSet = [];
+        foreach (string name in allowedIndexes)
+        {
+            _ = allowedIndexSet.Add(Util.StringUtils.ToUpperEnglish(name));
+        }
     }
 
     /// <summary>
@@ -80,6 +93,7 @@ public sealed class IndexHints
     /// <returns>whether it was allowed</returns>
     public bool AllowIndex(string? indexName)
     {
-        return indexName is not null && allowedIndexSet.Contains(indexName);
+        return indexName is not null
+            && allowedIndexSet.Contains(Util.StringUtils.ToUpperEnglish(indexName));
     }
 }
