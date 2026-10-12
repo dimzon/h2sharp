@@ -67,6 +67,13 @@ public sealed class Delete : FilteredDataChangeStatement
     /// <inheritdoc/>
     public override bool IsRetryable() => true;
     /// <inheritdoc/>
+    /// <remarks>
+    /// The table is bound here and not at run time. A statement that looked its table up when
+    /// it ran would write to a different table than the one that was named when it was read --
+    /// and would fail after it had already changed something.
+    /// </remarks>
     protected override void DoPrepare()
-        => throw new TODOException("Prepare.doPrepare: the statement is not bound to its table yet");
+    {
+        table = GetTableByName(GetParsedTableName());
+    }
 }

@@ -261,11 +261,25 @@ public sealed class Parser
             case DropTableStatement drop:
                 return PrepareDropTable(current, drop);
             case InsertStatement insert:
-                return new Dml.Insert(current);
+                {
+                    Dml.Insert command = new(current);
+                    command.SetParsedStatement(insert);
+                    return command;
+                }
+
             case UpdateStatement update:
-                return new Dml.Update(current);
+                {
+                    Dml.Update command = new(current);
+                    command.SetParsedStatement(update);
+                    return command;
+                }
+
             case DeleteStatement delete:
-                return new Dml.Delete(current);
+                {
+                    Dml.Delete command = new(current);
+                    command.SetParsedStatement(delete);
+                    return command;
+                }
             case SelectStatement select:
                 return new Query.Select(current);
             case EmptyStatement:

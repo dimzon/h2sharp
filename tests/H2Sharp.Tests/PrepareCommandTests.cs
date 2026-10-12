@@ -61,18 +61,16 @@ public sealed class PrepareCommandTests
     }
 
     [Fact]
-    public void ADataChangeStatementRefusesToPrepareUntilItIsBound()
+    public void ADataChangeStatementFailsOnATableThatIsNotThere()
     {
         SessionLocal session = NewSession();
 
-        // The reference binds a data change statement in prepare(): it is where the statement
-        // reads its own text and finds its table. Here the parser reads the text first and the
-        // statement is not yet handed the result, so preparing refuses -- and refusing is the
-        // honest answer, because a statement that prepared without its table would have nothing
-        // to write to.
-        Assert.Throws<TODOException>(() => session.PrepareCommand("INSERT INTO T VALUES (1)"));
-        Assert.Throws<TODOException>(() => session.PrepareCommand("UPDATE T SET ID = 1"));
-        Assert.Throws<TODOException>(() => session.PrepareCommand("DELETE FROM T"));
+        // This is what preparing is for. "INSERT INTO NOSUCH" has to fail before it has changed
+        // anything; a statement that looked its table up when it ran would have half-applied
+        // itself first.
+        Assert.ThrowsAny<Exception>(() => session.PrepareCommand("INSERT INTO NOSUCH VALUES (1)"));
+        Assert.ThrowsAny<Exception>(() => session.PrepareCommand("UPDATE NOSUCH SET ID = 1"));
+        Assert.ThrowsAny<Exception>(() => session.PrepareCommand("DELETE FROM NOSUCH"));
     }
 
     [Fact]
