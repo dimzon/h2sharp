@@ -94,67 +94,8 @@ public abstract class DataChangeStatement : Prepared
     /// Gets the table this statement changes.
     /// </summary>
     /// <returns>the table</returns>
-    /// <summary>
-    /// The statement the parser read, handed over before the command is prepared.
-    /// </summary>
-    /// <remarks>
-    /// The reference has each command read its own text in its constructor. Here the parser reads
-    /// the text first and the result is given to the command, which is the same decision reached
-    /// by a different road: what matters is that the table is bound while preparing, and not at
-    /// run time — a statement that ran against a table looked up then would write to a different
-    /// table than the one that was named when it was read.
-    /// </remarks>
-    public Statement? ParsedStatement { get; private set; }
-
-    /// <summary>
-    /// Gives the command the statement the parser read.
-    /// </summary>
-    /// <param name="statement">the parsed statement</param>
-    public void SetParsedStatement(Statement statement)
-    {
-        ArgumentNullException.ThrowIfNull(statement);
-        ParsedStatement = statement;
-    }
-
-    /// <summary>
-    /// The table this statement changes, once it has been bound.
-    /// </summary>
-    protected Table? table;
-
-    /// <summary>
-    /// Finds the table a data change statement names, in the session's current schema.
-    /// </summary>
-    /// <remarks>
-    /// A name that names no table is the reference's error and is raised here rather than at
-    /// run time. That is the whole point of preparing: "INSERT INTO NOSUCH" should fail before
-    /// it has begun to change anything, and a statement that waited until it ran would have
-    /// half-applied itself first.
-    /// </remarks>
-    /// <param name="name">the table name</param>
-    /// <returns>the table</returns>
-    protected Table GetTableByName(string name)
-    {
-        ArgumentNullException.ThrowIfNull(name);
-        return GetSession().GetCurrentSchema().GetTableOrView(null, name);
-    }
-
-    /// <summary>
-    /// Gets the name of the table a data change statement names.
-    /// </summary>
-    /// <returns>the name</returns>
-    protected string GetParsedTableName()
-    {
-        return ParsedStatement switch
-        {
-            InsertStatement insert => insert.Name,
-            UpdateStatement update => update.Name,
-            DeleteStatement delete => delete.Name,
-            _ => throw new TODOException("DataChangeStatement.getTableName: not a data change statement"),
-        };
-    }
-
     /// <inheritdoc/>
-    public virtual Table? GetTable() => table;
+    public abstract Table? GetTable();
 
     /// <inheritdoc/>
     public override bool IsTransactional() => true;

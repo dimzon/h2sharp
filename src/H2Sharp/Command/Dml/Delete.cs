@@ -68,12 +68,12 @@ public sealed class Delete : FilteredDataChangeStatement
     public override bool IsRetryable() => true;
     /// <inheritdoc/>
     /// <remarks>
-    /// The table is bound here and not at run time. A statement that looked its table up when
-    /// it ran would write to a different table than the one that was named when it was read --
-    /// and would fail after it had already changed something.
+    /// Not ported. In the reference this is where the statement binds its own text: it holds a
+    /// parser from its constructor and reads itself, so by the time doPrepare runs it already
+    /// has its table, its columns and its rows, and all this has to do is check that each row
+    /// has a value for every column. Here the parser reads the text first and there is no way to
+    /// give that result to the statement, so this refuses rather than binding half of it.
     /// </remarks>
     protected override void DoPrepare()
-    {
-        table = GetTableByName(GetParsedTableName());
-    }
+        => throw new TODOException("DoPrepare: the operator does not read its own text yet");
 }

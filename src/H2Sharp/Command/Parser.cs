@@ -55,19 +55,6 @@ public abstract class Statement
     public abstract int GetCommandType();
 }
 
-/// <summary>A statement that was empty.</summary>
-/// <remarks>
-/// The reference has no such thing: its parser answers an empty statement with a
-/// <c>NoOperation</c> and never builds an intermediate one. This is the parser's own mark of
-/// "there was nothing to read", and it turns into a <c>NoOperation</c> on the way out, so
-/// nothing downstream ever sees it.
-/// </remarks>
-public sealed class EmptyStatement : Statement
-{
-    /// <inheritdoc/>
-    public override int GetCommandType() => CommandInterface.NoOperation;
-}
-
 /// <summary>One column of a CREATE TABLE.</summary>
 /// <param name="Name">the column name</param>
 /// <param name="Type">the type as it was written</param>
@@ -261,29 +248,13 @@ public sealed class Parser
             case DropTableStatement drop:
                 return PrepareDropTable(current, drop);
             case InsertStatement insert:
-                {
-                    Dml.Insert command = new(current);
-                    command.SetParsedStatement(insert);
-                    return command;
-                }
-
+                return new Dml.Insert(current);
             case UpdateStatement update:
-                {
-                    Dml.Update command = new(current);
-                    command.SetParsedStatement(update);
-                    return command;
-                }
-
+                return new Dml.Update(current);
             case DeleteStatement delete:
-                {
-                    Dml.Delete command = new(current);
-                    command.SetParsedStatement(delete);
-                    return command;
-                }
+                return new Dml.Delete(current);
             case SelectStatement select:
                 return new Query.Select(current);
-            case EmptyStatement:
-                return new Dml.NoOperation(current);
             default:
                 return new Dml.NoOperation(current);
         }
@@ -418,15 +389,6 @@ public sealed class Parser
 
     private Statement ReadStatement()
     {
-        // A statement may be empty: the text was ";" or only a comment. The reference reads the
-        // first token and switches on it, and the switch answers END_OF_INPUT and SEMICOLON with
-        // a NoOperation -- so an empty statement is a statement that runs and changes nothing,
-        // rather than something downstream has to know how to cope with.
-        if (CurrentType == Token.EndOfInput || CurrentType == Token.Semicolon)
-        {
-            return new EmptyStatement();
-        }
-
         if (IsWord("CREATE", consume: false))
         {
             Read();

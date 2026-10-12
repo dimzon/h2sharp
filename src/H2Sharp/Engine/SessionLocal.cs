@@ -290,6 +290,16 @@ public sealed class SessionLocal : Session
     public override H2Sharp.Command.CommandInterface PrepareCommand(string sql)
     {
         ArgumentNullException.ThrowIfNull(sql);
+
+        // First, and before anything else: a session that has been closed prepares nothing. This
+        // is the reference's first line of prepareLocal, and it is first for a reason — every
+        // step below it, the cache included, would otherwise hand a closed session a command it
+        // could not run and leave the failure somewhere further along.
+        if (IsClosed())
+        {
+            throw DbException.Get(Api.ErrorCode.ConnectionBroken1, "session closed");
+        }
+
         // The reference reads the statement and wraps it in a CommandContainer here. Same three
         // steps, and the cache around them is where a repeated statement is meant to become
         // cheap: a command is only handed back once it has been closed, so nothing that is still

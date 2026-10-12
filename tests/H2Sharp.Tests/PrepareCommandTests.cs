@@ -61,16 +61,19 @@ public sealed class PrepareCommandTests
     }
 
     [Fact]
-    public void ADataChangeStatementFailsOnATableThatIsNotThere()
+    public void ADataChangeStatementIsNotReadyToPrepareYet()
     {
         SessionLocal session = NewSession();
 
-        // This is what preparing is for. "INSERT INTO NOSUCH" has to fail before it has changed
-        // anything; a statement that looked its table up when it ran would have half-applied
-        // itself first.
-        Assert.ThrowsAny<Exception>(() => session.PrepareCommand("INSERT INTO NOSUCH VALUES (1)"));
-        Assert.ThrowsAny<Exception>(() => session.PrepareCommand("UPDATE NOSUCH SET ID = 1"));
-        Assert.ThrowsAny<Exception>(() => session.PrepareCommand("DELETE FROM NOSUCH"));
+        // The reference binds a data change statement in doPrepare, and by then the statement
+        // has already read its own text: it holds a parser from its constructor, so it has its
+        // table, its columns and its rows before anything is checked. Here the parser reads the
+        // text first and there is no way to hand that result to the statement, so preparing
+        // refuses. That is the honest state -- a statement that prepared with half of itself
+        // bound would be the thing this project forbids.
+        Assert.Throws<TODOException>(() => session.PrepareCommand("INSERT INTO T VALUES (1)"));
+        Assert.Throws<TODOException>(() => session.PrepareCommand("UPDATE T SET ID = 1"));
+        Assert.Throws<TODOException>(() => session.PrepareCommand("DELETE FROM T"));
     }
 
     [Fact]
@@ -130,24 +133,6 @@ public sealed class PrepareCommandTests
 
         _ = session.GetDatabase().GetNextModificationMetaId();
         Assert.NotSame(first, session.PrepareCommand("SELECT ID FROM T"));
-    }
-
-    [Fact]
-    public void AnEmptyStatementIsAStatementThatDoesNothing()
-    {
-        SessionLocal session = NewSession();
-
-        // ";" is a statement in every SQL dialect, and something has to come back for it:
-        // everything downstream asks the statement what it is.
-        NoOperation empty = Assert.IsType<NoOperation>(
-            AsContainer(session.PrepareCommand(";")).GetPreparedCommand());
-        Assert.Equal(0, empty.Update());
-        Assert.Equal(CommandInterface.NoOperation, empty.GetCommandType());
-        Assert.True(empty.IsReadOnly());
-
-        // No columns to describe, and a result with no columns would be a thing a caller could
-        // read rows from and find none -- a different answer from "there is no result".
-        Assert.Null(empty.QueryMeta());
     }
 
     [Fact]

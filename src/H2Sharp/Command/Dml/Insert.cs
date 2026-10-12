@@ -18,6 +18,7 @@
  * itself needs the table's transaction, the identity handling and the duplicate-key path, none
  * of which exists here yet.
  */
+using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
@@ -51,11 +52,30 @@ public sealed class Insert : CommandWithValues
 
 
     /// <summary>
+    /// The table this statement writes into, set by the statement's own parser.
+    /// </summary>
+    /// <returns>the table, or null before it has been bound</returns>
+    public override Table? GetTable() => table;
+
+    /// <summary>
+    /// The table this statement writes into.
+    /// </summary>
+    /// <remarks>
+    /// Set by the statement's own parser, as in the reference — which is why it is null here:
+    /// that parser has not been ported, and a statement that guessed its table would write to
+    /// a table nobody named.
+    /// </remarks>
+    private Table? table;
+
+    /// <summary>
     /// Sets the table the rows go into.
     /// </summary>
     /// <param name="table">the table</param>
     public void SetTable(Table table)
-        => throw new TODOException("Insert.setTable: not ported");
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        this.table = table;
+    }
 
     /// <summary>
     /// Sets the columns the values are for.
@@ -153,12 +173,12 @@ public sealed class Insert : CommandWithValues
     public override bool IsRetryable() => true;
     /// <inheritdoc/>
     /// <remarks>
-    /// The table is bound here and not at run time. A statement that looked its table up when
-    /// it ran would write to a different table than the one that was named when it was read --
-    /// and would fail after it had already changed something.
+    /// Not ported. In the reference this is where the statement binds its own text: it holds a
+    /// parser from its constructor and reads itself, so by the time doPrepare runs it already
+    /// has its table, its columns and its rows, and all this has to do is check that each row
+    /// has a value for every column. Here the parser reads the text first and there is no way to
+    /// give that result to the statement, so this refuses rather than binding half of it.
     /// </remarks>
     protected override void DoPrepare()
-    {
-        table = GetTableByName(GetParsedTableName());
-    }
+        => throw new TODOException("DoPrepare: the operator does not read its own text yet");
 }
