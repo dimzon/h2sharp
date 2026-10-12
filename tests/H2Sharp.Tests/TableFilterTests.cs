@@ -128,4 +128,36 @@ public sealed class TableFilterTests
             store.Dispose();
         }
     }
+
+    [Fact]
+    public void ConditionsAccumulateSeparately()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), null, 3, "TEST",
+                [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // The first condition is kept as written and every later one ANDs onto it, so that
+            // there is one condition per row. A join condition and a filter condition are kept
+            // on different piles, because they are answered at different moments -- and a test
+            // that only added one would never see whether the second landed on the right pile.
+            TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
+            var first = H2Sharp.Expressions.ValueExpression.Get(H2Sharp.Values.ValueBoolean.Get(true));
+            var second = H2Sharp.Expressions.ValueExpression.Get(H2Sharp.Values.ValueBoolean.Get(false));
+
+            filter.AddFilterCondition(first, isJoin: false);
+            filter.AddFilterCondition(second, isJoin: false);
+            filter.AddFilterCondition(first, isJoin: true);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
 }

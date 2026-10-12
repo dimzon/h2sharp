@@ -31,6 +31,7 @@ using System;
 using System.Collections.Generic;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
+using H2Sharp.Expressions.Conditions;
 using H2Sharp.Result;
 using H2Sharp.Values;
 
@@ -76,11 +77,22 @@ public class TableFilter : ColumnResolver
     /// <summary>
     /// The index conditions used for direct index lookup (start or end).
     /// </summary>
-    /// <remarks>
-    /// Held from the start because the reference holds them from the start. They are filled by
-    /// <c>AddIndexCondition</c> as the query is read, which is the next member to be ported.
-    /// </remarks>
     private readonly List<IndexCondition> indexConditions = [];
+
+    /// <summary>
+    /// Adds an index condition, to be used for direct index lookup.
+    /// </summary>
+    /// <remarks>
+    /// It is only held here. Whether it becomes a lookup or a scan is decided later, when the
+    /// plan is chosen — holding it now and using it then is what keeps a condition on an indexed
+    /// column from being answered by reading the whole table.
+    /// </remarks>
+    /// <param name="condition">the condition</param>
+    public void AddIndexCondition(IndexCondition condition)
+    {
+        ArgumentNullException.ThrowIfNull(condition);
+        indexConditions.Add(condition);
+    }
 
     private readonly int hashCode;
 
@@ -232,17 +244,37 @@ public class TableFilter : ColumnResolver
     /// <inheritdoc/>
     public override bool Equals(object? obj) => ReferenceEquals(this, obj);
 
+    private Expression? filterCondition;
+
+    private Expression? joinCondition;
+
     /// <summary>
-    /// Adds a condition to the filter, to be answered without reading a row or not.
+    /// Adds a filter condition.
     /// </summary>
     /// <remarks>
-    /// Not ported. It is where the query hands the filter the conditions it will have to answer,
-    /// and a filter that swallowed them would answer every row in and every condition out.
+    /// The first one is kept as it was written; every later one is ANDed onto it. That is not
+    /// an optimisation, it is how the filter answers: there is one condition to check per row,
+    /// and two conditions on one row are true together or not at all. A join condition and a
+    /// filter condition are kept separately because they are answered at different moments — the
+    /// join decides which rows pair up, the filter decides which of the pairs survive.
     /// </remarks>
     /// <param name="condition">the condition</param>
     /// <param name="isJoin">whether this is part of the join</param>
     public void AddFilterCondition(Expression? condition, bool isJoin)
-        => throw new TODOException("TableFilter.addFilterCondition: the planner keeps them");
+    {
+        if (isJoin)
+        {
+            joinCondition = joinCondition is null
+                ? condition
+                : new ConditionAndOr(ConditionAndOr.And, joinCondition, condition!);
+        }
+        else
+        {
+            filterCondition = filterCondition is null
+                ? condition
+                : new ConditionAndOr(ConditionAndOr.And, filterCondition, condition!);
+        }
+    }
 
     /// <summary>
     /// Gets the session this filter runs on.
