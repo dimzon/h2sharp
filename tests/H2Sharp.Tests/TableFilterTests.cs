@@ -373,6 +373,48 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void DerivedNamesMustMatchAndNotRepeat()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("A", Values.TypeInfo.TypeInteger, null, 0),
+                 new Tables.Column("B", Values.TypeInfo.TypeInteger, null, 1)],
+                store, persistData: false);
+
+            Tables.TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
+            Assert.False(filter.HasDerivedColumnList());
+
+            // The wrong length leaves columns unnamed, and a repeated name makes two columns
+            // unfindable: both are refused here, while the query has read nothing yet, rather
+            // than when the missing name is looked up.
+            Assert.ThrowsAny<Exception>(() => filter.SetDerivedColumns(["X"]));
+            Assert.ThrowsAny<Exception>(() => filter.SetDerivedColumns(["X", "X"]));
+            Assert.False(filter.HasDerivedColumnList());
+
+            filter.SetDerivedColumns(["X", "Y"]);
+            Assert.True(filter.HasDerivedColumnList());
+
+            // Finding by those names is FindColumn's own member, and it needs the database's
+            // identifier comparison plus the table's own lookup -- neither of which is ported.
+            // What is asserted here is the list itself: it is accepted exactly when it names
+            // every column once, and the two refusals above are the reference's errors rather
+            // than something the lookup would have to invent later.
+            Assert.ThrowsAny<Exception>(() => filter.FindColumn("X"));
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void HintsAreKeptNotApplied()
     {
         SessionLocal session = NewSession();

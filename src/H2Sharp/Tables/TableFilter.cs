@@ -673,6 +673,61 @@ public class TableFilter : ColumnResolver
     public IndexHints? GetIndexHints() => indexHints;
 
     /// <summary>
+    /// The names a derived table gives its own columns, and which column each name means.
+    /// </summary>
+    /// <remarks>
+    /// A dictionary rather than the reference's linked map, with the same caveat as the shared
+    /// columns above: insertion order is only read when the select list is built, which is not
+    /// ported, and a reader that needs it will revisit this choice.
+    /// </remarks>
+    private Dictionary<Column, string>? derivedColumnMap;
+
+    /// <summary>
+    /// Whether this filter reads through names of its own rather than the table's.
+    /// </summary>
+    /// <returns>true when it has a derived column list</returns>
+    public bool HasDerivedColumnList() => derivedColumnMap is not null;
+
+    /// <summary>
+    /// Sets the names this filter's columns are known by.
+    /// </summary>
+    /// <remarks>
+    /// The count must match the columns, and no two names may be the same: a derived list that
+    /// renamed two columns to one name would make both unfindable, and a list of the wrong
+    /// length would leave columns unnamed. Both are the reference's errors, raised here rather
+    /// than when the missing name is looked up — by then the query would have read rows it
+    /// cannot name.
+    /// </remarks>
+    /// <param name="derivedColumnNames">the names, in column order</param>
+    public void SetDerivedColumns(List<string> derivedColumnNames)
+    {
+        ArgumentNullException.ThrowIfNull(derivedColumnNames);
+        Column[] columns = GetColumns();
+        int count = columns.Length;
+        if (count != derivedColumnNames.Count)
+        {
+            throw DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
+        }
+
+        Dictionary<Column, string> map = [];
+        for (int i = 0; i < count; i++)
+        {
+            string alias = derivedColumnNames[i];
+            for (int j = 0; j < i; j++)
+            {
+                if (alias.Equals(derivedColumnNames[j], StringComparison.Ordinal))
+                {
+                    throw DbException.Get(Api.ErrorCode.DuplicateColumnName1, alias);
+                }
+            }
+
+            map[columns[i]] = alias;
+        }
+
+        derivedColumnMap = map;
+    }
+
+    /// <summary>
     /// The columns two sides of a NATURAL join or USING share, and what replaces them.
     /// </summary>
     /// <remarks>
