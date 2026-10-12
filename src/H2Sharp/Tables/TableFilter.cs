@@ -390,6 +390,31 @@ public class TableFilter : ColumnResolver
 
     private readonly IndexHints? indexHints;
 
+    private H2Sharp.Indexes.Index? index;
+
+    /// <summary>
+    /// Sets the index this filter reads, and points the cursor at it.
+    /// </summary>
+    /// <remarks>
+    /// Two assignments and neither is optional. The filter answers which index it reads and the
+    /// cursor does the reading — a filter that kept one and let the cursor walk another would
+    /// answer about an index it never read.
+    /// </remarks>
+    /// <param name="index">the index</param>
+    /// <param name="reverse">whether to walk it backwards</param>
+    public void SetIndex(H2Sharp.Indexes.Index index, bool reverse)
+    {
+        ArgumentNullException.ThrowIfNull(index);
+        this.index = index;
+        cursor.SetIndex(index, reverse);
+    }
+
+    /// <summary>
+    /// Gets the index this filter reads.
+    /// </summary>
+    /// <returns>the index, or null when the plan has not chosen one</returns>
+    public H2Sharp.Indexes.Index? GetIndex() => index;
+
     /// <summary>
     /// The filter used to walk through the index.
     /// </summary>

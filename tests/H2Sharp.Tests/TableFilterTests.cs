@@ -446,6 +446,40 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void TheFilterAnswersTheIndexItWasGiven()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // No plan has chosen anything, so there is no index to answer with -- and null is
+            // the answer, not a failure to prepare one.
+            Tables.TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
+            Assert.Null(filter.GetIndex());
+
+            // Setting one answers it back, and points the cursor at it in the same breath: the
+            // filter answers which index it reads and the cursor does the reading, and keeping
+            // one while the other walked elsewhere would answer about an index never read.
+            H2Sharp.Indexes.Index? primary = table.GetPrimaryKey();
+            Assert.NotNull(primary);
+            filter.SetIndex(primary, reverse: false);
+            Assert.Same(primary, filter.GetIndex());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void HintsAreKeptNotApplied()
     {
         SessionLocal session = NewSession();
