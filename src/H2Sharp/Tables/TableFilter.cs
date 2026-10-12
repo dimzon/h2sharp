@@ -276,9 +276,58 @@ public class TableFilter : ColumnResolver
         }
     }
 
+    private bool evaluatable;
+
     /// <summary>
-    /// Gets the condition this filter joins on.
+    /// Marks this filter and everything reachable from it as evaluatable or not.
     /// </summary>
+    /// <remarks>
+    /// The flag goes to the filter itself, to both of its conditions, to the nested join — but
+    /// only when this *is* the filter being marked, because a nested join belongs to the join
+    /// it sits in and enabling a filter of a joined filter must not switch it on — and then to
+    /// the join. That asymmetry is the whole content of this method: a blanket "mark
+    /// everything" would enable filters the query never asked to evaluate.
+    /// </remarks>
+    /// <param name="filter">the filter the marking started from</param>
+    /// <param name="b">whether it is evaluatable</param>
+    public void SetEvaluatable(TableFilter filter, bool b)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        filter.SetEvaluatable(b);
+        if (filterCondition is not null)
+        {
+            filterCondition.SetEvaluatable(filter, b);
+        }
+
+        if (joinCondition is not null)
+        {
+            joinCondition.SetEvaluatable(filter, b);
+        }
+
+        if (nestedJoin is not null)
+        {
+            // don't enable / disable the nested join filters
+            // if enabling a filter in a joined filter
+            if (this == filter)
+            {
+                nestedJoin.SetEvaluatable(nestedJoin, b);
+            }
+        }
+
+        if (join is not null)
+        {
+            join.SetEvaluatable(filter, b);
+        }
+    }
+
+    /// <summary>
+    /// Sets whether this filter can be evaluated without reading a row.
+    /// </summary>
+    /// <param name="evaluatable">true when it can</param>
+    public void SetEvaluatable(bool evaluatable)
+    {
+        this.evaluatable = evaluatable;
+    }
     /// <remarks>
     /// It is kept apart from the filter condition because the two are answered at different
     /// moments: the join decides which rows pair up, the filter which of the pairs survive. A
