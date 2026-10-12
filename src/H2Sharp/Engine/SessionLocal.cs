@@ -139,6 +139,8 @@ public sealed class SessionLocal : Session
     {
         this.database = database;
         this.userName = userName;
+        Schemas.Schema? main = database.GetMainSchema();
+        currentSchemaName = main is not null ? main.GetName() : H2Sharp.Engine.Constants.SchemaMain;
         database.AddSession(this);
     }
 
@@ -442,16 +444,54 @@ public sealed class SessionLocal : Session
     /// <summary>
     /// Sets the schema that unqualified names are read from.
     /// </summary>
+    /// <remarks>
+    /// The reference stores the *name*, not the schema, and that is deliberate: the schema may
+    /// be dropped and recreated while this session is open, and a session holding the old object
+    /// would go on using a schema that no longer exists. The name is looked up when it is needed.
+    /// </remarks>
     /// <param name="schema">the schema name</param>
     public override void SetCurrentSchemaName(string schema)
-        => throw new TODOException("SessionLocal.setCurrentSchemaName: Schema is not ported");
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        currentSchemaName = GetDatabase().GetSchema(schema).GetName();
+    }
 
     /// <summary>
     /// Gets the schema that unqualified names are read from.
     /// </summary>
     /// <returns>the schema name</returns>
     public override string GetCurrentSchemaName()
-        => throw new TODOException("SessionLocal.getCurrentSchemaName: Schema is not ported");
+    {
+        return currentSchemaName;
+    }
+
+    /// <summary>
+    /// Gets the schema that unqualified names are read from.
+    /// </summary>
+    /// <returns>the schema</returns>
+    public H2Sharp.Schemas.Schema GetCurrentSchema()
+    {
+        return GetDatabase().GetSchema(currentSchemaName);
+    }
+
+    /// <summary>
+    /// Sets the schema by object.
+    /// </summary>
+    /// <param name="schema">the schema</param>
+    public void SetCurrentSchema(H2Sharp.Schemas.Schema schema)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        currentSchemaName = schema.GetName();
+    }
+
+    /// <summary>
+    /// The name of the schema unqualified names are read from.
+    /// </summary>
+    /// <remarks>
+    /// The main schema of the database, or the system identifier for it. It is a *name* and not
+    /// a schema on purpose, and the reason is written on <see cref="SetCurrentSchemaName"/>.
+    /// </remarks>
+    private string currentSchemaName;
 
     /// <summary>
     /// Sets the network connection information.

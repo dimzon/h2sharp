@@ -314,15 +314,13 @@ public sealed class Parser
     /// The schema a statement is read against.
     /// </summary>
     /// <remarks>
-    /// The reference asks the session, and the session knows it because the connection string
-    /// named it. That part is not ported — a session here has no current schema — so this refuses
-    /// rather than picking one: a DDL statement prepared against the wrong schema would create
-    /// its table somewhere nobody asked for.
+    /// The reference asks the session, and the session knows it because the database named one
+    /// when it opened. A DDL statement prepared against the wrong schema would create its table
+    /// somewhere nobody asked for, which is why this asks rather than picking.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <returns>the schema</returns>
-    private Schemas.Schema CurrentSchema(SessionLocal session)
-        => throw new TODOException("Parser.getCurrentSchema: a session has no current schema yet");
+    private Schemas.Schema CurrentSchema(SessionLocal session) => session.GetCurrentSchema();
 
     private Parser(string sql, CastDataProvider provider, List<Token> tokens)
         : this(sql, provider, tokens, null)

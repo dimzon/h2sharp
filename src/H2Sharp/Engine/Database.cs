@@ -56,6 +56,96 @@ public sealed partial class Database
 
     private long modificationMetaId;
 
+    /// <summary>
+    /// The schemas of this database, by name.
+    /// </summary>
+    /// <remarks>
+    /// Case-insensitive, as every name in H2 is: the fold is the database's, not the current
+    /// culture's. It is a plain dictionary under the lock rather than a concurrent one, because
+    /// the reference locks the database around schema changes and a lookup that raced a CREATE
+    /// SCHEMA would be a lookup that answered differently on two threads at the same moment.
+    /// </remarks>
+    private readonly Dictionary<string, Schemas.Schema> schemas = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The schema new objects go into when the session has not chosen another.
+    /// </summary>
+    private Schemas.Schema? mainSchema;
+
+    /// <summary>
+    /// Finds a schema.
+    /// </summary>
+    /// <param name="name">the schema name</param>
+    /// <returns>the schema, or null</returns>
+    public Schemas.Schema? FindSchema(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        lock (syncRoot)
+        {
+            return schemas.TryGetValue(name, out Schemas.Schema? schema) ? schema : null;
+        }
+    }
+
+    /// <summary>
+    /// Gets a schema, or fails with the error the reference fails with.
+    /// </summary>
+    /// <param name="name">the schema name</param>
+    /// <returns>the schema</returns>
+    public Schemas.Schema GetSchema(string name)
+    {
+        return FindSchema(name) ?? throw DbException.Get(Api.ErrorCode.SchemaNotFound1, name);
+    }
+
+    /// <summary>
+    /// Adds a schema.
+    /// </summary>
+    /// <param name="schema">the schema</param>
+    public void AddSchema(Schemas.Schema schema)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        lock (syncRoot)
+        {
+            schemas[schema.GetName()] = schema;
+        }
+    }
+
+    /// <summary>
+    /// Gets the schema new objects go into, or null before there is one.
+    /// </summary>
+    /// <returns>the main schema, or null</returns>
+    public Schemas.Schema? GetMainSchema()
+    {
+        lock (syncRoot)
+        {
+            return mainSchema;
+        }
+    }
+
+    /// <summary>
+    /// Sets the schema new objects go into.
+    /// </summary>
+    /// <param name="schema">the schema</param>
+    public void SetMainSchema(Schemas.Schema schema)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        lock (syncRoot)
+        {
+            mainSchema = schema;
+        }
+    }
+
+    /// <summary>
+    /// Gets the schemas of this database.
+    /// </summary>
+    /// <returns>the schemas</returns>
+    public IEnumerable<Schemas.Schema> GetSchemas()
+    {
+        lock (syncRoot)
+        {
+            return [.. schemas.Values];
+        }
+    }
+
     private bool closing;
 
     /// <summary>
@@ -104,6 +194,14 @@ public sealed partial class Database
         name = connectionInfo.GetName();
         memory = !connectionInfo.IsPersistent();
         objectId = FirstObjectId;
+
+        // The main schema exists from the moment the database does, before anybody connects. A
+        // session opening against a database with no schema would have nothing to create its
+        // first object in, and the reference names PUBLIC here rather than making the first
+        // statement do it.
+        Schemas.Schema main = new(this, AllocateObjectId(), Constants.SchemaMain, system: false);
+        AddSchema(main);
+        SetMainSchema(main);
     }
 
     /// <summary>

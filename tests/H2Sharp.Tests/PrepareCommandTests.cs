@@ -153,15 +153,41 @@ public sealed class PrepareCommandTests
     }
 
     [Fact]
-    public void ACreatedTableKnowsItsName()
+    public void ADdlStatementPreparesAgainstTheCurrentSchema()
     {
         SessionLocal session = NewSession();
 
-        // The DDL statements need a schema, and a session has none yet, so this refuses rather
-        // than picking one. What is checked here is that it refuses *there* and not earlier:
-        // a statement prepared against the wrong schema would create its table somewhere nobody
-        // asked for.
-        Assert.Throws<TODOException>(() => session.PrepareCommand("CREATE TABLE PERSON(ID INT)"));
+        // The statement is prepared against the schema the session is reading. That is the check
+        // that matters: a DDL statement prepared against the wrong schema would create its table
+        // somewhere nobody asked for. The reference keeps the schema on the statement and hides
+        // it, so what is asserted here is that preparation succeeds and says what it is -- the
+        // schema itself is checked on the session below.
+        CreateTable create = Assert.IsType<CreateTable>(
+            AsContainer(session.PrepareCommand("CREATE TABLE PERSON(ID INT PRIMARY KEY)")).GetPreparedCommand());
+        Assert.Equal(CommandInterface.CreateTable, create.GetCommandType());
+
+        // A create or a drop is not transactional, which is what makes the wrapper commit before
+        // it runs and leave the transaction alone afterwards.
+        Assert.False(create.IsTransactional());
+        Assert.False(create.IsReadOnly());
+
+        DropTable drop = Assert.IsType<DropTable>(
+            AsContainer(session.PrepareCommand("DROP TABLE PERSON")).GetPreparedCommand());
+        Assert.Equal(CommandInterface.DropTable, drop.GetCommandType());
+        Assert.False(drop.IsTransactional());
+    }
+
+    [Fact]
+    public void TheCurrentSchemaIsTheDatabasesMainSchema()
+    {
+        SessionLocal session = NewSession();
+
+        Assert.Equal("PUBLIC", session.GetCurrentSchemaName());
+        Assert.Same(session.GetDatabase().GetMainSchema(), session.GetCurrentSchema());
+
+        // A schema that is not there is the reference's error, and not a null that a caller has
+        // to check for.
+        Assert.ThrowsAny<Exception>(() => session.SetCurrentSchemaName("NOPE"));
     }
 
     private static CommandContainer AsContainer(CommandInterface command) => (CommandContainer)command;
