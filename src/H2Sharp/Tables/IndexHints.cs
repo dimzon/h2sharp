@@ -33,9 +33,18 @@ public sealed class IndexHints
 {
     private readonly List<string> allowedIndexes;
 
+    /// <summary>
+    /// The same names, for lookup. Built once rather than on every call: a hint is asked about
+    /// every candidate index, and allocating a set per question would make the answer cost more
+    /// than the question. The list above keeps the order the names were written in; this keeps
+    /// the fold, because H2 folds every name before it compares it.
+    /// </summary>
+    private readonly HashSet<string> allowedIndexSet;
+
     private IndexHints(List<string> allowedIndexes)
     {
         this.allowedIndexes = allowedIndexes;
+        allowedIndexSet = new(allowedIndexes, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -71,7 +80,6 @@ public sealed class IndexHints
     /// <returns>whether it was allowed</returns>
     public bool AllowIndex(string? indexName)
     {
-        return indexName is not null
-            && new HashSet<string>(allowedIndexes, StringComparer.OrdinalIgnoreCase).Contains(indexName);
+        return indexName is not null && allowedIndexSet.Contains(indexName);
     }
 }

@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using H2Sharp.Result;
 using H2Sharp.Tables;
 using H2Sharp.Values;
@@ -44,9 +45,13 @@ public sealed class SessionLocal : Session
     /// catalogue, and this one is for things that live inside a statement — table filters. A
     /// filter's hash is its identity among the query's own filters, and it must not spend an id
     /// a catalogue object would need.
+    ///
+    /// Atomic, although the reference's own counter is not. The reference touches it under the
+    /// session lock, which this port does not hold everywhere the counter is needed — and two
+    /// filters with one hash would be one filter too few for the query that holds them both.
     /// </remarks>
     /// <returns>the next id</returns>
-    public int NextObjectId() => objectId++;
+    public int NextObjectId() => Interlocked.Increment(ref objectId) - 1;
 
     private int objectId;
 
