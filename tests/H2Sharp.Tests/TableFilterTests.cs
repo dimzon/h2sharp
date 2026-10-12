@@ -155,6 +155,18 @@ public sealed class TableFilterTests
             a.Visit(new AliasCollector(seen));
             Assert.Equal(["A", "B", "N", "C"], seen);
 
+            // A condition over the whole join lands on every filter of the chain: it constrains
+            // rows no single filter sees alone. The field has no reader -- the reference reads it
+            // in optimizeFullCondition, which is not ported -- so what is asserted is the walk
+            // itself: over three links and a nested join, without breaking the chain that the
+            // next visit still sees whole.
+            var whole = H2Sharp.Expressions.ValueExpression.Get(H2Sharp.Values.ValueBoolean.Get(true));
+            a.SetFullCondition(whole);
+
+            List<string> again = [];
+            a.Visit(new AliasCollector(again));
+            Assert.Equal(["A", "B", "N", "C"], again);
+
             // Removing the join drops the link and nothing else, and removing the condition
             // drops only the condition: the pairing is kept so that the next try starts from
             // the same tables.

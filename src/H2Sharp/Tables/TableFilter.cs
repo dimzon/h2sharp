@@ -479,6 +479,27 @@ public class TableFilter : ColumnResolver
 
     private TableFilter? nestedJoin;
 
+    private Expression? fullCondition;
+
+    /// <summary>
+    /// Sets the condition over the whole join.
+    /// </summary>
+    /// <remarks>
+    /// It lands here and on every filter this one is joined to, because a condition over the
+    /// whole join constrains rows no single filter can see alone. A condition that stayed on one
+    /// filter would be asked of rows outside its join, which is a different question with a
+    /// different answer.
+    /// </remarks>
+    /// <param name="condition">the condition</param>
+    public void SetFullCondition(Expression? condition)
+    {
+        fullCondition = condition;
+        if (join is not null)
+        {
+            join.SetFullCondition(condition);
+        }
+    }
+
     /// <summary>
     /// Sets the filter this one is nested inside.
     /// </summary>
