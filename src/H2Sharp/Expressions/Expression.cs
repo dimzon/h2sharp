@@ -493,7 +493,7 @@ public abstract class Expression
     {
         if (!addedToFilter && IsEverything(ExpressionVisitor.EvaluableVisitor))
         {
-            _ = filter.AddFilterCondition(this, false);
+            filter.AddFilterCondition(this, false);
             addedToFilter = true;
         }
     }

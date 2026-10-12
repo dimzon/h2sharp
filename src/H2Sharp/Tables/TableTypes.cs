@@ -116,51 +116,6 @@ public class IndexColumn
 }
 
 /// <summary>
-/// A filter on a table, which is a table plus the state of the current row.
-/// </summary>
-public class TableFilter
-{
-    private readonly Table table;
-
-    /// <summary>
-    /// Creates a table filter.
-    /// </summary>
-    /// <param name="table">the table</param>
-    public TableFilter(Table table)
-    {
-        this.table = table;
-    }
-
-    /// <summary>
-    /// Adds a condition to this filter that can be evaluated without reading a row.
-    /// </summary>
-    /// <param name="condition">the condition</param>
-    /// <param name="isEvaluable">whether the condition is evaluatable</param>
-    /// <returns>this filter</returns>
-    public virtual TableFilter AddFilterCondition(Expressions.Expression condition, bool isEvaluable)
-    {
-        return this;
-    }
-
-    /// <summary>
-    /// Gets the columns of the table this filter reads.
-    /// </summary>
-    /// <returns>the columns</returns>
-    public virtual Column[] GetColumns()
-    {
-        return table.GetColumns();
-    }
-
-    /// <summary>
-    /// Gets the table.
-    /// </summary>
-    public Table GetTable()
-    {
-        return table;
-    }
-}
-
-/// <summary>
 /// A cursor over an index.
 /// </summary>
 public abstract class IndexCursor

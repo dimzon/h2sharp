@@ -1,0 +1,131 @@
+/*
+ * Copyright 2026 H2Sharp contributors.
+ * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
+ *
+ * The foundation of a table filter: one object per *use* of a table.
+ *
+ * "SELECT * FROM TEST T1, TEST T2" has two filters over one table, each with its own alias, its
+ * own position and its own identity, because each is read independently and a column reference
+ * has to say which of them it means. A port that kept one object per table would make T1.NAME
+ * and T2.NAME the same column, and no test with a single table in FROM would notice.
+ *
+ * The constructor checks the right to read the table unless the caller says it was already
+ * checked. That is where a statement that names a table it may not read fails — before the table
+ * would be opened, because a check at run time would have half-read it first.
+ */
+using System;
+using H2Sharp.Engine;
+using H2Sharp.Tables;
+using Xunit;
+
+namespace H2Sharp.Tests;
+
+public sealed class TableFilterTests
+{
+    private static SessionLocal NewSession()
+    {
+        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:filter_tests")), "sa")
+        {
+            CastDataProvider = new TestCastDataProvider(),
+            CompareMode = Values.CompareMode.GetInstance(null, 0),
+        };
+    }
+
+    [Fact]
+    public void TwoUsesOfOneTableAreTwoFilters()
+    {
+        SessionLocal session = NewSession();
+
+        // MVTable needs a store, and a test double of a table would not be what a query reads.
+        // The store is real because the filter is real: it is built to read a table, and a table
+        // that cannot be read is not a table a filter can be built over.
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), null, 3, "TEST",
+                [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            TableFilter first = new(session, table, "T1", rightsChecked: true, null, 0, null);
+            TableFilter second = new(session, table, "T2", rightsChecked: true, null, 1, null);
+
+            // Different aliases, different positions, and not equal: each is read independently.
+            Assert.Equal("T1", first.GetTableAlias());
+            Assert.Equal("T2", second.GetTableAlias());
+            Assert.Equal(0, first.GetOrderInFrom());
+            Assert.Equal(1, second.GetOrderInFrom());
+            Assert.NotEqual(first, second);
+            Assert.NotEqual(first.GetHashCode(), second.GetHashCode());
+
+            // The same table behind both.
+            Assert.Same(table, first.GetTable());
+            Assert.Same(table, second.GetTable());
+
+            // An alias is what was written. Without one, the table's own name is what answers,
+            // so that a column written without a qualifier is still a column *of this table*.
+            TableFilter plain = new(session, table, null, rightsChecked: true, null, 0, null);
+            Assert.False(plain.HasAlias());
+            Assert.True(first.HasAlias());
+            Assert.Equal("TEST", plain.GetTableAlias());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void TheOrderInFromComparatorOrdersByPosition()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), null, 3, "TEST",
+                [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            TableFilter[] filters =
+            [
+                new(session, table, "B", rightsChecked: true, null, 2, null),
+                new(session, table, "A", rightsChecked: true, null, 0, null),
+                new(session, table, "C", rightsChecked: true, null, 1, null),
+            ];
+            Array.Sort(filters, TableFilter.OrderInFromComparator);
+
+            Assert.Equal([0, 1, 2], [filters[0].GetOrderInFrom(), filters[1].GetOrderInFrom(), filters[2].GetOrderInFrom()]);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void AFilterResolvesItself()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), null, 3, "TEST",
+                [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
+            Assert.Same(filter, filter.GetTableFilter());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+}

@@ -36,6 +36,20 @@ public sealed class SessionLocal : Session
 
     private bool closed;
 
+    /// <summary>
+    /// Allocates an object id that is unique within this session.
+    /// </summary>
+    /// <remarks>
+    /// Not the database's <c>AllocateObjectId</c>: those are for objects that live in the
+    /// catalogue, and this one is for things that live inside a statement — table filters. A
+    /// filter's hash is its identity among the query's own filters, and it must not spend an id
+    /// a catalogue object would need.
+    /// </remarks>
+    /// <returns>the next id</returns>
+    public int NextObjectId() => objectId++;
+
+    private int objectId;
+
     private Result.SearchRow? currentRow;
 
     private readonly Dictionary<string, Values.Value> parameters = [];
