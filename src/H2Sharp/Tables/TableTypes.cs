@@ -838,6 +838,35 @@ public abstract class Table
     public const int LOCAL_TEMPORARY = 4;
 
     /// <summary>
+    /// Read lock: the table may be read but not changed.
+    /// </summary>
+    public const int ReadLock = 0;
+
+    /// <summary>
+    /// Write lock: the table may be read and changed.
+    /// </summary>
+    public const int WriteLock = 1;
+
+    /// <summary>
+    /// Exclusive lock: nobody else may even read the table.
+    /// </summary>
+    public const int ExclusiveLock = 2;
+
+    /// <summary>
+    /// Lock the table for the given session. This method waits until the lock is granted.
+    /// </summary>
+    /// <remarks>
+    /// False here, as in the reference: the base table has nothing to lock, and a lock on it
+    /// would serialize statements that share nothing. The tables that do share something — the
+    /// ones with rows — override this with a real lock, and the filter never knows which kind
+    /// it holds.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="lockType">the type of lock</param>
+    /// <returns>true if the table was already exclusively locked by this session</returns>
+    public virtual bool Lock(H2Sharp.Engine.SessionLocal session, int lockType) => false;
+
+    /// <summary>
     /// Gets the table name.
     /// </summary>
     public abstract string GetTableName();

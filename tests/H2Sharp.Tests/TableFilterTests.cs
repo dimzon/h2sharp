@@ -631,6 +631,38 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void LockingLocksTheWholeChain()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // The base table answers false: it has nothing to lock, and a lock on it would
+            // serialize statements that share nothing. What is asserted is that the call walks
+            // the chain -- a join left unlocked while the filter is locked would join rows from
+            // two different moments.
+            Tables.TableFilter a = new(session, table, "A", rightsChecked: true, null, 0, null);
+            Tables.TableFilter b = new(session, table, "B", rightsChecked: true, null, 1, null);
+            a.AddJoin(b, outer: false, null);
+
+            Assert.False(a.GetTable().Lock(session, Tables.Table.ReadLock));
+            a.Lock(session);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void HintsAreKeptNotApplied()
     {
         SessionLocal session = NewSession();

@@ -1390,6 +1390,25 @@ public class TableFilter : ColumnResolver
         }
     }
 
+    /// <summary>
+    /// Locks the table this filter reads, and everything joined to it.
+    /// </summary>
+    /// <remarks>
+    /// The join is locked too, because a query that reads two tables while another statement
+    /// writes one of them would join rows from two different moments. Locking only this filter
+    /// would protect half the join and leave the other half to move.
+    /// </remarks>
+    /// <param name="s">the session</param>
+    public virtual void Lock(SessionLocal s)
+    {
+        ArgumentNullException.ThrowIfNull(s);
+        table.Lock(s, Table.ReadLock);
+        if (join is not null)
+        {
+            join.Lock(s);
+        }
+    }
+
     /// <returns>the session</returns>
     public SessionLocal GetSession() => session;
 
