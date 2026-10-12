@@ -132,20 +132,36 @@ public sealed class TableFilterTests
             Assert.Same(b, a.GetJoin());
             Assert.Null(b.GetJoin());
 
-            a.AddJoin(c, outer: true, null);
+            var on = H2Sharp.Expressions.ValueExpression.Get(H2Sharp.Values.ValueBoolean.Get(true));
+            b.AddJoin(c, outer: true, on);
             Assert.Same(b, a.GetJoin());
             Assert.Same(c, b.GetJoin());
             Assert.True(c.IsJoinOuter());
             Assert.True(c.IsJoinOuterIndirect());
 
+            // The ON condition landed on the joined filter, not on the one that added it: a join
+            // condition names columns of both sides, and the side that was joined is where it is
+            // answered.
+            Assert.NotNull(c.GetJoinCondition());
+
             // Every member of the chain is visited, with the nested one before the chain moves
-            // on past the filter it sits in.
+            // on past the filter it sits in. This is checked before anything is removed: the
+            // visit walks the very links the next assertions drop, and checking it afterwards
+            // would prove nothing about a chain that is no longer there.
             TableFilter nested = new(session, table, "N", rightsChecked: true, null, 3, null);
             b.SetNestedJoin(nested);
 
             List<string> seen = [];
             a.Visit(new AliasCollector(seen));
             Assert.Equal(["A", "B", "N", "C"], seen);
+
+            // Removing the join drops the link and nothing else, and removing the condition
+            // drops only the condition: the pairing is kept so that the next try starts from
+            // the same tables.
+            b.RemoveJoin();
+            Assert.Null(b.GetJoin());
+            c.RemoveJoinCondition();
+            Assert.Null(c.GetJoinCondition());
         }
         finally
         {

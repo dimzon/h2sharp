@@ -338,7 +338,27 @@ public class TableFilter : ColumnResolver
     public Expression? GetJoinCondition() => joinCondition;
 
     /// <summary>
-    /// Gets the condition this filter filters by.
+    /// Removes the joined table.
+    /// </summary>
+    /// <remarks>
+    /// It only drops the link. The filter that was joined keeps its own conditions, because
+    /// removing a join is not removing what was read through it — a query that forgets which
+    /// rows paired up but remembers the pairing would answer from half a plan.
+    /// </remarks>
+    public void RemoveJoin() => join = null;
+
+    /// <summary>
+    /// Removes the join condition.
+    /// </summary>
+    /// <remarks>
+    /// The filter stays joined; only the condition goes. That is for the planner, which tries a
+    /// plan, measures it, and takes the condition back when the plan loses — the pairing is
+    /// kept so that the next try starts from the same tables.
+    /// </remarks>
+    public void RemoveJoinCondition() => joinCondition = null;
+
+    /// <summary>
+    /// Gets the condition this filter joins on.
     /// </summary>
     /// <returns>the filter condition, or null</returns>
     public Expression? GetFilterCondition() => filterCondition;
