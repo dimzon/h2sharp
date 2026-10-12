@@ -358,8 +358,30 @@ public class TableFilter : ColumnResolver
     public void RemoveJoinCondition() => joinCondition = null;
 
     /// <summary>
-    /// Gets the condition this filter joins on.
+    /// Pushes the condition over the whole join down into the filters that can answer it.
     /// </summary>
+    /// <remarks>
+    /// Only when this is not the outer side: the null row an outer join produces has no values
+    /// to filter by, and a condition pushed into it would unmake rows the join was told to keep.
+    /// The walk goes to the nested join and to the join for the same reason the condition was
+    /// set on all of them — it constrains rows no single filter sees alone.
+    /// </remarks>
+    internal void OptimizeFullCondition()
+    {
+        if (!joinOuter && fullCondition is not null)
+        {
+            fullCondition.AddFilterConditions(this);
+            if (nestedJoin is not null)
+            {
+                nestedJoin.OptimizeFullCondition();
+            }
+
+            if (join is not null)
+            {
+                join.OptimizeFullCondition();
+            }
+        }
+    }
     /// <returns>the filter condition, or null</returns>
     public Expression? GetFilterCondition() => filterCondition;
 
