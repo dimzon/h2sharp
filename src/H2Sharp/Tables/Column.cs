@@ -264,8 +264,20 @@ public class Column
     }
 
     /// <summary>
-    /// Gets the value type of this column.
+    /// Converts a row's values to the types of the given columns.
     /// </summary>
+    /// <remarks>
+    /// Not ported. It copies the row and converts each value to its column's type, so that a
+    /// compound IN list read from storage compares against values of the right types. Until it
+    /// is here, a compound IN over columns of different types would compare unconverted values
+    /// and match rows it should not.
+    /// </remarks>
+    /// <param name="provider">where casts come from</param>
+    /// <param name="columns">the columns</param>
+    /// <param name="valueRow">the row</param>
+    /// <returns>the converted row</returns>
+    public static Values.ValueRow Convert(Engine.CastDataProvider? provider, Column[] columns, Values.ValueRow valueRow)
+        => throw new TODOException("Column.convert: compound IN conversion is not ported");
     /// <returns>the value type</returns>
     public int GetValueType()
     {
