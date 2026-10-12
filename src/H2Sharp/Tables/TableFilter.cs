@@ -277,8 +277,162 @@ public class TableFilter : ColumnResolver
     }
 
     /// <summary>
-    /// Gets the session this filter runs on.
+    /// Joins another filter to this one.
     /// </summary>
+    /// <remarks>
+    /// The ON condition is mapped against both sides first, because a name inside it may belong
+    /// to either table and reading it against one of them would answer with the other's column.
+    /// The filter lands at the end of the join chain rather than here: "A JOIN B JOIN C" pairs
+    /// A with B before C is even seen, and putting C anywhere but last would pair it with the
+    /// wrong one.
+    /// </remarks>
+    /// <param name="filter">the joined filter</param>
+    /// <param name="outer">whether the join is an outer one</param>
+    /// <param name="on">the join condition</param>
+    public void AddJoin(TableFilter filter, bool outer, Expression? on)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (on is not null)
+        {
+            MapColumnsVisitor visitor = new(on);
+            Visit(visitor);
+            filter.Visit(visitor);
+        }
+
+        if (join is null)
+        {
+            join = filter;
+            filter.joinOuter = outer;
+            if (outer)
+            {
+                filter.Visit(new JoinOuterVisitor());
+            }
+
+            if (on is not null)
+            {
+                filter.AddFilter(on);
+            }
+        }
+        else
+        {
+            join.AddJoin(filter, outer, on);
+        }
+    }
+
+    /// <summary>
+    /// Adds a condition that is answered while joining.
+    /// </summary>
+    /// <remarks>
+    /// It lands on this filter and on every filter it is joined to, because a join condition
+    /// names columns of both sides and neither side can answer it alone. A condition that stayed
+    /// on one side would be asked of rows it cannot see.
+    /// </remarks>
+    /// <param name="on">the condition</param>
+    public void AddFilter(Expression? on)
+    {
+        AddFilterCondition(on, true);
+        if (join is not null)
+        {
+            join.AddFilter(on);
+        }
+    }
+
+    /// <summary>
+    /// Something that is done to every filter of a join.
+    /// </summary>
+    public interface TableFilterVisitor
+    {
+        /// <summary>
+        /// Called for each nested or joined table filter.
+        /// </summary>
+        /// <param name="f">the filter</param>
+        void Accept(TableFilter f);
+    }
+
+    /// <summary>
+    /// Visits this filter and every filter joined to it.
+    /// </summary>
+    /// <remarks>
+    /// The nested join is visited before the chain moves on, because a filter nested inside a
+    /// join belongs to the join it sits in — and visiting it after the chain would hand it to a
+    /// query that has already walked past.
+    /// </remarks>
+    /// <param name="visitor">the visitor</param>
+    public void Visit(TableFilterVisitor visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        TableFilter f = this;
+        do
+        {
+            visitor.Accept(f);
+            TableFilter? n = f.nestedJoin;
+            if (n is not null)
+            {
+                n.Visit(visitor);
+            }
+
+            f = f.join!;
+        }
+        while (f is not null);
+    }
+
+    private TableFilter? join;
+
+    private bool joinOuter;
+
+    private TableFilter? nestedJoin;
+
+    /// <summary>
+    /// Sets the filter this one is nested inside.
+    /// </summary>
+    /// <param name="filter">the filter</param>
+    public void SetNestedJoin(TableFilter? filter)
+    {
+        nestedJoin = filter;
+    }
+
+    /// <summary>
+    /// Get the filter this one is joined to.
+    /// </summary>
+    /// <returns>the joined filter, or null</returns>
+    public TableFilter? GetJoin() => join;
+
+    /// <summary>
+    /// Whether this is the outer side of an outer join.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsJoinOuter() => joinOuter;
+
+    /// <summary>
+    /// Maps an ON condition against the columns it names.
+    /// </summary>
+    /// <summary>
+    /// Marks every filter of a join as the outer side of one.
+    /// </summary>
+    private sealed class JoinOuterVisitor : TableFilterVisitor
+    {
+        public void Accept(TableFilter f)
+        {
+            ArgumentNullException.ThrowIfNull(f);
+            f.joinOuterIndirect = true;
+        }
+    }
+
+    private sealed class MapColumnsVisitor : TableFilterVisitor
+    {
+        private readonly Expression on;
+
+        internal MapColumnsVisitor(Expression on)
+        {
+            this.on = on;
+        }
+
+        public void Accept(TableFilter f)
+        {
+            ArgumentNullException.ThrowIfNull(f);
+            on.MapColumns(f, 0, Expression.MapInitial);
+        }
+    }
     /// <returns>the session</returns>
     public SessionLocal GetSession() => session;
 

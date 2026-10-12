@@ -107,6 +107,68 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void AJoinLandsAtTheEndOfTheChain()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), null, 3, "TEST",
+                [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // "A JOIN B JOIN C" pairs A with B before C is seen: C must land at the end of the
+            // chain, and a filter that put it anywhere else would pair it with the wrong one.
+            // An outer join marks every filter of its chain as an outer side, so that the null
+            // row is produced for the right one.
+            TableFilter a = new(session, table, "A", rightsChecked: true, null, 0, null);
+            TableFilter b = new(session, table, "B", rightsChecked: true, null, 1, null);
+            TableFilter c = new(session, table, "C", rightsChecked: true, null, 2, null);
+
+            a.AddJoin(b, outer: false, null);
+            Assert.Same(b, a.GetJoin());
+            Assert.Null(b.GetJoin());
+
+            a.AddJoin(c, outer: true, null);
+            Assert.Same(b, a.GetJoin());
+            Assert.Same(c, b.GetJoin());
+            Assert.True(c.IsJoinOuter());
+            Assert.True(c.IsJoinOuterIndirect());
+
+            // Every member of the chain is visited, with the nested one before the chain moves
+            // on past the filter it sits in.
+            TableFilter nested = new(session, table, "N", rightsChecked: true, null, 3, null);
+            b.SetNestedJoin(nested);
+
+            List<string> seen = [];
+            a.Visit(new AliasCollector(seen));
+            Assert.Equal(["A", "B", "N", "C"], seen);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    private sealed class AliasCollector : Tables.TableFilter.TableFilterVisitor
+    {
+        private readonly List<string> seen;
+
+        internal AliasCollector(List<string> seen)
+        {
+            this.seen = seen;
+        }
+
+        public void Accept(Tables.TableFilter f)
+        {
+            seen.Add(f.GetTableAlias());
+        }
+    }
+
+    [Fact]
     public void AFilterResolvesItself()
     {
         SessionLocal session = NewSession();
@@ -131,6 +193,29 @@ public sealed class TableFilterTests
 
     [Fact]
     public void ConditionsAccumulateSeparately()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), null, 3, "TEST",
+                [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
+            Assert.Same(filter, filter.GetTableFilter());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void ConditionsAccumulateOnTheRightPiles()
     {
         SessionLocal session = NewSession();
 
