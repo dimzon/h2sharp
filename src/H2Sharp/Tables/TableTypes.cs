@@ -121,6 +121,39 @@ public class IndexColumn
 public abstract class IndexCursor
 {
     /// <summary>
+    /// Whether the given index can serve an IN condition over the given columns.
+    /// </summary>
+    /// <remarks>
+    /// Only when the index keeps exactly these columns in exactly this order. An IN over two
+    /// columns is a lookup on a compound key, and an index whose columns are the same two in a
+    /// different order is a different key — it would answer rows the condition never asked for.
+    /// Null and length are refused first rather than compared, because an index with no columns
+    /// is not one that "almost matches".
+    /// </remarks>
+    /// <param name="index">the index</param>
+    /// <param name="columns">the columns of the condition</param>
+    /// <returns>true when the index can serve it</returns>
+    public static bool CanUseIndexForIn(H2Sharp.Indexes.Index? index, Column[]? columns)
+    {
+        IndexColumn[]? cols = index?.GetColumns();
+        if (cols is null || columns is null || cols.Length != columns.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < cols.Length; i++)
+        {
+            IndexColumn idxCol = cols[i];
+            if (idxCol is not null && !ReferenceEquals(idxCol.GetColumn(), columns[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Advances to the next row.
     /// </summary>
     public abstract void Next();

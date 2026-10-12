@@ -228,6 +228,30 @@ public abstract class Index : SchemaObject
     }
 
     /// <summary>
+    /// Finds the position of a column in this index.
+    /// </summary>
+    /// <remarks>
+    /// -1 when the column is not in the index, and that is not a failure to report: it is the
+    /// answer the planner asks for, because an index that does not contain the column is an
+    /// index that cannot serve the condition on it. Equals is on the table and the name, so a
+    /// column that was created and later widened is still found.
+    /// </remarks>
+    /// <param name="col">the column</param>
+    /// <returns>the position, or -1</returns>
+    public int GetColumnIndex(Column col)
+    {
+        for (int i = 0, len = columns.Length; i < len; i++)
+        {
+            if (columns[i].Equals(col))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
     /// Gets the column at the given position.
     /// </summary>
     /// <param name="column">the column position</param>
