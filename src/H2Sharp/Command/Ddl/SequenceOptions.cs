@@ -243,7 +243,11 @@ public class SequenceOptions
                         max *= 10;
                     }
 
-                    min = ---max;
+                    // The reference writes this as `min = - --max`: a pre-decrement, so the
+                    // bound is one below the largest number p digits can spell. Written out
+                    // here because C# has no pre-decrement on anything but a variable.
+                    max--;
+                    min = -max;
                 }
 
                 break;
