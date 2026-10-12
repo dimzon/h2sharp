@@ -393,8 +393,26 @@ public class TableFilter : ColumnResolver
     private int[]? masks;
 
     /// <summary>
-    /// Sets the plan this filter will use.
+    /// Gets the best plan item for this filter: the index to read and what it costs.
     /// </summary>
+    /// <remarks>
+    /// Not ported. It prices every index of the table against the conditions, the sort order
+    /// and the columns the query reads — which is the planner's own work, and doing any of it
+    /// here would be a plan built without being priced.
+    /// </remarks>
+    /// <param name="s">the session</param>
+    /// <param name="filters">the filters of the query</param>
+    /// <param name="filter">the position of this filter among them</param>
+    /// <param name="allColumnsSet">the columns each table reads, or null</param>
+    /// <param name="isSelectCommand">whether the caller is a select</param>
+    /// <returns>the plan item</returns>
+    public PlanItem GetBestPlanItem(
+        SessionLocal s,
+        TableFilter[] filters,
+        int filter,
+        Command.Query.AllColumnsForPlan? allColumnsSet,
+        bool isSelectCommand)
+        => throw new TODOException("TableFilter.getBestPlanItem: the planner prices indexes");
     /// <remarks>
     /// A null plan is not an error here but a plan that cannot be used — most likely because a
     /// column was not found — and the exception comes later, when the statement runs without
