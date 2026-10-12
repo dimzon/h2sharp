@@ -355,14 +355,15 @@ public class IndexCondition
     /// Clones this condition with the columns of the given index.
     /// </summary>
     /// <remarks>
-    /// Not ported. It is what fixes the order of a compound condition's columns to the order the
-    /// index keeps them in — and fixing an order without the index to fix it against would be a
-    /// guess about a storage this port does not have.
+    /// Not ported. It reorders a compound condition's columns to the order the index keeps
+    /// them in, which needs ValueRow.cloneWithOrder and ExpressionList.cloneWithOrder -- and
+    /// neither reordering exists here. Until they do, a compound condition whose columns are
+    /// out of order cannot be fixed, only dropped.
     /// </remarks>
     /// <param name="index">the index</param>
     /// <returns>the fixed condition, or null when it cannot be fixed</returns>
     public IndexCondition? CloneWithIndexColumns(Index index)
-        => throw new TODOException("IndexCondition.cloneWithIndexColumns: it needs the index");
+        => throw new TODOException("IndexCondition.cloneWithIndexColumns: reordering rows is not ported");
 
 
 }

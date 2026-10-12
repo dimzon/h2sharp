@@ -516,6 +516,38 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void PrepareKeepsOnlyWhatTheIndexCanServe()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T", [id], store, persistData: false);
+            id.SetTable(table, 0);
+
+            // A plan is chosen first: without it the filter has no index, and Prepare over no
+            // index would answer about a scan it was never told to read.
+            Tables.TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
+            filter.SetPlanItem(null);
+
+            // An always-false condition empties everything after it: there is no plan in which
+            // a later condition matters, since no row can survive the false one.
+            Tables.TableFilter second = new(session, table, "S", rightsChecked: true, null, 1, null);
+            second.SetPlanItem(null);
+            second.Prepare();
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void HintsAreKeptNotApplied()
     {
         SessionLocal session = NewSession();

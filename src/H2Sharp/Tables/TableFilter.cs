@@ -491,8 +491,110 @@ public class TableFilter : ColumnResolver
     }
 
     /// <summary>
-    /// Gets the index this filter reads.
+    /// Forgets the index conditions that cannot use the chosen index.
     /// </summary>
+    /// <remarks>
+    /// The list may be modified here, which is why it is walked by index and not by enumerator:
+    /// removing while enumerating would fail, and copying it first would double every prepare.
+    /// A compound condition found first takes the index and everything after it goes, because a
+    /// compound lookup and another lookup cannot share one cursor -- the cursor holds one list.
+    /// A simple condition stays when it names the index's first column, since that is the only
+    /// column a scan can start from; anything else is a filter, not a bound.
+    /// </remarks>
+    public void Prepare()
+    {
+        // forget all unused index conditions
+        // the indexConditions list may be modified here
+        bool compoundIndexConditionFound = false;
+        for (int i = 0; i < indexConditions.Count; i++)
+        {
+            Indexes.IndexCondition condition = indexConditions[i];
+            if (!condition.IsAlwaysFalse())
+            {
+                if (compoundIndexConditionFound)
+                {
+                    // A compound index condition is already found. We cannot use other indexes with it, so removing
+                    // everything else. The compound condition was added first.
+                    // See: ConditionIn#createIndexConditions(SessionLocal, TableFilter)
+                    indexConditions.RemoveAt(i);
+                    i--;
+                }
+                else if (condition.IsCompoundColumns())
+                {
+                    if (index is not null && index.GetIndexType()?.IsScan() == true)
+                    {
+                        // This is only a pseudo index.
+                        indexConditions.RemoveAt(i);
+                        i--;
+                        continue;
+                    }
+
+                    // Checking the columns match with the index.
+                    if (IndexCursor.CanUseIndexForIn(index, condition.GetColumns()))
+                    {
+                        // The condition uses the exact columns in the right order.
+                        compoundIndexConditionFound = true;
+                        continue;
+                    }
+
+                    // Trying to fix the order of the condition columns.
+                    Indexes.IndexCondition? fixedCondition = condition.CloneWithIndexColumns(index!);
+                    if (fixedCondition is not null)
+                    {
+                        indexConditions[i] = fixedCondition;
+                        compoundIndexConditionFound = true;
+                        continue;
+                    }
+
+                    // Index condition cannot be used.
+                    indexConditions.RemoveAt(i);
+                    i--;
+                }
+                else
+                {
+                    Tables.Column? col = condition.GetColumn();
+                    if (col is not null && col.GetColumnId() >= 0)
+                    {
+                        int columnIndex = index?.GetColumnIndex(col) ?? -1;
+                        if (columnIndex == 0)
+                        {
+                            // The first column of the index always matches.
+                            continue;
+                        }
+
+                        if (columnIndex < 0 || condition.GetCompareType() == H2Sharp.Expressions.Conditions.Comparison.InList)
+                        {
+                            // The index does not contain the column, or this is an IN() condition which can be used
+                            // only if the first index column is the searched one.
+                            // See: IndexCursor#canUseIndexFor(column)
+                            indexConditions.RemoveAt(i);
+                            i--;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (nestedJoin is not null)
+        {
+            if (ReferenceEquals(nestedJoin, this))
+            {
+                throw DbException.GetInternalError("self join");
+            }
+
+            nestedJoin.Prepare();
+        }
+
+        if (join is not null)
+        {
+            if (ReferenceEquals(join, this))
+            {
+                throw DbException.GetInternalError("self join");
+            }
+
+            join.Prepare();
+        }
+    }
     /// <returns>the index, or null when the plan has not chosen one</returns>
     public H2Sharp.Indexes.Index? GetIndex() => index;
 
@@ -1237,6 +1339,9 @@ public class TableFilter : ColumnResolver
         return c is not null && commonJoinColumnsToExclude is not null && commonJoinColumnsToExclude.Contains(c);
     }
 
+    /// <summary>
+    /// Gets the session this filter runs on.
+    /// </summary>
     /// <returns>the session</returns>
     public SessionLocal GetSession() => session;
 
