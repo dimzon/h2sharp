@@ -1,0 +1,368 @@
+/*
+ * Copyright 2004-2026 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
+ * Initial Developer: H2 Group
+ * Ported from org.h2.index.IndexCondition.
+ * Copyright 2026 H2Sharp contributors.
+ * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
+ *
+ * One condition that can potentially use an index.
+ *
+ * It is not an expression, although there is generally one expression behind each index
+ * condition. An expression says what is true about a row; an index condition says what the
+ * *index* can do with it — whether the column it names is the first of the index, whether the
+ * comparison bounds the scan from below, from above, or from both sides. That is why the
+ * comparison type is a bit of a mask here and an answer there.
+ *
+ * The masks are the whole reason this is a class and not a pair of values. EQUALITY, START and
+ * END compose: a BETWEEN is START|END, and ALWAYS_FALSE is a bit rather than a special case
+ * because a condition that is always false is still a condition on the index's columns, and the
+ * planner treats it as a range of nothing.
+ *
+ * The simple readers are real. The members that evaluate — the current value, the list, the
+ * result, the mask over a list of conditions, whether a compound list fits an index — refuse,
+ * because they need the session to read and the index to compare against.
+ */
+using System;
+using System.Collections.Generic;
+using System.Text;
+using H2Sharp.Engine;
+using H2Sharp.Expressions;
+using H2Sharp.Expressions.Conditions;
+using H2Sharp.Result;
+using H2Sharp.Tables;
+using H2Sharp.Values;
+
+namespace H2Sharp.Indexes;
+
+/// <summary>
+/// An index condition object is made for each condition that can potentially use an index. This
+/// class does not extend expression, but in general there is one expression that maps to each
+/// index condition.
+/// </summary>
+public class IndexCondition
+{
+    /// <summary>
+    /// A bit of a search mask meaning 'equal'.
+    /// </summary>
+    public const int Equality = 1;
+
+    /// <summary>
+    /// A bit of a search mask meaning 'larger or equal'.
+    /// </summary>
+    public const int Start = 2;
+
+    /// <summary>
+    /// A bit of a search mask meaning 'smaller or equal'.
+    /// </summary>
+    public const int End = 4;
+
+    /// <summary>
+    /// A search mask meaning 'between'.
+    /// </summary>
+    public const int Range = Start | End;
+
+    /// <summary>
+    /// A bit of a search mask meaning 'the condition is always false'.
+    /// </summary>
+    public const int AlwaysFalse = 8;
+
+    /// <summary>
+    /// A bit of a search mask meaning 'spatial intersection'.
+    /// </summary>
+    public const int SpatialIntersects = 16;
+
+    private readonly Column? column;
+
+    private readonly Column[]? columns;
+
+    private readonly bool compoundColumns;
+
+    /// <summary>
+    /// see constants in <see cref="Comparison"/>
+    /// </summary>
+    private readonly int compareType;
+
+    private readonly Expression? expression;
+
+    private readonly List<Expression>? expressionList;
+
+    private readonly Command.Query.Query? expressionQuery;
+
+    /// <summary>
+    /// Creates an index condition.
+    /// </summary>
+    /// <param name="compareType">the comparison type, see constants in <see cref="Comparison"/></param>
+    /// <param name="column">the column, or null for a compound list</param>
+    /// <param name="columns">the columns, or null for a single column</param>
+    /// <param name="expression">the expression</param>
+    /// <param name="list">the expression list, or null</param>
+    /// <param name="query">the query, or null</param>
+    protected IndexCondition(
+        int compareType,
+        ExpressionColumn? column,
+        Column[]? columns,
+        Expression? expression,
+        List<Expression>? list,
+        Command.Query.Query? query)
+    {
+        this.compareType = compareType;
+        if (column is not null)
+        {
+            this.column = column.GetColumn();
+            this.columns = null;
+            compoundColumns = false;
+        }
+        else if (columns is not null)
+        {
+            this.column = null;
+            this.columns = columns;
+            compoundColumns = true;
+        }
+        else
+        {
+            this.column = null;
+            this.columns = null;
+            compoundColumns = false;
+        }
+
+        this.expression = expression;
+        expressionList = list;
+        expressionQuery = query;
+    }
+
+    /// <summary>
+    /// Create an index condition with the given parameters.
+    /// </summary>
+    /// <param name="compareType">the comparison type, see constants in <see cref="Comparison"/></param>
+    /// <param name="column">the column</param>
+    /// <param name="expression">the expression</param>
+    /// <returns>the index condition</returns>
+    public static IndexCondition Get(int compareType, ExpressionColumn column, Expression expression)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        return new IndexCondition(compareType, column, null, expression, null, null);
+    }
+
+    /// <summary>
+    /// Create an index condition with the compare type IN_LIST and with the given parameters.
+    /// </summary>
+    /// <param name="column">the column</param>
+    /// <param name="list">the expression list</param>
+    /// <returns>the index condition</returns>
+    public static IndexCondition GetInList(ExpressionColumn column, List<Expression> list)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        ArgumentNullException.ThrowIfNull(list);
+        return new IndexCondition(Comparison.InList, column, null, null, list, null);
+    }
+
+    /// <summary>
+    /// Create a compound index condition with the compare type IN_LIST and the given parameters.
+    /// </summary>
+    /// <param name="columns">the columns</param>
+    /// <param name="list">the expression list</param>
+    /// <returns>the index condition</returns>
+    public static IndexCondition GetCompoundInList(Column[] columns, List<Expression> list)
+    {
+        ArgumentNullException.ThrowIfNull(columns);
+        ArgumentNullException.ThrowIfNull(list);
+        return new IndexCondition(Comparison.InList, null, columns, null, list, null);
+    }
+
+    /// <summary>
+    /// Create an index condition with the compare type IN_ARRAY and the given parameters.
+    /// </summary>
+    /// <param name="column">the column</param>
+    /// <param name="array">the array expression</param>
+    /// <returns>the index condition</returns>
+    public static IndexCondition GetInArray(ExpressionColumn column, Expression array)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        ArgumentNullException.ThrowIfNull(array);
+        return new IndexCondition(Comparison.InArray, column, null, array, null, null);
+    }
+
+    /// <summary>
+    /// Create an index condition with the compare type IN_QUERY and the given parameters.
+    /// </summary>
+    /// <param name="column">the column</param>
+    /// <param name="query">the query</param>
+    /// <returns>the index condition</returns>
+    public static IndexCondition GetInQuery(ExpressionColumn column, Command.Query.Query query)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        ArgumentNullException.ThrowIfNull(query);
+        return new IndexCondition(Comparison.InQuery, column, null, null, null, query);
+    }
+
+    /// <summary>
+    /// Gets the current value of this condition's expression.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the value</returns>
+    public Value? GetCurrentValue(SessionLocal session)
+        => throw new TODOException("IndexCondition.getCurrentValue: the session has to read it");
+
+    /// <summary>
+    /// Gets the current values of this condition's expression list.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="sortTypes">the sort types</param>
+    /// <returns>the values</returns>
+    public Value?[] GetCurrentValueList(SessionLocal session, int[] sortTypes)
+        => throw new TODOException("IndexCondition.getCurrentValueList: the session has to read them");
+
+    /// <summary>
+    /// Gets the current result of this condition's query.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="sortTypes">the sort types</param>
+    /// <returns>the result</returns>
+    public ResultInterface? GetCurrentResult(SessionLocal session, int[] sortTypes)
+        => throw new TODOException("IndexCondition.getCurrentResult: the query has to run");
+
+    /// <summary>
+    /// Gets the SQL of this condition.
+    /// </summary>
+    /// <remarks>
+    /// Not ported. In the reference this delegates to <c>buildSql</c>, which prints an IN list,
+    /// a compound column list or a plain comparison depending on what the condition holds — and
+    /// guessing at that shape would give a caller a statement that looks like the condition and
+    /// is not it.
+    /// </remarks>
+    /// <param name="sqlFlags">the SQL flags</param>
+    /// <returns>the SQL</returns>
+    public string GetSql(int sqlFlags)
+        => throw new TODOException("IndexCondition.getSQL: it prints what the condition holds");
+
+    /// <summary>
+    /// Gets the search mask for the given conditions.
+    /// </summary>
+    /// <param name="indexConditions">the conditions</param>
+    /// <returns>the mask</returns>
+    public static int GetMask(List<IndexCondition> indexConditions)
+        => throw new TODOException("IndexCondition.getMask: it needs the columns of an index");
+
+    /// <summary>
+    /// Whether this condition is always false.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsAlwaysFalse() => compareType == Comparison.False;
+
+    /// <summary>
+    /// Whether this condition bounds the scan from below.
+    /// </summary>
+    /// <returns>true if it does</returns>
+    public bool IsStart()
+    {
+        return compareType switch
+        {
+            Comparison.Equal or Comparison.BiggerEqual or Comparison.Bigger => true,
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// Whether this condition bounds the scan from above.
+    /// </summary>
+    /// <returns>true if it does</returns>
+    public bool IsEnd()
+    {
+        return compareType switch
+        {
+            Comparison.Equal or Comparison.SmallerEqual or Comparison.Smaller => true,
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// Whether this condition is a spatial intersection.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsSpatialIntersects() => compareType == Comparison.SpatialIntersects;
+
+    /// <summary>
+    /// Gets the comparison type.
+    /// </summary>
+    /// <returns>the comparison type</returns>
+    public int GetCompareType() => compareType;
+
+    /// <summary>
+    /// Gets the referenced column.
+    /// </summary>
+    /// <returns>the column, or null for a compound list</returns>
+    public Column? GetColumn() => column;
+
+    /// <summary>
+    /// Gets the referenced columns.
+    /// </summary>
+    /// <returns>the columns, or null for a single column</returns>
+    public Column[]? GetColumns() => columns;
+
+    /// <summary>
+    /// Whether this condition covers several columns.
+    /// </summary>
+    /// <returns>true if it does</returns>
+    public bool IsCompoundColumns() => compoundColumns;
+
+    /// <summary>
+    /// Gets the expression.
+    /// </summary>
+    /// <returns>the expression, or null</returns>
+    public Expression? GetExpression() => expression;
+
+    /// <summary>
+    /// Gets the expression list.
+    /// </summary>
+    /// <returns>the list, or null</returns>
+    public List<Expression>? GetExpressionList() => expressionList;
+
+    /// <summary>
+    /// Gets the expression query.
+    /// </summary>
+    /// <returns>the query, or null</returns>
+    public Command.Query.Query? GetExpressionQuery() => expressionQuery;
+
+    /// <summary>
+    /// Whether this condition can be evaluated without reading a row.
+    /// </summary>
+    /// <returns>true if it can</returns>
+    public bool IsEvaluatable()
+    {
+        if (expression is not null)
+        {
+            return expression.IsEverything(ExpressionVisitor.EvaluableVisitor);
+        }
+
+        if (expressionList is not null)
+        {
+            foreach (Expression e in expressionList)
+            {
+                if (!e.IsEverything(ExpressionVisitor.EvaluableVisitor))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return expressionQuery is null || expressionQuery.IsEverything(ExpressionVisitor.EvaluableVisitor);
+    }
+
+    /// <summary>
+    /// Clones this condition with the columns of the given index.
+    /// </summary>
+    /// <remarks>
+    /// Not ported. It is what fixes the order of a compound condition's columns to the order the
+    /// index keeps them in — and fixing an order without the index to fix it against would be a
+    /// guess about a storage this port does not have.
+    /// </remarks>
+    /// <param name="index">the index</param>
+    /// <returns>the fixed condition, or null when it cannot be fixed</returns>
+    public IndexCondition? CloneWithIndexColumns(Index index)
+        => throw new TODOException("IndexCondition.cloneWithIndexColumns: it needs the index");
+
+
+}
