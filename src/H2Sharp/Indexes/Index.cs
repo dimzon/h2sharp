@@ -234,6 +234,18 @@ public abstract class Index : SchemaObject
     public Table? GetTable() => table;
 
     /// <summary>
+    /// Whether finding through this index always reads the whole table.
+    /// </summary>
+    /// <remarks>
+    /// False, unless a subclass says otherwise. It is the planner's shortcut around an index
+    /// that cannot serve a lookup: asking such an index for rows would scan the table once per
+    /// condition, and the one scan the filter would have done anyway is cheaper than all of
+    /// them.
+    /// </remarks>
+    /// <returns>true when every find is a full scan</returns>
+    public virtual bool IsFindUsingFullTableScan() => false;
+
+    /// <summary>
     /// Finds the position of a column in this index.
     /// </summary>
     /// <remarks>

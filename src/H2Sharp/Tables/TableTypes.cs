@@ -33,6 +33,17 @@ public class IndexColumn
     private readonly bool ascending;
 
     /// <summary>
+    /// The sort type: direction, and where NULL goes.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps this as a bit mask rather than a boolean, because direction is not
+    /// the whole answer — NULLS FIRST and NULLS LAST ride on the same number. This port was
+    /// built with a boolean, so the mask is derived from it: ascending is the default order and
+    /// everything else is explicit.
+    /// </remarks>
+    public readonly int SortType;
+
+    /// <summary>
     /// Creates an index column.
     /// </summary>
     /// <param name="column">the column</param>
@@ -41,6 +52,7 @@ public class IndexColumn
     {
         this.column = column;
         this.ascending = ascending;
+        SortType = ascending ? Result.SortOrder.Ascending : Result.SortOrder.Descending;
     }
 
     /// <summary>
@@ -165,8 +177,31 @@ public abstract class IndexCursor
     }
 
     /// <summary>
-    /// Whether the given index can serve an IN condition over the given columns.
+    /// Builds the sort types an IN list over the given columns is read in.
     /// </summary>
+    /// <remarks>
+    /// One per column, up to the longer of the index and the condition. Each answers whether
+    /// that column of the index runs backwards, flipped when the cursor itself runs backwards:
+    /// a backwards cursor over a backwards column reads forwards, and the sort types have to
+    /// say so or the list comes back in the wrong order.
+    /// </remarks>
+    /// <param name="columns">the columns of the condition</param>
+    /// <returns>the sort types</returns>
+    private int[] BuildSortTypes(Column[] columns)
+    {
+        ArgumentNullException.ThrowIfNull(columns);
+        IndexColumn[]? idxColumns = index?.GetColumns();
+        int l = Math.Max(idxColumns is null ? 0 : idxColumns.Length, columns.Length);
+        int[] sortTypes = new int[l];
+        for (int i = 0; i < l; i++)
+        {
+            sortTypes[i] = ((idxColumns![i].SortType & Result.SortOrder.Descending) != 0) ^ reverse
+                ? Result.SortOrder.Descending
+                : Result.SortOrder.Ascending;
+        }
+
+        return sortTypes;
+    }
     /// <remarks>
     /// Only when the index keeps exactly these columns in exactly this order. An IN over two
     /// columns is a lookup on a compound key, and an index whose columns are the same two in a
