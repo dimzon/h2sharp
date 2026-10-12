@@ -13,8 +13,10 @@
  * subclass fits without reshaping.
  */
 using System;
+using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Values;
 using Index = H2Sharp.Indexes.Index;
@@ -141,6 +143,25 @@ public abstract class IndexCursor
 
     private IndexColumn?[]? indexColumns;
 
+    private Engine.SessionLocal? session;
+
+    private bool alwaysFalse;
+
+    private Result.SearchRow? start;
+
+    private Result.SearchRow? end;
+
+    private Result.SearchRow? intersects;
+
+    /// <summary>
+    /// Contains a <see cref="Column"/> or a <c>Column[]</c> depending on the condition type.
+    /// </summary>
+    private object? inColumn;
+
+    private Values.Value?[]? inList;
+
+    private Result.ResultInterface? inResult;
+
     /// <summary>
     /// Sets the index this cursor walks, and how.
     /// </summary>
@@ -202,6 +223,322 @@ public abstract class IndexCursor
 
         return sortTypes;
     }
+
+    /// <summary>
+    /// Prepares this cursor to answer the given conditions.
+    /// </summary>
+    /// <remarks>
+    /// Everything is reset first, because a cursor is prepared again for every run and a bound
+    /// left over from the last one would answer this run's questions with last run's rows. The
+    /// conditions that cannot use this index are skipped rather than failed on — a full-table
+    /// index asked for a lookup would scan the table once per condition, and the one scan the
+    /// filter would have done anyway is cheaper than all of them.
+    ///
+    /// An equality narrows both bounds, and a narrower bound replaces a wider one: that is why
+    /// each bound is built with GetSearchRow rather than set, and why a second X=? on the same
+    /// column keeps the tighter of the two instead of the later.
+    /// </remarks>
+    /// <param name="s">the session</param>
+    /// <param name="indexConditions">the conditions</param>
+    public void Prepare(Engine.SessionLocal s, List<H2Sharp.Indexes.IndexCondition> indexConditions)
+    {
+        ArgumentNullException.ThrowIfNull(s);
+        ArgumentNullException.ThrowIfNull(indexConditions);
+        session = s;
+        alwaysFalse = false;
+        start = end = null;
+        inList = null;
+        inColumn = null;
+        inResult = null;
+        intersects = null;
+        foreach (H2Sharp.Indexes.IndexCondition condition in indexConditions)
+        {
+            if (condition.IsAlwaysFalse())
+            {
+                alwaysFalse = true;
+                break;
+            }
+
+            // If index can perform only full table scan do not try to use it for regular
+            // lookups, each such lookup will perform an own table scan.
+            if (index is not null && index.IsFindUsingFullTableScan())
+            {
+                continue;
+            }
+
+            if (condition.IsCompoundColumns())
+            {
+                Column[]? columns = condition.GetColumns();
+                if (condition.GetCompareType() == H2Sharp.Expressions.Conditions.Comparison.InList)
+                {
+                    if (start is null && end is null)
+                    {
+                        if (CanUseIndexForIn(columns!))
+                        {
+                            inColumn = columns;
+                            inList = condition.GetCurrentValueList(s, BuildSortTypes(columns!));
+                        }
+                    }
+
+                    continue;
+                }
+
+                throw DbException.GetInternalError("Multiple columns can only be used with compound IN lists.");
+            }
+
+            Column? column = condition.GetColumn();
+            switch (condition.GetCompareType())
+            {
+                case H2Sharp.Expressions.Conditions.Comparison.InList:
+                case H2Sharp.Expressions.Conditions.Comparison.InArray:
+                    if (start is null && end is null)
+                    {
+                        if (column is not null && CanUseIndexForIn(column))
+                        {
+                            inColumn = column;
+                            inList = condition.GetCurrentValueList(s, BuildSortTypes([column]));
+                        }
+                    }
+
+                    break;
+                case H2Sharp.Expressions.Conditions.Comparison.InQuery:
+                    if (start is null && end is null)
+                    {
+                        if (column is not null && CanUseIndexForIn(column))
+                        {
+                            inColumn = column;
+                            inResult = condition.GetCurrentResult(session!, BuildSortTypes([column]));
+                        }
+                    }
+
+                    break;
+                default:
+                    Values.Value? v = condition.GetCurrentValue(s);
+                    bool isStart = condition.IsStart();
+                    bool isEnd = condition.IsEnd();
+                    bool isIntersects = condition.IsSpatialIntersects();
+                    int columnId = column?.GetColumnId() ?? Result.SearchRow.RowidIndex;
+                    if (columnId != Result.SearchRow.RowidIndex)
+                    {
+                        IndexColumn? idxCol = indexColumns?[columnId];
+                        if (idxCol is not null && (idxCol.SortType & Result.SortOrder.Descending) != 0)
+                        {
+                            // if the index column is sorted the other way, we swap
+                            // end and start NULLS_FIRST / NULLS_LAST is not a
+                            // problem, as nulls never match anyway
+                            bool temp = isStart;
+                            isStart = isEnd;
+                            isEnd = temp;
+                        }
+                    }
+
+                    if (isStart)
+                    {
+                        start = GetSearchRow(start, columnId, v, true);
+                    }
+
+                    if (isEnd)
+                    {
+                        end = GetSearchRow(end, columnId, v, false);
+                    }
+
+                    if (isIntersects)
+                    {
+                        intersects = GetSpatialSearchRow(intersects, columnId, v);
+                    }
+
+                    // An X=? condition will produce less rows than
+                    // an X IN(..) condition, unless the X IN condition can use the index.
+                    if ((isStart || isEnd) && (inColumn is not Column inCol || !CanUseIndexFor(inCol)))
+                    {
+                        inColumn = null;
+                        inList = null;
+                        inResult = null;
+                    }
+
+                    break;
+            }
+        }
+
+        if (inColumn is not null)
+        {
+            start = table?.GetTemplateRow();
+        }
+    }
+
+    /// <summary>
+    /// Whether the result is empty for sure.
+    /// </summary>
+    /// <returns>true when nothing can match</returns>
+    public bool IsAlwaysFalse() => alwaysFalse;
+
+    /// <summary>
+    /// Whether the given column can start an IN lookup on this index.
+    /// </summary>
+    /// <remarks>
+    /// Only one IN condition can be used at a time: a second one would need a second list, and
+    /// the cursor holds one. The column itself still has to fit the index, which is the other
+    /// half of the question.
+    /// </remarks>
+    /// <param name="column">the column</param>
+    /// <returns>true when it can</returns>
+    private bool CanUseIndexForIn(Column column)
+    {
+        if (inColumn is not null)
+        {
+            // only one IN(..) condition can be used at the same time
+            return false;
+        }
+
+        return CanUseIndexFor(column);
+    }
+
+    /// <summary>
+    /// Whether the given columns can start an IN lookup on this index.
+    /// </summary>
+    /// <param name="columns">the columns</param>
+    /// <returns>true when they can</returns>
+    private bool CanUseIndexForIn(Column[] columns)
+    {
+        if (inColumn is not null)
+        {
+            // only one IN(..) condition can be used at the same time
+            return false;
+        }
+
+        return CanUseIndexForIn(index, columns);
+    }
+
+    /// <summary>
+    /// Whether the given column can narrow a scan on this index.
+    /// </summary>
+    /// <remarks>
+    /// The first column of the index must match, or the index must be one built over a view
+    /// where the column is null: a condition on a later column without one on the first is a
+    /// filter, not a bound, and the index cannot start from it.
+    /// </remarks>
+    /// <param name="column">the column</param>
+    /// <returns>true when it can</returns>
+    private bool CanUseIndexFor(Column column)
+    {
+        // The first column of the index must match this column,
+        // or it must be a VIEW index (where the column is null).
+        // Multiple IN conditions with views are not supported, see
+        // IndexCondition.getMask.
+        IndexColumn[]? cols = index?.GetColumns();
+        if (cols is null)
+        {
+            return true;
+        }
+
+        IndexColumn idxCol = cols[0];
+        return idxCol is null || ReferenceEquals(idxCol.GetColumn(), column);
+    }
+
+    /// <summary>
+    /// Builds a search row for one bound of the scan.
+    /// </summary>
+    /// <remarks>
+    /// A null row means "no bound yet", so a fresh template is made; a row that is already
+    /// there keeps the tighter of the two values. The rowid is not a value but the key, which
+    /// is why it is set apart: a key of NULL would be no key at all, so a NULL bound becomes
+    /// the smallest key there is.
+    /// </remarks>
+    /// <param name="row">the row so far, or null</param>
+    /// <param name="columnId">which column the bound is on</param>
+    /// <param name="v">the bound</param>
+    /// <param name="max">whether the larger value wins</param>
+    /// <returns>the row</returns>
+    private Result.SearchRow GetSearchRow(Result.SearchRow? row, int columnId, Values.Value? v, bool max)
+    {
+        if (row is null)
+        {
+            row = table?.GetTemplateRow() ?? throw new TODOException("IndexCursor.getSearchRow: no table to template from");
+        }
+        else
+        {
+            v = GetMax(row.GetValue(columnId), v, max);
+        }
+
+        if (columnId == Result.SearchRow.RowidIndex)
+        {
+            row.SetKey(v == Values.ValueNull.Instance ? long.MinValue : v!.GetLong());
+        }
+        else
+        {
+            // The reference passes v as it is, null included; this port's SetValue takes a
+            // non-nullable value, so a null becomes the NULL value here. It is the same answer:
+            // null in a search row means SQL NULL, and ValueNull is what that is.
+            row.SetValue(columnId, v ?? Values.ValueNull.Instance);
+        }
+
+        return row;
+    }
+
+    /// <summary>
+    /// Picks the tighter of two bounds.
+    /// </summary>
+    /// <remarks>
+    /// Null loses to everything, and NULL loses to everything but is remembered: "IS NULL must
+    /// be checked later" is the reference's own comment, because a NULL bound is not a bound at
+    /// all but a question the scan still has to ask. Equal values answer with the first, so that
+    /// a bound written twice does not move.
+    /// </remarks>
+    /// <param name="a">the bound so far</param>
+    /// <param name="b">the new bound</param>
+    /// <param name="bigger">whether the larger value wins</param>
+    /// <returns>the tighter bound</returns>
+    private Values.Value? GetMax(Values.Value? a, Values.Value? b, bool bigger)
+    {
+        if (a is null)
+        {
+            return b;
+        }
+
+        if (b is null)
+        {
+            return a;
+        }
+
+        // IS NULL must be checked later
+        if (ReferenceEquals(a, Values.ValueNull.Instance))
+        {
+            return b;
+        }
+
+        if (ReferenceEquals(b, Values.ValueNull.Instance))
+        {
+            return a;
+        }
+
+        // The session compares, because two values of different types compare by the session's
+        // rules and not by either value's own: it is the same Compare the filter's map uses.
+        int comp = session is null
+            ? throw new TODOException("IndexCursor.getMax: no session to compare with")
+            : session.Compare(a, b);
+        if (comp == 0)
+        {
+            return a;
+        }
+
+        return (comp > 0) == bigger ? a : b;
+    }
+
+    /// <summary>
+    /// Builds a search row for a spatial bound.
+    /// </summary>
+    /// <remarks>
+    /// Not ported. An object that must overlap two others must overlap their union, not their
+    /// intersection — which needs the geometry envelope, and there is no geometry here to take
+    /// one from.
+    /// </remarks>
+    /// <param name="row">the row so far, or null</param>
+    /// <param name="columnId">which column the bound is on</param>
+    /// <param name="v">the bound</param>
+    /// <returns>the row</returns>
+    private Result.SearchRow? GetSpatialSearchRow(Result.SearchRow? row, int columnId, Values.Value? v)
+        => throw new TODOException("IndexCursor.getSpatialSearchRow: geometry is not ported");
+
     /// <remarks>
     /// Only when the index keeps exactly these columns in exactly this order. An IN over two
     /// columns is a lookup on a compound key, and an index whose columns are the same two in a
