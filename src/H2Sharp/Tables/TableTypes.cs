@@ -375,6 +375,18 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
     }
 
     /// <summary>
+    /// Gets the lower bound of the scan.
+    /// </summary>
+    /// <returns>the bound, or null when there is none</returns>
+    public Result.SearchRow? GetStart() => start;
+
+    /// <summary>
+    /// Gets the upper bound of the scan.
+    /// </summary>
+    /// <returns>the bound, or null when there is none</returns>
+    public Result.SearchRow? GetEnd() => end;
+
+    /// <summary>
     /// Whether the result is empty for sure.
     /// </summary>
     /// <returns>true when nothing can match</returns>

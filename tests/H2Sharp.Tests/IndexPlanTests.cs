@@ -106,6 +106,8 @@ public sealed class IndexPlanTests
             cursor.Prepare(session, []);
             Assert.False(cursor.IsAlwaysFalse());
             Assert.False(cursor.Next());
+            Assert.Null(cursor.GetStart());
+            Assert.Null(cursor.GetEnd());
             Assert.ThrowsAny<Exception>(() => cursor.Previous());
         }
         finally
