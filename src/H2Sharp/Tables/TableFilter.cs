@@ -390,6 +390,87 @@ public class TableFilter : ColumnResolver
 
     private readonly IndexHints? indexHints;
 
+    private int[]? masks;
+
+    /// <summary>
+    /// Sets the plan this filter will use.
+    /// </summary>
+    /// <remarks>
+    /// A null plan is not an error here but a plan that cannot be used — most likely because a
+    /// column was not found — and the exception comes later, when the statement runs without
+    /// one. Failing here would fail the statement that is still being read, for a table it has
+    /// not finished naming.
+    /// </remarks>
+    /// <param name="item">the plan item, or null</param>
+    public void SetPlanItem(PlanItem? item)
+    {
+        if (item is null)
+        {
+            // invalid plan, most likely because a column wasn't found
+            // this will result in an exception later on
+            return;
+        }
+
+        SetIndex(item.GetIndex()!, reverse: false);
+        masks = item.GetMasks();
+        if (nestedJoin is not null)
+        {
+            if (item.GetNestedJoinPlan() is not null)
+            {
+                nestedJoin.SetPlanItem(item.GetNestedJoinPlan());
+            }
+            else
+            {
+                nestedJoin.SetScanIndexes();
+            }
+        }
+
+        if (join is not null)
+        {
+            if (item.GetJoinPlan() is not null)
+            {
+                join.SetPlanItem(item.GetJoinPlan());
+            }
+            else
+            {
+                join.SetScanIndexes();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the masks of the columns the query has fixed.
+    /// </summary>
+    /// <returns>the masks, or null when the plan chose none</returns>
+    public int[]? GetMasks() => masks;
+
+    /// <summary>
+    /// Points every filter without an index at a full scan, down the whole chain.
+    /// </summary>
+    /// <remarks>
+    /// Only the filters that have none: a filter with a plan keeps it, since a plan the
+    /// planner chose beats a scan by definition. This is the fallback the planner itself
+    /// calls, not a default — a filter that scanned when it had a plan would answer slower
+    /// than it was told to.
+    /// </remarks>
+    private void SetScanIndexes()
+    {
+        if (index is null)
+        {
+            SetIndex(table.GetScanIndex(GetSession())!, reverse: false);
+        }
+
+        if (join is not null)
+        {
+            join.SetScanIndexes();
+        }
+
+        if (nestedJoin is not null)
+        {
+            nestedJoin.SetScanIndexes();
+        }
+    }
+
     private H2Sharp.Indexes.Index? index;
 
     /// <summary>

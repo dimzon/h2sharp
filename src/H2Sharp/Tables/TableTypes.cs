@@ -948,6 +948,18 @@ public abstract class Table
     public abstract Column[] GetColumns();
 
     /// <summary>
+    /// Gets the index a full scan reads.
+    /// </summary>
+    /// <remarks>
+    /// Abstract because "the index a full scan reads" depends on the table: a regular table
+    /// scans its primary index, and any other table answers with whatever it walks in full. A
+    /// scan that read another index would skip rows or read them twice, depending on which.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <returns>the scan index</returns>
+    public abstract H2Sharp.Indexes.Index? GetScanIndex(Engine.SessionLocal session);
+
+    /// <summary>
     /// Gets the primary key index.
     /// </summary>
     public abstract Index? GetPrimaryKey();

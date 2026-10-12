@@ -180,6 +180,17 @@ public sealed class MVTable : Table
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The primary index, as in the reference. A full scan of this table walks the rows in
+    /// key order, which is what the primary index keeps.
+    /// </remarks>
+    public override Index? GetScanIndex(SessionLocal session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return primaryIndex;
+    }
+
+    /// <inheritdoc/>
     public override Index? GetIndexFor(SessionLocal session, SearchRow row)
     {
         return primaryIndex;

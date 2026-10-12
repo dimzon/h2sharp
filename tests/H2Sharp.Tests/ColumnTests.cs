@@ -106,6 +106,12 @@ public sealed class ColumnTests
 
         public override string GetTableName() => "T";
 
+        /// <summary>
+        /// A fake has no storage, so it has no scan index either: null is the honest answer,
+        /// and a caller that scans a fake was already mistaken about what it holds.
+        /// </summary>
+        public override H2Sharp.Indexes.Index? GetScanIndex(SessionLocal session) => null;
+
         public override int GetTableType() => TABLE;
 
         public override int GetColumnCount() => 1;

@@ -480,6 +480,42 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void ANullPlanSetsNothing()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // A null plan is not an error here but a plan that cannot be used: the exception
+            // comes later, when the statement runs without one. What is asserted is that
+            // nothing is set by it -- no index, no masks.
+            Tables.TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
+            Assert.Null(filter.GetIndex());
+            Assert.Null(filter.GetMasks());
+            filter.SetPlanItem(null);
+            Assert.Null(filter.GetIndex());
+            Assert.Null(filter.GetMasks());
+
+            // A plan without an index is refused, not scanned: in the reference this is a null
+            // dereference inside setIndex, and here it is the argument check saying the same
+            // thing -- a plan has to name an index to be a plan.
+            Assert.ThrowsAny<Exception>(() => filter.SetPlanItem(new Tables.PlanItem()));
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void HintsAreKeptNotApplied()
     {
         SessionLocal session = NewSession();
