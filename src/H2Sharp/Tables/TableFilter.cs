@@ -53,6 +53,321 @@ public class TableFilter : ColumnResolver
 
     private const int NullRow = 3;
 
+    private Result.SearchRow? currentSearchRow;
+
+    private Result.Row? current;
+
+    private int state;
+
+    private bool foundOne;
+
+    private int scanCount;
+
+    /// <summary>
+    /// Starts a query on this filter and everything joined to it.
+    /// </summary>
+    /// <remarks>
+    /// The session is handed down because the filter that was built for one session may run on
+    /// another: a prepared statement outlives the session that prepared it, and a filter holding
+    /// the old one would read with the wrong transaction. The scan count starts over for the
+    /// same reason a bound does — a leftover count would time out this run for the last one's
+    /// rows.
+    /// </remarks>
+    /// <param name="s">the session</param>
+    public void StartQuery(SessionLocal s)
+    {
+        ArgumentNullException.ThrowIfNull(s);
+        session = s;
+        scanCount = 0;
+        if (nestedJoin is not null)
+        {
+            nestedJoin.StartQuery(s);
+        }
+
+        if (join is not null)
+        {
+            join.StartQuery(s);
+        }
+    }
+
+    /// <summary>
+    /// Resets to the current position.
+    /// </summary>
+    /// <remarks>
+    /// The nested join and the join are reset first, because a scan that restarts in the middle
+    /// would re-read the rows it already answered: the position is only "current" when every
+    /// filter of the chain agrees where it is.
+    /// </remarks>
+    public void Reset()
+    {
+        if (nestedJoin is not null)
+        {
+            nestedJoin.Reset();
+        }
+
+        if (join is not null)
+        {
+            join.Reset();
+        }
+
+        state = BeforeFirst;
+        foundOne = false;
+    }
+
+    /// <summary>
+    /// Sets the null row, for the outer side of an outer join that matched nothing.
+    /// </summary>
+    /// <remarks>
+    /// It is protected because only the scan itself may produce it: a caller that set a null
+    /// row from outside would make the filter answer rows the join never saw. The nested join
+    /// is visited rather than set, since it has its own null row to produce.
+    /// </remarks>
+    protected void SetNullRow()
+    {
+        state = NullRow;
+        current = table.GetNullRow();
+        currentSearchRow = current;
+        if (nestedJoin is not null)
+        {
+            nestedJoin.Visit(new NullRowVisitor());
+        }
+    }
+
+    /// <summary>
+    /// Marks every filter of a join as holding the null row.
+    /// </summary>
+    private sealed class NullRowVisitor : TableFilterVisitor
+    {
+        public void Accept(TableFilter f)
+        {
+            ArgumentNullException.ThrowIfNull(f);
+            f.SetNullRow();
+        }
+    }
+
+    /// <summary>
+    /// Whether the current value of the condition is true, or there is no condition.
+    /// </summary>
+    /// <param name="condition">the condition (null for no condition)</param>
+    /// <returns>true if yes</returns>
+    internal bool IsOk(Expression? condition)
+    {
+        return condition is null || condition.GetBooleanValue(GetSession());
+    }
+
+    /// <summary>
+    /// Advances to the next row that survives the conditions.
+    /// </summary>
+    /// <remarks>
+    /// The join is tried first when there is a row to continue from: a joined table that still
+    /// has rows pairs them with the current one before anything moves, because moving on would
+    /// drop pairs nobody asked to drop. Otherwise the cursor walks, and every row it finds is
+    /// asked — the filter condition, then the join condition — before the join is walked for it.
+    /// A row that fails either is skipped, not answered: answering it would hand the query a row
+    /// its own WHERE refused.
+    ///
+    /// The null row is produced once, when the scan is over and the join is outer and nothing
+    /// matched: it is the row the outer join exists to keep, and producing it twice would double
+    /// every unmatched row.
+    /// </remarks>
+    /// <returns>true when there is a row</returns>
+    public bool Next()
+    {
+        if (state == AfterLast)
+        {
+            return false;
+        }
+
+        if (state == BeforeFirst)
+        {
+            cursor.Find(GetSession(), indexConditions);
+            if (!cursor.IsAlwaysFalse())
+            {
+                if (nestedJoin is not null)
+                {
+                    nestedJoin.Reset();
+                }
+
+                if (join is not null)
+                {
+                    join.Reset();
+                }
+            }
+        }
+        else
+        {
+            // state == FOUND || NULL_ROW
+            // the last row was ok - try next row of the join
+            if (join is not null && join.Next())
+            {
+                return true;
+            }
+        }
+
+        while (true)
+        {
+            // go to the next row
+            if (state == NullRow)
+            {
+                break;
+            }
+
+            if (cursor.IsAlwaysFalse())
+            {
+                state = AfterLast;
+            }
+            else if (nestedJoin is not null)
+            {
+                if (state == BeforeFirst)
+                {
+                    state = Found;
+                }
+            }
+            else
+            {
+                if ((++scanCount & 4095) == 0)
+                {
+                    CheckTimeout();
+                }
+
+                if (cursor.Next())
+                {
+                    currentSearchRow = cursor.GetSearchRow();
+                    current = null;
+                    state = Found;
+                }
+                else
+                {
+                    state = AfterLast;
+                }
+            }
+
+            if (nestedJoin is not null && state == Found)
+            {
+                if (!nestedJoin.Next())
+                {
+                    state = AfterLast;
+                    if (joinOuter && !foundOne)
+                    {
+                        // possibly null row
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            // if no more rows found, try the null row (for outer joins only)
+            if (state == AfterLast)
+            {
+                if (joinOuter && !foundOne)
+                {
+                    SetNullRow();
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (!IsOk(filterCondition))
+            {
+                continue;
+            }
+
+            bool joinConditionOk = IsOk(joinCondition);
+            if (state == Found)
+            {
+                if (joinConditionOk)
+                {
+                    foundOne = true;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+            if (join is not null)
+            {
+                join.Reset();
+                if (!join.Next())
+                {
+                    continue;
+                }
+            }
+
+            // check if it's ok
+            if (state == NullRow || joinConditionOk)
+            {
+                return true;
+            }
+        }
+
+        state = AfterLast;
+        return false;
+    }
+
+    /// <summary>
+    /// Throws when the statement running this scan was canceled.
+    /// </summary>
+    /// <remarks>
+    /// Empty, because there is nothing to cancel yet: the reference checks a deadline the
+    /// cancel call sets, and neither the deadline nor the throttling around it is ported. A
+    /// check that threw here would end every scan at its 4096th row, which is not what
+    /// "not ported" means — it would be a scan that fails for being long.
+    /// </remarks>
+    private void CheckTimeout()
+    {
+    }
+
+    /// <summary>
+    /// Whether the cursor is on the null row of an outer join.
+    /// </summary>
+    /// <remarks>
+    /// It is the state and nothing else: a null row is not an empty row and not a missing one,
+    /// it is the row an outer join produces where the inner side had nothing. Anything that
+    /// reads it as "no row" would drop the very rows the outer join exists to keep.
+    /// </remarks>
+    /// <returns>true when it is on the null row</returns>
+    public bool IsNullRow() => state == NullRow;
+
+    /// <summary>
+    /// Gets the row the cursor is on.
+    /// </summary>
+    /// <remarks>
+    /// The search row is enough when it is all there is; the full row is read from the cursor
+    /// only when the cursor is actually standing on it. Reading it eagerly would fetch every
+    /// row twice — once to find it, once to read it — and a scan that fetches twice runs half
+    /// as fast for no reason.
+    /// </remarks>
+    /// <returns>the row, or null when there is none</returns>
+    public Result.Row? Get()
+    {
+        if (current is null && currentSearchRow is not null)
+        {
+            current = cursor.Get();
+        }
+
+        return current;
+    }
+
+    /// <summary>
+    /// Sets the row the cursor is on, and the search row with it.
+    /// </summary>
+    /// <remarks>
+    /// Both at once, because they are two views of one position: the search row is what the
+    /// index found, the row is what the table holds. Setting one without the other would leave
+    /// the cursor standing between two different rows.
+    /// </remarks>
+    /// <param name="current">the row, or null</param>
+    public void Set(Result.Row? current)
+    {
+        this.current = current;
+        currentSearchRow = current;
+    }
+
     /// <summary>
     /// Comparator that uses order in FROM clause as a sort key.
     /// </summary>

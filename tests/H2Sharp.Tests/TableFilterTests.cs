@@ -415,6 +415,37 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void AnEmptyTableEndsTheScanBeforeItStarts()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // Nothing was ever inserted, so the scan has no first row: Next answers false on a
+            // filter that was started and reset, and there is no row to read afterwards. A scan
+            // that answered true here would hand out a row the table never held.
+            Tables.TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
+            filter.StartQuery(session);
+            filter.Reset();
+            Assert.False(filter.Next());
+            Assert.False(filter.IsNullRow());
+            Assert.Null(filter.Get());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void HintsAreKeptNotApplied()
     {
         SessionLocal session = NewSession();

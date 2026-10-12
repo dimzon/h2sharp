@@ -886,6 +886,36 @@ public abstract class Table
     public abstract Column GetColumn(int index);
 
     /// <summary>
+    /// Gets a row filled with NULL, for the outer side of an outer join that matched nothing.
+    /// </summary>
+    /// <remarks>
+    /// Made once and kept, because every null row of this table is the same row: it has no
+    /// values to differ by. Two threads may make two of them at the same moment, and that is
+    /// fine for the same reason — neither has anything in it that the other lacks.
+    /// </remarks>
+    /// <returns>the null row</returns>
+    public virtual Row GetNullRow()
+    {
+        Row? row = nullRow;
+        if (row is null)
+        {
+            // Here can be concurrently produced more than one row, but it must
+            // be ok.
+            Value?[] values = new Value?[GetColumnCount()];
+            for (int i = 0; i < values.Length; i++)
+            {
+                values[i] = ValueNull.Instance;
+            }
+
+            nullRow = row = CreateRow(values!, 1);
+        }
+
+        return row;
+    }
+
+    private Row? nullRow;
+
+    /// <summary>
     /// Creates a row with the given values.
     /// </summary>
     /// <remarks>
