@@ -76,9 +76,19 @@ public class TableFilter : ColumnResolver
     private readonly IndexHints? indexHints;
 
     /// <summary>
+    /// The filter used to walk through the index.
+    /// </summary>
+    /// <remarks>
+    /// Built here and not when the plan arrives, because the reference builds it in the
+    /// constructor for the same reason: a filter without a cursor cannot be walked, and a plan
+    /// that arrived before the cursor would have nowhere to point it.
+    /// </remarks>
+    private readonly IndexCursor cursor;
+
+    /// <summary>
     /// The index conditions used for direct index lookup (start or end).
     /// </summary>
-    private readonly List<IndexCondition> indexConditions = [];
+    private readonly List<Indexes.IndexCondition> indexConditions = [];
 
     /// <summary>
     /// Adds an index condition, to be used for direct index lookup.
@@ -89,7 +99,7 @@ public class TableFilter : ColumnResolver
     /// column from being answered by reading the whole table.
     /// </remarks>
     /// <param name="condition">the condition</param>
-    public void AddIndexCondition(IndexCondition condition)
+    public void AddIndexCondition(Indexes.IndexCondition condition)
     {
         ArgumentNullException.ThrowIfNull(condition);
         indexConditions.Add(condition);
@@ -124,6 +134,7 @@ public class TableFilter : ColumnResolver
         this.table = table;
         this.alias = alias;
         this.select = select;
+        this.cursor = new IndexCursor();
 
         if (!rightsChecked)
         {

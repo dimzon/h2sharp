@@ -133,7 +133,13 @@ public class IndexColumn
 /// <summary>
 /// A cursor over an index.
 /// </summary>
-public abstract class IndexCursor
+/// <remarks>
+/// It implements <see cref="H2Sharp.Indexes.Cursor"/>, as the reference's IndexCursor does: a
+/// cursor that walks an index is walked through that contract, and anything else would make the
+/// filter hold a cursor it cannot read through. The walk itself — find, next, previous — is not
+/// ported yet; what is here is everything around it, which the reference keeps on the same class.
+/// </remarks>
+public class IndexCursor : H2Sharp.Indexes.Cursor
 {
     private H2Sharp.Indexes.Index? index;
 
@@ -152,6 +158,8 @@ public abstract class IndexCursor
     private Result.SearchRow? end;
 
     private Result.SearchRow? intersects;
+
+    private ResultCursor? cursor;
 
     /// <summary>
     /// Contains a <see cref="Column"/> or a <c>Column[]</c> depending on the condition type.
@@ -570,40 +578,99 @@ public abstract class IndexCursor
     }
 
     /// <summary>
-    /// Advances to the next row.
+    /// Finds the rows the prepared conditions describe and points the cursor at them.
     /// </summary>
-    public abstract void Next();
+    /// <remarks>
+    /// An IN list short-circuits everything: it is answered from the list, and no scan is
+    /// started for it. Otherwise, unless the conditions already ruled everything out, the scan
+    /// runs from the first bound to the last — swapped when the cursor walks backwards, so that
+    /// "backwards" means the same rows in the other order and not a different set of them.
+    /// </remarks>
+    /// <param name="s">the session</param>
+    /// <param name="indexConditions">the conditions</param>
+    public void Find(Engine.SessionLocal s, List<H2Sharp.Indexes.IndexCondition> indexConditions)
+    {
+        ArgumentNullException.ThrowIfNull(s);
+        ArgumentNullException.ThrowIfNull(indexConditions);
+        Prepare(s, indexConditions);
+        if (inColumn is not null)
+        {
+            return;
+        }
+
+        if (!alwaysFalse)
+        {
+            Result.SearchRow? first;
+            Result.SearchRow? last;
+            if (reverse)
+            {
+                first = end;
+                last = start;
+            }
+            else
+            {
+                first = start;
+                last = end;
+            }
+
+            if (intersects is not null && index is H2Sharp.Indexes.SpatialIndex spatial)
+            {
+                cursor = spatial.FindByGeometry(session!, first, last, reverse, intersects);
+            }
+            else if (index is not null)
+            {
+                cursor = index.GetCursor(session!, first, last);
+            }
+        }
+    }
 
     /// <summary>
-    /// Moves to the previous row.
+    /// Gets the complete current row. All columns are available.
     /// </summary>
-    public abstract void Previous();
+    /// <remarks>
+    /// Not ported. It is the row the walk stands on, and the walk is what is missing: a Get
+    /// without Next would answer the same row forever, which is a result set that never ends.
+    /// </remarks>
+    /// <returns>the complete row</returns>
+    public Result.Row? Get()
+        => throw new TODOException("IndexCursor.get: the walk is not ported");
 
     /// <summary>
-    /// Moves to the first row.
+    /// Gets the current row. Only the data for indexed columns is available in this row.
     /// </summary>
-    public abstract void First();
+    /// <remarks>
+    /// Not ported, for the same reason as <see cref="Get"/>.
+    /// </remarks>
+    /// <returns>the search row</returns>
+    public Result.SearchRow? GetSearchRow()
+        => throw new TODOException("IndexCursor.getSearchRow: the walk is not ported");
 
     /// <summary>
-    /// Moves to the last row.
+    /// Skips to the next row if one is available.
     /// </summary>
-    public abstract void Last();
+    /// <remarks>
+    /// Not ported. It is the walk itself, and a Next that answered true without moving would be
+    /// the result set that never ends from above.
+    /// </remarks>
+    /// <returns>true if another row is available</returns>
+    public bool Next()
+        => throw new TODOException("IndexCursor.next: the walk is not ported");
 
     /// <summary>
-    /// Whether there is a current row.
+    /// Skips to the previous row if one is available. No filtering is made here.
     /// </summary>
-    public abstract bool HasNext();
-
-    /// <summary>
-    /// Gets the current row.
-    /// </summary>
-    public abstract Row GetRow();
+    /// <remarks>
+    /// Not ported, for the same reason as <see cref="Next"/>.
+    /// </remarks>
+    /// <returns>true if another row is available</returns>
+    public bool Previous()
+        => throw new TODOException("IndexCursor.previous: the walk is not ported");
 
     /// <summary>
     /// Inserts a row through this cursor.
     /// </summary>
     /// <param name="row">the row</param>
-    public virtual void Add(Row row)
+    public virtual void Add(Result.Row row)
         => throw new TODOException("IndexCursor.add");
 
     /// <summary>
@@ -611,29 +678,6 @@ public abstract class IndexCursor
     /// </summary>
     public virtual void Remove()
         => throw new TODOException("IndexCursor.remove");
-}
-
-/// <summary>
-/// A condition on an index, used to estimate the cost of a lookup.
-/// </summary>
-public sealed class IndexCondition
-{
-    /// <summary>
-    /// Creates an index condition.
-    /// </summary>
-    /// <param name="column">the column</param>
-    /// <param name="index">the index</param>
-    public IndexCondition(Column column, Index index)
-    {
-        Column = column;
-        Index = index;
-    }
-
-    /// <summary>Gets the column the condition is on.</summary>
-    public Column Column { get; }
-
-    /// <summary>Gets the index the condition applies to.</summary>
-    public Index Index { get; }
 }
 
 /// <summary>
