@@ -93,7 +93,7 @@ public interface CommandInterface : IDisposable
     /// Get an empty result set containing the metadata.
     /// </summary>
     /// <returns>the metadata</returns>
-    ResultInterface GetMetaData();
+    ResultInterface? GetMetaData();
 
     /// <summary>Unknown.</summary>
     public const int Unknown = 0;

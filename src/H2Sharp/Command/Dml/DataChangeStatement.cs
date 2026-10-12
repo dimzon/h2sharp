@@ -55,10 +55,33 @@ public abstract class DataChangeStatement : Prepared
     /// <summary>
     /// Reads the statement's own text and binds what it names: the table, the columns, the
     /// query. The reference calls this from the constructor of each subclass; here it is called
-    /// by whoever prepares the statement, because the parsing that fills it is not ported.
     /// </summary>
     public override void Prepare()
-        => throw new TODOException("DataChangeStatement.prepare: the commands are not ported");
+    {
+        // Prepared once, and only once. The flag is here rather than in the subclass because a
+        // statement is prepared again on every re-use of a cached command, and doing the work a
+        // second time would bind the table and the columns against a database that has moved on
+        // since.
+        if (isPrepared)
+        {
+            return;
+        }
+
+        DoPrepare();
+        isPrepared = true;
+    }
+
+    private bool isPrepared;
+
+    /// <summary>
+    /// Binds what this statement names: the table, the columns, the query.
+    /// </summary>
+    /// <remarks>
+    /// Not ported. It is where the statement's own parsing lands — the reference reads its text
+    /// here — and the parser this port has reads into a statement tree that is not yet handed
+    /// over.
+    /// </remarks>
+    protected abstract void DoPrepare();
 
     /// <summary>
     /// Gets the name of this statement, as it appears in its SQL.

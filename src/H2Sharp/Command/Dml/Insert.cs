@@ -153,4 +153,7 @@ public sealed class Insert : CommandWithValues
 
     /// <inheritdoc/>
     public override bool IsRetryable() => true;
+    /// <inheritdoc/>
+    protected override void DoPrepare()
+        => throw new TODOException("Prepare.doPrepare: the statement is not bound to its table yet");
 }

@@ -105,7 +105,7 @@ public abstract class Command : CommandInterface
     /// Get an empty result set containing the metadata.
     /// </summary>
     /// <returns>an empty result set</returns>
-    public abstract ResultInterface QueryMeta();
+    public abstract ResultInterface? QueryMeta();
 
     /// <summary>
     /// Execute an updating statement (for example insert, delete, or update), if this is possible.
@@ -128,7 +128,7 @@ public abstract class Command : CommandInterface
     public abstract ResultInterface Query(long maxrows);
 
     /// <inheritdoc/>
-    public ResultInterface GetMetaData()
+    public ResultInterface? GetMetaData()
     {
         return QueryMeta();
     }

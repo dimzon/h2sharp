@@ -94,7 +94,7 @@ public class CommandContainer : Command
     }
 
     /// <inheritdoc/>
-    public override ResultInterface QueryMeta() => command.QueryMeta();
+    public override ResultInterface? QueryMeta() => command.QueryMeta();
 
     /// <inheritdoc/>
     public override ResultWithGeneratedKeys UpdateRows(object generatedKeysRequest)

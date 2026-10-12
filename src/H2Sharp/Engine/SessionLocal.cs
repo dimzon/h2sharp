@@ -20,6 +20,8 @@ using H2Sharp.Tables;
 using H2Sharp.Values;
 using H2Sharp.Api;
 using H2Sharp.Command;
+using H2Sharp.Message;
+using H2Sharp.Util;
 
 namespace H2Sharp.Engine;
 
@@ -284,7 +286,80 @@ public sealed class SessionLocal : Session
     /// <param name="sql">the SQL</param>
     /// <returns>the prepared command</returns>
     public override H2Sharp.Command.CommandInterface PrepareCommand(string sql)
-        => throw new TODOException("SessionLocal.prepareCommand: the commands are not ported");
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+        // The reference reads the statement and wraps it in a CommandContainer here. Same three
+        // steps, and the cache around them is where a repeated statement is meant to become
+        // cheap: a command is only handed back once it has been closed, so nothing that is still
+        // in use can be run twice underneath a caller.
+        H2Sharp.Command.Command? cached = null;
+        if (queryCacheSize > 0)
+        {
+            if (queryCache is null)
+            {
+                queryCache = SmallLRUCache<string, H2Sharp.Command.Command>.NewInstance(queryCacheSize);
+                modificationMetaId = GetDatabase().GetModificationMetaId();
+            }
+            else
+            {
+                // A change of any kind invalidates the whole cache. This is blunt on purpose:
+                // tracking which object each cached command depended on is the finer rule, and
+                // dropping everything is the one that cannot be wrong about a dependency it
+                // failed to notice.
+                long newModificationMetaId = GetDatabase().GetModificationMetaId();
+                if (newModificationMetaId != modificationMetaId)
+                {
+                    queryCache.Clear();
+                    modificationMetaId = newModificationMetaId;
+                }
+
+                if (queryCache.TryGetValue(sql, out H2Sharp.Command.Command? found) && found.CanReuse())
+                {
+                    cached = found;
+                }
+            }
+        }
+
+        if (cached is not null)
+        {
+            cached.Reuse();
+            return cached;
+        }
+        H2Sharp.Command.Command command = new H2Sharp.Command.Parser(this).PrepareCommand(sql);
+
+        if (queryCache is not null && command.IsCacheable())
+        {
+            _ = queryCache.Put(sql, command);
+        }
+
+        return command;
+    }
+
+    /// <summary>
+    /// The prepared commands this session keeps, keyed by their text.
+    /// </summary>
+    /// <remarks>
+    /// A statement is parsed once and run many times, so the tree is worth keeping — and keeping
+    /// it is only safe while nothing it read has changed. That is what the modification id is
+    /// for: the whole cache is dropped the moment the database reports a change, which is blunt
+    /// but correct, and is cheaper than tracking which object each cached command depended on.
+    /// </remarks>
+    private SmallLRUCache<string, H2Sharp.Command.Command>? queryCache;
+
+    private long modificationMetaId;
+
+    /// <summary>
+    /// How many commands this session keeps, or zero for none.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads this from the database settings (QUERY_CACHE_SIZE, default 8) when the
+    /// session opens, because a setting changed after the database started must not change a
+    /// session that is already running. The settings object is not ported, so the default is
+    /// written here.
+    /// </remarks>
+    private readonly int queryCacheSize = QueryCacheSize;
+
+    private const int QueryCacheSize = 8;
 
     /// <summary>
     /// Gets the current timestamp of this session.

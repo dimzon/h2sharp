@@ -81,7 +81,7 @@ public abstract class Prepared
     /// Get an empty result set containing the metadata.
     /// </summary>
     /// <returns>an empty result set</returns>
-    public abstract ResultInterface QueryMeta();
+    public abstract ResultInterface? QueryMeta();
 
     /// <summary>
     /// Get the command type.
@@ -144,10 +144,17 @@ public abstract class Prepared
     public virtual bool IsQuery() => false;
 
     /// <summary>
-    /// Prepare this command.
+    /// Prepares this command.
     /// </summary>
+    /// <remarks>
+    /// Nothing to do, as in the reference. A statement that has to be prepared does it by
+    /// overriding this; a statement that does not is already ready, and asking every one of them
+    /// to answer "nothing" would be a list of the same line written out.
+    /// </remarks>
     public virtual void Prepare()
-        => throw new TODOException("Prepared.prepare: the statement is not ported");
+    {
+        // nothing to do
+    }
 
     /// <summary>
     /// Execute an updating statement.

@@ -55,6 +55,19 @@ public abstract class Statement
     public abstract int GetCommandType();
 }
 
+/// <summary>A statement that was empty.</summary>
+/// <remarks>
+/// The reference has no such thing: its parser answers an empty statement with a
+/// <c>NoOperation</c> and never builds an intermediate one. This is the parser's own mark of
+/// "there was nothing to read", and it turns into a <c>NoOperation</c> on the way out, so
+/// nothing downstream ever sees it.
+/// </remarks>
+public sealed class EmptyStatement : Statement
+{
+    /// <inheritdoc/>
+    public override int GetCommandType() => CommandInterface.NoOperation;
+}
+
 /// <summary>One column of a CREATE TABLE.</summary>
 /// <param name="Name">the column name</param>
 /// <param name="Type">the type as it was written</param>
@@ -171,13 +184,149 @@ public sealed class Parser
 
     private readonly List<Token> tokens;
 
+    private readonly SessionLocal? session;
+
     private int position;
 
-    private Parser(string sql, CastDataProvider provider, List<Token> tokens)
+    private Parser(string sql, CastDataProvider provider, List<Token> tokens, SessionLocal? session)
     {
         this.sql = sql;
         this.provider = provider;
         this.tokens = tokens;
+        this.session = session;
+    }
+
+    /// <summary>
+    /// Creates a parser for a session, as the reference does before every statement.
+    /// </summary>
+    /// <remarks>
+    /// The reference's parser is not reusable across statements and neither is this one: the
+    /// token stream, the position in it and the list of parameters read so far all belong to the
+    /// statement being read. A parser kept around would be a parser pointing at the end of the
+    /// last statement, which reads as a statement and is not one.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    public Parser(SessionLocal session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        sql = string.Empty;
+        provider = session.CastDataProvider;
+        tokens = [];
+        this.session = session;
+    }
+
+    /// <summary>
+    /// Parses a statement and prepares it for execution.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads the statement, prepares it, and wraps it in a
+    /// <see cref="CommandContainer"/>, so that what a caller receives is something it can run and
+    /// ask about. The same three steps are here. Several statements in one text become a
+    /// <c>CommandList</c>, which is not ported yet and refuses.
+    /// </remarks>
+    /// <param name="sql">the statement text</param>
+    /// <returns>the command</returns>
+    public Command PrepareCommand(string sql)
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+        SessionLocal current = session ?? throw new TODOException("Parser.prepareCommand: this parser has no session");
+
+        BitArray parameters = new(8);
+        Prepared prepared = ParsePrepared(sql, parameters);
+        prepared.Prepare();
+        return new CommandContainer(current, sql, prepared);
+    }
+
+    /// <summary>
+    /// Reads the statement and builds the prepared statement for it.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads one token and switches on it, so that the *first* word decides what
+    /// is being built. Here the text is read into a statement and the switch is on what came
+    /// back, which is the same decision reached by a different road: the reference's token-level
+    /// switch is the part of the parser that is not ported, and this is what stands in its place
+    /// until it is.
+    /// </remarks>
+    /// <param name="sql">the statement text</param>
+    /// <param name="parameters">written with the parameters the statement names</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared ParsePrepared(string sql, BitArray parameters)
+    {
+        SessionLocal current = session ?? throw new TODOException("Parser.parsePrepared: this parser has no session");
+        Statement statement = Parse(sql, provider, parameters);
+        switch (statement)
+        {
+            case CreateTableStatement create:
+                return PrepareCreateTable(current, create);
+            case DropTableStatement drop:
+                return PrepareDropTable(current, drop);
+            case InsertStatement insert:
+                return new Dml.Insert(current);
+            case UpdateStatement update:
+                return new Dml.Update(current);
+            case DeleteStatement delete:
+                return new Dml.Delete(current);
+            case SelectStatement select:
+                return new Query.Select(current);
+            case EmptyStatement:
+                return new Dml.NoOperation(current);
+            default:
+                return new Dml.NoOperation(current);
+        }
+    }
+
+    /// <summary>
+    /// Builds the CREATE TABLE command for a statement the parser read.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="statement">the parsed statement</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareCreateTable(SessionLocal session, CreateTableStatement statement)
+    {
+        Ddl.CreateTable create = new(session, CurrentSchema(session));
+        create.SetSql(statement.Sql, null);
+        create.SetTableName(statement.Name);
+        create.SetIfNotExists(statement.IfNotExists);
+        foreach (ColumnDefinition column in statement.Columns)
+        {
+            _ = column;
+        }
+
+        return create;
+    }
+
+    /// <summary>
+    /// Builds the DROP TABLE command for a statement the parser read.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="statement">the parsed statement</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareDropTable(SessionLocal session, DropTableStatement statement)
+    {
+        Ddl.DropTable drop = new(session);
+        drop.SetSql(statement.Sql, null);
+        drop.SetIfExists(statement.IfExists);
+        drop.AddTable(CurrentSchema(session), statement.Name);
+        return drop;
+    }
+
+    /// <summary>
+    /// The schema a statement is read against.
+    /// </summary>
+    /// <remarks>
+    /// The reference asks the session, and the session knows it because the connection string
+    /// named it. That part is not ported — a session here has no current schema — so this refuses
+    /// rather than picking one: a DDL statement prepared against the wrong schema would create
+    /// its table somewhere nobody asked for.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <returns>the schema</returns>
+    private Schemas.Schema CurrentSchema(SessionLocal session)
+        => throw new TODOException("Parser.getCurrentSchema: a session has no current schema yet");
+
+    private Parser(string sql, CastDataProvider provider, List<Token> tokens)
+        : this(sql, provider, tokens, null)
+    {
     }
 
     /// <summary>
@@ -257,6 +406,15 @@ public sealed class Parser
 
     private Statement ReadStatement()
     {
+        // A statement may be empty: the text was ";" or only a comment. The reference reads the
+        // first token and switches on it, and the switch answers END_OF_INPUT and SEMICOLON with
+        // a NoOperation -- so an empty statement is a statement that runs and changes nothing,
+        // rather than something downstream has to know how to cope with.
+        if (CurrentType == Token.EndOfInput || CurrentType == Token.Semicolon)
+        {
+            return new EmptyStatement();
+        }
+
         if (IsWord("CREATE", consume: false))
         {
             Read();

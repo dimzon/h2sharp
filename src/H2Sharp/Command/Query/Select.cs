@@ -1,0 +1,217 @@
+/*
+ * Copyright 2004-2026 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
+ * Initial Developer: H2 Group
+ * Ported from org.h2.command.query.Select.
+ * Copyright 2026 H2Sharp contributors.
+ * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
+ *
+ * SELECT.
+ *
+ * The largest single class of the reference's command layer — over 1800 lines — and it is large
+ * for a reason: it is the plan as well as the statement. It reads its own text, builds a list of
+ * expressions, finds the tables behind them, asks the optimizer what to do, and runs the plan it
+ * was given into a LocalResult. The optimizer is a separate class and the interesting part of the
+ * whole thing.
+ *
+ * That is why nothing here is faked. A SELECT that answered rows without a plan would be a
+ * different program that happens to share a name, and the first thing it would get wrong is the
+ * one nobody checks first: which table it reads from, and in what order.
+ *
+ * The setters are the reference's, one per clause. They are here rather than one method with a
+ * flag because the clauses are read in a fixed order and each one decides what the next may be:
+ * HAVING before GROUP BY is a syntax error, and a parser that sets fields in any order would
+ * accept it.
+ *
+ * Not ported: every member refuses.
+ */
+using System.Collections.Generic;
+using System.Text;
+using H2Sharp.Engine;
+using H2Sharp.Expressions;
+using H2Sharp.Result;
+using H2Sharp.Tables;
+using H2Sharp.Values;
+
+namespace H2Sharp.Command.Query;
+
+/// <summary>
+/// A SELECT statement.
+/// </summary>
+public sealed class Select : Query
+{
+    private SessionLocal session;
+
+    private Expression[] expressions = [];
+
+    private bool isQuickAggregateQuery;
+
+    private bool distinct;
+
+    private bool isDistinct;
+
+    private Expression? filter;
+
+    private Expression? having;
+
+    private List<Expression>? groupBy;
+
+    private List<Expression>? windows;
+
+    private List<QueryOrderBy>? orderBy;
+
+    private bool isOrderByTop;
+
+    private long limit = -1;
+
+    private long offset;
+
+    private bool isFetchDistinct;
+
+    private string? forUpdate;
+
+    private TableFilter[]? filters = [];
+
+    /// <summary>
+    /// Creates the statement for a session.
+    /// </summary>
+    /// <param name="session">the session</param>
+    public Select(SessionLocal session)
+        : base(session, string.Empty)
+    {
+        this.session = session;
+    }
+
+    /// <inheritdoc/>
+    public override void Optimize(SessionLocal session, TableFilter? targetTableFilter)
+        => throw new TODOException("Select.optimize: the optimizer is not ported");
+
+    /// <inheritdoc/>
+    public override void PreparePlan(SessionLocal session, TableFilter? targetTableFilter)
+        => throw new TODOException("Select.preparePlan: the optimizer is not ported");
+
+    /// <inheritdoc/>
+    public override bool IsEverything(ExpressionVisitor visitor) => filter is null;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A select is cacheable unless it locks: FOR UPDATE takes row locks that belong to one run of
+    /// the statement, and handing back a cached command would hand back locks nobody asked for.
+    /// </remarks>
+    public override bool IsCacheable() => forUpdate is null;
+
+    /// <inheritdoc/>
+    public override long GetCost()
+        => throw new TODOException("Select.getCost: the plan is not built");
+
+    /// <inheritdoc/>
+    public override HashSet<DbObject> GetDependencies()
+        => throw new TODOException("Select.getDependencies: the plan is not built");
+
+    /// <inheritdoc/>
+    public override bool IsUnion() => false;
+
+    /// <inheritdoc/>
+    public override int GetUnionType()
+        => throw new TODOException("Select.getUnionType: a select is not a union");
+
+    /// <inheritdoc/>
+    public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
+        => throw new TODOException("Select.getPlanSQL: the plan is not built");
+
+    /// <inheritdoc/>
+    public override Expression[] GetExpressions() => expressions;
+
+    /// <inheritdoc/>
+    public override int GetColumnCount() => expressions.Length;
+
+    /// <inheritdoc/>
+    public override long GetRowCount(SessionLocal session, List<TableFilter> filters, long limit)
+        => throw new TODOException("Select.getRowCount: the plan is not built");
+
+    /// <inheritdoc/>
+    public override ResultInterface Run(long limit)
+        => throw new TODOException("Select.query: the optimizer is not ported");
+
+    /// <inheritdoc/>
+    public override int GetCommandType() => CommandInterface.Select;
+
+    /// <inheritdoc/>
+    public override ResultInterface? QueryMeta() => null;
+
+    /// <inheritdoc/>
+    public override bool IsQuery() => true;
+
+    /// <inheritdoc/>
+    public override bool IsTransactional() => true;
+
+    /// <summary>Sets the condition that selects the rows.</summary>
+    /// <param name="filter">the condition</param>
+    public void SetFilter(Expression? filter) => this.filter = filter;
+
+    /// <summary>Sets the condition on the grouped rows.</summary>
+    /// <param name="having">the condition</param>
+    public void SetHaving(Expression? having) => this.having = having;
+
+    /// <summary>Sets the columns to group by.</summary>
+    /// <param name="groupBy">the expressions</param>
+    public void SetGroupBy(List<Expression>? groupBy) => this.groupBy = groupBy;
+
+    /// <summary>Sets the window functions.</summary>
+    /// <param name="windows">the expressions</param>
+    public void SetWindows(List<Expression>? windows) => this.windows = windows;
+
+    /// <summary>Sets the order of the rows.</summary>
+    /// <param name="orderBy">the order</param>
+    public void SetOrderBy(List<QueryOrderBy>? orderBy) => this.orderBy = orderBy;
+
+    /// <summary>Sets whether this is ORDER BY ... TOP.</summary>
+    /// <param name="isOrderByTop">true for ORDER BY ... TOP</param>
+    public void SetOrderByTop(bool isOrderByTop) => this.isOrderByTop = isOrderByTop;
+
+    /// <summary>Sets the maximum number of rows.</summary>
+    /// <param name="limit">the limit, -1 for no limit</param>
+    public void SetLimit(long limit) => this.limit = limit;
+
+    /// <summary>Sets the number of rows to skip.</summary>
+    /// <param name="offset">the offset</param>
+    public void SetOffset(long offset) => this.offset = offset;
+
+    /// <summary>Sets whether FETCH is DISTINCT.</summary>
+    /// <param name="isFetchDistinct">true for FETCH DISTINCT</param>
+    public void SetFetchDistinct(bool isFetchDistinct) => this.isFetchDistinct = isFetchDistinct;
+
+    /// <summary>Sets the table this statement locks.</summary>
+    /// <param name="forUpdate">the table name</param>
+    public void SetForUpdate(string? forUpdate) => this.forUpdate = forUpdate;
+
+    /// <summary>Sets the table filters of the plan.</summary>
+    /// <param name="filters">the filters</param>
+    public void SetFilters(TableFilter[]? filters) => this.filters = filters;
+
+    /// <summary>Sets the expressions this statement selects.</summary>
+    /// <param name="expressions">the expressions</param>
+    public void SetExpressions(Expression[] expressions) => this.expressions = expressions;
+
+    /// <summary>Sets whether this is an aggregate over the whole table.</summary>
+    /// <param name="isQuick">true for a quick aggregate</param>
+    public void SetQuickAggregateQuery(bool isQuick) => isQuickAggregateQuery = isQuick;
+
+    /// <summary>Sets whether duplicate rows are removed.</summary>
+    /// <param name="distinct">true for DISTINCT</param>
+    public void SetDistinct(bool distinct) => this.distinct = distinct;
+
+    /// <summary>Sets whether the columns of this statement are distinct.</summary>
+    /// <param name="isDistinct">true for DISTINCT ON</param>
+    public void SetIsDistinct(bool isDistinct) => this.isDistinct = isDistinct;
+
+    /// <summary>
+    /// Gets the session this statement runs on.
+    /// </summary>
+    /// <returns>the session</returns>
+    public new SessionLocal GetSession() => session;
+
+    /// <summary>Sets the session this statement runs on.</summary>
+    /// <param name="session">the session</param>
+    public new void SetSession(SessionLocal session) => this.session = session;
+}
