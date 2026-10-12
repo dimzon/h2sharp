@@ -645,6 +645,17 @@ public class TableFilter : ColumnResolver
         }
     }
 
+    /// <summary>
+    /// Gets the hints about which indexes this filter may use.
+    /// </summary>
+    /// <remarks>
+    /// They are kept, not applied, because applying them is the planner's job and not the
+    /// filter's: a filter that chose its own index would answer about a plan it has not seen,
+    /// and the hint that named one index would become a demand for it.
+    /// </remarks>
+    /// <returns>the hints, or null when the caller allowed everything</returns>
+    public IndexHints? GetIndexHints() => indexHints;
+
     /// <returns>the session</returns>
     public SessionLocal GetSession() => session;
 

@@ -319,6 +319,37 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void HintsAreKeptNotApplied()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // A filter without hints allows everything, and one with hints keeps them: applying
+            // them is the planner's job, and a filter that chose its own index would answer
+            // about a plan it has not seen.
+            Tables.TableFilter plain = new(session, table, "P", rightsChecked: true, null, 0, null);
+            Assert.Null(plain.GetIndexHints());
+
+            Tables.IndexHints hints = Tables.IndexHints.CreateUseIndexHints(["I"]);
+            Tables.TableFilter hinted = new(session, table, "H", rightsChecked: true, null, 1, hints);
+            Assert.Same(hints, hinted.GetIndexHints());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void MarkingWalksTheChainWithoutBreakingIt()
     {
         SessionLocal session = NewSession();
