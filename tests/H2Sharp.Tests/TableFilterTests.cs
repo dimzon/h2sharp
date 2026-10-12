@@ -246,6 +246,12 @@ public sealed class TableFilterTests
             // do not mix.
             Assert.NotNull(filter.GetFilterCondition());
             Assert.NotNull(filter.GetJoinCondition());
+
+            // Forgetting the filter condition is the planner's move: a condition the index
+            // answers is removed from the filter, so that it is asked once and not twice.
+            filter.RemoveFilterCondition();
+            Assert.Null(filter.GetFilterCondition());
+            Assert.NotNull(filter.GetJoinCondition());
         }
         finally
         {

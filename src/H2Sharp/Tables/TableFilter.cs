@@ -295,6 +295,16 @@ public class TableFilter : ColumnResolver
     public Expression? GetFilterCondition() => filterCondition;
 
     /// <summary>
+    /// Forgets the filter condition.
+    /// </summary>
+    /// <remarks>
+    /// It is the planner that does this, when it decides the condition is better answered by the
+    /// index than by the filter: a condition left in both places would be asked twice, and a
+    /// condition asked twice is asked once too many.
+    /// </remarks>
+    public void RemoveFilterCondition() => filterCondition = null;
+
+    /// <summary>
     /// Joins another filter to this one.
     /// </summary>
     /// <remarks>
