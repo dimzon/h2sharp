@@ -646,8 +646,23 @@ public class TableFilter : ColumnResolver
     }
 
     /// <summary>
-    /// Gets the hints about which indexes this filter may use.
+    /// Sets the alias of this filter.
     /// </summary>
+    /// <remarks>
+    /// It is set, not built, because the alias is what was written and not what was resolved:
+    /// a filter renamed after it was read would answer column references against a name nobody
+    /// wrote.
+    /// </remarks>
+    /// <param name="alias">the alias, or null</param>
+    public void SetAlias(string? alias) => this.alias = alias;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The alias when there is one, the table otherwise. It is the name this filter is known by
+    /// in the query it belongs to — and a filter that printed its table when it has an alias
+    /// would print a name the query never used.
+    /// </remarks>
+    public override string ToString() => alias ?? table.ToString()!;
     /// <remarks>
     /// They are kept, not applied, because applying them is the planner's job and not the
     /// filter's: a filter that chose its own index would answer about a plan it has not seen,

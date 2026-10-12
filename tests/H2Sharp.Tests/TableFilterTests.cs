@@ -63,11 +63,19 @@ public sealed class TableFilterTests
             Assert.Same(table, first.GetTable());
             Assert.Same(table, second.GetTable());
 
+            // An alias is set, not built: it is what was written, and renaming a filter after
+            // it was read would answer column references against a name nobody wrote. What the
+            // filter prints is the name it is known by -- the alias when there is one, the
+            // table's own printing otherwise, which is name:id:... and not the bare name.
+            Assert.Equal("T1", first.ToString());
+            first.SetAlias(null);
+            Assert.False(first.HasAlias());
+            Assert.Equal(table.ToString(), first.ToString());
+
             // An alias is what was written. Without one, the table's own name is what answers,
             // so that a column written without a qualifier is still a column *of this table*.
             TableFilter plain = new(session, table, null, rightsChecked: true, null, 0, null);
             Assert.False(plain.HasAlias());
-            Assert.True(first.HasAlias());
             Assert.Equal("TEST", plain.GetTableAlias());
         }
         finally
