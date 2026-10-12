@@ -385,6 +385,32 @@ public abstract class Table
     public abstract Column GetColumn(int index);
 
     /// <summary>
+    /// Creates a row with the given values.
+    /// </summary>
+    /// <remarks>
+    /// The factory belongs to the table, not to the caller, because a row knows how it is
+    /// stored: a row made by another table's factory would carry the wrong key layout, and the
+    /// store would write it to a place nobody reads from.
+    /// </remarks>
+    /// <param name="data">the values</param>
+    /// <param name="memory">how the memory is counted</param>
+    /// <returns>the row</returns>
+    public virtual Row CreateRow(Value[] data, int memory) => rowFactory.CreateRow(data, memory);
+
+    /// <summary>
+    /// Creates an empty row with room for every column.
+    /// </summary>
+    /// <remarks>
+    /// A template, not a row: its values are all null, and it exists so that a search has
+    /// something to fill in. A caller that kept it would hold a row that means nothing, which
+    /// is why the reference makes one per search rather than keeping one around.
+    /// </remarks>
+    /// <returns>the empty row</returns>
+    public virtual Row GetTemplateRow() => CreateRow(new Value[GetColumns().Length], DefaultRow.MemoryCalculate);
+
+    private readonly RowFactory rowFactory = RowFactory.GetDefaultRowFactory();
+
+    /// <summary>
     /// Gets all columns.
     /// </summary>
     /// <returns>the columns</returns>

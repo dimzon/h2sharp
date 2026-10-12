@@ -151,6 +151,20 @@ public sealed class MVTableTests : IDisposable
         Assert.Contains("CHARACTER VARYING", table.GetCreateSql(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ATemplateRowHasRoomForEveryColumn()
+    {
+        MVTable table = NewTable();
+
+        // A template is not a row: every value in it is null, and it exists so that a search
+        // has something to fill in. What is asserted is the room, not the contents -- a template
+        // with fewer slots than columns would drop the values a search wrote past its end.
+        Row template = table.GetTemplateRow();
+        Assert.Equal(2, template.GetColumnCount());
+        Assert.Null(template.GetValue(0));
+        Assert.Null(template.GetValue(1));
+    }
+
     private static Row Row(int id, string name)
         => new DefaultRow([ValueInteger.Get(id), ValueVarchar.Get(name)]);
 

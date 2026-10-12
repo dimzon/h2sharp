@@ -132,7 +132,10 @@ public abstract class RowFactory
         }
 
         public override Row CreateRow(Value[] data, int memory)
-            => throw new TODOException("RowFactory.createRow(Value[], int): the concrete row is not ported");
+        {
+            ArgumentNullException.ThrowIfNull(data);
+            return new DefaultRow(data, memory);
+        }
 
         public override SearchRow CreateRow()
             => throw new TODOException("RowFactory.createRow(): the concrete row is not ported");
