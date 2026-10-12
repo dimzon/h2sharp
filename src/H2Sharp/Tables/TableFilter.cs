@@ -1369,6 +1369,27 @@ public class TableFilter : ColumnResolver
         Dictionary<Column, string>? map = derivedColumnMap;
         return map is not null && map.TryGetValue(column, out string? name) ? name : column.GetName();
     }
+    /// <summary>
+    /// Forgets the index conditions no index can serve.
+    /// </summary>
+    /// <remarks>
+    /// A condition with no mask names no column of the index, and one that cannot be evaluated
+    /// without a row cannot narrow a scan: keeping either would make the planner price a lookup
+    /// that reads every row, which is a scan with extra steps.
+    /// </remarks>
+    internal void RemoveUnusableIndexConditions()
+    {
+        // the indexConditions list may be modified here
+        for (int i = 0; i < indexConditions.Count; i++)
+        {
+            Indexes.IndexCondition cond = indexConditions[i];
+            if (cond.GetMask(indexConditions) == 0 || !cond.IsEvaluatable())
+            {
+                indexConditions.RemoveAt(i--);
+            }
+        }
+    }
+
     /// <returns>the session</returns>
     public SessionLocal GetSession() => session;
 

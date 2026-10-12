@@ -239,9 +239,14 @@ public class IndexCondition
     /// <summary>
     /// Gets the search mask for the given conditions.
     /// </summary>
+    /// <remarks>
+    /// An instance member, as in the reference: the mask answers what *this* condition
+    /// contributes to the lookup, read against the conditions around it. A static one would
+    /// answer about a list with no condition of its own, which is a mask of nothing.
+    /// </remarks>
     /// <param name="indexConditions">the conditions</param>
     /// <returns>the mask</returns>
-    public static int GetMask(List<IndexCondition> indexConditions)
+    public int GetMask(List<IndexCondition> indexConditions)
         => throw new TODOException("IndexCondition.getMask: it needs the columns of an index");
 
     /// <summary>

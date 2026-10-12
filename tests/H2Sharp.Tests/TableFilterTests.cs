@@ -555,6 +555,46 @@ public sealed class TableFilterTests
     }
 
     [Fact]
+    public void APlanKnowsItsFiltersAndPricesTheImpossibleAsInfinity()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T",
+                [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
+                store, persistData: false);
+
+            // The plan walks every filter of the order, collecting the filters themselves and
+            // every join condition it meets: that walk is why a plan knows about tables the
+            // query never named in FROM.
+            Tables.TableFilter a = new(session, table, "A", rightsChecked: true, null, 0, null);
+            Tables.TableFilter b = new(session, table, "B", rightsChecked: true, null, 1, null);
+            a.AddJoin(
+                b, outer: false,
+                H2Sharp.Expressions.ValueExpression.Get(H2Sharp.Values.ValueBoolean.Get(true)));
+
+            Tables.Plan plan = new([a, b], 2, null);
+            Assert.Equal([a, b], plan.GetFilters());
+            Assert.Null(plan.GetItem(a));
+
+            // Pricing refuses: no filter has a plan item, because choosing one is the planner's
+            // job and it is not here. What is asserted is that it refuses rather than pricing
+            // a plan it never built.
+            Assert.ThrowsAny<Exception>(() => plan.CalculateCost(
+                session, new H2Sharp.Command.Query.AllColumnsForPlan([a, b]), isSelectCommand: true));
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
     public void HintsAreKeptNotApplied()
     {
         SessionLocal session = NewSession();
