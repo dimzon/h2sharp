@@ -664,8 +664,25 @@ public class TableFilter : ColumnResolver
     /// </summary>
     /// <param name="used">true when the plan uses it</param>
     public void SetUsed(bool used) => this.used = used;
-
     private bool used;
+
+    /// <summary>
+    /// Gets the filter this one is nested inside.
+    /// </summary>
+    /// <returns>the nested filter, or null</returns>
+    public TableFilter? GetNestedJoin() => nestedJoin;
+
+    /// <summary>
+    /// Whether this filter can be evaluated without reading a row.
+    /// </summary>
+    /// <remarks>
+    /// It is a flag and not a question, because the answer is decided elsewhere — by the query
+    /// that marks what it will read, and by the planner that takes conditions away. Asking the
+    /// filter to decide would make it answer about a plan it has not seen.
+    /// </remarks>
+    /// <returns>true when it can</returns>
+    public bool IsEvaluatable() => evaluatable;
+
     /// <param name="s">the session</param>
     public void SetSession(SessionLocal s)
     {

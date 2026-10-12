@@ -348,6 +348,11 @@ public sealed class TableFilterTests
             List<string> seen = [];
             outer.Visit(new AliasCollector(seen));
             Assert.Equal(["O", "N"], seen);
+
+            // The flag is read back as it was set: it is decided elsewhere, by the query that
+            // marks what it will read, and the filter only keeps it.
+            Assert.True(outer.IsEvaluatable());
+            Assert.Same(nested, outer.GetNestedJoin());
         }
         finally
         {
