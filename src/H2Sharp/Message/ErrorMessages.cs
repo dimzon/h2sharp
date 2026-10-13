@@ -252,14 +252,15 @@ public static class ErrorMessages
 
         StringBuilder result = new(raw.Length + 16);
         int position = 0;
-        foreach (int offset in offsets)
+        // By position, not by lookup: two placeholders can share one offset ("{0}{1}" splices
+        // both at the same place), and a lookup would answer both with the first one's argument.
+        for (int k = 0; k < offsets.Length; k++)
         {
+            int offset = offsets[k];
             result.Append(raw, position, offset - position);
             position = offset;
 
-            // argumentNumbers and offsets are parallel; find the index for this offset.
-            int argumentIndex = Array.IndexOf(offsets, offset);
-            int index = argumentIndices[argumentIndex];
+            int index = argumentIndices[k];
             if (index < 0 || index >= arguments.Length)
             {
                 // MessageFormat prints the placeholder itself when the argument is

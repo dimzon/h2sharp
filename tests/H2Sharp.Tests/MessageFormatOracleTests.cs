@@ -74,6 +74,8 @@ public sealed class MessageFormatOracleTests
         Assert.Equal("{", Format("'{"));           // a quoted brace never opens a placeholder
         Assert.Equal("0{", Format("'0{"));
         Assert.Equal("ab", Format("a'b"));          // a lone apostrophe vanishes
+        Assert.Equal("AB", ErrorMessages.Format("{0}{1}", "A", "B"));   // adjacent placeholders
+        Assert.Equal("xByAzB", ErrorMessages.Format("x{1}y{0}z{1}", "A", "B"));
     }
 
     /// <summary>
