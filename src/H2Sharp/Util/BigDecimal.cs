@@ -932,7 +932,11 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     /// <summary>
     /// Ten, which BigInteger does not have as a constant.
     /// </summary>
-    private static BigInteger Ten => BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One
+    /// <remarks>
+    /// A field rather than a property: the sum is the same ten every time, and rebuilding it
+    /// per read spent ~200 bytes of garbage on every caller.
+    /// </remarks>
+    private static readonly BigInteger Ten = BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One
         + BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One + BigInteger.One;
 
     /// <summary>
