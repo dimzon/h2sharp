@@ -607,12 +607,21 @@ public static class Utils
     }
 
     /// <summary>
+    /// Nanoseconds per timer tick.
+    /// </summary>
+    private static readonly long NanosPerTick = 1_000_000_000L / Stopwatch.Frequency;
+
+    /// <summary>
     /// Returns the current value of the high-resolution time source.
     /// </summary>
+    /// <remarks>
+    /// The frequency does not change under a running process, so the scale is computed once
+    /// rather than divided on every read.
+    /// </remarks>
     /// <returns>time in nanoseconds, never equal to 0</returns>
     public static long CurrentNanoTime()
     {
-        long time = Stopwatch.GetTimestamp() * (1_000_000_000L / Stopwatch.Frequency);
+        long time = Stopwatch.GetTimestamp() * NanosPerTick;
         return time == 0L ? 1L : time;
     }
 
