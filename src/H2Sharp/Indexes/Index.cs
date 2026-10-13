@@ -258,7 +258,7 @@ public abstract class Index : SchemaObject
     /// </remarks>
     /// <param name="col">the column</param>
     /// <returns>the position, or -1</returns>
-    public int GetColumnIndex(Column col)
+    public virtual int GetColumnIndex(Column col)
     {
         for (int i = 0, len = columns.Length; i < len; i++)
         {
@@ -279,6 +279,20 @@ public abstract class Index : SchemaObject
     public IndexColumn GetColumn(int column)
     {
         return indexColumns[column];
+    }
+
+    /// <summary>
+    /// Whether the given column is the first for this index.
+    /// </summary>
+    /// <remarks>
+    /// For scan indexes of tables with row identifiers their row id column counts as first,
+    /// although it is not in the list, because such scans walk in that virtual column's order.
+    /// </remarks>
+    /// <param name="column">the column</param>
+    /// <returns>true when it is first</returns>
+    public virtual bool IsFirstColumn(Column column)
+    {
+        return column.Equals(columns[0]);
     }
 
     /// <summary>

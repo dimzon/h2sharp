@@ -568,6 +568,22 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
         return GetRowCountMax();
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Always the miss: a condition on a primary column is served by the delegate that wraps
+    /// it, never by the primary itself.
+    /// </remarks>
+    public override int GetColumnIndex(Tables.Column column)
+    {
+        return -1;
+    }
+
+    /// <inheritdoc/>
+    public override bool IsFirstColumn(Tables.Column column)
+    {
+        return column.GetColumnId() == Result.SearchRow.RowidIndex && column.GetTable() == table;
+    }
+
     private TransactionMap<long, SearchRow> GetMap(Transaction? transaction)
     {
         if (transaction is null)

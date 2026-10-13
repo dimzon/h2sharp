@@ -165,6 +165,49 @@ public sealed class TableFilterScanTests
         }
     }
 
+    /// <summary>
+    /// A condition the scan index cannot serve is pruned, not bound: the primary answers no
+    /// column, so the walk reads everything and the rows come out whole on both sides.
+    /// </summary>
+    [JavaOracleFact]
+    public void AnUnservableConditionReadsTheWholeTable()
+    {
+        SessionLocal session = NewSession("filter_unservable");
+        var store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            MVTable table = NewTable(session, store, 0);
+            table.AddRow(session, Row(3, "c", 30));
+            table.AddRow(session, Row(1, "a", 10));
+            table.AddRow(session, Row(2, "b", 20));
+
+            TableFilter f = NewFilter(session, table);
+            var ec = new ExpressionColumn(table.GetColumn(0), f, 0);
+            var two = ValueExpression.Get(ValueInteger.Get(2));
+            f.AddIndexCondition(IndexCondition.Get(Comparison.Equal, ec, two));
+            List<string> actual = WalkPlanned(f, session);
+
+            const string javaConds = """
+                org.h2.expression.ExpressionColumn ec = new org.h2.expression.ExpressionColumn(
+                    session.getDatabase(), null, "T", "ID");
+                ec.mapColumns(f, 0, org.h2.expression.Expression.MAP_INITIAL);
+                org.h2.expression.Expression two = org.h2.expression.ValueExpression.get(
+                    org.h2.value.ValueInteger.get(2));
+                f.addIndexCondition(org.h2.index.IndexCondition.get(
+                    org.h2.expression.condition.Comparison.EQUAL, ec, two));
+                """;
+            string javaWalk = JavaWalk.Replace("CONDS", javaConds);
+            List<string> java = OracleRunner.Run(
+                [], JavaSetup + JavaRows + javaWalk, null, null, "org.h2.table");
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
     private const string JavaRows = """
         org.h2.result.Row r1 = new org.h2.result.DefaultRow(new org.h2.value.Value[]{
             org.h2.value.ValueInteger.get(3), org.h2.value.ValueVarchar.get("c") });

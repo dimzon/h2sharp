@@ -113,6 +113,18 @@ public sealed class MVDelegateIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    public override int GetColumnIndex(Tables.Column column)
+    {
+        return IsFirstColumn(column) ? 0 : -1;
+    }
+
+    /// <inheritdoc/>
+    public override bool IsFirstColumn(Tables.Column column)
+    {
+        return column.GetColumnId() == mainIndex.GetMainIndexColumn() && column.GetTable() == table;
+    }
+
+    /// <inheritdoc/>
     /// <remarks>
     /// Reads through the primary: the delegate keeps no data of its own, so its walk is the
     /// primary's walk. In the reference this is the find override; here the cursor member
