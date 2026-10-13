@@ -160,13 +160,25 @@ public class CompressDeflate : Compressor
 
     private static uint Adler32(byte[] data, int pos, int len)
     {
+        // Batched as zlib does: 5552 is the largest block whose running sums cannot overflow
+        // 32 bits, so the modulo runs once per block instead of twice per byte, with the same
+        // value either way.
         const uint mod = 65521;
+        const int nmax = 5552;
         uint a = 1;
         uint b = 0;
-        for (int i = 0; i < len; i++)
+        while (len > 0)
         {
-            a = (a + data[pos + i]) % mod;
-            b = (b + a) % mod;
+            int k = len < nmax ? len : nmax;
+            len -= k;
+            while (k-- > 0)
+            {
+                a += data[pos++];
+                b += a;
+            }
+
+            a %= mod;
+            b %= mod;
         }
 
         return (b << 16) | a;
