@@ -67,20 +67,9 @@ public static class Utils
             return -1;
         }
 
-        int last = bytes.Length - pattern.Length + 1;
-        int patternLen = pattern.Length;
-        ReadOnlySpan<byte> haystack = bytes;
-        ReadOnlySpan<byte> needle = pattern;
-
-        for (; start < last; start++)
-        {
-            if (haystack.Slice(start, patternLen).SequenceEqual(needle))
-            {
-                return start;
-            }
-        }
-
-        return -1;
+        // One vectorized search instead of a slice plus compare per position: same first match.
+        int found = bytes.AsSpan(start).IndexOf(pattern);
+        return found < 0 ? -1 : start + found;
     }
 
     /// <summary>
