@@ -713,8 +713,8 @@ public class LocalResult : ResultInterface, ResultTarget
 
             if (startOffset != 0 || to != rows.Count)
             {
-                // avoid copying the whole array for each row
-                rows = [.. rows.GetRange((int)startOffset, to - (int)startOffset)];
+                // GetRange already hands back a fresh list; wrapping it copies every row twice.
+                rows = rows.GetRange((int)startOffset, to - (int)startOffset);
             }
         }
         else
