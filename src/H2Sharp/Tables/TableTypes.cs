@@ -58,6 +58,34 @@ public class IndexColumn
     }
 
     /// <summary>
+    /// Creates an ascending index column over the given column.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps the name and resolves the column later; here the column arrives
+    /// resolved, so this is the ascending creation with the column already in hand.
+    /// </remarks>
+    /// <param name="column">the column</param>
+    public IndexColumn(Column column)
+        : this(column, ascending: true)
+    {
+    }
+
+    /// <summary>
+    /// Wraps each column in an ascending index column.
+    /// </summary>
+    /// <param name="columns">the columns</param>
+    /// <returns>the wrapped columns</returns>
+    public static IndexColumn[] Wrap(Column[] columns)
+    {
+        IndexColumn[] list = new IndexColumn[columns.Length];
+        for (int i = 0; i < list.Length; i++)
+        {
+            list[i] = new IndexColumn(columns[i]);
+        }
+        return list;
+    }
+
+    /// <summary>
     /// Gets the column.
     /// </summary>
     public Column GetColumn()

@@ -135,6 +135,12 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    public override bool NeedRebuild()
+    {
+        return false;
+    }
+
+    /// <inheritdoc/>
     public override void Add(SessionLocal session, Row row)
     {
         if (mainIndexColumn == SearchRow.RowidIndex)
@@ -303,6 +309,25 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     public long GetRowCount(Transaction transaction)
     {
         return dataMap.GetInstance(transaction).SizeAsLong();
+    }
+
+    /// <summary>
+    /// The largest row count this index can report: the size of the underlying map.
+    /// </summary>
+    /// <returns>the row count maximum</returns>
+    public long GetRowCountMax()
+    {
+        return dataMap.SizeAsLongMax();
+    }
+
+    /// <summary>
+    /// The approximate row count, for the planner's pricing.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the row count maximum</returns>
+    public long GetRowCountApproximation(SessionLocal session)
+    {
+        return GetRowCountMax();
     }
 
     private TransactionMap<long, SearchRow> GetMap(Transaction? transaction)

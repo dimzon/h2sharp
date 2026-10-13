@@ -3885,7 +3885,25 @@ Prepared → DefineCommand → SchemaCommand → CommandWithColumns → CreateTa
 целиком сегодня не встанет — честный порядок такой: сначала недостающие члены базы,
 потом классы, потом метод. `prepareColumns` тоже ждёт: ему нужны публичное поле
 `column` и конструктор по имени у `IndexColumn`, а наш построен на bool и хранит колонку
-приватно — это отдельная переделка с её же оракулом. Заодно тест
+приватно — это отдельная переделка с её же оракулом.
+
+Второй шаг: `MVDelegateIndex` стоит. База получила абстрактный `NeedRebuild` (в эталоне
+абстрактный; `MVPrimaryIndex` отвечает `false`, даблы в `IndexPlanTests` — тоже, хранить
+им нечего). `MVPrimaryIndex` получил `GetRowCountMax` (размер карты) и
+`GetRowCountApproximation` (он же, как в эталоне). `IndexColumn` — только добавками:
+конструктор по колонке и статический `Wrap`, существующее не тронуто. Сам делегат:
+настоящие конструктор, `GetCost` (поиск по строкам первичного), `NeedRebuild` (`false`),
+пустые `Add`/`Remove`/`Update`/`Truncate`, `Remove(session)` (возвращает главную колонку
+в row id), `GetMVMap` и отказывающие `AddRowsToBuffer`/`AddBufferedRows`. Чего нет и
+почему: фабрика строк и поиск строк ждут базу (публичная фабрика против защищённой здесь
+— переопределить нельзя) и первичный (поиска строк там нет), `GetColumnIndex`
+наследуется (базовый не виртуальный, а считает по колонкам индекса — у делегата она
+ровно обёрнутая главная), `IsFirstColumn`/`GetRowCount(session)` ждут базу. Проверено
+`DelegateIndexTests`: делегат, собранный руками как его соберёт `addIndex`, против
+делегата, собранного движком через `CREATE TABLE` на JVM, — цена 230, поиск колонок
+0/−1, `needRebuild` 0. Сам `addIndex` следующим: остались `MVSecondaryIndex`,
+`prepareColumns` (переделка `IndexColumn`) и мелочь (`lockMeta`, `hasMap`, `setTemporary`,
+`addSchemaObject`, `setModified`). Заодно тест
 `APlanKnowsItsFilters...` переписан: он утверждал отказ (`ThrowsAny`), потому что
 `GetBestPlanItem` был стабом, а эталонный `Plan.calculateCost` недостающие строит, —
 теперь тест сверяет цену соединения с JVM побитово, имя поправлено под новое поведение.

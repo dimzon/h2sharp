@@ -709,6 +709,15 @@ public abstract class Index : SchemaObject
     public abstract void Close(SessionLocal session);
 
     /// <summary>
+    /// Whether this index needs rebuilding after opening.
+    /// </summary>
+    /// <remarks>
+    /// This method is called after opening an index.
+    /// </remarks>
+    /// <returns>true if a rebuild is required</returns>
+    public abstract bool NeedRebuild();
+
+    /// <summary>
     /// Adds a row to the index.
     /// </summary>
     /// <param name="session">the session to use</param>

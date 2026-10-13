@@ -50,6 +50,11 @@ public sealed class IndexPlanTests
         }
 
         /// <summary>
+        /// Nothing is stored, so there is nothing to rebuild after opening.
+        /// </summary>
+        public override bool NeedRebuild() => false;
+
+        /// <summary>
         /// A test double prices like a scan of nothing: the methods under test here are the
         /// lookup and the mask check, and a cost is not one of them.
         /// </summary>
@@ -178,6 +183,11 @@ public sealed class IndexPlanTests
         public override void Close(SessionLocal session)
         {
         }
+
+        /// <summary>
+        /// Nothing is stored, so there is nothing to rebuild after opening.
+        /// </summary>
+        public override bool NeedRebuild() => false;
 
         public override double GetCost(
             SessionLocal session,
