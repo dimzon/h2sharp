@@ -243,11 +243,62 @@ public class IndexCondition
     /// An instance member, as in the reference: the mask answers what *this* condition
     /// contributes to the lookup, read against the conditions around it. A static one would
     /// answer about a list with no condition of its own, which is a mask of nothing.
+    /// Table types are ints here rather than the reference's enum, so "a regular table" is
+    /// the <c>TABLE</c> constant, not an enum member — the comparison means the same.
     /// </remarks>
     /// <param name="indexConditions">the conditions</param>
     /// <returns>the mask</returns>
     public int GetMask(List<IndexCondition> indexConditions)
-        => throw new TODOException("IndexCondition.getMask: it needs the columns of an index");
+    {
+        switch (compareType)
+        {
+            case Comparison.False:
+                return AlwaysFalse;
+            case Comparison.Equal:
+            case Comparison.EqualNullSafe:
+                return Equality;
+            case Comparison.InList:
+            case Comparison.InArray:
+            case Comparison.InQuery:
+                if (indexConditions.Count > 1)
+                {
+                    if (IsCompoundColumns())
+                    {
+                        Column[]? columns = GetColumns();
+                        for (int i = columns!.Length; --i >= 0;)
+                        {
+                            if (Tables.Table.TABLE != columns[i].GetTable()?.GetTableType())
+                            {
+                                return 0;
+                            }
+                        }
+                    }
+                    else if (Tables.Table.TABLE != GetColumn()?.GetTable()?.GetTableType())
+                    {
+                        // if combined with other conditions,
+                        // IN(..) can only be used for regular tables
+                        // test case:
+                        // create table test(a int, b int, primary key(id, name));
+                        // create unique index c on test(b, a);
+                        // insert into test values(1, 10), (2, 20);
+                        // select * from (select * from test)
+                        // where a=1 and b in(10, 20);
+                        return 0;
+                    }
+                }
+                return Equality;
+            case Comparison.BiggerEqual:
+            case Comparison.Bigger:
+                return Start;
+            case Comparison.SmallerEqual:
+            case Comparison.Smaller:
+                return End;
+            case Comparison.SpatialIntersects:
+                return SpatialIntersects;
+            default:
+                throw Message.DbException.GetInternalError("type=" + compareType);
+        }
+    }
 
     /// <summary>
     /// Whether this condition is always false.

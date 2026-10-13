@@ -555,7 +555,7 @@ public sealed class TableFilterTests
     }
 
     [Fact]
-    public void APlanKnowsItsFiltersAndPricesTheImpossibleAsInfinity()
+    public void APlanKnowsItsFiltersAndPricesThemThroughThePlanner()
     {
         SessionLocal session = NewSession();
 
@@ -582,11 +582,36 @@ public sealed class TableFilterTests
             Assert.Equal([a, b], plan.GetFilters());
             Assert.Null(plan.GetItem(a));
 
-            // Pricing refuses: no filter has a plan item, because choosing one is the planner's
-            // job and it is not here. What is asserted is that it refuses rather than pricing
-            // a plan it never built.
-            Assert.ThrowsAny<Exception>(() => plan.CalculateCost(
-                session, new H2Sharp.Command.Query.AllColumnsForPlan([a, b]), isSelectCommand: true));
+            // Pricing chooses: a missing plan item is not a refusal, the reference prices each
+            // filter through getBestPlanItem and files the items away. The join is on a
+            // constant, so the plan is valid and the cost below is what the reference answers
+            // for the same two filters, probed on the JVM.
+            double cost = plan.CalculateCost(
+                session, new H2Sharp.Command.Query.AllColumnsForPlan([a, b]), isSelectCommand: true);
+            Assert.NotNull(plan.GetItem(a));
+            Assert.NotNull(plan.GetItem(b));
+
+            const string javaBody = """
+                java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:plan_cost");
+                java.sql.Statement stat = conn.createStatement();
+                stat.execute("CREATE TABLE T(ID INT)");
+                org.h2.jdbc.JdbcConnection c = (org.h2.jdbc.JdbcConnection) conn;
+                org.h2.engine.SessionLocal session = (org.h2.engine.SessionLocal) c.getSession();
+                org.h2.table.Table table = session.getDatabase().getSchema("PUBLIC").getTableOrView(session, "T");
+                org.h2.table.TableFilter a = new org.h2.table.TableFilter(session, table, "A", true, null, 0, null);
+                org.h2.table.TableFilter b = new org.h2.table.TableFilter(session, table, "B", true, null, 1, null);
+                a.addJoin(b, false, org.h2.expression.ValueExpression.get(org.h2.value.ValueBoolean.get(true)));
+                org.h2.table.Plan plan = new org.h2.table.Plan(
+                    new org.h2.table.TableFilter[]{ a, b }, 2, null);
+                double cost = plan.calculateCost(session,
+                    new org.h2.command.query.AllColumnsForPlan(
+                        new org.h2.table.TableFilter[]{ a, b }), true);
+                System.out.println("=" + Double.doubleToLongBits(cost));
+                conn.close();
+                """;
+            System.Collections.Generic.List<string> java = H2Sharp.Tests.Oracle.OracleRunner.Run(
+                [], javaBody, null, null, "org.h2.table");
+            Assert.Equal(java, ["=" + System.BitConverter.DoubleToInt64Bits(cost).ToString()]);
         }
         finally
         {

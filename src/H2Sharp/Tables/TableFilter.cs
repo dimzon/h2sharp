@@ -396,9 +396,13 @@ public class TableFilter : ColumnResolver
     /// Gets the best plan item for this filter: the index to read and what it costs.
     /// </summary>
     /// <remarks>
-    /// Not ported. It prices every index of the table against the conditions, the sort order
-    /// and the columns the query reads — which is the planner's own work, and doing any of it
-    /// here would be a plan built without being priced.
+    /// The scan is priced twice, on purpose. When nothing is fixed the scan-only plan
+    /// <c>item1</c> is the fallback the mask-priced plan has to beat; when something is fixed
+    /// there is no fallback and the mask-priced plan stands however it compares. The discount
+    /// for many conditions pulls the heavily-fixed table earlier, so that joins without
+    /// indexes still run quickly (issue 113). The join cost is the reference's own
+    /// approximation — cost multiplied by the join's cost — kept as it stands, including its
+    /// TODO to price row counts separately.
     /// </remarks>
     /// <param name="s">the session</param>
     /// <param name="filters">the filters of the query</param>
@@ -412,7 +416,87 @@ public class TableFilter : ColumnResolver
         int filter,
         Command.Query.AllColumnsForPlan? allColumnsSet,
         bool isSelectCommand)
-        => throw new TODOException("TableFilter.getBestPlanItem: the planner prices indexes");
+    {
+        PlanItem? item1 = null;
+        SortOrder? sortOrder = null;
+        if (select != null)
+        {
+            sortOrder = select.GetSortOrder();
+        }
+        if (indexConditions.Count == 0)
+        {
+            item1 = new PlanItem();
+            item1.SetIndex(table.GetScanIndex(s, null, filters, filter,
+                sortOrder, allColumnsSet));
+            item1.Cost = item1.GetIndex()!.GetCost(s, null, filters, filter,
+                sortOrder, allColumnsSet, isSelectCommand);
+        }
+        int len = table.GetColumns().Length;
+        int[]? masks = new int[len];
+        foreach (Indexes.IndexCondition condition in indexConditions)
+        {
+            if (condition.IsEvaluatable())
+            {
+                if (condition.IsAlwaysFalse())
+                {
+                    masks = null;
+                    break;
+                }
+                if (condition.IsCompoundColumns())
+                {
+                    // Set the op mask in case of compound columns as well.
+                    Column[]? columns = condition.GetColumns();
+                    foreach (Column column in columns!)
+                    {
+                        int id = column.GetColumnId();
+                        if (id >= 0)
+                        {
+                            masks[id] |= condition.GetMask(indexConditions);
+                        }
+                    }
+                }
+                else
+                {
+                    int id = condition.GetColumn()!.GetColumnId();
+                    if (id >= 0)
+                    {
+                        masks[id] |= condition.GetMask(indexConditions);
+                    }
+                }
+            }
+        }
+        PlanItem item = table.GetBestPlanItem(s, masks, filters, filter, sortOrder, allColumnsSet, isSelectCommand);
+        item.SetMasks(masks);
+        // The more index conditions, the earlier the table.
+        // This is to ensure joins without indexes run quickly:
+        // x (x.a=10); y (x.b=y.b) - see issue 113
+        item.Cost -= item.Cost * indexConditions.Count / 100 / (filter + 1);
+        if (item1 != null && item1.Cost < item.Cost)
+        {
+            item = item1;
+        }
+        if (nestedJoin != null)
+        {
+            SetEvaluatable(true);
+            item.SetNestedJoinPlan(nestedJoin.GetBestPlanItem(s, filters, filter, allColumnsSet, isSelectCommand));
+            // TODO optimizer: calculate cost of a join: should use separate
+            // expected row number and lookup cost
+            item.Cost += item.Cost * item.GetNestedJoinPlan()!.Cost;
+        }
+        if (join != null)
+        {
+            SetEvaluatable(true);
+            do
+            {
+                filter++;
+            } while (filters[filter] != join);
+            item.SetJoinPlan(join.GetBestPlanItem(s, filters, filter, allColumnsSet, isSelectCommand));
+            // TODO optimizer: calculate cost of a join: should use separate
+            // expected row number and lookup cost
+            item.Cost += item.Cost * item.GetJoinPlan()!.Cost;
+        }
+        return item;
+    }
     /// <remarks>
     /// A null plan is not an error here but a plan that cannot be used — most likely because a
     /// column was not found — and the exception comes later, when the statement runs without
