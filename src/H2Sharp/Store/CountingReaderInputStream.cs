@@ -47,6 +47,12 @@ public sealed class CountingReaderInputStream : Stream
     private int pendingLength;
 
     /// <summary>
+    /// The character window, kept for the instance's life as the reference keeps its buffer:
+    /// every fetch reads into the same array instead of allocating one per call.
+    /// </summary>
+    private readonly char[] characters = new char[Constants.IoBufferSize];
+
+    /// <summary>
     /// A stream over some text, of at most so many characters.
     /// </summary>
     /// <param name="reader">the text</param>
@@ -162,7 +168,6 @@ public sealed class CountingReaderInputStream : Stream
             return false;
         }
 
-        char[] characters = new char[Constants.IoBufferSize];
         int want = (int)Math.Min(characters.Length, remaining);
         int read = reader.Read(characters, 0, want);
         if (read <= 0)
