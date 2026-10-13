@@ -271,9 +271,9 @@ public sealed class JsonBytesSource : JsonTextSource
         }
 
     Done:
-        Target.ValueNumber(BigDecimal.Parse(
-            Encoding.Latin1.GetString(bytes.AsSpan(start, i - start)),
-            Encoding.Latin1.GetString(bytes.AsSpan(start, i - start))));
+        // Decoded once: the text is parsed and, only on failure, quoted in the error.
+        string number = Encoding.Latin1.GetString(bytes.AsSpan(start, i - start));
+        Target.ValueNumber(BigDecimal.Parse(number.AsSpan(), number));
         index = i;
     }
 
