@@ -95,6 +95,39 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
         return mainIndexColumn;
     }
 
+    /// <summary>
+    /// Gets the cost of using this index: ten times the range price, because every row it
+    /// returns has to be read from the table itself as well.
+    /// </summary>
+    /// <remarks>
+    /// The factor of ten is not measured anywhere, it is what the reference charges: a primary
+    /// lookup that stopped at the index would be free of the table, and this one is not. A
+    /// closed store fails the sizing first, and that failure is reported as OBJECT_CLOSED
+    /// rather than whatever the store said — a caller that asked for a cost gets an answer
+    /// about the database, not about the file.
+    /// </remarks>
+    /// <inheritdoc/>
+    public override double GetCost(
+        SessionLocal session,
+        int[]? masks,
+        Tables.TableFilter[]? filters,
+        int filter,
+        SortOrder? sortOrder,
+        H2Sharp.Command.Query.AllColumnsForPlan? allColumnsSet,
+        bool isSelectCommand)
+    {
+        try
+        {
+            return 10 * GetCostRangeIndex(
+                masks, dataMap.SizeAsLongMax(), filters, filter, sortOrder,
+                isScanIndex: true, allColumnsSet, isSelectCommand);
+        }
+        catch (MvStoreException e)
+        {
+            throw DbException.Get(ErrorCode.ObjectClosed, e);
+        }
+    }
+
     /// <inheritdoc/>
     public override void Close(SessionLocal session)
     {

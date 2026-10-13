@@ -20,6 +20,7 @@
  * unique columns alone, which for a composite index is a shorter key than the index itself.
  */
 using System;
+using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Message;
@@ -350,6 +351,323 @@ public abstract class Index : SchemaObject
     public bool IsScan()
     {
         return indexType is not null && indexType.IsScan();
+    }
+
+    /// <summary>
+    /// Gets the cost of using this index for the given query: how many rows it will read.
+    /// </summary>
+    /// <remarks>
+    /// Abstract, because no two kinds of index answer it the same way: a scan reads everything
+    /// it holds, and a lookup reads what its bounds describe. What they share is below, in
+    /// <see cref="GetCostRangeIndex"/>.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="masks">which columns the query fixed, by column id</param>
+    /// <param name="filters">the filters of the query</param>
+    /// <param name="filter">the position of this index's filter among them</param>
+    /// <param name="sortOrder">the order the query wants, or null</param>
+    /// <param name="allColumnsSet">the columns each table reads, or null</param>
+    /// <param name="isSelectCommand">whether the caller is a select</param>
+    /// <returns>the cost</returns>
+    public abstract double GetCost(
+        Engine.SessionLocal session,
+        int[]? masks,
+        Tables.TableFilter[]? filters,
+        int filter,
+        Result.SortOrder? sortOrder,
+        Command.Query.AllColumnsForPlan? allColumnsSet,
+        bool isSelectCommand);
+
+    /// <summary>
+    /// Prices a range scan over this index's own columns.
+    /// </summary>
+    /// <remarks>
+    /// An equality on all of a unique key costs 3 rows, because that is what a lookup that
+    /// stops at the first match reads. A range costs a quarter of the rows, a start or an end
+    /// a third: those fractions are not measured anywhere, they are what the reference charges,
+    /// and changing them reorders every plan with a range in it. An ORDER BY the index already
+    /// keeps is cheaper by exactly the sort it saves, and a covering index by the table it
+    /// never reads.
+    /// </remarks>
+    /// <param name="masks">which columns the query fixed, by column id</param>
+    /// <param name="rowCount">how many rows the index holds</param>
+    /// <param name="filters">the filters of the query</param>
+    /// <param name="filter">the position of this index's filter among them</param>
+    /// <param name="sortOrder">the order the query wants, or null</param>
+    /// <param name="isScanIndex">whether this index is the scan index</param>
+    /// <param name="allColumnsSet">the columns each table reads, or null</param>
+    /// <param name="isSelectCommand">whether the caller is a select</param>
+    /// <returns>the cost</returns>
+    protected long GetCostRangeIndex(
+        int[]? masks,
+        long rowCount,
+        Tables.TableFilter[]? filters,
+        int filter,
+        Result.SortOrder? sortOrder,
+        bool isScanIndex,
+        Command.Query.AllColumnsForPlan? allColumnsSet,
+        bool isSelectCommand)
+    {
+        rowCount += Engine.Constants.CostRowOffset;
+        int totalSelectivity = 0;
+        long rowsCost = rowCount;
+        if (masks is not null)
+        {
+            int i = 0;
+            int len = columns.Length;
+            bool tryAdditional = false;
+            while (i < len)
+            {
+                Tables.Column column = columns[i++];
+                int index = column.GetColumnId();
+                int mask = masks[index];
+                if ((mask & H2Sharp.Indexes.IndexCondition.Equality) == H2Sharp.Indexes.IndexCondition.Equality)
+                {
+                    if (i > 0 && i == uniqueColumnColumn)
+                    {
+                        rowsCost = 3;
+                        break;
+                    }
+
+                    totalSelectivity = 100 - ((100 - totalSelectivity) * (100 - column.GetSelectivity()) / 100);
+                    long distinctRows = rowCount * totalSelectivity / 100;
+                    if (distinctRows <= 0)
+                    {
+                        distinctRows = 1;
+                    }
+
+                    rowsCost = 2 + Math.Max(rowCount / distinctRows, 1);
+                }
+                else if ((mask & H2Sharp.Indexes.IndexCondition.Range) == H2Sharp.Indexes.IndexCondition.Range)
+                {
+                    rowsCost = 2 + rowsCost / 4;
+                    tryAdditional = true;
+                    break;
+                }
+                else if ((mask & H2Sharp.Indexes.IndexCondition.Start) == H2Sharp.Indexes.IndexCondition.Start)
+                {
+                    rowsCost = 2 + rowsCost / 3;
+                    tryAdditional = true;
+                    break;
+                }
+                else if ((mask & H2Sharp.Indexes.IndexCondition.End) == H2Sharp.Indexes.IndexCondition.End)
+                {
+                    rowsCost = rowsCost / 3;
+                    tryAdditional = true;
+                    break;
+                }
+                else if ((mask & H2Sharp.Indexes.IndexCondition.SpatialIntersects) == H2Sharp.Indexes.IndexCondition.SpatialIntersects)
+                {
+                    rowsCost = 2 + rowsCost / 4;
+                    tryAdditional = true;
+                    break;
+                }
+                else
+                {
+                    if (mask == 0)
+                    {
+                        // Adjust counter of used columns (i)
+                        i--;
+                    }
+
+                    break;
+                }
+            }
+
+            // Some additional columns can still be used
+            if (tryAdditional)
+            {
+                while (i < len && masks[columns[i].GetColumnId()] != 0)
+                {
+                    i++;
+                    rowsCost--;
+                }
+            }
+
+            // Increase cost of indexes with additional unused columns
+            rowsCost += len - i;
+        }
+
+        // If the ORDER BY clause matches the ordering of this index,
+        // it will be cheaper than another index, so adjust the cost
+        // accordingly.
+        long sortingCost = 0;
+        if (sortOrder is not null)
+        {
+            sortingCost = 100 + rowCount / 10;
+        }
+
+        if (sortOrder is not null && !isScanIndex && filters is not null && filter == 0)
+        {
+            int coveringCount = 0;
+            // Unlike running out of index columns, or a direction/null-ordering mismatch on
+            // an otherwise-matching column (still usable via a reverse index scan), landing
+            // on a sort column the index doesn't have at that position at all means the rows
+            // still need a real sort from that point on, so it must disqualify the discount
+            // below rather than just cap coveringCount at whatever matched so far.
+            bool mismatched = false;
+            int[] sortTypes = sortOrder.GetSortTypesWithNullOrdering();
+            int sortOrderLength = sortTypes.Length;
+            Tables.TableFilter tableFilter = filters[0];
+            Engine.DefaultNullOrdering defaultNullOrdering = GetDatabase()!.GetDefaultNullOrdering();
+            bool reverse = false;
+            Tables.IndexColumn[] idxColumns = GetColumns();
+            for (int i = 0; i < sortOrderLength; i++)
+            {
+                if (i >= idxColumns.Length)
+                {
+                    // We can still use this index if we are sorting by more
+                    // than it's columns, it's just that the coveringCount
+                    // is lower than with an index that contains
+                    // more of the order by columns.
+                    break;
+                }
+
+                Tables.Column? col = sortOrder.GetColumn(i, tableFilter);
+                if (col is null)
+                {
+                    mismatched = true;
+                    break;
+                }
+
+                Tables.IndexColumn idxCol = idxColumns[i];
+                if (!col.Equals(idxCol.GetColumn()))
+                {
+                    mismatched = true;
+                    break;
+                }
+
+                bool mismatch = false;
+                if (col.IsNullable() == Tables.Column.Nullable)
+                {
+                    int o1 = Engine.DefaultNullOrderingRules.AddExplicitNullOrdering(defaultNullOrdering, idxCol.SortType);
+                    int o2 = sortTypes[i];
+                    if (i == 0)
+                    {
+                        if (o1 != o2)
+                        {
+                            if (o1 == Result.SortOrder.Inverse(o2))
+                            {
+                                reverse = true;
+                            }
+                            else
+                            {
+                                mismatch = true;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (o1 != (reverse ? Result.SortOrder.Inverse(o2) : o2))
+                        {
+                            mismatch = true;
+                        }
+                    }
+                }
+                else
+                {
+                    bool different = (idxCol.SortType & Result.SortOrder.Descending)
+                        != (sortTypes[i] & Result.SortOrder.Descending);
+                    if (i == 0)
+                    {
+                        reverse = different;
+                    }
+                    else
+                    {
+                        mismatch = different != reverse;
+                    }
+                }
+
+                if (mismatch)
+                {
+                    break;
+                }
+
+                coveringCount++;
+            }
+
+            if (!mismatched && coveringCount > 0)
+            {
+                // "coveringCount" makes sure that when we have two
+                // or more covering indexes, we choose the one
+                // that covers more.
+                sortingCost = 100 - coveringCount;
+            }
+        }
+
+        // If we have two indexes with the same cost, and one of the indexes can
+        // satisfy the query without needing to read from the primary table
+        // (scan index), make that one slightly lower cost.
+        // For INSERT or UPDATE commands, we have to touch the primary table anyway
+        // so this makes no difference.
+        bool needsToReadFromScanIndex;
+        if (isSelectCommand && !isScanIndex && allColumnsSet is not null)
+        {
+            needsToReadFromScanIndex = false;
+            List<Tables.Column>? foundCols = allColumnsSet.Get(GetTable()!);
+            if (foundCols is not null)
+            {
+                Tables.Table? table = GetTable();
+                int main = table?.GetMainIndexColumn() ?? Result.SearchRow.RowidIndex;
+                foreach (Tables.Column c in foundCols)
+                {
+                    int id = c.GetColumnId();
+                    if (id == Result.SearchRow.RowidIndex || id == main)
+                    {
+                        continue;
+                    }
+
+                    bool covered = false;
+                    foreach (Tables.Column c2 in columns)
+                    {
+                        if (ReferenceEquals(c, c2))
+                        {
+                            covered = true;
+                            break;
+                        }
+                    }
+
+                    if (!covered)
+                    {
+                        needsToReadFromScanIndex = true;
+                        break;
+                    }
+                }
+            }
+        }
+        else
+        {
+            needsToReadFromScanIndex = true;
+        }
+
+        long rc;
+        if (!isSelectCommand)
+        {
+            // For UPDATE or INSERT, we have to touch the primary table
+            // so the covering index calculations below are irrelevant.
+            rc = rowsCost + sortingCost;
+        }
+        else if (isScanIndex)
+        {
+            rc = rowsCost + sortingCost + 20;
+        }
+        else if (needsToReadFromScanIndex)
+        {
+            rc = rowsCost + rowsCost + sortingCost + 20;
+        }
+        else
+        {
+            // covering index
+            // The "+ 20" terms above, and the "+ columns.length" term here,
+            // makes sure that when we pick a covering index,
+            // we pick the covering index that has the smallest number of
+            // columns (the more columns we have in index - the higher cost).
+            // This is faster because a smaller index will fit into fewer data
+            // blocks.
+            rc = rowsCost + sortingCost + columns.Length;
+        }
+
+        return rc;
     }
 
     /// <summary>

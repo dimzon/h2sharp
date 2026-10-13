@@ -48,6 +48,19 @@ public sealed class IndexPlanTests
         public override void Close(SessionLocal session)
         {
         }
+
+        /// <summary>
+        /// A test double prices like a scan of nothing: the methods under test here are the
+        /// lookup and the mask check, and a cost is not one of them.
+        /// </summary>
+        public override double GetCost(
+            SessionLocal session,
+            int[]? masks,
+            Tables.TableFilter[]? filters,
+            int filter,
+            Result.SortOrder? sortOrder,
+            H2Sharp.Command.Query.AllColumnsForPlan? allColumnsSet,
+            bool isSelectCommand) => 0;
     }
 
     [Fact]
@@ -143,6 +156,73 @@ public sealed class IndexPlanTests
             cursor.Prepare(session, [condition]);
             Assert.True(cursor.IsAlwaysFalse());
             Assert.False(cursor.Next());
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// An index with one unique leading column, like the delegate the reference wraps a primary
+    /// key in: an equality on all of a unique key costs 3 rows, because a lookup that stops at
+    /// the first match reads that much and no more.
+    /// </summary>
+    private sealed class UniqueIndex : DbIndex
+    {
+        internal UniqueIndex(Tables.Table? table, int id, string name, Tables.IndexColumn[] columns)
+            : base(table, id, name, columns, 1, null)
+        {
+        }
+
+        public override void Close(SessionLocal session)
+        {
+        }
+
+        public override double GetCost(
+            SessionLocal session,
+            int[]? masks,
+            Tables.TableFilter[]? filters,
+            int filter,
+            Result.SortOrder? sortOrder,
+            H2Sharp.Command.Query.AllColumnsForPlan? allColumnsSet,
+            bool isSelectCommand)
+        {
+            // Row count zero, as on an empty table: GetCostRangeIndex adds the offset itself,
+            // and passing anything else would price a table that was never built.
+            return 10 * GetCostRangeIndex(
+                masks, 0, filters, filter, sortOrder,
+                isScanIndex: true, allColumnsSet, isSelectCommand);
+        }
+    }
+
+    [Fact]
+    public void AUniqueLookupCosts230AndAScanCosts10200()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T", [id], store, persistData: false);
+            id.SetTable(table, 0);
+
+            DbIndex index = new UniqueIndex(
+                table, 7, "I", [new Tables.IndexColumn(id, ascending: true)]);
+
+            // The mask says EQUALITY on column 0, which is what a WHERE ID = ? becomes by the
+            // time the planner prices it. Neither number below is hand-computed: both are what
+            // the reference answers for the same table, the same mask and the same row count,
+            // probed on the JVM rather than derived here. A planner that priced them close
+            // would pick a scan where a lookup would do.
+            int[] masks = new int[1];
+            masks[0] = H2Sharp.Indexes.IndexCondition.Equality;
+            Assert.Equal(230, index.GetCost(session, masks, null, 0, null, null, isSelectCommand: true));
+            Assert.Equal(10200, index.GetCost(session, null, null, 0, null, null, isSelectCommand: true));
         }
         finally
         {

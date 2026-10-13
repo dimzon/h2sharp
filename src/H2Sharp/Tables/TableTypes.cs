@@ -908,6 +908,17 @@ public abstract class Table
     public abstract int GetColumnCount();
 
     /// <summary>
+    /// Gets the column id of the main index column: the rowid, unless a table says otherwise.
+    /// </summary>
+    /// <remarks>
+    /// The rowid, because that is what every table is ordered by until it says it is ordered
+    /// by something else. A covering-index check that asked for another column would compare
+    /// the query's columns against the wrong key.
+    /// </remarks>
+    /// <returns>the column id</returns>
+    public virtual int GetMainIndexColumn() => Result.SearchRow.RowidIndex;
+
+    /// <summary>
     /// Gets the column at the given index.
     /// </summary>
     /// <param name="index">the column index</param>

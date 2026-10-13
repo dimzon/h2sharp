@@ -510,9 +510,15 @@ public class Column
     }
 
     /// <summary>Gets the selectivity of this column.</summary>
+    /// <remarks>
+    /// The default when nothing was measured, because a column whose selectivity was never
+    /// analyzed is not a column with no distinct values: answering 0 would price every lookup
+    /// on it as a full scan, and the planner would never choose the index that holds it.
+    /// </remarks>
+    /// <returns>the selectivity, or the default when it was never set</returns>
     public int GetSelectivity()
     {
-        return selectivity;
+        return selectivity == 0 ? Engine.Constants.SelectivityDefault : selectivity;
     }
 
     /// <summary>Sets the selectivity of this column.</summary>
