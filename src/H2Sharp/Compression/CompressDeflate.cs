@@ -11,10 +11,8 @@ namespace H2Sharp.Compression;
 /// </summary>
 /// <remarks>
 /// Java's <c>Deflater</c> writes zlib (RFC 1950): a two-byte header, raw deflate, and an Adler-32
-/// trailer. .NET's <c>DeflateStream</c> writes only the raw deflate middle, so the header and the
-/// trailer go on here — without them a file written on one side would not open on the other.
-/// The header's second byte follows zlib's own mapping of level to header, and the trailer is the
-/// Adler-32 of the input, which the reference's <c>Inflater</c> checks itself.
+/// trailer. .NET's <c>ZLibStream</c> writes the same framing natively, so there is no hand-built
+/// header or trailer here — without them a file written on one side would not open on the other.
 /// <para>
 /// Levels map approximately: 0 passes through, 1 is the fastest, 2–6 and the default are optimal,
 /// 7–9 are the smallest. There is no strategy knob on this side; the option is accepted and
@@ -81,18 +79,18 @@ public class CompressDeflate : Compressor
     /// <inheritdoc/>
     public int Compress(byte[] input, int inPos, int inLen, byte[] output, int outPos)
     {
-        byte[] raw;
+        byte[] full;
         using (var buffer = new MemoryStream())
         {
-            using (var deflate = new DeflateStream(buffer, MapLevel(level), true))
+            using (var zlib = new ZLibStream(buffer, MapLevel(level), true))
             {
-                deflate.Write(input, inPos, inLen);
+                zlib.Write(input, inPos, inLen);
             }
 
-            raw = buffer.ToArray();
+            full = buffer.ToArray();
         }
 
-        if (raw.Length == 0 && inLen > 0)
+        if (full.Length == 0 && inLen > 0)
         {
             // the compressed length is 0, meaning compression didn't work
             // (sounds like a JDK bug)
@@ -102,19 +100,12 @@ public class CompressDeflate : Compressor
             return Compress(input, inPos, inLen, output, outPos);
         }
 
-        output[outPos] = 0x78;
-        output[outPos + 1] = level <= 1 ? (byte)0x01 : level >= 7 ? (byte)0xDA : (byte)0x9C;
-        // What fits is what the reference's bounded deflate would have written; the caller only
-        // keeps the answer when it is shorter than the input, so a truncated tail is never read.
-        int body = Math.Min(raw.Length, output.Length - outPos - 6);
-        Buffer.BlockCopy(raw, 0, output, outPos + 2, body);
-        int end = outPos + 2 + body;
-        uint adler = Adler32(input, inPos, inLen);
-        output[end] = (byte)(adler >> 24);
-        output[end + 1] = (byte)(adler >> 16);
-        output[end + 2] = (byte)(adler >> 8);
-        output[end + 3] = (byte)adler;
-        return end + 4;
+        // What fits is what the reference's bounded deflate would have written: a prefix of the
+        // stream, which carries no trailer — only a complete stream does. The caller only keeps
+        // the answer when it is shorter than the input, so a prefix is never read.
+        int body = Math.Min(full.Length, output.Length - outPos);
+        Buffer.BlockCopy(full, 0, output, outPos, body);
+        return outPos + body;
     }
 
     /// <inheritdoc/>
