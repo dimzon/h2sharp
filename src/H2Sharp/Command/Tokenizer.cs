@@ -2005,12 +2005,50 @@ public sealed class Tokenizer
     }
 
     /// <remarks>
-    /// The reference builds a <c>java.math.BigInteger</c> from the digits and a radix. .NET parses
-    /// the same text with the same radixes and the same rules about a sign, so this is a parse with
-    /// nothing to say about it beyond which styles are allowed.
+    /// The reference builds a <c>java.math.BigInteger</c> from the digits and a radix, so the
+    /// radix is read here and not ignored: a digit is a <c>Character.digit</c> in that radix,
+    /// with an optional leading sign, and anything else refuses the statement the way the
+    /// constructor's <c>NumberFormatException</c> refuses it there.
     /// </remarks>
     private static BigInteger ParseInteger(string text, int radix)
-        => BigInteger.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+    {
+        if (radix == 10)
+        {
+            return BigInteger.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+        }
+
+        int i = 0;
+        bool negative = false;
+        if (i < text.Length && (text[i] == '-' || text[i] == '+'))
+        {
+            negative = text[i] == '-';
+            i++;
+        }
+
+        BigInteger value = BigInteger.Zero;
+        bool any = false;
+        for (; i < text.Length; i++)
+        {
+            char c = text[i];
+            int digit = c <= '9' && c >= '0'
+                ? c - '0'
+                : (c | 0x20) >= 'a' && (c | 0x20) <= 'z' ? (c | 0x20) - 'a' + 10 : -1;
+            if (digit < 0 || digit >= radix)
+            {
+                throw new FormatException($"Invalid digit '{c}' for radix {radix}.");
+            }
+
+            value = (value * radix) + digit;
+            any = true;
+        }
+
+        if (!any)
+        {
+            throw new FormatException("Zero length integer.");
+        }
+
+        return negative ? -value : value;
+    }
 
     private static string ReadAndRemoveUnderscores(
         string sql, int start, int endIndex, bool withUnderscore)

@@ -139,6 +139,13 @@ public sealed class TokenizerOracleTests
         "SELECT 42L",
         "SELECT 2147483648L",
         "SELECT 1_2L",
+        "SELECT 0x100000000",
+        "SELECT 0x100000000L",
+        "SELECT 0b100000000000000000000000000000000",
+        "SELECT 0o20000000000",
+        "SELECT 0xFFFFFFFFFFFFFFFFFFFF",
+        "SELECT 0Xabcdef1234567890ABCDEF",
+        "SELECT 0b1010_1010_1010_1010_1010_1010_1010_1010_1",
 
         // Strings, where the quoting rules and the escapes are the whole story.
         "SELECT 'text'",
@@ -227,6 +234,7 @@ public sealed class TokenizerOracleTests
         "SELECT 0x",
         "SELECT 0b",
         "SELECT 0xZZ",
+        "SELECT 0xFFFFFFFFFFFFFFFFFFL",
         "SELECT 1e",
         "SELECT 1e+",
         "SELECT 1_0e",
