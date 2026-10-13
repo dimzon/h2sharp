@@ -153,7 +153,7 @@ public class LocalResult : ResultInterface, ResultTarget
             Database db = session.GetDatabase();
             if (db.IsPersistent() && !db.IsReadOnly())
             {
-                maxMemoryRows = session.GetDatabase().GetMaxMemoryRows();
+                maxMemoryRows = db.GetMaxMemoryRows();
             }
             else
             {
@@ -161,7 +161,6 @@ public class LocalResult : ResultInterface, ResultTarget
             }
         }
 
-        rows = Utils.NewSmallArrayList<Value?[]>();
         this.visibleColumnCount = visibleColumnCount;
         this.resultColumnCount = resultColumnCount;
         rowId = -1;
