@@ -153,8 +153,20 @@ public abstract class Query : Prepared
     public abstract override ResultInterface Run(long limit);
 
     /// <summary>
-    /// Gets the index of the ORDER BY item this query orders by, or -1.
+    /// The sort order of ORDER BY, or null when the query has none.
     /// </summary>
+    /// <remarks>
+    /// It lives here rather than on Select because every query has an order, including the set
+    /// operations that are not selects: a UNION with an ORDER BY sorts the union, and the sort
+    /// belongs to the query that runs rather than to one of its arms.
+    /// </remarks>
+    protected Result.SortOrder? sort;
+
+    /// <summary>
+    /// Gets the sort order of this query.
+    /// </summary>
+    /// <returns>the sort order, or null</returns>
+    public Result.SortOrder? GetSortOrder() => sort;
     /// <returns>the index</returns>
     public int GetOrderByIndex() => orderByIndex;
 

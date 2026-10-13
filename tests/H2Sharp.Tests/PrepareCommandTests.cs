@@ -77,6 +77,19 @@ public sealed class PrepareCommandTests
     }
 
     [Fact]
+    public void ANewQueryHasNoSortOrder()
+    {
+        SessionLocal session = NewSession();
+
+        // The sort order arrives with the ORDER BY clause, which the parser has not handed over:
+        // null is what "no ORDER BY" looks like, and a default order here would sort queries
+        // nobody asked to sort.
+        Select select = Assert.IsType<Select>(
+            AsContainer(session.PrepareCommand("SELECT ID FROM T")).GetPreparedCommand());
+        Assert.Null(select.GetSortOrder());
+    }
+
+    [Fact]
     public void AQueryIsAQuery()
     {
         SessionLocal session = NewSession();
