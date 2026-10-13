@@ -856,16 +856,65 @@ public class TableFilter : ColumnResolver
     /// Reads a column out of the row the cursor is on.
     /// </summary>
     /// <remarks>
-    /// Not ported. It is the row's own value, and answering it needs the search row the cursor
-    /// found and the rules for a rowid — which is <c>ValueBigint.get(currentSearchRow.getKey())</c>
-    /// when the column asks for the key rather than a value. Until that is here, a column read
-    /// outside a scan would give the same answer as a failed read inside one, which is the
-    /// failure this refuses rather than reports.
+    /// The search row answers first when it holds the value; otherwise the full row is read
+    /// and kept, and a key column of a delegated index is recomputed from the key, because the
+    /// primary keeps the key and not a copy of the value.
     /// </remarks>
     /// <param name="column">the column</param>
+    /// <returns>the value, or null when there is no row</returns>
+    public Values.Value? GetValue(Column column)
+    {
+        if (currentSearchRow is null)
+        {
+            return null;
+        }
+
+        int columnId = column.GetColumnId();
+        if (columnId == -1)
+        {
+            return Values.ValueBigint.Get(currentSearchRow.GetKey());
+        }
+
+        if (current is null)
+        {
+            Values.Value? v = currentSearchRow.GetValue(columnId);
+            if (v is not null)
+            {
+                return v;
+            }
+
+            if (columnId == column.GetTable()!.GetMainIndexColumn())
+            {
+                return GetDelegatedValue(column);
+            }
+
+            current = cursor.Get();
+            if (current is null)
+            {
+                return Values.ValueNull.Instance;
+            }
+        }
+
+        return current.GetValue(columnId);
+    }
+
+    /// <summary>
+    /// Recomputes a key column from the row's key.
+    /// </summary>
+    /// <param name="column">the column</param>
     /// <returns>the value</returns>
-    public Value GetValue(Column column)
-        => throw new TODOException("TableFilter.getValue: the cursor's row is not readable yet");
+    private Values.Value GetDelegatedValue(Column column)
+    {
+        long key = currentSearchRow!.GetKey();
+        return column.GetTypeInfo().GetValueType() switch
+        {
+            Values.Value.Tinyint => Values.ValueTinyint.Get((sbyte)key),
+            Values.Value.Smallint => Values.ValueSmallint.Get((short)key),
+            Values.Value.Integer => Values.ValueInteger.Get((int)key),
+            Values.Value.Bigint => Values.ValueBigint.Get(key),
+            _ => throw DbException.GetInternalError(),
+        };
+    }
 
     /// <summary>
     /// Finds the rowid column of the table this filter reads.

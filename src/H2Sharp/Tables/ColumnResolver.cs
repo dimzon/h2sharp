@@ -78,9 +78,13 @@ public interface ColumnResolver
     /// <summary>
     /// Get the value for the given column.
     /// </summary>
+    /// <remarks>
+    /// Null when there is no row to read from: that is not SQL NULL but the absence of an
+    /// answer, which is why this is nullable while values themselves are not.
+    /// </remarks>
     /// <param name="column">the column</param>
-    /// <returns>the value</returns>
-    Value GetValue(Column column);
+    /// <returns>the value, or null</returns>
+    Value? GetValue(Column column);
 
     /// <summary>
     /// Get the table filter.

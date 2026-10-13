@@ -113,6 +113,17 @@ public sealed class MVDelegateIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Reads through the primary: the delegate keeps no data of its own, so its walk is the
+    /// primary's walk. In the reference this is the find override; here the cursor member
+    /// carries it, because the base answers cursors rather than finds.
+    /// </remarks>
+    public override Indexes.Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last)
+    {
+        return mainIndex.GetCursor(session, first, last);
+    }
+
+    /// <inheritdoc/>
     public override void Remove(SessionLocal session, Row row)
     {
         // nothing to do

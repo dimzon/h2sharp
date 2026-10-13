@@ -113,7 +113,9 @@ public sealed class ExpressionColumn : Expression
             throw new TODOException("ExpressionColumn.GetValue: the column was not mapped");
         }
 
-        return resolver.GetValue(column);
+        // Null passes through as it does in the reference: no row to read from fails where
+        // the value is used, not here.
+        return resolver.GetValue(column)!;
     }
 
     /// <inheritdoc/>

@@ -814,22 +814,21 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
     /// Gets the complete current row. All columns are available.
     /// </summary>
     /// <remarks>
-    /// Not ported. It is the row the walk stands on, and the walk is what is missing: a Get
-    /// without Next would answer the same row forever, which is a result set that never ends.
+    /// Whatever the index walk stands on: this cursor only frames it with bounds, and the row
+    /// itself comes from the walk. Null when the walk has nothing — before any Next, or past
+    /// the end.
     /// </remarks>
     /// <returns>the complete row</returns>
-    public Result.Row? Get()
-        => throw new TODOException("IndexCursor.get: the walk is not ported");
+    public Result.Row? Get() => cursor?.Get();
 
     /// <summary>
     /// Gets the current row. Only the data for indexed columns is available in this row.
     /// </summary>
     /// <remarks>
-    /// Not ported, for the same reason as <see cref="Get"/>.
+    /// Same delegation as <see cref="Get"/>.
     /// </remarks>
     /// <returns>the search row</returns>
-    public Result.SearchRow? GetSearchRow()
-        => throw new TODOException("IndexCursor.getSearchRow: the walk is not ported");
+    public Result.SearchRow? GetSearchRow() => cursor?.GetSearchRow();
 
     /// <summary>
     /// Inserts a row through this cursor.

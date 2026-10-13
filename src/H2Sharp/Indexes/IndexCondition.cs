@@ -202,7 +202,7 @@ public class IndexCondition
     /// <param name="session">the session</param>
     /// <returns>the value</returns>
     public Value? GetCurrentValue(SessionLocal session)
-        => throw new TODOException("IndexCondition.getCurrentValue: the session has to read it");
+        => expression!.GetValue(session);
 
     /// <summary>
     /// Gets the current values of this condition's expression list.

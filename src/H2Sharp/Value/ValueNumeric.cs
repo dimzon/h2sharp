@@ -40,17 +40,6 @@ public sealed class ValueNumeric : ValueBigDecimalBase
     /// </summary>
     public const int MaximumScale = 100_000;
 
-    /// <summary>
-    /// The largest Number a long can hold, as a decimal, which is where the printed form of a NUMERIC
-    /// stops needing a CAST.
-    /// </summary>
-    private static readonly BigDecimal MaxLongDecimal = BigDecimal.FromLong(long.MaxValue);
-
-    /// <summary>
-    /// The smallest Number a long can hold, as a decimal.
-    /// </summary>
-    private static readonly BigDecimal MinLongDecimal = BigDecimal.FromLong(long.MinValue);
-
     private ValueNumeric(BigDecimal v)
         : base(v)
     {

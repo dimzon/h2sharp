@@ -762,11 +762,15 @@ public abstract class Index : SchemaObject
     /// <summary>
     /// Returns a cursor over this index.
     /// </summary>
+    /// <remarks>
+    /// The interface rather than the table filter's cursor: what walks here is the index's own
+    /// walk, and the filter wraps it with bounds and conditions of its own.
+    /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="first">the first row, or null to start at the beginning</param>
     /// <param name="last">the last row, or null to read to the end</param>
     /// <returns>the cursor</returns>
-    public virtual IndexCursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last)
+    public virtual Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last)
         => throw new TODOException("Index.getCursor: the storage is not ported");
 
     /// <summary>

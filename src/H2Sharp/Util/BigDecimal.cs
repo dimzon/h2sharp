@@ -381,6 +381,22 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     public BigDecimal Abs() => unscaledValue.Sign < 0 ? new BigDecimal(BigInteger.Negate(unscaledValue), scale) : this;
 
     /// <summary>
+    /// This value as a long, dropping the fraction towards zero.
+    /// </summary>
+    /// <remarks>
+    /// The JDK's <c>longValue</c>, which key resolution needs after it has checked the value
+    /// fits: the division truncates the same way, and the in-range cast cannot overflow.
+    /// </remarks>
+    /// <returns>the truncated value</returns>
+    public long LongValue()
+    {
+        BigInteger integer = scale <= 0
+            ? unscaledValue * BigInteger.Pow(10, -scale)
+            : unscaledValue / BigInteger.Pow(10, scale);
+        return (long)integer;
+    }
+
+    /// <summary>
     /// This value with its sign the other way round.
     /// </summary>
     public BigDecimal Negate() => new(BigInteger.Negate(unscaledValue), scale);

@@ -40,12 +40,15 @@ public abstract partial class Value
     /// The largest long as a decimal, for the conversions that have to check a decimal against
     /// the range of a long before rounding it.
     /// </summary>
-    private static readonly BigDecimal MaxLongDecimal = BigDecimal.FromLong(long.MaxValue);
+    /// <remarks>
+    /// Public as in the reference: key resolution checks the same bounds.
+    /// </remarks>
+    public static readonly BigDecimal MaxLongDecimal = BigDecimal.FromLong(long.MaxValue);
 
     /// <summary>
     /// The smallest long as a decimal, for the same reason.
     /// </summary>
-    private static readonly BigDecimal MinLongDecimal = BigDecimal.FromLong(long.MinValue);
+    public static readonly BigDecimal MinLongDecimal = BigDecimal.FromLong(long.MinValue);
 
     /// <summary>
     /// Cast a value to the specified type.

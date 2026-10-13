@@ -297,6 +297,244 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     }
 
     /// <summary>
+    /// A cursor over the rows from the first bound to the last, or over everything when no
+    /// bounds were given.
+    /// </summary>
+    /// <remarks>
+    /// The bounds resolve to keys the way the reference resolves them: no bound is open-ended,
+    /// otherwise the key when the row id is indexed or the value is missing, and otherwise the
+    /// long the value names, with unrepresentable and infinite values ending or emptying the
+    /// walk as they do there. A lookup whose bounds meet on one key reads that one row.
+    /// Reverse never arrives here — the table filter's cursor swaps the bounds instead.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="first">the first row, or null to start at the beginning</param>
+    /// <param name="last">the last row, or null to read to the end</param>
+    /// <returns>the cursor</returns>
+    public override Indexes.Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last)
+    {
+        long? min, max;
+        Values.Value? v;
+        if (first is null)
+        {
+            min = null;
+        }
+        else if (mainIndexColumn == SearchRow.RowidIndex || (v = first.GetValue(mainIndexColumn)) is null)
+        {
+            min = first.GetKey();
+        }
+        else
+        {
+            switch (v.GetValueType())
+            {
+                case Values.Value.Null:
+                    return SingleRowCursor.Empty;
+                case Values.Value.Real:
+                case Values.Value.Double:
+                    {
+                        double d = v.GetDouble();
+                        if (double.IsNaN(d))
+                        {
+                            return SingleRowCursor.Empty;
+                        }
+
+                        min = (long)d;
+                        break;
+                    }
+                case Values.Value.Decfloat:
+                    if (!((Values.ValueDecfloat)v).IsFinite())
+                    {
+                        if (ReferenceEquals(v, Values.ValueDecfloat.NegativeInfinity))
+                        {
+                            min = null;
+                        }
+                        else
+                        {
+                            return SingleRowCursor.Empty;
+                        }
+
+                        break;
+                    }
+
+                    goto case Values.Value.Numeric;
+                case Values.Value.Numeric:
+                    {
+                        Util.BigDecimal bd = v.GetBigDecimal();
+                        if (bd.CompareTo(Values.Value.MaxLongDecimal) > 0)
+                        {
+                            return SingleRowCursor.Empty;
+                        }
+
+                        if (bd.CompareTo(Values.Value.MinLongDecimal) < 0)
+                        {
+                            min = null;
+                        }
+                        else
+                        {
+                            min = bd.LongValue();
+                        }
+
+                        break;
+                    }
+                default:
+                    min = v.GetLong();
+                    break;
+            }
+        }
+
+        if (last is null)
+        {
+            max = null;
+        }
+        else if (mainIndexColumn == SearchRow.RowidIndex || (v = last.GetValue(mainIndexColumn)) is null)
+        {
+            max = last.GetKey();
+        }
+        else
+        {
+            switch (v.GetValueType())
+            {
+                case Values.Value.Null:
+                    return SingleRowCursor.Empty;
+                case Values.Value.Real:
+                case Values.Value.Double:
+                    {
+                        double d = v.GetDouble();
+                        if (double.IsNaN(d))
+                        {
+                            max = null;
+                        }
+                        else
+                        {
+                            max = (long)d;
+                        }
+
+                        break;
+                    }
+                case Values.Value.Decfloat:
+                    if (!((Values.ValueDecfloat)v).IsFinite())
+                    {
+                        if (ReferenceEquals(v, Values.ValueDecfloat.NegativeInfinity))
+                        {
+                            return SingleRowCursor.Empty;
+                        }
+
+                        max = null;
+                        break;
+                    }
+
+                    goto case Values.Value.Numeric;
+                case Values.Value.Numeric:
+                    {
+                        Util.BigDecimal bd = v.GetBigDecimal();
+                        if (bd.CompareTo(Values.Value.MaxLongDecimal) > 0)
+                        {
+                            max = null;
+                        }
+                        else if (bd.CompareTo(Values.Value.MinLongDecimal) < 0)
+                        {
+                            return SingleRowCursor.Empty;
+                        }
+                        else
+                        {
+                            max = bd.LongValue();
+                        }
+
+                        break;
+                    }
+                default:
+                    max = v.GetLong();
+                    break;
+            }
+        }
+
+        // A read opens the session's transaction on demand, as getInstance does behind
+        // session.getTransaction there: the table's store is the session's store here.
+        TransactionMap<long, SearchRow> map = GetMap(session.Transaction ??= mvTable.GetTransactionBegin());
+        if (min.HasValue && max.HasValue && min.Value == max.Value)
+        {
+            return new SingleRowCursor(SetRowKey((Row)map.GetFromSnapshot(min.Value)!, min.Value));
+        }
+
+        return new MVStoreCursor(map.EntryIterator(min, max, false));
+    }
+
+    /// <summary>
+    /// The row with the given key, or null when there is none.
+    /// </summary>
+    /// <remarks>
+    /// Rows read back carry no key of their own until it is set: a row whose key is zero takes
+    /// the key it was read under, which is how a stored row finds its identity again.
+    /// </remarks>
+    /// <param name="row">the row, or null</param>
+    /// <param name="key">the key it was read under</param>
+    /// <returns>the row</returns>
+    private static Row? SetRowKey(Row? row, long key)
+    {
+        if (row is not null && row.GetKey() == 0)
+        {
+            row.SetKey(key);
+        }
+
+        return row;
+    }
+
+    /// <summary>
+    /// A cursor over map entries in key order.
+    /// </summary>
+    private sealed class MVStoreCursor : Indexes.Cursor
+    {
+        private readonly TransactionMap<long, SearchRow>.TMIterator<long, SearchRow, KeyValuePair<long, SearchRow>> iterator;
+
+        private KeyValuePair<long, SearchRow>? current;
+
+        private Row? row;
+
+        internal MVStoreCursor(
+            TransactionMap<long, SearchRow>.TMIterator<long, SearchRow, KeyValuePair<long, SearchRow>> iterator)
+            => this.iterator = iterator;
+
+        /// <inheritdoc/>
+        public Row? Get()
+        {
+            if (row is null && current.HasValue)
+            {
+                row = (Row)current.Value.Value;
+                if (row.GetKey() == 0)
+                {
+                    row.SetKey(current.Value.Key);
+                }
+            }
+
+            return row;
+        }
+
+        /// <inheritdoc/>
+        public SearchRow? GetSearchRow() => Get();
+
+        /// <inheritdoc/>
+        public bool Next()
+        {
+            if (!iterator.TryFetchNext(out KeyValuePair<long, SearchRow> entry))
+            {
+                current = null;
+                row = null;
+                return false;
+            }
+
+            current = entry;
+            row = null;
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public bool Previous()
+        {
+            throw Message.DbException.GetUnsupportedException("previous");
+        }
+    }
+
+    /// <summary>
     /// The number of rows in this index.
     /// </summary>
     /// <remarks>

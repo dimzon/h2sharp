@@ -220,6 +220,12 @@ public sealed class MVTable : Table
     }
 
     /// <inheritdoc/>
+    public override int GetMainIndexColumn()
+    {
+        return primaryIndex.GetMainIndexColumn();
+    }
+
+    /// <inheritdoc/>
     public override Index? GetIndexFor(SessionLocal session, SearchRow row)
     {
         return primaryIndex;
