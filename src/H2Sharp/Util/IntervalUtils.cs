@@ -1088,7 +1088,9 @@ public static class IntervalUtils
     /// </remarks>
     private static long ParseIntervalLeading(string s, int start, int end, bool negative)
     {
-        long leading = long.Parse(s[start..end], CultureInfo.InvariantCulture);
+        // From the span, as the remaining half already parses: the substring allocated per
+        // field for the same digits.
+        long leading = long.Parse(s.AsSpan(start, end - start), CultureInfo.InvariantCulture);
         if (leading == 0)
         {
             return negative ^ s[start] == '-' ? long.MinValue : 0;
