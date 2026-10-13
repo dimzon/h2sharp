@@ -232,6 +232,18 @@ public sealed class SessionLocal : Session
         => throw new TODOException("SessionLocal.getResolver: the query layer is not ported");
 
     /// <summary>
+    /// Registers an index of a session-local temporary table.
+    /// </summary>
+    /// <remarks>
+    /// Not ported. It keeps the index by name and refuses a duplicate, which needs the
+    /// session's temporary-table registry — and there is no temporary-table lifecycle here
+    /// yet to register against.
+    /// </remarks>
+    /// <param name="index">the index</param>
+    public void AddLocalTempTableIndex(H2Sharp.Indexes.Index index)
+        => throw new TODOException("SessionLocal.addLocalTempTableIndex");
+
+    /// <summary>
     /// Compares two values, answering the SQL rule for NULL: a comparison with NULL is
     /// unknown unless the mode says otherwise, and unknown sorts before everything.
     /// </summary>

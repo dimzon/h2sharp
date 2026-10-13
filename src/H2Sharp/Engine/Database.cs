@@ -176,6 +176,50 @@ public sealed partial class Database
     private bool closing;
 
     /// <summary>
+    /// Whether the database is opening.
+    /// </summary>
+    /// <remarks>
+    /// Construction leaves it cleared: there is no open lifecycle here yet to set it while
+    /// running, so every database reads as already open.
+    /// </remarks>
+    private bool starting = false;
+    /// <summary>
+    /// Whether the database is opening.
+    /// </summary>
+    /// <returns>true while opening</returns>
+    public bool IsStarting()
+    {
+        return starting;
+    }
+
+    /// <summary>
+    /// Locks the meta data of the database.
+    /// </summary>
+    /// <remarks>
+    /// There is no meta table here yet to lock, so this answers locked, as the reference does
+    /// when there is nothing to guard. When the meta table arrives, this delegates to it.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <returns>true</returns>
+    public bool LockMeta(SessionLocal session)
+    {
+        return true;
+    }
+
+    /// <summary>
+    /// Adds a schema object to the database.
+    /// </summary>
+    /// <remarks>
+    /// Not ported. Past the lock it registers the object with its schema and writes it to the
+    /// meta table — and the meta table is the unported half. The lock above is real, the
+    /// registry write is what refuses.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="obj">the object to add</param>
+    public void AddSchemaObject(SessionLocal session, Schemas.SchemaObject obj)
+        => throw new TODOException("Database.addSchemaObject: the meta table is not ported");
+
+    /// <summary>
     /// How many rows a result may hold in memory before it spills. The reference's default,
     /// from its MAX_MEMORY_ROWS setting.
     /// </summary>

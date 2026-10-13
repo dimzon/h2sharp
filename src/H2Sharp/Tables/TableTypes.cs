@@ -71,6 +71,23 @@ public class IndexColumn
     }
 
     /// <summary>
+    /// Creates an index column over the given column with the given sort mask.
+    /// </summary>
+    /// <remarks>
+    /// The reference builds this from a name and resolves the column onto it; here the column
+    /// arrives resolved, so the name travels with it and only the mask is new. The direction
+    /// flag follows the mask, because the boolean exists only as the mask's shadow.
+    /// </remarks>
+    /// <param name="column">the column</param>
+    /// <param name="sortType">the sort type mask</param>
+    public IndexColumn(Column column, int sortType)
+    {
+        this.column = column;
+        ascending = (sortType & Result.SortOrder.Descending) == 0;
+        SortType = sortType;
+    }
+
+    /// <summary>
     /// Wraps each column in an ascending index column.
     /// </summary>
     /// <param name="columns">the columns</param>
@@ -864,6 +881,47 @@ public abstract class Table
     /// A local temporary table.
     /// </summary>
     public const int LOCAL_TEMPORARY = 4;
+
+    /// <summary>
+    /// Whether this table is temporary.
+    /// </summary>
+    /// <remarks>
+    /// In the reference the flag lives on DbObject, which this hierarchy does not share: Table
+    /// stands on its own. The member is the reference's, only the shelf moved, and construction
+    /// leaves it cleared, as tables here are regular until temporary ones are ported.
+    /// </remarks>
+    private bool temporary;
+
+    /// <summary>
+    /// Check if this object is temporary (for example, a temporary table).
+    /// </summary>
+    /// <returns>true if temporary</returns>
+    public bool IsTemporary()
+    {
+        return temporary;
+    }
+
+    /// <summary>
+    /// Tell this table that it is temporary or not.
+    /// </summary>
+    /// <param name="temporary">the new value</param>
+    public void SetTemporary(bool temporary)
+    {
+        this.temporary = temporary;
+    }
+
+    /// <summary>
+    /// Whether this is a global temporary table.
+    /// </summary>
+    /// <remarks>
+    /// Always false: global temporariness arrives with CreateTableData, which does not exist
+    /// here yet, so no table can be one.
+    /// </remarks>
+    /// <returns>false</returns>
+    public bool IsGlobalTemporary()
+    {
+        return false;
+    }
 
     /// <summary>
     /// Read lock: the table may be read but not changed.

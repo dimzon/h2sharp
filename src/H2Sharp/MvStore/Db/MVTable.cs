@@ -62,6 +62,23 @@ public sealed class MVTable : Table
     /// </remarks>
     private readonly List<Index> indexes;
 
+    /// <summary>
+    /// The id of the database state this table was last changed in.
+    /// </summary>
+    /// <remarks>
+    /// In the reference this lives on DbObject; MVTable carries its own database here, so the
+    /// member lives with it. Same null-tolerant body.
+    /// </remarks>
+    private long modificationId;
+
+    /// <summary>
+    /// Tell the table that it was modified.
+    /// </summary>
+    public void SetModified()
+    {
+        modificationId = database is null ? -1 : database.GetNextModificationMetaId();
+    }
+
     private readonly TransactionStore store;
 
     private readonly bool persistData;
@@ -226,6 +243,224 @@ public sealed class MVTable : Table
     {
         return new TableRowFactory(columns.Length);
     }
+
+    /// <summary>
+    /// Adds an index to this table: a delegate over the primary for a single integer key,
+    /// an index of its own for everything else.
+    /// </summary>
+    /// <remarks>
+    /// The branches are the reference's. The spatial branch refuses: naming it needs the
+    /// spatial key type, which is not ported, and a class with invented type arguments would
+    /// be worse than an honest refusal. The schema half after a built index — the comment and
+    /// the registry write — runs only for tables the reference itself does not exempt, and
+    /// waits for the meta table with them. Rebuilding a non-empty table waits for the buffered
+    /// and block-merge builders below.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="indexName">the index name</param>
+    /// <param name="indexId">the object id</param>
+    /// <param name="cols">the columns that are indexed</param>
+    /// <param name="uniqueColumnCount">count of unique columns</param>
+    /// <param name="indexType">the index type</param>
+    /// <param name="create">whether this call creates the index</param>
+    /// <param name="indexComment">the comment, or null</param>
+    /// <returns>the added index</returns>
+    public Index AddIndex(
+        SessionLocal session,
+        string? indexName,
+        int indexId,
+        IndexColumn[] cols,
+        int uniqueColumnCount,
+        IndexType indexType,
+        bool create,
+        string? indexComment)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        cols = PrepareColumns(database, cols, indexType);
+        bool isSessionTemporary = IsTemporary() && !IsGlobalTemporary();
+        if (!isSessionTemporary)
+        {
+            database.LockMeta(session);
+        }
+        Index index;
+        int mainIndexColumn = primaryIndex.GetMainIndexColumn() != SearchRow.RowidIndex
+            ? SearchRow.RowidIndex : GetMainIndexColumn(indexType, cols);
+        if (database.IsStarting())
+        {
+            // if index does exist as a separate map it can't be a delegate
+            if (store.HasMap("index." + indexId))
+            {
+                // we can not reuse primary index
+                mainIndexColumn = SearchRow.RowidIndex;
+            }
+        }
+        else if (primaryIndex.GetRowCountMax() != 0)
+        {
+            mainIndexColumn = SearchRow.RowidIndex;
+        }
+
+        if (mainIndexColumn != SearchRow.RowidIndex)
+        {
+            primaryIndex.SetMainIndexColumn(mainIndexColumn);
+            index = new MVDelegateIndex(this, indexId, indexName, primaryIndex, indexType);
+        }
+        else if (indexType.IsSpatial())
+        {
+            throw new TODOException("MVTable.addIndex: spatial indexes need the spatial key type");
+        }
+        else
+        {
+            index = new MVSecondaryIndex(session.GetDatabase(), this, indexId,
+                indexName, cols, uniqueColumnCount, indexType);
+        }
+        if (index.NeedRebuild())
+        {
+            RebuildIndex(session, index, indexName);
+        }
+        index.SetTemporary(IsTemporary());
+        if (Id != 0 && index.GetCreateSql() != null)
+        {
+            index.SetComment(indexComment);
+            if (isSessionTemporary)
+            {
+                session.AddLocalTempTableIndex(index);
+            }
+            else
+            {
+                database.AddSchemaObject(session, index);
+            }
+        }
+        indexes.Add(index);
+        SetModified();
+        return index;
+    }
+
+    /// <summary>
+    /// Prepares the index columns: primary-key columns must not be nullable, and plain columns
+    /// gain the default's explicit null ordering.
+    /// </summary>
+    /// <remarks>
+    /// Nullability here is three-state, and anything but definitely-not-nullable is rejected:
+    /// a primary key over a column that may hold NULL is not a key. The rewritten column keeps
+    /// its resolved column and only trades the mask, because nameless columns do not exist here.
+    /// The null-ordering rule lives on DefaultNullOrderingRules rather than the ordering enum;
+    /// same pure function, only the shelf moved.
+    /// </remarks>
+    /// <param name="database">the database</param>
+    /// <param name="cols">the columns</param>
+    /// <param name="indexType">the index type</param>
+    /// <returns>the prepared columns</returns>
+    private static IndexColumn[] PrepareColumns(
+        Engine.Database database,
+        IndexColumn[] cols,
+        IndexType indexType)
+    {
+        if (indexType.IsPrimaryKey())
+        {
+            foreach (IndexColumn c in cols)
+            {
+                Column column = c.GetColumn();
+                if (column.IsNullable() != Column.NotNullable)
+                {
+                    throw Message.DbException.Get(Api.ErrorCode.ColumnMustNotBeNullable1, column.GetName());
+                }
+            }
+            foreach (IndexColumn c in cols)
+            {
+                c.GetColumn().SetPrimaryKey(true);
+            }
+        }
+        else if (!indexType.IsSpatial())
+        {
+            int i = 0, l = cols.Length;
+            while (i < l && (cols[i].SortType & (SortOrder.NullsFirst | SortOrder.NullsLast)) != 0)
+            {
+                i++;
+            }
+            if (i != l)
+            {
+                cols = (IndexColumn[])cols.Clone();
+                DefaultNullOrdering defaultNullOrdering = database.GetDefaultNullOrdering();
+                for (; i < l; i++)
+                {
+                    IndexColumn oldColumn = cols[i];
+                    int sortTypeOld = oldColumn.SortType;
+                    int sortTypeNew = DefaultNullOrderingRules.AddExplicitNullOrdering(defaultNullOrdering, sortTypeOld);
+                    if (sortTypeNew != sortTypeOld)
+                    {
+                        IndexColumn newColumn = new IndexColumn(oldColumn.GetColumn(), sortTypeNew);
+                        cols[i] = newColumn;
+                    }
+                }
+            }
+        }
+        return cols;
+    }
+
+    /// <summary>
+    /// Rebuilds the index from the table's rows, removing the half-built index when it fails.
+    /// </summary>
+    /// <remarks>
+    /// The cleanup is thinner than the reference's: freeing the reserved name waits for the
+    /// schema's name registry, and the failure log waits for tracing. What stays is the shape
+    /// that matters — a failed rebuild leaves no half index behind and the failure travels on.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="index">the index</param>
+    /// <param name="indexName">the index name</param>
+    private void RebuildIndex(SessionLocal session, Index index, string? indexName)
+    {
+        try
+        {
+            if (!session.GetDatabase().IsPersistent() || index is MVSecondaryIndex)
+            {
+                // in-memory
+                RebuildIndexBuffered(session, index);
+            }
+            else
+            {
+                RebuildIndexBlockMerge(session, index);
+            }
+        }
+        catch (H2SharpException)
+        {
+            try
+            {
+                index.Remove(session);
+            }
+            catch (H2SharpException)
+            {
+                // this could happen, for example on failure in the storage
+                // but if that is not the case it means
+                // there is something wrong with the database
+                throw;
+            }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the index by buffering the rows first.
+    /// </summary>
+    /// <remarks>
+    /// Not ported. It sorts the rows into temporary buffers and merges them into the index,
+    /// which needs row cursors over the table and the buffer lifecycle — both unported.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="index">the index</param>
+    private void RebuildIndexBuffered(SessionLocal session, Index index)
+        => throw new TODOException("MVTable.rebuildIndexBuffered");
+
+    /// <summary>
+    /// Rebuilds the index by merging sorted blocks.
+    /// </summary>
+    /// <remarks>
+    /// Not ported. It is the persistent twin of the buffered rebuild, with the same needs.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="index">the index</param>
+    private void RebuildIndexBlockMerge(SessionLocal session, Index index)
+        => throw new TODOException("MVTable.rebuildIndexBlockMerge");
 
     /// <summary>
     /// Gets the type of this table's rows: the reference's, so that what is written to a page
