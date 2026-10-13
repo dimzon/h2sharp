@@ -536,7 +536,7 @@ public static class EWKTUtils
 
             // A zero of either sign is one zero here, so that a geometry written from this one
             // writes the same text.
-            double d = double.Parse(ewkt[start..offset], NumberStyles.Float, CultureInfo.InvariantCulture);
+            double d = double.Parse(ewkt.AsSpan(start, offset - start), NumberStyles.Float, CultureInfo.InvariantCulture);
             return d == 0 ? 0 : d;
         }
 
