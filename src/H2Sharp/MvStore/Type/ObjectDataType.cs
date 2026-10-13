@@ -542,7 +542,7 @@ public class ObjectDataType : BasicDataType<object?>
         {
             TypeInt => DataUtils.ReadVarInt(buff, ref position),
             TagIntegerNegative => -DataUtils.ReadVarInt(buff, ref position),
-            TagIntegerFixed => BinaryPrimitives.ReadInt32BigEndian(ReadBytes(buff, ref position, 4)),
+            TagIntegerFixed => ReadFixedInt(buff, ref position),
             _ => tag - TagInteger015,
         };
     }
@@ -596,7 +596,7 @@ public class ObjectDataType : BasicDataType<object?>
         {
             TypeLong => DataUtils.ReadVarLong(buff, ref position),
             TagLongNegative => -DataUtils.ReadVarLong(buff, ref position),
-            TagLongFixed => BinaryPrimitives.ReadInt64BigEndian(ReadBytes(buff, ref position, 8)),
+            TagLongFixed => ReadFixedLong(buff, ref position),
             _ => (long)(tag - TagLong07),
         };
     }
@@ -649,7 +649,7 @@ public class ObjectDataType : BasicDataType<object?>
             TagFloat0 => 0f,
             TagFloat1 => 1f,
             TagFloatFixed => BitConverter.Int32BitsToSingle(
-                BinaryPrimitives.ReadInt32BigEndian(ReadBytes(buff, ref position, 4))),
+                ReadFixedInt(buff, ref position)),
             _ => BitConverter.Int32BitsToSingle(
                 ReverseBits(DataUtils.ReadVarInt(buff, ref position))),
         };
@@ -703,7 +703,7 @@ public class ObjectDataType : BasicDataType<object?>
             TagDouble0 => 0d,
             TagDouble1 => 1d,
             TagDoubleFixed => BitConverter.Int64BitsToDouble(
-                BinaryPrimitives.ReadInt64BigEndian(ReadBytes(buff, ref position, 8))),
+                ReadFixedLong(buff, ref position)),
             _ => BitConverter.Int64BitsToDouble(
                 ReverseBits(DataUtils.ReadVarLong(buff, ref position))),
         };
@@ -956,7 +956,7 @@ public class ObjectDataType : BasicDataType<object?>
 
         internal override object? ReadTagged(Span<byte> buff, ref int position, int tag)
             => DateTime.UnixEpoch.AddMilliseconds(
-                BinaryPrimitives.ReadInt64BigEndian(ReadBytes(buff, ref position, 8)));
+                ReadFixedLong(buff, ref position));
     }
 
     private sealed class ObjectArrayType : AutoDetectDataType
@@ -1245,12 +1245,12 @@ public class ObjectDataType : BasicDataType<object?>
                     else if (clazz == typeof(float))
                     {
                         ((float[])result)[i] = BitConverter.Int32BitsToSingle(
-                            BinaryPrimitives.ReadInt32BigEndian(ReadBytes(buff, ref position, 4)));
+                            ReadFixedInt(buff, ref position));
                     }
                     else if (clazz == typeof(double))
                     {
                         ((double[])result)[i] = BitConverter.Int64BitsToDouble(
-                            BinaryPrimitives.ReadInt64BigEndian(ReadBytes(buff, ref position, 8)));
+                            ReadFixedLong(buff, ref position));
                     }
                     else if (clazz == typeof(long))
                     {
@@ -1402,6 +1402,27 @@ public class ObjectDataType : BasicDataType<object?>
     {
         byte[] result = buff.Slice(position, count).ToArray();
         position += count;
+        return result;
+    }
+
+    /// <summary>
+    /// Reads a fixed int straight from the buffer: the primitive readers take spans, so only
+    /// the variable shapes still copy into arrays.
+    /// </summary>
+    private static int ReadFixedInt(Span<byte> buff, ref int position)
+    {
+        int result = BinaryPrimitives.ReadInt32BigEndian(buff.Slice(position, 4));
+        position += 4;
+        return result;
+    }
+
+    /// <summary>
+    /// Reads a fixed long straight from the buffer, same reason.
+    /// </summary>
+    private static long ReadFixedLong(Span<byte> buff, ref int position)
+    {
+        long result = BinaryPrimitives.ReadInt64BigEndian(buff.Slice(position, 8));
+        position += 8;
         return result;
     }
 
