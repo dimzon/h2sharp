@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
+using H2Sharp.Expressions.Conditions;
 using H2Sharp.Indexes;
 using H2Sharp.MvStore;
 using H2Sharp.MvStore.Db;
@@ -139,4 +140,183 @@ public sealed class SelectRunTests
 
     private static DefaultRow Row(int id, string name)
         => new([ValueInteger.Get(id), ValueVarchar.Get(name)]);
+
+    private static MVTable NewKeyedTable(SessionLocal session, TransactionStore store)
+    {
+        Column id = new("ID", TypeInfo.TypeInteger, null, 0);
+        id.SetNullable(false);
+        Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
+        MVTable table = new(
+            session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+            0, "T", [id, name], store, persistData: false);
+        foreach (Column column in table.GetColumns())
+        {
+            column.SetTable(table, column.GetColumnId());
+        }
+
+        table.AddIndex(session, "I", 7, [new IndexColumn(id, ascending: true)], 1,
+            IndexType.CreatePrimaryKey(persistent: false, hash: false), create: true, indexComment: null);
+        table.AddRow(session, Row(3, "c"));
+        table.AddRow(session, Row(1, "a"));
+        table.AddRow(session, Row(2, "b"));
+        return table;
+    }
+
+    private static Select NewSelect(SessionLocal session, MVTable table)
+    {
+        TableFilter f = new(session, table, "T", rightsChecked: true, null, 0, null);
+        Select select = new(session);
+        select.AddTableFilter(f, isTop: true);
+        select.SetExpressions(
+        [
+            new ExpressionColumn(table.GetColumn(0), f, 0),
+            new ExpressionColumn(table.GetColumn(1), f, 1),
+        ]);
+        select.PreparePlan(session, targetTableFilter: null);
+        return select;
+    }
+
+    private const string JavaTable = """
+        org.h2.command.ddl.CreateTableData data = new org.h2.command.ddl.CreateTableData();
+        data.schema = db.getSchema("PUBLIC");
+        data.id = 0;
+        data.tableName = "T";
+        org.h2.table.Column idCol = new org.h2.table.Column("ID", org.h2.value.TypeInfo.TYPE_INTEGER);
+        idCol.setNullable(false);
+        data.columns.add(idCol);
+        data.columns.add(new org.h2.table.Column("NAME", org.h2.value.TypeInfo.TYPE_VARCHAR));
+        data.persistIndexes = false;
+        data.persistData = false;
+        org.h2.mvstore.db.MVTable table = new org.h2.mvstore.db.MVTable(data, db.getStore());
+        org.h2.table.IndexColumn[] cols = new org.h2.table.IndexColumn[]{
+            new org.h2.table.IndexColumn(table.getColumn("ID")) };
+        table.addIndex(session, "I", 7, cols, 1,
+            org.h2.index.IndexType.createPrimaryKey(false, false), true, null);
+        table.addRow(session, new org.h2.result.DefaultRow(new org.h2.value.Value[]{
+            org.h2.value.ValueInteger.get(3), org.h2.value.ValueVarchar.get("c") }));
+        table.addRow(session, new org.h2.result.DefaultRow(new org.h2.value.Value[]{
+            org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("a") }));
+        table.addRow(session, new org.h2.result.DefaultRow(new org.h2.value.Value[]{
+            org.h2.value.ValueInteger.get(2), org.h2.value.ValueVarchar.get("b") }));
+        """;
+
+    private const string JavaSelect = """
+        org.h2.table.TableFilter f = new org.h2.table.TableFilter(session, table, "T", true, null, 0, null);
+        org.h2.command.query.Select select = new org.h2.command.query.Select(session, null);
+        select.addTableFilter(f, true);
+        java.util.ArrayList<org.h2.expression.Expression> exprs = new java.util.ArrayList<>();
+        org.h2.expression.ExpressionColumn idEc = new org.h2.expression.ExpressionColumn(
+            session.getDatabase(), null, "T", "ID");
+        idEc.mapColumns(f, 0, org.h2.expression.Expression.MAP_INITIAL);
+        org.h2.expression.ExpressionColumn nameEc = new org.h2.expression.ExpressionColumn(
+            session.getDatabase(), null, "T", "NAME");
+        nameEc.mapColumns(f, 0, org.h2.expression.Expression.MAP_INITIAL);
+        exprs.add(idEc);
+        exprs.add(nameEc);
+        select.setExpressions(exprs);
+        select.preparePlan();
+        """;
+
+    private static List<string> Print(ResultInterface result)
+    {
+        List<string> rows = [];
+        while (result.Next())
+        {
+            Value?[] row = result.CurrentRow();
+            rows.Add("=" + row[0] + ":" + row[1]);
+        }
+
+        return rows;
+    }
+
+    private const string JavaPrint = """
+        while (r.next()) {
+            org.h2.value.Value[] row = r.currentRow();
+            System.out.println("=" + row[0] + ":" + row[1]);
+        }
+        conn.close();
+        """;
+
+    private const string JavaSession = """
+        java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:select_run_e2e");
+        org.h2.jdbc.JdbcConnection c = (org.h2.jdbc.JdbcConnection) conn;
+        org.h2.engine.SessionLocal session = (org.h2.engine.SessionLocal) c.getSession();
+        org.h2.engine.Database db = session.getDatabase();
+        """;
+
+    [JavaOracleFact]
+    public void FilteredSelectReadsItsRow()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            MVTable table = NewKeyedTable(session, store);
+            TableFilter f = new(session, table, "T", rightsChecked: true, null, 0, null);
+            var ec = new ExpressionColumn(table.GetColumn(0), f, 0);
+            var cond = new Comparison(
+                Comparison.Equal, ec, ValueExpression.Get(ValueInteger.Get(2)), whenOperand: false);
+            Select select = new(session);
+            select.AddTableFilter(f, isTop: true);
+            select.AddCondition(cond);
+            select.SetExpressions(
+            [
+                new ExpressionColumn(table.GetColumn(0), f, 0),
+                new ExpressionColumn(table.GetColumn(1), f, 1),
+            ]);
+            select.PreparePlan(session, targetTableFilter: null);
+            List<string> actual = Print(select.Run(-1));
+
+            const string javaConds = """
+                org.h2.expression.ExpressionColumn ec = new org.h2.expression.ExpressionColumn(
+                    session.getDatabase(), null, "T", "ID");
+                ec.mapColumns(f, 0, org.h2.expression.Expression.MAP_INITIAL);
+                org.h2.expression.condition.Comparison cond = new org.h2.expression.condition.Comparison(
+                    org.h2.expression.condition.Comparison.EQUAL, ec,
+                    org.h2.expression.ValueExpression.get(org.h2.value.ValueInteger.get(2)), false);
+                select.addCondition(cond);
+                """;
+            List<string> java = OracleRunner.Run(
+                [], JavaSession + JavaTable + JavaSelect + javaConds + JavaRun + JavaPrint, null, null, null);
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    private const string JavaRun = """
+        org.h2.result.ResultInterface r = select.query(-1);
+        """;
+
+    [JavaOracleFact]
+    public void LimitedSelectReadsItsRows()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            MVTable table = NewKeyedTable(session, store);
+            Select select = NewSelect(session, table);
+            select.PreparePlan(session, targetTableFilter: null);
+            List<string> actual = Print(select.Run(2));
+
+            List<string> java = OracleRunner.Run(
+                [], JavaSession + JavaTable + JavaSelect + JavaRunLimit + JavaPrint, null, null, null);
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    private const string JavaRunLimit = """
+        org.h2.result.ResultInterface r = select.query(2);
+        """;
 }

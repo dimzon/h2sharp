@@ -249,10 +249,10 @@ public sealed class SessionLocal : Session
     /// </summary>
     /// <param name="left">the left value</param>
     /// <param name="right">the right value</param>
-    /// <param name="ignoreCase">whether case is ignored</param>
-    /// <returns>-1, 0 or 1</returns>
-    public int CompareWithNull(Values.Value left, Values.Value right, bool ignoreCase)
-        => throw new TODOException("SessionLocal.compareWithNull");
+    /// <param name="forEquality">whether this is an equality comparison</param>
+    /// <returns>-1, 0, 1, or the unknown sentinel</returns>
+    public int CompareWithNull(Values.Value left, Values.Value right, bool forEquality)
+        => left.CompareWithNull(right, forEquality, this, GetCompareMode());
 
     /// <summary>
     /// Compares two values with the current comparison mode. The values may have different data
