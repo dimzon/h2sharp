@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace H2Sharp.MvStore;
 
@@ -375,15 +376,10 @@ internal sealed class LongBitSet
     /// <returns>the bytes</returns>
     internal byte[] ToByteArray()
     {
+        // The loop this replaces read the words out little endian, which is the order the
+        // bytes of a long already sit in.
         int used = (Length + 7) / 8;
-        byte[] result = new byte[used];
-        for (int i = 0; i < used; i++)
-        {
-            long word = words[i / 8];
-            result[i] = (byte)((word >> (8 * (i & 7))) & 0xff);
-        }
-
-        return result;
+        return MemoryMarshal.AsBytes(words.AsSpan())[..used].ToArray();
     }
 
     private void EnsureCapacity(int bits)

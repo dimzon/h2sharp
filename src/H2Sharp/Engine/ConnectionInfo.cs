@@ -197,8 +197,7 @@ public sealed class ConnectionInfo
     /// <returns>the property value</returns>
     public string? RemoveProperty(string key, string? defaultValue)
     {
-        string? value = GetProperty(key);
-        _ = properties.Remove(key);
+        _ = properties.Remove(key, out string? value);
         return value ?? defaultValue;
     }
 

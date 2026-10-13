@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using H2Sharp.Util;
 
@@ -457,7 +458,7 @@ public class ObjectDataType : BasicDataType<object?>
 
         internal override object? ReadTagged(Span<byte> buff, ref int position, int tag)
         {
-            short value = (short)((buff[position] << 8) | buff[position + 1]);
+            short value = BinaryPrimitives.ReadInt16BigEndian(buff.Slice(position, 2));
             position += 2;
             return value;
         }
@@ -484,7 +485,7 @@ public class ObjectDataType : BasicDataType<object?>
 
         public override object? Read(Span<byte> buff, ref int position)
         {
-            char value = (char)((buff[position] << 8) | buff[position + 1]);
+            char value = (char)BinaryPrimitives.ReadUInt16BigEndian(buff.Slice(position, 2));
             position += 2;
             return value;
         }
@@ -906,13 +907,8 @@ public class ObjectDataType : BasicDataType<object?>
             // other. A Guid's own byte order is mixed endian, so the value goes out field by field in
             // the same order Java's UUID writes them, rather than as one copy of its bytes.
             _ = buff.Put((byte)TypeUuid);
-            byte[] bytes = ((Guid)obj!).ToByteArray();
-            byte[] ordered =
-            [
-                bytes[3], bytes[2], bytes[1], bytes[0],
-                bytes[5], bytes[4], bytes[7], bytes[6],
-                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
-            ];
+            Span<byte> ordered = stackalloc byte[16];
+            Util.Bits.UuidToBytes((Guid)obj!, ordered);
             _ = buff.Put(ordered);
         }
 
@@ -922,12 +918,16 @@ public class ObjectDataType : BasicDataType<object?>
         internal override object? ReadTagged(Span<byte> buff, ref int position, int tag)
         {
             byte[] bytes = ReadBytes(buff, ref position, 16);
-            byte[] ordered =
-            [
-                bytes[3], bytes[2], bytes[1], bytes[0],
-                bytes[5], bytes[4], bytes[7], bytes[6],
-                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
-            ];
+            Span<byte> ordered = stackalloc byte[16];
+            ordered[0] = bytes[3];
+            ordered[1] = bytes[2];
+            ordered[2] = bytes[1];
+            ordered[3] = bytes[0];
+            ordered[4] = bytes[5];
+            ordered[5] = bytes[4];
+            ordered[6] = bytes[7];
+            ordered[7] = bytes[6];
+            bytes.AsSpan(8, 8).CopyTo(ordered[8..]);
             return new Guid(ordered);
         }
     }
@@ -1184,14 +1184,11 @@ public class ObjectDataType : BasicDataType<object?>
             if (tag != TypeArray)
             {
                 // A short byte array carries no class id; like every other byte array on disk it is
-                // Java's signed bytes, which are sbyte here.
+                // Java's signed bytes, which are sbyte here. A reinterpret cast, not a loop: the
+                // bits are the same either way.
                 byte[] raw = ReadBytes(buff, ref position, tag - TagByteArray015);
                 sbyte[] signed = new sbyte[raw.Length];
-                for (int i = 0; i < raw.Length; i++)
-                {
-                    signed[i] = (sbyte)raw[i];
-                }
-
+                MemoryMarshal.Cast<byte, sbyte>(raw).CopyTo(signed);
                 return signed;
             }
 
@@ -1229,18 +1226,15 @@ public class ObjectDataType : BasicDataType<object?>
                     }
                     else if (clazz == typeof(char))
                     {
-                        ((char[])result)[i] = (char)BinaryPrimitives.ReadUInt16BigEndian(
-                            ReadBytes(buff, ref position, 2));
+                        ((char[])result)[i] = (char)ReadFixedShort(buff, ref position);
                     }
                     else if (clazz == typeof(short))
                     {
-                        ((short[])result)[i] = BinaryPrimitives.ReadInt16BigEndian(
-                            ReadBytes(buff, ref position, 2));
+                        ((short[])result)[i] = ReadFixedShort(buff, ref position);
                     }
                     else if (clazz == typeof(int))
                     {
-                        ((int[])result)[i] = BinaryPrimitives.ReadInt32BigEndian(
-                            ReadBytes(buff, ref position, 4));
+                        ((int[])result)[i] = ReadFixedInt(buff, ref position);
                     }
                     else if (clazz == typeof(float))
                     {
@@ -1254,8 +1248,7 @@ public class ObjectDataType : BasicDataType<object?>
                     }
                     else if (clazz == typeof(long))
                     {
-                        ((long[])result)[i] = BinaryPrimitives.ReadInt64BigEndian(
-                            ReadBytes(buff, ref position, 8));
+                        ((long[])result)[i] = ReadFixedLong(buff, ref position);
                     }
                     else
                     {
@@ -1402,6 +1395,16 @@ public class ObjectDataType : BasicDataType<object?>
     {
         byte[] result = buff.Slice(position, count).ToArray();
         position += count;
+        return result;
+    }
+
+    /// <summary>
+    /// Reads a fixed short straight from the buffer, like the int and long readers below it.
+    /// </summary>
+    private static short ReadFixedShort(Span<byte> buff, ref int position)
+    {
+        short result = BinaryPrimitives.ReadInt16BigEndian(buff.Slice(position, 2));
+        position += 2;
         return result;
     }
 

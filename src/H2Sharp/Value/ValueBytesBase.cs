@@ -136,7 +136,7 @@ public abstract class ValueBytesBase : Value
     /// </summary>
     /// <remarks>
     /// An array is shorter than any longer array that starts with it, so the length decides only
-    /// when every shared byte is equal.
+    /// when every shared byte is equal. Bytes are unsigned on both sides of the comparison.
     /// </remarks>
     /// <param name="a">the first array</param>
     /// <param name="b">the second array</param>
@@ -145,16 +145,5 @@ public abstract class ValueBytesBase : Value
     /// number otherwise
     /// </returns>
     private static int CompareUnsigned(byte[] a, byte[] b)
-    {
-        int shared = Math.Min(a.Length, b.Length);
-        for (int i = 0; i < shared; i++)
-        {
-            if (a[i] != b[i])
-            {
-                return a[i] < b[i] ? -1 : 1;
-            }
-        }
-
-        return a.Length == b.Length ? 0 : a.Length < b.Length ? -1 : 1;
-    }
+        => a.AsSpan().SequenceCompareTo(b);
 }

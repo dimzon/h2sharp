@@ -240,7 +240,7 @@ public sealed class ValueClob : ValueLob
                     throw DbException.GetUnsupportedException("Invalid LOB");
                 }
 
-                int comparison = Math.Sign(string.CompareOrdinal(new string(oneBuffer), new string(otherBuffer)));
+                int comparison = Math.Sign(oneBuffer.AsSpan().SequenceCompareTo(otherBuffer));
                 if (comparison != 0)
                 {
                     return comparison;

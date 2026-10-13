@@ -29,6 +29,7 @@
  * written by accident and then read back as something else.
  */
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
@@ -603,7 +604,7 @@ public sealed class ValueDataType : BasicDataType<Value>
 
             case Smallint:
                 {
-                    short s = (short)((buff[position] << 8) | buff[position + 1]);
+                    short s = BinaryPrimitives.ReadInt16BigEndian(buff.Slice(position, 2));
                     position += 2;
                     return ValueSmallint.Get(s);
                 }
@@ -653,10 +654,14 @@ public sealed class ValueDataType : BasicDataType<Value>
                 return ValueDouble.Get(1d);
 
             case Varbinary:
-                return ValueVarbinary.Get(ReadBytes(buff, ref position));
+                // One copy, not two: the array out of the buffer is private to this read, so it
+                // goes straight into the value instead of through a second clone. When the cache
+                // answers with another instance the array is garbage, which is what the clone was
+                // before it.
+                return ValueVarbinary.GetNoCopy(ReadBytes(buff, ref position));
 
             case Binary:
-                return ValueBinary.Get(ReadBytes(buff, ref position));
+                return ValueBinary.GetNoCopy(ReadBytes(buff, ref position));
 
             case Char:
                 return ValueChar.Get(ReadString(buff, ref position));
@@ -725,7 +730,7 @@ public sealed class ValueDataType : BasicDataType<Value>
                         int len = type - Varbinary0To31;
                         byte[] bytes = buff.Slice(position, len).ToArray();
                         position += len;
-                        return ValueVarbinary.Get(bytes);
+                        return ValueVarbinary.GetNoCopy(bytes);
                     }
 
                     if (type is Varchar or VarcharIgnoreCase)
@@ -768,12 +773,7 @@ public sealed class ValueDataType : BasicDataType<Value>
     /// </summary>
     private static long ReadFixedLong(Span<byte> buff, ref int position)
     {
-        long result = 0;
-        for (int i = 0; i < 8; i++)
-        {
-            result = (result << 8) | buff[position + i];
-        }
-
+        long result = BinaryPrimitives.ReadInt64BigEndian(buff.Slice(position, 8));
         position += 8;
         return result;
     }
@@ -795,6 +795,10 @@ public sealed class ValueDataType : BasicDataType<Value>
         return result;
     }
 
+    /// <summary>
+    /// Reads a byte string out of the buffer. The array is freshly allocated and private to the
+    /// caller, so a value built with <c>GetNoCopy</c> takes it as is.
+    /// </summary>
     private static byte[] ReadBytes(Span<byte> buff, ref int position)
     {
         int len = DataUtils.ReadVarInt(buff, ref position);

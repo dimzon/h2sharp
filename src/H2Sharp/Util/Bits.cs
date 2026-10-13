@@ -55,12 +55,22 @@ public static class Bits
     public static byte[] UuidToBytes(Guid uuid)
     {
         byte[] buff = new byte[UuidByteLength];
-        if (!uuid.TryWriteBytes(buff, bigEndian: true, out int written) || written != UuidByteLength)
+        UuidToBytes(uuid, buff);
+        return buff;
+    }
+
+    /// <summary>
+    /// Writes a UUID in big-endian order into a span, without allocating.
+    /// </summary>
+    /// <param name="uuid">UUID value</param>
+    /// <param name="destination">at least sixteen bytes</param>
+    public static void UuidToBytes(Guid uuid, Span<byte> destination)
+    {
+        if (!uuid.TryWriteBytes(destination, bigEndian: true, out int written)
+            || written != UuidByteLength)
         {
             throw new InvalidOperationException("Unexpected Guid byte length: " + written);
         }
-
-        return buff;
     }
 
     /// <summary>
@@ -77,12 +87,19 @@ public static class Bits
         }
 
         // H2 wire order is Data1|Data2|Data3|Data4 in canonical text order.
-        // Guid.ReadOnlySpan<byte> ctor expects Data1..Data3 little-endian, so read
-        // the three leading fields big-endian and pass them explicitly.
-        int data1 = unchecked((int)BinaryPrimitives.ReadUInt32BigEndian(bytes[..4]));
-        short data2 = unchecked((short)BinaryPrimitives.ReadUInt16BigEndian(bytes.Slice(4, 2)));
-        short data3 = unchecked((short)BinaryPrimitives.ReadUInt16BigEndian(bytes.Slice(6, 2)));
-        return new Guid(data1, data2, data3, bytes.Slice(8, 8).ToArray());
+        // Guid.ReadOnlySpan<byte> ctor expects Data1..Data3 little-endian, so the three
+        // leading fields are reordered and the tail copied as is. No allocation.
+        Span<byte> ordered = stackalloc byte[UuidByteLength];
+        ordered[0] = bytes[3];
+        ordered[1] = bytes[2];
+        ordered[2] = bytes[1];
+        ordered[3] = bytes[0];
+        ordered[4] = bytes[5];
+        ordered[5] = bytes[4];
+        ordered[6] = bytes[7];
+        ordered[7] = bytes[6];
+        bytes.Slice(8, 8).CopyTo(ordered[8..]);
+        return new Guid(ordered);
     }
 
     /// <summary>
@@ -92,7 +109,11 @@ public static class Bits
     /// <param name="uuid">the UUID</param>
     /// <returns>the most significant bits</returns>
     public static long Msb(Guid uuid)
-        => BinaryPrimitives.ReadInt64BigEndian(UuidToBytes(uuid).AsSpan(0, 8));
+    {
+        Span<byte> buff = stackalloc byte[UuidByteLength];
+        UuidToBytes(uuid, buff);
+        return BinaryPrimitives.ReadInt64BigEndian(buff[..8]);
+    }
 
     /// <summary>
     /// Extracts the least significant 64 bits of a UUID, matching
@@ -101,7 +122,11 @@ public static class Bits
     /// <param name="uuid">the UUID</param>
     /// <returns>the least significant bits</returns>
     public static long Lsb(Guid uuid)
-        => BinaryPrimitives.ReadInt64BigEndian(UuidToBytes(uuid).AsSpan(8, 8));
+    {
+        Span<byte> buff = stackalloc byte[UuidByteLength];
+        UuidToBytes(uuid, buff);
+        return BinaryPrimitives.ReadInt64BigEndian(buff[8..]);
+    }
 
     /// <summary>
     /// Reads an int from four bytes in network byte order, matching what

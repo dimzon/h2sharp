@@ -284,17 +284,5 @@ public sealed class ValueBlob : ValueLob
     /// Java's <c>Arrays.compareUnsigned</c>: the bytes as numbers, the bigger byte the later one.
     /// </summary>
     private static int CompareUnsigned(byte[] a, byte[] b)
-    {
-        int length = Math.Min(a.Length, b.Length);
-        for (int i = 0; i < length; i++)
-        {
-            int comparison = a[i].CompareTo(b[i]);
-            if (comparison != 0)
-            {
-                return comparison;
-            }
-        }
-
-        return a.Length.CompareTo(b.Length);
-    }
+        => a.AsSpan().SequenceCompareTo(b);
 }

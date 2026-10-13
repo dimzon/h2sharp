@@ -14,6 +14,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using H2Sharp.Api;
 using H2Sharp.Message;
 
@@ -105,12 +106,16 @@ public sealed class MemoryFilePath : FilePath
     {
         lock (Sync)
         {
-            if (Files.ContainsKey(Name))
+            // One lookup and no allocation when the file is there: the slot starts empty and
+            // is filled only for a file that is actually created.
+            ref MemoryFile? slot =
+                ref CollectionsMarshal.GetValueRefOrAddDefault(Files, Name, out bool exists);
+            if (exists)
             {
                 return false;
             }
 
-            Files[Name] = new MemoryFile();
+            slot = new MemoryFile();
             return true;
         }
     }

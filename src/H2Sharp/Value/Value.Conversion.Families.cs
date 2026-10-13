@@ -18,6 +18,7 @@
  * unchanged; it converts both operands of a comparison at once, which is not what this does.
  */
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Api;
@@ -2139,15 +2140,7 @@ public abstract partial class Value
     /// <param name="bytes">exactly four bytes</param>
     /// <returns>the int</returns>
     private static int ReadIntBigEndian(byte[] bytes)
-    {
-        uint value = 0;
-        for (int i = 0; i < 4; i++)
-        {
-            value = (value << 8) | bytes[i];
-        }
-
-        return unchecked((int)value);
-    }
+        => BinaryPrimitives.ReadInt32BigEndian(bytes);
 
     /// <summary>
     /// Reads eight bytes as a big-endian long, which is how an eight byte BINARY is a BIGINT.
@@ -2155,15 +2148,7 @@ public abstract partial class Value
     /// <param name="bytes">exactly eight bytes</param>
     /// <returns>the long</returns>
     private static long ReadLongBigEndian(byte[] bytes)
-    {
-        ulong value = 0;
-        for (int i = 0; i < 8; i++)
-        {
-            value = (value << 8) | bytes[i];
-        }
-
-        return unchecked((long)value);
-    }
+        => BinaryPrimitives.ReadInt64BigEndian(bytes);
 
     /// <summary>
     /// The too long error for this value against a target type, naming the column when there

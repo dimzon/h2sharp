@@ -75,8 +75,14 @@ public class SoftValuesHashMap<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TV
     /// <returns>the value that was there, or the default</returns>
     public TValue? Remove(TKey key)
     {
-        TValue? previous = Get(key);
-        _ = map.Remove(key);
+        // One lookup: the entry is taken out and its target read from the removed reference,
+        // which is what Get answers for a key that is still here.
+        if (!map.Remove(key, out WeakReference<TValue>? reference)
+            || !reference.TryGetTarget(out TValue? previous))
+        {
+            return default;
+        }
+
         return previous;
     }
 

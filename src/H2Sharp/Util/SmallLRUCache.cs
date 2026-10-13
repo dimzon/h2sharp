@@ -13,6 +13,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace H2Sharp.Util;
 
@@ -90,17 +91,20 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
     /// <returns>the value that was there, or what was given</returns>
     public TValue Put(TKey key, TValue value)
     {
+        // One lookup: the slot is written before anything resizes the dictionary, so the
+        // reference stays valid. The order list is touched in between, but it is not the
+        // dictionary.
+        ref LinkedListNode<KeyValuePair<TKey, TValue>>? slot =
+            ref CollectionsMarshal.GetValueRefOrAddDefault(entries, key, out bool exists);
         TValue previous = default!;
-        if (entries.TryGetValue(key, out LinkedListNode<KeyValuePair<TKey, TValue>>? node))
+        if (exists)
         {
+            LinkedListNode<KeyValuePair<TKey, TValue>> node = slot!;
             previous = node.Value.Value;
             order.Remove(node);
-            entries.Remove(key);
         }
 
-        LinkedListNode<KeyValuePair<TKey, TValue>> added =
-            order.AddFirst(new KeyValuePair<TKey, TValue>(key, value));
-        _ = entries[key] = added;
+        slot = order.AddFirst(new KeyValuePair<TKey, TValue>(key, value));
         Trim();
         return previous;
     }
@@ -112,12 +116,12 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
     /// <returns>the value, or what an absent key gives</returns>
     public TValue Remove(TKey key)
     {
-        if (!entries.TryGetValue(key, out LinkedListNode<KeyValuePair<TKey, TValue>>? node))
+        if (!entries.Remove(key, out LinkedListNode<KeyValuePair<TKey, TValue>>? node))
         {
             return default!;
         }
+
         order.Remove(node);
-        entries.Remove(key);
         return node.Value.Value;
     }
 

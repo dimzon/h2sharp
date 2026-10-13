@@ -42,9 +42,7 @@ public sealed class ByteArrayDataType : BasicDataType<byte[]>
     /// <inheritdoc/>
     /// <remarks>
     /// Unsigned and element by element. The reference uses
-    /// <c>Arrays.compareUnsigned</c>, which walks the bytes as unsigned; <see cref="Array"/> has no
-    /// unsigned comparison, so the loop does it and stops at the first difference rather than
-    /// accumulating, which is the same answer in fewer comparisons.
+    /// <c>Arrays.compareUnsigned</c>, which walks the bytes as unsigned.
     /// </remarks>
     public override int Compare(byte[]? one, byte[]? two)
     {
@@ -53,16 +51,6 @@ public sealed class ByteArrayDataType : BasicDataType<byte[]>
             return (one?.Length ?? -1).CompareTo(two?.Length ?? -1);
         }
 
-        int shared = Math.Min(one.Length, two.Length);
-        for (int i = 0; i < shared; i++)
-        {
-            int diff = one[i].CompareTo(two[i]);
-            if (diff != 0)
-            {
-                return diff;
-            }
-        }
-
-        return one.Length.CompareTo(two.Length);
+        return one.AsSpan().SequenceCompareTo(two);
     }
 }
