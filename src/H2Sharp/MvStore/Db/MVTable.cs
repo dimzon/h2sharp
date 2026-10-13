@@ -51,6 +51,17 @@ public sealed class MVTable : Table
 
     private readonly MVPrimaryIndex primaryIndex;
 
+    /// <summary>
+    /// Every index of this table, the primary first.
+    /// </summary>
+    /// <remarks>
+    /// In the reference this is a copy-on-write list the table hands out live; here the list
+    /// stays inside and <see cref="GetIndexes"/> hands out a snapshot, because the port widened
+    /// the answer to an array. Until <c>addIndex</c> is ported the constructor is the only
+    /// writer, so the list holds the primary and nothing else.
+    /// </remarks>
+    private readonly List<Index> indexes;
+
     private readonly TransactionStore store;
 
     private readonly bool persistData;
@@ -84,6 +95,7 @@ public sealed class MVTable : Table
         this.store = store;
         this.persistData = persistData;
         primaryIndex = new MVPrimaryIndex(null!, this, id, null, IndexType.CreatePrimaryKey(persistData, false));
+        indexes = new List<Index> { primaryIndex };
     }
 
     /// <summary>Gets the schema of this table, if any.</summary>
@@ -194,6 +206,17 @@ public sealed class MVTable : Table
     public override Index? GetIndexFor(SessionLocal session, SearchRow row)
     {
         return primaryIndex;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A snapshot, not the live list: the port widened the reference's list answer to an
+    /// array, and handing the list itself out would let callers add or drop indexes behind
+    /// the table's back. See <see cref="indexes"/> for who writes it.
+    /// </remarks>
+    public override Index[] GetIndexes()
+    {
+        return indexes.ToArray();
     }
 
     /// <summary>

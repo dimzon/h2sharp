@@ -112,6 +112,8 @@ public sealed class SchemaRegistryTests
 
         public override Index? GetPrimaryKey() => null;
 
+        public override Index? GetScanIndex(SessionLocal session) => null;
+
         public override Index? GetIndexFor(SessionLocal session, H2Sharp.Result.SearchRow row) => null;
 
         public override long GetRowCountApproximation() => 0;

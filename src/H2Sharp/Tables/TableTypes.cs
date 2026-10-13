@@ -988,6 +988,97 @@ public abstract class Table
     public abstract Column[] GetColumns();
 
     /// <summary>
+    /// Gets the index a full scan reads, priced for the given query.
+    /// </summary>
+    /// <remarks>
+    /// The base answer ignores everything but the session: a scan reads the whole table however
+    /// it was asked, and masks, filters, order and columns do not change what "everything"
+    /// costs. The tables that read less override this; the base is what they fall back to, not
+    /// what they compute with.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="masks">which columns the query fixed, by column id</param>
+    /// <param name="filters">the filters of the query</param>
+    /// <param name="filter">the position of this table among them</param>
+    /// <param name="sortOrder">the order the query wants, or null</param>
+    /// <param name="allColumnsSet">the columns each table reads, or null</param>
+    /// <returns>the scan index</returns>
+    public virtual H2Sharp.Indexes.Index? GetScanIndex(
+        Engine.SessionLocal session,
+        int[]? masks,
+        TableFilter[]? filters,
+        int filter,
+        Result.SortOrder? sortOrder,
+        H2Sharp.Command.Query.AllColumnsForPlan? allColumnsSet)
+    {
+        return GetScanIndex(session);
+    }
+
+    /// <summary>
+    /// Prices every index the table owns for the given query and returns the cheapest plan.
+    /// </summary>
+    /// <remarks>
+    /// The scan is always priced first and wins by default; every other index is priced only
+    /// when the query fixed columns, and only when the query's hints do not forbid it. An
+    /// unfixed query never leaves the scan, however many indexes the table has.
+    /// The reference logs each candidate through the session trace here; that logging is
+    /// skipped, because <see cref="Engine.SessionLocal.GetTrace"/> refuses until tracing is
+    /// ported, and a plan must not depend on diagnostics being available.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="masks">which columns the query fixed, by column id, or null</param>
+    /// <param name="filters">the filters of the query</param>
+    /// <param name="filter">the position of this table among them</param>
+    /// <param name="sortOrder">the order the query wants, or null</param>
+    /// <param name="allColumnsSet">the columns each table reads, or null</param>
+    /// <param name="isSelectCommand">whether a SELECT is being planned</param>
+    /// <returns>the cheapest plan item</returns>
+    public virtual PlanItem GetBestPlanItem(
+        Engine.SessionLocal session,
+        int[]? masks,
+        TableFilter[]? filters,
+        int filter,
+        Result.SortOrder? sortOrder,
+        H2Sharp.Command.Query.AllColumnsForPlan? allColumnsSet,
+        bool isSelectCommand)
+    {
+        PlanItem item = new();
+        H2Sharp.Indexes.Index? scanIndex = GetScanIndex(session);
+        item.SetIndex(scanIndex);
+        item.Cost = item.GetIndex()!.GetCost(session, null, filters, filter, null, allColumnsSet, isSelectCommand);
+        if (masks != null)
+        {
+            IndexHints? indexHints = GetIndexHints(filters, filter);
+            foreach (H2Sharp.Indexes.Index index in GetIndexes())
+            {
+                if (index == scanIndex || IsIndexExcludedByHints(indexHints, index))
+                {
+                    continue;
+                }
+
+                double cost = index.GetCost(session, masks, filters, filter,
+                    sortOrder, allColumnsSet, isSelectCommand);
+                if (cost < item.Cost)
+                {
+                    item.Cost = cost;
+                    item.SetIndex(index);
+                }
+            }
+        }
+        return item;
+    }
+
+    private static bool IsIndexExcludedByHints(IndexHints? indexHints, H2Sharp.Indexes.Index index)
+    {
+        return indexHints is not null && !indexHints.AllowIndex(index.GetName());
+    }
+
+    private static IndexHints? GetIndexHints(TableFilter[]? filters, int filter)
+    {
+        return filters is null ? null : filters[filter].GetIndexHints();
+    }
+
+    /// <summary>
     /// Gets the index a full scan reads.
     /// </summary>
     /// <remarks>
