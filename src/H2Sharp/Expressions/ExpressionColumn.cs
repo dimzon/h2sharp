@@ -45,6 +45,12 @@ public sealed class ExpressionColumn : Expression
     private int queryLevel;
 
     /// <summary>
+    /// What this was mapped through, for the callers that must know which table a shared name
+    /// came from.
+    /// </summary>
+    private ColumnResolver? columnResolver;
+
+    /// <summary>
     /// Creates a new expression column.
     /// </summary>
     /// <param name="column">the column</param>
@@ -56,6 +62,7 @@ public sealed class ExpressionColumn : Expression
         columnAlias = resolver.GetColumnName(column);
         tableAlias = resolver.GetTableAlias();
         this.queryLevel = queryLevel;
+        columnResolver = resolver;
     }
 
     /// <summary>
@@ -90,14 +97,11 @@ public sealed class ExpressionColumn : Expression
     /// </summary>
     /// <remarks>
     /// The reference keeps the filter on the expression, because a query can name the same table
-    /// twice and a column reference has to say which of them it means. Here a column is mapped
-    /// through a resolver instead of a filter, so this has nothing to answer with and refuses:
-    /// answering the *first* filter, or comparing aliases, would look like the reference's rule
-    /// and quietly disagree with it wherever a self-join appears.
+    /// twice and a column reference has to say which of them it means. Here that is the
+    /// resolver it was mapped through, which answers for itself.
     /// </remarks>
-    /// <returns>the table filter</returns>
-    public TableFilter? GetTableFilter()
-        => throw new TODOException("ExpressionColumn.getTableFilter: this port maps by resolver, not by filter");
+    /// <returns>the table filter, or null</returns>
+    public TableFilter? GetTableFilter() => columnResolver?.GetTableFilter();
 
     /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
@@ -169,6 +173,13 @@ public sealed class ExpressionColumn : Expression
         if (!found && foundColumn is not null)
         {
             columnAlias = foundColumn;
+        }
+
+        // First mapping wins, as the reference keeps the first resolver: a later one with a
+        // different filter is an ambiguous column, which waits for its own error.
+        if (found && columnResolver is null)
+        {
+            columnResolver = resolver;
         }
 
         return found;

@@ -1121,6 +1121,16 @@ public abstract class Table
     /// neither does a second column — only an ascending single integer key reuses the primary
     /// index, everything else gets its own.
     /// </remarks>
+    /// <summary>
+    /// Whether conditions on this table can use an index.
+    /// </summary>
+    /// <remarks>
+    /// True unless a table kind that stores no order says otherwise; none of those kinds is
+    /// ported, so nothing overrides this yet.
+    /// </remarks>
+    /// <returns>true</returns>
+    public virtual bool IsQueryComparable() => true;
+
     /// <param name="indexType">the type of the index</param>
     /// <param name="cols">the columns of the index</param>
     /// <returns>the main index column, or <see cref="SearchRow.RowidIndex"/></returns>

@@ -33,6 +33,8 @@
 using System;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Indexes;
+using H2Sharp.Message;
 using H2Sharp.Tables;
 using H2Sharp.Values;
 
@@ -307,8 +309,244 @@ public sealed class Comparison : Condition
             BiggerEqual => SmallerEqual,
             EqualNullSafe => EqualNullSafe,
             NotEqualNullSafe => NotEqualNullSafe,
+            SpatialIntersects => SpatialIntersects,
             _ => throw new ArgumentOutOfRangeException(nameof(compareType)),
         };
+    }
+
+    /// <inheritdoc/>
+    public override void CreateIndexConditions(SessionLocal session, TableFilter filter)
+    {
+        if (!whenOperand)
+        {
+            CreateIndexConditions(filter, left, right, compareType);
+        }
+    }
+
+    /// <summary>
+    /// Whether a comparison between the column type and the higher type can use an index.
+    /// </summary>
+    /// <remarks>
+    /// A numeric integer column against a wider numeric is unsafe: the index holds integers
+    /// and the condition may match fractions between them. The range check is the reference's
+    /// numeric-type test written out, because the type catalog it reads does not exist here.
+    /// </remarks>
+    /// <param name="colType">the column type</param>
+    /// <param name="higherType">the higher type</param>
+    /// <returns>true when the index can serve the comparison</returns>
+    private static bool IsSafeIndexCondition(TypeInfo colType, TypeInfo higherType)
+    {
+        if (!TypeInfo.HaveSameOrdering(colType, higherType))
+        {
+            return false;
+        }
+
+        int cType = colType.GetValueType(), hType = higherType.GetValueType();
+        if (cType == hType)
+        {
+            return true;
+        }
+
+        if (cType is >= Value.Tinyint and <= Value.Decfloat
+            && hType is >= Value.Tinyint and <= Value.Decfloat)
+        {
+            bool cIsInt = cType is Value.Tinyint or Value.Smallint or Value.Integer or Value.Bigint;
+            bool hIsInt = hType is Value.Tinyint or Value.Smallint or Value.Integer or Value.Bigint;
+            if (cIsInt && !hIsInt)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void CreateIndexConditions(TableFilter filter, Expression left, Expression right, int compareType)
+    {
+        if (compareType == NotEqual || compareType == NotEqualNullSafe)
+        {
+            return;
+        }
+
+        if (!filter.GetTable()!.IsQueryComparable())
+        {
+            return;
+        }
+
+        if (compareType != SpatialIntersects)
+        {
+            bool lIsList = left is ExpressionList, rIsList = right is ExpressionList;
+            if (lIsList)
+            {
+                if (rIsList)
+                {
+                    CreateIndexConditions(filter, (ExpressionList)left, (ExpressionList)right, compareType);
+                }
+                else if (right is ValueExpression)
+                {
+                    CreateIndexConditions(filter, (ExpressionList)left, (ValueExpression)right, compareType);
+                }
+            }
+            else if (rIsList && left is ValueExpression)
+            {
+                CreateIndexConditions(filter, (ExpressionList)right, (ValueExpression)left,
+                    GetReversedCompareType(compareType));
+                return;
+            }
+        }
+
+        ExpressionColumn? l = null;
+        if (left is ExpressionColumn leftColumn)
+        {
+            l = leftColumn;
+            if (!ReferenceEquals(filter, l.GetTableFilter()))
+            {
+                l = null;
+            }
+        }
+
+        ExpressionColumn? r = null;
+        if (right is ExpressionColumn rightColumn)
+        {
+            r = rightColumn;
+            if (!ReferenceEquals(filter, r.GetTableFilter()))
+            {
+                r = null;
+            }
+        }
+
+        // one side must be from the current filter
+        if ((l is null) == (r is null))
+        {
+            return;
+        }
+
+        if (l is null)
+        {
+            if (!left.IsEverything(ExpressionVisitor.GetNotFromResolverVisitor(filter)))
+            {
+                return;
+            }
+        }
+        else
+        {
+            // r is null
+            if (!right.IsEverything(ExpressionVisitor.GetNotFromResolverVisitor(filter)))
+            {
+                return;
+            }
+        }
+
+        switch (compareType)
+        {
+            case Equal:
+            case EqualNullSafe:
+            case Bigger:
+            case BiggerEqual:
+            case SmallerEqual:
+            case Smaller:
+            case SpatialIntersects:
+                if (l is not null)
+                {
+                    TypeInfo colType = l.GetTypeInfo();
+                    TypeInfo higherType = TypeInfo.GetHigherType(colType, right.GetTypeInfo());
+                    if (IsSafeIndexCondition(colType, higherType))
+                    {
+                        filter.AddIndexCondition(IndexCondition.Get(compareType, l, right));
+                    }
+                }
+                else
+                {
+                    TypeInfo colType = r!.GetTypeInfo();
+                    TypeInfo higherType = TypeInfo.GetHigherType(colType, left.GetTypeInfo());
+                    if (IsSafeIndexCondition(colType, higherType))
+                    {
+                        filter.AddIndexCondition(IndexCondition.Get(GetReversedCompareType(compareType), r, left));
+                    }
+                }
+
+                break;
+            default:
+                throw DbException.GetInternalError("type=" + compareType);
+        }
+    }
+
+    private static void CreateIndexConditions(TableFilter filter, ExpressionList left, ExpressionList right,
+        int compareType)
+    {
+        int c = left.GetSubexpressionCount();
+        if (c == 0 || c != right.GetSubexpressionCount())
+        {
+            return;
+        }
+
+        if (compareType != Equal && compareType != EqualNullSafe)
+        {
+            if (c > 1)
+            {
+                if (compareType == Bigger)
+                {
+                    compareType = BiggerEqual;
+                }
+                else if (compareType == Smaller)
+                {
+                    compareType = SmallerEqual;
+                }
+            }
+
+            c = 1;
+        }
+
+        for (int i = 0; i < c; i++)
+        {
+            CreateIndexConditions(filter, left.GetSubexpression(i), right.GetSubexpression(i), compareType);
+        }
+    }
+
+    private static void CreateIndexConditions(TableFilter filter, ExpressionList left, ValueExpression right,
+        int compareType)
+    {
+        int c = left.GetSubexpressionCount();
+        if (c == 0)
+        {
+            return;
+        }
+        else if (c == 1)
+        {
+            CreateIndexConditions(filter, left.GetSubexpression(0), right, compareType);
+        }
+        else if (c > 1)
+        {
+            Value v = right.GetValue(null!);
+            if (v.GetValueType() == Value.Row)
+            {
+                Value[] values = ((ValueRow)v).GetList();
+                if (c != values.Length)
+                {
+                    return;
+                }
+
+                if (compareType != Equal && compareType != EqualNullSafe)
+                {
+                    if (compareType == Bigger)
+                    {
+                        compareType = BiggerEqual;
+                    }
+                    else if (compareType == Smaller)
+                    {
+                        compareType = SmallerEqual;
+                    }
+
+                    c = 1;
+                }
+
+                for (int i = 0; i < c; i++)
+                {
+                    CreateIndexConditions(filter, left.GetSubexpression(i), ValueExpression.Get(values[i]),
+                        compareType);
+                }
+            }
+        }
     }
 
     /// <inheritdoc/>

@@ -134,4 +134,107 @@ public sealed class SelectPreparePlanTests
             store.Dispose();
         }
     }
+
+    /// <summary>
+    /// A WHERE clause becomes the index condition on its own: the same masks and the same
+    /// cost as the hand-built condition, through the expression layer rather than around it.
+    /// </summary>
+    [JavaOracleFact]
+    public void WhereBecomesTheIndexCondition()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Column id = new("ID", TypeInfo.TypeInteger, null, 0);
+            id.SetNullable(false);
+            Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
+            MVTable table = new(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                0, "T", [id, name], store, persistData: false);
+            foreach (Column column in table.GetColumns())
+            {
+                column.SetTable(table, column.GetColumnId());
+            }
+
+            table.AddIndex(session, "I", 7, [new IndexColumn(id, ascending: true)], 1,
+                IndexType.CreatePrimaryKey(persistent: false, hash: false), create: true, indexComment: null);
+
+            TableFilter f = new(session, table, "T", rightsChecked: true, null, 0, null);
+            var ec = new ExpressionColumn(id, f, 0);
+            var cond = new Comparison(
+                Comparison.Equal, ec, ValueExpression.Get(ValueInteger.Get(5)), whenOperand: false);
+            Select select = new(session);
+            select.AddTableFilter(f, isTop: true);
+            select.AddCondition(cond);
+            select.SetExpressions(
+            [
+                new ExpressionColumn(id, f, 0),
+                new ExpressionColumn(name, f, 1),
+            ]);
+            select.PreparePlan(session, targetTableFilter: null);
+
+            int[] masks = f.GetMasks()!;
+            List<string> actual =
+            [
+                "=masks:" + masks[0] + "," + masks[1],
+                "=cost:" + select.GetCost(),
+            ];
+
+            const string javaBody = """
+                java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:select_where");
+                org.h2.jdbc.JdbcConnection c = (org.h2.jdbc.JdbcConnection) conn;
+                org.h2.engine.SessionLocal session = (org.h2.engine.SessionLocal) c.getSession();
+                org.h2.engine.Database db = session.getDatabase();
+                org.h2.command.ddl.CreateTableData data = new org.h2.command.ddl.CreateTableData();
+                data.schema = db.getSchema("PUBLIC");
+                data.id = 0;
+                data.tableName = "T";
+                org.h2.table.Column idCol = new org.h2.table.Column("ID", org.h2.value.TypeInfo.TYPE_INTEGER);
+                idCol.setNullable(false);
+                data.columns.add(idCol);
+                data.columns.add(new org.h2.table.Column("NAME", org.h2.value.TypeInfo.TYPE_VARCHAR));
+                data.persistIndexes = false;
+                data.persistData = false;
+                org.h2.mvstore.db.MVTable table = new org.h2.mvstore.db.MVTable(data, db.getStore());
+                org.h2.table.IndexColumn[] cols = new org.h2.table.IndexColumn[]{
+                    new org.h2.table.IndexColumn(table.getColumn("ID")) };
+                table.addIndex(session, "I", 7, cols, 1,
+                    org.h2.index.IndexType.createPrimaryKey(false, false), true, null);
+                org.h2.table.TableFilter f = new org.h2.table.TableFilter(session, table, "T", true, null, 0, null);
+                org.h2.expression.ExpressionColumn ec = new org.h2.expression.ExpressionColumn(
+                    session.getDatabase(), null, "T", "ID");
+                ec.mapColumns(f, 0, org.h2.expression.Expression.MAP_INITIAL);
+                org.h2.expression.condition.Comparison cond = new org.h2.expression.condition.Comparison(
+                    org.h2.expression.condition.Comparison.EQUAL, ec,
+                    org.h2.expression.ValueExpression.get(org.h2.value.ValueInteger.get(5)), false);
+                org.h2.command.query.Select select = new org.h2.command.query.Select(session, null);
+                select.addTableFilter(f, true);
+                select.addCondition(cond);
+                java.util.ArrayList<org.h2.expression.Expression> exprs = new java.util.ArrayList<>();
+                org.h2.expression.ExpressionColumn idEc = new org.h2.expression.ExpressionColumn(
+                    session.getDatabase(), null, "T", "ID");
+                idEc.mapColumns(f, 0, org.h2.expression.Expression.MAP_INITIAL);
+                org.h2.expression.ExpressionColumn nameEc = new org.h2.expression.ExpressionColumn(
+                    session.getDatabase(), null, "T", "NAME");
+                nameEc.mapColumns(f, 0, org.h2.expression.Expression.MAP_INITIAL);
+                exprs.add(idEc);
+                exprs.add(nameEc);
+                select.setExpressions(exprs);
+                select.preparePlan();
+                int[] masks = f.getMasks();
+                System.out.println("=masks:" + masks[0] + "," + masks[1]);
+                System.out.println("=cost:" + (long) select.getCost());
+                conn.close();
+                """;
+            List<string> java = OracleRunner.Run([], javaBody, null, null, null);
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
 }
