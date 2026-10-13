@@ -14,8 +14,13 @@
  * would be opened, because a check at run time would have half-read it first.
  */
 using System;
+using System.Collections.Generic;
 using H2Sharp.Engine;
+using H2Sharp.Expressions;
+using H2Sharp.Expressions.Conditions;
 using H2Sharp.Tables;
+using H2Sharp.Tests.Oracle;
+using H2Sharp.Values;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -547,6 +552,73 @@ public sealed class TableFilterTests
             Tables.TableFilter second = new(session, table, "S", rightsChecked: true, null, 1, null);
             second.SetPlanItem(null);
             second.Prepare();
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Prepare folds a constant condition away and keeps a real one: the fold is the tail of
+    /// prepare, and a condition that is always true constrains nothing.
+    /// </summary>
+    [JavaOracleFact]
+    public void PrepareFoldsConstantConditionsAway()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Column id = new("ID", TypeInfo.TypeInteger, null, 0);
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T", [id], store, persistData: false);
+            id.SetTable(table, 0);
+
+            Tables.TableFilter always = new(session, table, "T", rightsChecked: true, null, 0, null);
+            always.AddFilterCondition(ValueExpression.True, isJoin: false);
+            always.Prepare();
+
+            Tables.TableFilter filtered = new(session, table, "T", rightsChecked: true, null, 1, null);
+            var column = new ExpressionColumn(id, filtered, 0);
+            var five = ValueExpression.Get(ValueInteger.Get(5));
+            filtered.AddFilterCondition(new Comparison(Comparison.Equal, column, five, whenOperand: false), isJoin: false);
+            filtered.Prepare();
+
+            List<string> actual =
+            [
+                "=t:" + (always.GetFilterCondition() is null ? "null" : "kept"),
+                "=f:" + (filtered.GetFilterCondition() is null ? "null" : "kept"),
+            ];
+
+            const string javaBody = """
+                java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:prepare_fold");
+                java.sql.Statement stat = conn.createStatement();
+                stat.execute("CREATE TABLE T(ID INT)");
+                org.h2.jdbc.JdbcConnection c = (org.h2.jdbc.JdbcConnection) conn;
+                org.h2.engine.SessionLocal session = (org.h2.engine.SessionLocal) c.getSession();
+                org.h2.table.Table table = session.getDatabase().getSchema("PUBLIC").getTableOrView(session, "T");
+                org.h2.table.TableFilter t = new org.h2.table.TableFilter(session, table, "T", true, null, 0, null);
+                t.addFilterCondition(org.h2.expression.ValueExpression.TRUE, false);
+                t.prepare();
+                org.h2.table.TableFilter f = new org.h2.table.TableFilter(session, table, "T", true, null, 1, null);
+                org.h2.expression.ExpressionColumn ec = new org.h2.expression.ExpressionColumn(
+                    session.getDatabase(), null, "T", "ID");
+                ec.mapColumns(f, 0, org.h2.expression.Expression.MAP_INITIAL);
+                org.h2.expression.Expression five = org.h2.expression.ValueExpression.get(
+                    org.h2.value.ValueInteger.get(5));
+                f.addFilterCondition(new org.h2.expression.condition.Comparison(
+                    org.h2.expression.condition.Comparison.EQUAL, ec, five, false), false);
+                f.prepare();
+                System.out.println("=t:" + (t.getFilterCondition() == null ? "null" : "kept"));
+                System.out.println("=f:" + (f.getFilterCondition() == null ? "null" : "kept"));
+                conn.close();
+                """;
+            List<string> java = OracleRunner.Run([], javaBody, null, null, null);
+            Assert.Equal(java, actual);
         }
         finally
         {

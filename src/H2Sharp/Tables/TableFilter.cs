@@ -696,6 +696,16 @@ public class TableFilter : ColumnResolver
 
             join.Prepare();
         }
+
+        if (filterCondition is not null)
+        {
+            filterCondition = filterCondition.OptimizeCondition(session);
+        }
+
+        if (joinCondition is not null)
+        {
+            joinCondition = joinCondition.OptimizeCondition(session);
+        }
     }
     /// <returns>the index, or null when the plan has not chosen one</returns>
     public H2Sharp.Indexes.Index? GetIndex() => index;
