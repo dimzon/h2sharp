@@ -177,10 +177,13 @@ public static class StringUtils
         StringBuilder builder = new(s.Length + UpperExtraLength(s));
         for (int i = 0; i < s.Length; i++)
         {
-            string? extra = CaseFolding.Upper(s[i]);
+            char c = s[i];
+            // Below the overrides' floor there is nothing to look up: the table starts at
+            // 0xDF, which is what HasCaseFoldingOverrides tests for.
+            string? extra = c < 0xDF ? null : CaseFolding.Upper(c);
             if (extra is null)
             {
-                builder.Append(char.ToUpperInvariant(s[i]));
+                builder.Append(char.ToUpperInvariant(c));
             }
             else
             {
@@ -229,7 +232,8 @@ public static class StringUtils
         int extra = 0;
         for (int i = 0; i < s.Length; i++)
         {
-            string? mapping = CaseFolding.Upper(s[i]);
+            char c = s[i];
+            string? mapping = c < 0xDF ? null : CaseFolding.Upper(c);
             if (mapping is not null)
             {
                 extra += mapping.Length - 1;
