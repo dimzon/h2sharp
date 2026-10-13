@@ -182,7 +182,7 @@ public sealed class RowDataType : BasicDataType<SearchRow>
         int x = initialGuess - 1;
         if (x < 0 || x > high)
         {
-            x = (high + 1) >>> 1;
+            x = high >>> 1;
         }
 
         while (low <= high)
@@ -201,7 +201,7 @@ public sealed class RowDataType : BasicDataType<SearchRow>
                 return x;
             }
 
-            x = (low + high + 1) >>> 1;
+            x = (low + high) >>> 1;
         }
 
         return -(low + 1);
