@@ -54,7 +54,9 @@ public sealed class Select : Query
 
     private bool isDistinct;
 
-    private Expression? filter;
+    private Expression? condition;
+
+    private TableFilter? topTableFilter;
 
     private Expression? having;
 
@@ -78,10 +80,6 @@ public sealed class Select : Query
 
     private readonly List<TableFilter> topFilters = [];
 
-    private Expression? condition;
-
-    private TableFilter? topTableFilter;
-
     /// <summary>
     /// Creates the statement for a session.
     /// </summary>
@@ -101,7 +99,14 @@ public sealed class Select : Query
         => throw new TODOException("Select.preparePlan: the optimizer is not ported");
 
     /// <inheritdoc/>
-    public override bool IsEverything(ExpressionVisitor visitor) => filter is null;
+    /// <remarks>
+    /// Not ported. In the reference this walks the expressions, the condition, the having and
+    /// the tables, answering per visitor kind -- and each branch needs machinery that is not
+    /// here (table determinism, modification ids). A stub that answered true would mark every
+    /// query cacheable and optimizable whether it is or not.
+    /// </remarks>
+    public override bool IsEverything(ExpressionVisitor visitor)
+        => throw new TODOException("Select.isEverything: the branches need unported machinery");
 
     /// <inheritdoc/>
     /// <remarks>
@@ -154,10 +159,6 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     public override bool IsTransactional() => true;
-
-    /// <summary>Sets the condition that selects the rows.</summary>
-    /// <param name="filter">the condition</param>
-    public void SetFilter(Expression? filter) => this.filter = filter;
 
     /// <summary>Sets the condition on the grouped rows.</summary>
     /// <param name="having">the condition</param>
