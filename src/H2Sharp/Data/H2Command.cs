@@ -39,6 +39,20 @@ public sealed class H2Command : DbCommand
     private readonly List<H2Parameter> parameters = [];
 
     /// <summary>
+    /// The parameter collection, created once: the list behind it never changes identity, only
+    /// contents, so one wrapper serves every access instead of garbage per statement.
+    /// </summary>
+    private readonly H2ParameterCollection parameterCollection;
+
+    /// <summary>
+    /// Creates a command.
+    /// </summary>
+    public H2Command()
+    {
+        parameterCollection = new H2ParameterCollection(this, parameters);
+    }
+
+    /// <summary>
     /// Gets or sets the command text.
     /// </summary>
     /// <remarks>
@@ -130,7 +144,7 @@ public sealed class H2Command : DbCommand
     /// <summary>
     /// Gets the parameters of this command.
     /// </summary>
-    protected override DbParameterCollection DbParameterCollection => new H2ParameterCollection(this, parameters);
+    protected override DbParameterCollection DbParameterCollection => parameterCollection;
 
     /// <summary>
     /// Runs the command and returns the rows it affected.
