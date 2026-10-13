@@ -57,10 +57,9 @@ public class CaseInsensitiveMap<TValue> : Dictionary<string, TValue>
     /// </remarks>
     public new TValue? Remove(string key)
     {
-        // Folded once, like every other member: the fold is pure, so folding twice answers the
-        // same string while paying the hash and the scan twice per remove.
-        string folded = Fold(key);
-        return base.TryGetValue(folded, out TValue? value) && base.Remove(folded) ? value : default;
+        // Folded once and looked up once: Remove with an out value finds and drops in one
+        // pass, where a TryGetValue plus Remove would hash twice for the same answer.
+        return base.Remove(Fold(key), out TValue? value) ? value : default;
     }
 
     /// <summary>
