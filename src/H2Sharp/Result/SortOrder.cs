@@ -86,6 +86,12 @@ public sealed class SortOrder
     private readonly List<H2Sharp.Command.Query.QueryOrderBy>? orderList;
 
     /// <summary>
+    /// The row comparison as a delegate, built once: every sort would otherwise allocate one
+    /// from the method group per call.
+    /// </summary>
+    private Comparison<Value?[]>? comparison;
+
+    /// <summary>
     /// Construct a new sort order object with specified sort types.
     /// </summary>
     /// <param name="session">the session</param>
@@ -256,7 +262,7 @@ public sealed class SortOrder
     /// <param name="rows">the list of rows</param>
     public void Sort(List<Value?[]> rows)
     {
-        rows.Sort(Compare);
+        rows.Sort(comparison ??= Compare);
     }
 
     /// <summary>
@@ -289,7 +295,7 @@ public sealed class SortOrder
 
         Value?[][] array = new Value?[rows.Count][];
         rows.CopyTo(array);
-        Utils.SortTopN(array, fromInclusive, toExclusive, Compare);
+        Utils.SortTopN(array, fromInclusive, toExclusive, comparison ??= Compare);
         for (int i = fromInclusive; i < toExclusive; i++)
         {
             rows[i] = array[i];

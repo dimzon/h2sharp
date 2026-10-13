@@ -76,6 +76,45 @@ public sealed class LocalResultOracleTests
         AssertSame(java, csharp);
     }
 
+    /// <summary>
+    /// ORDER BY with a nonzero OFFSET sorts the window, not from the offset for the offset's
+    /// length: the range bug sorted the wrong slice and threw past the end.
+    /// </summary>
+    [JavaOracleFact]
+    public void SortedOffset_MatchesReference()
+    {
+        string body = """
+                      org.h2.expression.Expression[] expr = { org.h2.expression.ValueExpression.get(org.h2.value.ValueInteger.get(0)) };
+                      org.h2.result.LocalResult r = new org.h2.result.LocalResult(session, expr, 1, 1);
+                      r.setSortOrder(org.h2.result.SortOrder.ofSortTypes(session, new int[] { 0 }));
+                      int[] keys = new int[] { 5, 1, 4, 2, 3 };
+                      for (int k : keys) {
+                        r.addRow(new org.h2.value.Value[]{ org.h2.value.ValueInteger.get(k) });
+                      }
+                      r.setLimit(10);
+                      r.setOffset(3);
+                      r.done();
+                      while (r.next()) { System.out.println("  " + r.currentRow()[0].toString()); }
+            """;
+
+        List<string> java = OracleRunner.Run([], JavaSession + body);
+
+        LocalResult result = NewResult();
+        result.SetSortOrder(SortOrder.OfSortTypes(NewSessionLocal(), [0]));
+        foreach (int k in new[] { 5, 1, 4, 2, 3 })
+        {
+            result.AddRow(new Value?[] { ValueInteger.Get(k) });
+        }
+
+        result.SetLimit(10);
+        result.SetOffset(3);
+        result.Done();
+        List<string> csharp = [];
+        Print(result, csharp);
+
+        AssertSame(java, csharp);
+    }
+
     [JavaOracleFact]
     public void OffsetAndLimit_MatchesReference()
     {

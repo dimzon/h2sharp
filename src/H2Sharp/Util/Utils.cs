@@ -324,7 +324,10 @@ public static class Utils
         if (highInclusive > 0 && toExclusive > fromInclusive)
         {
             PartialQuickSort(array, 0, highInclusive, comp, fromInclusive, toExclusive - 1);
-            Array.Sort(array, fromInclusive, toExclusive, Comparer<X>.Create(comp));
+            // An index and a length: Java sorts from one index to another, and passing the end
+            // as a length sorted past it. .NET has no ranged sort taking a Comparison, so the
+            // wrapper stays; the range is what got fixed.
+            Array.Sort(array, fromInclusive, toExclusive - fromInclusive, Comparer<X>.Create(comp));
         }
     }
 
