@@ -1025,6 +1025,43 @@ public abstract class Table
     /// skipped, because <see cref="Engine.SessionLocal.GetTrace"/> refuses until tracing is
     /// ported, and a plan must not depend on diagnostics being available.
     /// </remarks>
+    /// <summary>
+    /// Returns the main index column when the index is a primary key over one _ROWID_-compatible
+    /// column, or the row id when it is anything else.
+    /// </summary>
+    /// <remarks>
+    /// In the reference this static lives on TableBase, which this port does not have: the
+    /// table hierarchy here is Table with MVTable directly under it. The signature is the
+    /// reference's verbatim; only the shelf moved. A descending key never qualifies, and
+    /// neither does a second column — only an ascending single integer key reuses the primary
+    /// index, everything else gets its own.
+    /// </remarks>
+    /// <param name="indexType">the type of the index</param>
+    /// <param name="cols">the columns of the index</param>
+    /// <returns>the main index column, or <see cref="SearchRow.RowidIndex"/></returns>
+    public static int GetMainIndexColumn(H2Sharp.Indexes.IndexType indexType, IndexColumn[] cols)
+    {
+        if (!indexType.IsPrimaryKey() || cols.Length != 1)
+        {
+            return SearchRow.RowidIndex;
+        }
+        IndexColumn first = cols[0];
+        if ((first.SortType & SortOrder.Descending) != 0)
+        {
+            return SearchRow.RowidIndex;
+        }
+        switch (first.GetColumn().GetTypeInfo().GetValueType())
+        {
+            case Value.Tinyint:
+            case Value.Smallint:
+            case Value.Integer:
+            case Value.Bigint:
+                return first.GetColumn().GetColumnId();
+            default:
+                return SearchRow.RowidIndex;
+        }
+    }
+
     /// <param name="session">the session</param>
     /// <param name="masks">which columns the query fixed, by column id, or null</param>
     /// <param name="filters">the filters of the query</param>
