@@ -788,15 +788,10 @@ public sealed class ValueDataType : BasicDataType<Value>
     {
         // The payload is one byte per character, written by PutStringData: a character that does
         // not fit was replaced on the way in, so the bytes read back are exactly what was
-        // stored and nothing is re-encoded here.
-        string result = string.Empty;
-        int start = position;
+        // stored and nothing is re-encoded here. One widening pass instead of a concatenation
+        // per character, which spent O(n²) copies on every string in a page leaf.
+        string result = Encoding.Latin1.GetString(buff.Slice(position, len));
         position += len;
-        foreach (byte b in buff[start..position])
-        {
-            result += (char)b;
-        }
-
         return result;
     }
 
