@@ -81,6 +81,11 @@ public sealed class Select : Query
     private readonly List<TableFilter> topFilters = [];
 
     /// <summary>
+    /// The cost of the built plan.
+    /// </summary>
+    private double cost;
+
+    /// <summary>
     /// Creates the statement for a session.
     /// </summary>
     /// <param name="session">the session</param>
@@ -95,8 +100,33 @@ public sealed class Select : Query
         => throw new TODOException("Select.optimize: the optimizer is not ported");
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The distinct and sort fast paths wait for index-sort resolution: without them every
+    /// plan still answers, only less cheaply. What runs here is the reference's shape — outer
+    /// joins keep their conditions out of the indexes, then the optimizer prices and prepares.
+    /// </remarks>
     public override void PreparePlan(SessionLocal session, TableFilter? targetTableFilter)
-        => throw new TODOException("Select.preparePlan: the optimizer is not ported");
+    {
+        if (condition is not null)
+        {
+            foreach (TableFilter f in filters)
+            {
+                // outer joins: must not add index conditions such as
+                // "c is null" - example:
+                // create table parent(p int primary key) as select 1;
+                // create table child(c int primary key, pc int);
+                // insert into child values(2, 1);
+                // select p, c from parent
+                // left outer join child on p = pc where c is null;
+                if (!f.IsJoinOuter() && !f.IsJoinOuterIndirect())
+                {
+                    condition.CreateIndexConditions(session, f);
+                }
+            }
+        }
+
+        cost = PreparePlan(session.IsParsingCreateView());
+    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -116,8 +146,11 @@ public sealed class Select : Query
     public override bool IsCacheable() => forUpdate is null;
 
     /// <inheritdoc/>
-    public override long GetCost()
-        => throw new TODOException("Select.getCost: the plan is not built");
+    /// <remarks>
+    /// The hierarchy types plan costs as whole numbers, so the fraction is dropped. Nothing
+    /// prices on it yet; the field keeps the full answer for when something does.
+    /// </remarks>
+    public override long GetCost() => (long)cost;
 
     /// <inheritdoc/>
     public override HashSet<DbObject> GetDependencies()
@@ -332,6 +365,38 @@ public sealed class Select : Query
             if (n is not null)
             {
                 SetEvaluatableRecursive(n);
+            }
+
+            Expression? on = f.GetJoinCondition();
+            if (on is not null)
+            {
+                if (!on.IsEverything(ExpressionVisitor.EvaluableVisitor))
+                {
+                    // need to check that all added are bound to a table
+                    on = on.Optimize(session);
+                    if (!f.IsJoinOuter() && !f.IsJoinOuterIndirect())
+                    {
+                        f.RemoveJoinCondition();
+                        AddCondition(on);
+                    }
+                }
+            }
+
+            on = f.GetFilterCondition();
+            if (on is not null)
+            {
+                if (!on.IsEverything(ExpressionVisitor.EvaluableVisitor))
+                {
+                    f.RemoveFilterCondition();
+                    AddCondition(on);
+                }
+            }
+
+            // this is only important for subqueries, so they know
+            // the result columns are evaluatable
+            foreach (Expression e in expressions)
+            {
+                e.SetEvaluatable(f, true);
             }
         }
     }

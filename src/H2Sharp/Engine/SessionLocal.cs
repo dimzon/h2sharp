@@ -417,6 +417,15 @@ public sealed class SessionLocal : Session
         => throw new TODOException("SessionLocal.getAutoCommit");
 
     /// <summary>
+    /// Whether this session is only parsing a view, without running anything.
+    /// </summary>
+    /// <remarks>
+    /// Always false: view parsing does not exist here yet, so no session can be in it.
+    /// </remarks>
+    /// <returns>false</returns>
+    public bool IsParsingCreateView() => false;
+
+    /// <summary>
     /// Checks whether this session may read the given table.
     /// </summary>
     /// <param name="table">the table</param>
