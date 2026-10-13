@@ -197,16 +197,18 @@ public static class FileUtils
     /// <summary>
     /// Write exactly as many bytes as given, and fail if they did not all go.
     /// </summary>
+    /// <remarks>
+    /// One call is the whole method: unlike Java NIO, <see cref="FileChannel.Write"/> takes all
+    /// or throws, so there is no short write to loop over. The old loop advanced by the full
+    /// length after every call, which could neither repeat nor detect a short write — it only
+    /// implied a handling that the void contract cannot express. A channel that cannot take all
+    /// must throw rather than take part; that is what keeps "exactly as many bytes" true.
+    /// </remarks>
     /// <param name="channel">the open file</param>
     /// <param name="source">what to write</param>
     /// <exception cref="IOException">if it did not all go</exception>
     public static void WriteFully(FileChannel channel, ReadOnlySpan<byte> source)
     {
-        int at = 0;
-        while (at < source.Length)
-        {
-            channel.Write(source[at..]);
-            at += source.Length;
-        }
+        channel.Write(source);
     }
 }

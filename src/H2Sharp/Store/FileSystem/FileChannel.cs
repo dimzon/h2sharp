@@ -87,6 +87,11 @@ public abstract class FileChannel : IDisposable
     /// <summary>
     /// Write the buffer at the current position, and move the position on by its length.
     /// </summary>
+    /// <remarks>
+    /// All of it or an exception: short writes are not representable here (unlike Java NIO,
+    /// where write returns a count), so an implementation that cannot take the whole buffer
+    /// must throw rather than take part. <see cref="FileUtils.WriteFully"/> stands on this.
+    /// </remarks>
     /// <param name="buffer">what to write</param>
     public abstract void Write(ReadOnlySpan<byte> buffer);
 
