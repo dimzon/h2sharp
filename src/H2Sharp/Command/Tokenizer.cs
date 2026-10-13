@@ -1407,8 +1407,24 @@ public sealed class Tokenizer
                 break;
             }
 
-            int cp = JavaCharacter.CodePointAt(sql, i);
-            if (!JavaCharacter.IsJavaIdentifierPart(cp)
+            // The fast path reads the character as is: CategoryOf answers BMP values from the
+            // same BCL call either way, and a lone surrogate reads as its own value on both
+            // paths, so only a high surrogate needs the pair read.
+            char c = sql[i];
+            int cp;
+            bool isPart;
+            if (JavaCharacter.IsHighSurrogate(c))
+            {
+                cp = JavaCharacter.CodePointAt(sql, i);
+                isPart = JavaCharacter.IsJavaIdentifierPart(cp);
+            }
+            else
+            {
+                cp = c;
+                isPart = JavaCharacter.IsJavaIdentifierPart(c);
+            }
+
+            if (!isPart
                 && (cp != '#' || !provider.GetMode().SupportPoundSymbolForColumnNames))
             {
                 break;
@@ -1565,8 +1581,23 @@ public sealed class Tokenizer
     {
         while (i <= end)
         {
-            int cp = JavaCharacter.CodePointAt(sql, i);
-            if (!JavaCharacter.IsWhitespace(cp))
+            // Same split as the identifier scan: a high surrogate is the only character whose
+            // answer needs the pair, everything else reads as is with the same result.
+            char c = sql[i];
+            int cp;
+            bool isWs;
+            if (JavaCharacter.IsHighSurrogate(c))
+            {
+                cp = JavaCharacter.CodePointAt(sql, i);
+                isWs = JavaCharacter.IsWhitespace(cp);
+            }
+            else
+            {
+                cp = c;
+                isWs = JavaCharacter.IsWhitespace(c);
+            }
+
+            if (!isWs)
             {
                 if (cp == '/' && i < end)
                 {
