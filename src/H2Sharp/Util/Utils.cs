@@ -214,7 +214,10 @@ public static class Utils
         {
             if (bytes.Length == len)
             {
-                return (byte[])bytes.Clone();
+                // Same copy without zeroing first: every byte is overwritten below.
+                byte[] exact = GC.AllocateUninitializedArray<byte>(len);
+                bytes.AsSpan().CopyTo(exact);
+                return exact;
             }
 
             byte[] copy = new byte[len];

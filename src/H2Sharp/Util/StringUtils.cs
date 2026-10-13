@@ -1680,7 +1680,10 @@ public static class StringUtils
             return chars;
         }
 
-        return (char[])chars.Clone();
+        // Same copy without zeroing first: every character is overwritten below.
+        char[] copy = GC.AllocateUninitializedArray<char>(len);
+        chars.AsSpan().CopyTo(copy);
+        return copy;
     }
 
     /// <summary>
