@@ -70,7 +70,12 @@ public sealed partial class Database
     /// <summary>
     /// The schema new objects go into when the session has not chosen another.
     /// </summary>
-    private Schemas.Schema? mainSchema;
+    /// <remarks>
+    /// Volatile rather than locked on read: a lone reference reads atomically, and the lock
+    /// stays on the write, so every read sees a schema the write published — the same answers
+    /// without blocking sessions that only resolve names.
+    /// </remarks>
+    private volatile Schemas.Schema? mainSchema;
 
     /// <summary>
     /// Finds a schema.
@@ -113,13 +118,7 @@ public sealed partial class Database
     /// Gets the schema new objects go into, or null before there is one.
     /// </summary>
     /// <returns>the main schema, or null</returns>
-    public Schemas.Schema? GetMainSchema()
-    {
-        lock (syncRoot)
-        {
-            return mainSchema;
-        }
-    }
+    public Schemas.Schema? GetMainSchema() => mainSchema;
 
     /// <summary>
     /// Sets the schema new objects go into.
@@ -223,25 +222,25 @@ public sealed partial class Database
     /// How many rows a result may hold in memory before it spills. The reference's default,
     /// from its MAX_MEMORY_ROWS setting.
     /// </summary>
-    private int maxMemoryRows = 40_000;
-
+    /// <remarks>
+    /// Volatile rather than locked on read, like the main schema above: one word, same answers.
+    /// </remarks>
+    private volatile int maxMemoryRows = 40_000;
     /// <summary>
     /// Where a NULL goes when a statement did not say. LOW, because the reference starts there
     /// and every answer about ordering before a caller sets it comes from this field.
     /// </summary>
-    private DefaultNullOrdering defaultNullOrdering = DefaultNullOrdering.LOW;
+    /// <remarks>
+    /// Volatile rather than locked on read: this is the field the ORDER BY comparator reads per
+    /// NULL comparison, and a lone word needs no monitor to answer the same.
+    /// </remarks>
+    private volatile DefaultNullOrdering defaultNullOrdering = DefaultNullOrdering.LOW;
 
     /// <summary>
     /// Gets where a NULL goes when a statement did not say.
     /// </summary>
     /// <returns>the ordering</returns>
-    public DefaultNullOrdering GetDefaultNullOrdering()
-    {
-        lock (syncRoot)
-        {
-            return defaultNullOrdering;
-        }
-    }
+    public DefaultNullOrdering GetDefaultNullOrdering() => defaultNullOrdering;
 
     /// <summary>
     /// Sets where a NULL goes when a statement did not say.
@@ -329,13 +328,7 @@ public sealed partial class Database
     /// Gets the number of rows a result may hold in memory before it is written to disk.
     /// </summary>
     /// <returns>the number of rows</returns>
-    public int GetMaxMemoryRows()
-    {
-        lock (syncRoot)
-        {
-            return maxMemoryRows;
-        }
-    }
+    public int GetMaxMemoryRows() => maxMemoryRows;
 
     /// <summary>
     /// Sets the number of rows a result may hold in memory before it is written to disk.
