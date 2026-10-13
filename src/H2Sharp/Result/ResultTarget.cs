@@ -10,8 +10,12 @@ public interface ResultTarget
     /// <summary>
     /// Add the row to the result set.
     /// </summary>
+    /// <remarks>
+    /// The elements stay nullable: a row walked from an index can carry positions the walk
+    /// never filled, and Java's signature never promised otherwise.
+    /// </remarks>
     /// <param name="values">the values</param>
-    void AddRow(params Value[] values);
+    void AddRow(params Value?[] values);
 
     /// <summary>
     /// Get the number of rows.

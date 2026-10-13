@@ -81,6 +81,17 @@ public sealed class Select : Query
     private readonly List<TableFilter> topFilters = [];
 
     /// <summary>
+    /// How many leading columns come from the index in order. Resolution builds it with the
+    /// sort; until then every sort reads the whole result.
+    /// </summary>
+    private int indexSortedColumns = 0;
+
+    /// <summary>
+    /// Whether tied rows ride along past the limit.
+    /// </summary>
+    private bool withTies = false;
+
+    /// <summary>
     /// The cost of the built plan.
     /// </summary>
     private double cost;
@@ -178,8 +189,276 @@ public sealed class Select : Query
         => throw new TODOException("Select.getRowCount: the plan is not built");
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Flat queries only: grouped, sorted, distinct, windowed and locking shapes refuse below,
+    /// each waiting for its own machinery. What runs here is the reference's flat path — skip
+    /// the offset, fill the result, trim it — with lazy execution left out: every result here
+    /// is materialized, and a lazy one would hand back a walk over tables the caller may close.
+    /// </remarks>
     public override ResultInterface Run(long limit)
-        => throw new TODOException("Select.query: the optimizer is not ported");
+    {
+        if (groupBy is not null || windows is not null || orderBy is not null || distinct
+            || isDistinct || forUpdate is not null)
+        {
+            throw new TODOException("Select.query: grouped, sorted, distinct, windowed and locking queries are not ported");
+        }
+
+        long offset = this.offset;
+        long fetch = limit >= 0 ? limit : this.limit;
+        int columnCount = expressions.Length;
+        LocalResult result = new(session, expressions, visibleColumnCount, expressions.Length);
+        topTableFilter!.StartQuery(session);
+        topTableFilter.Reset();
+        topTableFilter.Lock(session);
+        QueryFlat(columnCount, result, offset, fetch, withTies, QuickOffset.Yes);
+        offset = 0;
+        if (fetch >= 0)
+        {
+            result.SetLimit(fetch);
+        }
+
+        result.Done();
+        return result;
+    }
+
+    /// <summary>
+    /// Reads the flat rows into the result, skipping the offset on the way when allowed.
+    /// </summary>
+    /// <param name="columnCount">how many columns each row has</param>
+    /// <param name="result">where the rows go, or null for a lazy walk</param>
+    /// <param name="offset">how many rows to skip</param>
+    /// <param name="limitRows">how many rows to read, or negative for all</param>
+    /// <param name="withTies">whether tied rows ride along past the limit</param>
+    /// <param name="quickOffset">how the offset is skipped</param>
+    /// <returns>the lazy walk, when no result was given</returns>
+    private LazyResult? QueryFlat(
+        int columnCount,
+        ResultTarget? result,
+        long offset,
+        long limitRows,
+        bool withTies,
+        QuickOffset quickOffset)
+    {
+        if (limitRows > 0 && offset > 0 && quickOffset != QuickOffset.Yes)
+        {
+            limitRows += offset;
+            if (limitRows < 0)
+            {
+                // Overflow
+                limitRows = long.MaxValue;
+            }
+        }
+
+        LazyResultQueryFlat lazyResult = new(this, expressions, columnCount, forUpdate is not null);
+        SkipOffset(lazyResult, offset, quickOffset == QuickOffset.Yes);
+        if (result is null)
+        {
+            return lazyResult;
+        }
+
+        if (limitRows == long.MaxValue || limitRows < 0 || sort is not null && indexSortedColumns == 0
+            || withTies && quickOffset == QuickOffset.No)
+        {
+            while (lazyResult.Next())
+            {
+                result.AddRow(lazyResult.CurrentRow());
+            }
+        }
+        else
+        {
+            ReadWithLimit(result, limitRows, withTies, lazyResult);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads at most so many rows, plus the ties when they ride along.
+    /// </summary>
+    /// <param name="result">where the rows go</param>
+    /// <param name="limitRows">how many rows to read</param>
+    /// <param name="withTies">whether tied rows ride along past the limit</param>
+    /// <param name="lazyResult">the walk</param>
+    private void ReadWithLimit(ResultTarget result, long limitRows, bool withTies, LazyResultQueryFlat lazyResult)
+    {
+        Value?[]? last = null;
+        while (result.GetRowCount() < limitRows && lazyResult.Next())
+        {
+            last = lazyResult.CurrentRow();
+            result.AddRow(last);
+        }
+
+        if (sort is not null && last is not null)
+        {
+            if (indexSortedColumns < Indexes.IndexSort.FullySorted)
+            {
+                while (lazyResult.Next())
+                {
+                    Value?[] row = lazyResult.CurrentRow();
+                    if (sort.Compare(last, row, indexSortedColumns) != 0)
+                    {
+                        break;
+                    }
+
+                    result.AddRow(row);
+                }
+            }
+            else if (withTies)
+            {
+                while (lazyResult.Next())
+                {
+                    Value?[] row = lazyResult.CurrentRow();
+                    if (sort.Compare(last, row) != 0)
+                    {
+                        break;
+                    }
+
+                    result.AddRow(row);
+                }
+
+                result.LimitsWereApplied();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the offset was skipped while walking rather than trimmed afterwards.
+    /// </summary>
+    private enum QuickOffset
+    {
+        No,
+        Yes,
+        Partial,
+    }
+
+    /// <summary>
+    /// Skips the offset rows of a lazy walk.
+    /// </summary>
+    /// <param name="lazyResult">the walk</param>
+    /// <param name="offset">how many rows to skip</param>
+    /// <param name="quickOffset">whether skipping while walking is allowed</param>
+    private static void SkipOffset(LazyResultSelect lazyResult, long offset, bool quickOffset)
+    {
+        if (quickOffset)
+        {
+            while (offset > 0 && lazyResult.Skip())
+            {
+                offset--;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lazy execution support for a select: the filter walk plus the row number.
+    /// </summary>
+    /// <remarks>
+    /// Nested as in the reference, reading the statement it runs for: the filter to walk, the
+    /// visible count to report, and the row number the ROWNUM function reads. C# nested classes
+    /// do not capture the outer instance, so it arrives as a constructor argument where Java
+    /// takes it for granted.
+    /// </remarks>
+    private abstract class LazyResultSelect : LazyResult
+    {
+        protected long rowNumber;
+
+        protected int columnCount;
+
+        protected readonly Select select;
+
+        protected LazyResultSelect(Select select, Expression[] expressions, int columnCount)
+            : base(select.GetSession(), expressions)
+        {
+            this.select = select;
+            this.columnCount = columnCount;
+            select.SetCurrentRowNumber(0);
+        }
+
+        /// <inheritdoc/>
+        public override int GetVisibleColumnCount() => select.visibleColumnCount;
+
+        /// <inheritdoc/>
+        public override void Reset()
+        {
+            base.Reset();
+            select.topTableFilter!.Reset();
+            select.SetCurrentRowNumber(0);
+            rowNumber = 0;
+        }
+    }
+
+    /// <summary>
+    /// Lazy execution for a flat query.
+    /// </summary>
+    private sealed class LazyResultQueryFlat : LazyResultSelect
+    {
+        private readonly bool forUpdate;
+
+        internal LazyResultQueryFlat(Select select, Expression[] expressions, int columnCount, bool forUpdate)
+            : base(select, expressions, columnCount) => this.forUpdate = forUpdate;
+
+        /// <inheritdoc/>
+        protected override Value?[]? FetchNextRow()
+        {
+            TableFilter top = select.topTableFilter!;
+            while (top.Next())
+            {
+                select.SetCurrentRowNumber(rowNumber + 1);
+                // This method may lock rows
+                if (forUpdate ? select.IsConditionMetForUpdate() : select.IsConditionMet())
+                {
+                    ++rowNumber;
+                    Value?[] row = new Value?[columnCount];
+                    for (int i = 0; i < columnCount; i++)
+                    {
+                        Expression expr = expressions[i];
+                        row[i] = expr.GetValue(select.GetSession());
+                    }
+
+                    return row;
+                }
+            }
+
+            return null;
+        }
+
+        /// <inheritdoc/>
+        protected override bool SkipNextRow()
+        {
+            TableFilter top = select.topTableFilter!;
+            while (top.Next())
+            {
+                select.SetCurrentRowNumber(rowNumber + 1);
+                // This method does not lock rows
+                if (select.IsConditionMet())
+                {
+                    ++rowNumber;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => Close();
+    }
+
+    /// <summary>
+    /// Whether the current row survives the WHERE clause.
+    /// </summary>
+    /// <returns>true when there is no clause or it holds</returns>
+    private bool IsConditionMet() => condition is null || condition.GetBooleanValue(session);
+
+    /// <summary>
+    /// Whether the current row survives locking for update.
+    /// </summary>
+    /// <remarks>
+    /// Not ported: it locks the row in every table and re-checks the condition on what came
+    /// back, and row locking does not exist here yet.
+    /// </remarks>
+    /// <returns>never returns</returns>
+    private bool IsConditionMetForUpdate()
+        => throw new TODOException("Select.isConditionMetForUpdate: row locking is not ported");
 
     /// <inheritdoc/>
     public override int GetCommandType() => CommandInterface.Select;
@@ -242,7 +521,17 @@ public sealed class Select : Query
 
     /// <summary>Sets the expressions this statement selects.</summary>
     /// <param name="expressions">the expressions</param>
-    public void SetExpressions(Expression[] expressions) => this.expressions = expressions;
+    public void SetExpressions(Expression[] expressions)
+    {
+        this.expressions = expressions;
+        visibleColumnCount = expressions.Length;
+    }
+
+    /// <summary>
+    /// How many of the expressions are visible columns. Set with the list until init() lands:
+    /// the reference fixes it when the columns are parsed, which is the same moment here.
+    /// </summary>
+    private int visibleColumnCount;
 
     /// <summary>Sets whether this is an aggregate over the whole table.</summary>
     /// <param name="isQuick">true for a quick aggregate</param>

@@ -106,6 +106,14 @@ public sealed class ExpressionColumn : Expression
     /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
     {
+        // Bound columns read through their resolver, as the reference reads through its own:
+        // the group-data detour above it waits for grouping. Only unmapped columns go through
+        // the session, which does not resolve yet.
+        if (columnResolver is not null && column is not null)
+        {
+            return columnResolver.GetValue(column)!;
+        }
+
         if (tableAlias is null)
         {
             throw new TODOException("ExpressionColumn.GetValue: no resolver is set on this expression");

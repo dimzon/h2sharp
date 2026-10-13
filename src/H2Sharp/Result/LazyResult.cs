@@ -22,7 +22,11 @@ public abstract class LazyResult : FetchedResult
 {
     private readonly SessionLocal session;
 
-    private readonly Expression[] expressions;
+    /// <summary>
+    /// The expressions that produce the columns. Protected rather than private because the
+    /// query's own row sources read the list, which nested classes do freely in Java.
+    /// </summary>
+    protected readonly Expression[] expressions;
 
     private bool closed;
 
