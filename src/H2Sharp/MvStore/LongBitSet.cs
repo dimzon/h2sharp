@@ -86,28 +86,94 @@ internal sealed class LongBitSet
     /// <summary>
     /// Set every bit in a range, growing the set if it has to.
     /// </summary>
+    /// <remarks>
+    /// An empty range neither answers nor grows, as the reference returns before expanding.
+    /// A reversed or negative range is refused rather than silently skipped.
+    /// </remarks>
     /// <param name="from">the first position, inclusive</param>
     /// <param name="to">the last position, exclusive</param>
     internal void SetRange(int from, int to)
     {
-        EnsureCapacity(to - 1);
-        for (int i = from; i < to; i++)
+        if (from < 0 || to < 0 || from > to)
         {
-            words[i >> 6] |= 1L << (i & 63);
+            throw new IndexOutOfRangeException("from=" + from + " to=" + to);
+        }
+
+        if (from == to)
+        {
+            return;
+        }
+
+        int start = from >> 6;
+        int end = (to - 1) >> 6;
+        EnsureCapacity(to - 1);
+        long first = -1L << from;
+        long last = -1L >>> -to;
+        if (start == end)
+        {
+            words[start] |= first & last;
+        }
+        else
+        {
+            words[start] |= first;
+            for (int i = start + 1; i < end; i++)
+            {
+                words[i] = -1L;
+            }
+
+            words[end] |= last;
         }
     }
 
     /// <summary>
     /// Clear every bit in a range. The set never grows for this.
     /// </summary>
+    /// <remarks>
+    /// Words past the end are already clear, so the range is clamped to the storage the same
+    /// way the reference clamps to the words in use: clearing what is not there changes nothing.
+    /// </remarks>
     /// <param name="from">the first position, inclusive</param>
     /// <param name="to">the last position, exclusive</param>
     internal void ClearRange(int from, int to)
     {
-        int end = Math.Min(to, Capacity);
-        for (int i = Math.Max(from, 0); i < end; i++)
+        if (from < 0 || to < 0 || from > to)
         {
-            words[i >> 6] &= ~(1L << (i & 63));
+            throw new IndexOutOfRangeException("from=" + from + " to=" + to);
+        }
+
+        if (from == to)
+        {
+            return;
+        }
+
+        int start = from >> 6;
+        if (start >= words.Length)
+        {
+            return;
+        }
+
+        int end = (to - 1) >> 6;
+        if (end >= words.Length)
+        {
+            to = Length;
+            end = words.Length - 1;
+        }
+
+        long first = -1L << from;
+        long last = -1L >>> -to;
+        if (start == end)
+        {
+            words[start] &= ~(first & last);
+        }
+        else
+        {
+            words[start] &= ~first;
+            for (int i = start + 1; i < end; i++)
+            {
+                words[i] = 0;
+            }
+
+            words[end] &= ~last;
         }
     }
 
@@ -224,24 +290,46 @@ internal sealed class LongBitSet
     /// <summary>
     /// The highest clear bit at or before a position, or -1 when everything up to it is set.
     /// </summary>
+    /// <remarks>
+    /// Past the end everything is clear, so such a position answers itself. Trailing zero
+    /// words read as all clear, which they are — unlike the set-bit search, this one cannot
+    /// mistake them.
+    /// </remarks>
     /// <param name="from">where to stop, inclusive</param>
     /// <returns>the position, or -1</returns>
     internal int PreviousClearBit(int from)
     {
         if (from < 0)
         {
-            return -1;
-        }
-
-        for (int i = from; i >= 0; i--)
-        {
-            if (!Get(i))
+            if (from == -1)
             {
-                return i;
+                return -1;
             }
+
+            throw new IndexOutOfRangeException("from=" + from);
         }
 
-        return -1;
+        int w = from >> 6;
+        if (w >= words.Length)
+        {
+            return from;
+        }
+
+        ulong word = ~(ulong)words[w] & (ulong.MaxValue >>> -(from + 1));
+        while (true)
+        {
+            if (word != 0)
+            {
+                return (w << 6) + 63 - BitOperations.LeadingZeroCount(word);
+            }
+
+            if (w-- == 0)
+            {
+                return -1;
+            }
+
+            word = ~(ulong)words[w];
+        }
     }
 
     /// <summary>

@@ -620,6 +620,7 @@ Java-имена и разрешать их: получился бы файл, к
 | `BigDecimal.Ten` (issue #1, A4) | ~200 байт мусора на чтение (оценка аудита) | 0 | поле вместо свойства; значение то же по построению, оракулы BigDecimal 27/27 до и после |
 | `H2Command.Parameters` (issue #1, A10) | обёртка на каждое обращение | 0 | поле, список за ней тот же; красный→зелёный `H2CommandParametersTests` |
 | `DiskFilePath.CheckName`/`SystemName` (issue #1, A9) | клон набора на символ + строка на file-op | 0 | `static readonly` набор + `??=`; файловые сьюты 59/59 до и после |
+| `LongBitSet` диапазоны (issue #1, A3) | итерация на бит в `SetRange`/`ClearRange`/`PreviousClearBit` | пословно с масками на краях | ответы те же, края сверены с `java.util.BitSet` зондом; `LongBitSetTests` + оракул `FreeSpaceBitSet` зелёные |
 
 Замер ревью (issue #1, A9): 20M проверок, Release — посимвольный спан 46мс, `HashSet` 37мс,
 один `IndexOfAny` на всю строку 3мс. Сет действительно быстрее спана, но цикл остался
