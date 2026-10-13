@@ -81,6 +81,12 @@ public class CompareMode
     private readonly int strength;
 
     /// <summary>
+    /// The last mode built, handed back when the arguments match. A benign race: two threads
+    /// may build the same mode twice, and both answers are equal, as in the reference.
+    /// </summary>
+    private static volatile CompareMode? lastUsed;
+
+    /// <summary>
     /// Creates a compare mode.
     /// </summary>
     /// <param name="name">the collation name, or <see langword="null"/> for none</param>
@@ -95,35 +101,42 @@ public class CompareMode
     /// Create a new compare mode with the given collation name and strength.
     /// </summary>
     /// <remarks>
-    /// The reference caches the last mode it built and hands the same object back for the
-    /// same arguments. That is an allocation saving, and its observable effect is reference
-    /// identity, which nothing in the port relies on, so it is not reproduced.
+    /// If possible the last built mode is returned: same arguments, same object. That is an
+    /// allocation saving, and its observable effect is reference identity, which nothing in
+    /// the port compares on.
     /// </remarks>
     /// <param name="name">the collation name, or <see langword="null"/> for none</param>
     /// <param name="strength">the collation strength</param>
     /// <returns>the compare mode</returns>
     public static CompareMode GetInstance(string? name, int strength)
     {
+        CompareMode? last = lastUsed;
+        if (last is not null && last.name == name && last.strength == strength)
+        {
+            return last;
+        }
+
         if (name is null || name == Off)
         {
-            return new CompareMode(name, strength);
+            last = new CompareMode(name, strength);
         }
-
-        // CompareModeDefault only carries the CHARSET_ branch: a charset collator
-        // compares encoded bytes, so no platform weights are involved and the port
-        // is exact. Every other name still fails below with the measured reason.
-        if (name.StartsWith(Charset, StringComparison.Ordinal))
+        else if (name.StartsWith(Charset, StringComparison.Ordinal))
         {
-            return new CompareModeDefault(name, strength);
+            last = new CompareModeDefault(name, strength);
         }
-
-        throw new NotSupportedException(
+        else
+        {
+            throw new NotSupportedException(
             $"The collation '{name}' needs a collator, which is not ported: the platform's "
             + "collation weights disagree with the reference's on 31 per cent of a measured "
             + "grid, including the order of upper and lower case. With COLLATION OFF, which "
             + "is the default, comparison is exact. See MIGRATION_STATUS.md.")
-        {
-        };
+            {
+            };
+        }
+
+        lastUsed = last;
+        return last;
     }
 
     /// <summary>
