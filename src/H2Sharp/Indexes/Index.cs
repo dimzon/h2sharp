@@ -127,10 +127,11 @@ public abstract class Index : SchemaObject
             }
         }
 
-        // The row factories need the database's compare mode and its table columns, and the
-        // database is the one thing this constructor does not have yet: a schema in this port
-        // does not know its database (Schema.GetDatabase exists but returns nothing usable yet).
-        // They are filled in by the subclass once it has a session.
+        // The row factories need the database's row factory, its compare mode and its table
+        // columns, and the database is the one thing this constructor does not have yet: a
+        // schema in this port does not know its database (Schema.GetDatabase exists but returns
+        // nothing usable yet). They stay null until that path is ported, and the accessors
+        // below refuse instead of handing a null that would fail later far from the cause.
         rowFactory = null;
         uniqueRowFactory = null;
     }
@@ -138,17 +139,17 @@ public abstract class Index : SchemaObject
     /// <summary>
     /// Gets the row factory that reads rows in the order of this index.
     /// </summary>
-    protected RowFactory? GetRowFactory()
+    protected RowFactory GetRowFactory()
     {
-        return rowFactory;
+        return rowFactory ?? throw new TODOException("Index.getRowFactory: the database row factory is not ported");
     }
 
     /// <summary>
     /// Gets the row factory that reads rows in the order of the unique columns alone.
     /// </summary>
-    protected RowFactory? GetUniqueRowFactory()
+    protected RowFactory GetUniqueRowFactory()
     {
-        return uniqueRowFactory;
+        return uniqueRowFactory ?? throw new TODOException("Index.getUniqueRowFactory: the database row factory is not ported");
     }
 
     /// <inheritdoc/>

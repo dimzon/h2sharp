@@ -50,6 +50,16 @@ public sealed class IndexPlanTests
         }
 
         /// <summary>
+        /// Reads through to the base row factories, which refuse until the database path lands.
+        /// </summary>
+        internal H2Sharp.Result.RowFactory ProbeRowFactory() => GetRowFactory();
+
+        /// <summary>
+        /// Reads through to the base unique factory, same refusal.
+        /// </summary>
+        internal H2Sharp.Result.RowFactory ProbeUniqueRowFactory() => GetUniqueRowFactory();
+
+        /// <summary>
         /// Nothing is stored, so there is nothing to rebuild after opening.
         /// </summary>
         public override bool NeedRebuild() => false;
@@ -94,6 +104,34 @@ public sealed class IndexPlanTests
             // Equals says so rather than comparing names in the air.
             Assert.Equal(0, index.GetColumnIndex(new Tables.Column("ID", Values.TypeInfo.TypeBigint, table, 0)));
             Assert.Equal(-1, index.GetColumnIndex(new Tables.Column("NOPE", Values.TypeInfo.TypeInteger, table, 7)));
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void AnIndexWithoutADatabaseRefusesARowFactory()
+    {
+        SessionLocal session = NewSession();
+
+        var store = new H2Sharp.MvStore.Tx.TransactionStore(H2Sharp.MvStore.MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
+            Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
+                session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
+                3, "T", [id], store, persistData: false);
+            id.SetTable(table, 0);
+
+            ColumnsIndex index = new(table, 7, "I", [new Tables.IndexColumn(id, ascending: true)]);
+
+            // A loud refusal at the access, not a null that fails later far from the cause:
+            // the factories need the database path, which is not ported.
+            Assert.Throws<H2Sharp.TODOException>(() => index.ProbeRowFactory());
+            Assert.Throws<H2Sharp.TODOException>(() => index.ProbeUniqueRowFactory());
         }
         finally
         {
