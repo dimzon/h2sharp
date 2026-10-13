@@ -100,6 +100,93 @@ public sealed class TimeZoneProviderOracleTests
     }
 
     /// <summary>
+    /// Instants outside DateTimeOffset's years 1..9999 fold by the 400-year Gregorian period
+    /// before the zone is asked; the zone rules repeat inside the period, so the folded answer
+    /// is the true one. The loop this replaced walked there one period at a time.
+    /// </summary>
+    /// <remarks>
+    /// Only the modern era is compared: below it the runtimes read different history tables
+    /// (.NET on Windows has no local-mean-time past, the JVM does), and a fold landing there
+    /// answers the standing offset of its own table — the min-1 probe showed exactly that
+    /// (-18000 here against -17762 there), which vindicates the landing while forbidding the
+    /// comparison. A fold landing in year zero would leave nothing representable on this
+    /// side — that edge is recorded in MIGRATION_STATUS.md, and none of these land there.
+    /// </remarks>
+    [JavaOracleFact]
+    public void ExtremeInstantsFoldToTheSameOffset()
+    {
+        Assert.Equal(43_200L, Noon(1970, 1, 1));
+
+        // The fold's own constants, in seconds: the top of DateTimeOffset's range and the
+        // 400-year Gregorian period.
+        const long max = 253_402_300_799L;
+        const long period = 12_622_780_800L;
+        long[] extremes =
+        [
+            max + 1,
+            max + period + 12_345,
+            Noon(500_000, 6, 15),
+            Noon(999_999_999, 6, 15),
+        ];
+        string[] zones = ["America/New_York", "Europe/London"];
+
+        List<string> inputs = [];
+        foreach (string zone in zones)
+        {
+            foreach (long t in extremes)
+            {
+                inputs.Add(zone + "|" + t.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        const string body = """
+            for (String line : inputs) {
+                int bar = line.indexOf('|');
+                String zone = line.substring(0, bar);
+                long t = Long.parseLong(line.substring(bar + 1));
+                int off = java.time.ZoneId.of(zone).getRules()
+                    .getOffset(java.time.Instant.ofEpochSecond(t)).getTotalSeconds();
+                System.out.println("=" + zone + " " + t + ":" + off);
+            }
+            """;
+        List<string> java = OracleRunner.Run(inputs, body, null, null, null);
+
+        List<string> csharp = [];
+        foreach (string line in inputs)
+        {
+            int bar = line.IndexOf('|');
+            string zone = line[..bar];
+            long t = long.Parse(line[(bar + 1)..], CultureInfo.InvariantCulture);
+            TimeZoneProvider tz = TimeZoneProvider.OfId(zone);
+            csharp.Add("=" + zone + " " + t.ToString(CultureInfo.InvariantCulture) + ":"
+                + tz.GetTimeZoneOffsetUtc(t).ToString(CultureInfo.InvariantCulture));
+        }
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == csharp[i], $"line {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
+    /// <summary>
+    /// Noon UTC of the given proleptic Gregorian date, in EPOCH seconds. Howard Hinnant's
+    /// days-from-civil, because DateTime cannot hold these years and both runtimes date with
+    /// the same calendar.
+    /// </summary>
+    private static long Noon(int year, int month, int day)
+    {
+        int y = month <= 2 ? year - 1 : year;
+        int era = (y >= 0 ? y : y - 399) / 400;
+        int yoe = y - era * 400;
+        int mp = (month + 9) % 12;
+        int doy = (153 * mp + 2) / 5 + day - 1;
+        int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        long days = (long)era * 146097 + doe - 719468;
+        return days * 86_400 + 43_200;
+    }
+
+    /// <summary>
     /// A bare abbreviation is the one name the two runtimes resolve differently, and the
     /// difference is recorded here rather than left out of the oracle silently.
     /// </summary>

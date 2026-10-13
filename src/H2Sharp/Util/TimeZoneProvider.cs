@@ -590,14 +590,23 @@ public abstract class TimeZoneProvider
         private static DateTimeOffset EpochSecondsToDateTimeOffset(long epochSeconds)
         {
             DateTimeOffset folded = DateTimeOffset.FromUnixTimeSeconds(0);
-            while (epochSeconds > MaxUnixSeconds)
+            // Closed form of the loop: the folded value sits in (Max - period, Max] with the
+            // input's residue, which is exactly where repeated subtraction stops. The remainder
+            // form cannot overflow for any input, where a count-then-multiply could.
+            if (epochSeconds > MaxUnixSeconds)
             {
-                epochSeconds -= SecondsPerPeriod;
+                long excess = (epochSeconds - MaxUnixSeconds) % SecondsPerPeriod;
+                epochSeconds = excess == 0
+                    ? MaxUnixSeconds
+                    : MaxUnixSeconds - SecondsPerPeriod + excess;
             }
 
-            while (epochSeconds < MinUnixSeconds)
+            if (epochSeconds < MinUnixSeconds)
             {
-                epochSeconds += SecondsPerPeriod;
+                long shortage = (MinUnixSeconds - epochSeconds) % SecondsPerPeriod;
+                epochSeconds = shortage == 0
+                    ? MinUnixSeconds
+                    : MinUnixSeconds + SecondsPerPeriod - shortage;
             }
 
             return folded.AddSeconds(epochSeconds);
