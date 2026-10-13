@@ -611,8 +611,10 @@ public abstract class Page<K, V> : IPage
                 }
 
                 byte[] comp = new byte[expLen * 2];
-                byte[] grown = buff.ToArray();
-                int compLen = compressor.Compress(grown, compressStart, expLen, comp, 0);
+                // Straight from the buffer, as FileStore does for the chunk: ToArray copies the
+                // whole written region per compressed page, while the compressor only reads the
+                // page's slice and never writes its input.
+                int compLen = compressor.Compress(buff.GetBuffer(), compressStart, expLen, comp, 0);
                 int plus = DataUtils.GetVarIntLen(expLen - compLen);
                 if (compLen + plus < expLen)
                 {
