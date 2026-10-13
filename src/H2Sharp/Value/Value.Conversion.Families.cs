@@ -1993,28 +1993,32 @@ public abstract partial class Value
         {
             Value[] values = v.GetList();
             int length = values.Length;
-            List<KeyValuePair<string, TypeInfo>> fields = [.. ext.GetFields()];
-            if (length != fields.Count)
+            if (length != ext.FieldCount)
             {
                 throw GetDataConversionErrorException(targetType);
             }
 
+            // One iterator beside the values, as the reference walks the entry set beside the
+            // value array: the component type comes from the iterator, and past the first
+            // changed element the rest convert against that same type rather than their own.
+            using IEnumerator<KeyValuePair<string, TypeInfo>> iter = ext.GetFields().GetEnumerator();
             for (int i = 0; i < length; i++)
             {
                 Value v1 = values[i];
-                TypeInfo componentType = fields[i].Value;
+                iter.MoveNext();
+                TypeInfo componentType = iter.Current.Value;
                 Value v2 = v1.ConvertToValue(componentType, provider, conversionMode, column);
                 if (!ReferenceEquals(v1, v2))
                 {
                     // Same walk as the array's: the first element that changed is replaced and
-                    // the rest are converted against the field types, not against each other.
+                    // the rest are converted against the changed element's type.
                     Value[] newValues = new Value[length];
                     System.Array.Copy(values, newValues, i);
                     newValues[i] = v2;
                     while (++i < length)
                     {
                         newValues[i] = values[i].ConvertToValue(
-                            fields[i].Value, provider, conversionMode, column);
+                            componentType, provider, conversionMode, column);
                     }
 
                     v = ValueRow.Get(targetType, newValues);

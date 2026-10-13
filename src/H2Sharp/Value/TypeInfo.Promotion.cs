@@ -298,18 +298,20 @@ public sealed partial class TypeInfo
 
                 case Value.Row:
                     {
-                        List<KeyValuePair<string, TypeInfo>> f1 =
-                            [.. ((ExtTypeInfoRow)unwrapped1.extTypeInfo!).GetFields()];
-                        List<KeyValuePair<string, TypeInfo>> f2 =
-                            [.. ((ExtTypeInfoRow)unwrapped2.extTypeInfo!).GetFields()];
-                        if (f1.Count != f2.Count)
+                        // Paired iterators, as the reference walks both entry sets together: the
+                        // fields are compared in order, and no list is built to index into.
+                        ExtTypeInfoRow row1 = (ExtTypeInfoRow)unwrapped1.extTypeInfo!;
+                        ExtTypeInfoRow row2 = (ExtTypeInfoRow)unwrapped2.extTypeInfo!;
+                        if (row1.FieldCount != row2.FieldCount)
                         {
                             return false;
                         }
 
-                        for (int i = 0; i < f1.Count; i++)
+                        using IEnumerator<KeyValuePair<string, TypeInfo>> i1 = row1.GetFields().GetEnumerator();
+                        using IEnumerator<KeyValuePair<string, TypeInfo>> i2 = row2.GetFields().GetEnumerator();
+                        while (i1.MoveNext() && i2.MoveNext())
                         {
-                            if (!AreComparable(f1[i].Value, f2[i].Value))
+                            if (!AreComparable(i1.Current.Value, i2.Current.Value))
                             {
                                 return false;
                             }
@@ -413,18 +415,18 @@ public sealed partial class TypeInfo
 
                 case Value.Row:
                     {
-                        List<KeyValuePair<string, TypeInfo>> f1 =
-                            [.. ((ExtTypeInfoRow)a.extTypeInfo!).GetFields()];
-                        List<KeyValuePair<string, TypeInfo>> f2 =
-                            [.. ((ExtTypeInfoRow)b.extTypeInfo!).GetFields()];
-                        if (f1.Count != f2.Count)
+                        ExtTypeInfoRow row1 = (ExtTypeInfoRow)a.extTypeInfo!;
+                        ExtTypeInfoRow row2 = (ExtTypeInfoRow)b.extTypeInfo!;
+                        if (row1.FieldCount != row2.FieldCount)
                         {
                             return false;
                         }
 
-                        for (int i = 0; i < f1.Count; i++)
+                        using IEnumerator<KeyValuePair<string, TypeInfo>> i1 = row1.GetFields().GetEnumerator();
+                        using IEnumerator<KeyValuePair<string, TypeInfo>> i2 = row2.GetFields().GetEnumerator();
+                        while (i1.MoveNext() && i2.MoveNext())
                         {
-                            if (!HaveSameOrdering(f1[i].Value, f2[i].Value))
+                            if (!HaveSameOrdering(i1.Current.Value, i2.Current.Value))
                             {
                                 return false;
                             }
@@ -497,11 +499,13 @@ public sealed partial class TypeInfo
     {
         if (valueType == Value.Row)
         {
-            List<KeyValuePair<string, TypeInfo>> fields =
-                [.. ((ExtTypeInfoRow)extTypeInfo!).GetFields()];
-            if (fields.Count == 1)
+            ExtTypeInfoRow row = (ExtTypeInfoRow)extTypeInfo!;
+            if (row.FieldCount == 1)
             {
-                return fields[0].Value.UnwrapRow();
+                // The reference takes the iterator's single next element; one MoveNext is that.
+                using IEnumerator<KeyValuePair<string, TypeInfo>> fields = row.GetFields().GetEnumerator();
+                fields.MoveNext();
+                return fields.Current.Value.UnwrapRow();
             }
         }
 
@@ -576,18 +580,19 @@ public sealed partial class TypeInfo
             return type1;
         }
 
-        List<KeyValuePair<string, TypeInfo>> m1 = [.. ext1.GetFields()];
-        List<KeyValuePair<string, TypeInfo>> m2 = [.. ext2.GetFields()];
-        int degree = m1.Count;
-        if (m2.Count != degree)
+        int degree = ext1.FieldCount;
+        if (ext2.FieldCount != degree)
         {
             throw DbException.Get(ErrorCode.ColumnCountDoesNotMatch);
         }
 
         OrderedStringMap<TypeInfo> m = new((int)Math.Ceiling(degree / .75));
-        for (int i = 0; i < degree; i++)
+        using IEnumerator<KeyValuePair<string, TypeInfo>> i1 = ext1.GetFields().GetEnumerator();
+        using IEnumerator<KeyValuePair<string, TypeInfo>> i2 = ext2.GetFields().GetEnumerator();
+        while (i1.MoveNext() && i2.MoveNext())
         {
-            m.Put(m1[i].Key, GetHigherType(m1[i].Value, m2[i].Value));
+            KeyValuePair<string, TypeInfo> e1 = i1.Current;
+            m.Put(e1.Key, GetHigherType(e1.Value, i2.Current.Value));
         }
 
         return GetTypeInfo(Value.Row, 0, 0, new ExtTypeInfoRow(m));

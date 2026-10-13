@@ -231,6 +231,48 @@ public sealed class ExtTypeInfoRowOracleTests
         }
     }
 
+    /// <summary>
+    /// Past the first changed element a row converts against that element's type, not against
+    /// each field's own: the iterator has moved on and the reference does not move it back.
+    /// </summary>
+    [JavaOracleFact]
+    public void RowConversionUsesTheChangedFieldsTypeForTheRest_MatchReference()
+    {
+        const string body = """
+            org.h2.value.ValueRow row = org.h2.value.ValueRow.get(new org.h2.value.Value[]{
+                org.h2.value.ValueInteger.get(5), org.h2.value.ValueVarchar.get("x") });
+            java.util.LinkedHashMap<String, org.h2.value.TypeInfo> m = new java.util.LinkedHashMap<>();
+            m.put("C1", org.h2.value.TypeInfo.TYPE_BIGINT);
+            m.put("C2", org.h2.value.TypeInfo.TYPE_VARCHAR);
+            org.h2.value.TypeInfo target = org.h2.value.TypeInfo.getTypeInfo(org.h2.value.Value.ROW,
+                0, 0, new org.h2.value.ExtTypeInfoRow(m));
+            try {
+                org.h2.value.Value out = row.convertTo(target, null, null);
+                System.out.println("=ok:" + out.getString());
+            } catch (org.h2.message.DbException e) {
+                System.out.println("=throws:" + e.getErrorCode());
+            }
+            """;
+
+        string csharp;
+        try
+        {
+            ValueRow row = ValueRow.Get([ValueInteger.Get(5), ValueVarchar.Get("x")]);
+            OrderedStringMap<TypeInfo> map = new(2);
+            map.Put("C1", TypeInfo.TypeBigint);
+            map.Put("C2", TypeInfo.TypeVarchar);
+            TypeInfo target = TypeInfo.GetTypeInfo(Value.Row, 0, 0, new ExtTypeInfoRow(map));
+            csharp = "=ok:" + row.ConvertToType(target).GetString();
+        }
+        catch (H2SharpException e)
+        {
+            csharp = "=throws:" + e.H2ErrorCode.ToString(CultureInfo.InvariantCulture);
+        }
+
+        List<string> java = OracleRunner.Run([], body, null, null, null);
+        Assert.Equal(java, [csharp]);
+    }
+
     private static string Render((string Name, TypeInfo Type)[] fields)
     {
         OrderedStringMap<TypeInfo> map = new(fields.Length);
