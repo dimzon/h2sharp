@@ -56,10 +56,12 @@ public class CaseInsensitiveMap<TValue> : Dictionary<string, TValue>
     /// whether anything was there instead, which is why this hides it rather than overriding it.
     /// </remarks>
     public new TValue? Remove(string key)
-        => base.TryGetValue(StringUtils.ToUpperEnglish(key), out TValue? value)
-            && base.Remove(StringUtils.ToUpperEnglish(key))
-                ? value
-                : default;
+    {
+        // Folded once, like every other member: the fold is pure, so folding twice answers the
+        // same string while paying the hash and the scan twice per remove.
+        string folded = Fold(key);
+        return base.TryGetValue(folded, out TValue? value) && base.Remove(folded) ? value : default;
+    }
 
     /// <summary>
     /// Adds the value only if there is nothing under that name, folded.
