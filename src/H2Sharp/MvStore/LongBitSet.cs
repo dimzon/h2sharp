@@ -343,7 +343,15 @@ internal sealed class LongBitSet
     /// </remarks>
     /// <param name="bytes">the bytes, lowest bit first</param>
     /// <returns>the set</returns>
-    internal static LongBitSet ValueOf(byte[] bytes)
+    internal static LongBitSet ValueOf(byte[] bytes) => ValueOf(bytes.AsSpan());
+
+    /// <summary>
+    /// A set holding the bits of these bytes, read as little endian longs, without copying
+    /// them out first. Only the words are kept.
+    /// </summary>
+    /// <param name="bytes">the bytes, lowest bit first</param>
+    /// <returns>the set</returns>
+    internal static LongBitSet ValueOf(ReadOnlySpan<byte> bytes)
     {
         LongBitSet set = new();
         if (bytes.Length != 0)
@@ -353,7 +361,7 @@ internal sealed class LongBitSet
         int whole = bytes.Length / sizeof(long);
         for (int i = 0; i < whole; i++)
         {
-            set.words[i] = BitConverter.ToInt64(bytes, i * sizeof(long));
+            set.words[i] = BitConverter.ToInt64(bytes.Slice(i * sizeof(long), sizeof(long)));
         }
 
         if ((bytes.Length & 7) != 0)

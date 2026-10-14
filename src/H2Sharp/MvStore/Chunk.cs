@@ -613,8 +613,10 @@ public abstract class Chunk
     /// The block is read before the page and compared afterwards: a chunk moved by another
     /// thread in between is noticed and the read repeats. When the chunk was just serialized
     /// and not saved yet, the page comes from its in-memory image instead of the file.
+    /// The image is handed out as a view, not a copy: the reader deserializes it within its
+    /// own call, while this buffer is still the chunk's.
     /// </remarks>
-    internal byte[] ReadBufferForPage(FileStore store, int offset, long pos)
+    internal Memory<byte> ReadBufferForPage(FileStore store, int offset, long pos)
     {
         Debug.Assert(IsAllocated() || Buffer != null);
         while (true)
@@ -650,9 +652,9 @@ public abstract class Chunk
                 }
 
                 byte[]? buffer = Buffer;
-                byte[] buff = buffer == null
+                Memory<byte> buff = buffer == null
                     ? ReadFully(store, filePos, length)
-                    : buffer.AsSpan(offset, length).ToArray();
+                    : buffer.AsMemory(offset, length);
 
                 if (originalBlock == Block)
                 {

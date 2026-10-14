@@ -106,7 +106,14 @@ public sealed class ValueUuid : Value
     /// </summary>
     /// <param name="binary">the bytes</param>
     /// <returns>the value</returns>
-    public static ValueUuid Get(byte[] binary)
+    public static ValueUuid Get(byte[] binary) => Get(binary.AsSpan());
+
+    /// <summary>
+    /// A value for sixteen bytes, without copying them out first. Only the halves are kept.
+    /// </summary>
+    /// <param name="binary">the bytes</param>
+    /// <returns>the value</returns>
+    public static ValueUuid Get(ReadOnlySpan<byte> binary)
     {
         int length = binary.Length;
         if (length != 16)
@@ -246,7 +253,7 @@ public sealed class ValueUuid : Value
             throw new ArgumentException("The UUID cannot be written", nameof(uuid));
         }
 
-        return Get(bytes.ToArray());
+        return Get(bytes);
     }
 
     /// <summary>

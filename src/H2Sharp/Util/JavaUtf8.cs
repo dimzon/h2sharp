@@ -47,7 +47,14 @@ public static class JavaUtf8
     /// </summary>
     /// <param name="value">the bytes</param>
     /// <returns>the decoded text, with a replacement wherever the input is malformed</returns>
-    public static string GetString(byte[] value)
+    public static string GetString(byte[] value) => GetString(value.AsSpan());
+
+    /// <summary>
+    /// Decodes bytes as UTF-8, the way the reference does, without copying them out first.
+    /// </summary>
+    /// <param name="value">the bytes</param>
+    /// <returns>the decoded text, with a replacement wherever the input is malformed</returns>
+    public static string GetString(ReadOnlySpan<byte> value)
     {
         int length = value.Length;
 
@@ -62,7 +69,7 @@ public static class JavaUtf8
 
         if (ascii == length)
         {
-            return length == 0 ? string.Empty : Encoding.ASCII.GetString(value, 0, length);
+            return length == 0 ? string.Empty : Encoding.ASCII.GetString(value);
         }
 
         // One character per byte is an upper bound: a byte that becomes a replacement character
@@ -86,7 +93,7 @@ public static class JavaUtf8
     /// Decodes into a buffer that is known to be long enough, and returns how much of it was
     /// used.
     /// </summary>
-    private static int Decode(byte[] value, char[] destination)
+    private static int Decode(ReadOnlySpan<byte> value, Span<char> destination)
     {
         int length = value.Length;
         int n = 0;
@@ -96,7 +103,7 @@ public static class JavaUtf8
             ascii++;
         }
 
-        Encoding.ASCII.GetChars(value, 0, ascii, destination, 0);
+        Encoding.ASCII.GetChars(value[..ascii], destination[..ascii]);
         n = ascii;
         int i = ascii;
         while (i < length)
@@ -235,6 +242,43 @@ public static class JavaUtf8
             return length == 0 ? [] : Encoding.ASCII.GetBytes(value);
         }
 
+        byte[] result = new byte[CountBytes(value.AsSpan())];
+        FillBytes(value.AsSpan(), result);
+        return result;
+    }
+
+    /// <summary>
+    /// Encodes text as UTF-8 into a caller buffer, the way the reference does.
+    /// </summary>
+    /// <remarks>
+    /// The counting and filling passes are the ones <see cref="GetBytes(string)"/> runs; a
+    /// buffer that is too short fails without writing anything, so a retry with a bigger
+    /// buffer never sees a half-written answer.
+    /// </remarks>
+    /// <param name="value">the text</param>
+    /// <param name="destination">the buffer</param>
+    /// <param name="written">how many bytes were written</param>
+    /// <returns>true when the buffer held the answer</returns>
+    public static bool TryGetBytes(string value, Span<byte> destination, out int written)
+    {
+        ReadOnlySpan<char> chars = value.AsSpan();
+        int needed = CountBytes(chars);
+        if (destination.Length < needed)
+        {
+            written = 0;
+            return false;
+        }
+
+        written = FillBytes(chars, destination);
+        return true;
+    }
+
+    /// <summary>
+    /// How many bytes the encoding needs: the counting pass of <see cref="GetBytes(string)"/>.
+    /// </summary>
+    private static int CountBytes(ReadOnlySpan<char> value)
+    {
+        int length = value.Length;
         int needed = 0;
         for (int i = 0; i < length; i++)
         {
@@ -258,7 +302,16 @@ public static class JavaUtf8
             }
         }
 
-        byte[] result = new byte[needed];
+        return needed;
+    }
+
+    /// <summary>
+    /// The filling pass of <see cref="GetBytes(string)"/>, into a buffer known to be long
+    /// enough, returning how much of it was used.
+    /// </summary>
+    private static int FillBytes(ReadOnlySpan<char> value, Span<byte> result)
+    {
+        int length = value.Length;
         int o = 0;
         for (int i = 0; i < length; i++)
         {
@@ -293,13 +346,13 @@ public static class JavaUtf8
             }
         }
 
-        return result;
+        return o;
     }
 
     /// <summary>
     /// Whether the character at this position is a high surrogate with its partner next.
     /// </summary>
-    private static bool IsPair(string value, int i)
+    private static bool IsPair(ReadOnlySpan<char> value, int i)
         => char.IsHighSurrogate(value[i])
             && i + 1 < value.Length
             && char.IsLowSurrogate(value[i + 1]);

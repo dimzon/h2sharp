@@ -461,6 +461,17 @@ public sealed class ValueAllocationTests
     }
 
     [Fact]
+    public void UuidFromGuidCostsTheValueAndNothingElse()
+    {
+        // The halves are all a value keeps, so a Guid goes in through a stack buffer and no
+        // sixteen byte array stands between it and the value. Before the span form this was the
+        // value plus the array.
+        Guid guid = Guid.Parse("123e4567-e89b-12d3-a456-426614174000");
+        Assert.Equal(ValueUuid.Get(guid), ValueUuid.Get(guid));
+        Assert.InRange(MeasurePerCall(() => ValueUuid.Get(guid)), 24, 64);
+    }
+
+    [Fact]
     public void TheCacheAnswersWithTheSameInstance()
     {
         // Not an allocation test, but the property the cache exists for: equal values are the

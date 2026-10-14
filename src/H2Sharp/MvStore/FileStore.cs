@@ -1873,11 +1873,11 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
             {
                 C chunk = GetChunk(pos);
                 int pageOffset = DataUtils.GetPageOffset(pos);
-                byte[] buff = chunk.ReadBufferForPage(this, pageOffset, pos);
+                Memory<byte> buff = chunk.ReadBufferForPage(this, pageOffset, pos);
                 try
                 {
                     int position = 0;
-                    page = Page<K, V>.Read(buff, ref position, pos, map);
+                    page = Page<K, V>.Read(buff.Span, ref position, pos, map);
                 }
                 catch (MvStoreException)
                 {

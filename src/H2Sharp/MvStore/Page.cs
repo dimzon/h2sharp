@@ -179,7 +179,14 @@ public abstract class Page<K, V> : IPage
     /// <summary>
     /// A page read back from its bytes.
     /// </summary>
-    internal static Page<K, V> Read(byte[] buffer, ref int position, long pos, MVMap<K, V> map)
+    /// <remarks>
+    /// A span, not an array: the caller hands a view of the chunk's in-memory image, and the
+    /// span's lifetime ends with this call — nothing read here retains it, every key and value
+    /// is materialized. Mutable only because the data-type readers take <c>Span</c>; nothing
+    /// here writes through it. Only a compressed page copies, because the expander takes
+    /// arrays.
+    /// </remarks>
+    internal static Page<K, V> Read(Span<byte> buffer, ref int position, long pos, MVMap<K, V> map)
     {
         bool leaf = (DataUtils.GetPageType(pos) & 1) == DataUtils.PageTypeLeaf;
         Page<K, V> page = leaf ? new Leaf(map) : new NonLeaf(map);
@@ -447,12 +454,12 @@ public abstract class Page<K, V> : IPage
     /// <summary>
     /// Reads this page out of its bytes.
     /// </summary>
-    private void Read(byte[] buffer, ref int position)
+    private void Read(Span<byte> buffer, ref int position)
     {
         int chunkId = DataUtils.GetPageChunkId(GetPos());
         int offset = DataUtils.GetPageOffset(GetPos());
         int start = position;
-        int pageLength = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(position, 4));
+        int pageLength = BinaryPrimitives.ReadInt32BigEndian(buffer.Slice(position, 4));
         position += 4;
 
         // does not include optional part (pageNo)
@@ -465,7 +472,7 @@ public abstract class Page<K, V> : IPage
                 chunkId, remaining, pageLength);
         }
 
-        short check = BinaryPrimitives.ReadInt16BigEndian(buffer.AsSpan(position, 2));
+        short check = BinaryPrimitives.ReadInt16BigEndian(buffer.Slice(position, 2));
         position += 2;
         int checkTest = DataUtils.GetCheckValue(chunkId)
             ^ DataUtils.GetCheckValue(offset)
@@ -513,6 +520,7 @@ public abstract class Page<K, V> : IPage
             ReadPayLoad(buffer, ref position, end);
         }
 
+        Span<byte> active = buffer;
         bool compressed = (type & DataUtils.PageCompressed) != 0;
         if (compressed)
         {
@@ -522,16 +530,16 @@ public abstract class Page<K, V> : IPage
             int lenAdd = DataUtils.ReadVarInt(buffer, ref position);
             int compLen = end - position;
             byte[] expanded = new byte[compLen + lenAdd];
-            compressor.Expand(buffer, position, compLen, expanded, 0, expanded.Length);
-            buffer = expanded;
+            compressor.Expand(buffer.Slice(position, compLen).ToArray(), 0, compLen, expanded, 0, expanded.Length);
+            active = expanded;
             position = 0;
             end = expanded.Length;
         }
 
-        map.KeyType.Read(buffer.AsSpan(0, end), keys, keyCount, ref position);
+        map.KeyType.Read(active.Slice(0, end), keys, keyCount, ref position);
         if (IsLeaf())
         {
-            ReadPayLoad(buffer, ref position, end);
+            ReadPayLoad(active, ref position, end);
         }
 
         diskSpaceUsed = pageLength;
@@ -541,7 +549,7 @@ public abstract class Page<K, V> : IPage
     /// <summary>
     /// Reads the payload: the children of a node, or the values of a leaf.
     /// </summary>
-    protected abstract void ReadPayLoad(byte[] buffer, ref int position, int end);
+    protected abstract void ReadPayLoad(Span<byte> buffer, ref int position, int end);
 
     /// <summary>
     /// Whether this page was ever written.
@@ -1191,14 +1199,14 @@ public abstract class Page<K, V> : IPage
             return childPage.GetAppendCursorPos(new CursorPos<K, V>(this, keyCount, cursorPos));
         }
 
-        protected override void ReadPayLoad(byte[] buffer, ref int position, int end)
+        protected override void ReadPayLoad(Span<byte> buffer, ref int position, int end)
         {
             int keyCount = GetKeyCount();
             children = CreateRefStorage(keyCount + 1);
             long[] positions = new long[keyCount + 1];
             for (int i = 0; i <= keyCount; i++)
             {
-                positions[i] = BinaryPrimitives.ReadInt64BigEndian(buffer.AsSpan(position, 8));
+                positions[i] = BinaryPrimitives.ReadInt64BigEndian(buffer.Slice(position, 8));
                 position += 8;
             }
 
@@ -1525,11 +1533,11 @@ public abstract class Page<K, V> : IPage
             return new CursorPos<K, V>(this, ~keyCount, cursorPos);
         }
 
-        protected override void ReadPayLoad(byte[] buffer, ref int position, int end)
+        protected override void ReadPayLoad(Span<byte> buffer, ref int position, int end)
         {
             int keyCount = GetKeyCount();
             values = CreateValueStorage(keyCount);
-            map.ValueType.Read(buffer.AsSpan(0, end), values, keyCount, ref position);
+            map.ValueType.Read(buffer.Slice(0, end), values, keyCount, ref position);
         }
 
         protected override void WriteValues(WriteBuffer buff)
