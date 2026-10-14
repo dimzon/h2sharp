@@ -21,6 +21,7 @@
  *   implemented directly in UrlEncode so that SQL URLs stay byte-identical.
  */
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -1505,17 +1506,11 @@ public static class StringUtils
     /// </returns>
     public static int CompareJava(string a, string b)
     {
-        int shared = Math.Min(a.Length, b.Length);
-        for (int i = 0; i < shared; i++)
-        {
-            char ca = a[i], cb = b[i];
-            if (ca != cb)
-            {
-                return ca - cb;
-            }
-        }
-
-        return a.Length - b.Length;
+        // The shared prefix is vectorized; only the decision at its end is scalar, because the
+        // magnitude is observed: the difference of the first differing units, or of the lengths
+        // when one string is a prefix of the other.
+        int shared = a.AsSpan().CommonPrefixLength(b.AsSpan());
+        return shared < Math.Min(a.Length, b.Length) ? a[shared] - b[shared] : a.Length - b.Length;
     }
 
     /// <summary>
@@ -1971,16 +1966,63 @@ public static class StringUtils
     }
 
     /// <summary>
+    /// Parses an unsigned 31-bit integer from characters. Neither - nor + signs are allowed.
+    /// </summary>
+    /// <remarks>
+    /// The same refusals as the string form, including the message: an empty part and a bad
+    /// digit both fail with the part's own text, and only the failure builds that string.
+    /// </remarks>
+    /// <param name="s">the characters to parse</param>
+    /// <returns>the unsigned int not greater than int.MaxValue</returns>
+    public static int ParseUInt31(ReadOnlySpan<char> s)
+    {
+        if (s.Length == 0)
+        {
+            throw new FormatException("");
+        }
+
+        int result = 0;
+        for (int i = 0; i < s.Length; i++)
+        {
+            char ch = s[i];
+
+            // Ensure that the character is valid and that multiplication by 10 will be
+            // performed without overflow
+            if (ch is < '0' or > '9' || result > 214_748_364)
+            {
+                throw new FormatException(new string(s));
+            }
+
+            result = result * 10 + ch - '0';
+            if (result < 0)
+            {
+                // Overflow
+                throw new FormatException(new string(s));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Convert a hex encoded string to a byte array.
     /// </summary>
     /// <param name="s">the hex encoded string</param>
     /// <returns>the byte array</returns>
-    public static byte[] ConvertHexToBytes(string s)
+    public static byte[] ConvertHexToBytes(string s) => ConvertHexToBytes(s.AsSpan());
+
+    /// <summary>
+    /// Convert hex encoded characters to a byte array, without copying them out first. Only
+    /// a refusal builds the message string, on a path that is already throwing.
+    /// </summary>
+    /// <param name="s">the hex encoded characters</param>
+    /// <returns>the byte array</returns>
+    public static byte[] ConvertHexToBytes(ReadOnlySpan<char> s)
     {
         int len = s.Length;
         if (len % 2 != 0)
         {
-            throw DbException.Get(ErrorCode.HexStringOdd1, s);
+            throw DbException.Get(ErrorCode.HexStringOdd1, new string(s));
         }
 
         len /= 2;
@@ -1998,12 +2040,12 @@ public static class StringUtils
         }
         catch (IndexOutOfRangeException)
         {
-            throw DbException.Get(ErrorCode.HexStringWrong1, s);
+            throw DbException.Get(ErrorCode.HexStringWrong1, new string(s));
         }
 
         if ((mask & ~255) != 0)
         {
-            throw DbException.Get(ErrorCode.HexStringWrong1, s);
+            throw DbException.Get(ErrorCode.HexStringWrong1, new string(s));
         }
 
         return buff;
@@ -2011,17 +2053,21 @@ public static class StringUtils
 
     /// <summary>
     /// Parses a hex encoded string with possible space separators and appends
-    /// the decoded binary string to the specified output stream.
+    /// the decoded binary string to the specified writer.
     /// </summary>
-    /// <param name="baos">the output stream, or null</param>
+    /// <remarks>
+    /// Bytes gather in the writer's spans and go in with one advance per span, rather than
+    /// one virtual call per byte.
+    /// </remarks>
+    /// <param name="writer">the writer to append to</param>
     /// <param name="s">the hex encoded string</param>
     /// <param name="start">the start index</param>
     /// <param name="end">the end index, exclusive</param>
-    /// <returns>the specified output stream or a new output stream</returns>
-    public static MemoryStream ConvertHexWithSpacesToBytes(
-        MemoryStream? baos, string s, int start, int end)
+    public static void ConvertHexWithSpacesToBytes(
+        IBufferWriter<byte> writer, string s, int start, int end)
     {
-        baos ??= new MemoryStream((end - start) >>> 1);
+        Span<byte> span = writer.GetSpan((end - start) >>> 1);
+        int buffered = 0;
         int mask = 0;
         int[] hex = HexDecode;
         int i = start;
@@ -2069,7 +2115,14 @@ public static class StringUtils
             {
                 d = hex[c1] << 4 | hex[c2];
                 mask |= d;
-                baos.WriteByte((byte)d);
+                if (buffered == span.Length)
+                {
+                    writer.Advance(buffered);
+                    buffered = 0;
+                    span = writer.GetSpan();
+                }
+
+                span[buffered++] = (byte)d;
             }
             catch (IndexOutOfRangeException)
             {
@@ -2078,12 +2131,11 @@ public static class StringUtils
         }
 
     done:
+        writer.Advance(buffered);
         if ((mask & ~255) != 0)
         {
             throw GetHexStringException(ErrorCode.HexStringWrong1, s, start, end);
         }
-
-        return baos;
     }
 
     private static H2SharpException GetHexStringException(int code, string s, int start, int end)

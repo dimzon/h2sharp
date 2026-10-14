@@ -382,8 +382,15 @@ public sealed class JsonBytesSource : JsonTextSource
             throw new ArgumentException();
         }
 
+        // Four hex digits are four Latin-1 bytes, which are the same four chars: no string.
+        Span<char> hex = stackalloc char[4];
+        for (int i = 0; i < 4; i++)
+        {
+            hex[i] = (char)bytes[index + i];
+        }
+
         if (!ushort.TryParse(
-                Encoding.Latin1.GetString(bytes.AsSpan(index, 4)),
+                hex,
                 System.Globalization.NumberStyles.HexNumber,
                 System.Globalization.CultureInfo.InvariantCulture,
                 out ushort code))

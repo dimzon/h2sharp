@@ -89,31 +89,31 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
             {
                 case '\b':
                     Flush(stream, buffer, ref buffered);
-                    WriteAscii(stream, "\\b");
+                    WriteAscii(stream, "\\b"u8);
                     break;
                 case '\t':
                     Flush(stream, buffer, ref buffered);
-                    WriteAscii(stream, "\\t");
+                    WriteAscii(stream, "\\t"u8);
                     break;
                 case '\f':
                     Flush(stream, buffer, ref buffered);
-                    WriteAscii(stream, "\\f");
+                    WriteAscii(stream, "\\f"u8);
                     break;
                 case '\n':
                     Flush(stream, buffer, ref buffered);
-                    WriteAscii(stream, "\\n");
+                    WriteAscii(stream, "\\n"u8);
                     break;
                 case '\r':
                     Flush(stream, buffer, ref buffered);
-                    WriteAscii(stream, "\\r");
+                    WriteAscii(stream, "\\r"u8);
                     break;
                 case '"':
                     Flush(stream, buffer, ref buffered);
-                    WriteAscii(stream, "\\\"");
+                    WriteAscii(stream, "\\\""u8);
                     break;
                 case '\\':
                     Flush(stream, buffer, ref buffered);
-                    WriteAscii(stream, "\\\\");
+                    WriteAscii(stream, "\\\\"u8);
                     break;
                 default:
                     if (c < ' ')
@@ -121,7 +121,7 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
                         // The only escapes left are the control characters, and they always have
                         // four digits after the backslash.
                         Flush(stream, buffer, ref buffered);
-                        WriteAscii(stream, "\\u00");
+                        WriteAscii(stream, "\\u00"u8);
                         stream.WriteByte((byte)Hex[(c >> 4) & 0xf]);
                         stream.WriteByte((byte)Hex[c & 0xf]);
                     }
@@ -198,11 +198,30 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
         }
     }
 
-    private static void WriteAscii(MemoryStream stream, string ascii)
+    /// <summary>
+    /// Writes ASCII bytes with one call: the escapes below are static data, and a number is
+    /// already ASCII, so neither goes through a byte at a time.
+    /// </summary>
+    private static void WriteAscii(MemoryStream stream, ReadOnlySpan<byte> ascii)
+        => stream.Write(ascii);
+
+    /// <summary>
+    /// Writes ASCII characters with one call per buffer, rather than one virtual call per
+    /// character.
+    /// </summary>
+    private static void WriteAscii(MemoryStream stream, ReadOnlySpan<char> ascii)
     {
-        foreach (char ch in ascii)
+        Span<byte> bytes = stackalloc byte[BufferSize];
+        while (!ascii.IsEmpty)
         {
-            stream.WriteByte((byte)ch);
+            int count = Math.Min(bytes.Length, ascii.Length);
+            for (int i = 0; i < count; i++)
+            {
+                bytes[i] = (byte)ascii[i];
+            }
+
+            stream.Write(bytes[..count]);
+            ascii = ascii[count..];
         }
     }
 
@@ -295,7 +314,7 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
     public override void ValueNull()
     {
         BeforeValue();
-        WriteAscii(stream, "null");
+        WriteAscii(stream, "null"u8);
         AfterValue();
     }
 
@@ -303,7 +322,7 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
     public override void ValueFalse()
     {
         BeforeValue();
-        WriteAscii(stream, "false");
+        WriteAscii(stream, "false"u8);
         AfterValue();
     }
 
@@ -311,7 +330,7 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
     public override void ValueTrue()
     {
         BeforeValue();
-        WriteAscii(stream, "true");
+        WriteAscii(stream, "true"u8);
         AfterValue();
     }
 

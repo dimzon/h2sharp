@@ -166,10 +166,34 @@ public sealed class CharsetCollator
     }
 
     /// <summary>
-    /// Compares two byte arrays the way java.util.Arrays.compare(byte[], byte[])
+    /// Compares two character spans by their encoded bytes, without making strings out of
+    /// them. This is what a per-character comparison goes through: two one-character
+    /// substrings and a cache lookup per character used to stand here.
+    /// </summary>
+    /// <param name="source">the first characters</param>
+    /// <param name="target">the second characters</param>
+    /// <returns>the same signed difference java.util.Arrays.compare returns</returns>
+    public int Compare(ReadOnlySpan<char> source, ReadOnlySpan<char> target)
+    {
+        return CompareBytes(ToBytesCore(Fold(source)), ToBytesCore(Fold(target)));
+    }
+
+    /// <summary>
+    /// The case fold this strength compares with, as a span. A folded string temporary lives
+    /// to the end of the calling expression, which is where the span is read.
+    /// </summary>
+    private ReadOnlySpan<char> Fold(ReadOnlySpan<char> source)
+        => strength <= Secondary ? StringUtils.ToUpperEnglish(source.ToString()).AsSpan() : source;
+
+    /// <summary>
+    /// Compares two byte spans the way java.util.Arrays.compare(byte[], byte[])
     /// does: signed bytes first, then the length difference.
     /// </summary>
-    internal static int CompareBytes(byte[] a, byte[] b)
+    /// <remarks>
+    /// Spans only: the body stays a signed loop, because an unsigned comparison answers
+    /// the opposite for every non-ASCII byte.
+    /// </remarks>
+    internal static int CompareBytes(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
     {
         int n = Math.Min(a.Length, b.Length);
         for (int i = 0; i < n; i++)
@@ -203,12 +227,23 @@ public sealed class CharsetCollator
             source = StringUtils.ToUpperEnglish(source);
         }
 
+        return ToBytesCore(source);
+    }
+
+    /// <summary>
+    /// The span core behind <see cref="ToBytes(string)"/> and the span comparison: the same
+    /// walk, with the fold done by the caller.
+    /// </summary>
+    /// <param name="source">the already-folded characters</param>
+    /// <returns>the bytes</returns>
+    private byte[] ToBytesCore(ReadOnlySpan<char> source)
+    {
         List<byte>? bytes = null;
         int start = 0;
         int i = 0;
         while (i < source.Length)
         {
-            Rune.DecodeFromUtf16(source.AsSpan(i), out Rune rune, out int consumed);
+            Rune.DecodeFromUtf16(source[i..], out Rune rune, out int consumed);
             if (IsRepresentable(rune, source[i]))
             {
                 i += consumed;
@@ -235,7 +270,7 @@ public sealed class CharsetCollator
 
         if (bytes is null)
         {
-            return encoding.GetBytes(source);
+            return EncodeRun(source);
         }
 
         if (i > start)
@@ -246,9 +281,20 @@ public sealed class CharsetCollator
         return bytes.ToArray();
     }
 
-    private void Append(List<byte> bytes, string run)
+    /// <summary>
+    /// Encodes one representable run in a single call: the exact size is safe to ask for,
+    /// because a run the walk hands over never contains a character the encoding refuses.
+    /// </summary>
+    private byte[] EncodeRun(ReadOnlySpan<char> run)
     {
-        byte[] encoded = encoding.GetBytes(run);
+        byte[] encoded = new byte[encoding.GetByteCount(run)];
+        int written = encoding.GetBytes(run, encoded);
+        return written == encoded.Length ? encoded : encoded[..written];
+    }
+
+    private void Append(List<byte> bytes, ReadOnlySpan<char> run)
+    {
+        byte[] encoded = EncodeRun(run);
         bytes.AddRange(encoded);
     }
 

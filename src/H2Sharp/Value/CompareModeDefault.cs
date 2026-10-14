@@ -95,7 +95,31 @@ public class CompareModeDefault : CompareMode
     /// <inheritdoc/>
     public override bool EqualsChars(string a, int ai, string b, int bi, bool ignoreCase)
     {
-        return CompareString(a.Substring(ai, 1), b.Substring(bi, 1), ignoreCase) == 0;
+        // One character each, compared as spans: two one-character substrings and a locked
+        // cache lookup per character used to stand here, for bytes the collator computes
+        // from the characters alone.
+        return CollatorFor(ignoreCase).Compare(a.AsSpan(ai, 1), b.AsSpan(bi, 1)) == 0;
+    }
+
+    /// <summary>
+    /// The collator an insensitive comparison folds through: past secondary strength the
+    /// fold is a secondary instance's, otherwise this one's.
+    /// </summary>
+    private CharsetCollator CollatorFor(bool ignoreCase)
+    {
+        if (ignoreCase && GetStrength() > CharsetCollator.Secondary)
+        {
+            CompareModeDefault? i = caseInsensitive;
+            if (i is null)
+            {
+                i = new CompareModeDefault(GetName(), CharsetCollator.Secondary);
+                caseInsensitive = i;
+            }
+
+            return i.collator;
+        }
+
+        return collator;
     }
 
     private CharsetCollator.CharsetCollationKey GetKey(string a)

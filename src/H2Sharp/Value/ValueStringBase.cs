@@ -131,18 +131,18 @@ public abstract class ValueStringBase : Value
     /// </remarks>
     public sealed override bool GetBoolean()
     {
-        string s = value.Trim();
-        if (s.Equals("true", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("t", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("yes", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("y", StringComparison.OrdinalIgnoreCase))
+        ReadOnlySpan<char> s = value.AsSpan().Trim();
+        if (MemoryExtensions.Equals(s, "true", StringComparison.OrdinalIgnoreCase)
+            || MemoryExtensions.Equals(s, "t", StringComparison.OrdinalIgnoreCase)
+            || MemoryExtensions.Equals(s, "yes", StringComparison.OrdinalIgnoreCase)
+            || MemoryExtensions.Equals(s, "y", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
-        else if (s.Equals("false", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("f", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("no", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("n", StringComparison.OrdinalIgnoreCase))
+        else if (MemoryExtensions.Equals(s, "false", StringComparison.OrdinalIgnoreCase)
+            || MemoryExtensions.Equals(s, "f", StringComparison.OrdinalIgnoreCase)
+            || MemoryExtensions.Equals(s, "no", StringComparison.OrdinalIgnoreCase)
+            || MemoryExtensions.Equals(s, "n", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -164,17 +164,17 @@ public abstract class ValueStringBase : Value
     /// exactly the range Java's signed byte has, so it is the one to go through.
     /// </remarks>
     public sealed override sbyte GetByte()
-        => Parse(value, static (string s, NumberStyles st, IFormatProvider p, out sbyte r) => sbyte.TryParse(s, st, p, out r));
+        => Parse(value, static (ReadOnlySpan<char> s, NumberStyles st, IFormatProvider p, out sbyte r) => sbyte.TryParse(s, st, p, out r));
 
     /// <inheritdoc/>
     public sealed override short GetShort()
-        => Parse(value, static (string s, NumberStyles st, IFormatProvider p, out short r) => short.TryParse(s, st, p, out r));
+        => Parse(value, static (ReadOnlySpan<char> s, NumberStyles st, IFormatProvider p, out short r) => short.TryParse(s, st, p, out r));
 
     /// <inheritdoc/>
-    public sealed override int GetInt() => Parse(value, static (string s, NumberStyles st, IFormatProvider p, out int r) => int.TryParse(s, st, p, out r));
+    public sealed override int GetInt() => Parse(value, static (ReadOnlySpan<char> s, NumberStyles st, IFormatProvider p, out int r) => int.TryParse(s, st, p, out r));
 
     /// <inheritdoc/>
-    public sealed override long GetLong() => Parse(value, static (string s, NumberStyles st, IFormatProvider p, out long r) => long.TryParse(s, st, p, out r));
+    public sealed override long GetLong() => Parse(value, static (ReadOnlySpan<char> s, NumberStyles st, IFormatProvider p, out long r) => long.TryParse(s, st, p, out r));
 
     /// <inheritdoc/>
     // NumberStyles.Float rather than Integer, because a float may carry a point and an exponent
@@ -183,7 +183,7 @@ public abstract class ValueStringBase : Value
     public sealed override float GetFloat()
         => Parse(
             value,
-            static (string s, NumberStyles st, IFormatProvider p, out float r)
+            static (ReadOnlySpan<char> s, NumberStyles st, IFormatProvider p, out float r)
                 => float.TryParse(StripTypeSuffix(s), st, p, out r),
             NumberStyles.Float);
 
@@ -195,7 +195,11 @@ public abstract class ValueStringBase : Value
     /// remains is not empty. A bare <c>d</c> stays as it is so that it is still refused, which
     /// is what the reference does with it.
     /// </remarks>
-    private static string StripTypeSuffix(string text)
+    /// <summary>
+    /// The same suffix rule on a span: a slice, not a copy, and the span itself when there is
+    /// no suffix.
+    /// </summary>
+    private static ReadOnlySpan<char> StripTypeSuffix(ReadOnlySpan<char> text)
     {
         int last = text.Length - 1;
         if (last <= 0)
@@ -224,7 +228,7 @@ public abstract class ValueStringBase : Value
     public sealed override double GetDouble()
         => Parse(
             value,
-            static (string s, NumberStyles st, IFormatProvider p, out double r)
+            static (ReadOnlySpan<char> s, NumberStyles st, IFormatProvider p, out double r)
                 => double.TryParse(StripTypeSuffix(s), st, p, out r),
             NumberStyles.Float);
 
@@ -257,13 +261,13 @@ public abstract class ValueStringBase : Value
     /// error there and would be <c>false</c> here if the platform parser were asked first.
     /// </para>
     /// </remarks>
-    private static bool IsJavaNumber(string s)
+    private static bool IsJavaNumber(ReadOnlySpan<char> s)
     {
-        if (s.Equals("NaN", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("Infinity", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("-Infinity", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("\u221e", StringComparison.Ordinal)
-            || s.Equals("-\u221e", StringComparison.Ordinal))
+        if (MemoryExtensions.Equals(s, "NaN", StringComparison.OrdinalIgnoreCase)
+            || MemoryExtensions.Equals(s, "Infinity", StringComparison.OrdinalIgnoreCase)
+            || MemoryExtensions.Equals(s, "-Infinity", StringComparison.OrdinalIgnoreCase)
+            || MemoryExtensions.Equals(s, "\u221e", StringComparison.Ordinal)
+            || MemoryExtensions.Equals(s, "-\u221e", StringComparison.Ordinal))
         {
             return false;
         }
@@ -331,7 +335,7 @@ public abstract class ValueStringBase : Value
     /// <summary>
     /// Whether any digit of the text is nonzero, which is the sign of the number it spells.
     /// </summary>
-    private static bool HasNonZeroDigit(string s)
+    private static bool HasNonZeroDigit(ReadOnlySpan<char> s)
     {
         foreach (char c in s)
         {
@@ -351,7 +355,7 @@ public abstract class ValueStringBase : Value
     {
         try
         {
-            if (!tryParse(text.Trim(), style, CultureInfo.InvariantCulture, out T result))
+            if (!tryParse(text.AsSpan().Trim(), style, CultureInfo.InvariantCulture, out T result))
             {
                 throw new FormatException(text);
             }
@@ -369,5 +373,5 @@ public abstract class ValueStringBase : Value
     /// A parser that reports whether it succeeded, so that a refusal can carry the reference's
     /// own error shape: the conversion error with the offending text.
     /// </summary>
-    private delegate bool TryParse<T>(string text, NumberStyles style, IFormatProvider provider, out T result);
+    private delegate bool TryParse<T>(ReadOnlySpan<char> text, NumberStyles style, IFormatProvider provider, out T result);
 }

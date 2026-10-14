@@ -1175,8 +1175,11 @@ public static class DateTimeUtils
     /// </remarks>
     private static int ParseTimeZoneOffset(string s, int start)
     {
-        string zone = s[start..].Trim();
-        if (zone.Length == 0 || zone is "Z" or "z")
+        // No substring and no split: the zone is sliced where it stands, and at most two
+        // colons are ever looked for. A third colon is more than three parts, which is the
+        // shape the split refused.
+        ReadOnlySpan<char> zone = s.AsSpan(start).Trim();
+        if (zone.Length == 0 || (zone.Length == 1 && zone[0] is 'Z' or 'z'))
         {
             return 0;
         }
@@ -1187,16 +1190,21 @@ public static class DateTimeUtils
         }
 
         bool negative = zone[0] == '-';
-        string digits = zone[1..];
-        string[] parts = digits.Split(':');
-        if (parts.Length > 3)
+        ReadOnlySpan<char> digits = zone[1..];
+        int first = digits.IndexOf(':');
+        ReadOnlySpan<char> hoursPart = first < 0 ? digits : digits[..first];
+        ReadOnlySpan<char> rest = first < 0 ? [] : digits[(first + 1)..];
+        int second = rest.IndexOf(':');
+        ReadOnlySpan<char> minutesPart = second < 0 ? rest : rest[..second];
+        ReadOnlySpan<char> secondsPart = second < 0 ? [] : rest[(second + 1)..];
+        if (secondsPart.IndexOf(':') >= 0)
         {
             throw new ArgumentException(s, nameof(s));
         }
 
-        int hours = StringUtils.ParseUInt31(parts[0], 0, parts[0].Length);
-        int minutes = parts.Length > 1 ? StringUtils.ParseUInt31(parts[1], 0, parts[1].Length) : 0;
-        int seconds = parts.Length > 2 ? StringUtils.ParseUInt31(parts[2], 0, parts[2].Length) : 0;
+        int hours = StringUtils.ParseUInt31(hoursPart);
+        int minutes = first < 0 ? 0 : StringUtils.ParseUInt31(minutesPart);
+        int seconds = second < 0 ? 0 : StringUtils.ParseUInt31(secondsPart);
         if (minutes > 59 || seconds > 59)
         {
             throw new ArgumentException(s, nameof(s));

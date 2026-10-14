@@ -7,6 +7,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System;
+using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
@@ -1493,7 +1494,7 @@ public sealed class Tokenizer
 
     private static int ReadBinaryString(string sql, int tokenStart, int end, int i, List<Token> tokens)
     {
-        MemoryStream result = new();
+        ArrayBufferWriter<byte> result = new();
         int stringEnd;
         do
         {
@@ -1503,12 +1504,12 @@ public sealed class Tokenizer
                 throw DbException.GetSyntaxError(sql, tokenStart);
             }
 
-            _ = StringUtils.ConvertHexWithSpacesToBytes(result, sql, i, stringEnd);
+            StringUtils.ConvertHexWithSpacesToBytes(result, sql, i, stringEnd);
             i = SkipWhitespace(sql, end, stringEnd + 1);
         }
         while (i <= end && sql[i] == '\'');
 
-        tokens.Add(new Token.BinaryStringToken(tokenStart, result.ToArray()));
+        tokens.Add(new Token.BinaryStringToken(tokenStart, result.WrittenSpan.ToArray()));
         return i;
     }
 
@@ -1637,7 +1638,7 @@ public sealed class Tokenizer
             throw DbException.Get(ErrorCode.HexStringWrong1, sql[start..(i + 1)]);
         }
 
-        tokens.Add(new Token.BinaryStringToken(start, StringUtils.ConvertHexToBytes(sql[start..i])));
+        tokens.Add(new Token.BinaryStringToken(start, StringUtils.ConvertHexToBytes(sql.AsSpan(start, i - start))));
         return i;
     }
 
@@ -1957,10 +1958,13 @@ public sealed class Tokenizer
 
     private static BigDecimal ReadBigDecimal(string sql, int tokenStart, int i, bool withUnderscore)
     {
-        string text = ReadAndRemoveUnderscores(sql, tokenStart, i, withUnderscore);
         try
         {
-            return BigDecimal.Parse(text);
+            // The common literal has no underscores, so it is parsed where it stands. The
+            // message string is only read when the parse throws, on a path that throws anyway.
+            return withUnderscore
+                ? BigDecimal.Parse(ReadAndRemoveUnderscores(sql, tokenStart, i, true))
+                : BigDecimal.Parse(sql.AsSpan(tokenStart, i - tokenStart), sql);
         }
         catch (FormatException)
         {
@@ -1983,8 +1987,9 @@ public sealed class Tokenizer
             throw DbException.GetSyntaxError(sql, tokenStart, "Hex number");
         }
 
-        BigInteger bigInteger = ParseInteger(
-            ReadAndRemoveUnderscores(sql, start, endIndex, withUnderscore), radix);
+        BigInteger bigInteger = withUnderscore
+            ? ParseInteger(ReadAndRemoveUnderscores(sql, start, endIndex, true), radix)
+            : ParseInteger(sql.AsSpan(start, endIndex - start), radix);
         Token token;
         if (bigInteger.CompareTo(ValueBigint.MaxBi) > 0)
         {
@@ -2010,7 +2015,7 @@ public sealed class Tokenizer
     /// with an optional leading sign, and anything else refuses the statement the way the
     /// constructor's <c>NumberFormatException</c> refuses it there.
     /// </remarks>
-    private static BigInteger ParseInteger(string text, int radix)
+    private static BigInteger ParseInteger(ReadOnlySpan<char> text, int radix)
     {
         if (radix == 10)
         {
