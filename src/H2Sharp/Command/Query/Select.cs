@@ -64,8 +64,6 @@ public sealed class Select : Query
 
     private List<Expression>? windows;
 
-    private List<QueryOrderBy>? orderBy;
-
     private bool isOrderByTop;
 
     private long limit = -1;
@@ -190,6 +188,39 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
+    /// The order half of the reference's method: the order list becomes the sort, and the
+    /// sort drops what optimization proved constant. The expression half waits for the
+    /// mode machinery: the reference folds the select list through
+    /// <c>optimizeExpressionsAndPreserveAliases</c> in two of its modes and through a plain
+    /// optimize in the rest, and only the plain path is taken here. The condition is
+    /// optimized as there. The quick aggregate shortcut and the expression array snapshot
+    /// wait for their own machinery.
+    /// </remarks>
+    public override void PrepareExpressions()
+    {
+        if (orderList is not null)
+        {
+            PrepareOrder(orderList, expressions.Length);
+        }
+
+        for (int i = 0; i < expressions.Length; i++)
+        {
+            expressions[i] = expressions[i].Optimize(session);
+        }
+
+        if (sort is not null)
+        {
+            CleanupOrder(expressions);
+        }
+
+        if (condition is not null)
+        {
+            condition = condition.OptimizeCondition(session);
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Flat queries only: grouped, sorted, distinct, windowed and locking shapes refuse below,
     /// each waiting for its own machinery. What runs here is the reference's flat path — skip
     /// the offset, fill the result, trim it — with lazy execution left out: every result here
@@ -197,10 +228,10 @@ public sealed class Select : Query
     /// </remarks>
     public override ResultInterface Run(long limit)
     {
-        if (groupBy is not null || windows is not null || orderBy is not null || distinct
+        if (groupBy is not null || windows is not null || distinct
             || isDistinct || forUpdate is not null)
         {
-            throw new TODOException("Select.query: grouped, sorted, distinct, windowed and locking queries are not ported");
+            throw new TODOException("Select.query: grouped, distinct, windowed and locking queries are not ported");
         }
 
         long offset = this.offset;
@@ -210,11 +241,29 @@ public sealed class Select : Query
         topTableFilter!.StartQuery(session);
         topTableFilter.Reset();
         topTableFilter.Lock(session);
-        QueryFlat(columnCount, result, offset, fetch, withTies, QuickOffset.Yes);
-        offset = 0;
+        QuickOffset quickOffset = QuickOffset.Yes;
+        if (sort is not null && indexSortedColumns != Indexes.IndexSort.FullySorted)
+        {
+            result.SetSortOrder(sort);
+            // PARTIAL waits for index-sort resolution: without a sorted index the offset cannot
+            // be skipped up front, the result trims it after the sort.
+            quickOffset = QuickOffset.No;
+        }
+
+        QueryFlat(columnCount, result, offset, fetch, withTies, quickOffset);
+        if (quickOffset == QuickOffset.Yes)
+        {
+            offset = 0;
+        }
+
         if (fetch >= 0)
         {
             result.SetLimit(fetch);
+        }
+
+        if (offset != 0)
+        {
+            result.SetOffset(offset);
         }
 
         result.Done();
@@ -483,10 +532,6 @@ public sealed class Select : Query
     /// <summary>Sets the window functions.</summary>
     /// <param name="windows">the expressions</param>
     public void SetWindows(List<Expression>? windows) => this.windows = windows;
-
-    /// <summary>Sets the order of the rows.</summary>
-    /// <param name="orderBy">the order</param>
-    public void SetOrderBy(List<QueryOrderBy>? orderBy) => this.orderBy = orderBy;
 
     /// <summary>Sets whether this is ORDER BY ... TOP.</summary>
     /// <param name="isOrderByTop">true for ORDER BY ... TOP</param>

@@ -26,6 +26,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -316,10 +317,13 @@ public static class Utils
         if (highInclusive > 0 && toExclusive > fromInclusive)
         {
             PartialQuickSort(array, 0, highInclusive, comp, fromInclusive, toExclusive - 1);
-            // An index and a length: Java sorts from one index to another, and passing the end
-            // as a length sorted past it. .NET has no ranged sort taking a Comparison, so the
-            // wrapper stays; the range is what got fixed.
-            Array.Sort(array, fromInclusive, toExclusive - fromInclusive, Comparer<X>.Create(comp));
+            // Java sorts the window with a stable sort and the order of tied rows is observed.
+            // .NET's ranged sort is introspective, so the window goes through the stable LINQ
+            // sort and back.
+            X[] ordered = array[fromInclusive..toExclusive]
+                .OrderBy(static x => x, Comparer<X>.Create(comp))
+                .ToArray();
+            Array.Copy(ordered, 0, array, fromInclusive, ordered.Length);
         }
     }
 

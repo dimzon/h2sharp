@@ -5,65 +5,45 @@
  * Ported from org.h2.command.query.QueryOrderBy.
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
- *
- * One item of an ORDER BY clause: what to order by, and how.
- *
- * It is kept as a list rather than folded into the sort order, because the clause has to be
- * printed back out — a prepared statement's SQL is the text the caller wrote — and because
- * ORDER BY may name a column of the select list by its alias, which only the query knows how to
- * resolve. Both halves are the reference's and neither is answered here yet.
  */
 using System.Text;
 using H2Sharp.Expressions;
+using H2Sharp.Result;
 
 namespace H2Sharp.Command.Query;
 
 /// <summary>
-/// One item of an ORDER BY clause.
+/// Describes one element of the ORDER BY clause of a query.
 /// </summary>
 public sealed class QueryOrderBy
 {
-    private readonly Expression expression;
-
-    private readonly bool isDesc;
+    /// <summary>
+    /// The order by expression.
+    /// </summary>
+    public Expression? expression;
 
     /// <summary>
-    /// Creates an item.
+    /// The column index expression. This can be a column index number (1 meaning
+    /// the first column of the select list) or a parameter (the parameter is a
+    /// number representing the column index number).
     /// </summary>
-    /// <param name="expression">what to order by</param>
-    /// <param name="isDesc">whether descending</param>
-    public QueryOrderBy(Expression expression, bool isDesc)
-    {
-        this.expression = expression;
-        this.isDesc = isDesc;
-    }
+    public Expression? columnIndexExpr;
 
     /// <summary>
-    /// Gets what to order by.
+    /// Sort type for this column.
     /// </summary>
-    /// <returns>the expression</returns>
-    public Expression GetExpression()
-    {
-        return expression;
-    }
+    public int sortType;
 
     /// <summary>
-    /// Whether the order is descending.
+    /// Appends the order by expression to the specified builder.
     /// </summary>
-    /// <returns>true if it is</returns>
-    public bool IsDesc()
-    {
-        return isDesc;
-    }
-
-    /// <summary>
-    /// Appends the SQL of this item.
-    /// </summary>
-    /// <param name="builder">the builder</param>
+    /// <param name="builder">the string builder</param>
+    /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the builder</returns>
-    public StringBuilder GetSql(StringBuilder builder)
+    public StringBuilder GetSql(StringBuilder builder, int sqlFlags)
     {
-        _ = expression.GetSql(builder, 0);
-        return isDesc ? _ = builder.Append(" DESC") : builder;
+        _ = (expression ?? columnIndexExpr)!.GetUnenclosedSql(builder, sqlFlags);
+        SortOrder.TypeToString(builder, sortType);
+        return builder;
     }
 }

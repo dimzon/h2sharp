@@ -31,6 +31,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
@@ -262,7 +263,16 @@ public sealed class SortOrder
     /// <param name="rows">the list of rows</param>
     public void Sort(List<Value?[]> rows)
     {
-        rows.Sort(comparison ??= Compare);
+        // Java's List.sort is stable and the reference relies on it: tied rows keep the order
+        // they were read in, which is what a limit then trims. List.Sort is introspective and
+        // makes no such promise, so the order goes through the stable LINQ sort instead.
+        Value?[][] ordered = rows
+            .OrderBy(static row => row, Comparer<Value?[]>.Create(comparison ??= Compare))
+            .ToArray();
+        for (int i = 0; i < ordered.Length; i++)
+        {
+            rows[i] = ordered[i];
+        }
     }
 
     /// <summary>
@@ -330,7 +340,7 @@ public sealed class SortOrder
             return null;
         }
 
-        Expression? expr = orderList[index].GetExpression();
+        Expression? expr = orderList[index].expression;
         expr = expr?.GetNonAliasExpression();
         if (expr is null || expr.IsConstant())
         {

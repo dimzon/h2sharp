@@ -18,11 +18,15 @@
  * the data change statements are written against.
  */
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
+using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
+using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Tables;
+using H2Sharp.Values;
 
 namespace H2Sharp.Command.Query;
 
@@ -151,6 +155,148 @@ public abstract class Query : Prepared
     /// <param name="limit">the limit</param>
     /// <returns>the rows</returns>
     public abstract override ResultInterface Run(long limit);
+
+    /// <summary>
+    /// Prepares the expressions of this query.
+    /// </summary>
+    public abstract void PrepareExpressions();
+
+    /// <summary>
+    /// The order by list, or null when the query has none. The parser fills it; preparing
+    /// the expressions turns it into <see cref="sort"/> and drops it.
+    /// </summary>
+    internal List<QueryOrderBy>? orderList;
+
+    /// <summary>
+    /// Set the order by list.
+    /// </summary>
+    /// <param name="order">the order by list</param>
+    public void SetOrder(List<QueryOrderBy> order) => orderList = order;
+
+    /// <summary>
+    /// Create a <see cref="SortOrder"/> object given the list of <see cref="QueryOrderBy"/>
+    /// objects.
+    /// </summary>
+    /// <param name="orderList">a list of order by elements</param>
+    /// <param name="expressionCount">the number of columns in the query</param>
+    internal void PrepareOrder(List<QueryOrderBy> orderList, int expressionCount)
+    {
+        int size = orderList.Count;
+        int[] index = new int[size];
+        int[] sortType = new int[size];
+        for (int i = 0; i < size; i++)
+        {
+            QueryOrderBy o = orderList[i];
+            int idx;
+            bool reverse = false;
+            Value v = o.columnIndexExpr!.GetValue(null!);
+            if (v == ValueNull.Instance)
+            {
+                // parameter not yet set - order by first column
+                idx = 0;
+            }
+            else
+            {
+                idx = v.GetInt();
+                if (idx < 0)
+                {
+                    reverse = true;
+                    idx = -idx;
+                }
+
+                idx -= 1;
+                if (idx < 0 || idx >= expressionCount)
+                {
+                    throw DbException.Get(
+                        ErrorCode.OrderByNotInResult,
+                        (idx + 1).ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            index[i] = idx;
+            int type = o.sortType;
+            if (reverse)
+            {
+                // TODO NULLS FIRST / LAST should be inverted too? (carried over from the reference).
+                type ^= SortOrder.Descending;
+            }
+
+            sortType[i] = type;
+        }
+
+        sort = new SortOrder(GetSession(), index, sortType, orderList);
+        this.orderList = null;
+    }
+
+    /// <summary>
+    /// Removes constant expressions from the sort order.
+    /// Some constants are detected only after optimization of expressions, this
+    /// method removes them from the sort order only. They are currently
+    /// preserved in the list of expressions.
+    /// </summary>
+    /// <remarks>
+    /// The expressions arrive as a parameter rather than a field: this class does not own
+    /// the select list, the select does.
+    /// </remarks>
+    /// <param name="expressions">the columns of the query</param>
+    internal void CleanupOrder(Expression[] expressions)
+    {
+        int[] sourceIndexes = sort!.GetQueryColumnIndexes();
+        int count = sourceIndexes.Length;
+        // The reference keeps these two in a BitSet; two flag arrays say the same thing.
+        bool[] deduplication = new bool[expressions.Length];
+        bool[] retain = new bool[count];
+        for (int i = 0; i < count; i++)
+        {
+            int sourceIndex = sourceIndexes[i];
+            if (!expressions[sourceIndex].IsConstant() && !deduplication[sourceIndex])
+            {
+                // duplicate expression, remove it from the sort order
+                deduplication[sourceIndex] = true;
+                retain[i] = true;
+            }
+        }
+
+        int size = 0;
+        foreach (bool kept in retain)
+        {
+            if (kept)
+            {
+                size++;
+            }
+        }
+
+        if (size == count)
+        {
+            return;
+        }
+
+        if (size == 0)
+        {
+            sort = null;
+            return;
+        }
+
+        int[] indexes = new int[size];
+        int[] sortTypes = new int[size];
+        int[] sourceSortTypes = sort.GetSortTypes();
+        List<QueryOrderBy> reorderList = sort.GetOrderList()!;
+        for (int i = 0, j = 0; i < count; i++)
+        {
+            if (retain[i])
+            {
+                indexes[j] = sourceIndexes[i];
+                sortTypes[j] = sourceSortTypes[i];
+                j++;
+            }
+            else
+            {
+                reorderList.RemoveAt(j);
+            }
+        }
+
+        sort = new SortOrder(GetSession(), indexes, sortTypes, reorderList);
+    }
 
     /// <summary>
     /// The sort order of ORDER BY, or null when the query has none.
