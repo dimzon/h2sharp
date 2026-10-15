@@ -282,7 +282,8 @@ public sealed class ValueJson : ValueBytesBase
     /// <returns>JSON value</returns>
     public static ValueJson Get(string @string)
     {
-        using MemoryStream stream = new(@string.Length + 2);
+        // Sized exactly: escapes would overflow a length-plus-two guess and grow the stream.
+        using MemoryStream stream = new(JsonByteArrayTarget.EncodedLength(@string));
         return new ValueJson(JsonByteArrayTarget.EncodeString(stream, @string).ToArray());
     }
 

@@ -255,12 +255,17 @@ public static class IOUtils
         {
             if (length <= 0)
             {
-                length = int.MaxValue;
+                using MemoryStream outStream = new(Constants.IoBufferSize);
+                _ = Copy(input, outStream);
+                return outStream.ToArray();
             }
 
-            using MemoryStream outStream = new((int)Math.Min(Constants.IoBufferSize, length));
-            _ = Copy(input, outStream, length);
-            return outStream.ToArray();
+            // Exact size: the length is an upper bound the stream usually fills, so one
+            // allocation does it. A short stream still ends correctly, through one more copy
+            // on a path that means the input was malformed anyway.
+            byte[] result = new byte[length];
+            int copied = ReadFully(input, result, length);
+            return copied == length ? result : result[..copied];
         }
         finally
         {

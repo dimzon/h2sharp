@@ -170,6 +170,68 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
     }
 
     /// <summary>
+    /// How many bytes <see cref="EncodeString"/> writes for this string, quotes included.
+    /// </summary>
+    /// <remarks>
+    /// Our own helper, not the reference's: it sizes the destination exactly so the stream
+    /// never grows, and a test pins it against the encoder's output length, so the two
+    /// cannot drift apart unnoticed.
+    /// </remarks>
+    /// <param name="s">the string to encode</param>
+    /// <returns>the encoded length in bytes</returns>
+    /// <exception cref="H2SharpException">the string contains an unpaired surrogate</exception>
+    internal static int EncodedLength(string s)
+    {
+        int length = 2;
+        for (int i = 0, end = s.Length; i < end; i++)
+        {
+            char c = s[i];
+            switch (c)
+            {
+                case '\b':
+                case '\t':
+                case '\f':
+                case '\n':
+                case '\r':
+                case '"':
+                case '\\':
+                    length += 2;
+                    break;
+                default:
+                    if (c < ' ')
+                    {
+                        length += 6;
+                    }
+                    else if (c < 0x80)
+                    {
+                        length += 1;
+                    }
+                    else if (c < 0x800)
+                    {
+                        length += 2;
+                    }
+                    else if (!char.IsSurrogate(c))
+                    {
+                        length += 3;
+                    }
+                    else
+                    {
+                        if (!char.IsHighSurrogate(c) || ++i >= end || !char.IsLowSurrogate(s[i]))
+                        {
+                            throw DbException.Get(ErrorCode.DataConversionError1, Truncate(s));
+                        }
+
+                        length += 4;
+                    }
+
+                    break;
+            }
+        }
+
+        return length;
+    }
+
+    /// <summary>
     /// A long string does not fit in an error message, and the reference cuts it. The cut is worth
     /// keeping: without it the message would carry the whole string, which for a JSON document can
     /// be megabytes.

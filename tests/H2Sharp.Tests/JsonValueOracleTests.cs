@@ -160,6 +160,38 @@ new("string", "🎉"),
     }
 
     /// <summary>
+    /// The precomputed encoded length matches what the encoder actually writes, byte for
+    /// byte count: the capacity is only a performance hint (the stream would grow past a
+    /// wrong one), so this pins the two together instead of trusting the arithmetic.
+    /// </summary>
+    [Fact]
+    public void EncodedLengthMatchesTheEncoder()
+    {
+        string[] corpus =
+        [
+            string.Empty,
+            "a",
+            "plain ascii text",
+            "\"quoted\"",
+            "back\\slash",
+            "tab\there",
+            "line\nbreak",
+            "a\x00b\x1f",
+            "привет",
+            "€uro",
+            "𝄞clef",
+            "mix \"\\\b\f\n\r\t\x01" + "€" + "𝄞",
+            new string('x', 1000),
+        ];
+        foreach (string s in corpus)
+        {
+            using System.IO.MemoryStream stream = new();
+            int written = JsonByteArrayTarget.EncodeString(stream, s).ToArray().Length;
+            Assert.Equal(written, JsonByteArrayTarget.EncodedLength(s));
+        }
+    }
+
+    /// <summary>
     /// An unpaired surrogate cannot be written as UTF-8, and the choice is to fail rather than
     /// substitute: a substituted character would corrupt a stored value with nothing to show for it.
     /// </summary>
