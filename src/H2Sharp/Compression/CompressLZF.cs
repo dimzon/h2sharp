@@ -389,6 +389,12 @@ public sealed class CompressLZF : Compressor
         ExpandCore(new ReadOnlySpan<byte>(@in, inPos, @in.Length - inPos), new Span<byte>(@out, outPos, outLen), outLen);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Explicit, because the static span form below already owns this signature.
+    /// </remarks>
+    void Compressor.Expand(ReadOnlySpan<byte> input, Span<byte> output) => Expand(input, output);
+
     /// <summary>
     /// Expands into a window of bytes, which is what the reference expands into a
     /// <c>ByteBuffer</c>.

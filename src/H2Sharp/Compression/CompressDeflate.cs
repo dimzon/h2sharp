@@ -113,35 +113,42 @@ public class CompressDeflate : Compressor
 
     /// <inheritdoc/>
     public void Expand(byte[] input, int inPos, int inLen, byte[] output, int outPos, int outLen)
+        => Expand(input.AsSpan(inPos, inLen), output.AsSpan(outPos, outLen));
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The deflate stream needs a <see cref="Stream"/>, which cannot wrap a span, so the
+    /// input is copied once here. The copy is the compressed bytes — the small side —
+    /// where the page-sized copy this replaces stood.
+    /// </remarks>
+    public void Expand(ReadOnlySpan<byte> input, Span<byte> output)
     {
         try
         {
-            if (inLen < 6 || input[inPos] != 0x78 || (input[inPos] * 256 + input[inPos + 1]) % 31 != 0)
+            if (input.Length < 6 || input[0] != 0x78 || (input[0] * 256 + input[1]) % 31 != 0)
             {
                 throw new InvalidDataException("Not a zlib stream");
             }
 
-            using (var buffer = new MemoryStream(input, inPos + 2, inLen - 6, false))
+            byte[] deflated = input.Slice(2, input.Length - 6).ToArray();
+            using (var buffer = new MemoryStream(deflated, false))
             using (var inflate = new DeflateStream(buffer, CompressionMode.Decompress))
             {
                 int total = 0;
                 int read;
-                while (total < outLen && (read = inflate.Read(output, outPos + total, outLen - total)) > 0)
+                while (total < output.Length && (read = inflate.Read(output.Slice(total))) > 0)
                 {
                     total += read;
                 }
 
-                if (total != outLen)
+                if (total != output.Length)
                 {
-                    throw new InvalidDataException(total + " " + outLen);
+                    throw new InvalidDataException(total + " " + output.Length);
                 }
             }
 
-            uint expected = (uint)((input[inPos + inLen - 4] << 24)
-                | (input[inPos + inLen - 3] << 16)
-                | (input[inPos + inLen - 2] << 8)
-                | input[inPos + inLen - 1]);
-            if (expected != Adler32(output, outPos, outLen))
+            uint expected = (uint)((input[^4] << 24) | (input[^3] << 16) | (input[^2] << 8) | input[^1]);
+            if (expected != Adler32(output))
             {
                 throw new InvalidDataException("Adler-32 mismatch");
             }
@@ -158,7 +165,7 @@ public class CompressDeflate : Compressor
             : level >= 7 ? CompressionLevel.SmallestSize
             : CompressionLevel.Optimal;
 
-    private static uint Adler32(byte[] data, int pos, int len)
+    private static uint Adler32(ReadOnlySpan<byte> data)
     {
         // Batched as zlib does: 5552 is the largest block whose running sums cannot overflow
         // 32 bits, so the modulo runs once per block instead of twice per byte, with the same
@@ -167,6 +174,8 @@ public class CompressDeflate : Compressor
         const int nmax = 5552;
         uint a = 1;
         uint b = 0;
+        int len = data.Length;
+        int pos = 0;
         while (len > 0)
         {
             int k = len < nmax ? len : nmax;

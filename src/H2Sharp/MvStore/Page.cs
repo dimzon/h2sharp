@@ -530,7 +530,7 @@ public abstract class Page<K, V> : IPage
             int lenAdd = DataUtils.ReadVarInt(buffer, ref position);
             int compLen = end - position;
             byte[] expanded = new byte[compLen + lenAdd];
-            compressor.Expand(buffer.Slice(position, compLen).ToArray(), 0, compLen, expanded, 0, expanded.Length);
+            compressor.Expand(buffer.Slice(position, compLen), expanded);
             active = expanded;
             position = 0;
             end = expanded.Length;

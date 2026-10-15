@@ -3,6 +3,8 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
+using System;
+
 namespace H2Sharp.Compression;
 
 /// <summary>
@@ -70,6 +72,19 @@ public interface Compressor
     /// <param name="outPos">where to start writing</param>
     /// <param name="outLen">how many bytes the answer has</param>
     void Expand(byte[] @in, int inPos, int inLen, byte[] @out, int outPos, int outLen);
+
+    /// <summary>
+    /// Expands compressed bytes into a span.
+    /// </summary>
+    /// <remarks>
+    /// The spans are exact: the input holds the compressed bytes and nothing else, the
+    /// output is the answer at full length. The array form stays for callers that own
+    /// arrays; this one is for callers holding a view, like a page over a chunk image,
+    /// where materializing the input would copy a whole page to feed it back.
+    /// </remarks>
+    /// <param name="input">the compressed data</param>
+    /// <param name="output">where the answer goes</param>
+    void Expand(ReadOnlySpan<byte> input, Span<byte> output);
 
     /// <summary>
     /// Sets the options of the algorithm, which may trade compression for speed.
