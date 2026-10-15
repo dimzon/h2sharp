@@ -252,10 +252,10 @@ public abstract partial class Value
     /// </summary>
     /// <remarks>
     /// Java sorts NaN above every number and negative zero below positive zero; .NET does the
-    /// opposite on both. The same rule lives in <see cref="ValueDouble"/>, where it is the
-    /// whole of that type's comparison, and it is repeated here because this path compares two
-    /// values that may be of different types and neither of them has to be a double. A shared
-    /// helper would be nicer; it is one screenful of logic and both places say why.
+    /// opposite on both. The same rule is the whole of <c>ValueDouble</c>'s own comparison,
+    /// which calls this rather than keeping a second copy: the copy that used to live there
+    /// answered 0.0 as equal to every positive number, and the differential corpus never
+    /// compared a zero against a nonzero, so nothing caught it.
     /// </remarks>
     /// <param name="a">the first value</param>
     /// <param name="b">the second value</param>

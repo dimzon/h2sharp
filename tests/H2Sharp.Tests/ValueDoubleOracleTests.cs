@@ -125,6 +125,56 @@ public sealed class ValueDoubleOracleTests
     }
 
     /// <summary>
+    /// Zero against the rest, both orders: the shared comparison answers what the reference
+    /// answers, including 0.0 below every positive number. The main corpus only ever compares
+    /// a value with itself, so the private copy that used to live in <c>ValueDouble</c>
+    /// answered 0.0 as equal to 5.0 and nothing caught it.
+    /// </summary>
+    /// <remarks>
+    /// Both sides compare through the engine values rather than raw doubles: the reference
+    /// folds -0.0 into the same ZERO singleton this port keeps, so a raw
+    /// <c>Double.compare(0.0, -0.0)</c> answers a question neither engine is asked.
+    /// </remarks>
+    [JavaOracleFact]
+    public void ZeroComparesAgainstTheRest()
+    {
+        string[] corpus = ["0.0", "-0.0", "-1.0", "0.5", "1.0", "NaN", "Infinity", "-Infinity"];
+        string body = """
+            org.h2.value.CompareMode mode = org.h2.value.CompareMode.getInstance(null, 0);
+            for (String a : inputs) {
+                for (String b : inputs) {
+                    org.h2.value.ValueDouble va =
+                        org.h2.value.ValueDouble.get(Double.parseDouble(a));
+                    org.h2.value.ValueDouble vb =
+                        org.h2.value.ValueDouble.get(Double.parseDouble(b));
+                    System.out.println(va.compareTo(vb, null, mode));
+                }
+            }
+            """;
+
+        List<string> java = OracleRunner.Run(
+            corpus,
+            body,
+            numbers: null,
+            extraJavaArgs: ["-Duser.language=en", "-Duser.country=", "-Duser.variant="],
+            packageName: null);
+
+        CompareMode mode = CompareMode.GetInstance(null, 0);
+        List<string> csharp = [];
+        foreach (string a in corpus)
+        {
+            foreach (string b in corpus)
+            {
+                csharp.Add(ValueDouble.Get(double.Parse(a, CultureInfo.InvariantCulture))
+                    .CompareTo(ValueDouble.Get(double.Parse(b, CultureInfo.InvariantCulture)), null, mode)
+                    .ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        Assert.Equal(java, csharp);
+    }
+
+    /// <summary>
     /// Whether the value is subnormal, which is the one range whose rendering the reference
     /// does not produce by the shortest-round-trip rule.
     /// </summary>

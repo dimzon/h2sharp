@@ -107,7 +107,7 @@ public sealed class JsonStringTarget : JsonTarget<string>
 
     private readonly StringBuilder builder;
 
-    private readonly List<byte> stack;
+    private readonly ByteStack stack = new();
 
     private readonly bool asciiPrintableOnly;
 
@@ -147,7 +147,6 @@ public sealed class JsonStringTarget : JsonTarget<string>
     public JsonStringTarget(bool asciiPrintableOnly, int initialCapacity)
     {
         builder = new StringBuilder(initialCapacity > 0 ? initialCapacity : DefaultCapacity);
-        stack = [];
         this.asciiPrintableOnly = asciiPrintableOnly;
     }
 
@@ -156,14 +155,14 @@ public sealed class JsonStringTarget : JsonTarget<string>
     {
         BeforeValue();
         afterName = false;
-        stack.Add(Object);
+        stack.Push(Object);
         _ = builder.Append('{');
     }
 
     /// <inheritdoc/>
     public override void EndObject()
     {
-        if (afterName || Pop() != Object)
+        if (afterName || stack.Pop() != Object)
         {
             throw new InvalidOperationException();
         }
@@ -177,14 +176,14 @@ public sealed class JsonStringTarget : JsonTarget<string>
     {
         BeforeValue();
         afterName = false;
-        stack.Add(Array);
+        stack.Push(Array);
         _ = builder.Append('[');
     }
 
     /// <inheritdoc/>
     public override void EndArray()
     {
-        if (Pop() != Array)
+        if (stack.Pop() != Array)
         {
             throw new InvalidOperationException();
         }
@@ -196,7 +195,7 @@ public sealed class JsonStringTarget : JsonTarget<string>
     /// <inheritdoc/>
     public override void Member(string name)
     {
-        if (afterName || Peek() != Object)
+        if (afterName || stack.Peek(0) != Object)
         {
             throw new InvalidOperationException();
         }
@@ -261,7 +260,7 @@ public sealed class JsonStringTarget : JsonTarget<string>
 
     private void BeforeValue()
     {
-        if (!afterName && Peek() == Object)
+        if (!afterName && stack.Peek(0) == Object)
         {
             // Inside an object and not after a name: two values with no name between them.
             throw new InvalidOperationException();
@@ -269,7 +268,7 @@ public sealed class JsonStringTarget : JsonTarget<string>
 
         if (needSeparator)
         {
-            if (stack.Count == 0)
+            if (stack.IsEmpty())
             {
                 throw new InvalidOperationException();
             }
@@ -286,34 +285,11 @@ public sealed class JsonStringTarget : JsonTarget<string>
     }
 
     /// <inheritdoc/>
-    public override bool IsPropertyExpected() => !afterName && Peek() == Object;
+    public override bool IsPropertyExpected() => !afterName && stack.Peek(0) == Object;
 
     /// <inheritdoc/>
     public override bool IsValueSeparatorExpected() => needSeparator;
 
     /// <inheritdoc/>
     protected override string? GetTypedResult() => builder.ToString();
-
-    /// <summary>
-    /// The innermost open object or array, or zero when there is none.
-    /// </summary>
-    /// <returns>the marker</returns>
-    /// <remarks>
-    /// The reference's <c>peek(-1)</c> returns zero for an empty stack rather than failing, and
-    /// every caller wants that: "am I inside an object" is false at the top level, which is a
-    /// question rather than a mistake.
-    /// </remarks>
-    private byte Peek() => stack.Count == 0 ? (byte)0 : stack[^1];
-
-    private byte Pop()
-    {
-        if (stack.Count == 0)
-        {
-            throw new InvalidOperationException();
-        }
-
-        byte last = stack[^1];
-        stack.RemoveAt(stack.Count - 1);
-        return last;
-    }
 }

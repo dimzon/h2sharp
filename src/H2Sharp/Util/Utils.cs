@@ -17,7 +17,7 @@
  *     H2Sharp has no equivalent entry points.
  *   - H2_THREAD_GROUP / createBackgroundThread / isBackgroundThread:
  *     System.Threading.Thread lacks an addressable ThreadGroup. H2Sharp uses
- *     dedicated background Task instances; see H2Sharp.Util.BackgroundTaskQueue.
+ *     dedicated background threads; see <see cref="Utils.BackgroundExecutor"/>.
  *   - ClassFactory interface: OSGi-only.
  *
  * ThreadPoolExecutor-based helpers are ported to ThreadPoolExecutor equivalents.
@@ -318,10 +318,8 @@ public static class Utils
             PartialQuickSort(array, 0, highInclusive, comp, fromInclusive, toExclusive - 1);
             // Java sorts the window with a stable sort and the order of tied rows is observed.
             // .NET's ranged sort is introspective, so the window goes through the stable
-            // merge below and back.
-            X[] ordered = array[fromInclusive..toExclusive];
-            StableSort(ordered, comp);
-            Array.Copy(ordered, 0, array, fromInclusive, ordered.Length);
+            // merge below, in place: no copy out and back.
+            StableSort(array, fromInclusive, toExclusive, comp);
         }
     }
 
@@ -338,52 +336,72 @@ public static class Utils
     /// <param name="array">the array, sorted in place</param>
     /// <param name="comp">the comparer</param>
     public static void StableSort<X>(X[] array, Comparison<X> comp)
+        => StableSort(array, 0, array.Length, comp);
+
+    /// <summary>
+    /// Sorts a window of an array stably, leaving everything outside the window where it was.
+    /// </summary>
+    /// <remarks>
+    /// The same bottom-up merge as the whole-array sort, with the two buffers ping-ponging
+    /// between the array window and an auxiliary the size of the window. An even number of
+    /// passes lands back in the array with no copy at all; an odd number copies the window
+    /// once, which is the only copy this method ever makes.
+    /// </remarks>
+    /// <typeparam name="X">the type of elements</typeparam>
+    /// <param name="array">the array holding the window</param>
+    /// <param name="fromInclusive">the start of the window, inclusive</param>
+    /// <param name="toExclusive">the end of the window, exclusive</param>
+    /// <param name="comp">the comparer</param>
+    public static void StableSort<X>(X[] array, int fromInclusive, int toExclusive, Comparison<X> comp)
     {
-        int n = array.Length;
-        if (n < 2)
+        int length = toExclusive - fromInclusive;
+        if (length < 2)
         {
             return;
         }
 
-        X[] buffer = new X[n];
+        X[] aux = new X[length];
         X[] src = array;
-        X[] dst = buffer;
-        for (int width = 1; width < n; width *= 2)
+        int srcBase = fromInclusive;
+        X[] dst = aux;
+        int dstBase = 0;
+        for (int width = 1; width < length; width *= 2)
         {
-            for (int lo = 0; lo < n; lo += 2 * width)
+            for (int lo = 0; lo < length; lo += 2 * width)
             {
-                int mid = Math.Min(lo + width, n);
-                int hi = Math.Min(lo + 2 * width, n);
+                int mid = Math.Min(lo + width, length);
+                int hi = Math.Min(lo + 2 * width, length);
                 int i = lo, j = mid, k = lo;
                 while (i < mid && j < hi)
                 {
-                    if (comp(src[j], src[i]) < 0)
+                    if (comp(src[srcBase + j], src[srcBase + i]) < 0)
                     {
-                        dst[k++] = src[j++];
+                        dst[dstBase + k++] = src[srcBase + j++];
                     }
                     else
                     {
-                        dst[k++] = src[i++];
+                        dst[dstBase + k++] = src[srcBase + i++];
                     }
                 }
 
                 while (i < mid)
                 {
-                    dst[k++] = src[i++];
+                    dst[dstBase + k++] = src[srcBase + i++];
                 }
 
                 while (j < hi)
                 {
-                    dst[k++] = src[j++];
+                    dst[dstBase + k++] = src[srcBase + j++];
                 }
             }
 
             (src, dst) = (dst, src);
+            (srcBase, dstBase) = (dstBase, srcBase);
         }
 
         if (!ReferenceEquals(src, array))
         {
-            Array.Copy(src, array, n);
+            Array.Copy(src, 0, array, fromInclusive, length);
         }
     }
 

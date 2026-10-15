@@ -180,7 +180,7 @@ public sealed class ValueDouble : Value
 
     /// <inheritdoc/>
     public override int CompareTypeSafe(Value o, CompareMode mode, CastDataProvider? provider)
-        => JavaCompare(value, ((ValueDouble)o).value);
+        => JavaCompareDouble(value, ((ValueDouble)o).value);
 
     /// <inheritdoc/>
     public override int GetSignum()
@@ -227,46 +227,5 @@ public sealed class ValueDouble : Value
 
     /// <inheritdoc/>
     public override bool Equals(object? other)
-        => other is ValueDouble v && JavaCompare(value, v.value) == 0;
-
-    /// <summary>
-    /// Compares two doubles the way Java's <c>Double.compare</c> does.
-    /// </summary>
-    /// <remarks>
-    /// Java and .NET disagree on two points, and both are visible in SQL results:
-    /// Java sorts NaN above every number and .NET sorts it below every number, and Java sorts
-    /// negative zero below positive zero while .NET calls them equal. An ORDER BY that mixes a
-    /// NaN with ordinary values, or a grouping that sees 0.0 and -0.0 as different, would give
-    /// a different answer if this were <see cref="double.CompareTo(double)"/>, so the rule is
-    /// spelled out here.
-    /// </remarks>
-    /// <param name="a">the first value</param>
-    /// <param name="b">the second value</param>
-    /// <returns>-1, 0 or 1 as Java's compare answers</returns>
-    private static int JavaCompare(double a, double b)
-    {
-        if (double.IsNaN(a))
-        {
-            return double.IsNaN(b) ? 0 : 1;
-        }
-
-        if (double.IsNaN(b))
-        {
-            return -1;
-        }
-
-        if (a == 0.0)
-        {
-            // Only reachable when both are zero, since a zero never equals anything else here.
-            bool negativeA = double.IsNegative(a), negativeB = double.IsNegative(b);
-            if (negativeA != negativeB)
-            {
-                return negativeA ? -1 : 1;
-            }
-
-            return 0;
-        }
-
-        return a < b ? -1 : a > b ? 1 : 0;
-    }
+        => other is ValueDouble v && JavaCompareDouble(value, v.value) == 0;
 }

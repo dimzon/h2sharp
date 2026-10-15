@@ -1937,32 +1937,9 @@ public static class StringUtils
             throw new IndexOutOfRangeException();
         }
 
-        if (start == end)
-        {
-            throw new FormatException("");
-        }
-
-        int result = 0;
-        for (int i = start; i < end; i++)
-        {
-            char ch = s[i];
-
-            // Ensure that the character is valid and that multiplication by 10 will be
-            // performed without overflow
-            if (ch is < '0' or > '9' || result > 214_748_364)
-            {
-                throw new FormatException(s[start..end]);
-            }
-
-            result = result * 10 + ch - '0';
-            if (result < 0)
-            {
-                // Overflow
-                throw new FormatException(s[start..end]);
-            }
-        }
-
-        return result;
+        // One body for both forms: the span below is exactly the part, so its refusals carry
+        // the part's text on both roads.
+        return ParseUInt31(s.AsSpan(start, end - start));
     }
 
     /// <summary>
@@ -2456,10 +2433,12 @@ public static class StringUtils
 /// <see cref="CultureInfo.CurrentCulture"/> and cached per culture name rather than
 /// being hard-coded to the invariant culture.
 /// <para>
-/// Caching is a single volatile slot on purpose: the comparer is consulted at most a
+/// Caching is one atomically published entry on purpose: the comparer is consulted at most a
 /// handful of times per identifier comparison, and a <see cref="ConcurrentDictionary"/>
-/// would allocate a node per culture and pay a lookup hash for every call. The slot is
-/// replaced atomically so a concurrent swap cannot publish a partially built comparer.
+/// would allocate a node per culture and pay a lookup hash for every call. Publishing the
+/// name and the comparer as one immutable record means a concurrent swap can only hand out
+/// a comparer that matches its own name — a pair of separately assigned fields could hand
+/// out one culture's comparer under another culture's name.
 /// </para>
 /// </remarks>
 internal static class PrimaryComparer
@@ -2467,10 +2446,9 @@ internal static class PrimaryComparer
     private const CompareOptions Options =
         CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
 
-    private static readonly CultureInfo FallbackCulture = CultureInfo.InvariantCulture;
+    private sealed record CacheEntry(string Name, CompareInfo Info);
 
-    private static CompareInfo? cached;
-    private static string? cachedName;
+    private static volatile CacheEntry? cached;
 
     /// <summary>
     /// Compares two spans with PRIMARY-strength semantics, i.e. ignoring case and
@@ -2495,18 +2473,16 @@ internal static class PrimaryComparer
             CultureInfo culture = CultureInfo.CurrentCulture;
             string name = culture.Name;
 
-            // Fast path: same string instance as last time avoids the Name lookup.
-            if (ReferenceEquals(name, cachedName) || name == cachedName)
+            // Fast path: the entry carries its own name, so a hit answers without touching
+            // the culture object again. Same-instance check first: the name string often is.
+            CacheEntry? entry = cached;
+            if (entry is not null && (ReferenceEquals(name, entry.Name) || name == entry.Name))
             {
-                return cached!;
+                return entry.Info;
             }
 
             CompareInfo info = culture.CompareInfo;
-            // Publish the name first: a reader that observes it is guaranteed to see a
-            // fully constructed CompareInfo, because CompareInfo is immutable and the
-            // assignment below cannot be reordered before the name by the volatile write.
-            cachedName = name;
-            Volatile.Write(ref cached, info);
+            cached = new CacheEntry(name, info);
             return info;
         }
     }

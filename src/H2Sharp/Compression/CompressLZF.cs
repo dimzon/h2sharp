@@ -82,7 +82,10 @@ public sealed class CompressLZF : Compressor
     /// <summary>
     /// The two bytes at the place, as an integer with the first one in the high half.
     /// </summary>
-    private static int First(byte[] @in, int inPos) => (@in[inPos] << 8) | (@in[inPos + 1] & 255);
+    /// <remarks>
+    /// A call-through: the span overload below holds the logic, so the two cannot drift.
+    /// </remarks>
+    private static int First(byte[] @in, int inPos) => First(@in.AsSpan(), inPos);
 
     /// <summary>
     /// The two bytes at the place, as an integer with the first one in the high half.
@@ -92,7 +95,10 @@ public sealed class CompressLZF : Compressor
     /// <summary>
     /// The value moved one byte left, with the byte at <paramref name="inPos"/> + 2 added.
     /// </summary>
-    private static int Next(int v, byte[] @in, int inPos) => (v << 8) | (@in[inPos + 2] & 255);
+    /// <remarks>
+    /// A call-through, same reason as <see cref="First(byte[], int)"/>.
+    /// </remarks>
+    private static int Next(int v, byte[] @in, int inPos) => Next(v, @in.AsSpan(), inPos);
 
     /// <summary>
     /// The value moved one byte left, with the byte at <paramref name="inPos"/> + 2 added.
@@ -108,6 +114,15 @@ public sealed class CompressLZF : Compressor
     /// How many bytes from the two places are equal, up to <paramref name="max"/>.
     /// </summary>
     /// <remarks>
+    /// A call-through: the span overload below holds the logic, so the two cannot drift.
+    /// </remarks>
+    private static int EqualFrom(byte[] left, int leftPos, byte[] right, int rightPos, int max)
+        => EqualFrom(left.AsSpan(), leftPos, right.AsSpan(), rightPos, max);
+
+    /// <summary>
+    /// How many bytes from the two places are equal, up to <paramref name="max"/>.
+    /// </summary>
+    /// <remarks>
     /// The reference walks a match one byte at a time. A match can be up to 263 bytes long, and
     /// walking it that way is most of the work of compressing text, which is mostly matches: the
     /// bytes are compared eight at a time here instead, and the first pair that differs is found by
@@ -115,33 +130,6 @@ public sealed class CompressLZF : Compressor
     /// byte that differs, because a little-endian read puts the earlier byte in the lower half. So
     /// the length comes out the same as it did one byte at a time.
     /// </remarks>
-    private static int EqualFrom(byte[] left, int leftPos, byte[] right, int rightPos, int max)
-    {
-        int n = 0;
-        while (n + 8 <= max)
-        {
-            ulong l = BinaryPrimitives.ReadUInt64LittleEndian(left.AsSpan(leftPos + n, 8));
-            ulong r = BinaryPrimitives.ReadUInt64LittleEndian(right.AsSpan(rightPos + n, 8));
-            if (l != r)
-            {
-                return n + (BitOperations.TrailingZeroCount(l ^ r) >> 3);
-            }
-
-            n += 8;
-        }
-
-        while (n < max && left[leftPos + n] == right[rightPos + n])
-        {
-            n++;
-        }
-
-        return n;
-    }
-
-    /// <summary>
-    /// The same count over windows of bytes, which is what the reference walks over its
-    /// <c>ByteBuffer</c>.
-    /// </summary>
     private static int EqualFrom(ReadOnlySpan<byte> left, int leftPos, ReadOnlySpan<byte> right, int rightPos, int max)
     {
         int n = 0;

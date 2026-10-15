@@ -214,6 +214,50 @@ public sealed class UtilsTests
     }
 
     [Fact]
+    public void StableSort_SortsOnlyTheWindow()
+    {
+        // The window sorts stably by key with ties in arrival order, and everything outside
+        // it stays exactly where it was: the LIMIT path depends on both.
+        (int key, int seq)[] rows =
+        [
+            (9, 0), (2, 0), (1, 0), (2, 1), (0, 0), (1, 1), (2, 2), (8, 0),
+        ];
+        Utils.StableSort(rows, 1, 7, static (a, b) => a.key.CompareTo(b.key));
+
+        Assert.Equal(
+            [(9, 0), (0, 0), (1, 0), (1, 1), (2, 0), (2, 1), (2, 2), (8, 0)],
+            rows);
+    }
+
+    [Fact]
+    public void StableSort_HandlesWindowEdges()
+    {
+        // An empty window and a single-element window change nothing, at either end.
+        int[] values = [3, 1, 2];
+        Utils.StableSort(values, 1, 1, Comparer<int>.Default.Compare);
+        Utils.StableSort(values, 0, 0, Comparer<int>.Default.Compare);
+        Utils.StableSort(values, 3, 3, Comparer<int>.Default.Compare);
+        Assert.Equal([3, 1, 2], values);
+
+        Utils.StableSort(values, 2, 3, Comparer<int>.Default.Compare);
+        Assert.Equal([3, 1, 2], values);
+
+        // A window past the small-merge widths still sorts: eleven elements take three
+        // passes, an odd number, which is the path that copies the window back.
+        (int key, int seq)[] wide = new (int, int)[11];
+        for (int i = 0; i < wide.Length; i++)
+        {
+            wide[i] = (10 - i, i);
+        }
+
+        Utils.StableSort(wide, 0, wide.Length, static (a, b) => a.key.CompareTo(b.key));
+        for (int i = 0; i < wide.Length; i++)
+        {
+            Assert.Equal((i, 10 - i), wide[i]);
+        }
+    }
+
+    [Fact]
     public void SortTopN_PlacesTopValuesInRequestedRange()
     {
         // H2's javadoc says "descending order", but the implementation is a partial

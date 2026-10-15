@@ -245,6 +245,82 @@ public sealed class StringUtilsOracleTests
     }
 
     /// <summary>
+    /// The comparer cache follows the current culture on every call, under alternation and
+    /// under threads. The cache used to publish the name and the comparer through two
+    /// separate fields, so a culture switch racing another thread's resolution could hand
+    /// back one culture's comparer under another culture's name. Turkish is the probe:
+    /// at PRIMARY strength "I" and "ı" are the same letter there and different letters in
+    /// English, so each call must answer for its own call's culture.
+    /// </summary>
+    [Fact]
+    public void PrimaryComparerFollowsTheCurrentCulture()
+    {
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        try
+        {
+            for (int i = 0; i < 50; i++)
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("tr-TR");
+                Assert.True(StringUtils.StartsWithIgnoringCase("I", "\u0131"));
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+                Assert.False(StringUtils.StartsWithIgnoringCase("I", "\u0131"));
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
+
+        // The race itself, hammered: eight threads alternating cultures must each observe
+        // their own culture's answer on every call. An atomically published entry cannot
+        // mix a name with another culture's comparer, whatever the interleave.
+        CultureInfo.CurrentCulture = previous;
+        List<Exception> failures = [];
+        Thread[] threads = new Thread[8];
+        for (int t = 0; t < threads.Length; t++)
+        {
+            int thread = t;
+            threads[t] = new Thread(() =>
+            {
+                try
+                {
+                    for (int i = 0; i < 500; i++)
+                    {
+                        bool turkish = ((i + thread) & 1) == 0;
+                        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(
+                            turkish ? "tr-TR" : "en-US");
+                        bool equal = StringUtils.StartsWithIgnoringCase("I", "\u0131");
+                        if (equal != turkish)
+                        {
+                            throw new InvalidOperationException(
+                                $"call {i} on thread {thread}: turkish={turkish}, equal={equal}");
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    lock (failures)
+                    {
+                        failures.Add(e);
+                    }
+                }
+            });
+        }
+
+        foreach (Thread thread in threads)
+        {
+            thread.Start();
+        }
+
+        foreach (Thread thread in threads)
+        {
+            thread.Join();
+        }
+
+        Assert.Empty(failures);
+    }
+
+    /// <summary>
     /// Pins the divergences that the BCL cannot express. <c>java.text.Collator</c> at
     /// PRIMARY strength is not "ignore case": in CLDR root, a Cyrillic case pair such as
     /// "а"/"А" and a fullwidth pair such as "Ａ"/"ａ" carry *distinct* primary weights,
