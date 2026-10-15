@@ -376,17 +376,19 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Flat queries only: grouped, sorted, distinct, windowed and locking shapes refuse below,
-    /// each waiting for its own machinery. What runs here is the reference's flat path — skip
-    /// the offset, fill the result, trim it — with lazy execution left out: every result here
-    /// is materialized, and a lazy one would hand back a walk over tables the caller may close.
+    /// Flat queries only: grouped, windowed, DISTINCT ON and locking shapes refuse below, each
+    /// waiting for its own machinery. What runs here is the reference's flat path — skip the
+    /// offset, fill the result, trim it — with lazy execution left out: every result here is
+    /// materialized, and a lazy one would hand back a walk over tables the caller may close.
+    /// Plain DISTINCT runs: the result itself drops duplicates as rows arrive. The index
+    /// fast path that would walk them in order waits for secondary indexes, which are still
+    /// a stub.
     /// </remarks>
     public override ResultInterface Run(long limit)
     {
-        if (groupBy is not null || windows is not null || distinct
-            || isDistinct || forUpdate is not null)
+        if (groupBy is not null || windows is not null || isDistinct || forUpdate is not null)
         {
-            throw new TODOException("Select.query: grouped, distinct, windowed and locking queries are not ported");
+            throw new TODOException("Select.query: grouped, distinct on, windowed and locking queries are not ported");
         }
 
         long offset = this.offset;
@@ -403,6 +405,14 @@ public sealed class Select : Query
             result.SetSortOrder(sort);
             // PARTIAL waits for index-sort resolution: without a sorted index the offset cannot
             // be skipped up front, the result trims it after the sort.
+            quickOffset = QuickOffset.No;
+        }
+
+        if (distinct)
+        {
+            result.SetDistinct();
+            // A deduplicated row is not the row that was read: skipping the offset up front
+            // would skip raw rows and trim the wrong ones, so the result trims afterwards.
             quickOffset = QuickOffset.No;
         }
 
@@ -745,9 +755,21 @@ public sealed class Select : Query
     /// <param name="isQuick">true for a quick aggregate</param>
     public void SetQuickAggregateQuery(bool isQuick) => isQuickAggregateQuery = isQuick;
 
-    /// <summary>Sets whether duplicate rows are removed.</summary>
-    /// <param name="distinct">true for DISTINCT</param>
-    public void SetDistinct(bool distinct) => this.distinct = distinct;
+    /// <summary>Set the distinct flag.</summary>
+    /// <remarks>
+    /// No boolean: the reference's setter takes none, and DISTINCT ON arrives through its
+    /// own setter. The exclusion will matter when that list is ported; until then the guard
+    /// reads the marker that stands in its place.
+    /// </remarks>
+    public void SetDistinct()
+    {
+        if (isDistinct)
+        {
+            throw DbException.GetUnsupportedException("DISTINCT ON together with DISTINCT");
+        }
+
+        distinct = true;
+    }
 
     /// <summary>Sets whether the columns of this statement are distinct.</summary>
     /// <param name="isDistinct">true for DISTINCT ON</param>

@@ -515,7 +515,7 @@ public sealed class SelectInitOrderTests
             Select select = new(session);
             select.AddTableFilter(f, isTop: true);
             select.SetExpressions([new ExpressionColumn(table.GetColumn(0), f, 0)]);
-            select.SetDistinct(true);
+            select.SetDistinct();
             select.SetOrder(
             [
                 new QueryOrderBy
