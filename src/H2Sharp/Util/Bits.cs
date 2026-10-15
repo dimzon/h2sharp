@@ -20,6 +20,7 @@
  */
 using System;
 using System.Buffers.Binary;
+using System.Numerics;
 
 namespace H2Sharp.Util;
 
@@ -177,4 +178,47 @@ public static class Bits
     /// <param name="value">the long</param>
     public static void LongToBigEndian(Span<byte> bytes, int offset, long value)
         => BinaryPrimitives.WriteInt64BigEndian(bytes.Slice(offset, 8), value);
+
+    /// <summary>
+    /// Minimal two's complement big-endian, the shape <c>java.math.BigInteger</c> writes:
+    /// the same conversion both store types use for the same question, so the two formats
+    /// agree byte for byte.
+    /// </summary>
+    /// <remarks>
+    /// Sized exactly and left uninitialized: the writer fills every byte, so zeroing first
+    /// would be memset for nothing. Should the size ever disagree, the old
+    /// convert-and-reverse answers instead of a short array.
+    /// </remarks>
+    /// <param name="value">the value</param>
+    /// <returns>the minimal big-endian bytes</returns>
+    public static byte[] ToBigEndian(BigInteger value)
+    {
+        byte[] bytes = GC.AllocateUninitializedArray<byte>(ByteCount(value));
+        if (!value.TryWriteBytes(bytes, out int written, isUnsigned: false, isBigEndian: true)
+            || written != bytes.Length)
+        {
+            byte[] little = value.ToByteArray();
+            System.Array.Reverse(little);
+            return little;
+        }
+
+        return bytes;
+    }
+
+    /// <summary>
+    /// How many bytes the minimal two's complement big-endian form takes: one more than
+    /// the bit length needs, rounded up, which is the sign byte when the top bit is taken
+    /// and the single zero byte otherwise.
+    /// </summary>
+    /// <param name="value">the value</param>
+    /// <returns>the byte count</returns>
+    public static int ByteCount(BigInteger value) => ((int)value.GetBitLength() + 8) / 8;
+
+    /// <summary>
+    /// The inverse of <see cref="ToBigEndian"/>.
+    /// </summary>
+    /// <param name="bytes">the minimal big-endian bytes</param>
+    /// <returns>the value</returns>
+    public static BigInteger FromBigEndian(ReadOnlySpan<byte> bytes)
+        => new(bytes, isUnsigned: false, isBigEndian: true);
 }

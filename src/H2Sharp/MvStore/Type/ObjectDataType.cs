@@ -597,7 +597,7 @@ public class ObjectDataType : BasicDataType<object?>
         {
             TypeLong => DataUtils.ReadVarLong(buff, ref position),
             TagLongNegative => -DataUtils.ReadVarLong(buff, ref position),
-            TagLongFixed => ReadFixedLong(buff, ref position),
+            TagLongFixed => DataUtils.ReadFixedLong(buff, ref position),
             _ => (long)(tag - TagLong07),
         };
     }
@@ -704,7 +704,7 @@ public class ObjectDataType : BasicDataType<object?>
             TagDouble0 => 0d,
             TagDouble1 => 1d,
             TagDoubleFixed => BitConverter.Int64BitsToDouble(
-                ReadFixedLong(buff, ref position)),
+                DataUtils.ReadFixedLong(buff, ref position)),
             _ => BitConverter.Int64BitsToDouble(
                 ReverseBits(DataUtils.ReadVarLong(buff, ref position))),
         };
@@ -743,7 +743,7 @@ public class ObjectDataType : BasicDataType<object?>
                 }
                 else
                 {
-                    byte[] bytes = ToBigEndian(x);
+                    byte[] bytes = Util.Bits.ToBigEndian(x);
                     _ = buff.Put((byte)TypeBigInteger).PutVarInt(bytes.Length).Put(bytes);
                 }
             }
@@ -757,7 +757,7 @@ public class ObjectDataType : BasicDataType<object?>
             TagBigInteger0 => BigInteger.Zero,
             TagBigInteger1 => BigInteger.One,
             TagBigIntegerSmall => new BigInteger(DataUtils.ReadVarLong(buff, ref position)),
-            _ => FromBigEndian(ReadBytes(buff, ref position, DataUtils.ReadVarInt(buff, ref position))),
+            _ => Util.Bits.FromBigEndian(ReadBytes(buff, ref position, DataUtils.ReadVarInt(buff, ref position))),
         };
     }
 
@@ -808,7 +808,7 @@ public class ObjectDataType : BasicDataType<object?>
                 }
                 else
                 {
-                    byte[] bytes = ToBigEndian(unscaled);
+                    byte[] bytes = Util.Bits.ToBigEndian(unscaled);
                     _ = buff.Put((byte)TypeBigDecimal).PutVarInt(scale).PutVarInt(bytes.Length).Put(bytes);
                 }
             }
@@ -837,7 +837,7 @@ public class ObjectDataType : BasicDataType<object?>
         {
             int scale = DataUtils.ReadVarInt(buff, ref position);
             int len = DataUtils.ReadVarInt(buff, ref position);
-            return new Util.BigDecimal(FromBigEndian(ReadBytes(buff, ref position, len)), scale);
+            return new Util.BigDecimal(Util.Bits.FromBigEndian(ReadBytes(buff, ref position, len)), scale);
         }
     }
 
@@ -917,18 +917,11 @@ public class ObjectDataType : BasicDataType<object?>
 
         internal override object? ReadTagged(Span<byte> buff, ref int position, int tag)
         {
-            byte[] bytes = ReadBytes(buff, ref position, 16);
-            Span<byte> ordered = stackalloc byte[16];
-            ordered[0] = bytes[3];
-            ordered[1] = bytes[2];
-            ordered[2] = bytes[1];
-            ordered[3] = bytes[0];
-            ordered[4] = bytes[5];
-            ordered[5] = bytes[4];
-            ordered[6] = bytes[7];
-            ordered[7] = bytes[6];
-            bytes.AsSpan(8, 8).CopyTo(ordered[8..]);
-            return new Guid(ordered);
+            // No intermediate array and no hand reorder: the helper reads straight from the
+            // buffer slice, and it is the same helper the writer's counterpart calls.
+            Guid result = Util.Bits.BytesToUuid(buff.Slice(position, 16));
+            position += 16;
+            return result;
         }
     }
 
@@ -956,7 +949,7 @@ public class ObjectDataType : BasicDataType<object?>
 
         internal override object? ReadTagged(Span<byte> buff, ref int position, int tag)
             => DateTime.UnixEpoch.AddMilliseconds(
-                ReadFixedLong(buff, ref position));
+                DataUtils.ReadFixedLong(buff, ref position));
     }
 
     private sealed class ObjectArrayType : AutoDetectDataType
@@ -1244,11 +1237,11 @@ public class ObjectDataType : BasicDataType<object?>
                     else if (clazz == typeof(double))
                     {
                         ((double[])result)[i] = BitConverter.Int64BitsToDouble(
-                            ReadFixedLong(buff, ref position));
+                            DataUtils.ReadFixedLong(buff, ref position));
                     }
                     else if (clazz == typeof(long))
                     {
-                        ((long[])result)[i] = ReadFixedLong(buff, ref position);
+                        ((long[])result)[i] = DataUtils.ReadFixedLong(buff, ref position);
                     }
                     else
                     {
@@ -1419,16 +1412,6 @@ public class ObjectDataType : BasicDataType<object?>
         return result;
     }
 
-    /// <summary>
-    /// Reads a fixed long straight from the buffer, same reason.
-    /// </summary>
-    private static long ReadFixedLong(Span<byte> buff, ref int position)
-    {
-        long result = BinaryPrimitives.ReadInt64BigEndian(buff.Slice(position, 8));
-        position += 8;
-        return result;
-    }
-
     private static int ReverseBits(int value)
     {
         uint v = (uint)value;
@@ -1502,28 +1485,20 @@ public class ObjectDataType : BasicDataType<object?>
 
     private static long Low64(BigInteger value)
     {
-        BigInteger mask = (BigInteger.One << 64) - 1;
-        BigInteger low = value & mask;
-        byte[] bytes = low.ToByteArray();
-        Array.Resize(ref bytes, 8);
-        return BitConverter.ToInt64(bytes, 0);
-    }
+        // The low 64 bits of the two's complement form: the minimal little-endian write over
+        // a sign-extended buffer is exactly that, with no mask BigInteger, no array and no
+        // resize on the hot path. The fill matters: zero-fill would zero-extend, and FB,00..
+        // reads back as 251 rather than -5.
+        Span<byte> bytes = stackalloc byte[8];
+        bytes.Fill(value.Sign < 0 ? (byte)0xFF : (byte)0);
+        if (!value.TryWriteBytes(bytes, out _, isUnsigned: false, isBigEndian: false))
+        {
+            // Wider than 8 bytes: mask down explicitly. Unreachable through the small-form
+            // guards above, which only call this when the value fits.
+            return unchecked((long)(ulong)(value & ulong.MaxValue));
+        }
 
-    private static byte[] ToBigEndian(BigInteger value)
-    {
-        // Minimal two's complement big-endian, sign byte included, exactly what BigInteger
-        // writes on disk: stripping a leading zero would flip the sign on the way back and
-        // differ from the reference byte for byte.
-        byte[] little = value.ToByteArray();
-        Array.Reverse(little);
-        return little;
-    }
-
-    private static BigInteger FromBigEndian(byte[] bytes)
-    {
-        byte[] little = (byte[])bytes.Clone();
-        Array.Reverse(little);
-        return new BigInteger(little);
+        return BinaryPrimitives.ReadInt64LittleEndian(bytes);
     }
 }
 

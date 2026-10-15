@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -308,6 +309,20 @@ public static class DataUtils
         }
 
         return x;
+    }
+
+    /// <summary>
+    /// Reads eight raw bytes as a long, big endian, advancing past them: the shape the row
+    /// and object types both read fixed longs in.
+    /// </summary>
+    /// <param name="buff">the buffer</param>
+    /// <param name="position">where to read, advanced past the value</param>
+    /// <returns>the value</returns>
+    public static long ReadFixedLong(Span<byte> buff, ref int position)
+    {
+        long result = BinaryPrimitives.ReadInt64BigEndian(buff.Slice(position, 8));
+        position += 8;
+        return result;
     }
 
     /// <summary>

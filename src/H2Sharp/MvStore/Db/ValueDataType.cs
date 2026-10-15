@@ -464,7 +464,7 @@ public sealed class ValueDataType : BasicDataType<Value>
                             // Minimal two's complement big-endian, as java.math.BigInteger
                             // writes it: the row format and the object format agree byte for
                             // byte, and both agree with the reference.
-                            byte[] bytes = ToBigEndian(b);
+                            byte[] bytes = Bits.ToBigEndian(b);
                             buff.Put(Numeric).PutVarInt(scale).PutVarInt(bytes.Length).Put(bytes, 0, bytes.Length);
                         }
                     }
@@ -626,7 +626,7 @@ public sealed class ValueDataType : BasicDataType<Value>
                 {
                     int scale = DataUtils.ReadVarInt(buff, ref position);
                     int len = DataUtils.ReadVarInt(buff, ref position);
-                    BigInteger b = FromBigEndian(buff.Slice(position, len));
+                    BigInteger b = Bits.FromBigEndian(buff.Slice(position, len));
                     position += len;
                     return ValueNumeric.Get(new BigDecimal(b, scale));
                 }
@@ -680,8 +680,8 @@ public sealed class ValueDataType : BasicDataType<Value>
 
             case Uuid:
                 return ValueUuid.Get(
-                    ReadFixedLong(buff, ref position),
-                    ReadFixedLong(buff, ref position));
+                    DataUtils.ReadFixedLong(buff, ref position),
+                    DataUtils.ReadFixedLong(buff, ref position));
 
             case Array:
                 throw new TODOException("ValueDataType.read: ARRAY");
@@ -765,17 +765,6 @@ public sealed class ValueDataType : BasicDataType<Value>
         return DataUtils.ReadVarLong(buff, ref position);
     }
 
-    /// <summary>
-    /// Reads eight raw bytes as a long, big endian — the shape <see cref="WriteBuffer.PutLong"/>
-    /// writes, which is what a UUID's halves are stored in.
-    /// </summary>
-    private static long ReadFixedLong(Span<byte> buff, ref int position)
-    {
-        long result = BinaryPrimitives.ReadInt64BigEndian(buff.Slice(position, 8));
-        position += 8;
-        return result;
-    }
-
     private static string ReadString(Span<byte> buff, ref int position)
     {
         int len = DataUtils.ReadVarInt(buff, ref position);
@@ -804,43 +793,6 @@ public sealed class ValueDataType : BasicDataType<Value>
         position += len;
         return bytes;
     }
-
-    /// <summary>
-    /// Minimal two's complement big-endian, the shape <c>java.math.BigInteger</c> writes:
-    /// the same conversion <c>ObjectDataType</c> uses for the same question, so the two
-    /// formats agree byte for byte.
-    /// </summary>
-    /// <remarks>
-    /// Sized exactly and left uninitialized: the writer fills every byte, so zeroing first
-    /// would be memset for nothing. Should the size ever disagree, the old
-    /// convert-and-reverse answers instead of a short array.
-    /// </remarks>
-    private static byte[] ToBigEndian(BigInteger value)
-    {
-        byte[] bytes = GC.AllocateUninitializedArray<byte>(ByteCount(value));
-        if (!value.TryWriteBytes(bytes, out int written, isUnsigned: false, isBigEndian: true)
-            || written != bytes.Length)
-        {
-            byte[] little = value.ToByteArray();
-            System.Array.Reverse(little);
-            return little;
-        }
-
-        return bytes;
-    }
-
-    /// <summary>
-    /// How many bytes the minimal two's complement big-endian form takes: one more than
-    /// the bit length needs, rounded up, which is the sign byte when the top bit is taken
-    /// and the single zero byte otherwise.
-    /// </summary>
-    private static int ByteCount(BigInteger value) => ((int)value.GetBitLength() + 8) / 8;
-
-    /// <summary>
-    /// The inverse of <see cref="ToBigEndian"/>.
-    /// </summary>
-    private static BigInteger FromBigEndian(ReadOnlySpan<byte> bytes)
-        => new(bytes, isUnsigned: false, isBigEndian: true);
 
     private static long ReadTimestampTime(Span<byte> buff, ref int position)
     {
