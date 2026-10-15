@@ -1268,6 +1268,20 @@ public abstract class Table
     public abstract long GetRowCountApproximation();
 
     /// <summary>
+    /// Check if the row count can be retrieved quickly.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>true if it can</returns>
+    public abstract bool CanGetRowCount(H2Sharp.Engine.SessionLocal session);
+
+    /// <summary>
+    /// Get the row count for this table.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the row count</returns>
+    public abstract long GetRowCount(H2Sharp.Engine.SessionLocal session);
+
+    /// <summary>
     /// Gets the SQL statement that creates this table.
     /// </summary>
     public abstract string? GetCreateSql();

@@ -80,9 +80,29 @@ public sealed class Select : Query
 
     /// <summary>
     /// Whether this is a grouping query: aggregates, GROUP BY or HAVING. The parser says so;
-    /// the grouping machinery that reads it is not ported yet.
+    /// the quick aggregate shortcut reads it, grouped execution still refuses below.
     /// </summary>
     private bool isGroupQuery;
+
+    /// <summary>
+    /// Where the grouping key columns land in the result, or null when nothing groups.
+    /// </summary>
+    private int[]? groupIndex = null;
+
+    /// <summary>
+    /// Where the HAVING clause moved in the select list, or -1 when there is none.
+    /// </summary>
+    private int havingIndex = -1;
+
+    /// <summary>
+    /// Where the QUALIFY clause moved in the select list, or -1 when there is none.
+    /// </summary>
+    private int qualifyIndex = -1;
+
+    /// <summary>
+    /// The group data grouped execution walks, or null outside it.
+    /// </summary>
+    private SelectGroups? groupData = null;
 
     /// <summary>
     /// Whether init ran: a second run would resolve the order list twice and append its
@@ -382,22 +402,56 @@ public sealed class Select : Query
             condition = condition.OptimizeCondition(session);
         }
 
+        if (isGroupQuery && groupIndex is null && havingIndex < 0 && qualifyIndex < 0 && condition is null
+            && filters.Count == 1)
+        {
+            isQuickAggregateQuery = IsOptimizableAggregate(filters[0]);
+        }
+
         expressionArray = [.. expressions];
+    }
+
+    /// <summary>
+    /// Whether every select expression is optimizable against this table: the reference's
+    /// quick-aggregate check, which is what lets COUNT(*) skip the row walk. Joins, HAVING
+    /// and QUALIFY travel with their ports; none of them can appear here yet.
+    /// </summary>
+    /// <param name="filter">the table filter</param>
+    /// <returns>true when the aggregate can be answered without walking rows</returns>
+    private bool IsOptimizableAggregate(TableFilter filter)
+    {
+        Tables.Table? table = filter.GetTable();
+        if (table is null)
+        {
+            return false;
+        }
+
+        ExpressionVisitor visitor = ExpressionVisitor.GetOptimizableVisitor(table);
+        foreach (Expression e in expressions)
+        {
+            if (!e.IsEverything(visitor))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Flat queries only: grouped, windowed, DISTINCT ON and locking shapes refuse below, each
-    /// waiting for its own machinery. What runs here is the reference's flat path — skip the
-    /// offset, fill the result, trim it — with lazy execution left out: every result here is
-    /// materialized, and a lazy one would hand back a walk over tables the caller may close.
-    /// Plain DISTINCT runs: the result itself drops duplicates as rows arrive. The index
-    /// fast path that would walk them in order waits for secondary indexes, which are still
-    /// a stub.
+    /// Flat and quick aggregate queries only: grouped, windowed, DISTINCT ON and locking
+    /// shapes refuse below, each waiting for its own machinery. What runs here is the
+    /// reference's flat path — skip the offset, fill the result, trim it — with lazy
+    /// execution left out: every result here is materialized, and a lazy one would hand
+    /// back a walk over tables the caller may close. Plain DISTINCT runs: the result itself
+    /// drops duplicates as rows arrive. The index fast path that would walk them in order
+    /// waits for secondary indexes, which are still a stub.
     /// </remarks>
     public override ResultInterface Run(long limit)
     {
-        if (groupBy is not null || windows is not null || isDistinct || forUpdate is not null)
+        if (groupBy is not null || windows is not null || isDistinct || forUpdate is not null
+            || (isGroupQuery && !isQuickAggregateQuery))
         {
             throw new TODOException("Select.query: grouped, distinct on, windowed and locking queries are not ported");
         }
@@ -427,10 +481,18 @@ public sealed class Select : Query
             quickOffset = QuickOffset.No;
         }
 
-        QueryFlat(array, result, offset, fetch, withTies, quickOffset);
-        if (quickOffset == QuickOffset.Yes)
+        if (isQuickAggregateQuery)
         {
+            QueryQuick(array, result, columnCount, offset, fetch);
             offset = 0;
+        }
+        else
+        {
+            QueryFlat(array, result, offset, fetch, withTies, quickOffset);
+            if (quickOffset == QuickOffset.Yes)
+            {
+                offset = 0;
+            }
         }
 
         if (fetch >= 0)
@@ -445,6 +507,33 @@ public sealed class Select : Query
 
         result.Done();
         return result;
+    }
+
+    /// <summary>
+    /// Reads one aggregate row without walking the table: each expression answers off the
+    /// table itself, which is what makes COUNT(*) a lookup rather than a scan.
+    /// </summary>
+    /// <remarks>
+    /// The reference's queryQuick, minus the skip flag it threads through: an offset skips
+    /// the one row there is, and a zero fetch reads none, so both just mean no row here.
+    /// </remarks>
+    /// <param name="array">the select list, shared with the result and the walk</param>
+    /// <param name="result">where the row goes</param>
+    /// <param name="columnCount">how many columns the row has</param>
+    /// <param name="offset">how many rows to skip</param>
+    /// <param name="fetch">how many rows to read, or negative for all</param>
+    private void QueryQuick(Expression[] array, ResultTarget result, int columnCount, long offset, long fetch)
+    {
+        if (fetch != 0 && offset <= 0)
+        {
+            Value?[] row = new Value?[columnCount];
+            for (int i = 0; i < columnCount; i++)
+            {
+                row[i] = array[i].GetValue(session);
+            }
+
+            result.AddRow(row);
+        }
     }
 
     /// <summary>
@@ -766,6 +855,39 @@ public sealed class Select : Query
     /// <summary>Sets whether this is an aggregate over the whole table.</summary>
     /// <param name="isQuick">true for a quick aggregate</param>
     public void SetQuickAggregateQuery(bool isQuick) => isQuickAggregateQuery = isQuick;
+
+    /// <summary>
+    /// Whether this is an aggregate answered without walking rows, such as COUNT(*) over a
+    /// table the row count is known for.
+    /// </summary>
+    /// <returns>true for a quick aggregate</returns>
+    public bool IsQuickAggregateQuery() => isQuickAggregateQuery;
+
+    /// <summary>
+    /// Whether this query groups: aggregates, GROUP BY or HAVING.
+    /// </summary>
+    /// <returns>true for a grouping query</returns>
+    public bool IsGroupQuery() => isGroupQuery;
+
+    /// <summary>
+    /// Get the group data if there is currently a group-by active.
+    /// </summary>
+    /// <remarks>
+    /// Grouped execution is not ported, and only the quick aggregate path runs, which never
+    /// touches group data: this refuses with the missing piece named.
+    /// </remarks>
+    /// <param name="window">is this a window function</param>
+    /// <returns>the grouped data</returns>
+    public SelectGroups? GetGroupDataIfCurrent(bool window)
+    {
+        SelectGroups? data = groupData;
+        if (data is not null && data.IsCurrentGroup(window))
+        {
+            return data;
+        }
+
+        throw new TODOException("Select.getGroupDataIfCurrent: grouped execution is not ported");
+    }
 
     /// <summary>Set the distinct flag.</summary>
     /// <remarks>

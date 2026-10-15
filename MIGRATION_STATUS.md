@@ -4103,6 +4103,26 @@ Prepared → DefineCommand → SchemaCommand → CommandWithColumns → CreateTa
 -18000 здесь против -17762 там. Поэтому дифференциал экстремумов сравнивает только
 современную эру, где обе таблицы читают одни правила.
 
+### COUNT(*) бегает быстрым путём, остальные агрегаты ждут
+
+Портирована вертикаль COUNT: `AggregateType` целиком, `AggregateData` +
+`AggregateDataCount`, `DataAnalysisOperation` (select, маркер, map-машина,
+групповой диспетчер; окна — отказом), `AbstractAggregate` (аргументы, FILTER-часть),
+`Aggregate` только COUNT/COUNT_ALL (фабрика, quick-значение, fold констант,
+`isEverything` с проверкой nullability, SQL). Плюс стебы `Window` и
+`SelectGroups` эталонными интерфейсами, `Table.CanGetRowCount/GetRowCount`
+(абстрактно, `MVTable` считает через первичный индекс), `Select`: quick-флаг,
+`groupIndex/havingIndex/qualifyIndex/groupData`, вычисление quick в
+`PrepareExpressions`, ветка `QueryQuick` в `Run`; ридер читает `COUNT(*)` /
+`COUNT(col)` / `COUNT([DISTINCT|ALL] col)` и ставит `SetGroupQuery`, остальные
+вызовы `F(...)` отказывают по имени, а не синтаксисом.
+
+Граница среза: quick отвечает без чтения строк (`COUNT(*)` и `COUNT` по NOT NULL
+через `table.getRowCount`); всё остальное — nullable-аргумент, WHERE, DISTINCT —
+уходит в групповое выполнение и честно отказывает там. Проверено:
+`SelectTextTests` — COUNT-оракулы против JDBC (значения, алиас, LIMIT/OFFSET
+поверх) плюс 3 отказа; `H2Sharp.Tests` **844 зелёных**.
+
 ### Плоский SELECT читает LIMIT/OFFSET/FETCH
 
 `ParseQuerySelect` читает хвост в порядке эталона: `OFFSET n [ROW|ROWS]`,

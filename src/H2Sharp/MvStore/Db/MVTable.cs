@@ -645,6 +645,23 @@ public sealed class MVTable : Table
     }
 
     /// <inheritdoc/>
+    public override bool CanGetRowCount(SessionLocal session) => true;
+
+    /// <inheritdoc/>
+    public override long GetRowCount(SessionLocal session)
+    {
+        Transaction? t = GetTransactionBegin();
+        if (t is null)
+        {
+            return 0;
+        }
+
+        long count = primaryIndex.GetRowCount(t);
+        t.Commit();
+        return count;
+    }
+
+    /// <inheritdoc/>
     public override string? GetCreateSql()
     {
         StringBuilder builder = new("CREATE TABLE ");

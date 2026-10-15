@@ -310,20 +310,32 @@ public sealed class Parser
         }
 
         bool star = ReadIf(Token.Asterisk);
-        List<Expressions.Expression> columns = [];
-        List<string?> columnAliases = [];
+        List<Expressions.Expression> selectItems = [];
         if (!star)
         {
             do
             {
+                Expressions.Expression item;
                 if (IsWord("COUNT", consume: false)
                     && tokens[position + 1].TokenType == Token.OpenParen)
                 {
-                    throw new TODOException("Parser.parseQuerySelect: aggregates are not ported");
+                    item = ReadQueryAggregate(select);
+                }
+                else if (IsNameToken() && tokens[position + 1].TokenType == Token.OpenParen)
+                {
+                    // A function call: only COUNT is read, the rest waits for its aggregate.
+                    // Without this a SUM(ID) would read SUM as a column and fail on the
+                    // parenthesis with a syntax error about valid SQL.
+                    throw new TODOException(
+                        "Parser.parseQuerySelect: " + Current.AsIdentifier + " is not ported");
+                }
+                else
+                {
+                    string? tableAlias;
+                    string column = ReadQueryColumnName(out tableAlias);
+                    item = new Expressions.ExpressionColumn(column, tableAlias, 0);
                 }
 
-                string? tableAlias;
-                string column = ReadQueryColumnName(out tableAlias);
                 string? alias = null;
                 if (IsWord("AS"))
                 {
@@ -334,8 +346,12 @@ public sealed class Parser
                     throw new TODOException("Parser.parseQuerySelect: bare column aliases are not ported");
                 }
 
-                columns.Add(new Expressions.ExpressionColumn(column, tableAlias, 0));
-                columnAliases.Add(alias);
+                if (alias is not null)
+                {
+                    item = new Expressions.Alias(item, alias, aliasColumnName: true);
+                }
+
+                selectItems.Add(item);
             }
             while (ReadIf(Token.Comma));
         }
@@ -372,16 +388,7 @@ public sealed class Parser
         }
         else
         {
-            for (int i = 0; i < columns.Count; i++)
-            {
-                Expressions.Expression column = columns[i];
-                if (columnAliases[i] is not null)
-                {
-                    column = new Expressions.Alias(column, columnAliases[i]!, aliasColumnName: true);
-                }
-
-                selectList.Add(column);
-            }
+            selectList.AddRange(selectItems);
         }
 
         select.SetExpressions([.. selectList]);
@@ -556,8 +563,6 @@ public sealed class Parser
             || word.Equals("LIMIT", StringComparison.OrdinalIgnoreCase)
             || word.Equals("OFFSET", StringComparison.OrdinalIgnoreCase)
             || word.Equals("FETCH", StringComparison.OrdinalIgnoreCase)
-            || word.Equals("LIMIT", StringComparison.OrdinalIgnoreCase)
-            || word.Equals("FETCH", StringComparison.OrdinalIgnoreCase)
             || word.Equals("UNION", StringComparison.OrdinalIgnoreCase)
             || word.Equals("EXCEPT", StringComparison.OrdinalIgnoreCase)
             || word.Equals("INTERSECT", StringComparison.OrdinalIgnoreCase)
@@ -580,6 +585,51 @@ public sealed class Parser
         }
 
         return first;
+    }
+
+    /// <summary>
+    /// Reads COUNT(*) or COUNT(expression): the only aggregate the engine runs.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads every aggregate name here and builds the matching type; only
+    /// COUNT is built, anything else never reaches this branch. DISTINCT and ALL spellings
+    /// follow the reference; FILTER and OVER wait for their machinery, and the select is
+    /// marked a group query the way readOver does.
+    /// </remarks>
+    /// <param name="select">the select being read</param>
+    /// <returns>the aggregate</returns>
+    private Expressions.Aggregate.Aggregate ReadQueryAggregate(Query.Select select)
+    {
+        Read();
+        Expect(Token.OpenParen, "(");
+        Expressions.Aggregate.Aggregate aggregate;
+        if (ReadIf(Token.Asterisk))
+        {
+            Expect(Token.CloseParen, ")");
+            aggregate = new Expressions.Aggregate.Aggregate(
+                Expressions.Aggregate.AggregateType.CountAll, [], select, distinct: false);
+        }
+        else
+        {
+            bool distinct = IsWord("DISTINCT");
+            if (!distinct)
+            {
+                _ = IsWord("ALL");
+            }
+
+            Expressions.Expression arg = ReadQueryOr();
+            Expect(Token.CloseParen, ")");
+            aggregate = new Expressions.Aggregate.Aggregate(
+                Expressions.Aggregate.AggregateType.Count, [arg], select, distinct);
+        }
+
+        if (IsWord("FILTER", consume: false) || IsWord("OVER", consume: false))
+        {
+            throw new TODOException("Parser.parseQuerySelect: FILTER and OVER are not ported");
+        }
+
+        select.SetGroupQuery();
+        return aggregate;
     }
 
     /// <summary>

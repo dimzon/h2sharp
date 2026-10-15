@@ -248,6 +248,91 @@ public sealed class SelectTextTests
         CompareText("select_text_limit0", "SELECT ID FROM T ORDER BY ID LIMIT 0", []);
     }
 
+    [JavaOracleFact]
+    public void CountStarCountsRows()
+    {
+        CompareText("select_text_count", "SELECT COUNT(*) FROM T", ["=4"]);
+    }
+
+    [JavaOracleFact]
+    public void CountNotNullColumnCountsRows()
+    {
+        // ID is NOT NULL, so every row counts: the reference answers this without walking
+        // rows, and so does this side.
+        CompareText("select_text_countcol", "SELECT COUNT(ID) FROM T", ["=4"]);
+    }
+
+    [JavaOracleFact]
+    public void CountStarWithAlias()
+    {
+        CompareText("select_text_countas", "SELECT COUNT(*) AS C FROM T", ["=4"]);
+    }
+
+    [JavaOracleFact]
+    public void CountStarWithLimit()
+    {
+        CompareText("select_text_countlim", "SELECT COUNT(*) FROM T LIMIT 1", ["=4"]);
+    }
+
+    [JavaOracleFact]
+    public void CountStarWithOffsetReadsNothing()
+    {
+        CompareText("select_text_countoff", "SELECT COUNT(*) FROM T OFFSET 1", []);
+    }
+
+    [Fact]
+    public void CountNullableColumnWaitsForGrouping()
+    {
+        // NAME is nullable: the row count is not the answer, grouped execution is, and it
+        // is not ported — the reference answers 3, this side refuses by name.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            CommandContainer container = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("SELECT COUNT(NAME) FROM T"));
+            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
+            Assert.Contains("grouped", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void CountWithWhereWaitsForGrouping()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            CommandContainer container = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("SELECT COUNT(*) FROM T WHERE ID > 1"));
+            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
+            Assert.Contains("grouped", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void CountDistinctWaitsForGrouping()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            CommandContainer container = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("SELECT COUNT(DISTINCT ID) FROM T"));
+            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
+            Assert.Contains("grouped", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
     [Fact]
     public void FetchWithTiesWaitsForTies()
     {
@@ -346,14 +431,16 @@ public sealed class SelectTextTests
     }
 
     [Fact]
-    public void CountStarWaitsForAggregates()
+    public void SumWaitsForAggregates()
     {
+        // COUNT runs since the quick aggregate path; every other aggregate refuses by name
+        // rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
             TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT COUNT(*) FROM T"));
-            Assert.Contains("not ported", e.Message);
+                () => session.PrepareCommand("SELECT SUM(ID) FROM T"));
+            Assert.Contains("SUM", e.Message);
         }
         finally
         {

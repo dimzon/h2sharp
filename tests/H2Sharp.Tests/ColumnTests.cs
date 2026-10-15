@@ -127,6 +127,10 @@ public sealed class ColumnTests
 
         public override long GetRowCountApproximation() => 0;
 
+        public override bool CanGetRowCount(SessionLocal session) => false;
+
+        public override long GetRowCount(SessionLocal session) => throw new TODOException("TableFake");
+
         public override string GetCreateSql() => "CREATE TABLE T(NAME CHAR)";
 
         public override string GetSql(int sqlFlags) => "T";

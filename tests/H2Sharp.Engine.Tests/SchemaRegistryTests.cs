@@ -118,6 +118,10 @@ public sealed class SchemaRegistryTests
 
         public override long GetRowCountApproximation() => 0;
 
+        public override bool CanGetRowCount(SessionLocal session) => false;
+
+        public override long GetRowCount(SessionLocal session) => throw new TODOException("TestTable holds nothing");
+
         public override string GetCreateSql() => throw new TODOException("TestTable cannot create itself");
 
         public override string GetSql(int sqlFlags) => name;
