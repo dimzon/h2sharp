@@ -31,6 +31,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
@@ -259,20 +260,16 @@ public sealed class SortOrder
     /// <summary>
     /// Sort a list of rows.
     /// </summary>
+    /// <remarks>
+    /// Java's List.sort is stable and the reference relies on it: tied rows keep the order
+    /// they were read in, which is what a limit then trims. .NET's List.Sort is
+    /// introspective and makes no such promise, so the rows sort in the list's own memory
+    /// through the stable merge: no copy out and back, the auxiliary merge buffer aside.
+    /// </remarks>
     /// <param name="rows">the list of rows</param>
     public void Sort(List<Value?[]> rows)
     {
-        // Java's List.sort is stable and the reference relies on it: tied rows keep the order
-        // they were read in, which is what a limit then trims. .NET's List.Sort is
-        // introspective and makes no such promise, so the rows go through the stable merge
-        // in a copy and back.
-        Value?[][] array = new Value?[rows.Count][];
-        rows.CopyTo(array);
-        Util.Utils.StableSort(array, comparison ??= Compare);
-        for (int i = 0; i < array.Length; i++)
-        {
-            rows[i] = array[i];
-        }
+        Utils.StableSort(CollectionsMarshal.AsSpan(rows), 0, rows.Count, comparison ??= Compare);
     }
 
     /// <summary>
@@ -303,13 +300,7 @@ public sealed class SortOrder
             return;
         }
 
-        Value?[][] array = new Value?[rows.Count][];
-        rows.CopyTo(array);
-        Utils.SortTopN(array, fromInclusive, toExclusive, comparison ??= Compare);
-        for (int i = fromInclusive; i < toExclusive; i++)
-        {
-            rows[i] = array[i];
-        }
+        Utils.SortTopN(CollectionsMarshal.AsSpan(rows), fromInclusive, toExclusive, comparison ??= Compare);
     }
 
     /// <summary>

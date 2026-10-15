@@ -311,15 +311,27 @@ public static class Utils
     /// <param name="toExclusive">the end index, exclusive</param>
     /// <param name="comp">the comparer</param>
     public static void SortTopN<X>(X[] array, int fromInclusive, int toExclusive, Comparison<X> comp)
+        => SortTopN(array.AsSpan(), fromInclusive, toExclusive, comp);
+
+    /// <summary>
+    /// Find the top limit values using the given comparer and place them as in a full
+    /// array sort, in descending order.
+    /// </summary>
+    /// <typeparam name="X">the type of elements</typeparam>
+    /// <param name="span">the span</param>
+    /// <param name="fromInclusive">the start index, inclusive</param>
+    /// <param name="toExclusive">the end index, exclusive</param>
+    /// <param name="comp">the comparer</param>
+    public static void SortTopN<X>(Span<X> span, int fromInclusive, int toExclusive, Comparison<X> comp)
     {
-        int highInclusive = array.Length - 1;
+        int highInclusive = span.Length - 1;
         if (highInclusive > 0 && toExclusive > fromInclusive)
         {
-            PartialQuickSort(array, 0, highInclusive, comp, fromInclusive, toExclusive - 1);
+            PartialQuickSort(span, 0, highInclusive, comp, fromInclusive, toExclusive - 1);
             // Java sorts the window with a stable sort and the order of tied rows is observed.
             // .NET's ranged sort is introspective, so the window goes through the stable
             // merge below, in place: no copy out and back.
-            StableSort(array, fromInclusive, toExclusive, comp);
+            StableSort(span, fromInclusive, toExclusive, comp);
         }
     }
 
@@ -336,23 +348,35 @@ public static class Utils
     /// <param name="array">the array, sorted in place</param>
     /// <param name="comp">the comparer</param>
     public static void StableSort<X>(X[] array, Comparison<X> comp)
-        => StableSort(array, 0, array.Length, comp);
+        => StableSort(array.AsSpan(), 0, array.Length, comp);
 
     /// <summary>
-    /// Sorts a window of an array stably, leaving everything outside the window where it was.
+    /// Sorts an array window stably: equal elements keep the order they arrived in.
     /// </summary>
-    /// <remarks>
-    /// The same bottom-up merge as the whole-array sort, with the two buffers ping-ponging
-    /// between the array window and an auxiliary the size of the window. An even number of
-    /// passes lands back in the array with no copy at all; an odd number copies the window
-    /// once, which is the only copy this method ever makes.
-    /// </remarks>
     /// <typeparam name="X">the type of elements</typeparam>
     /// <param name="array">the array holding the window</param>
     /// <param name="fromInclusive">the start of the window, inclusive</param>
     /// <param name="toExclusive">the end of the window, exclusive</param>
     /// <param name="comp">the comparer</param>
     public static void StableSort<X>(X[] array, int fromInclusive, int toExclusive, Comparison<X> comp)
+        => StableSort(array.AsSpan(), fromInclusive, toExclusive, comp);
+
+    /// <summary>
+    /// Sorts a span window stably, leaving everything outside the window where it was.
+    /// </summary>
+    /// <remarks>
+    /// The same bottom-up merge as the whole-array sort, with the two buffers ping-ponging
+    /// between the span window and an auxiliary the size of the window. An even number of
+    /// passes lands back in the span with no copy at all; an odd number copies the window
+    /// once, which is the only copy this method ever makes. Sorting the list's own memory
+    /// through here is what lets a result sort without copying its rows out and back.
+    /// </remarks>
+    /// <typeparam name="X">the type of elements</typeparam>
+    /// <param name="span">the span holding the window</param>
+    /// <param name="fromInclusive">the start of the window, inclusive</param>
+    /// <param name="toExclusive">the end of the window, exclusive</param>
+    /// <param name="comp">the comparer</param>
+    public static void StableSort<X>(Span<X> span, int fromInclusive, int toExclusive, Comparison<X> comp)
     {
         int length = toExclusive - fromInclusive;
         if (length < 2)
@@ -361,10 +385,11 @@ public static class Utils
         }
 
         X[] aux = new X[length];
-        X[] src = array;
+        Span<X> src = span;
         int srcBase = fromInclusive;
-        X[] dst = aux;
+        Span<X> dst = aux;
         int dstBase = 0;
+        bool flipped = false;
         for (int width = 1; width < length; width *= 2)
         {
             for (int lo = 0; lo < length; lo += 2 * width)
@@ -395,13 +420,18 @@ public static class Utils
                 }
             }
 
-            (src, dst) = (dst, src);
-            (srcBase, dstBase) = (dstBase, srcBase);
+            Span<X> swap = src;
+            src = dst;
+            dst = swap;
+            int swapBase = srcBase;
+            srcBase = dstBase;
+            dstBase = swapBase;
+            flipped = !flipped;
         }
 
-        if (!ReferenceEquals(src, array))
+        if (flipped)
         {
-            Array.Copy(src, 0, array, fromInclusive, length);
+            src[..length].CopyTo(span.Slice(fromInclusive, length));
         }
     }
 
@@ -412,14 +442,14 @@ public static class Utils
     /// to end+1..high positions. Middle elements are placed into start..end positions.
     /// </summary>
     /// <typeparam name="X">the type of elements</typeparam>
-    /// <param name="array">the array to sort</param>
+    /// <param name="span">the span to sort</param>
     /// <param name="low">the lower index with data, inclusive</param>
     /// <param name="high">the higher index with data, inclusive, high &gt; low</param>
     /// <param name="comp">the comparer</param>
     /// <param name="start">the start index of requested region, inclusive</param>
     /// <param name="end">the end index of requested region, inclusive, end &gt;= start</param>
     private static void PartialQuickSort<X>(
-        X[] array, int low, int high, Comparison<X> comp, int start, int end)
+        Span<X> span, int low, int high, Comparison<X> comp, int start, int end)
     {
         if (low >= start && high <= end)
         {
@@ -431,40 +461,40 @@ public static class Utils
 
         // use a random pivot to protect against the worst case order
         int p = low + MathUtils.RandomInt(high - low);
-        X pivot = array[p];
+        X pivot = span[p];
         int m = (low + high) >>> 1;
-        X temp = array[m];
-        array[m] = pivot;
-        array[p] = temp;
+        X temp = span[m];
+        span[m] = pivot;
+        span[p] = temp;
 
         while (i <= j)
         {
-            while (comp(array[i], pivot) < 0)
+            while (comp(span[i], pivot) < 0)
             {
                 i++;
             }
 
-            while (comp(array[j], pivot) > 0)
+            while (comp(span[j], pivot) > 0)
             {
                 j--;
             }
 
             if (i <= j)
             {
-                temp = array[i];
-                array[i++] = array[j];
-                array[j--] = temp;
+                temp = span[i];
+                span[i++] = span[j];
+                span[j--] = temp;
             }
         }
 
         if (low < j && /* Intersection with middle region */ start <= j)
         {
-            PartialQuickSort(array, low, j, comp, start, end);
+            PartialQuickSort(span, low, j, comp, start, end);
         }
 
         if (i < high && /* Intersection with middle region */ i <= end)
         {
-            PartialQuickSort(array, i, high, comp, start, end);
+            PartialQuickSort(span, i, high, comp, start, end);
         }
     }
 

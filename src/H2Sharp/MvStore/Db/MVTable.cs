@@ -245,10 +245,17 @@ public sealed class MVTable : Table
     /// <summary>
     /// Gets the row factory that reads this table's rows.
     /// </summary>
+    /// <remarks>
+    /// One per table: the column count never changes after construction, and the factory
+    /// itself holds no state, so sharing it is safe and a second instance would only be
+    /// garbage.
+    /// </remarks>
     public RowFactory GetRowFactory()
     {
-        return new TableRowFactory(columns.Length);
+        return rowFactory ??= new TableRowFactory(columns.Length);
     }
+
+    private RowFactory? rowFactory;
 
     /// <summary>
     /// Adds an index to this table: a delegate over the primary for a single integer key,
@@ -467,15 +474,6 @@ public sealed class MVTable : Table
     /// <param name="index">the index</param>
     private void RebuildIndexBlockMerge(SessionLocal session, Index index)
         => throw new TODOException("MVTable.rebuildIndexBlockMerge");
-
-    /// <summary>
-    /// Gets the type of this table's rows: the reference's, so that what is written to a page
-    /// is the format the reference writes.
-    /// </summary>
-    public RowDataType GetRowDataType()
-    {
-        return new RowDataType(null, CompareMode.GetInstance(null, 0), null, null, null, columns.Length, true);
-    }
 
     /// <summary>
     /// Begins a transaction on the store this table's rows live in.
