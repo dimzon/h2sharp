@@ -6,10 +6,10 @@
  *
  * The corpus is those statements themselves rather than a prettier set of them: the point is that
  * the SQL an application writes is the SQL the database accepts. Where the reference's spelling
- * shows through, the test pins it — the statement words are identifiers the tokenizer never saw,
- * a keyword carries its text, and a named parameter is an at sign plus a name that the parser
- * binds. A parser that matched statement words by kind could only work by extending the keyword
- * table, and extending that table renumbers every token after it.
+ * shows through, the test pins it — the statement words are identifiers the tokenizer never saw
+ * and a keyword carries its text. An at sign plus a name is a session variable in the reference
+ * (`Variable`, not a parameter), and that class is not ported, so the parser refuses it by name
+ * rather than reading it into something it is not.
  */
 using System;
 using System.Collections;
@@ -17,6 +17,7 @@ using System.Linq;
 using System.Text;
 using H2Sharp.Command;
 using H2Sharp.Expressions;
+using H2Sharp.Expressions.Conditions;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -61,22 +62,13 @@ public sealed class ParserTests
     }
 
     [Fact]
-    public void InsertReadsValuesAndParameters()
+    public void InsertWithVariablesSaysSo()
     {
-        Statement statement = Parse("INSERT INTO PERSON(ID, NAME, AGE) VALUES (@Id, @Name, @Age)");
-
-        InsertStatement insert = Assert.IsType<InsertStatement>(statement);
-        Assert.Equal(CommandInterface.Insert, insert.GetCommandType());
-        Assert.Equal("PERSON", insert.Name);
-        Assert.Equal(["ID", "NAME", "AGE"], insert.Columns);
-        Assert.Single(insert.Rows);
-        Assert.Equal(3, insert.Rows[0].Count);
-
-        // The names arrive folded, because the tokenizer folds every identifier and a parameter
-        // keeps the folded spelling: a caller that binds "age" has to find the parameter the
-        // statement wrote as "AGE".
-        ParameterExpression first = Assert.IsType<ParameterExpression>(insert.Rows[0][0]);
-        Assert.Equal("ID", first.GetName());
+        // @Id is a session Variable in the reference, and that class is not ported: reading it
+        // as a named parameter was the parallel tree's invention, and it is gone with it.
+        TODOException e = Assert.Throws<TODOException>(
+            () => Parse("INSERT INTO PERSON(ID, NAME, AGE) VALUES (@Id, @Name, @Age)"));
+        Assert.Contains("variables", e.Message);
     }
 
     [Fact]
@@ -101,14 +93,14 @@ public sealed class ParserTests
     [Fact]
     public void SelectReadsColumnsWhereAndOrder()
     {
-        Statement statement = Parse("SELECT ID, NAME, AGE FROM PERSON WHERE ID = @Id ORDER BY ID");
+        Statement statement = Parse("SELECT ID, NAME, AGE FROM PERSON WHERE ID = 1 ORDER BY ID");
 
         SelectStatement select = Assert.IsType<SelectStatement>(statement);
         Assert.Equal(CommandInterface.Select, select.GetCommandType());
         Assert.Equal(["ID", "NAME", "AGE"], select.Items.Select(i => i.Column));
         Assert.Equal("PERSON", select.Name);
-        ComparisonExpression where = Assert.IsType<ComparisonExpression>(select.Where);
-        Assert.Equal(ComparisonExpression.Equal, CompareTypeOf(where));
+        Comparison where = Assert.IsType<Comparison>(select.Where);
+        Assert.Equal(Comparison.Equal, CompareTypeOf(where));
         Assert.Equal(("ID", true), Assert.Single(select.OrderBy));
     }
 
@@ -148,7 +140,7 @@ public sealed class ParserTests
         SelectStatement select = Assert.IsType<SelectStatement>(
             Parse("SELECT ID FROM PERSON WHERE ID = 1 OR ID = 2"));
 
-        LogicalExpression or = Assert.IsType<LogicalExpression>(select.Where);
+        ConditionAndOr or = Assert.IsType<ConditionAndOr>(select.Where);
         Assert.Contains(" OR ", Render(or), StringComparison.Ordinal);
     }
 
@@ -157,7 +149,7 @@ public sealed class ParserTests
     {
         SelectStatement select = Assert.IsType<SelectStatement>(Parse("SELECT ID FROM PERSON WHERE ID IS NULL"));
 
-        Assert.IsType<IsNullExpression>(select.Where);
+        Assert.IsType<ConditionIsNull>(select.Where);
     }
 
     [Fact]
@@ -166,21 +158,21 @@ public sealed class ParserTests
         SelectStatement select = Assert.IsType<SelectStatement>(
             Parse("SELECT ID FROM PERSON WHERE (ID = 1 OR ID = 2) AND NAME = 'x'"));
 
-        LogicalExpression and = Assert.IsType<LogicalExpression>(select.Where);
+        ConditionAndOr and = Assert.IsType<ConditionAndOr>(select.Where);
         Assert.Contains(" AND ", Render(and), StringComparison.Ordinal);
     }
 
     [Fact]
     public void UpdateReadsAssignmentsAndCondition()
     {
-        Statement statement = Parse("UPDATE PERSON SET AGE = @Age WHERE ID = @Id");
+        Statement statement = Parse("UPDATE PERSON SET AGE = 1 WHERE ID = 2");
 
         UpdateStatement update = Assert.IsType<UpdateStatement>(statement);
         Assert.Equal(CommandInterface.Update, update.GetCommandType());
         (string column, Expression value) = Assert.Single(update.Assignments);
         Assert.Equal("AGE", column);
-        Assert.IsType<ParameterExpression>(value);
-        Assert.IsType<ComparisonExpression>(update.Where);
+        Assert.IsType<ValueExpression>(value);
+        Assert.IsType<Comparison>(update.Where);
     }
 
     [Fact]
@@ -191,7 +183,7 @@ public sealed class ParserTests
         DeleteStatement delete = Assert.IsType<DeleteStatement>(statement);
         Assert.Equal(CommandInterface.Delete, delete.GetCommandType());
         Assert.Equal("PERSON", delete.Name);
-        Assert.IsType<ComparisonExpression>(delete.Where);
+        Assert.IsType<Comparison>(delete.Where);
     }
 
     [Fact]
@@ -230,17 +222,17 @@ public sealed class ParserTests
     /// The comparison type, read off the SQL the expression renders itself as. That is the only
     /// place it is visible without adding a member that exists for a test.
     /// </summary>
-    private static int CompareTypeOf(ComparisonExpression comparison)
+    private static int CompareTypeOf(Comparison comparison)
     {
         string rendered = Render(comparison);
         foreach ((string op, int type) in new[]
         {
-            (" <> ", ComparisonExpression.NotEqual),
-            (" <= ", ComparisonExpression.SmallerEqual),
-            (" >= ", ComparisonExpression.BiggerEqual),
-            (" = ", ComparisonExpression.Equal),
-            (" < ", ComparisonExpression.Smaller),
-            (" > ", ComparisonExpression.Bigger),
+            (" <> ", Comparison.NotEqual),
+            (" <= ", Comparison.SmallerEqual),
+            (" >= ", Comparison.BiggerEqual),
+            (" = ", Comparison.Equal),
+            (" < ", Comparison.Smaller),
+            (" > ", Comparison.Bigger),
         })
         {
             if (rendered.Contains(op, StringComparison.Ordinal))

@@ -22,10 +22,12 @@
  *   kinds of statement in `CommandInterface`; the tokenizer has never heard of them and they come
  *   through as `IdentifierToken`. Adding them to `ParserUtil` would renumber every token after
  *   them and disagree with every file the reference wrote.
- * * **A named parameter is two tokens.** `@Age` is a `Token.At` followed by the name as an
- *   identifier, and the parser binds them — the reference's `readTerm`: `case AT: read();
- *   r = new Variable(session, readIdentifier())`. The lexer keeps no name, so a parser that
- *   expected one token would read the parameter as a column.
+ * * **A variable is two tokens.** `@Age` is a `Token.At` followed by the name as an
+ *   identifier — the reference's `readTerm`: `case AT: read();
+ *   r = new Variable(session, readIdentifier())`. It is a session variable, not a named
+ *   parameter (those are the `?` this layer does not read yet), and `Variable` is not ported,
+ *   so this layer refuses it by name. The lexer keeps no name, so a parser that expected one
+ *   token would read the variable as a column.
  *
  * One trap that cost two rounds of guessing: <see cref="IsWord(string, bool)"/> *consumes* the
  * word unless asked not to, so a dispatch written as `if (IsWord("DELETE")) { Read(); … }` eats
@@ -1027,7 +1029,8 @@ public sealed class Parser
         while (CurrentType == ParserUtil.Or)
         {
             Read();
-            left = new LogicalExpression(left, LogicalExpression.Or, ReadAnd());
+            left = new Expressions.Conditions.ConditionAndOr(
+                Expressions.Conditions.ConditionAndOr.Or, left, ReadAnd());
         }
 
         return left;
@@ -1039,7 +1042,8 @@ public sealed class Parser
         while (CurrentType == ParserUtil.And)
         {
             Read();
-            left = new LogicalExpression(left, LogicalExpression.And, ReadComparison());
+            left = new Expressions.Conditions.ConditionAndOr(
+                Expressions.Conditions.ConditionAndOr.And, left, ReadComparison());
         }
 
         return left;
@@ -1052,7 +1056,7 @@ public sealed class Parser
             or Token.SmallerEqual or Token.BiggerEqual)
         {
             int compareType = ReadComparisonType();
-            left = new ComparisonExpression(left, compareType, ReadTerm());
+            left = new Expressions.Conditions.Comparison(compareType, left, ReadTerm(), whenOperand: false);
         }
 
         if (CurrentType == ParserUtil.Is)
@@ -1060,7 +1064,7 @@ public sealed class Parser
             Read();
             bool not = ReadIf(ParserUtil.Not);
             Expect(ParserUtil.Null, "NULL");
-            left = new IsNullExpression(left, not);
+            left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
         }
 
         return left;
@@ -1072,12 +1076,12 @@ public sealed class Parser
         Read();
         return type switch
         {
-            Token.Equal => ComparisonExpression.Equal,
-            Token.NotEqual => ComparisonExpression.NotEqual,
-            Token.Smaller => ComparisonExpression.Smaller,
-            Token.Bigger => ComparisonExpression.Bigger,
-            Token.SmallerEqual => ComparisonExpression.SmallerEqual,
-            Token.BiggerEqual => ComparisonExpression.BiggerEqual,
+            Token.Equal => Expressions.Conditions.Comparison.Equal,
+            Token.NotEqual => Expressions.Conditions.Comparison.NotEqual,
+            Token.Smaller => Expressions.Conditions.Comparison.Smaller,
+            Token.Bigger => Expressions.Conditions.Comparison.Bigger,
+            Token.SmallerEqual => Expressions.Conditions.Comparison.SmallerEqual,
+            Token.BiggerEqual => Expressions.Conditions.Comparison.BiggerEqual,
             _ => throw DbException.GetInternalError("comparison type " + type),
         };
     }
@@ -1094,7 +1098,7 @@ public sealed class Parser
         if (CurrentType == ParserUtil.Not)
         {
             Read();
-            return new NotExpression(ReadTerm());
+            return new Expressions.Conditions.ConditionNot(ReadTerm());
         }
 
         if (CurrentType == ParserUtil.Null)
@@ -1126,10 +1130,12 @@ public sealed class Parser
 
         if (CurrentType == Token.At)
         {
-            // The reference's shape: an at sign and the name are two tokens and the parser binds
-            // them. See the file header.
+            // The reference binds @name to a Variable, which is not ported: a session variable
+            // is storage on the session plus an assignment statement, and neither is here.
+            // A named parameter it is not (those are the ? this layer does not read yet).
             Read();
-            return new ParameterExpression(ReadIdentifier());
+            _ = ReadIdentifier();
+            throw new TODOException("Parser.readTerm: variables (@name) are not ported");
         }
 
         Value? literal = Current.GetValue(provider);
@@ -1139,7 +1145,7 @@ public sealed class Parser
             return ValueExpression.Get(literal);
         }
 
-        return new ColumnExpression(ReadIdentifier());
+        return new ExpressionColumn(ReadIdentifier(), null, 0);
     }
 
     private static Value Negate(Value value)

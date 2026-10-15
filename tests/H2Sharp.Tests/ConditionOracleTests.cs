@@ -212,4 +212,64 @@ public sealed class ConditionOracleTests
 
         return lines;
     }
+
+    /// <summary>
+    /// IS NULL over rows: the deleted parallel tree answered from the operand alone and never
+    /// unwrapped a row, so ROW(1, NULL) IS NULL said TRUE there. The canonical predicate asks
+    /// every field instead — all null for IS NULL, any null fails IS NOT NULL — and this asks
+    /// both sides over the same four rows.
+    /// </summary>
+    [JavaOracleFact]
+    public void RowIsNull_MatchesReference()
+    {
+        string body = """
+                      org.h2.value.Value[] one = { org.h2.value.ValueInteger.get(1) };
+                      org.h2.value.Value[] two = { org.h2.value.ValueInteger.get(1), org.h2.value.ValueInteger.get(2) };
+                      org.h2.value.Value[] mixed = { org.h2.value.ValueInteger.get(1), org.h2.value.ValueNull.INSTANCE };
+                      org.h2.value.Value[] empty = { org.h2.value.ValueNull.INSTANCE, org.h2.value.ValueNull.INSTANCE };
+                      org.h2.value.Value[][] rows = { one, two, mixed, empty };
+                      for (org.h2.value.Value[] fields : rows) {
+                        for (boolean not : new boolean[] { false, true }) {
+                          org.h2.value.Value row = org.h2.value.ValueRow.get(fields);
+                          org.h2.expression.condition.NullPredicate p =
+                              new org.h2.expression.condition.NullPredicate(
+                                  org.h2.expression.ValueExpression.get(row), not, false);
+                          System.out.println(p.getValue(null).getBoolean() ? "TRUE" : "FALSE");
+                        }
+                      }
+                      conn.close();
+            """;
+
+        List<string> java = OracleRunner.Run([], Setup + body);
+        List<string> csharp = DescribeRowIsNull();
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == csharp[i], $"line {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
+    private static List<string> DescribeRowIsNull()
+    {
+        List<Value?[]> rows =
+        [
+            [ValueInteger.Get(1)],
+            [ValueInteger.Get(1), ValueInteger.Get(2)],
+            [ValueInteger.Get(1), ValueNull.Instance],
+            [ValueNull.Instance, ValueNull.Instance],
+        ];
+        List<string> lines = [];
+        foreach (Value?[] fields in rows)
+        {
+            foreach (bool not in new[] { false, true })
+            {
+                Expression predicate = new ConditionIsNull(
+                    ValueExpression.Get(ValueRow.Get(fields)), not, whenOperand: false);
+                lines.Add(Word(predicate.GetValue(null!)));
+            }
+        }
+
+        return lines;
+    }
 }
