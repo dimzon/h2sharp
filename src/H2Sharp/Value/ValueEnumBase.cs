@@ -131,7 +131,7 @@ public class ValueEnumBase : Value
         unchecked
         {
             int results = 31;
-            results += JavaHashCode(label);
+            results += Utils.JavaHashCode(label);
             results += ordinal;
             return results;
         }
@@ -140,23 +140,4 @@ public class ValueEnumBase : Value
     /// <inheritdoc/>
     public override bool Equals(object? other)
         => other is ValueEnumBase e && GetInt() == e.GetInt();
-
-    private static int JavaHashCode(string? s)
-    {
-        if (s is null)
-        {
-            return 0;
-        }
-
-        unchecked
-        {
-            int hash = 0;
-            foreach (char c in s)
-            {
-                hash = (31 * hash) + c;
-            }
-
-            return hash;
-        }
-    }
 }

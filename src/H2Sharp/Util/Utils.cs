@@ -677,6 +677,37 @@ public static class Utils
             && s.AsSpan(index, prefix.Length).Equals(prefix, StringComparison.Ordinal);
 
     /// <summary>
+    /// Java's <c>String.hashCode</c>: the UTF-16 code units folded with 31.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>StringComparer.Ordinal.GetHashCode</c>, which .NET randomises per process.
+    /// The reference hash codes are part of the observable behaviour of a data type, and a
+    /// port that produced different numbers in each language would be wrong in the same way
+    /// a wrong string comparison would be. One copy for the whole project, so the four
+    /// callers cannot drift.
+    /// </remarks>
+    /// <param name="s">the string</param>
+    /// <returns>the Java hash code, with Java's wrapping overflow</returns>
+    public static int JavaHashCode(string? s)
+    {
+        if (s is null)
+        {
+            return 0;
+        }
+
+        unchecked
+        {
+            int hash = 0;
+            foreach (char c in s)
+            {
+                hash = (31 * hash) + c;
+            }
+
+            return hash;
+        }
+    }
+
+    /// <summary>
     /// Get the system property as a boolean. If the system property is not set, the
     /// default value is returned.
     /// </summary>

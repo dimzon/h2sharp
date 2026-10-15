@@ -230,27 +230,8 @@ public class CompareMode
         unchecked
         {
             int result = 1;
-            result = (31 * result) + JavaHashCode(GetName());
+            result = (31 * result) + Utils.JavaHashCode(GetName());
             return (31 * result) + strength;
-        }
-    }
-
-    private static int JavaHashCode(string? s)
-    {
-        if (s is null)
-        {
-            return 0;
-        }
-
-        unchecked
-        {
-            int hash = 0;
-            foreach (char c in s)
-            {
-                hash = (31 * hash) + c;
-            }
-
-            return hash;
         }
     }
 }

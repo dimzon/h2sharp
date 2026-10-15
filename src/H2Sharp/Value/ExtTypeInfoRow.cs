@@ -148,7 +148,7 @@ public sealed class ExtTypeInfoRow : ExtTypeInfo
         h = 67_378_403;
         foreach (KeyValuePair<string, TypeInfo> entry in fields.Entries)
         {
-            h = ((h * 31) + JavaHashCode(entry.Key)) * 37 + entry.Value.GetHashCode();
+            h = ((h * 31) + Utils.JavaHashCode(entry.Key)) * 37 + entry.Value.GetHashCode();
         }
 
         hash = h;
@@ -187,38 +187,5 @@ public sealed class ExtTypeInfoRow : ExtTypeInfo
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Java's <c>String.hashCode</c>: the UTF-16 code units folded with 31.
-    /// </summary>
-    /// <remarks>
-    /// Not <c>string.GetHashCode()</c>, and this is the part of the hash that actually
-    /// matters: .NET randomises string hashes per process, so a hash built from field names
-    /// would differ between two runs of the same program. Nothing needs to agree with the
-    /// reference's numbers — a hash code is neither persisted nor observed anywhere — but a
-    /// hash that changes per run is not a hash at all, so this is deterministic on purpose.
-    /// The arithmetic is Java's because the reference's own is, and using the same one keeps
-    /// the differential tests able to pin it.
-    /// </remarks>
-    /// <param name="s">the string</param>
-    /// <returns>the Java hash code, with Java's wrapping overflow</returns>
-    private static int JavaHashCode(string? s)
-    {
-        if (s is null)
-        {
-            return 0;
-        }
-
-        unchecked
-        {
-            int hash = 0;
-            foreach (char c in s)
-            {
-                hash = (31 * hash) + c;
-            }
-
-            return hash;
-        }
     }
 }

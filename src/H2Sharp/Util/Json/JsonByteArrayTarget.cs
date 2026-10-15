@@ -36,11 +36,6 @@ namespace H2Sharp.Util.Json;
 public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
 {
     /// <summary>
-    /// The hex characters.
-    /// </summary>
-    private const string Hex = "0123456789abcdef";
-
-    /// <summary>
     /// A JSON object.
     /// </summary>
     private const byte Object = 1;
@@ -122,8 +117,8 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
                         // four digits after the backslash.
                         Flush(stream, buffer, ref buffered);
                         WriteAscii(stream, "\\u00"u8);
-                        stream.WriteByte((byte)Hex[(c >> 4) & 0xf]);
-                        stream.WriteByte((byte)Hex[c & 0xf]);
+                        stream.WriteByte((byte)Hex.ToHexChar((c >> 4) & 0xf));
+                        stream.WriteByte((byte)Hex.ToHexChar(c & 0xf));
                     }
                     else if (c < 0x80)
                     {

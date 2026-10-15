@@ -20,11 +20,6 @@ namespace H2Sharp.Util.Json;
 public sealed class JsonStringTarget : JsonTarget<string>
 {
     /// <summary>
-    /// The hex characters.
-    /// </summary>
-    private const string Hex = "0123456789abcdef";
-
-    /// <summary>
     /// A JSON object.
     /// </summary>
     private const byte Object = 1;
@@ -87,8 +82,8 @@ public sealed class JsonStringTarget : JsonTarget<string>
                     if (c < ' ')
                     {
                         _ = builder.Append("\\u00")
-                            .Append(Hex[(c >> 4) & 0xf])
-                            .Append(Hex[c & 0xf]);
+                            .Append(Hex.ToHexChar((c >> 4) & 0xf))
+                            .Append(Hex.ToHexChar(c & 0xf));
                     }
                     else if (!asciiPrintableOnly || c <= 0x7f)
                     {
@@ -97,10 +92,10 @@ public sealed class JsonStringTarget : JsonTarget<string>
                     else
                     {
                         _ = builder.Append("\\u")
-                            .Append(Hex[(c >> 12) & 0xf])
-                            .Append(Hex[(c >> 8) & 0xf])
-                            .Append(Hex[(c >> 4) & 0xf])
-                            .Append(Hex[c & 0xf]);
+                            .Append(Hex.ToHexChar((c >> 12) & 0xf))
+                            .Append(Hex.ToHexChar((c >> 8) & 0xf))
+                            .Append(Hex.ToHexChar((c >> 4) & 0xf))
+                            .Append(Hex.ToHexChar(c & 0xf));
                     }
 
                     break;

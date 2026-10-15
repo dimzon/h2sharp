@@ -40,11 +40,6 @@ namespace H2Sharp.Util.Json;
 /// </remarks>
 public sealed unsafe class H2JavaScriptEncoder : JavaScriptEncoder
 {
-    /// <summary>
-    /// The hex characters, in the case the reference uses.
-    /// </summary>
-    private const string Hex = "0123456789abcdef";
-
     private readonly bool asciiPrintableOnly;
 
     /// <summary>
@@ -136,7 +131,7 @@ public sealed unsafe class H2JavaScriptEncoder : JavaScriptEncoder
 
         return asciiPrintableOnly && unicodeScalar > 0x7f
             ? Write("\\u" + HexOf(unicodeScalar), buffer, bufferLength, out numberOfCharactersWritten)
-            : Write("\\u00" + Hex[unicodeScalar >> 4 & 0xf] + Hex[unicodeScalar & 0xf], buffer, bufferLength, out numberOfCharactersWritten);
+            : Write("\\u00" + Hex.ToHexChar(unicodeScalar >> 4 & 0xf) + Hex.ToHexChar(unicodeScalar & 0xf), buffer, bufferLength, out numberOfCharactersWritten);
     }
 
     /// <inheritdoc/>
@@ -169,7 +164,7 @@ public sealed unsafe class H2JavaScriptEncoder : JavaScriptEncoder
     /// <param name="value">the value</param>
     /// <returns>the digits</returns>
     private static string HexOf(int value)
-        => new([Hex[value >> 12 & 0xf], Hex[value >> 8 & 0xf], Hex[value >> 4 & 0xf], Hex[value & 0xf]]);
+        => new([Hex.ToHexChar(value >> 12 & 0xf), Hex.ToHexChar(value >> 8 & 0xf), Hex.ToHexChar(value >> 4 & 0xf), Hex.ToHexChar(value & 0xf)]);
 
     /// <summary>
     /// Writes text at the start of the buffer.

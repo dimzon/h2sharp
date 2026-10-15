@@ -9,6 +9,7 @@
  */
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace H2Sharp.Util;
@@ -23,6 +24,15 @@ public static class Hex
     /// lookup is a byte read with no array bounds machinery per character.
     /// </summary>
     private static ReadOnlySpan<byte> Digits => "0123456789abcdef"u8;
+
+    /// <summary>
+    /// One lowercase hex digit as a character: the reference's HEX table, kept in one place so
+    /// the JSON writers cannot grow their own copies again.
+    /// </summary>
+    /// <param name="nibble">the value, only the low 4 bits are used</param>
+    /// <returns>the hex digit</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static char ToHexChar(int nibble) => (char)Digits[nibble & 0xF];
 
     /// <summary>
     /// The largest number of characters written by one stack buffer, that is 64 bytes.

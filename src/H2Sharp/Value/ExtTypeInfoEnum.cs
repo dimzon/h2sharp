@@ -241,7 +241,7 @@ public sealed class ExtTypeInfoEnum : ExtTypeInfo
         int hash = 1;
         foreach (string? e in enumerators)
         {
-            hash = (31 * hash) + JavaHashCode(e);
+            hash = (31 * hash) + Utils.JavaHashCode(e);
         }
 
         return hash + 203_117;
@@ -364,35 +364,5 @@ public sealed class ExtTypeInfoEnum : ExtTypeInfo
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Java's <c>String.hashCode</c>: the UTF-16 code units folded with 31.
-    /// </summary>
-    /// <remarks>
-    /// Not <c>StringComparer.Ordinal.GetHashCode</c>, which .NET randomises per process.
-    /// The reference hash codes are part of the observable behaviour of a data type, and a
-    /// port that produced different numbers in each language would be wrong in the same way
-    /// a wrong string comparison would be.
-    /// </remarks>
-    /// <param name="s">the string</param>
-    /// <returns>the Java hash code, with Java's wrapping overflow</returns>
-    private static int JavaHashCode(string? s)
-    {
-        if (s is null)
-        {
-            return 0;
-        }
-
-        unchecked
-        {
-            int hash = 0;
-            foreach (char c in s)
-            {
-                hash = (31 * hash) + c;
-            }
-
-            return hash;
-        }
     }
 }
