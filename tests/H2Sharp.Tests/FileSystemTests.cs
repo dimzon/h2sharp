@@ -132,6 +132,65 @@ public sealed class FileSystemTests : IDisposable
 
     [Theory]
     [MemberData(nameof(Schemes))]
+    public void PositionalAccessLeavesTheCursorAlone(string scheme)
+    {
+        // Bytes at absolute positions go around the cursor: a channel shared between a
+        // sequential framer and positional page reads must not seek either away.
+        FilePath path = At(scheme, "positional.bin");
+        Assert.True(path.CreateFile());
+
+        byte[] payload = [1, 2, 3, 4, 5, 6, 7, 8];
+        using (FileChannel channel = path.Open("rw"))
+        {
+            channel.Position = 0;
+            channel.Write(payload);
+            Assert.Equal(payload.Length, channel.Position);
+
+            channel.WriteAt(100, [9, 10]);
+            Assert.Equal(102, channel.Length);
+            Assert.Equal(payload.Length, channel.Position);
+
+            byte[] head = new byte[payload.Length];
+            Assert.Equal(payload.Length, channel.ReadAt(0, head));
+            Assert.Equal(payload, head);
+
+            byte[] tail = new byte[2];
+            Assert.Equal(2, channel.ReadAt(100, tail));
+            Assert.Equal([9, 10], tail);
+            Assert.Equal(payload.Length, channel.Position);
+
+            // The gap between the two writes reads as zeros, on the disk and in memory alike.
+            byte[] gap = new byte[4];
+            Assert.Equal(4, channel.ReadAt(10, gap));
+            Assert.Equal([0, 0, 0, 0], gap);
+
+            // Past the end there is nothing, not an error — the store probes for blocks.
+            Assert.Equal(0, channel.ReadAt(102, new byte[4]));
+            Assert.Equal(payload.Length, channel.Position);
+        }
+
+        // The whole-file helpers ride on the same pair, so a round trip through them covers
+        // ReadFully and WriteFully as well.
+        using (FileChannel channel = path.Open("rw"))
+        {
+            byte[] block = new byte[6000];
+            for (int i = 0; i < block.Length; i++)
+            {
+                block[i] = (byte)(i * 31);
+            }
+
+            H2Sharp.MvStore.DataUtils.WriteFully(channel, 5000, block);
+            byte[] back = new byte[block.Length];
+            H2Sharp.MvStore.DataUtils.ReadFully(channel, 5000, back);
+            Assert.Equal(block, back);
+
+            Assert.Throws<H2Sharp.MvStore.MvStoreException>(() =>
+                H2Sharp.MvStore.DataUtils.ReadFully(channel, channel.Length + 100, new byte[8]));
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Schemes))]
     public void AShorterFileCutsWhatWasThere(string scheme)
     {
         FilePath path = At(scheme, "truncate.bin");

@@ -169,6 +169,85 @@ internal sealed class SplitFileChannel : FileChannel
     }
 
     /// <inheritdoc/>
+    public override int ReadAt(long fileOffset, Span<byte> buffer)
+    {
+        if (fileOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(fileOffset));
+        }
+
+        lock (sync)
+        {
+            long available = length - fileOffset;
+            if (available <= 0)
+            {
+                return 0;
+            }
+
+            int count = (int)Math.Min(buffer.Length, available);
+            int done = 0;
+            while (done < count)
+            {
+                FileChannel part = PartAt(fileOffset);
+                int chunk = (int)Math.Min(count - done, maxLength - (fileOffset % maxLength));
+                int read = part.ReadAt(fileOffset % maxLength, buffer.Slice(done, chunk));
+                if (read <= 0)
+                {
+                    break;
+                }
+
+                done += read;
+                fileOffset += read;
+            }
+
+            return done;
+        }
+    }
+
+    /// <inheritdoc/>
+    public override void WriteAt(long fileOffset, ReadOnlySpan<byte> buffer)
+    {
+        if (fileOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(fileOffset));
+        }
+
+        lock (sync)
+        {
+            if (fileOffset >= length && fileOffset > maxLength)
+            {
+                // Writing into a part that is not there yet: every part between the last one
+                // and this one has to exist, and the gaps are written as a single byte each so
+                // that the file has no holes in it.
+                long target = fileOffset;
+                long x = length - (length % maxLength) + maxLength;
+                while (x < target)
+                {
+                    if (x > length)
+                    {
+                        WriteAt(x - 1, [0]);
+                    }
+
+                    x += maxLength;
+                }
+
+                fileOffset = target;
+            }
+
+            int done = 0;
+            while (done < buffer.Length)
+            {
+                FileChannel part = PartAt(fileOffset);
+                int chunk = (int)Math.Min(buffer.Length - done, maxLength - (fileOffset % maxLength));
+                part.WriteAt(fileOffset % maxLength, buffer.Slice(done, chunk));
+                done += chunk;
+                fileOffset += chunk;
+                length = Math.Max(length, fileOffset);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public override void SetLength(long newLength)
     {
         lock (sync)

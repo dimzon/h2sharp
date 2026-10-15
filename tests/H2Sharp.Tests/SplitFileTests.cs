@@ -288,6 +288,37 @@ public sealed class SplitFileTests : IDisposable
     }
 
     [Fact]
+    public void PositionalAccessCrossesPartsWithoutMovingTheCursor()
+    {
+        FilePath path = FilePath.Get(Split("positional.mv.db"));
+        using FileChannel channel = path.Open("rw");
+
+        // A write straddling a part boundary lands in both parts, and the cursor stays where
+        // the sequential writer left it.
+        byte[] payload = Pattern(16);
+        channel.Position = 7;
+        channel.WriteAt(PartLength - 2, payload);
+        Assert.Equal(7, channel.Position);
+        Assert.Equal(PartLength + 14, channel.Length);
+
+        byte[] back = new byte[payload.Length];
+        Assert.Equal(payload.Length, channel.ReadAt(PartLength - 2, back));
+        Assert.Equal(payload, back);
+        Assert.Equal(7, channel.Position);
+
+        // Past the end there is nothing, and a read past it does not move the cursor either.
+        Assert.Equal(0, channel.ReadAt(PartLength + 14, new byte[4]));
+        Assert.Equal(7, channel.Position);
+
+        // DataUtils rides on the same pair across the seam.
+        byte[] block = Pattern(100);
+        H2Sharp.MvStore.DataUtils.WriteFully(channel, PartLength - 50, block);
+        byte[] round = new byte[block.Length];
+        H2Sharp.MvStore.DataUtils.ReadFully(channel, PartLength - 50, round);
+        Assert.Equal(block, round);
+    }
+
+    [Fact]
     public void PartsOfDifferentSizesAreRefused()
     {
         // A split file whose middle part is the wrong size was not written by one writer. Opening

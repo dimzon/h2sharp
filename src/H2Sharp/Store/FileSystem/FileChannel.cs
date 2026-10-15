@@ -26,28 +26,15 @@ namespace H2Sharp.Store.FileSystem;
 
 /// <summary>
 /// A file opened for random access: a position, a length, and bytes read or written at that
-/// position.
+/// position or at an absolute one.
 /// </summary>
 /// <remarks>
-/// The reference's <c>FileChannel</c> is the same four things wrapped in <c>java.nio</c>. Two of its
-/// features are not here and both are written down above: the channel lock, which the store does
-/// not use because it locks in a file of its own, and mapping, which only the disk path has.
+/// The reference's <c>FileChannel</c> is the same things wrapped in <c>java.nio</c>: positional
+/// reads and writes are atomic by nature there. The positional pair below is that contract;
+/// the cursor pair exists for the framing layers, which walk a file through a stream.
 /// </remarks>
 public abstract class FileChannel : IDisposable
 {
-    private readonly object syncRoot = new();
-
-    /// <summary>
-    /// The lock guarding positional access to this channel.
-    /// </summary>
-    /// <remarks>
-    /// The reference reads and writes at absolute positions, which are atomic by nature. This
-    /// channel reads at its own position instead, so every save-seek-use-restore sequence must
-    /// hold this lock, or concurrent readers and writers garble each other into phantom
-    /// "file corrupted" errors. The store's parallel copy was the first to trip over it.
-    /// </remarks>
-    internal object SyncRoot => syncRoot;
-
     /// <summary>
     /// How long the file is.
     /// </summary>
@@ -94,6 +81,26 @@ public abstract class FileChannel : IDisposable
     /// </remarks>
     /// <param name="buffer">what to write</param>
     public abstract void Write(ReadOnlySpan<byte> buffer);
+
+    /// <summary>
+    /// Read into the buffer at an absolute position, leaving the channel's own position alone.
+    /// </summary>
+    /// <remarks>
+    /// Concurrent positional reads need no lock between them, which is what makes them
+    /// cheaper than a save-seek-use-restore around the cursor pair: two interleaved reads
+    /// seek each other away, and only a lock fixes that.
+    /// </remarks>
+    /// <param name="fileOffset">where to read from</param>
+    /// <param name="buffer">where to read into</param>
+    /// <returns>how many bytes were read; zero at the end of the file</returns>
+    public abstract int ReadAt(long fileOffset, Span<byte> buffer);
+
+    /// <summary>
+    /// Write the buffer at an absolute position, leaving the channel's own position alone.
+    /// </summary>
+    /// <param name="fileOffset">where to write</param>
+    /// <param name="buffer">what to write</param>
+    public abstract void WriteAt(long fileOffset, ReadOnlySpan<byte> buffer);
 
     /// <summary>
     /// Push what was written towards the disk.

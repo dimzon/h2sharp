@@ -368,6 +368,13 @@ public sealed class MemoryFilePath : FilePath
         }
 
         /// <inheritdoc/>
+        public override int ReadAt(long fileOffset, Span<byte> buffer) => file.Read(fileOffset, buffer);
+
+        /// <inheritdoc/>
+        public override void WriteAt(long fileOffset, ReadOnlySpan<byte> buffer)
+            => file.Write(fileOffset, buffer);
+
+        /// <inheritdoc/>
         /// <remarks>
         /// Nothing to push anywhere: the bytes are already where a reader will find them.
         /// </remarks>

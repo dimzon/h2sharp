@@ -436,6 +436,14 @@ internal sealed class DiskFileChannel : FileChannel
     public override void Write(ReadOnlySpan<byte> buffer) => stream.Write(buffer);
 
     /// <inheritdoc/>
+    public override int ReadAt(long fileOffset, Span<byte> buffer)
+        => System.IO.RandomAccess.Read(stream.SafeFileHandle!, buffer, fileOffset);
+
+    /// <inheritdoc/>
+    public override void WriteAt(long fileOffset, ReadOnlySpan<byte> buffer)
+        => System.IO.RandomAccess.Write(stream.SafeFileHandle!, buffer, fileOffset);
+
+    /// <inheritdoc/>
     public override void Flush(bool flushToDisk) => stream.Flush(flushToDisk);
 
     /// <inheritdoc/>
