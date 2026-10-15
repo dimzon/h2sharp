@@ -645,7 +645,7 @@ public sealed class MVTable : Table
     }
 
     /// <inheritdoc/>
-    public override string GetCreateSql()
+    public override string? GetCreateSql()
     {
         StringBuilder builder = new("CREATE TABLE ");
         _ = ParserUtil.QuoteIdentifier(builder, Name, HasSql.DefaultSqlFlags);

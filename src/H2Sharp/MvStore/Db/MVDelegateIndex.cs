@@ -130,9 +130,15 @@ public sealed class MVDelegateIndex : MVIndex<long, SearchRow>
     /// primary's walk. In the reference this is the find override; here the cursor member
     /// carries it, because the base answers cursors rather than finds.
     /// </remarks>
-    public override Indexes.Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last)
+    public override Indexes.Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last, bool reverse)
     {
-        return mainIndex.GetCursor(session, first, last);
+        return mainIndex.GetCursor(session, first, last, reverse);
+    }
+
+    /// <inheritdoc/>
+    public override bool IsRowIdIndex()
+    {
+        return true;
     }
 
     /// <inheritdoc/>

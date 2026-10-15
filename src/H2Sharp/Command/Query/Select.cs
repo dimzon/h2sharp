@@ -72,6 +72,12 @@ public sealed class Select : Query
     private bool isOrderByTop;
 
     /// <summary>
+    /// Whether this is a grouping query: aggregates, GROUP BY or HAVING. The parser says so;
+    /// the grouping machinery that reads it is not ported yet.
+    /// </summary>
+    private bool isGroupQuery;
+
+    /// <summary>
     /// Whether init ran: a second run would resolve the order list twice and append its
     /// expressions twice, so it is refused as the reference refuses it.
     /// </summary>
@@ -165,9 +171,10 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The distinct and sort fast paths wait for index-sort resolution: without them every
-    /// plan still answers, only less cheaply. What runs here is the reference's shape — outer
-    /// joins keep their conditions out of the indexes, then the optimizer prices and prepares.
+    /// What runs here is the reference's shape — outer joins keep their conditions out of
+    /// the indexes, then the optimizer prices and prepares, then a sorted index replaces
+    /// the chosen one when it serves the order. The distinct fast path between the costing
+    /// and the sort waits for the per-column index lookup and selectivity.
     /// </remarks>
     public override void PreparePlan(SessionLocal session, TableFilter? targetTableFilter)
     {
@@ -190,6 +197,70 @@ public sealed class Select : Query
         }
 
         cost = PreparePlan(session.IsParsingCreateView());
+
+        if (sort is not null && !isQuickAggregateQuery && !isGroupQuery)
+        {
+            List<Indexes.IndexSort>? sortIndexes = GetIndexSorts();
+            Indexes.Index? current = topTableFilter?.GetIndex();
+            if (sortIndexes is not null && current is not null && topTableFilter is not null)
+            {
+                foreach (Indexes.IndexSort sortIndex in sortIndexes)
+                {
+                    Indexes.Index? index = sortIndex.GetIndex();
+                    // A null index never materializes here — every table has its scan — but
+                    // the list can hold one where the reference holds a scan, so it is
+                    // skipped rather than handed to a setter that refuses nulls.
+                    if (index is null)
+                    {
+                        continue;
+                    }
+
+                    bool reverse = sortIndex.IsReverse();
+                    if (current.GetIndexType()?.IsScan() == true || current == index)
+                    {
+                        topTableFilter.SetIndex(index, reverse);
+                        indexSortedColumns = sortIndex.GetSortedColumns();
+                        break;
+                    }
+                    else
+                    {
+                        IndexColumn[] sortColumns = index.GetColumns();
+                        IndexColumn[] currentColumns = current.GetColumns();
+                        if (sortColumns.Length >= currentColumns.Length)
+                        {
+                            bool swapIndex = false;
+                            bool sameColumns = true;
+                            for (int i = 0; i < currentColumns.Length; i++)
+                            {
+                                if (!ReferenceEquals(sortColumns[i].GetColumn(), currentColumns[i].GetColumn()))
+                                {
+                                    sameColumns = false;
+                                    break;
+                                }
+
+                                if (sortColumns[i].SortType != currentColumns[i].SortType)
+                                {
+                                    swapIndex = true;
+                                }
+                            }
+
+                            if (sameColumns && swapIndex)
+                            {
+                                topTableFilter.SetIndex(index, reverse);
+                                indexSortedColumns = sortIndex.GetSortedColumns();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (indexSortedColumns > 0 && forUpdate is not null
+                && topTableFilter?.GetIndex()?.IsRowIdIndex() == false)
+            {
+                indexSortedColumns = 0;
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -589,6 +660,12 @@ public sealed class Select : Query
     /// <param name="groupBy">the expressions</param>
     public void SetGroupBy(List<Expression>? groupBy) => this.groupBy = groupBy;
 
+    /// <summary>
+    /// Set when SELECT statement contains (non-window) aggregate functions,
+    /// GROUP BY clause or HAVING clause.
+    /// </summary>
+    public void SetGroupQuery() => isGroupQuery = true;
+
     /// <summary>Sets the window functions.</summary>
     /// <param name="windows">the expressions</param>
     public void SetWindows(List<Expression>? windows) => this.windows = windows;
@@ -740,6 +817,184 @@ public sealed class Select : Query
         }
 
         return planCost;
+    }
+
+    /// <summary>
+    /// Returns possible index-sorting operations (better first) if they exist.
+    /// </summary>
+    /// <returns>possible index-sorting operations, or null if unavailable</returns>
+    private List<Indexes.IndexSort>? GetIndexSorts()
+    {
+        if (sort is null)
+        {
+            return null;
+        }
+
+        List<Column?> sortColumns = [];
+        int[] queryColumnIndexes = sort.GetQueryColumnIndexes();
+        int queryIndexesLength = queryColumnIndexes.Length;
+        int[] sortIndex = new int[queryIndexesLength];
+        int sortedColumns = 0;
+        bool needMore = false;
+        for (int i = 0; i < queryIndexesLength; i++)
+        {
+            int idx = queryColumnIndexes[i];
+            if (idx < 0 || idx >= expressions.Count)
+            {
+                throw DbException.GetInvalidValueException("ORDER BY", idx + 1);
+            }
+
+            Expression expr = expressions[idx].GetNonAliasExpression();
+            if (expr.IsConstant())
+            {
+                continue;
+            }
+
+            if (expr is not ExpressionColumn exprCol)
+            {
+                needMore = true;
+                break;
+            }
+
+            if (exprCol.GetTableFilter() != topTableFilter)
+            {
+                needMore = true;
+                break;
+            }
+
+            Column? sortColumn = exprCol.GetColumn();
+            sortColumns.Add(sortColumn);
+            sortIndex[sortedColumns++] = i;
+        }
+
+        if (sortedColumns == 0)
+        {
+            if (needMore)
+            {
+                // Can't sort using index
+                return null;
+            }
+
+            // sort just on constants - can use scan index
+            return [new Indexes.IndexSort(topTableFilter!.GetTable().GetScanIndex(session), false)];
+        }
+
+        Column?[] sortCols;
+        int[] sortTypes = sort.GetSortTypesWithNullOrdering();
+        if (sortedColumns == 1)
+        {
+            Column? column = sortColumns[0];
+            if (column is not null && column.GetColumnId() == SearchRow.RowidIndex)
+            {
+                // special case: order by _ROWID_
+                Indexes.Index? index = topTableFilter!.GetTable().GetScanIndex(session);
+                if (index?.IsRowIdIndex() == true)
+                {
+                    return [new Indexes.IndexSort(
+                        index, needMore ? sortedColumns : Indexes.IndexSort.FullySorted,
+                        (sortTypes[sortIndex[0]] & SortOrder.Descending) != 0)];
+                }
+            }
+
+            sortCols = [column];
+        }
+        else
+        {
+            sortCols = [.. sortColumns];
+        }
+
+        DefaultNullOrdering defaultNullOrdering = session.GetDatabase().GetDefaultNullOrdering();
+        List<Indexes.IndexSort> indexSorts = [];
+        foreach (Indexes.Index index in topTableFilter!.GetTable().GetIndexes())
+        {
+            if (index.GetCreateSql() is null || index.GetIndexType()?.IsHash() == true)
+            {
+                // can't use scan or hash indexes
+                continue;
+            }
+
+            IndexColumn[] indexCols = index.GetColumns();
+            int count = Math.Min(indexCols.Length, sortedColumns);
+            bool reverse = false;
+            bool matched = true;
+            for (int j = 0; j < count; j++)
+            {
+                // the index and the sort order must start
+                // with the exact same columns
+                IndexColumn idxCol = indexCols[j];
+                Column? sortCol = sortCols[j];
+                // A null sort column matches nothing: the reference compares the two
+                // references, where null is never the index's column.
+                bool mismatch = sortCol is null || !ReferenceEquals(idxCol.GetColumn(), sortCol);
+                if (!mismatch)
+                {
+                    // Not null: a null sort column mismatches above.
+                    if (sortCol!.IsNullable() == Column.Nullable)
+                    {
+                        int o1 = DefaultNullOrderingRules.AddExplicitNullOrdering(
+                            defaultNullOrdering, idxCol.SortType);
+                        int o2 = sortTypes[sortIndex[j]];
+                        if (j == 0)
+                        {
+                            if (o1 != o2)
+                            {
+                                if (o1 == SortOrder.Inverse(o2))
+                                {
+                                    reverse = true;
+                                }
+                                else
+                                {
+                                    mismatch = true;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (o1 != (reverse ? SortOrder.Inverse(o2) : o2))
+                            {
+                                mismatch = true;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        bool different = (idxCol.SortType & SortOrder.Descending)
+                            != (sortTypes[sortIndex[j]] & SortOrder.Descending);
+                        if (j == 0)
+                        {
+                            reverse = different;
+                        }
+                        else
+                        {
+                            mismatch = different != reverse;
+                        }
+                    }
+                }
+
+                if (mismatch)
+                {
+                    if (j > 0)
+                    {
+                        indexSorts.Add(new Indexes.IndexSort(index, j, reverse));
+                    }
+
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (!matched)
+            {
+                continue;
+            }
+
+            indexSorts.Add(new Indexes.IndexSort(
+                index, needMore || count < sortedColumns ? count : Indexes.IndexSort.FullySorted,
+                reverse));
+        }
+
+        indexSorts.Sort();
+        return indexSorts;
     }
 
     /// <summary>

@@ -167,7 +167,11 @@ public abstract class Index : SchemaObject
     }
 
     /// <inheritdoc/>
-    public override string GetCreateSql()
+    /// <remarks>
+    /// A scan index answers null, as the reference's primary index does: there is no
+    /// statement that creates it. <see cref="MvStore.Db.MVPrimaryIndex"/> says so.
+    /// </remarks>
+    public override string? GetCreateSql()
     {
         StringBuilder builder = new("CREATE ");
         _ = builder.Append(indexType is null ? "INDEX" : indexType.GetSql(true));
@@ -246,6 +250,12 @@ public abstract class Index : SchemaObject
     /// </remarks>
     /// <returns>true when every find is a full scan</returns>
     public virtual bool IsFindUsingFullTableScan() => false;
+
+    /// <summary>
+    /// Does this index support lookup by row id?
+    /// </summary>
+    /// <returns>true if it does</returns>
+    public virtual bool IsRowIdIndex() => false;
 
     /// <summary>
     /// Finds the position of a column in this index.
@@ -783,8 +793,9 @@ public abstract class Index : SchemaObject
     /// <param name="session">the session</param>
     /// <param name="first">the first row, or null to start at the beginning</param>
     /// <param name="last">the last row, or null to read to the end</param>
+    /// <param name="reverse">whether to walk backwards</param>
     /// <returns>the cursor</returns>
-    public virtual Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last)
+    public virtual Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last, bool reverse)
         => throw new TODOException("Index.getCursor: the storage is not ported");
 
     /// <summary>

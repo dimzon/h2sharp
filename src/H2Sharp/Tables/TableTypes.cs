@@ -701,7 +701,7 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
             start?.SetValue(id, v);
         }
 
-        cursor = index?.GetCursor(session!, start, start);
+        cursor = index?.GetCursor(session!, start, start, reverse);
     }
 
     /// <summary>
@@ -805,7 +805,7 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
             }
             else if (index is not null)
             {
-                cursor = index.GetCursor(session!, first, last);
+                cursor = index.GetCursor(session!, first, last, reverse);
             }
         }
     }
@@ -1277,7 +1277,7 @@ public abstract class Table
     /// <summary>
     /// Gets the SQL statement that creates this table.
     /// </summary>
-    public abstract string GetCreateSql();
+    public abstract string? GetCreateSql();
 
     /// <summary>
     /// Gets the SQL for this table with the given flags.

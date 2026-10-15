@@ -198,7 +198,7 @@ public sealed class Sequence : SchemaObject
     }
 
     /// <inheritdoc/>
-    public override string GetCreateSql()
+    public override string? GetCreateSql()
     {
         StringBuilder builder = new("CREATE SEQUENCE ");
         _ = GetSql(builder, 0);

@@ -106,7 +106,7 @@ public sealed class Schema : DbObject
     /// it is what tells INFORMATION_SCHEMA and a dump that this schema was never written by
     /// anybody.
     /// </remarks>
-    public override string GetCreateSql()
+    public override string? GetCreateSql()
     {
         if (system)
         {

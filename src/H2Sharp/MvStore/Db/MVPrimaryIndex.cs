@@ -135,6 +135,16 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Null, as the reference answers: no statement creates the scan index, and the
+    /// planner skips what has no statement.
+    /// </remarks>
+    public override string? GetCreateSql()
+    {
+        return null;
+    }
+
+    /// <inheritdoc/>
     public override bool NeedRebuild()
     {
         return false;
@@ -305,13 +315,13 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// otherwise the key when the row id is indexed or the value is missing, and otherwise the
     /// long the value names, with unrepresentable and infinite values ending or emptying the
     /// walk as they do there. A lookup whose bounds meet on one key reads that one row.
-    /// Reverse never arrives here — the table filter's cursor swaps the bounds instead.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="first">the first row, or null to start at the beginning</param>
     /// <param name="last">the last row, or null to read to the end</param>
+    /// <param name="reverse">whether to walk backwards</param>
     /// <returns>the cursor</returns>
-    public override Indexes.Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last)
+    public override Indexes.Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last, bool reverse)
     {
         long? min, max;
         Values.Value? v;
@@ -456,7 +466,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
             return new SingleRowCursor(SetRowKey((Row)map.GetFromSnapshot(min.Value)!, min.Value));
         }
 
-        return new MVStoreCursor(map.EntryIterator(min, max, false));
+        return new MVStoreCursor(map.EntryIterator(min, max, reverse));
     }
 
     /// <summary>

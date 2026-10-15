@@ -245,7 +245,7 @@ public abstract class DbObject
     /// Construct the CREATE ... SQL statement for this object for meta table.
     /// </summary>
     /// <returns>the SQL statement</returns>
-    public virtual string GetCreateSqlForMeta()
+    public virtual string? GetCreateSqlForMeta()
     {
         return GetCreateSql();
     }
@@ -253,8 +253,12 @@ public abstract class DbObject
     /// <summary>
     /// Construct the CREATE ... SQL statement for this object.
     /// </summary>
-    /// <returns>the SQL statement</returns>
-    public abstract string GetCreateSql();
+    /// <remarks>
+    /// Null when no statement creates it: the table's scan index answers null, and the
+    /// planner skips what has no statement.
+    /// </remarks>
+    /// <returns>the SQL statement, or null</returns>
+    public abstract string? GetCreateSql();
 
     /// <summary>
     /// Construct a DROP ... SQL statement for this object.
