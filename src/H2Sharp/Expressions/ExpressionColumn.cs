@@ -209,7 +209,7 @@ public sealed class ExpressionColumn : Expression
             _ = resolver.IncrementQueryLevel(1);
         }
 
-        if (state != MapInWindow && MapColumn(resolver, tableAlias, false))
+        if (state != MapInWindow && MapColumn(resolver, null, false))
         {
             if (state == MapInitial && level == 0)
             {

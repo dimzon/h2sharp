@@ -21,19 +21,51 @@ using H2Sharp.Command.Ddl;
 using H2Sharp.Command.Dml;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
+using H2Sharp.Indexes;
+using H2Sharp.MvStore;
+using H2Sharp.MvStore.Db;
+using H2Sharp.MvStore.Tx;
+using H2Sharp.Tables;
 using Xunit;
 
 namespace H2Sharp.Tests;
 
 public sealed class PrepareCommandTests
 {
-    private static SessionLocal NewSession()
+    private readonly TransactionStore store;
+
+    public PrepareCommandTests()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:prepare_tests")), "sa")
+        store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+    }
+
+    private SessionLocal NewSession()
+    {
+        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:prepare_tests")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = Values.CompareMode.GetInstance(null, 0),
         };
+
+        // Preparation binds the tables, as the reference does: a select over a missing table
+        // refuses here rather than coming back unbound. T lives in the main schema, so the
+        // session keeps reading it as its current one.
+        Schemas.Schema schema = session.GetDatabase().GetMainSchema()
+            ?? throw new InvalidOperationException("The in-memory database has no main schema.");
+        Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
+        id.SetNullable(false);
+        Column name = new("NAME", Values.TypeInfo.TypeVarchar, null, 1);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T", [id, name], store, persistData: false);
+        foreach (Column column in table.GetColumns())
+        {
+            column.SetTable(table, column.GetColumnId());
+        }
+
+        table.AddIndex(session, "I", 7, [new IndexColumn(id, ascending: true)], 1,
+            IndexType.CreatePrimaryKey(persistent: false, hash: false), create: true, indexComment: null);
+        schema.Add(table);
+        return session;
     }
 
     [Fact]
@@ -56,8 +88,8 @@ public sealed class PrepareCommandTests
     {
         SessionLocal session = NewSession();
 
-        // A select is prepared as it is read: the plan is built from the tables behind it, and
-        // there are no tables yet to be behind.
+        // A select is prepared as it is read: the plan is built from the tables behind it,
+        // and the T above is behind this one.
         Assert.IsType<Select>(AsContainer(session.PrepareCommand("SELECT ID FROM T")).GetPreparedCommand());
     }
 

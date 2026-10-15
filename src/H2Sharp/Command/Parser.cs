@@ -39,6 +39,7 @@ using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Message;
+using H2Sharp.Schemas;
 using H2Sharp.Tables;
 using H2Sharp.Util;
 using H2Sharp.Values;
@@ -240,7 +241,18 @@ public sealed class Parser
     private Prepared ParsePrepared(string sql, BitArray parameters)
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parsePrepared: this parser has no session");
-        Statement statement = Parse(sql, provider, parameters);
+        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        if (tokens.Count > 0 && IsSelectFirst(tokens[0]))
+        {
+            // The reference switches on the first token; the statement words arrive as
+            // identifiers, so the peek is by text, unquoted. A flat SELECT builds the engine
+            // operator directly, everything else goes through the parse-only statements below.
+            return new Parser(sql, provider, tokens, current).ParseQuerySelect();
+        }
+
+        Parser parser = new(sql, provider, tokens, current);
+        Statement statement = parser.ReadStatement();
+        statement.Sql = sql;
         switch (statement)
         {
             case CreateTableStatement create:
@@ -258,6 +270,392 @@ public sealed class Parser
             default:
                 return new Dml.NoOperation(current);
         }
+    }
+
+    /// <summary>
+    /// Whether the token opens a SELECT statement: the word SELECT, written plain.
+    /// </summary>
+    private static bool IsSelectFirst(Token token)
+        => !token.IsQuoted && "SELECT".Equals(token.AsIdentifier, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Reads a flat SELECT straight into the engine operator: one table, a column list,
+    /// an optional WHERE and an optional ORDER BY.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>parseSelect</c> reads the same way, clause by clause, and resolves
+    /// names while it reads. What is read here is what the engine runs today: no joins, no
+    /// groups, no aggregates, no limits. A clause that is valid SQL but not that is refused
+    /// as not ported, which is not a syntax error — the statement is fine, the reader is not
+    /// done. The names stay names: init turns them into positions and the mapping pass binds
+    /// them to columns.
+    /// <para>
+    /// The method names carry a Query infix because the short ones belong to the parse-only
+    /// layer of this same class, which reads the same clauses into statement records. The
+    /// logic inside mirrors the reference all the same.
+    /// </para>
+    /// </remarks>
+    /// <returns>the prepared statement</returns>
+    private Query.Select ParseQuerySelect()
+    {
+        SessionLocal current = session ?? throw new TODOException("Parser.parseQuerySelect: this parser has no session");
+        ExpectWord("SELECT");
+        Query.Select select = new(current);
+        select.SetSql(sql, null);
+        if (IsWord("DISTINCT"))
+        {
+            select.SetDistinct();
+        }
+
+        bool star = ReadIf(Token.Asterisk);
+        List<Expressions.Expression> columns = [];
+        List<string?> columnAliases = [];
+        if (!star)
+        {
+            do
+            {
+                if (IsWord("COUNT", consume: false)
+                    && tokens[position + 1].TokenType == Token.OpenParen)
+                {
+                    throw new TODOException("Parser.parseQuerySelect: aggregates are not ported");
+                }
+
+                string? tableAlias;
+                string column = ReadQueryColumnName(out tableAlias);
+                string? alias = null;
+                if (IsWord("AS"))
+                {
+                    alias = ReadIdentifier();
+                }
+                else if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+                {
+                    throw new TODOException("Parser.parseQuerySelect: bare column aliases are not ported");
+                }
+
+                columns.Add(new Expressions.ExpressionColumn(column, tableAlias, 0));
+                columnAliases.Add(alias);
+            }
+            while (ReadIf(Token.Comma));
+        }
+
+        if (CurrentType == Token.EndOfInput)
+        {
+            // SELECT 1 and friends: the reference reads an expression select with no tables,
+            // the engine has no table-less walk yet. End of input is the only shape that is
+            // certainly that, anything else stays a syntax error below.
+            throw new TODOException("Parser.parseQuerySelect: selects without FROM are not ported");
+        }
+
+        ExpectWord("FROM");
+        string tableName = ReadIdentifier(); string? filterAlias = null;
+        if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+        {
+            filterAlias = ReadIdentifier();
+        }
+
+        Schemas.Schema schema = current.GetCurrentSchema();
+        Tables.Table table = schema.GetTableOrView(current, tableName);
+        Tables.TableFilter filter = new(current, table, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
+        select.AddTableFilter(filter, isTop: true);
+
+        List<Expressions.Expression> selectList = [];
+        if (star)
+        {
+            // The reference expands the star in init; there is no star expression here to
+            // carry there, so the columns land directly.
+            foreach (Tables.Column column in table.GetColumns())
+            {
+                selectList.Add(new Expressions.ExpressionColumn(column, filter, 0));
+            }
+        }
+        else
+        {
+            for (int i = 0; i < columns.Count; i++)
+            {
+                Expressions.Expression column = columns[i];
+                if (columnAliases[i] is not null)
+                {
+                    column = new Expressions.Alias(column, columnAliases[i]!, aliasColumnName: true);
+                }
+
+                selectList.Add(column);
+            }
+        }
+
+        select.SetExpressions([.. selectList]);
+
+        if (CurrentType == ParserUtil.Where)
+        {
+            Read();
+            select.AddCondition(ReadQueryOr());
+        }
+
+        if (CurrentType == ParserUtil.Order)
+        {
+            Read();
+            ExpectWord("BY");
+            List<Query.QueryOrderBy> order = [];
+            do
+            {
+                Query.QueryOrderBy item = new();
+                if (Current.GetValue(provider) is Values.ValueInteger position)
+                {
+                    Read();
+                    item.columnIndexExpr = Expressions.ValueExpression.Get(position);
+                }
+                else
+                {
+                    item.expression = new Expressions.ExpressionColumn(ReadQueryColumnName(out string? orderTable), orderTable, 0);
+                }
+
+                item.sortType = ReadQuerySortType();
+                order.Add(item);
+            }
+            while (ReadIf(Token.Comma));
+
+            select.SetOrder(order);
+        }
+
+        if (CurrentType != Token.EndOfInput)
+        {
+            string word = Current.AsIdentifier ?? Current.ToString() ?? "statement";
+            if (IsClauseWord(word))
+            {
+                throw new TODOException("Parser.parseQuerySelect: " + word + " is not ported");
+            }
+
+            throw DbException.GetSyntaxError(sql, Current.Start, "statement");
+        }
+
+        select.Init();
+        select.PrepareExpressions();
+        select.PreparePlan(current, targetTableFilter: null);
+        return select;
+    }
+
+    /// <summary>
+    /// Whether the current token can be a name: a plain identifier or a keyword, which the
+    /// reference also allows as a name. Punctuation is never one, which is what keeps a comma
+    /// or a parenthesis from being read as an alias.
+    /// </summary>
+    private bool IsNameToken()
+        => CurrentType == ParserUtil.Identifier
+            || (CurrentType >= ParserUtil.FirstKeyword && CurrentType <= ParserUtil.LastKeyword);
+
+    /// <summary>
+    /// Whether the word opens a clause this reader does not read: such a word is never a table
+    /// alias, a column alias, or the end of anything.
+    /// </summary>
+    private static bool IsClauseWord(string word)
+        => word.Equals("FROM", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("WHERE", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("ORDER", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("GROUP", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("HAVING", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("WINDOW", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("LIMIT", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("OFFSET", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("FETCH", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("UNION", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("EXCEPT", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("INTERSECT", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("MINUS", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("FOR", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Reads a column name with an optional table prefix.
+    /// </summary>
+    /// <param name="tableAlias">the table prefix, or null</param>
+    /// <returns>the column name</returns>
+    private string ReadQueryColumnName(out string? tableAlias)
+    {
+        string first = ReadIdentifier();
+        tableAlias = null;
+        if (ReadIf(Token.Dot))
+        {
+            tableAlias = first;
+            return ReadIdentifier();
+        }
+
+        return first;
+    }
+
+    /// <summary>
+    /// Reads the direction and null ordering of one ORDER BY item.
+    /// </summary>
+    /// <returns>the sort type mask</returns>
+    private int ReadQuerySortType()
+    {
+        int sortType = Result.SortOrder.Ascending;
+        if (IsWord("DESC"))
+        {
+            sortType = Result.SortOrder.Descending;
+        }
+        else if (IsWord("ASC"))
+        {
+        }
+
+        if (IsWord("NULLS"))
+        {
+            if (IsWord("FIRST"))
+            {
+                sortType |= Result.SortOrder.NullsFirst;
+            }
+            else
+            {
+                ExpectWord("LAST");
+                sortType |= Result.SortOrder.NullsLast;
+            }
+        }
+
+        return sortType;
+    }
+
+    /// <summary>
+    /// Reads an OR of ANDs, as the reference's precedence does.
+    /// </summary>
+    private Expressions.Expression ReadQueryOr()
+    {
+        Expressions.Expression left = ReadQueryAnd();
+        while (CurrentType == ParserUtil.Or)
+        {
+            Read();
+            left = new Expressions.Conditions.ConditionAndOr(
+                Expressions.Conditions.ConditionAndOr.Or, left, ReadQueryAnd());
+        }
+
+        return left;
+    }
+
+    /// <summary>
+    /// Reads an AND of comparisons.
+    /// </summary>
+    private Expressions.Expression ReadQueryAnd()
+    {
+        Expressions.Expression left = ReadQueryComparison();
+        while (CurrentType == ParserUtil.And)
+        {
+            Read();
+            left = new Expressions.Conditions.ConditionAndOr(
+                Expressions.Conditions.ConditionAndOr.And, left, ReadQueryComparison());
+        }
+
+        return left;
+    }
+
+    /// <summary>
+    /// Reads a comparison with an optional IS NULL tail.
+    /// </summary>
+    private Expressions.Expression ReadQueryComparison()
+    {
+        Expressions.Expression left = ReadQueryTerm();
+        while (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
+            or Token.SmallerEqual or Token.BiggerEqual)
+        {
+            int compareType = ReadQueryComparisonType();
+            left = new Expressions.Conditions.Comparison(compareType, left, ReadQueryTerm(), whenOperand: false);
+        }
+
+        if (CurrentType == ParserUtil.Is)
+        {
+            Read();
+            bool not = ReadIf(ParserUtil.Not);
+            Expect(ParserUtil.Null, "NULL");
+            left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
+        }
+
+        return left;
+    }
+
+    /// <summary>
+    /// Reads the comparison operator.
+    /// </summary>
+    private int ReadQueryComparisonType()
+    {
+        int type = CurrentType;
+        Read();
+        return type switch
+        {
+            Token.Equal => Expressions.Conditions.Comparison.Equal,
+            Token.NotEqual => Expressions.Conditions.Comparison.NotEqual,
+            Token.Smaller => Expressions.Conditions.Comparison.Smaller,
+            Token.Bigger => Expressions.Conditions.Comparison.Bigger,
+            Token.SmallerEqual => Expressions.Conditions.Comparison.SmallerEqual,
+            Token.BiggerEqual => Expressions.Conditions.Comparison.BiggerEqual,
+            _ => throw DbException.GetInternalError("comparison type " + type),
+        };
+    }
+
+    /// <summary>
+    /// Reads one operand: a parenthesized expression, a NOT, a literal, a parameter, or a
+    /// column in name form.
+    /// </summary>
+    private Expressions.Expression ReadQueryTerm()
+    {
+        if (ReadIf(Token.OpenParen))
+        {
+            Expressions.Expression nested = ReadQueryOr();
+            Expect(Token.CloseParen, ")");
+            return nested;
+        }
+
+        if (CurrentType == ParserUtil.Not)
+        {
+            Read();
+            return new Expressions.Conditions.ConditionNot(ReadQueryTerm());
+        }
+
+        if (CurrentType == ParserUtil.Null)
+        {
+            Read();
+            return Expressions.ValueExpression.Null;
+        }
+
+        if (CurrentType is ParserUtil.True or ParserUtil.False)
+        {
+            bool value = CurrentType == ParserUtil.True;
+            Read();
+            return value ? Expressions.ValueExpression.True : Expressions.ValueExpression.False;
+        }
+
+        if (CurrentType == Token.MinusSign)
+        {
+            Read();
+            Expressions.Expression term = ReadQueryTerm();
+
+            // A negative literal is a literal: there is nothing in "-1" that needs a run.
+            if (term is not Expressions.ValueExpression negated)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start, "number");
+            }
+
+            return Expressions.ValueExpression.Get(Negate(negated.GetValueFromLiteral()));
+        }
+
+        if (Current is Token.ParameterToken parameter)
+        {
+            Read();
+            return new Expressions.Parameter(parameter.Index);
+        }
+
+        if (CurrentType == Token.At)
+        {
+            throw new TODOException("Parser.parseQuerySelect: named parameters are not ported");
+        }
+
+        Values.Value? literal = Current.GetValue(provider);
+        if (literal is not null)
+        {
+            Read();
+            return Expressions.ValueExpression.Get(literal);
+        }
+
+        if (Current.AsIdentifier is not null)
+        {
+            return new Expressions.ExpressionColumn(ReadQueryColumnName(out string? tableAlias), tableAlias, 0);
+        }
+
+        throw new TODOException("Parser.parseQuerySelect: this expression is not ported");
     }
 
     /// <summary>
