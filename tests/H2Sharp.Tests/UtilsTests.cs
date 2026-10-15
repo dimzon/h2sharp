@@ -4,6 +4,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using H2Sharp.Tests.Oracle;
@@ -167,6 +168,49 @@ public sealed class UtilsTests
         // and must not throw.
         byte[] bytes = Enumerable.Range(0, 200).Select(i => (byte)i).ToArray();
         Assert.Equal(Utils.GetByteArrayHash(bytes), Utils.GetByteArrayHash(bytes));
+    }
+
+    [Fact]
+    public void StableSort_KeepsTiesInArrivalOrder()
+    {
+        // Tied keys keep the order they arrived in: that is the whole contract of a stable
+        // sort, and what a limit trims after it. An unstable sort answers the same keys in
+        // some other order, which this fails.
+        (int key, int seq)[] rows =
+        [
+            (2, 0), (1, 0), (2, 1), (0, 0), (1, 1), (2, 2), (0, 1), (1, 2),
+        ];
+        Utils.StableSort(rows, static (a, b) => a.key.CompareTo(b.key));
+
+        Assert.Equal(
+            [(0, 0), (0, 1), (1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (2, 2)],
+            rows);
+    }
+
+    [Fact]
+    public void StableSort_HandlesEdges()
+    {
+        int[] empty = [];
+        Utils.StableSort(empty, Comparer<int>.Default.Compare);
+        Assert.Empty(empty);
+
+        int[] single = [42];
+        Utils.StableSort(single, Comparer<int>.Default.Compare);
+        Assert.Equal([42], single);
+
+        // Two hundred tied rows, past every small-array path of the merge.
+        (int key, int seq)[] tied = new (int, int)[200];
+        for (int i = 0; i < tied.Length; i++)
+        {
+            tied[i] = (i % 5, i);
+        }
+
+        Utils.StableSort(tied, static (a, b) => a.key.CompareTo(b.key));
+        for (int i = 1; i < tied.Length; i++)
+        {
+            Assert.True(tied[i - 1].key < tied[i].key
+                || (tied[i - 1].key == tied[i].key && tied[i - 1].seq < tied[i].seq));
+        }
     }
 
     [Fact]

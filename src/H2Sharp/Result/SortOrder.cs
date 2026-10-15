@@ -31,7 +31,6 @@
  */
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
@@ -264,14 +263,15 @@ public sealed class SortOrder
     public void Sort(List<Value?[]> rows)
     {
         // Java's List.sort is stable and the reference relies on it: tied rows keep the order
-        // they were read in, which is what a limit then trims. List.Sort is introspective and
-        // makes no such promise, so the order goes through the stable LINQ sort instead.
-        Value?[][] ordered = rows
-            .OrderBy(static row => row, Comparer<Value?[]>.Create(comparison ??= Compare))
-            .ToArray();
-        for (int i = 0; i < ordered.Length; i++)
+        // they were read in, which is what a limit then trims. .NET's List.Sort is
+        // introspective and makes no such promise, so the rows go through the stable merge
+        // in a copy and back.
+        Value?[][] array = new Value?[rows.Count][];
+        rows.CopyTo(array);
+        Util.Utils.StableSort(array, comparison ??= Compare);
+        for (int i = 0; i < array.Length; i++)
         {
-            rows[i] = ordered[i];
+            rows[i] = array[i];
         }
     }
 

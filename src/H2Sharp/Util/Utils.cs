@@ -26,7 +26,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -318,12 +317,73 @@ public static class Utils
         {
             PartialQuickSort(array, 0, highInclusive, comp, fromInclusive, toExclusive - 1);
             // Java sorts the window with a stable sort and the order of tied rows is observed.
-            // .NET's ranged sort is introspective, so the window goes through the stable LINQ
-            // sort and back.
-            X[] ordered = array[fromInclusive..toExclusive]
-                .OrderBy(static x => x, Comparer<X>.Create(comp))
-                .ToArray();
+            // .NET's ranged sort is introspective, so the window goes through the stable
+            // merge below and back.
+            X[] ordered = array[fromInclusive..toExclusive];
+            StableSort(ordered, comp);
             Array.Copy(ordered, 0, array, fromInclusive, ordered.Length);
+        }
+    }
+
+    /// <summary>
+    /// Sorts an array stably: equal elements keep the order they arrived in.
+    /// </summary>
+    /// <remarks>
+    /// Bottom-up merge sort, one auxiliary array and no comparer object per call — the
+    /// comparison runs directly. What it replaces (LINQ's stable sort) spent the same
+    /// memory plus an iterator and a comparer per call. Ties resolve left-first at every
+    /// merge, which is the whole of the stability.
+    /// </remarks>
+    /// <typeparam name="X">the type of elements</typeparam>
+    /// <param name="array">the array, sorted in place</param>
+    /// <param name="comp">the comparer</param>
+    public static void StableSort<X>(X[] array, Comparison<X> comp)
+    {
+        int n = array.Length;
+        if (n < 2)
+        {
+            return;
+        }
+
+        X[] buffer = new X[n];
+        X[] src = array;
+        X[] dst = buffer;
+        for (int width = 1; width < n; width *= 2)
+        {
+            for (int lo = 0; lo < n; lo += 2 * width)
+            {
+                int mid = Math.Min(lo + width, n);
+                int hi = Math.Min(lo + 2 * width, n);
+                int i = lo, j = mid, k = lo;
+                while (i < mid && j < hi)
+                {
+                    if (comp(src[j], src[i]) < 0)
+                    {
+                        dst[k++] = src[j++];
+                    }
+                    else
+                    {
+                        dst[k++] = src[i++];
+                    }
+                }
+
+                while (i < mid)
+                {
+                    dst[k++] = src[i++];
+                }
+
+                while (j < hi)
+                {
+                    dst[k++] = src[j++];
+                }
+            }
+
+            (src, dst) = (dst, src);
+        }
+
+        if (!ReferenceEquals(src, array))
+        {
+            Array.Copy(src, array, n);
         }
     }
 
