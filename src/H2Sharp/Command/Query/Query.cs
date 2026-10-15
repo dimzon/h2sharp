@@ -26,6 +26,7 @@ using H2Sharp.Expressions;
 using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Tables;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Command.Query;
@@ -157,6 +158,14 @@ public abstract class Query : Prepared
     public abstract override ResultInterface Run(long limit);
 
     /// <summary>
+    /// Initializes this query.
+    /// </summary>
+    /// <remarks>
+    /// The call sequence is init(), mapColumns() if it's a subquery, prepare().
+    /// </remarks>
+    public abstract void Init();
+
+    /// <summary>
     /// Prepares the expressions of this query.
     /// </summary>
     public abstract void PrepareExpressions();
@@ -239,12 +248,12 @@ public abstract class Query : Prepared
     /// the select list, the select does.
     /// </remarks>
     /// <param name="expressions">the columns of the query</param>
-    internal void CleanupOrder(Expression[] expressions)
+    internal void CleanupOrder(List<Expression> expressions)
     {
         int[] sourceIndexes = sort!.GetQueryColumnIndexes();
         int count = sourceIndexes.Length;
         // The reference keeps these two in a BitSet; two flag arrays say the same thing.
-        bool[] deduplication = new bool[expressions.Length];
+        bool[] deduplication = new bool[expressions.Count];
         bool[] retain = new bool[count];
         for (int i = 0; i < count; i++)
         {
@@ -296,6 +305,215 @@ public abstract class Query : Prepared
         }
 
         sort = new SortOrder(GetSession(), indexes, sortTypes, reorderList);
+    }
+
+    /// <summary>
+    /// Initialize the order by list. This call may extend the expressions list.
+    /// </summary>
+    /// <remarks>
+    /// The expressions arrive as a parameter rather than a field: the reference keeps the
+    /// select list on this class, here the select owns it and this class only resolves into
+    /// it. The visible count is read off <see cref="GetColumnCount"/>, which answers the
+    /// visible columns exactly as there.
+    /// </remarks>
+    /// <param name="expressionSQL">the select list SQL snippets</param>
+    /// <param name="mustBeInResult">all order by expressions must be in the select list</param>
+    /// <param name="filters">the table filters</param>
+    /// <param name="expressions">the select list, extended in place</param>
+    /// <returns>true if ORDER BY clause is preserved, false otherwise</returns>
+    internal bool InitOrder(
+        List<string>? expressionSQL, bool mustBeInResult, List<TableFilter>? filters, List<Expression> expressions)
+    {
+        for (int i = 0; i < orderList!.Count; i++)
+        {
+            QueryOrderBy o = orderList[i];
+            Expression? e = o.expression;
+            if (e is null)
+            {
+                continue;
+            }
+
+            if (e.IsConstant())
+            {
+                orderList.RemoveAt(i--);
+                continue;
+            }
+
+            int idx = InitExpression(expressionSQL, e, mustBeInResult, filters, expressions);
+            o.columnIndexExpr = ValueExpression.Get(ValueInteger.Get(idx + 1));
+            o.expression = expressions[idx].GetNonAliasExpression();
+        }
+
+        if (orderList.Count == 0)
+        {
+            orderList = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Initialize the 'ORDER BY' or 'DISTINCT' expressions.
+    /// </summary>
+    /// <remarks>
+    /// The mode comes from the session rather than from the database: the reference reads
+    /// <c>getDatabase().getMode()</c>, which is the same object, and this database does not
+    /// store one. Reading it refuses until Mode is ported, so a DISTINCT query ordering by
+    /// an unrelated expression refuses with that rather than with the mismatch error.
+    /// </remarks>
+    /// <param name="expressionSQL">the select list SQL snippets</param>
+    /// <param name="e">the expression</param>
+    /// <param name="mustBeInResult">all order by expressions must be in the select list</param>
+    /// <param name="filters">the table filters</param>
+    /// <param name="expressions">the select list, extended in place</param>
+    /// <returns>index on the expression in the expressions list</returns>
+    internal int InitExpression(
+        List<string>? expressionSQL, Expression e, bool mustBeInResult, List<TableFilter>? filters,
+        List<Expression> expressions)
+    {
+        SessionLocal session = GetSession();
+        Database db = session.GetDatabase();
+        // special case: SELECT 1 AS A FROM DUAL ORDER BY A
+        // (oracle supports it, but only in order by, not in group by and
+        // not in having):
+        // SELECT 1 AS A FROM DUAL ORDER BY -A
+        if (e is ExpressionColumn exprCol)
+        {
+            // order by expression
+            string? tableAlias = exprCol.GetOriginalTableAliasName();
+            string? col = exprCol.GetOriginalColumnName();
+            for (int j = 0, visible = GetColumnCount(); j < visible; j++)
+            {
+                Expression ec = expressions[j];
+                if (ec is ExpressionColumn c)
+                {
+                    // select expression
+                    if (!db.EqualsIdentifiers(col!, c.GetColumnName(session, j)))
+                    {
+                        continue;
+                    }
+
+                    if (tableAlias is null)
+                    {
+                        return j;
+                    }
+
+                    string? ca = c.GetOriginalTableAliasName();
+                    if (ca is not null)
+                    {
+                        if (db.EqualsIdentifiers(ca, tableAlias))
+                        {
+                            return j;
+                        }
+                    }
+                    else if (filters is not null)
+                    {
+                        // select id from test order by test.id
+                        foreach (TableFilter f in filters)
+                        {
+                            if (db.EqualsIdentifiers(f.GetTableAlias(), tableAlias))
+                            {
+                                return j;
+                            }
+                        }
+                    }
+                }
+                else if (ec is Alias alias)
+                {
+                    if (tableAlias is null && db.EqualsIdentifiers(col!, alias.GetAlias(session, j)))
+                    {
+                        return j;
+                    }
+
+                    Expression ec2 = alias.GetNonAliasExpression();
+                    if (ec2 is ExpressionColumn c2)
+                    {
+                        string ta = exprCol.GetSql(HasSql.DefaultSqlFlags, Expression.WithoutParentheses);
+                        string tb = c2.GetSql(HasSql.DefaultSqlFlags, Expression.WithoutParentheses);
+                        string s2 = c2.GetColumnName(session, j);
+                        if (db.EqualsIdentifiers(col!, s2) && db.EqualsIdentifiers(ta, tb))
+                        {
+                            return j;
+                        }
+                    }
+                }
+            }
+        }
+        else if (expressionSQL is not null)
+        {
+            string s = e.GetSql(HasSql.DefaultSqlFlags, Expression.WithoutParentheses);
+            for (int j = 0, size = expressionSQL.Count; j < size; j++)
+            {
+                if (db.EqualsIdentifiers(expressionSQL[j], s))
+                {
+                    return j;
+                }
+            }
+        }
+
+        if (expressionSQL is null
+                || mustBeInResult && !session.GetMode().AllowUnrelatedOrderByExpressionsInDistinctQueries
+                        && !CheckOrderOther(session, e, expressionSQL))
+        {
+            throw DbException.Get(Api.ErrorCode.OrderByNotInResult, e.GetTraceSql());
+        }
+
+        int idx = expressions.Count;
+        expressions.Add(e);
+        expressionSQL.Add(e.GetSql(HasSql.DefaultSqlFlags, Expression.WithoutParentheses));
+        return idx;
+    }
+
+    /// <summary>
+    /// An additional check for expression in ORDER BY list for DISTINCT selects
+    /// that was not matched with selected expressions in regular way. This
+    /// method allows expressions based only on selected expressions in different
+    /// complicated ways with functions, comparisons, or operators.
+    /// </summary>
+    /// <param name="session">session</param>
+    /// <param name="expr">expression to check</param>
+    /// <param name="expressionSQL">SQL of allowed expressions</param>
+    /// <returns>whether the specified expression should be allowed in ORDER BY list of DISTINCT select</returns>
+    private static bool CheckOrderOther(SessionLocal session, Expression? expr, List<string> expressionSQL)
+    {
+        if (expr is null || expr.IsConstant())
+        {
+            // ValueExpression, null expression in CASE, or other
+            return true;
+        }
+
+        string exprSQL = expr.GetSql(HasSql.DefaultSqlFlags, Expression.WithoutParentheses);
+        foreach (string sql in expressionSQL)
+        {
+            if (session.GetDatabase().EqualsIdentifiers(exprSQL, sql))
+            {
+                return true;
+            }
+        }
+
+        int count = expr.GetSubexpressionCount();
+        if (!expr.IsEverything(ExpressionVisitor.DeterministicVisitor))
+        {
+            return false;
+        }
+        else if (count <= 0)
+        {
+            // Expression is an ExpressionColumn, Parameter, SequenceValue or
+            // has other unsupported type without subexpressions
+            return false;
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            Expression? sub = expr.GetSubexpression(i);
+            if (sub is null || !CheckOrderOther(session, sub, expressionSQL))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

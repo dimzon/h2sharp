@@ -267,6 +267,28 @@ public sealed class ExpressionColumn : Expression
         return tableAlias;
     }
 
+    /// <summary>
+    /// Gets the table alias this was written with, before any mapping.
+    /// </summary>
+    /// <remarks>
+    /// The name as written, not as resolved: init matches ORDER BY names against the
+    /// select list by text, and a resolved column would match everything.
+    /// </remarks>
+    /// <returns>the table alias, or null</returns>
+    public string? GetOriginalTableAliasName()
+    {
+        return tableAlias;
+    }
+
+    /// <summary>
+    /// Gets the column name this was written with, before any mapping.
+    /// </summary>
+    /// <returns>the column name</returns>
+    public string? GetOriginalColumnName()
+    {
+        return columnAlias;
+    }
+
     /// <inheritdoc/>
     public override string? GetSchemaName()
     {

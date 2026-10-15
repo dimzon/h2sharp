@@ -35,6 +35,7 @@ using H2Sharp.Expressions;
 using H2Sharp.Result;
 
 using H2Sharp.Tables;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Command.Query;
@@ -46,7 +47,11 @@ public sealed class Select : Query
 {
     private SessionLocal session;
 
-    private Expression[] expressions = [];
+    /// <summary>
+    /// The select list, with hidden ORDER BY and grouping expressions appended past the
+    /// visible columns by <see cref="Init"/>, as the reference grows its own list.
+    /// </summary>
+    private List<Expression> expressions = [];
 
     private bool isQuickAggregateQuery;
 
@@ -65,6 +70,12 @@ public sealed class Select : Query
     private List<Expression>? windows;
 
     private bool isOrderByTop;
+
+    /// <summary>
+    /// Whether init ran: a second run would resolve the order list twice and append its
+    /// expressions twice, so it is refused as the reference refuses it.
+    /// </summary>
+    private bool checkInit;
 
     private long limit = -1;
 
@@ -103,6 +114,50 @@ public sealed class Select : Query
     {
         this.session = session;
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The order block of the reference's init: the select list snippets the order is
+    /// matched against, then the resolution of names to positions. The rest of init waits:
+    /// star expansion, the distinct indexes, the having and qualify moves, the grouping
+    /// indexes, and the column mapping pass — each needs machinery that is not here, and a
+    /// half-mapped select would answer wrong rows rather than refuse.
+    /// </remarks>
+    public override void Init()
+    {
+        if (checkInit)
+        {
+            throw DbException.GetInternalError();
+        }
+
+        List<string>? expressionSQL = null;
+        if (orderList is not null)
+        {
+            expressionSQL = new(visibleColumnCount);
+            for (int i = 0; i < visibleColumnCount; i++)
+            {
+                Expression expr = expressions[i].GetNonAliasExpression();
+                expressionSQL.Add(expr.GetSql(HasSql.DefaultSqlFlags, Expression.WithoutParentheses));
+            }
+        }
+
+        if (orderList is not null)
+        {
+            _ = InitOrder(expressionSQL, IsAnyDistinct(), filters, expressions);
+        }
+
+        checkInit = true;
+    }
+
+    /// <summary>
+    /// Whether this query is a DISTINCT or DISTINCT ON query.
+    /// </summary>
+    /// <remarks>
+    /// The reference also counts its distinct-expression list; that list is not ported, and
+    /// the DISTINCT ON marker stands in its place until it is.
+    /// </remarks>
+    /// <returns>true for either distinct flavor</returns>
+    public bool IsAnyDistinct() => distinct || isDistinct;
 
     /// <inheritdoc/>
     public override void Optimize(SessionLocal session, TableFilter? targetTableFilter)
@@ -177,10 +232,14 @@ public sealed class Select : Query
         => throw new TODOException("Select.getPlanSQL: the plan is not built");
 
     /// <inheritdoc/>
-    public override Expression[] GetExpressions() => expressions;
+    /// <remarks>
+    /// The visible columns, not the whole list: <see cref="Init"/> may append hidden ORDER
+    /// BY expressions past them, and those are not columns of the query.
+    /// </remarks>
+    public override Expression[] GetExpressions() => [.. expressions];
 
     /// <inheritdoc/>
-    public override int GetColumnCount() => expressions.Length;
+    public override int GetColumnCount() => visibleColumnCount;
 
     /// <inheritdoc/>
     public override long GetRowCount(SessionLocal session, List<TableFilter> filters, long limit)
@@ -200,10 +259,10 @@ public sealed class Select : Query
     {
         if (orderList is not null)
         {
-            PrepareOrder(orderList, expressions.Length);
+            PrepareOrder(orderList, expressions.Count);
         }
 
-        for (int i = 0; i < expressions.Length; i++)
+        for (int i = 0; i < expressions.Count; i++)
         {
             expressions[i] = expressions[i].Optimize(session);
         }
@@ -236,8 +295,9 @@ public sealed class Select : Query
 
         long offset = this.offset;
         long fetch = limit >= 0 ? limit : this.limit;
-        int columnCount = expressions.Length;
-        LocalResult result = new(session, expressions, visibleColumnCount, expressions.Length);
+        int columnCount = expressions.Count;
+        Expression[] expressionArray = [.. expressions];
+        LocalResult result = new(session, expressionArray, visibleColumnCount, expressionArray.Length);
         topTableFilter!.StartQuery(session);
         topTableFilter.Reset();
         topTableFilter.Lock(session);
@@ -298,7 +358,7 @@ public sealed class Select : Query
             }
         }
 
-        LazyResultQueryFlat lazyResult = new(this, expressions, columnCount, forUpdate is not null);
+        LazyResultQueryFlat lazyResult = new(this, [.. expressions], columnCount, forUpdate is not null);
         SkipOffset(lazyResult, offset, quickOffset == QuickOffset.Yes);
         if (result is null)
         {
@@ -568,13 +628,14 @@ public sealed class Select : Query
     /// <param name="expressions">the expressions</param>
     public void SetExpressions(Expression[] expressions)
     {
-        this.expressions = expressions;
+        this.expressions = [.. expressions];
         visibleColumnCount = expressions.Length;
     }
 
     /// <summary>
-    /// How many of the expressions are visible columns. Set with the list until init() lands:
-    /// the reference fixes it when the columns are parsed, which is the same moment here.
+    /// How many of the expressions are visible columns. Fixed here because the parser hands
+    /// over the finished select list; <see cref="Init"/> may append hidden ORDER BY
+    /// expressions past them, as the reference grows its own list in init.
     /// </summary>
     private int visibleColumnCount;
 

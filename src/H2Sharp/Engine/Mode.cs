@@ -49,7 +49,7 @@ public enum CharPadding
 /// reference's five for the same reason.
 /// <para>
 /// The table below is the reference's own, read off the static initialiser: for each mode, which of
-/// the seven are on. It is worth having in full even though only the tokenizer and the conversion
+/// the eight are on. It is worth having in full even though only the tokenizer and the conversion
 /// family read it, because "which mode turns this on" is the question that every future feature
 /// starts with.
 /// </para>
@@ -154,6 +154,15 @@ public sealed class Mode
     public bool ConvertOnlyToSmallerScale { get; }
 
     /// <summary>
+    /// Whether a DISTINCT query may order by an expression that is not in its select list.
+    /// </summary>
+    /// <remarks>
+    /// The eighth flag the port carries; the reference has dozens. Only MySQL and MariaDB
+    /// turn it on, which is where the table below puts it.
+    /// </remarks>
+    public bool AllowUnrelatedOrderByExpressionsInDistinctQueries { get; }
+
+    /// <summary>
     /// The name of the mode, as it is written in a URL.
     /// </summary>
     public string Name { get; }
@@ -171,7 +180,8 @@ public sealed class Mode
         bool limit,
         bool minusIsExcept,
         CharPadding charPadding = CharPadding.Always,
-        bool convertOnlyToSmallerScale = false)
+        bool convertOnlyToSmallerScale = false,
+        bool allowUnrelatedOrderByExpressionsInDistinctQueries = false)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -182,6 +192,7 @@ public sealed class Mode
         MinusIsExcept = minusIsExcept;
         CharPadding = charPadding;
         ConvertOnlyToSmallerScale = convertOnlyToSmallerScale;
+        AllowUnrelatedOrderByExpressionsInDistinctQueries = allowUnrelatedOrderByExpressionsInDistinctQueries;
     }
 
     /// <summary>
@@ -229,8 +240,10 @@ public sealed class Mode
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false),
-            ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never),
-            ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never),
+            ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true),
+            ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true),
