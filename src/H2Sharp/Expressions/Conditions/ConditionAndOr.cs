@@ -265,10 +265,15 @@ public sealed class ConditionAndOr : Condition
     /// Folds two operands when the pair decides the whole condition.
     /// </summary>
     /// <remarks>
-    /// A FALSE in an AND or a TRUE in an OR settles the rest without reading it, which is why
-    /// the fold is allowed to drop the sibling operands. A NULL does not decide: FALSE OR NULL
-    /// is still FALSE, but only because the FALSE was there, so NULL by itself makes the whole
-    /// condition unknown rather than true.
+    /// Each side's value is read once: the eager isTrue/isFalse/isUnknown triple this
+    /// replaced read every constant twice, and a second read of a value is never free.
+    /// <para>
+    /// NULL does not decide: FALSE AND NULL is FALSE only because FALSE dominates, while
+    /// TRUE AND NULL is UNKNOWN, and UNKNOWN is its own expression rather than FALSE. A
+    /// NULL next to a non-constant folds nothing at all. A TRUE next to an expression
+    /// casts it to boolean instead of passing it through, which is where a non-boolean
+    /// would otherwise leak into a condition.
+    /// </para>
     /// <para>
     /// The reference also merges comparable pairs here (getAdditionalAnd, optimizeOr), which
     /// is where "A=1 AND B=1 AND A=B" loses a comparison. Those need index conditions and the
@@ -283,76 +288,71 @@ public sealed class ConditionAndOr : Condition
     /// <returns>the folded expression, or null</returns>
     public static Expression? OptimizeIfConstant(SessionLocal session, int andOrType, Expression left, Expression right)
     {
-        bool isTrue = left.IsConstant() && left.GetBooleanValue(session);
-        bool isFalse = left.IsConstant() && !left.GetBooleanValue(session);
-        bool isUnknown = left.IsNullConstant();
+        if (!left.IsConstant())
+        {
+            if (!right.IsConstant())
+            {
+                return null;
+            }
 
+            return OptimizeConstant(session, andOrType, right.GetValue(session), left);
+        }
+
+        Value l = left.GetValue(session);
+        if (!right.IsConstant())
+        {
+            return OptimizeConstant(session, andOrType, l, right);
+        }
+
+        Value r = right.GetValue(session);
         switch (andOrType)
         {
             case And:
-                if (isTrue)
-                {
-                    return right;
-                }
-
-                if (isFalse || isUnknown)
+                if (l.IsFalse() || r.IsFalse())
                 {
                     return ValueExpression.False;
                 }
 
-                break;
-
-            case Or:
-                if (isFalse)
+                if (l is ValueNull || r is ValueNull)
                 {
-                    return right;
+                    return TypedValueExpression.Unknown;
                 }
 
-                if (isTrue || isUnknown)
+                return ValueExpression.True;
+
+            case Or:
+                if (l.IsTrue() || r.IsTrue())
                 {
                     return ValueExpression.True;
                 }
 
-                break;
+                if (l is ValueNull || r is ValueNull)
+                {
+                    return TypedValueExpression.Unknown;
+                }
+
+                return ValueExpression.False;
 
             default:
                 throw DbException.GetInternalError("type=" + andOrType);
         }
+    }
 
-        bool rIsTrue = right.IsConstant() && right.GetBooleanValue(session);
-        bool rIsFalse = right.IsConstant() && !right.GetBooleanValue(session);
-        bool rIsUnknown = right.IsNullConstant();
-
-        switch (andOrType)
+    private static Expression? OptimizeConstant(SessionLocal session, int andOrType, Value l, Expression right)
+    {
+        if (l is not ValueNull)
         {
-            case And:
-                if (rIsTrue)
-                {
-                    return left;
-                }
+            switch (andOrType)
+            {
+                case And:
+                    return l.GetBoolean() ? CastToBoolean(session, right) : ValueExpression.False;
 
-                if (rIsFalse || rIsUnknown)
-                {
-                    return ValueExpression.False;
-                }
+                case Or:
+                    return l.GetBoolean() ? ValueExpression.True : CastToBoolean(session, right);
 
-                break;
-
-            case Or:
-                if (rIsFalse)
-                {
-                    return left;
-                }
-
-                if (rIsTrue || rIsUnknown)
-                {
-                    return ValueExpression.True;
-                }
-
-                break;
-
-            default:
-                throw DbException.GetInternalError("type=" + andOrType);
+                default:
+                    throw DbException.GetInternalError("type=" + andOrType);
+            }
         }
 
         return null;

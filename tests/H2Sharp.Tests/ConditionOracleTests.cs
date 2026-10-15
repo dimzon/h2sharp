@@ -81,6 +81,9 @@ public sealed class ConditionOracleTests
     };
 
     private const string Setup = """
+                      java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:condition_fold");
+                      org.h2.jdbc.JdbcConnection c = (org.h2.jdbc.JdbcConnection) conn;
+                      org.h2.engine.SessionLocal session = (org.h2.engine.SessionLocal) c.getSession();
                       java.util.function.Function<String, org.h2.expression.Expression> constant =
                           s -> switch (s) {
                               case "TRUE" -> org.h2.expression.ValueExpression.TRUE;
@@ -101,5 +104,112 @@ public sealed class ConditionOracleTests
                             }
                             return v.getBoolean() ? "TRUE" : "FALSE";
                           };
+                      java.util.function.Function<org.h2.expression.Expression, String> folded =
+                          e -> {
+                            org.h2.expression.Expression o = e.optimize(session);
+                            org.h2.value.Value v = o.getValue(null);
+                            return (v == org.h2.value.ValueNull.INSTANCE ? "NULL"
+                                : v.getBoolean() ? "TRUE" : "FALSE")
+                                + "|" + o.getSQL(new StringBuilder(), 0) + "|" + o.getType().getValueType();
+                          };
             """;
+
+    /// <summary>
+    /// What folding an AND or OR of constants answers: the value, the SQL spelling of the
+    /// folded expression, and its type. UNKNOWN is a BOOLEAN NULL, not FALSE, and it prints
+    /// as UNKNOWN; a TRUE next to an expression casts it rather than passing it through.
+    /// </summary>
+    [JavaOracleFact]
+    public void AndOrFold_MatchesReference()
+    {
+        string body = """
+                      String[] values = { "TRUE", "FALSE", "NULL" };
+                      for (String a : values) {
+                        for (String b : values) {
+                          System.out.println(folded.apply(andOf.apply(a, b)) + "||"
+                              + folded.apply(orOf.apply(a, b)));
+                        }
+                      }
+                      conn.close();
+            """;
+
+        List<string> java = OracleRunner.Run([], Setup + body);
+        List<string> csharp = DescribeFold();
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == csharp[i], $"line {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
+    private static List<string> DescribeFold()
+    {
+        List<string> lines = [];
+        Expression[] sample = [ValueExpression.True, ValueExpression.False, TypedValueExpression.Unknown];
+        foreach (Expression a in sample)
+        {
+            foreach (Expression b in sample)
+            {
+                Expression and = new ConditionAndOr(ConditionAndOr.And, a, b);
+                Expression or = new ConditionAndOr(ConditionAndOr.Or, a, b);
+                lines.Add(Folded(and) + "||" + Folded(or));
+            }
+        }
+
+        return lines;
+    }
+
+    private static string Folded(Expression expression)
+    {
+        Expression folded = expression.Optimize(null!);
+        Value value = folded.GetValue(null!);
+        return Word(value) + "|" + folded.GetSql(new System.Text.StringBuilder(), 0, Expression.WithoutParentheses)
+            + "|" + folded.GetTypeInfo().GetValueType();
+    }
+
+    /// <summary>
+    /// NOT over a folded AND and OR: unknown stays unknown through the negation, and the
+    /// folded spelling survives it.
+    /// </summary>
+    [JavaOracleFact]
+    public void NotOfFold_MatchesReference()
+    {
+        string body = """
+                      String[] values = { "TRUE", "FALSE", "NULL" };
+                      for (String a : values) {
+                        for (String b : values) {
+                          System.out.println(folded.apply(new org.h2.expression.condition.ConditionNot(
+                              andOf.apply(a, b))) + "||" + folded.apply(
+                              new org.h2.expression.condition.ConditionNot(orOf.apply(a, b))));
+                        }
+                      }
+                      conn.close();
+            """;
+
+        List<string> java = OracleRunner.Run([], Setup + body);
+        List<string> csharp = DescribeNotFold();
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == csharp[i], $"line {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
+    private static List<string> DescribeNotFold()
+    {
+        List<string> lines = [];
+        Expression[] sample = [ValueExpression.True, ValueExpression.False, TypedValueExpression.Unknown];
+        foreach (Expression a in sample)
+        {
+            foreach (Expression b in sample)
+            {
+                lines.Add(Folded(new ConditionNot(new ConditionAndOr(ConditionAndOr.And, a, b))) + "||"
+                    + Folded(new ConditionNot(new ConditionAndOr(ConditionAndOr.Or, a, b))));
+            }
+        }
+
+        return lines;
+    }
 }

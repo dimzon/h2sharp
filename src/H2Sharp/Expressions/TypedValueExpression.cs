@@ -18,6 +18,8 @@
  * boolean is required; everywhere else it would make "WHERE NULL" look like a boolean and the
  * optimiser would fold it as one.
  */
+using System.Text;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Expressions;
@@ -64,21 +66,61 @@ public class TypedValueExpression : ValueExpression
         return GetImpl(value, type, false);
     }
 
-    private static ValueExpression GetImpl(Value value, TypeInfo type, bool typed)
+    private static ValueExpression GetImpl(Value value, TypeInfo type, bool preserveStrictType)
     {
-        if (!typed && value is not ValueNull)
+        if (value is ValueNull)
         {
-            return Get(value);
+            switch (type.GetValueType())
+            {
+                case Value.Null:
+                    return ValueExpression.Null;
+                case Value.Boolean:
+                    return Unknown;
+                default:
+                    return new TypedValueExpression(value, type);
+            }
         }
 
-        return value is ValueNull && type == TypeInfo.TypeBoolean && !typed
-            ? ValueExpression.Get(value)
-            : new TypedValueExpression(value, type);
+        if (preserveStrictType)
+        {
+            DataType dataType = DataType.GetDataType(type.GetValueType());
+            TypeInfo valueType = value.GetTypeInfo();
+            if (dataType.SupportsPrecision && type.GetPrecision() != valueType.GetPrecision()
+                || dataType.SupportsScale && type.GetScale() != valueType.GetScale()
+                || !Equals(type.GetExtTypeInfo(), valueType.GetExtTypeInfo()))
+            {
+                return new TypedValueExpression(value, type);
+            }
+        }
+
+        return ValueExpression.Get(value);
     }
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo()
     {
         return type;
+    }
+
+    /// <inheritdoc/>
+    public override StringBuilder GetUnenclosedSql(StringBuilder builder, int sqlFlags)
+    {
+        if (ReferenceEquals(this, Unknown))
+        {
+            _ = builder.Append("UNKNOWN");
+        }
+        else
+        {
+            _ = value.GetSql(builder.Append("CAST("), sqlFlags | HasSql.NoCasts).Append(" AS ");
+            _ = type.GetSql(builder, sqlFlags).Append(')');
+        }
+
+        return builder;
+    }
+
+    /// <inheritdoc/>
+    public override bool IsNullConstant()
+    {
+        return value is ValueNull;
     }
 }

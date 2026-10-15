@@ -41,7 +41,10 @@ public class ValueExpression : Expression
     /// <summary>The literal FALSE.</summary>
     public static readonly ValueExpression False = new(ValueBoolean.False);
 
-    private readonly Value value;
+    // Protected rather than private, as the reference keeps it package-visible for this
+    // subclass: C# has no package-private, and a getter would be a member the reference
+    // has nowhere.
+    protected readonly Value value;
 
     /// <summary>
     /// Creates an expression for the given value.
