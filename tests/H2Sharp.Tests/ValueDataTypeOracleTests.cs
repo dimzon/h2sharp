@@ -75,7 +75,12 @@ public sealed class ValueDataTypeOracleTests
                           org.h2.value.ValueTime.parse("12:34:56", null),
                           org.h2.value.ValueNumeric.ZERO, org.h2.value.ValueNumeric.ONE,
                           org.h2.value.ValueNumeric.get(java.math.BigDecimal.valueOf(-42)),
-                          org.h2.value.ValueNumeric.get(java.math.BigDecimal.valueOf(42))
+                          org.h2.value.ValueNumeric.get(java.math.BigDecimal.valueOf(42)),
+                          org.h2.value.ValueNumeric.get(new java.math.BigDecimal("9223372036854775807")),
+                          org.h2.value.ValueNumeric.get(new java.math.BigDecimal("9223372036854775808")),
+                          org.h2.value.ValueNumeric.get(new java.math.BigDecimal("123456789012345678901234567890")),
+                          org.h2.value.ValueNumeric.get(new java.math.BigDecimal("-123456789012345678901234567890")),
+                          org.h2.value.ValueNumeric.get(new java.math.BigDecimal("1234567890.12345678901234567890"))
                       };
                       for (org.h2.value.Value v : more) {
                         System.out.println(v.getValueType() + " " + written.apply(put.apply(t, v)));
@@ -129,6 +134,8 @@ public sealed class ValueDataTypeOracleTests
         ValueNumeric.Zero, ValueNumeric.One,
         ValueNumeric.Get(new BigDecimal(-42, 0)),
         ValueNumeric.Get(new BigDecimal(42, 0)),
+        ValueNumeric.Get(BigDecimal.Parse("9223372036854775808")),
+        ValueNumeric.Get(BigDecimal.Parse("-123456789012345678901234567890")),
     ];
 
     private static List<string> Describe()
@@ -168,6 +175,11 @@ public sealed class ValueDataTypeOracleTests
             ValueNumeric.Zero, ValueNumeric.One,
             ValueNumeric.Get(new BigDecimal(-42, 0)),
             ValueNumeric.Get(new BigDecimal(42, 0)),
+            ValueNumeric.Get(BigDecimal.Parse("9223372036854775807")),
+            ValueNumeric.Get(BigDecimal.Parse("9223372036854775808")),
+            ValueNumeric.Get(BigDecimal.Parse("123456789012345678901234567890")),
+            ValueNumeric.Get(BigDecimal.Parse("-123456789012345678901234567890")),
+            ValueNumeric.Get(BigDecimal.Parse("1234567890.12345678901234567890")),
         ];
         foreach (Value v in more)
         {

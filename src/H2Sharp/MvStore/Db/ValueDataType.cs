@@ -461,7 +461,10 @@ public sealed class ValueDataType : BasicDataType<Value>
                         }
                         else
                         {
-                            byte[] bytes = b.ToByteArray();
+                            // Minimal two's complement big-endian, as java.math.BigInteger
+                            // writes it: the row format and the object format agree byte for
+                            // byte, and both agree with the reference.
+                            byte[] bytes = ToBigEndian(b);
                             buff.Put(Numeric).PutVarInt(scale).PutVarInt(bytes.Length).Put(bytes, 0, bytes.Length);
                         }
                     }
@@ -628,7 +631,7 @@ public sealed class ValueDataType : BasicDataType<Value>
                 {
                     int scale = DataUtils.ReadVarInt(buff, ref position);
                     int len = DataUtils.ReadVarInt(buff, ref position);
-                    BigInteger b = new(buff.Slice(position, len));
+                    BigInteger b = FromBigEndian(buff.Slice(position, len));
                     position += len;
                     return ValueNumeric.Get(new BigDecimal(b, scale));
                 }
@@ -805,6 +808,28 @@ public sealed class ValueDataType : BasicDataType<Value>
         byte[] bytes = buff.Slice(position, len).ToArray();
         position += len;
         return bytes;
+    }
+
+    /// <summary>
+    /// Minimal two's complement big-endian, the shape <c>java.math.BigInteger</c> writes:
+    /// the same conversion <c>ObjectDataType</c> uses for the same question, so the two
+    /// formats agree byte for byte.
+    /// </summary>
+    private static byte[] ToBigEndian(BigInteger value)
+    {
+        byte[] little = value.ToByteArray();
+        System.Array.Reverse(little);
+        return little;
+    }
+
+    /// <summary>
+    /// The inverse of <see cref="ToBigEndian"/>.
+    /// </summary>
+    private static BigInteger FromBigEndian(ReadOnlySpan<byte> bytes)
+    {
+        byte[] little = bytes.ToArray();
+        System.Array.Reverse(little);
+        return new BigInteger(little);
     }
 
     private static long ReadTimestampTime(Span<byte> buff, ref int position)
