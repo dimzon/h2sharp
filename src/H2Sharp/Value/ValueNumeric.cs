@@ -172,7 +172,7 @@ public sealed class ValueNumeric : ValueBigDecimalBase
         BigDecimal divisor = ((ValueNumeric)v).Number;
         if (divisor.Signum() == 0)
         {
-            throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
+            throw DbException.Get(ErrorCode.DivisionByZero1, GetTraceSql());
         }
 
         return Get(Number.Divide(divisor, quotientType.GetScale(), RoundingMode.HalfDown));
@@ -184,7 +184,7 @@ public sealed class ValueNumeric : ValueBigDecimalBase
         BigDecimal divisor = ((ValueNumeric)v).Number;
         if (divisor.Signum() == 0)
         {
-            throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
+            throw DbException.Get(ErrorCode.DivisionByZero1, GetTraceSql());
         }
 
         return Get(Number.Remainder(divisor));

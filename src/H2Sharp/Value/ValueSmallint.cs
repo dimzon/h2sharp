@@ -66,7 +66,7 @@ public sealed class ValueSmallint : Value
         short divisor = ((ValueSmallint)v).value;
         if (divisor == 0)
         {
-            throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
+            throw DbException.Get(ErrorCode.DivisionByZero1, GetTraceSql());
         }
 
         return CheckRange(value / divisor);
@@ -82,7 +82,7 @@ public sealed class ValueSmallint : Value
         short divisor = ((ValueSmallint)v).value;
         if (divisor == 0)
         {
-            throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
+            throw DbException.Get(ErrorCode.DivisionByZero1, GetTraceSql());
         }
 
         return Get((short)(value % divisor));

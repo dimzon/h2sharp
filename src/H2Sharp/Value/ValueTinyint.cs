@@ -85,7 +85,7 @@ public sealed class ValueTinyint : Value
         sbyte divisor = ((ValueTinyint)v).value;
         if (divisor == 0)
         {
-            throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
+            throw DbException.Get(ErrorCode.DivisionByZero1, GetTraceSql());
         }
 
         return CheckRange(value / divisor);
@@ -101,7 +101,7 @@ public sealed class ValueTinyint : Value
         sbyte divisor = ((ValueTinyint)v).value;
         if (divisor == 0)
         {
-            throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
+            throw DbException.Get(ErrorCode.DivisionByZero1, GetTraceSql());
         }
 
         return Get((sbyte)(value % divisor));

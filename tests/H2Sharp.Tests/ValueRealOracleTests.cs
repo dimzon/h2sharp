@@ -27,6 +27,8 @@ using System.Text;
 using H2Sharp.Tests.Oracle;
 using H2Sharp.Util;
 using H2Sharp.Values;
+using H2Sharp;
+using H2Sharp.Api;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -121,6 +123,26 @@ public sealed class ValueRealOracleTests
 
     private static string Modulus(Value v, float divisor)
         => v.Modulus(ValueReal.Get(divisor)).GetString() ?? string.Empty;
+
+    /// <summary>
+    /// A division by zero names the dividend in its trace SQL: the sites spell it through
+    /// GetTraceSql rather than a throwaway builder, and this pins the text so a future
+    /// change to the trace flags fails here instead of silently.
+    /// </summary>
+    [Fact]
+    public void DivisionByZeroNamesTheDividend()
+    {
+        Value dividend = ValueReal.Get(1.5f);
+        H2SharpException divide = Assert.Throws<H2SharpException>(
+            () => dividend.Divide(ValueReal.Get(0f), TypeInfo.TypeReal));
+        Assert.Equal((int)ErrorCode.DivisionByZero1, divide.H2ErrorCode);
+        Assert.Contains(dividend.GetTraceSql(), divide.Message, StringComparison.Ordinal);
+
+        H2SharpException modulus = Assert.Throws<H2SharpException>(
+            () => dividend.Modulus(ValueReal.Get(0f)));
+        Assert.Equal((int)ErrorCode.DivisionByZero1, modulus.H2ErrorCode);
+        Assert.Contains(dividend.GetTraceSql(), modulus.Message, StringComparison.Ordinal);
+    }
 
     private static string Compare(Value v, float other)
         => v.CompareTo(ValueReal.Get(other), null, CompareMode.GetInstance(null, 0))

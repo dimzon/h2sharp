@@ -90,7 +90,7 @@ public sealed class ValueReal : Value
         float divisor = ((ValueReal)v).value;
         if (divisor == 0.0f)
         {
-            throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
+            throw DbException.Get(ErrorCode.DivisionByZero1, GetTraceSql());
         }
 
         return Get(value / divisor);
@@ -102,7 +102,7 @@ public sealed class ValueReal : Value
         float divisor = ((ValueReal)v).value;
         if (divisor == 0f)
         {
-            throw DbException.Get(ErrorCode.DivisionByZero1, GetSql(new StringBuilder(), 0).ToString());
+            throw DbException.Get(ErrorCode.DivisionByZero1, GetTraceSql());
         }
 
         return Get(value % divisor);

@@ -28,6 +28,8 @@ using System.Text;
 using H2Sharp.Tests.Oracle;
 using H2Sharp.Util;
 using H2Sharp.Values;
+using H2Sharp;
+using H2Sharp.Api;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -201,6 +203,27 @@ public sealed class ValueNumericOracleTests
 
     private static string Divide(Value v, Value divisor, int scale)
         => v.Divide(divisor, new TypeInfo(Value.Numeric, 20, scale, null)).GetString() ?? string.Empty;
+
+    /// <summary>
+    /// A division by zero names the dividend in its trace SQL: the sites spell it through
+    /// GetTraceSql rather than a throwaway builder, and this pins the text so a future
+    /// change to the trace flags fails here instead of silently.
+    /// </summary>
+    [Fact]
+    public void DivisionByZeroNamesTheDividend()
+    {
+        Value dividend = ValueNumeric.Get(BigDecimal.Parse("2.50"));
+        TypeInfo quotient = new(Value.Numeric, 20, 4, null);
+        H2SharpException divide = Assert.Throws<H2SharpException>(
+            () => dividend.Divide(ValueNumeric.Get(BigDecimal.Zero), quotient));
+        Assert.Equal((int)ErrorCode.DivisionByZero1, divide.H2ErrorCode);
+        Assert.Contains(dividend.GetTraceSql(), divide.Message, StringComparison.Ordinal);
+
+        H2SharpException modulus = Assert.Throws<H2SharpException>(
+            () => dividend.Modulus(ValueNumeric.Get(BigDecimal.Zero)));
+        Assert.Equal((int)ErrorCode.DivisionByZero1, modulus.H2ErrorCode);
+        Assert.Contains(dividend.GetTraceSql(), modulus.Message, StringComparison.Ordinal);
+    }
 
     private static string Compare(Value v, BigDecimal other)
         => v.CompareTo(ValueNumeric.Get(other), null, CompareMode.GetInstance(null, 0))

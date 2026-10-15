@@ -22,6 +22,8 @@ using System.Text;
 using H2Sharp.Tests.Oracle;
 using H2Sharp.Util;
 using H2Sharp.Values;
+using H2Sharp;
+using H2Sharp.Api;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -85,6 +87,30 @@ public sealed class SmallNumericTypesOracleTests
         Assert.True(ValueBoolean.True.Equals(ValueBoolean.True));
         Assert.False(ValueBoolean.True.Equals(ValueBoolean.False));
         Assert.False(ValueBoolean.True.Equals(null));
+    }
+
+    /// <summary>
+    /// A division by zero names the dividend in its trace SQL: the sites spell it through
+    /// GetTraceSql rather than a throwaway builder, and this pins the text so a future
+    /// change to the trace flags fails here instead of silently.
+    /// </summary>
+    [Fact]
+    public void DivisionByZeroNamesTheDividend()
+    {
+        AssertDividendNamesItself(ValueTinyint.Get(5), ValueTinyint.Get(0));
+        AssertDividendNamesItself(ValueSmallint.Get(300), ValueSmallint.Get(0));
+    }
+
+    private static void AssertDividendNamesItself(Value dividend, Value zero)
+    {
+        TypeInfo quotient = TypeInfo.GetTypeInfo(dividend.GetValueType(), 10, 0, null);
+        H2SharpException divide = Assert.Throws<H2SharpException>(() => dividend.Divide(zero, quotient));
+        Assert.Equal((int)ErrorCode.DivisionByZero1, divide.H2ErrorCode);
+        Assert.Contains(dividend.GetTraceSql(), divide.Message, StringComparison.Ordinal);
+
+        H2SharpException modulus = Assert.Throws<H2SharpException>(() => dividend.Modulus(zero));
+        Assert.Equal((int)ErrorCode.DivisionByZero1, modulus.H2ErrorCode);
+        Assert.Contains(dividend.GetTraceSql(), modulus.Message, StringComparison.Ordinal);
     }
 
     private static List<string> RunOracle(IReadOnlyList<string> inputs, string program)
