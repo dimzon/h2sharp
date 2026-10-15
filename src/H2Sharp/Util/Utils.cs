@@ -590,10 +590,16 @@ public static class Utils
     }
 
     /// <summary>
-    /// Parses an integer using java.lang.Integer.decode syntax: optional
-    /// <c>0x</c>/<c>0X</c> or <c>#</c> prefix for hexadecimal, a leading <c>0</c>
-    /// (with at least one following digit) for octal, otherwise decimal.
+    /// Parses an integer using java.lang.Integer.decode syntax: an optional sign, then
+    /// <c>0x</c>/<c>0X</c> or <c>#</c> for hexadecimal, a leading <c>0</c> (with at least one
+    /// following digit) for octal, otherwise decimal.
     /// </summary>
+    /// <remarks>
+    /// This is the project's one <c>Integer.decode</c>: <c>DataUtils</c> delegates its own
+    /// copy here, so a second implementation cannot drift again. The branches follow the JDK
+    /// one for one — a lone "0" stays decimal (the length guard decides that), a second sign
+    /// is "in the wrong position", and a magnitude that does not fit refuses.
+    /// </remarks>
     /// <param name="s">the text to parse</param>
     /// <param name="value">the parsed value on success</param>
     /// <returns>true if parsing succeeded</returns>
@@ -605,29 +611,58 @@ public static class Utils
             return false;
         }
 
+        int index = 0;
+        bool negative = false;
+        if (s[0] == '-')
+        {
+            negative = true;
+            index = 1;
+        }
+        else if (s[0] == '+')
+        {
+            index = 1;
+        }
+
+        int radix = 10;
+        if (StartsWithAt(s, "0x", index) || StartsWithAt(s, "0X", index))
+        {
+            index += 2;
+            radix = 16;
+        }
+        else if (StartsWithAt(s, "#", index))
+        {
+            index += 1;
+            radix = 16;
+        }
+        else if (StartsWithAt(s, "0", index) && s.Length > 1 + index)
+        {
+            index += 1;
+            radix = 8;
+        }
+
+        if (index >= s.Length || s[index] == '-' || s[index] == '+')
+        {
+            return false;
+        }
+
         try
         {
-            if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            // Integer.valueOf(digits, radix) takes digits only: no sign, no whitespace, at
+            // least one of them, and the magnitude must fit in an int — 0x80000000 refuses.
+            // .NET's own hex parsers wrap that into a negative instead, so every radix goes
+            // through a wider type first and the range is checked by hand. The limit moves by
+            // one for a negative: decode retries a failed magnitude with the sign included,
+            // which is exactly what lets -2147483648 through while 2147483648 still refuses.
+            long magnitude = radix == 10
+                ? long.Parse(s[index..], NumberStyles.None, CultureInfo.InvariantCulture)
+                : Convert.ToInt64(s[index..], radix);
+            long limit = negative ? (long)int.MaxValue + 1 : int.MaxValue;
+            if (magnitude < 0 || magnitude > limit)
             {
-                value = int.Parse(s[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-                return true;
+                return false;
             }
 
-            if (s.StartsWith('#'))
-            {
-                value = int.Parse(s[1..], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-                return true;
-            }
-
-            if (s.Length > 1 && s[0] == '0')
-            {
-                value = Convert.ToInt32(s[1..], 8);
-                return true;
-            }
-
-            // Java Integer.parseInt does not tolerate surrounding whitespace, so
-            // NumberStyles.AllowLeadingSign (not NumberStyles.Integer) is used here.
-            value = int.Parse(s, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+            value = (int)(negative ? -magnitude : magnitude);
             return true;
         }
         catch (Exception e) when (e is FormatException or OverflowException or ArgumentException)
@@ -636,6 +671,10 @@ public static class Utils
             return false;
         }
     }
+
+    private static bool StartsWithAt(string s, string prefix, int index)
+        => (uint)(s.Length - index) >= (uint)prefix.Length
+            && s.AsSpan(index, prefix.Length).Equals(prefix, StringComparison.Ordinal);
 
     /// <summary>
     /// Get the system property as a boolean. If the system property is not set, the

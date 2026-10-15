@@ -62,6 +62,54 @@ public sealed class DataUtilsOracleTests
         "a🎉b",
     ];
 
+    /// <summary>
+    /// One Integer.decode for the whole project: the same text through Utils.TryParseInt and
+    /// through DataUtils.GetConfigParam must answer the same, and both must answer what the JDK
+    /// answers — including the two places the old copies diverged ("0" threw on one road, "#..."
+    /// on the other) and the JDK quirks (a lone "0" stays decimal, "-2147483648" refuses).
+    /// </summary>
+    [JavaOracleFact]
+    public void DecodeIntegersAgreeWithTheReference()
+    {
+        string[] corpus =
+        [
+            "0", "010", "0x1f", "-0x1f", "#10", "-#10", "+0x1f", "+010", "-0", "00",
+            "08", "0x", "#", "-", "+", "--1", "0x80000000", "-0x80000000", "2147483647", "2147483648",
+            "-2147483648", " 10", "10 ", "42x", string.Empty,
+        ];
+        string body = """
+            for (String s : inputs) {
+                try {
+                    System.out.println(Integer.decode(s));
+                } catch (NumberFormatException e) {
+                    System.out.println("ERR");
+                }
+            }
+            """;
+
+        List<string> java = OracleRunner.Run(
+            corpus,
+            body,
+            numbers: null,
+            extraJavaArgs: ["-Duser.language=en"],
+            packageName: null);
+
+        List<string> csharp = [];
+        foreach (string s in corpus)
+        {
+            bool parsed = Utils.TryParseInt(s, out int value);
+            csharp.Add(parsed ? value.ToString(CultureInfo.InvariantCulture) : "ERR");
+
+            // The same config value through the store's road answers the same.
+            Dictionary<string, object?> config = new() { ["v"] = s };
+            Assert.Equal(
+                parsed ? value : -1,
+                DataUtils.GetConfigParam(config, "v", -1));
+        }
+
+        Assert.Equal(java, csharp);
+    }
+
     [Fact]
     public void EncodingsAgreeWithTheReference()
     {

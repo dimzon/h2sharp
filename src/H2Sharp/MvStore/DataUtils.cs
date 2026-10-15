@@ -1336,74 +1336,22 @@ public static class DataUtils
     /// <c>Integer.decode</c>, which .NET has no equivalent of.
     /// </summary>
     /// <remarks>
-    /// The rules are the JDK's: an optional sign, then <c>#</c> for hex, then a leading <c>0</c> for
-    /// octal unless it is followed by <c>x</c>, in which case it is hex. Anything that does not parse
-    /// raises, and the one caller here ignores that and uses its default.
+    /// A call-through, not a second implementation: <see cref="Utils.TryParseInt"/> follows the
+    /// JDK branch for branch (including the lone-"0"-stays-decimal guard this method used to
+    /// miss, and the sign handling that used to reject every "#..."), so this only translates
+    /// its boolean into the throw the caller catches.
     /// </remarks>
     /// <param name="s">the text</param>
     /// <returns>the value</returns>
     /// <exception cref="FormatException">the text is not a number in any of those radixes</exception>
     private static int DecodeInteger(string s)
     {
-        int i = 0;
-        bool negative = false;
-        if (s.Length > 0 && s[0] < '0')
+        if (Utils.TryParseInt(s, out int value))
         {
-            if (s[0] == '-')
-            {
-                negative = true;
-            }
-            else if (s[0] != '+')
-            {
-                throw new FormatException("For input string: \"" + s + "\"");
-            }
-
-            if (s.Length == 1)
-            {
-                throw new FormatException("For input string: \"" + s + "\"");
-            }
-
-            i = 1;
+            return value;
         }
 
-        int radix = 10;
-        if (i >= s.Length)
-        {
-            throw new FormatException("For input string: \"" + s + "\"");
-        }
-
-        if (s[i] == '#')
-        {
-            radix = 16;
-            i++;
-        }
-        else if (s[i] == '0')
-        {
-            if (i + 1 < s.Length && (s[i + 1] == 'x' || s[i + 1] == 'X'))
-            {
-                radix = 16;
-                i += 2;
-            }
-            else
-            {
-                radix = 8;
-                i++;
-            }
-        }
-
-        if (i >= s.Length)
-        {
-            throw new FormatException("For input string: \"" + s + "\"");
-        }
-
-        long value = Convert.ToInt64(s[i..], radix);
-        value = negative ? -value : value;
-        if (value is < int.MinValue or > int.MaxValue)
-        {
-            throw new FormatException("For input string: \"" + s + "\"");
-        }
-
-        return (int)value;
+        throw new FormatException("For input string: \"" + s + "\"");
     }
 
     /// <summary>
