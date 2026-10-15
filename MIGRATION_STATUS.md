@@ -4204,3 +4204,11 @@ WHERE, AND/`IS NOT NULL`, DESC+позиция, DISTINCT, алиасы, `X.ID`, �
 обеими сторонами), `PrepareCommandTests` — 12. `H2Sharp.Tests`: **797 зелёных**,
 красные — только задуманные (`Data.Tests` бэклог конформанса, `Engine.Tests`
 порт `TestIndex`).
+
+### Шестой аудит, перф (issue #6): `ref int` вместо `IntValueHolder`
+
+Отступление по форме, как и сказано в аудите: эталон держит аккумулятор
+несохранённой памяти в Java-обёртке (`MVMap.IntValueHolder`), потому что Java не
+умеет `out`-параметр без объекта; C# умеет `ref int`, и оба сайта
+(`FlushAppendBuffer`, `Operate`) переведены на него, класс удалён. Поведение то же
+побитово — та же сумма в тот же `RegisterUnsavedMemory`; `MvStore.Tests` зелёные.

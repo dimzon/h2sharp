@@ -1183,7 +1183,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
         int keysPerPage = Store.GetKeysPerPage();
         try
         {
-            var unsavedMemoryHolder = new IntValueHolder();
+            var unsavedMemory = 0;
             int attempt = 0;
             int keyCount;
             int availabilityThreshold = fullFlush ? 0 : keysPerPage - 1;
@@ -1264,13 +1264,13 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
                         0);
                 }
 
-                unsavedMemoryHolder.Value = 0;
+                unsavedMemory = 0;
                 if (splitPage is not null)
                 {
                     Debug.Assert(ReferenceEquals(splitPage.map, this));
                     Debug.Assert(splitPage.GetKeyCount() > 0);
                     K key = splitPage.GetKey(0);
-                    unsavedMemoryHolder.Value += splitPage.GetMemory();
+                    unsavedMemory += splitPage.GetMemory();
                     while (true)
                     {
                         if (pos is null)
@@ -1286,7 +1286,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
                                 Page<K, V>.PageReference[] children = Page<K, V>.CreateRefStorage(2);
                                 children[0] = new Page<K, V>.PageReference(page);
                                 children[1] = new Page<K, V>.PageReference(splitPage);
-                                unsavedMemoryHolder.Value += page.GetMemory();
+                                unsavedMemory += page.GetMemory();
                                 page = Page<K, V>.CreateNode(this, keys, children,
                                     page.GetTotalCount() + splitPage.GetTotalCount(), 0);
                             }
@@ -1311,11 +1311,11 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
 
                         key = page.GetKey(at);
                         splitPage = page.Split(at);
-                        unsavedMemoryHolder.Value += page.GetMemory() + splitPage.GetMemory();
+                        unsavedMemory += page.GetMemory() + splitPage.GetMemory();
                     }
                 }
 
-                page = ReplacePage(pos, page, unsavedMemoryHolder);
+                page = ReplacePage(pos, page, ref unsavedMemory);
                 RootReference<K, V>? updated =
                     rootReference.UpdatePageAndLockedStatus(page, preLocked || IsPersistent(), remainingBuffer);
                 if (updated is not null)
@@ -1325,7 +1325,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
                     locked = preLocked || IsPersistent();
                     if (IsPersistent() && tip is not null)
                     {
-                        RegisterUnsavedMemory(unsavedMemoryHolder.Value + tip.ProcessRemovalInfo(version));
+                        RegisterUnsavedMemory(unsavedMemory + tip.ProcessRemovalInfo(version));
                     }
 
                     Debug.Assert(rootReference.GetAppendCounter() <= availabilityThreshold);
@@ -1347,7 +1347,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
     }
 
     private static Page<K, V> ReplacePage(CursorPos<K, V>? path, Page<K, V> replacement,
-        IntValueHolder unsavedMemoryHolder)
+        ref int unsavedMemoryHolder)
     {
         int unsavedMemory = replacement.IsSaved() ? 0 : replacement.GetMemory();
         while (path is not null)
@@ -1366,7 +1366,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
             path = path.parent;
         }
 
-        unsavedMemoryHolder.Value += unsavedMemory;
+        unsavedMemoryHolder += unsavedMemory;
         return replacement;
     }
 
@@ -1467,7 +1467,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
     public virtual V? Operate(K key, V? value, DecisionMaker<V> decisionMaker)
     {
         CursorPos<K, V>? tip = null;
-        var unsavedMemoryHolder = new IntValueHolder();
+        int unsavedMemory = 0;
         for (int attempt = 0; ; decisionMaker.Reset())
         {
             RootReference<K, V> rootReference = FlushAndGetRoot();
@@ -1512,8 +1512,8 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
                 }
                 else
                 {
-                    unsavedMemoryHolder.Value = cp.index;
-                    rootPage = ReplacePage(cp.parent, cp.page, unsavedMemoryHolder);
+                    unsavedMemory = cp.index;
+                    rootPage = ReplacePage(cp.parent, cp.page, ref unsavedMemory);
                     if (!locked)
                     {
                         RootReference<K, V>? updated = rootReference.UpdateRootPage(rootPage, attempt);
@@ -1527,7 +1527,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
 
                     if (IsPersistent())
                     {
-                        RegisterUnsavedMemory(unsavedMemoryHolder.Value + tip.ProcessRemovalInfo(version));
+                        RegisterUnsavedMemory(unsavedMemory + tip.ProcessRemovalInfo(version));
                     }
 
                     decisionMaker.OnPageReplaced();
@@ -1964,11 +1964,6 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
         internal Decision? GetDecision() => decision;
 
         public override string ToString() => "rewrite";
-    }
-
-    private sealed class IntValueHolder
-    {
-        internal int Value;
     }
 
     // IAnyMap: the store sees every map through this, without knowing the key and value types.
