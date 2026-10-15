@@ -44,7 +44,8 @@ public sealed class PageReadSpanTests
         const int offset = 100;
         const int length = 512;
         long pos = DataUtils.ComposePagePos(7, offset, length, DataUtils.PageTypeLeaf);
-        Memory<byte> memory = chunk.ReadBufferForPage(null!, offset, pos);
+        using RentedBuffer rented = chunk.ReadBufferForPage(null!, offset, pos);
+        Memory<byte> memory = rented.Memory;
 
         Assert.True(MemoryMarshal.TryGetArray(memory, out ArraySegment<byte> segment));
         Assert.Same(image, segment.Array);

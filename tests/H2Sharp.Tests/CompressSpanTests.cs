@@ -36,7 +36,7 @@ public sealed class CompressSpanTests
             compressor.Expand(packed, 0, end, fromArray, 0, Text.Length);
 
             byte[] fromSpan = new byte[Text.Length];
-            compressor.Expand(packed.AsSpan(0, end), fromSpan);
+            compressor.Expand(new ReadOnlyMemory<byte>(packed, 0, end), fromSpan);
 
             Assert.Equal(Text, fromArray);
             Assert.Equal(Text, fromSpan);
@@ -47,7 +47,25 @@ public sealed class CompressSpanTests
     public void SpanExpandRefusesGarbage()
     {
         Assert.Throws<MvStoreException>(
-            () => new CompressDeflate().Expand([1, 2, 3, 4, 5, 6, 7, 8], new byte[8]));
+            () => new CompressDeflate().Expand(
+                new ReadOnlyMemory<byte>([1, 2, 3, 4, 5, 6, 7, 8]), new byte[8]));
+    }
+
+    [Fact]
+    public void IncompressibleDataFallsBackToAGrowingBuffer()
+    {
+        // Random bytes grow under deflate past the rented input-sized buffer, so the fixed
+        // buffer refuses and the growing fallback takes over. The round trip still holds.
+        byte[] random = new byte[65536];
+        new Random(42).NextBytes(random);
+
+        CompressDeflate deflate = new();
+        byte[] packed = new byte[random.Length * 2];
+        int end = deflate.Compress(random, 0, random.Length, packed, 0);
+
+        byte[] back = new byte[random.Length];
+        deflate.Expand(new ReadOnlyMemory<byte>(packed, 0, end), back);
+        Assert.Equal(random, back);
     }
 
     [Fact]

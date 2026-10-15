@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
@@ -79,6 +80,58 @@ public class CompressDeflate : Compressor
     /// <inheritdoc/>
     public int Compress(byte[] input, int inPos, int inLen, byte[] output, int outPos)
     {
+        // Compressed output is usually shorter than its input, so a buffer of the input's
+        // size holds it; the rare expansion falls back to a growing one. Either way no
+        // exact-sized copy is built just to copy a prefix of it into the caller's buffer.
+        byte[] rented = ArrayPool<byte>.Shared.Rent(Math.Max(inLen, 1));
+        try
+        {
+            int written;
+            try
+            {
+                using (var buffer = new MemoryStream(rented, 0, rented.Length, writable: true))
+                {
+                    using (var zlib = new ZLibStream(buffer, MapLevel(level), leaveOpen: true))
+                    {
+                        zlib.Write(input, inPos, inLen);
+                    }
+
+                    written = (int)buffer.Position;
+                }
+            }
+            catch (Exception e) when (e is NotSupportedException || e is IOException)
+            {
+                // The fixed buffer did not hold the answer: incompressible input can come
+                // out longer than it went in. A real write error retries below and surfaces
+                // from there.
+                return CompressGrowing(input, inPos, inLen, output, outPos);
+            }
+
+            if (written == 0 && inLen > 0)
+            {
+                // the compressed length is 0, meaning compression didn't work
+                // (sounds like a JDK bug)
+                // try again, using the default strategy and compression level
+                strategy = DefaultStrategy;
+                level = DefaultCompression;
+                return Compress(input, inPos, inLen, output, outPos);
+            }
+
+            // What fits is what the reference's bounded deflate would have written: a prefix of the
+            // stream, which carries no trailer — only a complete stream does. The caller only keeps
+            // the answer when it is shorter than the input, so a prefix is never read.
+            int body = Math.Min(written, output.Length - outPos);
+            Buffer.BlockCopy(rented, 0, output, outPos, body);
+            return outPos + body;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    private int CompressGrowing(byte[] input, int inPos, int inLen, byte[] output, int outPos)
+    {
         byte[] full;
         using (var buffer = new MemoryStream())
         {
@@ -90,19 +143,6 @@ public class CompressDeflate : Compressor
             full = buffer.ToArray();
         }
 
-        if (full.Length == 0 && inLen > 0)
-        {
-            // the compressed length is 0, meaning compression didn't work
-            // (sounds like a JDK bug)
-            // try again, using the default strategy and compression level
-            strategy = DefaultStrategy;
-            level = DefaultCompression;
-            return Compress(input, inPos, inLen, output, outPos);
-        }
-
-        // What fits is what the reference's bounded deflate would have written: a prefix of the
-        // stream, which carries no trailer — only a complete stream does. The caller only keeps
-        // the answer when it is shorter than the input, so a prefix is never read.
         int body = Math.Min(full.Length, output.Length - outPos);
         Buffer.BlockCopy(full, 0, output, outPos, body);
         return outPos + body;
@@ -113,25 +153,19 @@ public class CompressDeflate : Compressor
 
     /// <inheritdoc/>
     public void Expand(byte[] input, int inPos, int inLen, byte[] output, int outPos, int outLen)
-        => Expand(input.AsSpan(inPos, inLen), output.AsSpan(outPos, outLen));
+        => Expand(new ReadOnlyMemory<byte>(input, inPos, inLen), output.AsSpan(outPos, outLen));
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The deflate stream needs a <see cref="Stream"/>, which cannot wrap a span, so the
-    /// input is copied once here. The copy is the compressed bytes — the small side —
-    /// where the page-sized copy this replaces stood.
-    /// </remarks>
-    public void Expand(ReadOnlySpan<byte> input, Span<byte> output)
+    public void Expand(ReadOnlyMemory<byte> input, Span<byte> output)
     {
         try
         {
-            if (input.Length < 6 || input[0] != 0x78 || (input[0] * 256 + input[1]) % 31 != 0)
+            if (input.Length < 6 || input.Span[0] != 0x78 || (input.Span[0] * 256 + input.Span[1]) % 31 != 0)
             {
                 throw new InvalidDataException("Not a zlib stream");
             }
 
-            byte[] deflated = input.Slice(2, input.Length - 6).ToArray();
-            using (var buffer = new MemoryStream(deflated, false))
+            using (var buffer = new ReadOnlyMemoryStream(input.Slice(2, input.Length - 6)))
             using (var inflate = new DeflateStream(buffer, CompressionMode.Decompress))
             {
                 int total = 0;
@@ -147,7 +181,8 @@ public class CompressDeflate : Compressor
                 }
             }
 
-            uint expected = (uint)((input[^4] << 24) | (input[^3] << 16) | (input[^2] << 8) | input[^1]);
+            uint expected = (uint)((input.Span[^4] << 24) | (input.Span[^3] << 16)
+                | (input.Span[^2] << 8) | input.Span[^1]);
             if (expected != Adler32(output))
             {
                 throw new InvalidDataException("Adler-32 mismatch");

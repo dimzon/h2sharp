@@ -393,7 +393,7 @@ public sealed class CompressLZF : Compressor
     /// <remarks>
     /// Explicit, because the static span form below already owns this signature.
     /// </remarks>
-    void Compressor.Expand(ReadOnlySpan<byte> input, Span<byte> output) => Expand(input, output);
+    void Compressor.Expand(ReadOnlyMemory<byte> input, Span<byte> output) => Expand(input.Span, output);
 
     /// <summary>
     /// Expands into a window of bytes, which is what the reference expands into a

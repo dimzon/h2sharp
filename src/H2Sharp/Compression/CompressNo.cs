@@ -34,6 +34,6 @@ public class CompressNo : Compressor
         => Array.Copy(@in, inPos, @out, outPos, outLen);
 
     /// <inheritdoc/>
-    public void Expand(ReadOnlySpan<byte> input, Span<byte> output)
-        => input[..output.Length].CopyTo(output);
+    public void Expand(ReadOnlyMemory<byte> input, Span<byte> output)
+        => input.Span[..output.Length].CopyTo(output);
 }

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using H2Sharp.Compression;
@@ -180,13 +181,11 @@ public abstract class Page<K, V> : IPage
     /// A page read back from its bytes.
     /// </summary>
     /// <remarks>
-    /// A span, not an array: the caller hands a view of the chunk's in-memory image, and the
-    /// span's lifetime ends with this call — nothing read here retains it, every key and value
-    /// is materialized. Mutable only because the data-type readers take <c>Span</c>; nothing
-    /// here writes through it. Only a compressed page copies, because the expander takes
-    /// arrays.
+    /// Memory, not an array: the caller hands a view of the chunk's in-memory image, and the
+    /// memory's lifetime ends with this call — nothing read here retains it, every key and value
+    /// is materialized. Only a compressed page copies, because the expander takes arrays.
     /// </remarks>
-    internal static Page<K, V> Read(Span<byte> buffer, ref int position, long pos, MVMap<K, V> map)
+    internal static Page<K, V> Read(ReadOnlyMemory<byte> buffer, ref int position, long pos, MVMap<K, V> map)
     {
         bool leaf = (DataUtils.GetPageType(pos) & 1) == DataUtils.PageTypeLeaf;
         Page<K, V> page = leaf ? new Leaf(map) : new NonLeaf(map);
@@ -454,12 +453,12 @@ public abstract class Page<K, V> : IPage
     /// <summary>
     /// Reads this page out of its bytes.
     /// </summary>
-    private void Read(Span<byte> buffer, ref int position)
+    private void Read(ReadOnlyMemory<byte> buffer, ref int position)
     {
         int chunkId = DataUtils.GetPageChunkId(GetPos());
         int offset = DataUtils.GetPageOffset(GetPos());
         int start = position;
-        int pageLength = BinaryPrimitives.ReadInt32BigEndian(buffer.Slice(position, 4));
+        int pageLength = BinaryPrimitives.ReadInt32BigEndian(buffer.Slice(position, 4).Span);
         position += 4;
 
         // does not include optional part (pageNo)
@@ -472,7 +471,7 @@ public abstract class Page<K, V> : IPage
                 chunkId, remaining, pageLength);
         }
 
-        short check = BinaryPrimitives.ReadInt16BigEndian(buffer.Slice(position, 2));
+        short check = BinaryPrimitives.ReadInt16BigEndian(buffer.Slice(position, 2).Span);
         position += 2;
         int checkTest = DataUtils.GetCheckValue(chunkId)
             ^ DataUtils.GetCheckValue(offset)
@@ -485,7 +484,7 @@ public abstract class Page<K, V> : IPage
                 chunkId, checkTest, check);
         }
 
-        pageNo = DataUtils.ReadVarInt(buffer, ref position);
+        pageNo = DataUtils.ReadVarInt(buffer.Span, ref position);
         if (pageNo < 0)
         {
             throw DataUtils.NewMvStoreException(
@@ -493,7 +492,7 @@ public abstract class Page<K, V> : IPage
                 "File corrupted in chunk {0}, got negative page No {1}", chunkId, pageNo);
         }
 
-        int mapId = DataUtils.ReadVarInt(buffer, ref position);
+        int mapId = DataUtils.ReadVarInt(buffer.Span, ref position);
         if (mapId != map.GetId())
         {
             throw DataUtils.NewMvStoreException(
@@ -502,9 +501,9 @@ public abstract class Page<K, V> : IPage
                 chunkId, map.GetId(), mapId);
         }
 
-        int keyCount = DataUtils.ReadVarInt(buffer, ref position);
+        int keyCount = DataUtils.ReadVarInt(buffer.Span, ref position);
         keys = CreateKeyStorage(keyCount);
-        int type = buffer[position++];
+        int type = buffer.Span[position++];
         if (IsLeaf() != ((type & 1) == DataUtils.PageTypeLeaf))
         {
             throw DataUtils.NewMvStoreException(
@@ -520,14 +519,14 @@ public abstract class Page<K, V> : IPage
             ReadPayLoad(buffer, ref position, end);
         }
 
-        Span<byte> active = buffer;
+        ReadOnlyMemory<byte> active = buffer;
         bool compressed = (type & DataUtils.PageCompressed) != 0;
         if (compressed)
         {
             Compressor compressor = (type & DataUtils.PageCompressedHigh) == DataUtils.PageCompressedHigh
                 ? map.GetStore().GetCompressorHigh()
                 : map.GetStore().GetCompressorFast();
-            int lenAdd = DataUtils.ReadVarInt(buffer, ref position);
+            int lenAdd = DataUtils.ReadVarInt(buffer.Span, ref position);
             int compLen = end - position;
             byte[] expanded = new byte[compLen + lenAdd];
             compressor.Expand(buffer.Slice(position, compLen), expanded);
@@ -536,7 +535,7 @@ public abstract class Page<K, V> : IPage
             end = expanded.Length;
         }
 
-        map.KeyType.Read(active.Slice(0, end), keys, keyCount, ref position);
+        map.KeyType.Read(AsSpan(active.Slice(0, end)), keys, keyCount, ref position);
         if (IsLeaf())
         {
             ReadPayLoad(active, ref position, end);
@@ -547,9 +546,22 @@ public abstract class Page<K, V> : IPage
     }
 
     /// <summary>
+    /// The memory as a span for the data-type readers, which take spans.
+    /// </summary>
+    /// <remarks>
+    /// Array-backed in practice — chunk images, file reads and expanded pages all are — so
+    /// this unwraps without copying. Converting the thirty readers is its own move; the
+    /// fallback copies, and only runs for a buffer nobody retains.
+    /// </remarks>
+    private static Span<byte> AsSpan(ReadOnlyMemory<byte> memory)
+        => MemoryMarshal.TryGetArray(memory, out ArraySegment<byte> segment)
+            ? segment.AsSpan()
+            : memory.ToArray();
+
+    /// <summary>
     /// Reads the payload: the children of a node, or the values of a leaf.
     /// </summary>
-    protected abstract void ReadPayLoad(Span<byte> buffer, ref int position, int end);
+    protected abstract void ReadPayLoad(ReadOnlyMemory<byte> buffer, ref int position, int end);
 
     /// <summary>
     /// Whether this page was ever written.
@@ -1199,21 +1211,21 @@ public abstract class Page<K, V> : IPage
             return childPage.GetAppendCursorPos(new CursorPos<K, V>(this, keyCount, cursorPos));
         }
 
-        protected override void ReadPayLoad(Span<byte> buffer, ref int position, int end)
+        protected override void ReadPayLoad(ReadOnlyMemory<byte> buffer, ref int position, int end)
         {
             int keyCount = GetKeyCount();
             children = CreateRefStorage(keyCount + 1);
             long[] positions = new long[keyCount + 1];
             for (int i = 0; i <= keyCount; i++)
             {
-                positions[i] = BinaryPrimitives.ReadInt64BigEndian(buffer.Slice(position, 8));
+                positions[i] = BinaryPrimitives.ReadInt64BigEndian(buffer.Slice(position, 8).Span);
                 position += 8;
             }
 
             long total = 0;
             for (int i = 0; i <= keyCount; i++)
             {
-                long s = DataUtils.ReadVarLong(buffer, ref position);
+                long s = DataUtils.ReadVarLong(buffer.Span, ref position);
                 long childPos = positions[i];
                 Debug.Assert(childPos == 0 ? s == 0 : s >= 0);
                 total += s;
@@ -1533,11 +1545,11 @@ public abstract class Page<K, V> : IPage
             return new CursorPos<K, V>(this, ~keyCount, cursorPos);
         }
 
-        protected override void ReadPayLoad(Span<byte> buffer, ref int position, int end)
+        protected override void ReadPayLoad(ReadOnlyMemory<byte> buffer, ref int position, int end)
         {
             int keyCount = GetKeyCount();
             values = CreateValueStorage(keyCount);
-            map.ValueType.Read(buffer.Slice(0, end), values, keyCount, ref position);
+            map.ValueType.Read(AsSpan(buffer.Slice(0, end)), values, keyCount, ref position);
         }
 
         protected override void WriteValues(WriteBuffer buff)

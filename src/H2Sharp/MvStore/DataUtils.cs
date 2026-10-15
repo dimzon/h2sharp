@@ -229,6 +229,14 @@ public static class DataUtils
     /// <param name="buff">the buffer</param>
     /// <returns>the value</returns>
     public static int ReadVarInt(Span<byte> buff, ref int position)
+        => ReadVarInt((ReadOnlySpan<byte>)buff, ref position);
+
+    /// <summary>
+    /// Read a variable length integer.
+    /// </summary>
+    /// <param name="buff">the buffer</param>
+    /// <returns>the value</returns>
+    public static int ReadVarInt(ReadOnlySpan<byte> buff, ref int position)
     {
         int b = buff[position++];
         if (b < 0x80)
@@ -240,7 +248,7 @@ public static class DataUtils
         return ReadVarIntRest(buff, ref position, b);
     }
 
-    private static int ReadVarIntRest(Span<byte> buff, ref int position, int b)
+    private static int ReadVarIntRest(ReadOnlySpan<byte> buff, ref int position, int b)
     {
         int x = b & 0x7f;
         b = buff[position++];
@@ -273,6 +281,14 @@ public static class DataUtils
     /// <param name="buff">the buffer</param>
     /// <returns>the value</returns>
     public static long ReadVarLong(Span<byte> buff, ref int position)
+        => ReadVarLong((ReadOnlySpan<byte>)buff, ref position);
+
+    /// <summary>
+    /// Read a variable length long.
+    /// </summary>
+    /// <param name="buff">the buffer</param>
+    /// <returns>the value</returns>
+    public static long ReadVarLong(ReadOnlySpan<byte> buff, ref int position)
     {
         long x = buff[position++];
         if (x < 0x80)
@@ -894,7 +910,7 @@ public static class DataUtils
     /// </remarks>
     /// <param name="bytes">the bytes</param>
     /// <returns>the map, or null</returns>
-    internal static Dictionary<string, string>? ParseChecksummedMap(byte[] bytes)
+    internal static Dictionary<string, string>? ParseChecksummedMap(ReadOnlySpan<byte> bytes)
     {
         int start = 0, end = bytes.Length;
         while (start < end && bytes[start] <= ' ')
@@ -907,7 +923,7 @@ public static class DataUtils
             end--;
         }
 
-        string s = Encoding.Latin1.GetString(bytes, start, end - start);
+        string s = Encoding.Latin1.GetString(bytes[start..end]);
         Dictionary<string, string> map = [];
         StringBuilder buff = new();
         for (int i = 0, size = s.Length; i < size;)
@@ -924,7 +940,7 @@ public static class DataUtils
             {
                 _ = ParseMapValue(buff, s, i + 1, size);
                 int check = (int)long.Parse(buff.ToString(), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-                return check == GetFletcher32(bytes, start, startKey - 1) ? map : null;
+                return check == GetFletcher32(bytes.Slice(start, startKey - 1)) ? map : null;
             }
 
             string key = s[startKey..i];
@@ -1015,9 +1031,22 @@ public static class DataUtils
     /// <param name="length">how many</param>
     /// <returns>the checksum</returns>
     public static int GetFletcher32(byte[] bytes, int offset, int length)
+        => GetFletcher32(new ReadOnlySpan<byte>(bytes, offset, length));
+
+    /// <summary>
+    /// The Fletcher-32 checksum of the bytes.
+    /// </summary>
+    /// <remarks>
+    /// The sums are reduced every 360 words so that neither can overflow an int over a long file, and
+    /// an odd length has a zero byte appended before the last reduction.
+    /// </remarks>
+    /// <param name="bytes">the bytes</param>
+    /// <returns>the checksum</returns>
+    public static int GetFletcher32(ReadOnlySpan<byte> bytes)
     {
+        int length = bytes.Length;
         int s1 = 0xffff, s2 = 0xffff;
-        int i = offset, len = offset + (length & ~1);
+        int i = 0, len = length & ~1;
         while (i < len)
         {
             // reduce after 360 words (each word is two bytes)

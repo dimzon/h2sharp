@@ -142,7 +142,7 @@ public abstract class FileStore
     /// <param name="pos">where to read from</param>
     /// <param name="len">how many bytes to read</param>
     /// <returns>the bytes read</returns>
-    internal abstract byte[] ReadFully(Chunk? chunk, long pos, int len);
+    internal abstract RentedBuffer ReadFully(Chunk? chunk, long pos, int len);
 
     /// <summary>
     /// What the serialization manager needs from the file it cannot name: the page cache, the
@@ -1020,20 +1020,25 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
     /// <summary>
     /// Writes bytes at an absolute position.
     /// </summary>
-    protected abstract void WriteFully(C? chunk, long pos, byte[] src, int offset, int length);
+    protected abstract void WriteFully(C? chunk, long pos, ReadOnlyMemory<byte> src);
 
     /// <summary>
     /// Reads bytes at an absolute position through a channel, counting the read.
     /// </summary>
-    protected byte[] ReadFully(FileChannel file, long pos, int len)
+    /// <remarks>
+    /// Rented, not allocated: a page per miss is what this is, and zeroing a fresh array
+    /// per page is memset for nothing — the read fills it completely or throws.
+    /// </remarks>
+    protected RentedBuffer ReadFully(FileChannel file, long pos, int len)
     {
-        byte[] dst = new byte[len];
+        RentedBuffer rented = RentedBuffer.Rent(len);
         try
         {
-            DataUtils.ReadFully(file, pos, dst);
+            DataUtils.ReadFully(file, pos, rented.Memory);
         }
         catch (Exception e) when (e is not MvStoreException)
         {
+            rented.Dispose();
             throw DataUtils.NewMvStoreException(
                 DataUtils.ErrorReadingFailed,
                 "Reading from file {0} failed at position {1}, length {2}",
@@ -1042,7 +1047,7 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
 
         _ = readCount.IncrementAndGet();
         _ = readBytes.AddAndGet(len);
-        return dst;
+        return rented;
     }
 
     /// <summary>
@@ -1873,11 +1878,11 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
             {
                 C chunk = GetChunk(pos);
                 int pageOffset = DataUtils.GetPageOffset(pos);
-                Memory<byte> buff = chunk.ReadBufferForPage(this, pageOffset, pos);
+                using RentedBuffer buff = chunk.ReadBufferForPage(this, pageOffset, pos);
                 try
                 {
                     int position = 0;
-                    page = Page<K, V>.Read(buff.Span, ref position, pos, map);
+                    page = Page<K, V>.Read(buff.Memory, ref position, pos, map);
                 }
                 catch (MvStoreException)
                 {
@@ -2362,12 +2367,12 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
     private C ReadChunkHeader(long block)
     {
         long p = block * BlockSize;
-        byte[] buff = ReadFully((Chunk?)null, p, Chunk.MaxHeaderLength);
+        using RentedBuffer buff = ReadFully((Chunk?)null, p, Chunk.MaxHeaderLength);
         Exception? exception = null;
         try
         {
             int position = 0;
-            C chunk = CreateChunk(Chunk.ReadChunkHeader(buff, ref position));
+            C chunk = CreateChunk(Chunk.ReadChunkHeader(buff.Span, ref position));
             if (chunk.Block == 0)
             {
                 chunk.SetBlock(block);
@@ -2481,8 +2486,8 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
                 return null;
             }
 
-            byte[] buff = ReadFully((Chunk?)null, pos, Chunk.FooterLength);
-            Dictionary<string, string>? m = DataUtils.ParseChecksummedMap(buff);
+            using RentedBuffer buff = ReadFully((Chunk?)null, pos, Chunk.FooterLength);
+            Dictionary<string, string>? m = DataUtils.ParseChecksummedMap(buff.Span);
             if (m != null)
             {
                 C chunk = CreateChunk(m);

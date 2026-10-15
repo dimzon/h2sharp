@@ -278,6 +278,57 @@ public sealed class ValueDecfloatOracleTests
         return b.ToString();
     }
 
+    /// <summary>
+    /// Strings into DECFLOAT: padded numbers trim, the three words become the singletons,
+    /// and anything else refuses with the conversion error. The trim and the parse run on
+    /// spans, so only the refusal path names the text.
+    /// </summary>
+    [JavaOracleFact]
+    public void StringToDecfloat_MatchesReference()
+    {
+        string[] inputs =
+        [
+            "  1.5  ", "Infinity", " -Infinity ", "+Infinity", "NaN", "-NaN", "+NaN",
+            "  -0.5", "1E+10", "  42  ", "abc", string.Empty, "  ", "12.34.56", "0x10",
+        ];
+
+        List<string> java = OracleRunner.Run(
+                inputs,
+                """
+                      for (int i = 0; i < inputs.length; i++) {
+                        try {
+                          org.h2.value.Value v = org.h2.value.ValueVarchar.get(inputs[i])
+                              .convertTo(org.h2.value.TypeInfo.TYPE_DECFLOAT);
+                          System.out.println(hex(v.getString() + "|" + v.getValueType()));
+                        } catch (org.h2.message.DbException e) {
+                          System.out.println(hex("ERR " + e.getErrorCode()));
+                        }
+                      }
+                """,
+                extraJavaArgs: ["-Duser.language=en", "-Duser.country=", "-Duser.variant="])
+            .Select(Decode)
+            .ToList();
+
+        List<string> csharp = inputs.Select(text =>
+        {
+            try
+            {
+                Value v = ValueVarchar.Get(text).ConvertToType(TypeInfo.TypeDecfloat);
+                return (v.GetString() ?? "-") + "|" + v.GetValueType();
+            }
+            catch (H2SharpException e)
+            {
+                return "ERR " + e.H2ErrorCode;
+            }
+        }).ToList();
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == csharp[i], $"line {i} ({inputs[i]}):\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
     /// <remarks>
     /// One Java program, without lambdas, because a snippet that carries its own functions is a
     /// snippet whose types have to be inferred and javac answers an inference failure as a cascade

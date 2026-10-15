@@ -144,11 +144,11 @@ public abstract class RandomAccessStore : FileStore<Chunk>
         bool validStoreHeader = false;
         // find out which chunk and version are the newest
         // read the first two blocks
-        byte[] fileHeaderBlocks = ReadFully((Chunk?)null, 0, 2 * BlockSize);
+        using RentedBuffer fileHeaderBlocks = ReadFully((Chunk?)null, 0, 2 * BlockSize);
         byte[] buff = new byte[BlockSize];
         for (int i = 0; i <= BlockSize; i += BlockSize)
         {
-            Array.Copy(fileHeaderBlocks, i, buff, 0, BlockSize);
+            fileHeaderBlocks.Span.Slice(i, BlockSize).CopyTo(buff);
             // the following can fail for various reasons
             try
             {
@@ -394,7 +394,7 @@ public abstract class RandomAccessStore : FileStore<Chunk>
     protected override void WriteChunk(Chunk chunk, WriteBuffer buffer)
     {
         long filePos = chunk.Block * BlockSize;
-        WriteFully(chunk, filePos, buffer.GetBuffer(), 0, buffer.Limit());
+        WriteFully(chunk, filePos, new ReadOnlyMemory<byte>(buffer.GetBuffer(), 0, buffer.Limit()));
 
         // end of the used space is not necessarily the end of the file
         bool storeAtEndOfFile = filePos + buffer.Limit() >= Size();
@@ -666,7 +666,7 @@ public abstract class RandomAccessStore : FileStore<Chunk>
         byte[] header = new byte[2 * BlockSize];
         Array.Copy(bytes, 0, header, 0, bytes.Length);
         Array.Copy(bytes, 0, header, BlockSize, bytes.Length);
-        WriteFully(null, 0, header, 0, header.Length);
+        WriteFully(null, 0, header);
     }
 
     private void Store(long reservedLow, long reservedHigh)
@@ -719,8 +719,8 @@ public abstract class RandomAccessStore : FileStore<Chunk>
             // in the absence of a reserved area,
             // block should always move closer to the beginning of the file
             Debug.Assert(reservedAreaHigh > 0 || block <= chunk.Block, block + " " + chunk);
-            byte[] readBuff = ReadFully(chunk, start, length);
-            WriteFully(null, pos, readBuff, 0, length);
+            using RentedBuffer readBuff = ReadFully(chunk, start, length);
+            WriteFully(null, pos, readBuff.Memory);
             // can not set chunk's new block until it's fully written at new location,
             // because concurrent reader can pick it up prematurely,
             chunk.SetBlock(block);

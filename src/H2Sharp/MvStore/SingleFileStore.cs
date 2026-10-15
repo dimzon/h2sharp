@@ -45,16 +45,16 @@ public sealed class SingleFileStore : RandomAccessStore
     public override string ToString() => GetFileName() ?? "";
 
     /// <inheritdoc/>
-    internal override byte[] ReadFully(Chunk? chunk, long pos, int len)
+    internal override RentedBuffer ReadFully(Chunk? chunk, long pos, int len)
         => ReadFully(fileChannel!, pos, len);
 
     /// <inheritdoc/>
-    protected override void WriteFully(Chunk? chunk, long pos, byte[] src, int offset, int length)
+    protected override void WriteFully(Chunk? chunk, long pos, ReadOnlyMemory<byte> src)
     {
-        SetSize(Math.Max(Size(), pos + length));
-        DataUtils.WriteFully(fileChannel!, pos, new ReadOnlyMemory<byte>(src, offset, length));
+        SetSize(Math.Max(Size(), pos + src.Length));
+        DataUtils.WriteFully(fileChannel!, pos, src);
         _ = writeCount.IncrementAndGet();
-        _ = writeBytes.AddAndGet(length);
+        _ = writeBytes.AddAndGet(src.Length);
     }
 
     /// <inheritdoc/>

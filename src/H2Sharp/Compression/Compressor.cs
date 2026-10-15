@@ -77,14 +77,13 @@ public interface Compressor
     /// Expands compressed bytes into a span.
     /// </summary>
     /// <remarks>
-    /// The spans are exact: the input holds the compressed bytes and nothing else, the
-    /// output is the answer at full length. The array form stays for callers that own
-    /// arrays; this one is for callers holding a view, like a page over a chunk image,
-    /// where materializing the input would copy a whole page to feed it back.
+    /// The input is a view, not a copy: the caller hands the slice it already holds, and a
+    /// deflate stream that cannot read a span reads it through a stream over this memory
+    /// instead. The output is the answer at full length.
     /// </remarks>
     /// <param name="input">the compressed data</param>
     /// <param name="output">where the answer goes</param>
-    void Expand(ReadOnlySpan<byte> input, Span<byte> output);
+    void Expand(ReadOnlyMemory<byte> input, Span<byte> output);
 
     /// <summary>
     /// Sets the options of the algorithm, which may trade compression for speed.

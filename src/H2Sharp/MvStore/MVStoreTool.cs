@@ -225,7 +225,7 @@ public static class MVStoreTool
                             q += compLen;
                             int l = compLen + lenAdd;
                             data = new byte[l];
-                            compressor.Expand(comp, 0, compLen, data, 0, l);
+                            compressor.Expand(new ReadOnlyMemory<byte>(comp, 0, compLen), data.AsSpan(0, l));
                             dataPos = 0;
                         }
                         else

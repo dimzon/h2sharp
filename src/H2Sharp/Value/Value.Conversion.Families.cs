@@ -1024,21 +1024,32 @@ public abstract partial class Value
         else if (valueType is Char or Varchar or VarcharIgnorecase)
         {
             // Trimmed first: a string with a space around it is a number to a user, and the
-            // infinities and the NaNs are spelled as words rather than parsed as numbers.
-            string s = (GetString() ?? string.Empty).Trim();
-            try
+            // infinities and the NaNs are spelled as words rather than parsed as numbers. The
+            // trim and the parse both run on spans, so a padded number costs no strings; only
+            // a refusal builds one, on a path that throws anyway.
+            ReadOnlySpan<char> s = (GetString() ?? string.Empty).AsSpan().Trim();
+            if (BigDecimal.TryParse(s, out BigDecimal? parsed, out _))
             {
-                v = ValueDecfloat.Get(BigDecimal.Parse(s));
+                v = ValueDecfloat.Get(parsed!);
             }
-            catch (FormatException)
+            else if (MemoryExtensions.Equals(s, "-Infinity", StringComparison.Ordinal))
             {
-                return s switch
-                {
-                    "-Infinity" => ValueDecfloat.NegativeInfinity,
-                    "Infinity" or "+Infinity" => ValueDecfloat.PositiveInfinity,
-                    "NaN" or "-NaN" or "+NaN" => ValueDecfloat.NotANumber,
-                    _ => throw GetDataConversionErrorException(Decfloat),
-                };
+                return ValueDecfloat.NegativeInfinity;
+            }
+            else if (MemoryExtensions.Equals(s, "Infinity", StringComparison.Ordinal)
+                || MemoryExtensions.Equals(s, "+Infinity", StringComparison.Ordinal))
+            {
+                return ValueDecfloat.PositiveInfinity;
+            }
+            else if (MemoryExtensions.Equals(s, "NaN", StringComparison.Ordinal)
+                || MemoryExtensions.Equals(s, "-NaN", StringComparison.Ordinal)
+                || MemoryExtensions.Equals(s, "+NaN", StringComparison.Ordinal))
+            {
+                return ValueDecfloat.NotANumber;
+            }
+            else
+            {
+                throw GetDataConversionErrorException(Decfloat);
             }
         }
         else if (valueType == Boolean)

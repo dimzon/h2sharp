@@ -616,7 +616,7 @@ public abstract class Chunk
     /// The image is handed out as a view, not a copy: the reader deserializes it within its
     /// own call, while this buffer is still the chunk's.
     /// </remarks>
-    internal Memory<byte> ReadBufferForPage(FileStore store, int offset, long pos)
+    internal RentedBuffer ReadBufferForPage(FileStore store, int offset, long pos)
     {
         Debug.Assert(IsAllocated() || Buffer != null);
         while (true)
@@ -638,8 +638,8 @@ public abstract class Chunk
                 if (length == DataUtils.PageLarge)
                 {
                     // read the first bytes to figure out actual length
-                    length = BinaryPrimitives.ReadInt32BigEndian(
-                        ReadFully(store, filePos, 128).AsSpan(0, 4));
+                    using RentedBuffer probe = ReadFully(store, filePos, 128);
+                    length = BinaryPrimitives.ReadInt32BigEndian(probe.Span[..4]);
                     // pageNo is deliberately not included into length to preserve compatibility
                     length += 4;
                 }
@@ -652,9 +652,9 @@ public abstract class Chunk
                 }
 
                 byte[]? buffer = Buffer;
-                Memory<byte> buff = buffer == null
+                RentedBuffer buff = buffer == null
                     ? ReadFully(store, filePos, length)
-                    : buffer.AsMemory(offset, length);
+                    : RentedBuffer.View(buffer.AsMemory(offset, length));
 
                 if (originalBlock == Block)
                 {
@@ -689,10 +689,10 @@ public abstract class Chunk
                 {
                     int length = PageCount * 8;
                     long filePos = originalBlock * FileStore.BlockSize + TocPos;
-                    byte[] bytes = ReadFully(store, filePos, length);
+                    using RentedBuffer rented = ReadFully(store, filePos, length);
                     for (int i = 0; i < toc.Length; i++)
                     {
-                        toc[i] = BinaryPrimitives.ReadInt64BigEndian(bytes.AsSpan(i * 8, 8));
+                        toc[i] = BinaryPrimitives.ReadInt64BigEndian(rented.Span.Slice(i * 8, 8));
                     }
                 }
                 else
@@ -718,7 +718,7 @@ public abstract class Chunk
         }
     }
 
-    private byte[] ReadFully(FileStore store, long filePos, int length)
+    private RentedBuffer ReadFully(FileStore store, long filePos, int length)
         => store.ReadFully(this, filePos, length);
 
     /// <summary>
