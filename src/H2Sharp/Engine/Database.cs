@@ -357,25 +357,28 @@ public sealed partial class Database
     /// <summary>
     /// Gets the current modification meta id.
     /// </summary>
+    /// <remarks>
+    /// An atomic read, as the reference's AtomicLong get: this runs on every cache lookup
+    /// and every entry point check, where a monitor would serialize all sessions.
+    /// </remarks>
     /// <returns>the id</returns>
     public long GetModificationMetaId()
     {
-        lock (syncRoot)
-        {
-            return modificationMetaId;
-        }
+        return Interlocked.Read(ref modificationMetaId);
     }
 
     /// <summary>
     /// Gets the next modification meta id, marking the database as changed.
     /// </summary>
+    /// <remarks>
+    /// The id handed out is the one before the increment, as the reference's
+    /// incrementAndGet minus one. The data id the reference bumps alongside waits for
+    /// the meta table: nothing ported reads it yet.
+    /// </remarks>
     /// <returns>the id</returns>
     public long GetNextModificationMetaId()
     {
-        lock (syncRoot)
-        {
-            return ++modificationMetaId;
-        }
+        return Interlocked.Increment(ref modificationMetaId) - 1;
     }
 
     /// <summary>
@@ -454,13 +457,14 @@ public sealed partial class Database
     /// <summary>
     /// Whether this database is closing or closed.
     /// </summary>
+    /// <remarks>
+    /// A plain read, as the reference reads its own field: this runs on every entry point
+    /// check, where a monitor would serialize all sessions.
+    /// </remarks>
     /// <returns>true if it is</returns>
     public bool IsClosing()
     {
-        lock (syncRoot)
-        {
-            return closing;
-        }
+        return closing;
     }
 
     /// <summary>
