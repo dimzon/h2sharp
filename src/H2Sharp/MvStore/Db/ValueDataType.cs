@@ -503,20 +503,17 @@ public sealed class ValueDataType : BasicDataType<Value>
     /// The reference writes a float or a double as its *bit pattern*, reversed, as a var int —
     /// the point being that a float's significant bits are its trailing ones, so a common value
     /// costs three bytes instead of five. The reversal is what makes that true, and it is not
-    /// a byte swap: every bit moves, which is why this is spelled out rather than delegated to
-    /// whatever the platform calls it.
+    /// a byte swap: every bit moves. The mask ladder below is the same five steps the reference
+    /// runs; .NET has byte-order reversal but no bit reversal.
     /// </remarks>
     /// <param name="value">the bits</param>
     /// <returns>the bits in reverse order</returns>
     private static uint ReverseBits(uint value)
     {
-        uint result = 0;
-        for (int i = 0; i < 32; i++)
-        {
-            result = (result << 1) | ((value >> i) & 1);
-        }
-
-        return result;
+        value = ((value & 0x55555555) << 1) | ((value >> 1) & 0x55555555);
+        value = ((value & 0x33333333) << 2) | ((value >> 2) & 0x33333333);
+        value = ((value & 0x0f0f0f0f) << 4) | ((value >> 4) & 0x0f0f0f0f);
+        return (value << 24) | ((value & 0xff00) << 8) | ((value >> 8) & 0xff00) | (value >> 24);
     }
 
     /// <summary>
@@ -526,13 +523,11 @@ public sealed class ValueDataType : BasicDataType<Value>
     /// <returns>the bits in reverse order</returns>
     private static ulong ReverseBits(ulong value)
     {
-        ulong result = 0;
-        for (int i = 0; i < 64; i++)
-        {
-            result = (result << 1) | ((value >> i) & 1);
-        }
-
-        return result;
+        value = ((value & 0x5555555555555555) << 1) | ((value >> 1) & 0x5555555555555555);
+        value = ((value & 0x3333333333333333) << 2) | ((value >> 2) & 0x3333333333333333);
+        value = ((value & 0x0f0f0f0f0f0f0f0f) << 4) | ((value >> 4) & 0x0f0f0f0f0f0f0f0f);
+        value = ((value & 0x00ff00ff00ff00ff) << 8) | ((value >> 8) & 0x00ff00ff00ff00ff);
+        return (value << 48) | ((value & 0xffff0000) << 16) | ((value >> 16) & 0xffff0000) | (value >> 48);
     }
 
     /// <summary>
