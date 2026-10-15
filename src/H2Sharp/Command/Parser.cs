@@ -418,6 +418,75 @@ public sealed class Parser
             select.SetOrder(order);
         }
 
+        // Standard SQL OFFSET / FETCH, then MySQL-style LIMIT, in the reference's order and
+        // only when no fetch was set: vacuous for a flat select read once (no union branch
+        // could have set one), but the shape is kept so the union port finds it in place.
+        bool hasOffsetOrFetch = false;
+        if (CurrentType == ParserUtil.Offset)
+        {
+            Read();
+            hasOffsetOrFetch = true;
+            select.SetOffset(ReadQueryLimitValue());
+            _ = IsWord("ROW") || IsWord("ROWS");
+        }
+
+        if (CurrentType == ParserUtil.Fetch)
+        {
+            Read();
+            hasOffsetOrFetch = true;
+            if (!IsWord("FIRST"))
+            {
+                ExpectWord("NEXT");
+            }
+
+            if (IsWord("ROW") || IsWord("ROWS"))
+            {
+                select.SetLimit(1);
+            }
+            else
+            {
+                select.SetLimit(ReadQueryLimitValue());
+                if (IsWord("PERCENT"))
+                {
+                    throw new TODOException("Parser.parseQuerySelect: FETCH PERCENT is not ported");
+                }
+
+                if (!IsWord("ROW"))
+                {
+                    ExpectWord("ROWS");
+                }
+            }
+
+            if (IsWord("WITH"))
+            {
+                ExpectWord("TIES");
+                throw new TODOException("Parser.parseQuerySelect: FETCH WITH TIES is not ported");
+            }
+
+            ExpectWord("ONLY");
+        }
+
+        // The mode comes from the cast provider rather than the session: the tokenizer
+        // gates the LIMIT keyword on the same flag, and SessionLocal.GetMode refuses until
+        // Mode is ported.
+        if (!hasOffsetOrFetch && provider.GetMode().Limit && IsWord("LIMIT"))
+        {
+            long limit = ReadQueryLimitValue();
+            if (CurrentType == ParserUtil.Offset)
+            {
+                Read();
+                select.SetOffset(ReadQueryLimitValue());
+            }
+            else if (ReadIf(Token.Comma))
+            {
+                // MySQL: [offset, ] rowcount.
+                select.SetOffset(limit);
+                limit = ReadQueryLimitValue();
+            }
+
+            select.SetLimit(limit);
+        }
+
         if (CurrentType != Token.EndOfInput)
         {
             string word = Current.AsIdentifier ?? Current.ToString() ?? "statement";
@@ -433,6 +502,35 @@ public sealed class Parser
         select.PrepareExpressions();
         select.PreparePlan(current, targetTableFilter: null);
         return select;
+    }
+
+    /// <summary>
+    /// Reads a LIMIT, OFFSET or FETCH count: an integer literal, optionally negative.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads any expression here and evaluates it per run; the engine holds
+    /// only a long, so anything but a literal refuses by name rather than binding wrong.
+    /// A negative passes through and runs as no limit, which is what the engine already
+    /// does with a negative fetch.
+    /// </remarks>
+    /// <returns>the count</returns>
+    private long ReadQueryLimitValue()
+    {
+        bool negative = ReadIf(Token.MinusSign);
+        if (Current.GetValue(provider) is Values.ValueInteger small)
+        {
+            Read();
+            return negative ? -small.GetInt() : small.GetInt();
+        }
+
+        if (Current.GetValue(provider) is Values.ValueBigint big)
+        {
+            Read();
+            long value = big.GetLong();
+            return negative ? -value : value;
+        }
+
+        throw new TODOException("Parser.parseQuerySelect: LIMIT/OFFSET takes an integer literal here");
     }
 
     /// <summary>
@@ -457,6 +555,8 @@ public sealed class Parser
             || word.Equals("WINDOW", StringComparison.OrdinalIgnoreCase)
             || word.Equals("LIMIT", StringComparison.OrdinalIgnoreCase)
             || word.Equals("OFFSET", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("FETCH", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("LIMIT", StringComparison.OrdinalIgnoreCase)
             || word.Equals("FETCH", StringComparison.OrdinalIgnoreCase)
             || word.Equals("UNION", StringComparison.OrdinalIgnoreCase)
             || word.Equals("EXCEPT", StringComparison.OrdinalIgnoreCase)

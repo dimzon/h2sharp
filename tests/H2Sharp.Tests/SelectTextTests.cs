@@ -198,6 +198,105 @@ public sealed class SelectTextTests
     }
 
     [JavaOracleFact]
+    public void LimitReadsFirstRows()
+    {
+        CompareText("select_text_limit", "SELECT ID FROM T ORDER BY ID LIMIT 2", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void LimitWithCommaOffset()
+    {
+        CompareText("select_text_limoff", "SELECT ID FROM T ORDER BY ID LIMIT 1, 2", ["=2", "=3"]);
+    }
+
+    [JavaOracleFact]
+    public void LimitWithOffsetWord()
+    {
+        CompareText(
+            "select_text_limoffw", "SELECT ID FROM T ORDER BY ID LIMIT 2 OFFSET 1", ["=2", "=3"]);
+    }
+
+    [JavaOracleFact]
+    public void OffsetAloneSkipsRows()
+    {
+        CompareText("select_text_offset", "SELECT ID FROM T ORDER BY ID OFFSET 2", ["=3", "=4"]);
+    }
+
+    [JavaOracleFact]
+    public void OffsetWithRowWord()
+    {
+        CompareText("select_text_offsetr", "SELECT ID FROM T ORDER BY ID OFFSET 2 ROW", ["=3", "=4"]);
+    }
+
+    [JavaOracleFact]
+    public void FetchFirstRowsOnly()
+    {
+        CompareText(
+            "select_text_fetch", "SELECT ID FROM T ORDER BY ID FETCH FIRST 2 ROWS ONLY", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void FetchSingleRow()
+    {
+        CompareText(
+            "select_text_fetch1", "SELECT ID FROM T ORDER BY ID FETCH FIRST ROW ONLY", ["=1"]);
+    }
+
+    [JavaOracleFact]
+    public void LimitZeroReadsNothing()
+    {
+        CompareText("select_text_limit0", "SELECT ID FROM T ORDER BY ID LIMIT 0", []);
+    }
+
+    [Fact]
+    public void FetchWithTiesWaitsForTies()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            TODOException e = Assert.Throws<TODOException>(
+                () => session.PrepareCommand("SELECT ID FROM T ORDER BY ID FETCH FIRST 2 ROWS WITH TIES"));
+            Assert.Contains("WITH TIES", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void FetchPercentWaitsForPercent()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            TODOException e = Assert.Throws<TODOException>(
+                () => session.PrepareCommand("SELECT ID FROM T ORDER BY ID FETCH FIRST 50 PERCENT ROWS ONLY"));
+            Assert.Contains("PERCENT", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void LimitExpressionWaitsForExpressions()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            TODOException e = Assert.Throws<TODOException>(
+                () => session.PrepareCommand("SELECT ID FROM T ORDER BY ID LIMIT ?"));
+            Assert.Contains("integer literal", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [JavaOracleFact]
     public void UnknownTableIsRefusedOnBothSides()
     {
         SessionLocal session = NewSession(out TransactionStore store, out _);
