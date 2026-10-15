@@ -33,21 +33,30 @@ public sealed class ValueRow : ValueCollectionBase
     /// </summary>
     /// <remarks>
     /// A row never holds a null: NULL is a value in this engine, not the absence of one, and a
-    /// row that held a real null would fail its own comparison and its own hash. So a list that
-    /// arrives from a statement being built is normalized once, here, rather than every time
-    /// something reads the row.
+    /// row that held a real null would fail its own comparison and its own hash. A list with
+    /// no nulls in it is kept as is, as the reference keeps its list — the caller hands over
+    /// ownership with the call ("do not clone"), so the scan above is the whole cost. Only a
+    /// list that actually holds a null pays for a copy.
     /// </remarks>
     /// <param name="list">the values</param>
     /// <returns>the same values, with no nulls in them</returns>
     private static Value[] Normalize(Value?[] list)
     {
-        Value[] values = new Value[list.Length];
         for (int i = 0; i < list.Length; i++)
         {
-            values[i] = list[i] ?? ValueNull.Instance;
+            if (list[i] is null)
+            {
+                Value[] values = new Value[list.Length];
+                for (int j = 0; j < list.Length; j++)
+                {
+                    values[j] = list[j] ?? ValueNull.Instance;
+                }
+
+                return values;
+            }
         }
 
-        return values;
+        return list!;
     }
 
     private ValueRow(TypeInfo? type, Value?[] list)

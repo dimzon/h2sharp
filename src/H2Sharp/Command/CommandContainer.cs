@@ -65,25 +65,24 @@ public class CommandContainer : Command
     public override bool IsReadOnly() => command.IsReadOnly();
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// A statement that carries its own values (the {n: ...} form) hands out an empty list:
+    /// handing the parameters out would let a caller bind them a second time. C# generics
+    /// are invariant where Java wildcards are not, so the live list cannot be handed out as
+    /// a list of the interface without an adapter; it is copied once, sized exactly. Both
+    /// callers only enumerate.
+    /// </remarks>
     public override List<ParameterInterface> GetParameters()
     {
         List<Parameter>? parameters = command.GetParameters();
-        List<ParameterInterface> result = [];
+        if (parameters is not null && parameters.Count > 0 && command.IsWithParamValues())
+        {
+            return [];
+        }
+
+        List<ParameterInterface> result = new(parameters?.Count ?? 0);
         if (parameters is not null)
         {
-            // A statement that carries its parameter values hands out a copy of the list, so that
-            // a caller who adds to what it got back cannot change what the statement will run
-            // with.
-            if (parameters.Count > 0 && command.IsWithParamValues())
-            {
-                foreach (Parameter parameter in parameters)
-                {
-                    result.Add(parameter);
-                }
-
-                return result;
-            }
-
             foreach (Parameter parameter in parameters)
             {
                 result.Add(parameter);

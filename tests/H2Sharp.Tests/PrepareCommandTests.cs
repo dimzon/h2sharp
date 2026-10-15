@@ -15,6 +15,7 @@
  * be wrong about a dependency it failed to notice.
  */
 using System;
+using System.Collections.Generic;
 using H2Sharp.Command;
 using H2Sharp.Command.Ddl;
 using H2Sharp.Command.Dml;
@@ -74,6 +75,38 @@ public sealed class PrepareCommandTests
         Assert.Throws<TODOException>(() => session.PrepareCommand("INSERT INTO T VALUES (1)"));
         Assert.Throws<TODOException>(() => session.PrepareCommand("UPDATE T SET ID = 1"));
         Assert.Throws<TODOException>(() => session.PrepareCommand("DELETE FROM T"));
+    }
+
+    [Fact]
+    public void ParametersWithOwnValuesAreHidden()
+    {
+        // A statement that carries its own values (the {n: ...} form) hands out an empty
+        // list: handing the parameters out would let a caller bind them a second time.
+        SessionLocal session = NewSession();
+        Select prepared = new(session);
+        prepared.SetParameterList([new Expressions.Parameter(0)]);
+        prepared.SetWithParamValues(true);
+        CommandContainer command = new(session, "SELECT ?", prepared);
+
+        Assert.Empty(command.GetParameters());
+    }
+
+    [Fact]
+    public void ParametersAreHandedOutOtherwise()
+    {
+        // The same elements, in a list of the interface: C# generics cannot hand out the
+        // live list as-is the way Java wildcards do, so it is adapted once, sized exactly.
+        SessionLocal session = NewSession();
+        Select prepared = new(session);
+        prepared.SetParameterList([new Expressions.Parameter(0), new Expressions.Parameter(1)]);
+        CommandContainer command = new(session, "SELECT ?, ?", prepared);
+
+        List<Expressions.ParameterInterface> first = [.. command.GetParameters()];
+        List<Expressions.ParameterInterface> second = [.. command.GetParameters()];
+        Assert.Equal(2, first.Count);
+        Assert.Same(prepared.GetParameters()![0], first[0]);
+        Assert.Same(prepared.GetParameters()![1], first[1]);
+        Assert.NotSame(first, second);
     }
 
     [Fact]

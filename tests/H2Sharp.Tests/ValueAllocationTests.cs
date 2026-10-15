@@ -472,6 +472,26 @@ public sealed class ValueAllocationTests
     }
 
     [Fact]
+    public void ValueRowWithoutNullsKeepsItsArray()
+    {
+        // A row over values that are all present keeps the array it was given, as the
+        // reference keeps its list: the scan above is the whole cost, and a second array
+        // per row would be garbage per row read.
+        Value?[] values = [ValueInteger.Get(1), ValueVarchar.Get("a"), null];
+        Value?[] clean = [ValueInteger.Get(1), ValueVarchar.Get("a"), ValueBoolean.True];
+        ValueRow row = ValueRow.Get(clean);
+
+        Assert.Same(clean, row.GetList());
+        Assert.InRange(MeasurePerCall(() => ValueRow.Get(clean)), 0, 128);
+
+        ValueRow withNull = ValueRow.Get(values);
+        Assert.Equal(
+            [ValueInteger.Get(1), ValueVarchar.Get("a"), ValueNull.Instance],
+            withNull.GetList());
+        Assert.Null(values[2]);
+    }
+
+    [Fact]
     public void TheCacheAnswersWithTheSameInstance()
     {
         // Not an allocation test, but the property the cache exists for: equal values are the
