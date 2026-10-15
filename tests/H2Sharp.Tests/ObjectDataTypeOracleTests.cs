@@ -96,6 +96,18 @@ public sealed class ObjectDataTypeOracleTests
           new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 },
           new int[] { 1, 2, 3 }, new long[] { 4L, 5L },
           new Object[] { 1, "two", 3L },
+          new java.math.BigInteger("-1"), new java.math.BigInteger("-2"),
+          new java.math.BigInteger("4611686018427387904"),
+          new java.math.BigInteger("-4611686018427387904"),
+          new java.math.BigInteger("-4611686018427387905"),
+          new java.math.BigInteger("9223372036854775807"),
+          new java.math.BigInteger("9223372036854775808"),
+          new java.math.BigInteger("-9223372036854775808"),
+          new java.math.BigInteger("-9223372036854775809"),
+          new java.math.BigInteger("18446744073709551616"),
+          new java.math.BigDecimal("-4611686018427387904"),
+          new java.math.BigDecimal("-9223372036854775808"),
+          new java.math.BigDecimal("-0.01"),
         };
         for (int i = 0; i < values.length; i++) {
           System.out.println("v" + i + "|" + R.show(values[i], t));
@@ -135,6 +147,18 @@ public sealed class ObjectDataTypeOracleTests
             new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 },
             new int[] { 1, 2, 3 }, new long[] { 4L, 5L },
             new object?[] { 1, "two", 3L },
+            new BigInteger(-1), new BigInteger(-2),
+            BigInteger.Parse("4611686018427387904", CultureInfo.InvariantCulture),
+            BigInteger.Parse("-4611686018427387904", CultureInfo.InvariantCulture),
+            BigInteger.Parse("-4611686018427387905", CultureInfo.InvariantCulture),
+            new BigInteger(long.MaxValue),
+            BigInteger.Parse("9223372036854775808", CultureInfo.InvariantCulture),
+            new BigInteger(long.MinValue),
+            BigInteger.Parse("-9223372036854775809", CultureInfo.InvariantCulture),
+            BigInteger.Parse("18446744073709551616", CultureInfo.InvariantCulture),
+            Util.BigDecimal.Parse("-4611686018427387904"),
+            Util.BigDecimal.Parse("-9223372036854775808"),
+            Util.BigDecimal.Parse("-0.01"),
         ];
 
         for (int i = 0; i < values.Length; i++)

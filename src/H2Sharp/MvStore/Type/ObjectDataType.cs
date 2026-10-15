@@ -1491,23 +1491,14 @@ public class ObjectDataType : BasicDataType<object?>
 
     private const long CanonicalDoubleNaNBits = 0x7FF8000000000000L;
 
-    private static int BitLength(BigInteger value)
-    {
-        if (value.IsZero)
-        {
-            return 0;
-        }
-
-        BigInteger magnitude = BigInteger.Abs(value);
-        int bits = 0;
-        while (magnitude > BigInteger.Zero)
-        {
-            magnitude >>= 1;
-            bits++;
-        }
-
-        return value.Sign < 0 ? bits + 1 : bits;
-    }
+    /// <summary>
+    /// The bit length the small-form guards decide on, which is
+    /// <c>java.math.BigInteger.bitLength()</c>: the minimal two's complement width without
+    /// the sign bit, so a negative counts one less than its magnitude. .NET's
+    /// <see cref="BigInteger.GetBitLength"/> answers exactly that, verified value by value
+    /// against the reference, including the negatives.
+    /// </summary>
+    private static int BitLength(BigInteger value) => (int)value.GetBitLength();
 
     private static long Low64(BigInteger value)
     {
