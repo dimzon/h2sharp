@@ -53,6 +53,13 @@ public sealed class Select : Query
     /// </summary>
     private List<Expression> expressions = [];
 
+    /// <summary>
+    /// The select list as an array, snapshotted once in <see cref="PrepareExpressions"/>
+    /// and reused by every run, as the reference snapshots its own list there. Null until
+    /// then; runs that never prepared fall back to a fresh copy.
+    /// </summary>
+    private Expression[]? expressionArray;
+
     private bool isQuickAggregateQuery;
 
     private bool distinct;
@@ -330,9 +337,11 @@ public sealed class Select : Query
     /// <inheritdoc/>
     /// <remarks>
     /// The visible columns, not the whole list: <see cref="Init"/> may append hidden ORDER
-    /// BY expressions past them, and those are not columns of the query.
+    /// BY expressions past them, and those are not columns of the query. The array itself is
+    /// the snapshot <see cref="PrepareExpressions"/> took, as the reference hands out its
+    /// own list rather than a copy.
     /// </remarks>
-    public override Expression[] GetExpressions() => [.. expressions];
+    public override Expression[] GetExpressions() => expressionArray ?? [.. expressions];
 
     /// <inheritdoc/>
     public override int GetColumnCount() => visibleColumnCount;
@@ -348,8 +357,8 @@ public sealed class Select : Query
     /// mode machinery: the reference folds the select list through
     /// <c>optimizeExpressionsAndPreserveAliases</c> in two of its modes and through a plain
     /// optimize in the rest, and only the plain path is taken here. The condition is
-    /// optimized as there. The quick aggregate shortcut and the expression array snapshot
-    /// wait for their own machinery.
+    /// optimized as there. The quick aggregate shortcut waits for its own machinery. The
+    /// select list is snapshotted last, as the reference snapshots its array here.
     /// </remarks>
     public override void PrepareExpressions()
     {
@@ -372,6 +381,8 @@ public sealed class Select : Query
         {
             condition = condition.OptimizeCondition(session);
         }
+
+        expressionArray = [.. expressions];
     }
 
     /// <inheritdoc/>
@@ -393,9 +404,9 @@ public sealed class Select : Query
 
         long offset = this.offset;
         long fetch = limit >= 0 ? limit : this.limit;
-        int columnCount = expressions.Count;
-        Expression[] expressionArray = [.. expressions];
-        LocalResult result = new(session, expressionArray, visibleColumnCount, expressionArray.Length);
+        Expression[] array = expressionArray ?? [.. expressions];
+        int columnCount = array.Length;
+        LocalResult result = new(session, array, visibleColumnCount, array.Length);
         topTableFilter!.StartQuery(session);
         topTableFilter.Reset();
         topTableFilter.Lock(session);
@@ -416,7 +427,7 @@ public sealed class Select : Query
             quickOffset = QuickOffset.No;
         }
 
-        QueryFlat(columnCount, result, offset, fetch, withTies, quickOffset);
+        QueryFlat(array, result, offset, fetch, withTies, quickOffset);
         if (quickOffset == QuickOffset.Yes)
         {
             offset = 0;
@@ -439,7 +450,7 @@ public sealed class Select : Query
     /// <summary>
     /// Reads the flat rows into the result, skipping the offset on the way when allowed.
     /// </summary>
-    /// <param name="columnCount">how many columns each row has</param>
+    /// <param name="expressionArray">the select list, shared with the result and the walk</param>
     /// <param name="result">where the rows go, or null for a lazy walk</param>
     /// <param name="offset">how many rows to skip</param>
     /// <param name="limitRows">how many rows to read, or negative for all</param>
@@ -447,13 +458,14 @@ public sealed class Select : Query
     /// <param name="quickOffset">how the offset is skipped</param>
     /// <returns>the lazy walk, when no result was given</returns>
     private LazyResult? QueryFlat(
-        int columnCount,
+        Expression[] expressionArray,
         ResultTarget? result,
         long offset,
         long limitRows,
         bool withTies,
         QuickOffset quickOffset)
     {
+        int columnCount = expressionArray.Length;
         if (limitRows > 0 && offset > 0 && quickOffset != QuickOffset.Yes)
         {
             limitRows += offset;
@@ -464,7 +476,7 @@ public sealed class Select : Query
             }
         }
 
-        LazyResultQueryFlat lazyResult = new(this, [.. expressions], columnCount, forUpdate is not null);
+        LazyResultQueryFlat lazyResult = new(this, expressionArray, columnCount, forUpdate is not null);
         SkipOffset(lazyResult, offset, quickOffset == QuickOffset.Yes);
         if (result is null)
         {
@@ -844,14 +856,14 @@ public sealed class Select : Query
     /// <returns>the cost of the plan</returns>
     public double PreparePlan(bool parse)
     {
-        List<TableFilter> topArray = [.. topFilters];
+        TableFilter[] topArray = [.. topFilters];
         foreach (TableFilter t in topArray)
         {
             t.CreateIndexConditions();
             t.SetFullCondition(condition);
         }
 
-        Optimizer optimizer = new([.. topArray], condition, session);
+        Optimizer optimizer = new(topArray, condition, session);
         optimizer.Optimize(parse, isSelectCommand: true);
         topTableFilter = optimizer.GetTopFilter();
         double planCost = optimizer.GetCost();
