@@ -1384,9 +1384,17 @@ public class ObjectDataType : BasicDataType<object?>
         }
     }
 
+    /// <summary>
+    /// Reads bytes out of the buffer into a private array.
+    /// </summary>
+    /// <remarks>
+    /// Left uninitialized on purpose, same reason as the row type's reader: the copy fills
+    /// every byte, so no caller can observe the uninitialized memory either way.
+    /// </remarks>
     private static byte[] ReadBytes(Span<byte> buff, ref int position, int count)
     {
-        byte[] result = buff.Slice(position, count).ToArray();
+        byte[] result = GC.AllocateUninitializedArray<byte>(count);
+        buff.Slice(position, count).CopyTo(result);
         position += count;
         return result;
     }

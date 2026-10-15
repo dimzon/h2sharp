@@ -786,10 +786,15 @@ public sealed class ValueDataType : BasicDataType<Value>
     /// Reads a byte string out of the buffer. The array is freshly allocated and private to the
     /// caller, so a value built with <c>GetNoCopy</c> takes it as is.
     /// </summary>
+    /// <remarks>
+    /// Left uninitialized on purpose: the copy below fills every byte, so zeroing first
+    /// would be a memset for nothing on every BINARY read.
+    /// </remarks>
     private static byte[] ReadBytes(Span<byte> buff, ref int position)
     {
         int len = DataUtils.ReadVarInt(buff, ref position);
-        byte[] bytes = buff.Slice(position, len).ToArray();
+        byte[] bytes = GC.AllocateUninitializedArray<byte>(len);
+        buff.Slice(position, len).CopyTo(bytes);
         position += len;
         return bytes;
     }
