@@ -139,7 +139,7 @@ public sealed class SelectOrderByTests
         select.SetExpressions(
         [
             new ExpressionColumn(table.GetColumn(0), filter, 0),
-            new ExpressionColumn(table.GetColumn(1), filter, 1),
+            new ExpressionColumn(table.GetColumn(1), filter, 0),
         ]);
         return select;
     }
@@ -254,7 +254,7 @@ public sealed class SelectOrderByTests
         {
             MVTable table = NewKeyedTable(session, store);
             Select select = NewSelect(session, table, out TableFilter f);
-            ExpressionColumn nameEc = new(table.GetColumn(1), f, 1);
+            ExpressionColumn nameEc = new(table.GetColumn(1), f, 0);
             select.SetOrder(
             [
                 new QueryOrderBy
@@ -386,7 +386,7 @@ public sealed class SelectOrderByTests
             select.SetExpressions(
             [
                 new ExpressionColumn(table.GetColumn(0), f, 0),
-                new ExpressionColumn(table.GetColumn(1), f, 1),
+                new ExpressionColumn(table.GetColumn(1), f, 0),
             ]);
             select.SetOrder([Positional(2, SortOrder.Ascending)]);
             select.PrepareExpressions();

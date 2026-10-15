@@ -117,7 +117,7 @@ public sealed class SelectRunTests
             select.SetExpressions(
             [
                 new ExpressionColumn(id, f, 0),
-                new ExpressionColumn(name, f, 1),
+                new ExpressionColumn(name, f, 0),
             ]);
             select.PreparePlan(session, targetTableFilter: null);
             ResultInterface result = select.Run(-1);
@@ -264,7 +264,7 @@ public sealed class SelectRunTests
             select.SetExpressions(
             [
                 new ExpressionColumn(table.GetColumn(0), f, 0),
-                new ExpressionColumn(table.GetColumn(1), f, 1),
+                new ExpressionColumn(table.GetColumn(1), f, 0),
             ]);
             select.PreparePlan(session, targetTableFilter: null);
             List<string> actual = Print(select.Run(-1));

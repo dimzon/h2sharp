@@ -152,6 +152,12 @@ public sealed class Select : Query
             _ = InitOrder(expressionSQL, IsAnyDistinct(), filters, expressions);
         }
 
+        // map columns in select list and condition
+        foreach (TableFilter f in filters)
+        {
+            MapColumns(f, 0, false);
+        }
+
         checkInit = true;
     }
 
@@ -164,6 +170,25 @@ public sealed class Select : Query
     /// </remarks>
     /// <returns>true for either distinct flavor</returns>
     public bool IsAnyDistinct() => distinct || isDistinct;
+
+    /// <inheritdoc/>
+    public override void MapColumns(ColumnResolver resolver, int level, bool outer)
+    {
+        foreach (Expression e in expressions)
+        {
+            e.MapColumns(resolver, level, Expression.MapInitial);
+        }
+
+        if (condition is not null)
+        {
+            condition.MapColumns(resolver, level, Expression.MapInitial);
+        }
+
+        foreach (TableFilter tableFilter in topFilters)
+        {
+            tableFilter.MapColumns(resolver, level, outer);
+        }
+    }
 
     /// <inheritdoc/>
     public override void Optimize(SessionLocal session, TableFilter? targetTableFilter)

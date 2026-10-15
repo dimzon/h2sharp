@@ -196,6 +196,14 @@ public sealed class ExpressionColumn : Expression
     /// <inheritdoc/>
     public override void MapColumns(ColumnResolver resolver, int level, int state)
     {
+        if (ReferenceEquals(columnResolver, resolver))
+        {
+            // Already mapped here: the reference ignores re-mapping to the same resolver,
+            // and mapping again would fail the name search below (it passes the table
+            // alias where a column alias is expected) and drift the query level.
+            return;
+        }
+
         for (; level < queryLevel; level++)
         {
             _ = resolver.IncrementQueryLevel(1);

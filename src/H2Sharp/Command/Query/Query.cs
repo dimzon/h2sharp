@@ -166,6 +166,14 @@ public abstract class Query : Prepared
     public abstract void Init();
 
     /// <summary>
+    /// Map the columns to the given column resolver.
+    /// </summary>
+    /// <param name="resolver">the resolver</param>
+    /// <param name="level">the subquery level (0 is the top level query, 1 is the first subquery level)</param>
+    /// <param name="outer">whether this method was called from the outer query</param>
+    public abstract void MapColumns(Tables.ColumnResolver resolver, int level, bool outer);
+
+    /// <summary>
     /// Prepares the expressions of this query.
     /// </summary>
     public abstract void PrepareExpressions();

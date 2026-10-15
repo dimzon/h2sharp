@@ -158,7 +158,7 @@ public sealed class SelectIndexSortTests
             select.SetExpressions(
             [
                 new ExpressionColumn(table.GetColumn(0), f, 0),
-                new ExpressionColumn(table.GetColumn(1), f, 1),
+                new ExpressionColumn(table.GetColumn(1), f, 0),
             ]);
             string javaCondition = string.Empty;
             if (withCondition)

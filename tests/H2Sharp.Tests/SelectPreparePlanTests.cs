@@ -116,7 +116,7 @@ public sealed class SelectPreparePlanTests
             select.SetExpressions(
             [
                 new ExpressionColumn(id, f, 0),
-                new ExpressionColumn(name, f, 1),
+                new ExpressionColumn(name, f, 0),
             ]);
             select.PreparePlan(session, targetTableFilter: null);
 
@@ -172,7 +172,7 @@ public sealed class SelectPreparePlanTests
             select.SetExpressions(
             [
                 new ExpressionColumn(id, f, 0),
-                new ExpressionColumn(name, f, 1),
+                new ExpressionColumn(name, f, 0),
             ]);
             select.PreparePlan(session, targetTableFilter: null);
 

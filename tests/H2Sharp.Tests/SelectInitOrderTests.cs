@@ -23,6 +23,7 @@ using H2Sharp;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
+using H2Sharp.Expressions.Conditions;
 using H2Sharp.Indexes;
 using H2Sharp.MvStore;
 using H2Sharp.MvStore.Db;
@@ -140,7 +141,7 @@ public sealed class SelectInitOrderTests
         select.SetExpressions(
         [
             new ExpressionColumn(table.GetColumn(0), filter, 0),
-            new ExpressionColumn(table.GetColumn(1), filter, 1),
+            new ExpressionColumn(table.GetColumn(1), filter, 0),
         ]);
         return select;
     }
@@ -238,7 +239,7 @@ public sealed class SelectInitOrderTests
             select.SetExpressions(
             [
                 new ExpressionColumn(table.GetColumn(0), f, 0),
-                new Alias(new ExpressionColumn(table.GetColumn(1), f, 1), "N", true),
+                new Alias(new ExpressionColumn(table.GetColumn(1), f, 0), "N", true),
             ]);
             select.SetOrder([NameOrder(null, "N")]);
             select.Init();
@@ -283,8 +284,8 @@ public sealed class SelectInitOrderTests
     public void UnrelatedColumnIsAppendedPastTheVisibleOnes()
     {
         // ORDER BY a column that is not selected: it joins the select list past the visible
-        // columns, sorts by it, and never shows. The appended item is already mapped, as the
-        // mapping pass that would map a name-form one is not ported yet.
+        // columns, sorts by it, and never shows. The appended item arrives in name form, as
+        // the parser leaves it, and the mapping pass at the end of init resolves it.
         SessionLocal session = NewSession();
 
         var store = new TransactionStore(MVStore.Open(null!));
@@ -300,7 +301,7 @@ public sealed class SelectInitOrderTests
             [
                 new QueryOrderBy
                 {
-                    expression = new ExpressionColumn(table.GetColumn(1), f, 1),
+                    expression = new ExpressionColumn("NAME", null, 0),
                     sortType = SortOrder.Ascending,
                 },
             ]);
@@ -333,7 +334,7 @@ public sealed class SelectInitOrderTests
                     new java.util.ArrayList<>();
                 org.h2.command.query.QueryOrderBy ob = new org.h2.command.query.QueryOrderBy();
                 ob.expression = new org.h2.expression.ExpressionColumn(
-                    session.getDatabase(), null, "T", "NAME");
+                    session.getDatabase(), null, null, "NAME");
                 order.add(ob);
                 select.setOrder(order);
                 """;
@@ -359,6 +360,61 @@ public sealed class SelectInitOrderTests
         }
         conn.close();
         """;
+
+    [JavaOracleFact]
+    public void NameFormConditionIsMappedAndIndexed()
+    {
+        // A condition in name form is mapped by the same pass, so the plan sees it and the
+        // key index serves both the filter and the order.
+        SessionLocal session = NewSession();
+
+        var store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+        try
+        {
+            MVTable table = NewKeyedTable(session, store);
+            TableFilter f = new(session, table, "T", rightsChecked: true, null, 0, null);
+            Select select = new(session);
+            select.AddTableFilter(f, isTop: true);
+            select.SetExpressions(
+            [
+                new ExpressionColumn(table.GetColumn(0), f, 0),
+                new ExpressionColumn(table.GetColumn(1), f, 0),
+            ]);
+            select.AddCondition(new Comparison(
+                Comparison.Bigger,
+                new ExpressionColumn("ID", null, 0),
+                ValueExpression.Get(ValueInteger.Get(1)),
+                whenOperand: false));
+            select.SetOrder([NameOrder(null, "ID")]);
+            select.Init();
+            select.PrepareExpressions();
+            select.PreparePlan(session, targetTableFilter: null);
+            List<string> actual = Print(select.Run(-1));
+
+            const string javaCond = """
+                org.h2.expression.ExpressionColumn condEc = new org.h2.expression.ExpressionColumn(
+                    session.getDatabase(), null, null, "ID");
+                org.h2.expression.condition.Comparison cond =
+                    new org.h2.expression.condition.Comparison(
+                        org.h2.expression.condition.Comparison.BIGGER, condEc,
+                        org.h2.expression.ValueExpression.get(org.h2.value.ValueInteger.get(1)), false);
+                select.addCondition(cond);
+                """;
+            List<string> java = OracleRunner.Run(
+                [],
+                JavaSession + JavaTable + JavaSelect + javaCond
+                    + JavaNameOrder(null, "ID") + JavaPrepare + JavaPrint,
+                null, null, null);
+            Assert.Equal(["=2:a", "=3:c"], actual);
+            Assert.Equal("sort:[0]", java[0]);
+            Assert.Equal(java[1..], actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
 
     [JavaOracleFact]
     public void ConstantOrderIsDropped()
@@ -464,7 +520,7 @@ public sealed class SelectInitOrderTests
             [
                 new QueryOrderBy
                 {
-                    expression = new ExpressionColumn(table.GetColumn(1), f, 1),
+                    expression = new ExpressionColumn(table.GetColumn(1), f, 0),
                     sortType = SortOrder.Ascending,
                 },
             ]);
