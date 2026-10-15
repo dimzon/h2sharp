@@ -417,24 +417,41 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
             return Zero;
         }
 
-        BigInteger work = BigInteger.Abs(unscaledValue);
-        int stripped = 0;
+        // The common case fits in a long, where Java works on its compact form and divides
+        // without allocating: one range check instead of a BigInteger division per zero.
+        // The remainder keeps its sign in C#, but only zero matters here, so negatives
+        // strip exactly like positives.
+        if (unscaledValue.GetByteCount() <= sizeof(long))
+        {
+            long work = (long)unscaledValue;
+            int stripped = 0;
+            while (work % 10 == 0)
+            {
+                work /= 10;
+                stripped++;
+            }
+
+            return stripped == 0 ? this : new BigDecimal(new BigInteger(work), scale - stripped);
+        }
+
+        BigInteger big = BigInteger.Abs(unscaledValue);
+        int bigStripped = 0;
         BigInteger ten = Ten;
         while (true)
         {
-            BigInteger division = BigInteger.DivRem(work, ten, out BigInteger rest);
+            BigInteger division = BigInteger.DivRem(big, ten, out BigInteger rest);
             if (!rest.IsZero)
             {
                 break;
             }
 
-            work = division;
-            stripped++;
+            big = division;
+            bigStripped++;
         }
 
-        return stripped == 0
+        return bigStripped == 0
             ? this
-            : new BigDecimal(unscaledValue.Sign < 0 ? BigInteger.Negate(work) : work, scale - stripped);
+            : new BigDecimal(unscaledValue.Sign < 0 ? BigInteger.Negate(big) : big, scale - bigStripped);
     }
 
     /// <summary>

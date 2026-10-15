@@ -256,9 +256,20 @@ public static class GeoJsonUtils
         }
 
         private void WriteDouble(double v)
-            => output.ValueNumber(
-                BigDecimal.Parse(JavaNumberFormat.DoubleToString(GeometryUtils.CheckFinite(v)))
-                    .StripTrailingZeros());
+        {
+            // The text is already the shortest that reads back, so its unscaled value has no
+            // trailing zero to strip unless it ends in ".0": a shorter spelling would read
+            // back the same, which is what shortest means. Only the integral ".0" and ".0E"
+            // forms strip anything at all.
+            string text = JavaNumberFormat.DoubleToString(GeometryUtils.CheckFinite(v));
+            BigDecimal number = BigDecimal.Parse(text);
+            if (text.EndsWith(".0", StringComparison.Ordinal) || text.Contains(".0E", StringComparison.Ordinal))
+            {
+                number = number.StripTrailingZeros();
+            }
+
+            output.ValueNumber(number);
+        }
     }
 
     private static void Parse(JsonValue v, GeometryUtils.Target target)

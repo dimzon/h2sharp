@@ -10,15 +10,14 @@
  * stored SQL, error messages and index metadata, so it cannot be approximated.
  *
  * .NET has the shortest round-trip digits for most values but not for all of them: it prints
- * 1e7 as 10000000 where Java prints 1.0E7. So the shortest digit string has to be found by
- * asking for one digit at a time and checking whether it reads back.
+ * 1e7 as 10000000 where Java prints 1.0E7. So the shortest digit string comes from one "R"
+ * formatting, and the plain-or-scientific threshold ([1e-3, 1e7)) is applied in Render rather
+ * than in the search.
  *
- * The search is written to allocate nothing per step: the candidate goes into a stack buffer
- * and is read back from a span. An earlier version built a format string and a substring per
- * step, which measured at about a kilobyte per formatted number; this allocates the result and
- * nothing else. The two methods are near copies of each other on purpose: a shared generic
- * version would need a delegate per step to format into the span, which costs more than it
- * saves in a loop this short.
+ * The search allocates one stack buffer for the digits and nothing per step: the digits are
+ * read back from a span. The two methods are near copies of each other on purpose: a shared
+ * generic version would need a delegate per call to format into the span, which costs more
+ * than it saves for two callers.
  *
  * There is no counterpart class in the reference, and that is deliberate: the reference needs
  * no helper because the runtime provides one. The corpus is in
@@ -49,17 +48,6 @@ public static class JavaNumberFormat
     /// and padding of the plain form.
     /// </summary>
     private const int BufferLength = 48;
-
-    /// <summary>
-    /// The E format for each digit count, cached so the search does not build one per step.
-    /// "E0" is one significant digit, "E16" is seventeen, which is every digit a double needs.
-    /// </summary>
-    private static readonly string[] DoubleFormats = BuildFormats(17);
-
-    /// <summary>
-    /// The same for a float, which needs at most nine digits.
-    /// </summary>
-    private static readonly string[] FloatFormats = BuildFormats(9);
 
     /// <summary>
     /// The significant digits of a positive number, and the exponent they belong to.
@@ -106,20 +94,19 @@ public static class JavaNumberFormat
         bool negative = value < 0;
         double magnitude = negative ? -value : value;
 
+        // The shortest digits that read back are what both this and Java want, and "R" is
+        // exactly that in one call: the loop this replaces tried "E0".."E16" and parsed each
+        // back, which is seventeen parses on the way to the same digits. What differs from
+        // Java is only the plain-or-scientific threshold, and that lives in Render, which
+        // decides by magnitude whatever shape the digits arrived in.
         Span<char> candidate = stackalloc char[BufferLength];
-        foreach (string format in DoubleFormats)
+        if (!magnitude.TryFormat(candidate, out int written, "R", CultureInfo.InvariantCulture))
         {
-            _ = magnitude.TryFormat(candidate, out int written, format, CultureInfo.InvariantCulture);
-            ReadOnlySpan<char> text = candidate[..written];
-            if (double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture) == magnitude)
-            {
-                return Render(FromScientific(text), magnitude, negative);
-            }
+            throw new InvalidOperationException(
+                $"Cannot render {value.ToString(CultureInfo.InvariantCulture)}.");
         }
 
-        throw new InvalidOperationException(
-            $"No digit count reproduces {value.ToString(CultureInfo.InvariantCulture)}, which "
-            + "should be impossible for a finite double.");
+        return Render(FromShortest(candidate[..written]), magnitude, negative);
     }
 
     /// <summary>
@@ -157,20 +144,16 @@ public static class JavaNumberFormat
         bool negative = value < 0;
         float magnitude = negative ? -value : value;
 
+        // Same single call as the double next to it: "R" of a float is the shortest that
+        // reads back as that float.
         Span<char> candidate = stackalloc char[BufferLength];
-        foreach (string format in FloatFormats)
+        if (!magnitude.TryFormat(candidate, out int written, "R", CultureInfo.InvariantCulture))
         {
-            _ = magnitude.TryFormat(candidate, out int written, format, CultureInfo.InvariantCulture);
-            ReadOnlySpan<char> text = candidate[..written];
-            if (float.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture) == magnitude)
-            {
-                return Render(FromScientific(text), magnitude, negative);
-            }
+            throw new InvalidOperationException(
+                $"Cannot render {value.ToString(CultureInfo.InvariantCulture)}.");
         }
 
-        throw new InvalidOperationException(
-            $"No digit count reproduces {value.ToString(CultureInfo.InvariantCulture)}, which "
-            + "should be impossible for a finite float.");
+        return Render(FromShortest(candidate[..written]), magnitude, negative);
     }
 
     /// <summary>
@@ -305,6 +288,55 @@ public static class JavaNumberFormat
     }
 
     /// <summary>
+    /// Reads the shortest rendering into digits and an exponent, whatever shape it came in.
+    /// </summary>
+    /// <remarks>
+    /// "R" prints plain inside its own wide threshold and scientific outside it, while the
+    /// Java threshold is narrower — so both shapes arrive here and both leave as the same
+    /// digits with the exponent of the first one. A plain "10000000" is the digit 1 with
+    /// exponent 7, not eight significant digits: the shortest form never carries zeros that
+    /// do not move the value, and stripping them is exact.
+    /// </remarks>
+    /// <param name="text">the shortest text</param>
+    /// <returns>the digits and the exponent</returns>
+    private static Digits FromShortest(ReadOnlySpan<char> text)
+    {
+        if (text.Contains('E'))
+        {
+            return FromScientific(text);
+        }
+
+        int point = text.IndexOf('.');
+        int integerDigits = point < 0 ? text.Length : point;
+        int first = 0;
+        while (first < text.Length && (text[first] == '0' || text[first] == '.'))
+        {
+            first++;
+        }
+
+        int last = text.Length;
+        while (last > first && (text[last - 1] == '0' || text[last - 1] == '.'))
+        {
+            last--;
+        }
+
+        // A nonzero value always keeps a digit: the shortest form never spells zero of them.
+        int leading = 0;
+        for (int i = 0; i < first; i++)
+        {
+            if (text[i] == '0')
+            {
+                leading++;
+            }
+        }
+
+        string significant = point < first || point >= last
+            ? text[first..last].ToString()
+            : string.Concat(text[first..point], text[(point + 1)..last]);
+        return new Digits(significant, integerDigits - 1 - leading);
+    }
+
+    /// <summary>
     /// Reads an <c>E</c> shaped rendering into digits and an exponent.
     /// </summary>
     /// <remarks>
@@ -340,15 +372,4 @@ public static class JavaNumberFormat
             : (uint)Math.Abs(exponent) < 100 ? 2
             : (uint)Math.Abs(exponent) < 1000 ? 3
             : 4;
-
-    private static string[] BuildFormats(int maxDigits)
-    {
-        string[] formats = new string[maxDigits];
-        for (int i = 0; i < maxDigits; i++)
-        {
-            formats[i] = "E" + i.ToString(CultureInfo.InvariantCulture);
-        }
-
-        return formats;
-    }
 }

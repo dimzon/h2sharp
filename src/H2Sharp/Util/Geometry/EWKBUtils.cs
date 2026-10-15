@@ -4,6 +4,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Util;
@@ -26,11 +27,14 @@ public static class EWKBUtils
     /// </summary>
     public sealed class EWKBTarget : GeometryUtils.Target
     {
-        private readonly List<byte> output = [];
+        /// <summary>
+        /// The bytes gathered so far. A writer rather than a list: the reference gathers
+        /// into a byte stream with one write per int or double, and per-byte appends
+        /// would turn each coordinate into dozens of virtual calls.
+        /// </summary>
+        private readonly ArrayBufferWriter<byte> output = new();
 
         private readonly int dimensionSystem;
-
-        private readonly byte[] buffer = new byte[8];
 
         private int type;
 
@@ -49,7 +53,7 @@ public static class EWKBUtils
         /// The bytes written so far.
         /// </summary>
         /// <returns>the EWKB</returns>
-        public byte[] ToArray() => [.. output];
+        public byte[] ToArray() => output.WrittenSpan.ToArray();
 
         /// <inheritdoc/>
         protected internal override void Init(int srid) => this.srid = srid;
@@ -116,7 +120,8 @@ public static class EWKBUtils
                 type |= EwkbSrid;
             }
 
-            output.Add(0);
+            output.GetSpan(1)[0] = 0;
+            output.Advance(1);
             WriteInt(type);
             if (srid != 0)
             {
@@ -167,21 +172,17 @@ public static class EWKBUtils
 
         private void WriteInt(int value)
         {
-            Bits.IntToBigEndian(buffer, 0, value);
-            for (int i = 0; i < 4; i++)
-            {
-                output.Add(buffer[i]);
-            }
+            Span<byte> span = output.GetSpan(4);
+            Bits.IntToBigEndian(span, 0, value);
+            output.Advance(4);
         }
 
         private void WriteDouble(double value)
         {
             value = GeometryUtils.ToCanonicalDouble(value);
-            Bits.LongToBigEndian(buffer, 0, BitConverter.DoubleToInt64Bits(value));
-            for (int i = 0; i < 8; i++)
-            {
-                output.Add(buffer[i]);
-            }
+            Span<byte> span = output.GetSpan(8);
+            Bits.LongToBigEndian(span, 0, BitConverter.DoubleToInt64Bits(value));
+            output.Advance(8);
         }
     }
 
