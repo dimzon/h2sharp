@@ -391,8 +391,8 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     public long LongValue()
     {
         BigInteger integer = scale <= 0
-            ? unscaledValue * BigInteger.Pow(10, -scale)
-            : unscaledValue / BigInteger.Pow(10, scale);
+            ? unscaledValue * PowerOfTen(-scale)
+            : unscaledValue / PowerOfTen(scale);
         return (long)integer;
     }
 
@@ -485,7 +485,7 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
         }
 
         long difference = (long)coarser.scale - finer.scale;
-        BigInteger extended = BigInteger.Multiply(finer.unscaledValue, BigInteger.Pow(Ten, (int)difference));
+        BigInteger extended = BigInteger.Multiply(finer.unscaledValue, PowerOfTen((int)difference));
         BigInteger total = coarser.unscaledValue + extended;
         return total.IsZero ? ZeroWithScale(coarser.scale) : new BigDecimal(total, coarser.scale);
     }
@@ -545,10 +545,10 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
 
         if (newScale > scale)
         {
-            return new BigDecimal(BigInteger.Multiply(unscaledValue, BigInteger.Pow(Ten, newScale - scale)), newScale);
+            return new BigDecimal(BigInteger.Multiply(unscaledValue, PowerOfTen(newScale - scale)), newScale);
         }
 
-        BigInteger divisor = BigInteger.Pow(Ten, scale - newScale);
+        BigInteger divisor = PowerOfTen(scale - newScale);
         bool negative = unscaledValue.Sign < 0;
         BigInteger magnitude = RoundMagnitude(
             BigInteger.Abs(unscaledValue), divisor, MagnitudeMode(mode, negative));
@@ -593,7 +593,7 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
             // The quotient at that scale is one multiplication and one division rather than a
             // division that produces an endless decimal and a second pass over it.
             magnitude = RoundMagnitude(
-                BigInteger.Multiply(numerator, BigInteger.Pow(Ten, (int)shift)),
+                BigInteger.Multiply(numerator, PowerOfTen((int)shift)),
                 denominator,
                 MagnitudeMode(mode, negative));
         }
@@ -601,7 +601,7 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
         {
             magnitude = RoundMagnitude(
                 numerator,
-                BigInteger.Multiply(denominator, BigInteger.Pow(Ten, (int)-shift)),
+                BigInteger.Multiply(denominator, PowerOfTen((int)-shift)),
                 MagnitudeMode(mode, negative));
         }
 
@@ -653,8 +653,8 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
         BigInteger denominator = BigInteger.Abs(divisor.unscaledValue);
         long shift = (long)divisor.scale - scale;
         BigInteger whole = shift >= 0
-            ? BigInteger.Divide(BigInteger.Multiply(numerator, BigInteger.Pow(Ten, (int)shift)), denominator)
-            : BigInteger.Divide(numerator, BigInteger.Multiply(denominator, BigInteger.Pow(Ten, (int)-shift)));
+            ? BigInteger.Divide(BigInteger.Multiply(numerator, PowerOfTen((int)shift)), denominator)
+            : BigInteger.Divide(numerator, BigInteger.Multiply(denominator, PowerOfTen((int)-shift)));
 
         int sign = unscaledValue.Sign * divisor.unscaledValue.Sign;
         return new BigDecimal(sign < 0 ? BigInteger.Negate(whole) : whole, 0);
@@ -851,11 +851,11 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
         BigInteger right = other.unscaledValue;
         if (difference > 0)
         {
-            right = BigInteger.Multiply(right, BigInteger.Pow(Ten, difference));
+            right = BigInteger.Multiply(right, PowerOfTen(difference));
         }
         else if (difference < 0)
         {
-            left = BigInteger.Multiply(left, BigInteger.Pow(Ten, -difference));
+            left = BigInteger.Multiply(left, PowerOfTen(-difference));
         }
 
         return left.CompareTo(right);
@@ -982,6 +982,14 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     /// How far the table reaches, and past it the platform is asked instead.
     /// </summary>
     private const int PowerTableLength = 129;
+
+    /// <summary>
+    /// Ten to the power, from the table while it reaches, computed past it.
+    /// </summary>
+    /// <param name="n">the exponent</param>
+    /// <returns>10 to the power n</returns>
+    private static BigInteger PowerOfTen(int n)
+        => n >= 0 && n < PowerTableLength ? PowersOfTen[n] : BigInteger.Pow(Ten, n);
 
     /// <summary>
     /// The width in bits of the largest number in the table, which is where the table stops being
