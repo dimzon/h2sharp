@@ -123,11 +123,24 @@ public static class IOUtils
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(buffer);
+        return ReadFully(input, buffer.AsSpan(), max);
+    }
+
+    /// <summary>
+    /// Read what is there into the buffer, up to its length or up to the end of the stream.
+    /// </summary>
+    /// <param name="input">the stream</param>
+    /// <param name="buffer">where to read</param>
+    /// <param name="max">the most to read</param>
+    /// <returns>how many bytes were read</returns>
+    public static int ReadFully(Stream input, Span<byte> buffer, int max)
+    {
+        ArgumentNullException.ThrowIfNull(input);
         int result = 0;
         int len = Math.Min(max, buffer.Length);
         while (len > 0)
         {
-            int read = input.Read(buffer, result, len);
+            int read = input.Read(buffer.Slice(result, len));
             if (read <= 0)
             {
                 break;
@@ -151,11 +164,24 @@ public static class IOUtils
     {
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(buffer);
+        return ReadFully(reader, buffer.AsSpan(), max);
+    }
+
+    /// <summary>
+    /// Read what is there into the buffer, up to its length or up to the end of the text.
+    /// </summary>
+    /// <param name="reader">the reader</param>
+    /// <param name="buffer">where to read</param>
+    /// <param name="max">the most to read</param>
+    /// <returns>how many characters were read</returns>
+    public static int ReadFully(TextReader reader, Span<char> buffer, int max)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
         int result = 0;
         int len = Math.Min(max, buffer.Length);
         while (len > 0)
         {
-            int read = reader.Read(buffer, result, len);
+            int read = reader.Read(buffer.Slice(result, len));
             if (read <= 0)
             {
                 break;

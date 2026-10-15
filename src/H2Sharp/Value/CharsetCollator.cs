@@ -239,12 +239,13 @@ public sealed class CharsetCollator
     private byte[] ToBytesCore(ReadOnlySpan<char> source)
     {
         List<byte>? bytes = null;
+        Span<char> probe = stackalloc char[2];
         int start = 0;
         int i = 0;
         while (i < source.Length)
         {
             Rune.DecodeFromUtf16(source[i..], out Rune rune, out int consumed);
-            if (IsRepresentable(rune, source[i]))
+            if (IsRepresentable(rune, source[i], probe))
             {
                 i += consumed;
                 continue;
@@ -306,18 +307,21 @@ public sealed class CharsetCollator
     /// replacement rune is an unpaired surrogate, which no charset here can represent even
     /// when the text itself is the replacement rune.
     /// </summary>
-    private bool IsRepresentable(Rune rune, char firstChar)
+    /// <remarks>
+    /// The probe buffer lives with the caller: one stack slot per encoded string rather
+    /// than one per character it checks.
+    /// </remarks>
+    private bool IsRepresentable(Rune rune, char firstChar, Span<char> probe)
     {
         if (rune.Value == ReplacementRune && firstChar != ReplacementRune)
         {
             return false;
         }
 
-        Span<char> buffer = stackalloc char[2];
-        int written = rune.EncodeToUtf16(buffer);
+        int written = rune.EncodeToUtf16(probe);
         try
         {
-            return encoding.GetByteCount(buffer[..written]) >= 0;
+            return encoding.GetByteCount(probe[..written]) >= 0;
         }
         catch (EncoderFallbackException)
         {

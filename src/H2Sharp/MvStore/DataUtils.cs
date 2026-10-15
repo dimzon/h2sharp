@@ -832,20 +832,47 @@ public static class DataUtils
     /// <summary>
     /// Append one entry with a long value, in hex.
     /// </summary>
+    /// <remarks>
+    /// Formatted on the stack: a hex long is at most 16 characters, and a string per
+    /// numeric field would tax every chunk header and map record for nothing.
+    /// </remarks>
     /// <param name="buff">where to append</param>
     /// <param name="key">the key</param>
     /// <param name="value">the value</param>
     public static void AppendMap(StringBuilder buff, string key, long value)
-        => _ = AppendMapKey(buff, key).Append(value.ToString("x", CultureInfo.InvariantCulture));
+    {
+        Span<char> hex = stackalloc char[16];
+        if (value.TryFormat(hex, out int written, "x", CultureInfo.InvariantCulture))
+        {
+            _ = AppendMapKey(buff, key).Append(hex[..written]);
+        }
+        else
+        {
+            _ = AppendMapKey(buff, key).Append(value.ToString("x", CultureInfo.InvariantCulture));
+        }
+    }
 
     /// <summary>
     /// Append one entry with an int value, in hex.
     /// </summary>
+    /// <remarks>
+    /// Same stack formatting as the long form: 8 characters suffice, 16 are reserved.
+    /// </remarks>
     /// <param name="buff">where to append</param>
     /// <param name="key">the key</param>
     /// <param name="value">the value</param>
     public static void AppendMap(StringBuilder buff, string key, int value)
-        => _ = AppendMapKey(buff, key).Append(value.ToString("x", CultureInfo.InvariantCulture));
+    {
+        Span<char> hex = stackalloc char[16];
+        if (value.TryFormat(hex, out int written, "x", CultureInfo.InvariantCulture))
+        {
+            _ = AppendMapKey(buff, key).Append(hex[..written]);
+        }
+        else
+        {
+            _ = AppendMapKey(buff, key).Append(value.ToString("x", CultureInfo.InvariantCulture));
+        }
+    }
 
     private static int ParseMapValue(StringBuilder buff, string s, int i, int size)
     {

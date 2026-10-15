@@ -237,8 +237,10 @@ public sealed class ValueBlob : ValueLob
         {
             using Stream oneStream = one.GetInputStream();
             using Stream otherStream = other.GetInputStream();
-            byte[] oneBuffer = new byte[BlockComparisonSize];
-            byte[] otherBuffer = new byte[BlockComparisonSize];
+            // Small and short-lived: two stack buffers instead of two heap arrays on every
+            // comparison. The frames are transient — freed on return, never held across calls.
+            Span<byte> oneBuffer = stackalloc byte[BlockComparisonSize];
+            Span<byte> otherBuffer = stackalloc byte[BlockComparisonSize];
             for (; minPrecision >= BlockComparisonSize; minPrecision -= BlockComparisonSize)
             {
                 if (IOUtils.ReadFully(oneStream, oneBuffer, BlockComparisonSize) != BlockComparisonSize
@@ -283,6 +285,6 @@ public sealed class ValueBlob : ValueLob
     /// <summary>
     /// Java's <c>Arrays.compareUnsigned</c>: the bytes as numbers, the bigger byte the later one.
     /// </summary>
-    private static int CompareUnsigned(byte[] a, byte[] b)
-        => a.AsSpan().SequenceCompareTo(b);
+    private static int CompareUnsigned(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
+        => a.SequenceCompareTo(b);
 }

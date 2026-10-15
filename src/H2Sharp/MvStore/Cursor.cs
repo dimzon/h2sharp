@@ -16,8 +16,9 @@ namespace H2Sharp.MvStore;
 /// <para>
 /// Keys and values coming out of a map are never null, which is why <see cref="Next"/> answers
 /// with a plain <c>K</c>. Whether there is a current key is a flag, not a null check, and an
-/// absent bound is an <c>object?</c>, not a <c>K?</c>: for a value-type key, <c>K?</c> collapses
-/// to <c>K</c> and can neither hold null nor take a null bound.
+/// absent bound arrives as an <c>object?</c>, not a <c>K?</c>: for a value-type key, <c>K?</c>
+/// collapses to <c>K</c> and can neither hold null nor take a null bound. Once inside it is
+/// unpacked to a <c>K</c> with its own flag, so the walk compares without unboxing every key.
 /// </para>
 /// </remarks>
 /// <typeparam name="K">the key type</typeparam>
@@ -26,7 +27,9 @@ public sealed class Cursor<K, V> : IEnumerator<K>
 {
     private readonly bool reverse;
 
-    private readonly object? to;
+    private readonly K toValue;
+
+    private readonly bool hasTo;
 
     private CursorPos<K, V>? cursorPos;
 
@@ -55,7 +58,11 @@ public sealed class Cursor<K, V> : IEnumerator<K>
     {
         lastPage = rootReference.root;
         cursorPos = TraverseDown(lastPage, from, reverse);
-        this.to = to;
+        // Unpacked once: the bound arrives as an object because an absent bound is null
+        // and a K? would collapse for value-type keys, but checking it on every key of
+        // the walk would repeat the same type test thousands of times.
+        hasTo = to is not null;
+        toValue = hasTo ? (K)to! : default!;
         this.reverse = reverse;
     }
 
@@ -109,7 +116,7 @@ public sealed class Cursor<K, V> : IEnumerator<K>
                     if (reverse ? index >= 0 : index < page.GetKeyCount())
                     {
                         K key = page.GetKey(index);
-                        if (to is not null && Math.Sign(page.map.KeyType.Compare(key, (K)to)) == increment)
+                        if (hasTo && Math.Sign(page.map.Compare(key, toValue)) == increment)
                         {
                             return false;
                         }

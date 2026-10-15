@@ -230,8 +230,10 @@ public sealed class ValueClob : ValueLob
         {
             using TextReader oneReader = one.GetReader();
             using TextReader otherReader = other.GetReader();
-            char[] oneBuffer = new char[BlockComparisonSize];
-            char[] otherBuffer = new char[BlockComparisonSize];
+            // Small and short-lived, like their binary twins: two stack buffers instead of
+            // two heap arrays on every comparison.
+            Span<char> oneBuffer = stackalloc char[BlockComparisonSize];
+            Span<char> otherBuffer = stackalloc char[BlockComparisonSize];
             for (; minPrecision >= BlockComparisonSize; minPrecision -= BlockComparisonSize)
             {
                 if (IOUtils.ReadFully(oneReader, oneBuffer, BlockComparisonSize) != BlockComparisonSize
@@ -240,7 +242,7 @@ public sealed class ValueClob : ValueLob
                     throw DbException.GetUnsupportedException("Invalid LOB");
                 }
 
-                int comparison = Math.Sign(oneBuffer.AsSpan().SequenceCompareTo(otherBuffer));
+                int comparison = Math.Sign(oneBuffer.SequenceCompareTo(otherBuffer));
                 if (comparison != 0)
                 {
                     return comparison;

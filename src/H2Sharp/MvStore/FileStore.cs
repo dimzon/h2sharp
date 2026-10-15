@@ -1405,15 +1405,13 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
             var unallocatedChunksRpi = new List<RemovedPageInfo>();
             while (true)
             {
-                RemovedPageInfo? rpi;
                 lock (removedPages)
                 {
-                    while (removedPages.TryPeek(out rpi, out _) && rpi.Version < version)
+                    while (removedPages.TryPeek(out RemovedPageInfo rpi, out _) && rpi.Version < version)
                     {
                         // could be different from the peeked one, but nobody else retrieves
                         _ = removedPages.TryDequeue(out rpi, out _);
-                        Debug.Assert(rpi != null);
-                        Debug.Assert(rpi!.Version < version, rpi + " < " + version);
+                        Debug.Assert(rpi.Version < version, rpi + " < " + version);
                         int chunkId = rpi.GetPageChunkId();
                         bool found = chunks.TryGetValue(chunkId, out C? chunk);
                         Debug.Assert(!GetMvStore().IsOpen() || found, chunkId.ToString(CultureInfo.InvariantCulture));
@@ -2553,7 +2551,12 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
     /// A removed page: its chunk, its number within the chunk, its length, and the version that
     /// removed it. Ordered by version, so occupancy is accounted oldest-first.
     /// </summary>
-    private sealed class RemovedPageInfo : IComparable<RemovedPageInfo>
+    /// <remarks>
+    /// A value: two longs, nothing shared, never mutated after construction. The priority
+    /// queue carries the version as an explicit priority, so the comparison the reference
+    /// keeps for its own queue has no reader here.
+    /// </remarks>
+    private readonly struct RemovedPageInfo
     {
         internal readonly long Version;
         private readonly long removedPageInfo;
@@ -2563,8 +2566,6 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
             removedPageInfo = CreateRemovedPageInfo(pagePos, pinned, pageNo);
             Version = version;
         }
-
-        public int CompareTo(RemovedPageInfo? other) => Version.CompareTo(other!.Version);
 
         internal int GetPageChunkId() => DataUtils.GetPageChunkId(removedPageInfo);
 

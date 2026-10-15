@@ -278,14 +278,12 @@ public abstract class Chunk
         int pos = position;
         int take = Math.Min(buff.Length - pos, MaxHeaderLength);
         ReadOnlySpan<byte> data = buff.Slice(pos, take);
-        for (int i = 0; i < take; i++)
+        int newline = data.IndexOf((byte)'\n');
+        if (newline >= 0)
         {
-            if (data[i] == (byte)'\n')
-            {
-                // set the position to the start of the first page
-                position = pos + i + 1;
-                return Encoding.Latin1.GetString(data[..i]).Trim();
-            }
+            // set the position to the start of the first page
+            position = pos + newline + 1;
+            return Encoding.Latin1.GetString(data[..newline]).Trim();
         }
 
         throw DataUtils.NewMvStoreException(DataUtils.ErrorFileCorrupt, "Not a valid chunk header");

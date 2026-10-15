@@ -1215,7 +1215,9 @@ public abstract class Page<K, V> : IPage
         {
             int keyCount = GetKeyCount();
             children = CreateRefStorage(keyCount + 1);
-            long[] positions = new long[keyCount + 1];
+            // Bounded by KeysPerPage (tens of entries): a stack slot instead of a heap array
+            // for a buffer that only carries values from the first loop to the second.
+            Span<long> positions = stackalloc long[keyCount + 1];
             for (int i = 0; i <= keyCount; i++)
             {
                 positions[i] = BinaryPrimitives.ReadInt64BigEndian(buffer.Slice(position, 8).Span);
