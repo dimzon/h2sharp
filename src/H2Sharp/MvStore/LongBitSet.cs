@@ -32,6 +32,11 @@ internal sealed class LongBitSet
     /// <summary>
     /// One past the highest set bit, or zero when nothing is set.
     /// </summary>
+    /// <remarks>
+    /// Scanned, not delegated: clearing a range leaves trailing zero words behind without
+    /// shrinking the storage, and the helper reads the length off the last word, which would
+    /// then answer too far. Only a scan finds the highest bit that is actually set.
+    /// </remarks>
     internal int Length
     {
         get
@@ -76,13 +81,14 @@ internal sealed class LongBitSet
     /// <summary>
     /// Whether the bit at this position is set.
     /// </summary>
+    /// <remarks>
+    /// The arithmetic lives in <c>BitSetHelper</c>: one implementation for both the
+    /// occupancy sets and the transaction snapshots, so the two cannot disagree on what
+    /// a set bit is.
+    /// </remarks>
     /// <param name="index">the position</param>
     /// <returns>true when set</returns>
-    internal bool Get(int index)
-    {
-        int w = index >> 6;
-        return w < words.Length && (words[w] & (1L << (index & 63))) != 0;
-    }
+    internal bool Get(int index) => Tx.BitSetHelper.Get(words, index);
 
     /// <summary>
     /// Set every bit in a range, growing the set if it has to.
@@ -181,6 +187,10 @@ internal sealed class LongBitSet
     /// <summary>
     /// The first set bit at or after a position, or -1 when there is none.
     /// </summary>
+    /// <remarks>
+    /// The clamp stays here: the helper answers past-the-end callers, but a negative start
+    /// is this class's contract to normalize, not the helper's.
+    /// </remarks>
     /// <param name="from">where to start</param>
     /// <returns>the position, or -1</returns>
     internal int NextSetBit(int from)
@@ -190,32 +200,15 @@ internal sealed class LongBitSet
             from = 0;
         }
 
-        int w = from >> 6;
-        if (w >= words.Length)
-        {
-            return -1;
-        }
-
-        long word = words[w] & (-1L << (from & 63));
-        while (true)
-        {
-            if (word != 0)
-            {
-                return (w << 6) + BitOperations.TrailingZeroCount((ulong)word);
-            }
-
-            if (++w == words.Length)
-            {
-                return -1;
-            }
-
-            word = words[w];
-        }
+        return Tx.BitSetHelper.NextSetBit(words, from);
     }
 
     /// <summary>
     /// The first clear bit at or after a position, or -1 when everything from there on is set.
     /// </summary>
+    /// <remarks>
+    /// Same split as <see cref="NextSetBit"/>: the clamp is this class's, the scan is shared.
+    /// </remarks>
     /// <param name="from">where to start</param>
     /// <returns>the position, or -1</returns>
     internal int NextClearBit(int from)
@@ -225,20 +218,7 @@ internal sealed class LongBitSet
             from = 0;
         }
 
-        int w = from >> 6;
-        while (w < words.Length)
-        {
-            long word = ~words[w] & (-1L << (from & 63));
-            if (word != 0)
-            {
-                return (w << 6) + BitOperations.TrailingZeroCount((ulong)word);
-            }
-
-            from = (w + 1) << 6;
-            w++;
-        }
-
-        return from;
+        return Tx.BitSetHelper.NextClearBit(words, from);
     }
 
     /// <summary>

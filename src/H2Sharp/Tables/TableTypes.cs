@@ -845,13 +845,6 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
 }
 
 /// <summary>
-/// A snapshot of the visible rows, which is what a cost estimate is asked about.
-/// </summary>
-public interface MvccSnapshot
-{
-}
-
-/// <summary>
 /// A table of rows.
 /// </summary>
 public abstract class Table

@@ -25,7 +25,6 @@
  * a query, not API, and no caller outside the command layer has a plan to ask it for.
  */
 using System;
-using System.Collections;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Tables;
@@ -46,7 +45,7 @@ internal sealed class Optimizer
 
     private long startNs;
 
-    private BitArray? switched;
+    private bool[]? switched;
 
     //  possible plans for filters, if using brute force:
     //  1 filter 1 plan
@@ -231,7 +230,7 @@ internal sealed class Optimizer
 
             if (generateRandom)
             {
-                switched = new BitArray(filters.Length * filters.Length);
+                switched = new bool[filters.Length * filters.Length];
                 Array.Copy(filters, best, filters.Length);
                 ShuffleAll(best);
                 Array.Copy(best, list, filters.Length);
@@ -239,7 +238,7 @@ internal sealed class Optimizer
 
             if (TestPlan(list, isSelectCommand))
             {
-                switched = new BitArray(filters.Length * filters.Length);
+                switched = new bool[filters.Length * filters.Length];
                 Array.Copy(list, best, filters.Length);
             }
         }
@@ -298,12 +297,12 @@ internal sealed class Optimizer
             }
 
             int s = (a * f.Length) + b;
-            if (switched.Get(s))
+            if (switched[s])
             {
                 continue;
             }
 
-            switched.Set(s, true);
+            switched[s] = true;
             break;
         }
 

@@ -33,12 +33,6 @@ public abstract class TimeZoneProvider
     /// </summary>
     public static readonly TimeZoneProvider Utc = new Simple(0);
 
-    /// <summary>
-    /// The number of providers the name cache holds, a power of two because it is indexed by a
-    /// hash masked with its own size.
-    /// </summary>
-    private const int CacheSize = 64;
-
     private static volatile ConcurrentDictionary<string, TimeZoneProvider>? cache;
 
     /// <summary>
