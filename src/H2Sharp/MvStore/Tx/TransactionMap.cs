@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using H2Sharp.MvStore.Type;
 using H2Sharp.Values;
 
@@ -195,7 +196,7 @@ public sealed class TransactionMap<K, V>
     private long SizeAsLongRepeatableReadWithChanges()
     {
         long count = 0L;
-        var iterator = new RepeatableIterator<K, V, K>(this, null, null, false, false);
+        var iterator = new RepeatableIterator<K, V, K>(this, null, null, false);
         while (iterator.TryFetchNext(out _))
         {
             count++;
@@ -584,7 +585,7 @@ public sealed class TransactionMap<K, V>
     /// </summary>
     public KeyValuePair<K, V>? FirstEntry()
     {
-        var it = ChooseIterator<KeyValuePair<K, V>>(null, null, false, true);
+        var it = ChooseIterator<KeyValuePair<K, V>>(null, null, false);
         if (it.TryFetchNext(out KeyValuePair<K, V> value))
         {
             return value;
@@ -598,7 +599,7 @@ public sealed class TransactionMap<K, V>
     /// </summary>
     public K? FirstKey()
     {
-        var it = ChooseIterator<K>(null, null, false, false);
+        var it = ChooseIterator<K>(null, null, false);
         return it.TryFetchNext(out K value) ? value : default;
     }
 
@@ -607,7 +608,7 @@ public sealed class TransactionMap<K, V>
     /// </summary>
     public KeyValuePair<K, V>? LastEntry()
     {
-        var it = ChooseIterator<KeyValuePair<K, V>>(null, null, true, true);
+        var it = ChooseIterator<KeyValuePair<K, V>>(null, null, true);
         if (it.TryFetchNext(out KeyValuePair<K, V> value))
         {
             return value;
@@ -621,7 +622,7 @@ public sealed class TransactionMap<K, V>
     /// </summary>
     public K? LastKey()
     {
-        var it = ChooseIterator<K>(null, null, true, false);
+        var it = ChooseIterator<K>(null, null, true);
         return it.TryFetchNext(out K value) ? value : default;
     }
 
@@ -640,7 +641,7 @@ public sealed class TransactionMap<K, V>
     /// </summary>
     public KeyValuePair<K, V>? CeilingEntry(K key)
     {
-        var it = ChooseIterator<KeyValuePair<K, V>>((object?)key, null, false, true);
+        var it = ChooseIterator<KeyValuePair<K, V>>((object?)key, null, false);
         if (it.TryFetchNext(out KeyValuePair<K, V> value))
         {
             return value;
@@ -654,7 +655,7 @@ public sealed class TransactionMap<K, V>
     /// </summary>
     public K? CeilingKey(K key)
     {
-        var it = ChooseIterator<K>((object?)key, null, false, false);
+        var it = ChooseIterator<K>((object?)key, null, false);
         return it.TryFetchNext(out K value) ? value : default;
     }
 
@@ -663,7 +664,7 @@ public sealed class TransactionMap<K, V>
     /// </summary>
     public KeyValuePair<K, V>? FloorEntry(K key)
     {
-        var it = ChooseIterator<KeyValuePair<K, V>>((object?)key, null, true, true);
+        var it = ChooseIterator<KeyValuePair<K, V>>((object?)key, null, true);
         if (it.TryFetchNext(out KeyValuePair<K, V> value))
         {
             return value;
@@ -677,7 +678,7 @@ public sealed class TransactionMap<K, V>
     /// </summary>
     public K? FloorKey(K key)
     {
-        var it = ChooseIterator<K>((object?)key, null, true, false);
+        var it = ChooseIterator<K>((object?)key, null, true);
         return it.TryFetchNext(out K value) ? value : default;
     }
 
@@ -693,7 +694,7 @@ public sealed class TransactionMap<K, V>
 
     private KeyValuePair<K, V>? HigherLowerEntry(K key, bool lower)
     {
-        var it = ChooseIterator<KeyValuePair<K, V>>((object?)key, null, lower, true);
+        var it = ChooseIterator<KeyValuePair<K, V>>((object?)key, null, lower);
         KeyValuePair<K, V>? result = TryFetchEntry(it);
         if (result is not null && map.GetKeyType().Compare((object?)key, (object?)result.Value.Key) == 0)
         {
@@ -715,7 +716,7 @@ public sealed class TransactionMap<K, V>
 
     private K? HigherLowerKey(K key, bool lower)
     {
-        var it = ChooseIterator<K>((object?)key, null, lower, false);
+        var it = ChooseIterator<K>((object?)key, null, lower);
         K? result = it.TryFetchNext(out K first) ? first : default;
         if (map.GetKeyType().Compare((object?)key, (object?)result) == 0)
         {
@@ -729,25 +730,25 @@ public sealed class TransactionMap<K, V>
     /// Iterates keys from the first one. Bounds are objects: null is unbounded, and a
     /// default key is a real bound.
     /// </summary>
-    public TMIterator<K, V, K> KeyIterator(object? from) => ChooseIterator<K>(from, null, false, false);
+    public TMIterator<K, V, K> KeyIterator(object? from) => ChooseIterator<K>(from, null, false);
 
     /// <summary>
     /// Iterates keys in the given order.
     /// </summary>
     public TMIterator<K, V, K> KeyIterator(object? from, bool reverse)
-        => ChooseIterator<K>(from, null, reverse, false);
+        => ChooseIterator<K>(from, null, reverse);
 
     /// <summary>
     /// Iterates keys in a range.
     /// </summary>
     public TMIterator<K, V, K> KeyIterator(object? from, object? to)
-        => ChooseIterator<K>(from, to, false, false);
+        => ChooseIterator<K>(from, to, false);
 
     /// <summary>
     /// Iterates keys in a range and order.
     /// </summary>
     public TMIterator<K, V, K> KeyIterator(object? from, object? to, bool reverse)
-        => ChooseIterator<K>(from, to, reverse, false);
+        => ChooseIterator<K>(from, to, reverse);
 
     /// <summary>
     /// Iterates keys, including uncommitted entries.
@@ -759,32 +760,32 @@ public sealed class TransactionMap<K, V>
     /// Iterates entries in a range.
     /// </summary>
     public TMIterator<K, V, KeyValuePair<K, V>> EntryIterator(object? from, object? to)
-        => ChooseIterator<KeyValuePair<K, V>>(from, to, false, true);
+        => ChooseIterator<KeyValuePair<K, V>>(from, to, false);
 
     /// <summary>
     /// Iterates entries in a range and order.
     /// </summary>
     public TMIterator<K, V, KeyValuePair<K, V>> EntryIterator(object? from, object? to, bool reverse)
-        => ChooseIterator<KeyValuePair<K, V>>(from, to, reverse, true);
+        => ChooseIterator<KeyValuePair<K, V>>(from, to, reverse);
 
-    private TMIterator<K, V, X> ChooseIterator<X>(object? from, object? to, bool reverse, bool forEntries)
+    private TMIterator<K, V, X> ChooseIterator<X>(object? from, object? to, bool reverse)
     {
         switch (transaction.GetIsolationLevel())
         {
             case IsolationLevel.ReadUncommitted:
-                return new UncommittedIterator<K, V, X>(this, from, to, reverse, forEntries);
+                return new UncommittedIterator<K, V, X>(this, from, to, reverse);
             case IsolationLevel.RepeatableRead:
             case IsolationLevel.Snapshot:
             case IsolationLevel.Serializable:
                 if (hasChanges)
                 {
-                    return new RepeatableIterator<K, V, X>(this, from, to, reverse, forEntries);
+                    return new RepeatableIterator<K, V, X>(this, from, to, reverse);
                 }
 
                 goto case IsolationLevel.ReadCommitted;
             case IsolationLevel.ReadCommitted:
             default:
-                return new CommittedIterator<K, V, X>(this, from, to, reverse, forEntries);
+                return new CommittedIterator<K, V, X>(this, from, to, reverse);
         }
     }
 
@@ -804,14 +805,14 @@ public sealed class TransactionMap<K, V>
     private class UncommittedIterator<KK, VV, X> : TMIterator<KK, VV, X>
     {
         internal UncommittedIterator(TransactionMap<KK, VV> transactionMap, object? from, object? to,
-            bool reverse, bool forEntries)
-            : base(transactionMap, from, to, transactionMap.CreateSnapshot(), reverse, forEntries)
+            bool reverse)
+            : base(transactionMap, from, to, transactionMap.CreateSnapshot(), reverse)
         {
         }
 
         internal UncommittedIterator(TransactionMap<KK, VV> transactionMap, object? from, object? to,
-            Snapshot<object, VersionedValue<object>> snapshot, bool reverse, bool forEntries)
-            : base(transactionMap, from, to, snapshot, reverse, forEntries)
+            Snapshot<object, VersionedValue<object>> snapshot, bool reverse)
+            : base(transactionMap, from, to, snapshot, reverse)
         {
         }
 
@@ -842,7 +843,7 @@ public sealed class TransactionMap<K, V>
     private sealed class ValidationIterator<KK, VV, X> : UncommittedIterator<KK, VV, X>
     {
         internal ValidationIterator(TransactionMap<KK, VV> transactionMap, object? from, object? to)
-            : base(transactionMap, from, to, transactionMap.CreateSnapshot(), false, false)
+            : base(transactionMap, from, to, transactionMap.CreateSnapshot(), false)
         {
         }
 
@@ -863,8 +864,8 @@ public sealed class TransactionMap<K, V>
     private sealed class CommittedIterator<KK, VV, X> : TMIterator<KK, VV, X>
     {
         internal CommittedIterator(TransactionMap<KK, VV> transactionMap, object? from, object? to,
-            bool reverse, bool forEntries)
-            : base(transactionMap, from, to, transactionMap.GetSnapshot(), reverse, forEntries)
+            bool reverse)
+            : base(transactionMap, from, to, transactionMap.GetSnapshot(), reverse)
         {
         }
 
@@ -926,8 +927,8 @@ public sealed class TransactionMap<K, V>
         private object? uncommittedValue;
 
         internal RepeatableIterator(TransactionMap<KK, VV> transactionMap, object? from, object? to,
-            bool reverse, bool forEntries)
-            : base(transactionMap, from, to, transactionMap.GetSnapshot(), reverse, forEntries)
+            bool reverse)
+            : base(transactionMap, from, to, transactionMap.GetSnapshot(), reverse)
         {
             keyType = transactionMap.map.GetKeyType();
             Snapshot<object, VersionedValue<object>> snapshot = transactionMap.GetStatementSnapshot();
@@ -1064,21 +1065,27 @@ public sealed class TransactionMap<K, V>
         private X? peeked;
 
         internal TMIterator(TransactionMap<KK, VV> transactionMap, object? from, object? to,
-            Snapshot<object, VersionedValue<object>> snapshot, bool reverse, bool forEntries)
+            Snapshot<object, VersionedValue<object>> snapshot, bool reverse)
         {
             Transaction transaction = transactionMap.GetTransaction();
             transactionId = transaction.TransactionId;
-            this.forEntries = forEntries;
+            // Derived, not passed: an entries iterator always answers pairs, a keys iterator
+            // always answers keys. A mismatch between the flag and X used to be a silent
+            // reinterpretation of memory; now it cannot be expressed.
+            forEntries = typeof(X) == typeof(KeyValuePair<KK, VV>);
             cursor = transactionMap.map.Cursor(snapshot.Root, from, to, reverse);
             committingTransactions = snapshot.CommittingTransactions;
         }
 
         internal X ToElement(object key, object? value)
         {
-            object element = forEntries
-                ? new KeyValuePair<KK, VV>((KK)key!, (VV)value!)
-                : (object)(KK)key!;
-            return (X)element;
+            if (forEntries)
+            {
+                KeyValuePair<KK, VV> pair = new((KK)key!, (VV)value!);
+                return Unsafe.As<KeyValuePair<KK, VV>, X>(ref pair);
+            }
+
+            return (X)key;
         }
 
         /// <summary>
