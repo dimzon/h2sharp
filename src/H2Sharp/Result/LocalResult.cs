@@ -962,9 +962,10 @@ public class LocalResult : ResultInterface, ResultTarget
     /// <remarks>
     /// The reference hands the session itself to the TreeMap as its comparator, because a row is
     /// a value and the session is what knows how two values compare. It is the same rule here,
-    /// wrapped: the comparator cannot be the session itself, so it asks it.
+    /// wrapped: the comparator cannot be the session itself, so it asks it. Shared with the
+    /// group map, which must split rows exactly where DISTINCT merges them.
     /// </remarks>
-    private sealed class SessionRowComparer : IComparer<ValueRow>
+    internal sealed class SessionRowComparer : IComparer<ValueRow>
     {
         private readonly SessionLocal session;
 

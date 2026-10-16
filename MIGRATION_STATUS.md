@@ -4122,6 +4122,29 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### GROUP BY и HAVING бегают групповым путём
+
+Портировано grouped-выполнение: настоящий `SelectGroups` (группы в сортированном
+словаре поверх общего построчного компаратора — того же, что у DISTINCT, иначе
+группы и дедуп расходились бы в равенстве строк), блок групп в `Init`
+(индексы группировки с матчингом по SQL и алиасам, скрытые append'ы,
+`MergeGroupByExpressions`, флаги; ход HAVING), `gatherGroup`/`updateAgg`/
+`processGroupResult`/`constructGroupResultRow`/`initGroupData` в `Select`,
+ветка `QueryGroup` в `Run`, GROUP BY + HAVING в ридере (+ `SetGroupBy`;
+`SetHaving` уже был). Плюс `resultColumnCount` и обрезка строк (`RowForResult`,
+как в эталоне) — скрытые HAVING/GROUP-колонки едут внутри строк для сортировки
+и группировки, а наружу через `GetVisibleColumnCount` смотрят только видимые,
+ровно как JDBC-цикл по `getColumnCount`.
+
+Границы среза: позиционный GROUP BY отказывает (нужен несуществующий флаг
+`Mode.groupByColumnIndex`, а в regular он значит «константа», не «первая
+колонка» — угадывать нельзя); `SelectListColumnResolver` для HAVING по алиасам
+не портирован (HAVING над агрегатами маппится без него); `remove()` только из
+оконного пути. Пустая таблица: групп нет — строк нет, а COUNT(*) отвечает одной
+пустой группой с нулём, как в эталоне. Проверено: 8 GROUP BY/HAVING-оракулов
+против JDBC (ключи, WHERE, HAVING, ORDER BY поверх, пустая таблица) плюс отказы;
+`H2Sharp.Tests` **853 зелёных**.
+
 ### COUNT(*) бегает быстрым путём, остальные агрегаты ждут
 
 Портирована вертикаль COUNT: `AggregateType` целиком, `AggregateData` +

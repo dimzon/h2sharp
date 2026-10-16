@@ -73,11 +73,11 @@ public class Aggregate : AbstractAggregate
                     return new AggregateDataCount(false);
                 }
 
-                break;
+                throw new TODOException("Aggregate.createAggregateData: COUNT DISTINCT needs collecting");
+            default:
+                throw new TODOException(
+                    "Aggregate.createAggregateData: only COUNT is ported (type=" + aggregateType + ")");
         }
-
-        throw new TODOException(
-            "Aggregate.createAggregateData: only COUNT is ported (type=" + aggregateType + ")");
     }
 
     /// <inheritdoc/>
@@ -109,7 +109,7 @@ public class Aggregate : AbstractAggregate
     {
         if (aggregateType == AggregateType.Count && distinct)
         {
-            throw new TODOException("Aggregate.getAggregatedValue: COUNT DISTINCT needs the group path");
+            throw new TODOException("Aggregate.getAggregatedValue: COUNT DISTINCT needs collecting");
         }
 
         return ((AggregateData)aggregateData!).GetValue(session);

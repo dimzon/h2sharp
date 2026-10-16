@@ -29,6 +29,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Expressions.Analysis;
 using H2Sharp.Expressions.Conditions;
 using H2Sharp.Message;
 using H2Sharp.Expressions;
@@ -88,6 +89,24 @@ public sealed class Select : Query
     /// Where the grouping key columns land in the result, or null when nothing groups.
     /// </summary>
     private int[]? groupIndex = null;
+
+    /// <summary>
+    /// How many columns result rows carry: the visible columns plus the ORDER BY
+    /// appendages the sort still reads. HAVING and GROUP BY appendages never reach a
+    /// result row; the reference trims them at the same point.
+    /// </summary>
+    private int resultColumnCount;
+
+    /// <summary>
+    /// Which select expressions are grouping keys, by position.
+    /// </summary>
+    private bool[]? groupByExpression;
+
+    /// <summary>
+    /// For a select expression that repeats an earlier one, the earlier position; -2 for
+    /// an expression that is a source or has no copies. Null when nothing repeats.
+    /// </summary>
+    private int[]? groupByCopies;
 
     /// <summary>
     /// Where the HAVING clause moved in the select list, or -1 when there is none.
@@ -150,11 +169,11 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The order block of the reference's init: the select list snippets the order is
-    /// matched against, then the resolution of names to positions. The rest of init waits:
-    /// star expansion, the distinct indexes, the having and qualify moves, the grouping
-    /// indexes, and the column mapping pass — each needs machinery that is not here, and a
-    /// half-mapped select would answer wrong rows rather than refuse.
+    /// The order and group blocks of the reference's init: the select list snippets names
+    /// resolve against, then positions for ORDER BY and grouping indexes for GROUP BY, with
+    /// the HAVING move in between. Star expansion, the distinct indexes and the qualify move
+    /// wait: each needs machinery that is not here, and a half-mapped select would answer
+    /// wrong rows rather than refuse.
     /// </remarks>
     public override void Init()
     {
@@ -164,7 +183,7 @@ public sealed class Select : Query
         }
 
         List<string>? expressionSQL = null;
-        if (orderList is not null)
+        if (orderList is not null || groupBy is not null)
         {
             expressionSQL = new(visibleColumnCount);
             for (int i = 0; i < visibleColumnCount; i++)
@@ -177,6 +196,100 @@ public sealed class Select : Query
         if (orderList is not null)
         {
             _ = InitOrder(expressionSQL, IsAnyDistinct(), filters, expressions);
+        }
+
+        resultColumnCount = expressions.Count;
+
+        if (having is not null)
+        {
+            expressions.Add(having);
+            havingIndex = expressions.Count - 1;
+            having = null;
+        }
+        else
+        {
+            havingIndex = -1;
+        }
+
+        // first the select list (visible columns), then ORDER BY expressions,
+        // then HAVING expressions, and GROUP BY expressions at the end
+        if (groupBy is not null)
+        {
+            Database db = session.GetDatabase();
+            int size = groupBy.Count;
+            groupIndex = new int[size];
+            for (int i = 0; i < size; i++)
+            {
+                Expression expr = groupBy[i];
+                string sql = expr.GetSql(HasSql.DefaultSqlFlags, Expression.WithoutParentheses);
+                int found = -1;
+                for (int j = 0; j < visibleColumnCount; j++)
+                {
+                    if (db.EqualsIdentifiers(expressionSQL![j], sql))
+                    {
+                        found = MergeGroupByExpressions(db, j, expressionSQL, false);
+                        break;
+                    }
+                }
+
+                if (found < 0)
+                {
+                    // special case: GROUP BY a column alias
+                    for (int j = 0; j < visibleColumnCount; j++)
+                    {
+                        Expression e = expressions[j];
+                        if (db.EqualsIdentifiers(sql, e.GetAlias(session, j)))
+                        {
+                            found = MergeGroupByExpressions(db, j, expressionSQL!, true);
+                            break;
+                        }
+
+                        sql = expr.GetAlias(session, j);
+                        if (db.EqualsIdentifiers(sql, e.GetAlias(session, j)))
+                        {
+                            found = MergeGroupByExpressions(db, j, expressionSQL!, true);
+                            break;
+                        }
+                    }
+                }
+
+                if (found < 0)
+                {
+                    int index = expressions.Count;
+                    groupIndex[i] = index;
+                    expressions.Add(expr);
+                }
+                else
+                {
+                    groupIndex[i] = found;
+                }
+            }
+
+            if (groupByCopies is not null)
+            {
+                bool used = false;
+                foreach (int c in groupByCopies)
+                {
+                    if (c >= 0)
+                    {
+                        used = true;
+                        break;
+                    }
+                }
+
+                if (!used)
+                {
+                    groupByCopies = null;
+                }
+            }
+
+            groupByExpression = new bool[expressions.Count];
+            foreach (int gi in groupIndex)
+            {
+                groupByExpression[gi] = true;
+            }
+
+            groupBy = null;
         }
 
         // map columns in select list and condition
@@ -354,6 +467,68 @@ public sealed class Select : Query
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
         => throw new TODOException("Select.getPlanSQL: the plan is not built");
 
+    /// <summary>
+    /// Marks duplicate select expressions for the group walk: the first occurrence becomes
+    /// the source the copies read from.
+    /// </summary>
+    /// <remarks>
+    /// -1: uniqueness of expression is not known yet.
+    /// -2: expression that is used as a source for a copy or does not have copies.
+    /// >=0: expression is a copy of expression at this index.
+    /// </remarks>
+    /// <param name="db">the database</param>
+    /// <param name="index">the position of the expression</param>
+    /// <param name="expressionSQL">the select list snippets</param>
+    /// <param name="scanPrevious">whether expressions before this one may be identical</param>
+    /// <returns>the source position</returns>
+    private int MergeGroupByExpressions(Database db, int index, List<string> expressionSQL, bool scanPrevious)
+    {
+        if (groupByCopies is not null)
+        {
+            int c = groupByCopies[index];
+            if (c >= 0)
+            {
+                return c;
+            }
+            else if (c == -2)
+            {
+                return index;
+            }
+        }
+        else
+        {
+            groupByCopies = new int[expressionSQL.Count];
+            Array.Fill(groupByCopies, -1);
+        }
+
+        string sql = expressionSQL[index];
+        if (scanPrevious)
+        {
+            // If expression was matched using an alias previous expressions may
+            // be identical.
+            for (int i = 0; i < index; i++)
+            {
+                if (db.EqualsIdentifiers(sql, expressionSQL[i]))
+                {
+                    index = i;
+                    break;
+                }
+            }
+        }
+
+        int l = expressionSQL.Count;
+        for (int i = index + 1; i < l; i++)
+        {
+            if (db.EqualsIdentifiers(sql, expressionSQL[i]))
+            {
+                groupByCopies[i] = index;
+            }
+        }
+
+        groupByCopies[index] = -2;
+        return index;
+    }
+
     /// <inheritdoc/>
     /// <remarks>
     /// The visible columns, not the whole list: <see cref="Init"/> may append hidden ORDER
@@ -440,7 +615,7 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Flat and quick aggregate queries only: grouped, windowed, DISTINCT ON and locking
+    /// Flat, quick aggregate and grouped queries run; windowed, DISTINCT ON and locking
     /// shapes refuse below, each waiting for its own machinery. What runs here is the
     /// reference's flat path — skip the offset, fill the result, trim it — with lazy
     /// execution left out: every result here is materialized, and a lazy one would hand
@@ -450,17 +625,17 @@ public sealed class Select : Query
     /// </remarks>
     public override ResultInterface Run(long limit)
     {
-        if (groupBy is not null || windows is not null || isDistinct || forUpdate is not null
-            || (isGroupQuery && !isQuickAggregateQuery))
+        if (windows is not null || isDistinct || forUpdate is not null)
         {
-            throw new TODOException("Select.query: grouped, distinct on, windowed and locking queries are not ported");
+            throw new TODOException("Select.query: windowed, distinct on and locking queries are not ported");
         }
 
         long offset = this.offset;
         long fetch = limit >= 0 ? limit : this.limit;
         Expression[] array = expressionArray ?? [.. expressions];
         int columnCount = array.Length;
-        LocalResult result = new(session, array, visibleColumnCount, array.Length);
+        int resultWidth = resultColumnCount > 0 ? resultColumnCount : array.Length;
+        LocalResult result = new(session, array, visibleColumnCount, resultWidth);
         topTableFilter!.StartQuery(session);
         topTableFilter.Reset();
         topTableFilter.Lock(session);
@@ -485,6 +660,13 @@ public sealed class Select : Query
         {
             QueryQuick(array, result, columnCount, offset, fetch);
             offset = 0;
+        }
+        else if (isGroupQuery)
+        {
+            // Groups form after the walk, so the offset cannot be skipped up front: the
+            // result trims it after the sort, like the reference trims its own.
+            QueryGroup(result);
+            quickOffset = QuickOffset.No;
         }
         else
         {
@@ -529,11 +711,187 @@ public sealed class Select : Query
             Value?[] row = new Value?[columnCount];
             for (int i = 0; i < columnCount; i++)
             {
-                row[i] = array[i].GetValue(session);
+                row[i] = expressions[i].GetValue(session);
             }
 
-            result.AddRow(row);
+            result.AddRow(RowForResult(row));
         }
+    }
+
+    /// <summary>
+    /// Reads the grouped rows into the result: one pass accumulates the aggregates per
+    /// group key, another turns each group into a row.
+    /// </summary>
+    /// <param name="result">where the rows go</param>
+    private void QueryGroup(ResultTarget result)
+    {
+        int columnCount = expressions.Count;
+        InitGroupData(columnCount);
+        try
+        {
+            GatherGroup(columnCount);
+            ProcessGroupResult(result, columnCount);
+        }
+        finally
+        {
+            groupData!.Reset();
+        }
+    }
+
+    /// <summary>
+    /// Prepares the group data, reusing it across runs of the same prepared statement.
+    /// </summary>
+    /// <param name="columnCount">the number of columns</param>
+    private void InitGroupData(int columnCount)
+    {
+        if (groupData is null)
+        {
+            SetGroupData(SelectGroups.GetInstance(session, [.. expressions], isGroupQuery, groupIndex));
+        }
+        else
+        {
+            UpdateAgg(columnCount, DataAnalysisOperation.StageReset);
+        }
+
+        groupData!.Reset();
+    }
+
+    /// <summary>
+    /// Sets the group data this query walks.
+    /// </summary>
+    /// <remarks>
+    /// The reference also hands it to the filters of sub-selects; flat selects have none,
+    /// so only the field is set.
+    /// </remarks>
+    /// <param name="groupData">the group data</param>
+    private void SetGroupData(SelectGroups groupData) => this.groupData = groupData;
+
+    /// <summary>
+    /// Walks the table once, filing every surviving row into its group.
+    /// </summary>
+    /// <param name="columnCount">the number of columns</param>
+    private void GatherGroup(int columnCount)
+    {
+        long rowNumber = 0;
+        SetCurrentRowNumber(0);
+        while (topTableFilter!.Next())
+        {
+            SetCurrentRowNumber(rowNumber + 1);
+            if (IsConditionMet())
+            {
+                rowNumber++;
+                groupData!.NextSource();
+                UpdateAgg(columnCount, DataAnalysisOperation.StageGroup);
+            }
+        }
+
+        groupData!.Done();
+    }
+
+    /// <summary>
+    /// Update any aggregate expressions with the query stage.
+    /// </summary>
+    /// <param name="columnCount">the number of columns</param>
+    /// <param name="stage">the select stage</param>
+    private void UpdateAgg(int columnCount, int stage)
+    {
+        for (int i = 0; i < columnCount; i++)
+        {
+            if ((groupByExpression is null || !groupByExpression[i])
+                && (groupByCopies is null || groupByCopies[i] < 0))
+            {
+                Expression expr = expressions[i];
+                expr.UpdateAggregate(session, stage);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Turns each group into a result row, dropping the ones HAVING refuses.
+    /// </summary>
+    /// <param name="result">where the rows go</param>
+    /// <param name="columnCount">how many columns each row has</param>
+    private void ProcessGroupResult(ResultTarget result, int columnCount)
+    {
+        while (groupData!.Next() is ValueRow currentGroupsKey)
+        {
+            Value?[] row = ConstructGroupResultRow(currentGroupsKey.GetList(), columnCount);
+            if (IsHavingNullOrFalse(row))
+            {
+                continue;
+            }
+
+            result.AddRow(RowForResult(row));
+        }
+    }
+
+    /// <summary>
+    /// Whether the HAVING clause refuses this group row.
+    /// </summary>
+    /// <param name="row">the group row</param>
+    /// <returns>true when HAVING is present and not true</returns>
+    private bool IsHavingNullOrFalse(Value?[] row)
+        => havingIndex >= 0 && !row[havingIndex]!.IsTrue();
+
+    /// <summary>
+    /// Builds one group row: the key columns from the key, the rest by evaluation.
+    /// </summary>
+    /// <param name="keyValues">the group key values</param>
+    /// <param name="columnCount">how many columns the row has</param>
+    /// <returns>the row</returns>
+    private Value?[] ConstructGroupResultRow(Value?[] keyValues, int columnCount)
+    {
+        Value?[] row = new Value?[columnCount];
+        if (groupIndex is not null)
+        {
+            for (int i = 0, l = groupIndex.Length; i < l; i++)
+            {
+                row[groupIndex[i]] = keyValues[i];
+            }
+        }
+
+        for (int i = 0; i < columnCount; i++)
+        {
+            if (groupByExpression is not null && groupByExpression[i])
+            {
+                continue;
+            }
+
+            if (groupByCopies is not null)
+            {
+                int original = groupByCopies[i];
+                if (original >= 0)
+                {
+                    row[i] = row[original];
+                    continue;
+                }
+            }
+
+            row[i] = expressions[i].GetValue(session);
+        }
+
+        return row;
+    }
+
+    /// <summary>
+    /// Removes HAVING and GROUP BY appendages from the row.
+    /// </summary>
+    /// <remarks>
+    /// A select that never ran init keeps its rows whole: with no tracked width there is
+    /// nothing to trim to, and its rows are exactly what was built.
+    /// </remarks>
+    /// <param name="row">the complete row</param>
+    /// <returns>the same or the truncated row</returns>
+    private Value?[] RowForResult(Value?[] row)
+    {
+        if (resultColumnCount <= 0 || row.Length == resultColumnCount)
+        {
+            return row;
+        }
+
+        Value?[] kept = new Value?[resultColumnCount];
+        Array.Copy(row, kept, resultColumnCount);
+        return kept;
     }
 
     /// <summary>
@@ -881,7 +1239,7 @@ public sealed class Select : Query
     public SelectGroups? GetGroupDataIfCurrent(bool window)
     {
         SelectGroups? data = groupData;
-        if (data is not null && data.IsCurrentGroup(window))
+        if (data is not null && data.IsCurrentGroup())
         {
             return data;
         }

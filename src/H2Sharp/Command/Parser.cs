@@ -399,6 +399,37 @@ public sealed class Parser
             select.AddCondition(ReadQueryOr());
         }
 
+        if (CurrentType == ParserUtil.Group)
+        {
+            Read();
+            ExpectWord("BY");
+            select.SetGroupQuery();
+            List<Expressions.Expression> group = [];
+            do
+            {
+                // A bare number groups by position only where the mode says so, and the
+                // flag is not ported: in regular mode it groups by a constant instead,
+                // which is a guess this reader refuses to make either way.
+                if (Current.GetValue(provider) is Values.ValueInteger)
+                {
+                    throw new TODOException(
+                        "Parser.parseQuerySelect: GROUP BY position needs Mode.groupByColumnIndex");
+                }
+
+                group.Add(ReadQueryOr());
+            }
+            while (ReadIf(Token.Comma));
+
+            select.SetGroupBy(group);
+        }
+
+        if (CurrentType == ParserUtil.Having)
+        {
+            Read();
+            select.SetGroupQuery();
+            select.SetHaving(ReadQueryOr(select));
+        }
+
         if (CurrentType == ParserUtil.Order)
         {
             Read();
@@ -666,14 +697,15 @@ public sealed class Parser
     /// <summary>
     /// Reads an OR of ANDs, as the reference's precedence does.
     /// </summary>
-    private Expressions.Expression ReadQueryOr()
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    private Expressions.Expression ReadQueryOr(Query.Select? aggregateSelect = null)
     {
-        Expressions.Expression left = ReadQueryAnd();
+        Expressions.Expression left = ReadQueryAnd(aggregateSelect);
         while (CurrentType == ParserUtil.Or)
         {
             Read();
             left = new Expressions.Conditions.ConditionAndOr(
-                Expressions.Conditions.ConditionAndOr.Or, left, ReadQueryAnd());
+                Expressions.Conditions.ConditionAndOr.Or, left, ReadQueryAnd(aggregateSelect));
         }
 
         return left;
@@ -682,14 +714,15 @@ public sealed class Parser
     /// <summary>
     /// Reads an AND of comparisons.
     /// </summary>
-    private Expressions.Expression ReadQueryAnd()
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    private Expressions.Expression ReadQueryAnd(Query.Select? aggregateSelect = null)
     {
-        Expressions.Expression left = ReadQueryComparison();
+        Expressions.Expression left = ReadQueryComparison(aggregateSelect);
         while (CurrentType == ParserUtil.And)
         {
             Read();
             left = new Expressions.Conditions.ConditionAndOr(
-                Expressions.Conditions.ConditionAndOr.And, left, ReadQueryComparison());
+                Expressions.Conditions.ConditionAndOr.And, left, ReadQueryComparison(aggregateSelect));
         }
 
         return left;
@@ -698,14 +731,16 @@ public sealed class Parser
     /// <summary>
     /// Reads a comparison with an optional IS NULL tail.
     /// </summary>
-    private Expressions.Expression ReadQueryComparison()
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    private Expressions.Expression ReadQueryComparison(Query.Select? aggregateSelect = null)
     {
-        Expressions.Expression left = ReadQueryTerm();
+        Expressions.Expression left = ReadQueryTerm(aggregateSelect);
         while (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
             or Token.SmallerEqual or Token.BiggerEqual)
         {
             int compareType = ReadQueryComparisonType();
-            left = new Expressions.Conditions.Comparison(compareType, left, ReadQueryTerm(), whenOperand: false);
+            left = new Expressions.Conditions.Comparison(
+                compareType, left, ReadQueryTerm(aggregateSelect), whenOperand: false);
         }
 
         if (CurrentType == ParserUtil.Is)
@@ -742,11 +777,18 @@ public sealed class Parser
     /// Reads one operand: a parenthesized expression, a NOT, a literal, a parameter, or a
     /// column in name form.
     /// </summary>
-    private Expressions.Expression ReadQueryTerm()
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    private Expressions.Expression ReadQueryTerm(Query.Select? aggregateSelect = null)
     {
+        if (aggregateSelect is not null && IsWord("COUNT", consume: false)
+            && tokens[position + 1].TokenType == Token.OpenParen)
+        {
+            return ReadQueryAggregate(aggregateSelect);
+        }
+
         if (ReadIf(Token.OpenParen))
         {
-            Expressions.Expression nested = ReadQueryOr();
+            Expressions.Expression nested = ReadQueryOr(aggregateSelect);
             Expect(Token.CloseParen, ")");
             return nested;
         }
@@ -754,7 +796,7 @@ public sealed class Parser
         if (CurrentType == ParserUtil.Not)
         {
             Read();
-            return new Expressions.Conditions.ConditionNot(ReadQueryTerm());
+            return new Expressions.Conditions.ConditionNot(ReadQueryTerm(aggregateSelect));
         }
 
         if (CurrentType == ParserUtil.Null)
@@ -773,7 +815,7 @@ public sealed class Parser
         if (CurrentType == Token.MinusSign)
         {
             Read();
-            Expressions.Expression term = ReadQueryTerm();
+            Expressions.Expression term = ReadQueryTerm(aggregateSelect);
 
             // A negative literal is a literal: there is nothing in "-1" that needs a run.
             if (term is not Expressions.ValueExpression negated)
@@ -804,6 +846,14 @@ public sealed class Parser
 
         if (Current.AsIdentifier is not null)
         {
+            if (tokens[position + 1].TokenType == Token.OpenParen)
+            {
+                // A function call where only HAVING may aggregate: without the aggregate
+                // select this is a WHERE or GROUP BY key, and naming the function beats a
+                // syntax error about valid SQL.
+                throw new TODOException("Parser.parseQuerySelect: " + Current.AsIdentifier + " is not ported");
+            }
+
             return new Expressions.ExpressionColumn(ReadQueryColumnName(out string? tableAlias), tableAlias, 0);
         }
 

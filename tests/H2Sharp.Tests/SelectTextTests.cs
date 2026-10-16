@@ -34,6 +34,12 @@ namespace H2Sharp.Tests;
 public sealed class SelectTextTests
 {
     private static SessionLocal NewSession(out TransactionStore store, out Schemas.Schema schema)
+        => NewSeededSession(out store, out schema, seed: true);
+
+    private static SessionLocal NewEmptySession(out TransactionStore store)
+        => NewSeededSession(out store, out _, seed: false);
+
+    private static SessionLocal NewSeededSession(out TransactionStore store, out Schemas.Schema schema, bool seed)
     {
         SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_text")), "sa")
         {
@@ -58,10 +64,14 @@ public sealed class SelectTextTests
 
         table.AddIndex(session, "I", 7, [new IndexColumn(id, ascending: true)], 1,
             IndexType.CreatePrimaryKey(persistent: false, hash: false), create: true, indexComment: null);
-        table.AddRow(session, new DefaultRow([ValueInteger.Get(3), ValueVarchar.Get("c")]));
-        table.AddRow(session, new DefaultRow([ValueInteger.Get(1), ValueVarchar.Get("b")]));
-        table.AddRow(session, new DefaultRow([ValueInteger.Get(2), ValueVarchar.Get("b")]));
-        table.AddRow(session, new DefaultRow([ValueInteger.Get(4), ValueNull.Instance]));
+        if (seed)
+        {
+            table.AddRow(session, new DefaultRow([ValueInteger.Get(3), ValueVarchar.Get("c")]));
+            table.AddRow(session, new DefaultRow([ValueInteger.Get(1), ValueVarchar.Get("b")]));
+            table.AddRow(session, new DefaultRow([ValueInteger.Get(2), ValueVarchar.Get("b")]));
+            table.AddRow(session, new DefaultRow([ValueInteger.Get(4), ValueNull.Instance]));
+        }
+
         schema.Add(table);
         return session;
     }
@@ -70,13 +80,18 @@ public sealed class SelectTextTests
     {
         CommandContainer container = Assert.IsType<CommandContainer>(session.PrepareCommand(sql));
         ResultInterface result = container.Query(-1);
+        // Like JDBC's getColumnCount loop: hidden ORDER BY, HAVING and GROUP BY columns
+        // ride along inside the rows for the sort and the grouping, but only the visible
+        // ones are the answer.
+        int visible = result.GetVisibleColumnCount();
         List<string> rows = [];
         while (result.Next())
         {
             Value?[] row = result.CurrentRow();
             List<string> cells = [];
-            foreach (Value? value in row)
+            for (int i = 0; i < visible; i++)
             {
+                Value? value = row[i];
                 cells.Add(value is null or ValueNull ? "-" : value.GetString() ?? "-");
             }
 
@@ -263,6 +278,94 @@ public sealed class SelectTextTests
     }
 
     [JavaOracleFact]
+    public void CountNullableColumnCountsNonNull()
+    {
+        // NAME is nullable: the row count is not the answer, the grouped walk is.
+        CompareText("select_text_countnull", "SELECT COUNT(NAME) FROM T", ["=3"]);
+    }
+
+    [JavaOracleFact]
+    public void CountFilteredRows()
+    {
+        CompareText("select_text_countwhere", "SELECT COUNT(*) FROM T WHERE ID > 1", ["=3"]);
+    }
+
+    [JavaOracleFact]
+    public void GroupByNameCounts()
+    {
+        CompareText("select_text_group", "SELECT NAME, COUNT(*) FROM T GROUP BY NAME", ["=-:1", "=b:2", "=c:1"]);
+    }
+
+    [JavaOracleFact]
+    public void GroupByIdCounts()
+    {
+        CompareText("select_text_groupid", "SELECT ID, COUNT(*) FROM T GROUP BY ID", ["=1:1", "=2:1", "=3:1", "=4:1"]);
+    }
+
+    [JavaOracleFact]
+    public void GroupByWithWhere()
+    {
+        CompareText(
+            "select_text_groupwhere",
+            "SELECT NAME, COUNT(*) FROM T WHERE ID > 1 GROUP BY NAME",
+            ["=-:1", "=b:1", "=c:1"]);
+    }
+
+    [JavaOracleFact]
+    public void GroupByHaving()
+    {
+        CompareText(
+            "select_text_grouphaving",
+            "SELECT NAME, COUNT(*) FROM T GROUP BY NAME HAVING COUNT(*) > 1",
+            ["=b:2"]);
+    }
+
+    [JavaOracleFact]
+    public void GroupByOrderBy()
+    {
+        CompareText(
+            "select_text_grouporder",
+            "SELECT NAME, COUNT(*) FROM T GROUP BY NAME ORDER BY NAME DESC",
+            ["=c:1", "=b:2", "=-:1"]);
+    }
+
+    [Fact]
+    public void GroupByPositionWaitsForMode()
+    {
+        // A bare number groups by position only where the mode says so, and the flag is
+        // not ported: in regular mode it would group by a constant instead, which is a
+        // guess this reader refuses to make either way.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            TODOException e = Assert.Throws<TODOException>(
+                () => session.PrepareCommand("SELECT NAME, COUNT(*) FROM T GROUP BY 1"));
+            Assert.Contains("groupByColumnIndex", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void CountStarOverEmptyTable()
+    {
+        // No rows and no groups is still one empty group: COUNT(*) answers 0, and a
+        // GROUP BY over nothing answers no rows at all.
+        SessionLocal session = NewEmptySession(out TransactionStore store);
+        try
+        {
+            Assert.Equal(["=0"], RunText(session, "SELECT COUNT(*) FROM T"));
+            Assert.Equal([], RunText(session, "SELECT NAME, COUNT(*) FROM T GROUP BY NAME"));
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [JavaOracleFact]
     public void CountStarWithAlias()
     {
         CompareText("select_text_countas", "SELECT COUNT(*) AS C FROM T", ["=4"]);
@@ -281,43 +384,7 @@ public sealed class SelectTextTests
     }
 
     [Fact]
-    public void CountNullableColumnWaitsForGrouping()
-    {
-        // NAME is nullable: the row count is not the answer, grouped execution is, and it
-        // is not ported — the reference answers 3, this side refuses by name.
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            CommandContainer container = Assert.IsType<CommandContainer>(
-                session.PrepareCommand("SELECT COUNT(NAME) FROM T"));
-            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
-            Assert.Contains("grouped", e.Message);
-        }
-        finally
-        {
-            store.Dispose();
-        }
-    }
-
-    [Fact]
-    public void CountWithWhereWaitsForGrouping()
-    {
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            CommandContainer container = Assert.IsType<CommandContainer>(
-                session.PrepareCommand("SELECT COUNT(*) FROM T WHERE ID > 1"));
-            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
-            Assert.Contains("grouped", e.Message);
-        }
-        finally
-        {
-            store.Dispose();
-        }
-    }
-
-    [Fact]
-    public void CountDistinctWaitsForGrouping()
+    public void CountDistinctWaitsForCollecting()
     {
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
@@ -325,7 +392,7 @@ public sealed class SelectTextTests
             CommandContainer container = Assert.IsType<CommandContainer>(
                 session.PrepareCommand("SELECT COUNT(DISTINCT ID) FROM T"));
             TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
-            Assert.Contains("grouped", e.Message);
+            Assert.Contains("collecting", e.Message);
         }
         finally
         {
@@ -407,22 +474,6 @@ public sealed class SelectTextTests
                 numbers: null,
                 extraJavaArgs: ["-Duser.language=en"]);
             Assert.Equal(["ERR " + csharp.H2ErrorCode], java);
-        }
-        finally
-        {
-            store.Dispose();
-        }
-    }
-
-    [Fact]
-    public void GroupByWaitsForGrouping()
-    {
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT ID FROM T GROUP BY ID"));
-            Assert.Contains("not ported", e.Message);
         }
         finally
         {
