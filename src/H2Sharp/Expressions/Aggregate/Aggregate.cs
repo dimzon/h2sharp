@@ -68,15 +68,20 @@ public class Aggregate : AbstractAggregate
             case AggregateType.CountAll:
                 return new AggregateDataCount(true);
             case AggregateType.Count:
+            case AggregateType.Sum:
+            case AggregateType.Min:
+            case AggregateType.Max:
                 if (!distinct)
                 {
-                    return new AggregateDataCount(false);
+                    return aggregateType == AggregateType.Count
+                        ? new AggregateDataCount(false)
+                        : new AggregateDataDefault(aggregateType, type!);
                 }
 
-                throw new TODOException("Aggregate.createAggregateData: COUNT DISTINCT needs collecting");
+                throw new TODOException("Aggregate.createAggregateData: DISTINCT aggregates need collecting");
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT is ported (type=" + aggregateType + ")");
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN and MAX are ported (type=" + aggregateType + ")");
         }
     }
 
@@ -107,9 +112,9 @@ public class Aggregate : AbstractAggregate
     /// <inheritdoc/>
     protected override Value GetAggregatedValue(SessionLocal session, object? aggregateData)
     {
-        if (aggregateType == AggregateType.Count && distinct)
+        if (distinct)
         {
-            throw new TODOException("Aggregate.getAggregatedValue: COUNT DISTINCT needs collecting");
+            throw new TODOException("Aggregate.getAggregatedValue: DISTINCT aggregates need collecting");
         }
 
         return ((AggregateData)aggregateData!).GetValue(session);
@@ -144,14 +149,10 @@ public class Aggregate : AbstractAggregate
     /// <inheritdoc/>
     public override Expression Optimize(SessionLocal session)
     {
-        for (int i = 0; i < args.Length; i++)
+        base.Optimize(session);
+        if (args.Length == 1)
         {
-            args[i] = args[i].Optimize(session);
-        }
-
-        if (filterCondition is not null)
-        {
-            filterCondition = filterCondition.OptimizeCondition(session);
+            type = args[0].GetTypeInfo();
         }
 
         switch (aggregateType)
@@ -181,11 +182,61 @@ public class Aggregate : AbstractAggregate
             case AggregateType.CountAll:
                 type = TypeInfo.TypeBigint;
                 break;
+            case AggregateType.Sum:
+                type = GetSumType(type!) ?? throw Message.DbException.Get(
+                    Api.ErrorCode.SumOrAvgOnWrongDatatype1, GetTraceSql());
+                break;
+            case AggregateType.Min:
+            case AggregateType.Max:
+                break;
             default:
                 throw Message.DbException.GetInternalError("type=" + aggregateType);
         }
 
         return this;
+    }
+
+    /// <summary>
+    /// The additional result precision in decimal digits for a SUM aggregate function.
+    /// </summary>
+    private const int AdditionalSumPrecision = 10;
+
+    /// <summary>
+    /// The result type of a SUM over the argument type, or null when SUM makes no sense.
+    /// </summary>
+    /// <param name="type">the argument type</param>
+    /// <returns>the result type, or null</returns>
+    private static TypeInfo? GetSumType(TypeInfo type)
+    {
+        switch (type.GetValueType())
+        {
+            case Value.Boolean:
+            case Value.Tinyint:
+            case Value.Smallint:
+            case Value.Integer:
+                return TypeInfo.TypeBigint;
+            case Value.Bigint:
+                return TypeInfo.GetTypeInfo(
+                    Value.Numeric, ValueBigint.DecimalPrecision + AdditionalSumPrecision, -1, null);
+            case Value.Numeric:
+                return TypeInfo.GetTypeInfo(
+                    Value.Numeric, type.GetPrecision() + AdditionalSumPrecision, type.GetDeclaredScale(), null);
+            case Value.Real:
+                return TypeInfo.TypeDouble;
+            case Value.Double:
+                return TypeInfo.GetTypeInfo(
+                    Value.Decfloat, ValueDouble.DecimalPrecision + AdditionalSumPrecision, -1, null);
+            case Value.Decfloat:
+                return TypeInfo.GetTypeInfo(
+                    Value.Decfloat, type.GetPrecision() + AdditionalSumPrecision, -1, null);
+            default:
+                if (type.GetValueType() is >= Value.IntervalYear and <= Value.IntervalMinuteToSecond)
+                {
+                    throw new TODOException("Aggregate.getSumType: SUM over intervals is not ported");
+                }
+
+                return null;
+        }
     }
 
     /// <inheritdoc/>
@@ -251,12 +302,16 @@ public class Aggregate : AbstractAggregate
             return AppendTailConditions(builder.Append("COUNT(*)"), sqlFlags, false);
         }
 
-        if (aggregateType != AggregateType.Count)
+        string name = aggregateType switch
         {
-            throw Message.DbException.GetInternalError("type=" + aggregateType);
-        }
+            AggregateType.Count => "COUNT",
+            AggregateType.Sum => "SUM",
+            AggregateType.Min => "MIN",
+            AggregateType.Max => "MAX",
+            _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
+        };
 
-        _ = builder.Append(distinct ? "COUNT(DISTINCT " : "COUNT(");
+        _ = builder.Append(distinct ? name + "(DISTINCT " : name + "(");
         for (int i = 0; i < args.Length; i++)
         {
             if (i > 0)

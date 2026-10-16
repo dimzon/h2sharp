@@ -39,6 +39,39 @@ public sealed class SelectTextTests
     private static SessionLocal NewEmptySession(out TransactionStore store)
         => NewSeededSession(out store, out _, seed: false);
 
+    private static SessionLocal NewLongSession(out TransactionStore store)
+    {
+        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_long")), "sa")
+        {
+            CastDataProvider = new TestCastDataProvider(),
+            CompareMode = CompareMode.GetInstance(null, 0),
+        };
+
+        store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+
+        Schemas.Schema schema = new(session.GetDatabase(), 1, "PUBLIC", false);
+        session.GetDatabase().AddSchema(schema);
+
+        Column id = new("ID", TypeInfo.TypeInteger, null, 0);
+        id.SetNullable(false);
+        Column bigval = new("BIGVAL", TypeInfo.TypeBigint, null, 1);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T2", [id, bigval], store, persistData: false);
+        foreach (Column column in table.GetColumns())
+        {
+            column.SetTable(table, column.GetColumnId());
+        }
+
+        table.AddIndex(session, "I", 7, [new IndexColumn(id, ascending: true)], 1,
+            IndexType.CreatePrimaryKey(persistent: false, hash: false), create: true, indexComment: null);
+        table.AddRow(session, new DefaultRow([ValueInteger.Get(1), ValueBigint.Get(9223372036854775800L)]));
+        table.AddRow(session, new DefaultRow([ValueInteger.Get(2), ValueBigint.Get(-5)]));
+        table.AddRow(session, new DefaultRow([ValueInteger.Get(3), ValueNull.Instance]));
+        table.AddRow(session, new DefaultRow([ValueInteger.Get(4), ValueBigint.Get(7)]));
+        schema.Add(table);
+        return session;
+    }
+
     private static SessionLocal NewSeededSession(out TransactionStore store, out Schemas.Schema schema, bool seed)
     {
         SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_text")), "sa")
@@ -102,12 +135,16 @@ public sealed class SelectTextTests
     }
 
     private static List<string> RunJava(string dbName, string sql)
-    {
-        string setup = """
-            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:{DB}");
-            java.sql.Statement stat = conn.createStatement();
+        => RunJavaWithSetup(dbName, sql, """
             stat.execute("CREATE TABLE T(ID INT PRIMARY KEY, NAME VARCHAR)");
             stat.execute("INSERT INTO T VALUES (3, 'c'), (1, 'b'), (2, 'b'), (4, NULL)");
+            """);
+
+    private static List<string> RunJavaWithSetup(string dbName, string sql, string setup)
+    {
+        string head = """
+            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:{DB}");
+            java.sql.Statement stat = conn.createStatement();
             """.Replace("{DB}", dbName);
         string read = """
             java.sql.ResultSet rs = stat.executeQuery(inputs[0]);
@@ -127,7 +164,7 @@ public sealed class SelectTextTests
             """;
         return OracleRunner.Run(
             [sql],
-            setup + read,
+            head + setup + read,
             numbers: null,
             extraJavaArgs: ["-Duser.language=en"]);
     }
@@ -329,6 +366,110 @@ public sealed class SelectTextTests
             ["=c:1", "=b:2", "=-:1"]);
     }
 
+    [JavaOracleFact]
+    public void SumIds()
+    {
+        CompareText("select_text_sum", "SELECT SUM(ID) FROM T", ["=10"]);
+    }
+
+    [JavaOracleFact]
+    public void MinMaxName()
+    {
+        CompareText("select_text_minmax", "SELECT MIN(NAME), MAX(NAME) FROM T", ["=b:c"]);
+    }
+
+    [JavaOracleFact]
+    public void MinMaxId()
+    {
+        CompareText("select_text_minmaxid", "SELECT MIN(ID), MAX(ID) FROM T", ["=1:4"]);
+    }
+
+    [JavaOracleFact]
+    public void SumGroupBy()
+    {
+        CompareText(
+            "select_text_sumgroup", "SELECT NAME, SUM(ID) FROM T GROUP BY NAME", ["=-:4", "=b:3", "=c:3"]);
+    }
+
+    [Fact]
+    public void SumWrongTypeIsRefused()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            H2SharpException e = Assert.Throws<H2SharpException>(
+                () => session.PrepareCommand("SELECT SUM(NAME) FROM T"));
+            Assert.Equal(90015, e.H2ErrorCode);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void SumDistinctWaitsForCollecting()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            CommandContainer container = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("SELECT SUM(DISTINCT ID) FROM T"));
+            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
+            Assert.Contains("collecting", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [JavaOracleFact]
+    public void SumBigints()
+    {
+        SessionLocal session = NewLongSession(out TransactionStore store);
+        try
+        {
+            List<string> actual = RunText(session, "SELECT SUM(BIGVAL) FROM T2");
+            List<string> java = RunJavaWithSetup(
+                "select_text_sumlong",
+                "SELECT SUM(BIGVAL) FROM T2",
+                """
+                stat.execute("CREATE TABLE T2(ID INT PRIMARY KEY, BIGVAL BIGINT)");
+                stat.execute("INSERT INTO T2 VALUES (1, 9223372036854775800), (2, -5), (3, NULL), (4, 7)");
+                """);
+            Assert.Equal(["=9223372036854775802"], actual);
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [JavaOracleFact]
+    public void MinMaxBigints()
+    {
+        SessionLocal session = NewLongSession(out TransactionStore store);
+        try
+        {
+            List<string> actual = RunText(session, "SELECT MIN(BIGVAL), MAX(BIGVAL) FROM T2");
+            List<string> java = RunJavaWithSetup(
+                "select_text_minmaxlong",
+                "SELECT MIN(BIGVAL), MAX(BIGVAL) FROM T2",
+                """
+                stat.execute("CREATE TABLE T2(ID INT PRIMARY KEY, BIGVAL BIGINT)");
+                stat.execute("INSERT INTO T2 VALUES (1, 9223372036854775800), (2, -5), (3, NULL), (4, 7)");
+                """);
+            Assert.Equal(["=-5:9223372036854775800"], actual);
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
     [Fact]
     public void GroupByPositionWaitsForMode()
     {
@@ -482,16 +623,16 @@ public sealed class SelectTextTests
     }
 
     [Fact]
-    public void SumWaitsForAggregates()
+    public void AvgWaitsForAggregates()
     {
-        // COUNT runs since the quick aggregate path; every other aggregate refuses by name
-        // rather than misreading as a syntax error.
+        // COUNT, SUM, MIN and MAX run since their paths landed; every other aggregate
+        // refuses by name rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
             TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT SUM(ID) FROM T"));
-            Assert.Contains("SUM", e.Message);
+                () => session.PrepareCommand("SELECT AVG(ID) FROM T"));
+            Assert.Contains("AVG", e.Message);
         }
         finally
         {

@@ -316,10 +316,9 @@ public sealed class Parser
             do
             {
                 Expressions.Expression item;
-                if (IsWord("COUNT", consume: false)
-                    && tokens[position + 1].TokenType == Token.OpenParen)
+                if (IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType))
                 {
-                    item = ReadQueryAggregate(select);
+                    item = ReadQueryAggregate(select, aggregateType);
                 }
                 else if (IsNameToken() && tokens[position + 1].TokenType == Token.OpenParen)
                 {
@@ -619,22 +618,64 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads COUNT(*) or COUNT(expression): the only aggregate the engine runs.
+    /// Whether the current token names an aggregate this reader builds, without consuming it.
+    /// A name followed by anything else is a column that happens to share the spelling.
+    /// </summary>
+    /// <param name="aggregateType">the aggregate type, when this is a call</param>
+    /// <returns>true for a COUNT, SUM, MIN or MAX call</returns>
+    private bool IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType)
+    {
+        aggregateType = default;
+        string? name = Current.AsIdentifier;
+        if (name is null || tokens.Count <= position + 1
+            || tokens[position + 1].TokenType != Token.OpenParen)
+        {
+            return false;
+        }
+
+        if (name.Equals("COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Count;
+        }
+        else if (name.Equals("SUM", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Sum;
+        }
+        else if (name.Equals("MIN", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Min;
+        }
+        else if (name.Equals("MAX", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Max;
+        }
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Reads a COUNT, SUM, MIN or MAX call: the aggregates the engine runs.
     /// </summary>
     /// <remarks>
     /// The reference reads every aggregate name here and builds the matching type; only
-    /// COUNT is built, anything else never reaches this branch. DISTINCT and ALL spellings
-    /// follow the reference; FILTER and OVER wait for their machinery, and the select is
-    /// marked a group query the way readOver does.
+    /// these four are built, anything else never reaches this branch. DISTINCT and ALL
+    /// spellings follow the reference; FILTER and OVER wait for their machinery, and the
+    /// select is marked a group query the way readOver does.
     /// </remarks>
     /// <param name="select">the select being read</param>
+    /// <param name="aggregateType">the aggregate type</param>
     /// <returns>the aggregate</returns>
-    private Expressions.Aggregate.Aggregate ReadQueryAggregate(Query.Select select)
+    private Expressions.Aggregate.Aggregate ReadQueryAggregate(
+        Query.Select select, Expressions.Aggregate.AggregateType aggregateType)
     {
         Read();
         Expect(Token.OpenParen, "(");
         Expressions.Aggregate.Aggregate aggregate;
-        if (ReadIf(Token.Asterisk))
+        if (aggregateType == Expressions.Aggregate.AggregateType.Count && ReadIf(Token.Asterisk))
         {
             Expect(Token.CloseParen, ")");
             aggregate = new Expressions.Aggregate.Aggregate(
@@ -651,7 +692,7 @@ public sealed class Parser
             Expressions.Expression arg = ReadQueryOr();
             Expect(Token.CloseParen, ")");
             aggregate = new Expressions.Aggregate.Aggregate(
-                Expressions.Aggregate.AggregateType.Count, [arg], select, distinct);
+                aggregateType, [arg], select, distinct);
         }
 
         if (IsWord("FILTER", consume: false) || IsWord("OVER", consume: false))
@@ -780,10 +821,9 @@ public sealed class Parser
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     private Expressions.Expression ReadQueryTerm(Query.Select? aggregateSelect = null)
     {
-        if (aggregateSelect is not null && IsWord("COUNT", consume: false)
-            && tokens[position + 1].TokenType == Token.OpenParen)
+        if (aggregateSelect is not null && IsAggregateCall(out Expressions.Aggregate.AggregateType havingAggregate))
         {
-            return ReadQueryAggregate(aggregateSelect);
+            return ReadQueryAggregate(aggregateSelect, havingAggregate);
         }
 
         if (ReadIf(Token.OpenParen))
