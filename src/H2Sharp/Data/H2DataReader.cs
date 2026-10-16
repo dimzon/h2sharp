@@ -20,6 +20,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -228,37 +229,265 @@ public sealed class H2DataReader : DbDataReader
     }
 
     /// <inheritdoc/>
-    public override bool GetBoolean(int ordinal) => Get<bool>(ordinal);
+    /// <remarks>
+    /// Each getter converts from the cell, never through a boxed value: widening and
+    /// narrowing go through the <see cref="Convert"/> primitive overloads, so a long that
+    /// does not fit still overflows rather than truncating, exactly as the boxed road did.
+    /// Strings parse the way they did, and anything else refuses.
+    /// </remarks>
+    public override bool GetBoolean(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Boolean");
+        }
+
+        if (cell.GetValueType() == Value.Boolean)
+        {
+            return cell.GetBoolean();
+        }
+
+        if (cell.GetValueType() is Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob)
+        {
+            return Convert.ToBoolean(cell.GetString(), CultureInfo.InvariantCulture);
+        }
+
+        throw new InvalidCastException(
+            "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Boolean");
+    }
 
     /// <inheritdoc/>
-    public override byte GetByte(int ordinal) => Get<byte>(ordinal);
+    public override byte GetByte(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Byte");
+        }
+
+        return cell.GetValueType() switch
+        {
+            Value.Tinyint or Value.Smallint or Value.Integer => Convert.ToByte(cell.GetInt()),
+            Value.Bigint => Convert.ToByte(cell.GetLong()),
+            Value.Real => Convert.ToByte(cell.GetFloat()),
+            Value.Double => Convert.ToByte(cell.GetDouble()),
+            Value.Numeric or Value.Decfloat => Convert.ToByte(H2ValueMapper.ToDecimal(cell)),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+                => Convert.ToByte(cell.GetString(), CultureInfo.InvariantCulture),
+            _ => throw new InvalidCastException(
+                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Byte"),
+        };
+    }
 
     /// <inheritdoc/>
-    public override char GetChar(int ordinal) => Get<char>(ordinal);
+    public override char GetChar(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Char");
+        }
+
+        string text = GetString(ordinal);
+        if (text.Length == 1)
+        {
+            return text[0];
+        }
+
+        throw new InvalidCastException("Cannot read column " + ordinal + " as Char");
+    }
 
     /// <inheritdoc/>
-    public override DateTime GetDateTime(int ordinal) => Get<DateTime>(ordinal);
+    public override DateTime GetDateTime(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as DateTime");
+        }
+
+        object? value = H2ValueMapper.ToObject(cell);
+        if (value is DateTime dateTime)
+        {
+            return dateTime;
+        }
+
+        if (value is string text)
+        {
+            return Convert.ToDateTime(text, CultureInfo.InvariantCulture);
+        }
+
+        throw new InvalidCastException(
+            "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as DateTime");
+    }
 
     /// <inheritdoc/>
-    public override decimal GetDecimal(int ordinal) => Get<decimal>(ordinal);
+    public override decimal GetDecimal(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Decimal");
+        }
+
+        return cell.GetValueType() switch
+        {
+            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
+            Value.Bigint => cell.GetLong(),
+            Value.Real => Convert.ToDecimal(cell.GetFloat()),
+            Value.Double => Convert.ToDecimal(cell.GetDouble()),
+            Value.Numeric or Value.Decfloat => H2ValueMapper.ToDecimal(cell),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+                => Convert.ToDecimal(cell.GetString(), CultureInfo.InvariantCulture),
+            _ => throw new InvalidCastException(
+                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Decimal"),
+        };
+    }
 
     /// <inheritdoc/>
-    public override double GetDouble(int ordinal) => Get<double>(ordinal);
+    public override double GetDouble(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Double");
+        }
+
+        return cell.GetValueType() switch
+        {
+            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
+            Value.Bigint => cell.GetLong(),
+            Value.Real => cell.GetFloat(),
+            Value.Double => cell.GetDouble(),
+            Value.Numeric or Value.Decfloat => Convert.ToDouble(H2ValueMapper.ToDecimal(cell)),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+                => Convert.ToDouble(cell.GetString(), CultureInfo.InvariantCulture),
+            _ => throw new InvalidCastException(
+                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Double"),
+        };
+    }
 
     /// <inheritdoc/>
-    public override float GetFloat(int ordinal) => Get<float>(ordinal);
+    public override float GetFloat(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Single");
+        }
+
+        return cell.GetValueType() switch
+        {
+            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
+            Value.Bigint => cell.GetLong(),
+            Value.Real => cell.GetFloat(),
+            Value.Double => Convert.ToSingle(cell.GetDouble()),
+            Value.Numeric or Value.Decfloat => Convert.ToSingle(H2ValueMapper.ToDecimal(cell)),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+                => Convert.ToSingle(cell.GetString(), CultureInfo.InvariantCulture),
+            _ => throw new InvalidCastException(
+                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Single"),
+        };
+    }
 
     /// <inheritdoc/>
-    public override Guid GetGuid(int ordinal) => Get<Guid>(ordinal);
+    public override Guid GetGuid(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Guid");
+        }
+
+        if (cell.GetValueType() == Value.Uuid)
+        {
+            return ((ValueUuid)cell).GetUuid();
+        }
+
+        if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob
+            && cell.GetBytes() is byte[] bytes && bytes.Length == 16)
+        {
+            return new Guid(bytes);
+        }
+
+        if (cell.GetValueType() is Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob)
+        {
+            return Guid.Parse(cell.GetString()!);
+        }
+
+        throw new InvalidCastException(
+            "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Guid");
+    }
 
     /// <inheritdoc/>
-    public override short GetInt16(int ordinal) => Get<short>(ordinal);
+    public override short GetInt16(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Int16");
+        }
+
+        return cell.GetValueType() switch
+        {
+            Value.Tinyint or Value.Smallint or Value.Integer => Convert.ToInt16(cell.GetInt()),
+            Value.Bigint => Convert.ToInt16(cell.GetLong()),
+            Value.Real => Convert.ToInt16(cell.GetFloat()),
+            Value.Double => Convert.ToInt16(cell.GetDouble()),
+            Value.Numeric or Value.Decfloat => Convert.ToInt16(H2ValueMapper.ToDecimal(cell)),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+                => Convert.ToInt16(cell.GetString(), CultureInfo.InvariantCulture),
+            _ => throw new InvalidCastException(
+                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Int16"),
+        };
+    }
 
     /// <inheritdoc/>
-    public override int GetInt32(int ordinal) => Get<int>(ordinal);
+    public override int GetInt32(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Int32");
+        }
+
+        return cell.GetValueType() switch
+        {
+            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
+            Value.Bigint => Convert.ToInt32(cell.GetLong()),
+            Value.Real => Convert.ToInt32(cell.GetFloat()),
+            Value.Double => Convert.ToInt32(cell.GetDouble()),
+            Value.Numeric or Value.Decfloat => Convert.ToInt32(H2ValueMapper.ToDecimal(cell)),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+                => Convert.ToInt32(cell.GetString(), CultureInfo.InvariantCulture),
+            _ => throw new InvalidCastException(
+                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Int32"),
+        };
+    }
 
     /// <inheritdoc/>
-    public override long GetInt64(int ordinal) => Get<long>(ordinal);
+    public override long GetInt64(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Int64");
+        }
+
+        return cell.GetValueType() switch
+        {
+            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
+            Value.Bigint => cell.GetLong(),
+            Value.Real => Convert.ToInt64(cell.GetFloat()),
+            Value.Double => Convert.ToInt64(cell.GetDouble()),
+            Value.Numeric or Value.Decfloat => Convert.ToInt64(H2ValueMapper.ToDecimal(cell)),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+                => Convert.ToInt64(cell.GetString(), CultureInfo.InvariantCulture),
+            _ => throw new InvalidCastException(
+                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Int64"),
+        };
+    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -281,14 +510,26 @@ public sealed class H2DataReader : DbDataReader
     /// <inheritdoc/>
     public override long GetBytes(int ordinal, long fieldOffset, byte[]? buffer, int bufferOffset, int length)
     {
-        byte[] bytes = Get<byte[]>(ordinal);
-        return CopySlice(bytes, fieldOffset, buffer, bufferOffset, length);
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as Byte[]");
+        }
+
+        if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob
+            && cell.GetBytes() is byte[] bytes)
+        {
+            return CopySlice(bytes, fieldOffset, buffer, bufferOffset, length);
+        }
+
+        throw new InvalidCastException(
+            "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Byte[]");
     }
 
     /// <inheritdoc/>
     public override long GetChars(int ordinal, long fieldOffset, char[]? buffer, int bufferOffset, int length)
     {
-        char[] chars = Get<string>(ordinal).ToCharArray();
+        char[] chars = GetString(ordinal).ToCharArray();
         return CopySlice(chars, fieldOffset, buffer, bufferOffset, length);
     }
 
@@ -487,96 +728,6 @@ public sealed class H2DataReader : DbDataReader
 
         return table;
     }
-
-    private T Get<T>(int ordinal)
-        where T : notnull
-    {
-        if (typeof(T) == typeof(string))
-        {
-            return (T)(object)GetString(ordinal);
-        }
-
-        object? value = GetValue(ordinal);
-        if (value is T matched)
-        {
-            return matched;
-        }
-
-        if (value is DBNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as " + typeof(T).Name);
-        }
-
-        // A string parses into whatever it spells: Guid, timestamps, numbers, booleans.
-        if (value is string text)
-        {
-            return ParseString<T>(text, ordinal);
-        }
-
-        // Numbers widen and narrow with overflow checks; anything else converts only
-        // when the pair is exact below.
-        if (value is IConvertible && IsNumericType(typeof(T)) && IsNumericType(value.GetType()))
-        {
-            try
-            {
-                return (T)Convert.ChangeType(value, typeof(T), null);
-            }
-            catch (Exception e) when (e is OverflowException or FormatException)
-            {
-                throw new InvalidCastException(
-                    "Cannot read " + value.GetType().Name + " as " + typeof(T).Name, e);
-            }
-        }
-
-        if (typeof(T) == typeof(Guid) && value is byte[] bytes && bytes.Length == 16)
-        {
-            return (T)(object)new Guid(bytes);
-        }
-
-        if (typeof(T) == typeof(byte[]) && value is Guid guid)
-        {
-            return (T)(object)guid.ToByteArray();
-        }
-
-        if (typeof(T) == typeof(DateTimeOffset) && value is DateTime dateTime)
-        {
-            return (T)(object)new DateTimeOffset(dateTime);
-        }
-
-        throw new InvalidCastException(
-            "Cannot read " + value!.GetType().Name + " as " + typeof(T).Name);
-    }
-
-    private static T ParseString<T>(string text, int ordinal)
-    {
-        try
-        {
-            if (typeof(T) == typeof(Guid))
-            {
-                return (T)(object)Guid.Parse(text);
-            }
-
-            if (typeof(T) == typeof(DateTimeOffset))
-            {
-                return (T)(object)DateTimeOffset.Parse(
-                    text, System.Globalization.CultureInfo.InvariantCulture);
-            }
-
-            return (T)Convert.ChangeType(
-                text, typeof(T), System.Globalization.CultureInfo.InvariantCulture);
-        }
-        catch (Exception e) when (e is FormatException || e is OverflowException
-            || e is InvalidCastException)
-        {
-            throw new InvalidCastException(
-                "Cannot read column " + ordinal + " as " + typeof(T).Name, e);
-        }
-    }
-
-    private static bool IsNumericType(Type type)
-        => type == typeof(sbyte) || type == typeof(byte) || type == typeof(short)
-            || type == typeof(int) || type == typeof(long) || type == typeof(float)
-            || type == typeof(double) || type == typeof(decimal);
 
     private static long CopySlice<T>(
         T[] source, long fieldOffset, T[]? buffer, int bufferOffset, int length)

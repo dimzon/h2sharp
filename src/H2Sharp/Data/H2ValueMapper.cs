@@ -67,8 +67,7 @@ internal static class H2ValueMapper
             BigInteger bi => ValueNumeric.Get(new BigDecimal(bi, 0)),
             float f => ValueReal.Get(f),
             double d => ValueDouble.Get(d),
-            decimal m => ValueNumeric.Get(BigDecimal.Parse(
-                m.ToString(CultureInfo.InvariantCulture))),
+            decimal m => ValueNumeric.Get(FromDecimal(m)),
             char c => ValueChar.Get(c.ToString()),
             string s => ValueVarchar.Get(s),
             byte[] bytes => ValueVarbinary.Get(bytes),
@@ -230,7 +229,27 @@ internal static class H2ValueMapper
     private static DateTime ToDateTime(int year, int month, int day, long nanos)
         => new DateTime(year, month, day).AddTicks(nanos / 100L);
 
-    private static decimal ToDecimal(Value value)
+    /// <summary>
+    /// Builds a BigDecimal out of a decimal, bit for bit: the 96-bit integer plus the
+    /// scale ride along unchanged, so no precision is lost and none is invented.
+    /// </summary>
+    /// <param name="value">the decimal</param>
+    /// <returns>the BigDecimal with the same value</returns>
+    private static BigDecimal FromDecimal(decimal value)
+    {
+        int[] bits = decimal.GetBits(value);
+        BigInteger unscaled = new BigInteger((uint)bits[0])
+            | (new BigInteger((uint)bits[1]) << 32)
+            | (new BigInteger((uint)bits[2]) << 64);
+        if ((bits[3] & int.MinValue) != 0)
+        {
+            unscaled = BigInteger.Negate(unscaled);
+        }
+
+        return new BigDecimal(unscaled, (bits[3] >> 16) & 0xFF);
+    }
+
+    internal static decimal ToDecimal(Value value)
     {
         if (value is ValueDecfloat decfloat && !decfloat.IsFinite())
         {
@@ -238,8 +257,79 @@ internal static class H2ValueMapper
                 "Cannot read " + value.GetString() + " as Decimal");
         }
 
-        return decimal.Parse(
-            value.GetBigDecimal().ToPlainString(), CultureInfo.InvariantCulture);
+        return ToDecimalExact(value.GetBigDecimal());
+    }
+
+    /// <summary>
+    /// Builds a decimal out of a BigDecimal, exactly or not at all: a scale above 28 with
+    /// significant digits past it, or 96 bits that do not fit, refuse with OverflowException
+    /// rather than rounding quietly. Trailing zeros strip first, so a whole value with a
+    /// wide scale reads fine.
+    /// </summary>
+    /// <param name="value">the BigDecimal</param>
+    /// <returns>the decimal with the same value</returns>
+    private static decimal ToDecimalExact(BigDecimal value)
+    {
+        BigInteger unscaled = value.UnscaledValue;
+        int scale = value.Scale;
+        if (unscaled.IsZero)
+        {
+            return decimal.Zero;
+        }
+
+        bool negative = unscaled.Sign < 0;
+        if (negative)
+        {
+            unscaled = BigInteger.Negate(unscaled);
+        }
+
+        while (scale < 0)
+        {
+            unscaled *= 10;
+            scale++;
+        }
+
+        while (scale > 28 && unscaled % 10 == BigInteger.Zero)
+        {
+            unscaled /= 10;
+            scale--;
+        }
+
+        if (scale > 28)
+        {
+            throw new OverflowException(
+                "Cannot read " + value.ToPlainString() + " as Decimal: scale " + scale + " exceeds 28");
+        }
+
+        byte[] bytes = unscaled.ToByteArray();
+        if (bytes.Length > 1 && bytes[^1] == 0)
+        {
+            // The sign byte ToByteArray appends when the top bit is set: minimal form
+            // never carries two of them, so one strip is exact.
+            bytes = bytes[..^1];
+        }
+
+        if (bytes.Length > 12)
+        {
+            throw new OverflowException(
+                "Cannot read " + value.ToPlainString() + " as Decimal: out of range");
+        }
+
+        uint lo = Word(bytes, 0);
+        uint mid = Word(bytes, 4);
+        uint hi = Word(bytes, 8);
+        return new decimal(unchecked((int)lo), unchecked((int)mid), unchecked((int)hi), negative, (byte)scale);
+    }
+
+    private static uint Word(byte[] bytes, int offset)
+    {
+        uint word = 0;
+        for (int i = 0; i < 4 && offset + i < bytes.Length; i++)
+        {
+            word |= (uint)bytes[offset + i] << (8 * i);
+        }
+
+        return word;
     }
 
     private static ValueInterval FromTimeSpan(TimeSpan span)
