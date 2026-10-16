@@ -14,6 +14,7 @@
  * it would lose the type the caller wants to catch.
  */
 using System;
+using System.Buffers;
 using System.IO;
 using System.Text;
 using H2Sharp.Engine;
@@ -289,19 +290,30 @@ public static class IOUtils
                 length = int.MaxValue;
             }
 
-            StringBuilder text = new();
-            char[] buffer = new char[(int)Math.Min(Constants.IoBufferSize, length)];
-            while (length > 0)
+            // Sized from the length when it is known: a builder that starts at 16 doubles
+            // its way up, copying everything so far on each growth. The cap keeps a lying
+            // length from preallocating the world; the buffer rents for the same reason the
+            // map string reader rents its characters.
+            StringBuilder text = new(Math.Min(length, 16 * Constants.IoBufferSize));
+            char[] buffer = ArrayPool<char>.Shared.Rent(Math.Min(Constants.IoBufferSize, length));
+            try
             {
-                int want = (int)Math.Min(buffer.Length, length);
-                int read = reader.Read(buffer, 0, want);
-                if (read <= 0)
+                while (length > 0)
                 {
-                    break;
-                }
+                    int want = Math.Min(buffer.Length, length);
+                    int read = reader.Read(buffer, 0, want);
+                    if (read <= 0)
+                    {
+                        break;
+                    }
 
-                _ = text.Append(buffer, 0, read);
-                length -= read;
+                    _ = text.Append(buffer, 0, read);
+                    length -= read;
+                }
+            }
+            finally
+            {
+                ArrayPool<char>.Shared.Return(buffer);
             }
 
             return text.ToString();

@@ -976,9 +976,10 @@ public class LocalResult : ResultInterface, ResultTarget
 
         public int Compare(ValueRow? x, ValueRow? y)
         {
-            ArgumentNullException.ThrowIfNull(x);
-            ArgumentNullException.ThrowIfNull(y);
-            return session.Compare(x, y);
+            // No null checks: keys come from ValueRow.Get, which never answers null, and
+            // neither map ever stores one. Java forbids null keys by contract; the same
+            // rule holds here, without paying for it on every comparison.
+            return session.Compare(x!, y!);
         }
     }
 }

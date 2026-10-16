@@ -27,6 +27,8 @@ public sealed class DualTable : Table
 
     private readonly DualIndex scanIndex;
 
+    private readonly Index[] indexes;
+
     /// <summary>
     /// Creates a DUAL table.
     /// </summary>
@@ -35,6 +37,7 @@ public sealed class DualTable : Table
     {
         this.database = database;
         scanIndex = new DualIndex(this);
+        indexes = [scanIndex];
     }
 
     /// <inheritdoc/>
@@ -57,7 +60,10 @@ public sealed class DualTable : Table
     public override Index? GetScanIndex(SessionLocal session) => scanIndex;
 
     /// <inheritdoc/>
-    public override Index[] GetIndexes() => [scanIndex];
+    /// <remarks>
+    /// The one array, shared: this table never gains an index, so no copy guards anything.
+    /// </remarks>
+    public override Index[] GetIndexes() => indexes;
 
     /// <inheritdoc/>
     public override Index? GetPrimaryKey() => null;

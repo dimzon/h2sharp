@@ -1494,7 +1494,11 @@ public sealed class Tokenizer
 
     private static int ReadBinaryString(string sql, int tokenStart, int end, int i, List<Token> tokens)
     {
-        ArrayBufferWriter<byte> result = new();
+        // Sized from the first segment: two hex characters make a byte, so a literal
+        // longer than the 256-byte default stops paying growth for the predictable part.
+        // Continued ''-segments still grow it, and the final ToArray still copies once.
+        int firstEnd = sql.IndexOf('\'', i + 1);
+        ArrayBufferWriter<byte> result = new(Math.Max(1, (firstEnd < 0 ? end - i : firstEnd - i) / 2));
         int stringEnd;
         do
         {

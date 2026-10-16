@@ -1211,12 +1211,16 @@ public abstract class Page<K, V> : IPage
             return childPage.GetAppendCursorPos(new CursorPos<K, V>(this, keyCount, cursorPos));
         }
 
+        [SkipLocalsInit]
         protected override void ReadPayLoad(ReadOnlyMemory<byte> buffer, ref int position, int end)
         {
             int keyCount = GetKeyCount();
             children = CreateRefStorage(keyCount + 1);
             // Bounded by KeysPerPage (tens of entries): a stack slot instead of a heap array
             // for a buffer that only carries values from the first loop to the second.
+            // Uninitialized on purpose: every slot is written above before anything reads
+            // below, so zeroing it first would only cost a memset. No AggressiveInlining:
+            // this is a virtual override, and the JIT does not inline through dispatch.
             Span<long> positions = stackalloc long[keyCount + 1];
             for (int i = 0; i <= keyCount; i++)
             {

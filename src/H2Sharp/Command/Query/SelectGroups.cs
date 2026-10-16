@@ -58,13 +58,20 @@ public abstract class SelectGroups
             : base(session, expressions)
         {
             this.groupIndex = groupIndex;
+            groupComparer = new LocalResult.SessionRowComparer(session);
         }
+
+        /// <summary>
+        /// The row comparer, built once: it depends only on the session, so rebuilding it
+        /// on every run pays per execution for something that never changes.
+        /// </summary>
+        private readonly LocalResult.SessionRowComparer groupComparer;
 
         /// <inheritdoc/>
         public override void Reset()
         {
             base.Reset();
-            groupByData = new SortedDictionary<ValueRow, object?[]>(new LocalResult.SessionRowComparer(session));
+            groupByData = new SortedDictionary<ValueRow, object?[]>(groupComparer);
             currentGroupsKey = null;
             cursor = null;
         }

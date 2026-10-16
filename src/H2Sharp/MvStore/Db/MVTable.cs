@@ -235,12 +235,15 @@ public sealed class MVTable : Table
     /// <remarks>
     /// A snapshot, not the live list: the port widened the reference's list answer to an
     /// array, and handing the list itself out would let callers add or drop indexes behind
-    /// the table's back. See <see cref="indexes"/> for who writes it.
+    /// the table's back. The snapshot is cached and rebuilt when an index is added, so the
+    /// planner stops paying a copy per candidate.
     /// </remarks>
     public override Index[] GetIndexes()
     {
-        return indexes.ToArray();
+        return indexCache ??= [.. indexes];
     }
+
+    private Index[]? indexCache;
 
     /// <summary>
     /// Gets the row factory that reads this table's rows.
@@ -344,6 +347,7 @@ public sealed class MVTable : Table
             }
         }
         indexes.Add(index);
+        indexCache = null;
         SetModified();
         return index;
     }
@@ -742,7 +746,9 @@ public sealed class MVTable : Table
         public override SearchRow CreateRow() => new DefaultRow(columnCount);
 
         public override RowDataType GetRowDataType()
-            => new(null, CompareMode.GetInstance(null, 0), null, null, null, columnCount, true);
+            => rowDataType ??= new(null, CompareMode.GetInstance(null, 0), null, null, null, columnCount, true);
+
+        private RowDataType? rowDataType;
 
         public override int[]? GetIndexes() => null;
 

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Globalization;
@@ -404,32 +405,44 @@ public static class DataUtils
     /// <summary>
     /// Read a string of the given number of characters.
     /// </summary>
+    /// <remarks>
+    /// The characters rent rather than allocate: string.Create cannot carry the ref position
+    /// through its state (a Span cannot ride a generic argument), and a closure would cost
+    /// the allocation this removes. The rented buffer always goes back, even on a short read.
+    /// </remarks>
     /// <param name="buff">the buffer</param>
     /// <param name="position">where to read</param>
     /// <param name="len">how many characters</param>
     /// <returns>the string</returns>
     public static string ReadString(Span<byte> buff, ref int position, int len)
     {
-        char[] chars = new char[len];
-        for (int i = 0; i < len; i++)
+        char[] chars = ArrayPool<char>.Shared.Rent(len);
+        try
         {
-            int x = buff[position++];
-            if (x < 0x80)
+            for (int i = 0; i < len; i++)
             {
-                chars[i] = (char)x;
+                int x = buff[position++];
+                if (x < 0x80)
+                {
+                    chars[i] = (char)x;
+                }
+                else if (x >= 0xe0)
+                {
+                    chars[i] = (char)(((x & 0xf) << 12)
+                        + ((buff[position++] & 0x3f) << 6) + (buff[position++] & 0x3f));
+                }
+                else
+                {
+                    chars[i] = (char)(((x & 0x1f) << 6) + (buff[position++] & 0x3f));
+                }
             }
-            else if (x >= 0xe0)
-            {
-                chars[i] = (char)(((x & 0xf) << 12)
-                    + ((buff[position++] & 0x3f) << 6) + (buff[position++] & 0x3f));
-            }
-            else
-            {
-                chars[i] = (char)(((x & 0x1f) << 6) + (buff[position++] & 0x3f));
-            }
-        }
 
-        return new string(chars);
+            return new string(chars, 0, len);
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(chars);
+        }
     }
 
     /// <summary>

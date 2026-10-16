@@ -371,11 +371,34 @@ public sealed class SortOrder
     /// <summary>
     /// Returns sort order bit masks with <c>NULLS_FIRST</c> or <c>NULLS_LAST</c> explicitly set.
     /// </summary>
+    /// <remarks>
+    /// Computed once per null-ordering rule and kept: the planner asks once per index
+    /// candidate, and the array never changes under one rule. The rule rides along because
+    /// the database setting can change between plans, and a blind cache would keep answering
+    /// with the old one. Single-threaded sessions make the lazy fill benign.
+    /// </remarks>
     /// <returns>bit masks with either <c>NULLS_FIRST</c> or <c>NULLS_LAST</c> explicitly set</returns>
     public int[] GetSortTypesWithNullOrdering()
     {
-        return AddNullOrdering(session.GetDatabase(), (int[])sortTypes.Clone());
+        DefaultNullOrdering ordering = session.GetDatabase().GetDefaultNullOrdering();
+        if (sortTypesWithNullOrdering is null || cachedNullOrdering != ordering)
+        {
+            int[] computed = (int[])sortTypes.Clone();
+            for (int i = 0; i < computed.Length; i++)
+            {
+                computed[i] = DefaultNullOrderingRules.AddExplicitNullOrdering(ordering, computed[i]);
+            }
+
+            sortTypesWithNullOrdering = computed;
+            cachedNullOrdering = ordering;
+        }
+
+        return sortTypesWithNullOrdering;
     }
+
+    private int[]? sortTypesWithNullOrdering;
+
+    private DefaultNullOrdering? cachedNullOrdering;
 
     /// <summary>
     /// Adds explicit <c>NULLS_FIRST</c> or <c>NULLS_LAST</c> where they aren't already specified.
