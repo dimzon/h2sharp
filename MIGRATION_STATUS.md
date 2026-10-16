@@ -4122,6 +4122,18 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### AVG бегает групповым путём, пустое множество починило общий хвост
+
+`AggregateDataAvg` целиком (DOUBLE-сумма, NUMERIC/DECFLOAT-деление с HALF_DOWN,
+интервалы через портированный `IntervalUtils` в обе стороны), `getAvgType` целиком
+(DOUBLE/NUMERIC/DECFLOAT-лестница, интервальные типы, чужие типы в отказ тем же
+кодом 90015), фабрика, DISTINCT-отказ, SQL-имя, ридер. По дороге оракул пустого
+множества поймал уроненную ветку эталона в общем `GetAggregatedValue`: `data ==
+null → createAggregateData()` — без неё падал любой агрегат на пустой выборке, не
+только AVG. Проверено: AVG-оракулы против JDBC (DOUBLE, группировка, NUMERIC(29,10)
+с `3074457345618258600.6666666667`, пустое множество в NULL, пустой COUNT в 0,
+неверный тип кодом, DISTINCT-отказ, MEDIAN-отказ); `H2Sharp.Tests` **868 зелёных**.
+
 ### SUM, MIN и MAX бегают групповым путём, AVG ждёт
 
 К COUNT добавились три агрегата: `AggregateDataDefault` (SUM/MIN/MAX; остальные

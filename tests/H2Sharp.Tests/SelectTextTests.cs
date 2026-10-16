@@ -623,16 +623,97 @@ public sealed class SelectTextTests
     }
 
     [Fact]
-    public void AvgWaitsForAggregates()
+    public void MedianWaitsForAggregates()
     {
-        // COUNT, SUM, MIN and MAX run since their paths landed; every other aggregate
-        // refuses by name rather than misreading as a syntax error.
+        // COUNT, SUM, MIN, MAX and AVG run since their paths landed; every other
+        // aggregate refuses by name rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
             TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT AVG(ID) FROM T"));
-            Assert.Contains("AVG", e.Message);
+                () => session.PrepareCommand("SELECT MEDIAN(ID) FROM T"));
+            Assert.Contains("MEDIAN", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [JavaOracleFact]
+    public void AvgIds()
+    {
+        CompareText("select_text_avg", "SELECT AVG(ID) FROM T", ["=2.5"]);
+    }
+
+    [JavaOracleFact]
+    public void AvgGroupBy()
+    {
+        CompareText(
+            "select_text_avggroup", "SELECT NAME, AVG(ID) FROM T GROUP BY NAME", ["=-:4.0", "=b:1.5", "=c:3.0"]);
+    }
+
+    [JavaOracleFact]
+    public void AvgEmptyIsNull()
+    {
+        CompareText("select_text_avgempty", "SELECT AVG(ID) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void EmptyCountIsZero()
+    {
+        CompareText("select_text_countempty", "SELECT COUNT(*) FROM T WHERE ID > 100", ["=0"]);
+    }
+
+    [Fact]
+    public void AvgWrongTypeIsRefused()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            H2SharpException e = Assert.Throws<H2SharpException>(
+                () => session.PrepareCommand("SELECT AVG(NAME) FROM T"));
+            Assert.Equal(90015, e.H2ErrorCode);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void AvgDistinctWaitsForCollecting()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            CommandContainer container = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("SELECT AVG(DISTINCT ID) FROM T"));
+            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
+            Assert.Contains("collecting", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [JavaOracleFact]
+    public void AvgBigints()
+    {
+        SessionLocal session = NewLongSession(out TransactionStore store);
+        try
+        {
+            List<string> actual = RunText(session, "SELECT AVG(BIGVAL) FROM T2");
+            List<string> java = RunJavaWithSetup(
+                "select_text_avglong",
+                "SELECT AVG(BIGVAL) FROM T2",
+                """
+                stat.execute("CREATE TABLE T2(ID INT PRIMARY KEY, BIGVAL BIGINT)");
+                stat.execute("INSERT INTO T2 VALUES (1, 9223372036854775800), (2, -5), (3, NULL), (4, 7)");
+                """);
+            Assert.Equal(["=3074457345618258600.6666666667"], actual);
+            Assert.Equal(java, actual);
         }
         finally
         {

@@ -5,13 +5,13 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * Sliced to COUNT: COUNT(*) and COUNT(expression) walk the whole road — reading,
- * mapping, the quick aggregate shortcut and the grouped accumulation. Every other
- * aggregate type refuses where the reference would branch to it (the data factory,
- * the value reader and the type switch), so adding the next one is new branches,
- * not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
+ * Sliced to COUNT, SUM, MIN, MAX and AVG: the flat, quick and grouped paths carry any
+ * of them — reading, mapping and accumulation. Every other aggregate type refuses
+ * where the reference would branch to it (the data factory, the value reader and
+ * the type switch), so adding the next one is new branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
  * them yet, and a field nothing writes is a promise nothing checks.
  */
+using System;
 using System.Text;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
@@ -71,17 +71,21 @@ public class Aggregate : AbstractAggregate
             case AggregateType.Sum:
             case AggregateType.Min:
             case AggregateType.Max:
+            case AggregateType.Avg:
                 if (!distinct)
                 {
-                    return aggregateType == AggregateType.Count
-                        ? new AggregateDataCount(false)
-                        : new AggregateDataDefault(aggregateType, type!);
+                    return aggregateType switch
+                    {
+                        AggregateType.Count => new AggregateDataCount(false),
+                        AggregateType.Avg => new AggregateDataAvg(type!),
+                        _ => new AggregateDataDefault(aggregateType, type!),
+                    };
                 }
 
                 throw new TODOException("Aggregate.createAggregateData: DISTINCT aggregates need collecting");
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN and MAX are ported (type=" + aggregateType + ")");
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX and AVG are ported (type=" + aggregateType + ")");
         }
     }
 
@@ -112,12 +116,15 @@ public class Aggregate : AbstractAggregate
     /// <inheritdoc/>
     protected override Value GetAggregatedValue(SessionLocal session, object? aggregateData)
     {
+        // Ported from Aggregate.getAggregatedValue: an empty group hands over no data,
+        // the aggregate starts fresh and reports its empty-set value (NULL, or 0).
+        AggregateData data = (AggregateData?)aggregateData ?? (AggregateData)CreateAggregateData();
         if (distinct)
         {
             throw new TODOException("Aggregate.getAggregatedValue: DISTINCT aggregates need collecting");
         }
 
-        return ((AggregateData)aggregateData!).GetValue(session);
+        return data.GetValue(session);
     }
 
     /// <inheritdoc/>
@@ -189,6 +196,10 @@ public class Aggregate : AbstractAggregate
             case AggregateType.Min:
             case AggregateType.Max:
                 break;
+            case AggregateType.Avg:
+                type = GetAvgType(type!) ?? throw Message.DbException.Get(
+                    Api.ErrorCode.SumOrAvgOnWrongDatatype1, GetTraceSql());
+                break;
             default:
                 throw Message.DbException.GetInternalError("type=" + aggregateType);
         }
@@ -235,6 +246,71 @@ public class Aggregate : AbstractAggregate
                     throw new TODOException("Aggregate.getSumType: SUM over intervals is not ported");
                 }
 
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// The additional result scale in decimal digits for an AVG aggregate function.
+    /// </summary>
+    private const int AdditionalAvgScale = 10;
+
+    /// <summary>
+    /// The result type of an AVG over the argument type, or null when AVG makes no sense.
+    /// </summary>
+    /// <param name="type">the argument type</param>
+    /// <returns>the result type, or null</returns>
+    private static TypeInfo? GetAvgType(TypeInfo type)
+    {
+        switch (type.GetValueType())
+        {
+            case Value.Tinyint:
+            case Value.Smallint:
+            case Value.Integer:
+            case Value.Real:
+                return TypeInfo.TypeDouble;
+            case Value.Bigint:
+                return TypeInfo.GetTypeInfo(
+                    Value.Numeric, ValueBigint.DecimalPrecision + AdditionalAvgScale, AdditionalAvgScale, null);
+            case Value.Numeric:
+                {
+                    int additionalScale = Math.Min(
+                        ValueNumeric.MaximumScale - type.GetScale(),
+                        Math.Min(Engine.Constants.MaxNumericPrecision - (int)type.GetPrecision(), AdditionalAvgScale));
+                    return TypeInfo.GetTypeInfo(
+                        Value.Numeric, type.GetPrecision() + additionalScale, type.GetScale() + additionalScale, null);
+                }
+
+            case Value.Double:
+                return TypeInfo.GetTypeInfo(
+                    Value.Decfloat, ValueDouble.DecimalPrecision + AdditionalAvgScale, -1, null);
+            case Value.Decfloat:
+                return TypeInfo.GetTypeInfo(
+                    Value.Decfloat, type.GetPrecision() + AdditionalAvgScale, -1, null);
+            case Value.IntervalYear:
+            case Value.IntervalYearToMonth:
+                return TypeInfo.GetTypeInfo(Value.IntervalYearToMonth, type.GetDeclaredPrecision(), 0, null);
+            case Value.IntervalMonth:
+                return TypeInfo.GetTypeInfo(Value.IntervalMonth, type.GetDeclaredPrecision(), 0, null);
+            case Value.IntervalDay:
+            case Value.IntervalDayToHour:
+            case Value.IntervalDayToMinute:
+            case Value.IntervalDayToSecond:
+                return TypeInfo.GetTypeInfo(
+                    Value.IntervalDayToSecond, type.GetDeclaredPrecision(), ValueInterval.MaximumScale, null);
+            case Value.IntervalHour:
+            case Value.IntervalHourToMinute:
+            case Value.IntervalHourToSecond:
+                return TypeInfo.GetTypeInfo(
+                    Value.IntervalHourToSecond, type.GetDeclaredPrecision(), ValueInterval.MaximumScale, null);
+            case Value.IntervalMinute:
+            case Value.IntervalMinuteToSecond:
+                return TypeInfo.GetTypeInfo(
+                    Value.IntervalMinuteToSecond, type.GetDeclaredPrecision(), ValueInterval.MaximumScale, null);
+            case Value.IntervalSecond:
+                return TypeInfo.GetTypeInfo(
+                    Value.IntervalSecond, type.GetDeclaredPrecision(), ValueInterval.MaximumScale, null);
+            default:
                 return null;
         }
     }
@@ -308,6 +384,7 @@ public class Aggregate : AbstractAggregate
             AggregateType.Sum => "SUM",
             AggregateType.Min => "MIN",
             AggregateType.Max => "MAX",
+            AggregateType.Avg => "AVG",
             _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
         };
 

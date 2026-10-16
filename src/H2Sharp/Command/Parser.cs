@@ -622,7 +622,7 @@ public sealed class Parser
     /// A name followed by anything else is a column that happens to share the spelling.
     /// </summary>
     /// <param name="aggregateType">the aggregate type, when this is a call</param>
-    /// <returns>true for a COUNT, SUM, MIN or MAX call</returns>
+    /// <returns>true for a COUNT, SUM, MIN, MAX or AVG call</returns>
     private bool IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType)
     {
         aggregateType = default;
@@ -649,6 +649,10 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.Max;
         }
+        else if (name.Equals("AVG", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Avg;
+        }
         else
         {
             return false;
@@ -658,7 +662,7 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads a COUNT, SUM, MIN or MAX call: the aggregates the engine runs.
+    /// Reads a COUNT, SUM, MIN, MAX or AVG call: the aggregates the engine runs.
     /// </summary>
     /// <remarks>
     /// The reference reads every aggregate name here and builds the matching type; only
