@@ -1019,18 +1019,116 @@ public sealed class SelectTextTests
         }
     }
 
+    [JavaOracleFact]
+    public void ListaggNames()
+    {
+        CompareText("select_text_listagg", "SELECT LISTAGG(NAME) FROM T", ["=b,b,c"]);
+    }
+
+    [JavaOracleFact]
+    public void ListaggSeparator()
+    {
+        CompareText("select_text_listaggsep", "SELECT LISTAGG(NAME, ';') FROM T", ["=b;b;c"]);
+    }
+
+    [JavaOracleFact]
+    public void ListaggIds()
+    {
+        CompareText("select_text_listaggids", "SELECT LISTAGG(ID, '-') FROM T", ["=1-2-3-4"]);
+    }
+
+    [JavaOracleFact]
+    public void ListaggDistinct()
+    {
+        CompareText("select_text_listaggdistinct", "SELECT LISTAGG(DISTINCT NAME) FROM T", ["=b,c"]);
+    }
+
+    [JavaOracleFact]
+    public void ListaggSingle()
+    {
+        CompareText("select_text_listaggsingle", "SELECT LISTAGG(NAME) FROM T WHERE ID = 3", ["=c"]);
+    }
+
+    [JavaOracleFact]
+    public void ListaggEmptyIsNull()
+    {
+        CompareText("select_text_listaggempty", "SELECT LISTAGG(NAME) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void ListaggGrouped()
+    {
+        CompareText(
+            "select_text_listagggroup",
+            "SELECT NAME, LISTAGG(ID, ',') FROM T GROUP BY NAME",
+            ["=-:4", "=b:1,2", "=c:3"]);
+    }
+
+    [JavaOracleFact]
+    public void GroupConcatAlias()
+    {
+        CompareText("select_text_groupconcat", "SELECT GROUP_CONCAT(NAME) FROM T", ["=b,b,c"]);
+    }
+
+    [JavaOracleFact]
+    public void GroupConcatSeparator()
+    {
+        CompareText(
+            "select_text_groupconcatsep", "SELECT GROUP_CONCAT(NAME SEPARATOR ';') FROM T", ["=b;b;c"]);
+    }
+
+    [JavaOracleFact]
+    public void StringAggAlias()
+    {
+        CompareText("select_text_stringagg", "SELECT STRING_AGG(NAME, ';') FROM T", ["=b;b;c"]);
+    }
+
     [Fact]
-    public void ListaggWaitsForAggregates()
+    public void ArrayAggWaitsForAggregates()
     {
         // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE,
-        // PERCENTILE_CONT and PERCENTILE_DISC run since their paths landed; every
-        // other aggregate refuses by name rather than misreading as a syntax error.
+        // PERCENTILE_CONT, PERCENTILE_DISC and LISTAGG run since their paths
+        // landed; every other aggregate refuses by name rather than misreading
+        // as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
             TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT LISTAGG(NAME) FROM T"));
-            Assert.Contains("LISTAGG", e.Message);
+                () => session.PrepareCommand("SELECT ARRAY_AGG(NAME) FROM T"));
+            Assert.Contains("ARRAY_AGG", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void ListaggOverflowWaitsForTruncate()
+    {
+        // LISTAGG itself runs; only the ON OVERFLOW clause waits.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            TODOException e = Assert.Throws<TODOException>(
+                () => session.PrepareCommand("SELECT LISTAGG(NAME ON OVERFLOW ERROR) FROM T"));
+            Assert.Contains("ON OVERFLOW", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void ListaggWithinGroupWaitsForOrdering()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            TODOException e = Assert.Throws<TODOException>(
+                () => session.PrepareCommand("SELECT LISTAGG(NAME) WITHIN GROUP (ORDER BY NAME) FROM T"));
+            Assert.Contains("WITHIN GROUP", e.Message);
         }
         finally
         {

@@ -6,11 +6,11 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
  * Sliced to COUNT, SUM, MIN, MAX, AVG, the STDDEV / VAR family, ANY / EVERY,
- * MEDIAN, ANY_VALUE and PERCENTILE_CONT / PERCENTILE_DISC: the flat, quick and
- * grouped paths carry any of them — reading, mapping and accumulation. Every
- * other aggregate type refuses where the reference would branch to it (the data
- * factory, the value reader and the type switch), so adding the next one is new
- * branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
+ * MEDIAN, ANY_VALUE, PERCENTILE_CONT / PERCENTILE_DISC and LISTAGG: the flat,
+ * quick and grouped paths carry any of them — reading, mapping and accumulation.
+ * Every other aggregate type refuses where the reference would branch to it (the
+ * data factory, the value reader and the type switch), so adding the next one is
+ * new branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
  * them yet, and a field nothing writes is a promise nothing checks.
  */
 using System;
@@ -32,6 +32,8 @@ public class Aggregate : AbstractAggregate
     private readonly AggregateType aggregateType;
 
     private List<QueryOrderBy>? orderByList;
+
+    private object? extraArguments;
 
     /// <summary>
     /// Create a new aggregate object.
@@ -76,6 +78,18 @@ public class Aggregate : AbstractAggregate
     /// </summary>
     /// <param name="orderBy">the ORDER BY list</param>
     public void SetOrderByList(List<QueryOrderBy> orderBy) => orderByList = orderBy;
+
+    /// <summary>
+    /// Sets the additional arguments of this aggregate.
+    /// </summary>
+    /// <param name="extraArguments">the additional arguments</param>
+    public void SetExtraArguments(object extraArguments) => this.extraArguments = extraArguments;
+
+    /// <summary>
+    /// Returns the additional arguments of this aggregate.
+    /// </summary>
+    /// <returns>the additional arguments</returns>
+    public object? GetExtraArguments() => extraArguments;
 
     /// <inheritdoc/>
     protected override void UpdateAggregate(SessionLocal session, object aggregateData)
@@ -143,9 +157,14 @@ public class Aggregate : AbstractAggregate
             case AggregateType.PercentileCont:
             case AggregateType.PercentileDisc:
                 break;
+            case AggregateType.Listagg:
+                // NULL values are excluded by Aggregate
+                return new AggregateDataCollecting(
+                    distinct, orderByList is not null,
+                    AggregateDataCollecting.NullCollectionMode.UsedOrImpossible);
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE and PERCENTILE are ported (type="
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE and LISTAGG are ported (type="
                     + aggregateType + ")");
         }
 
@@ -335,6 +354,9 @@ public class Aggregate : AbstractAggregate
                             ? "PERCENTILE_CONT argument" : "PERCENTILE_DISC argument",
                         arg);
                 }
+
+            case AggregateType.Listagg:
+                return GetListagg(session, data);
             default:
                 break;
         }
@@ -350,6 +372,137 @@ public class Aggregate : AbstractAggregate
         }
 
         return d.GetValue(session);
+    }
+
+    private void SortWithOrderBy(Value[] array)
+    {
+        // orderBySort is not ported — no ordered aggregate is read yet — so the
+        // reference's sort always takes its fallback: session comparison.
+        Array.Sort(array, Comparer<Value>.Create((x, y) => select.GetSession().Compare(x!, y!)));
+    }
+
+    private Value GetListagg(SessionLocal session, AggregateData data)
+    {
+        AggregateDataCollecting collectingData = (AggregateDataCollecting)data;
+        Value[]? array = collectingData.GetArray();
+        if (array is null)
+        {
+            return ValueNull.Instance;
+        }
+
+        if (array.Length == 1)
+        {
+            Value v = array[0];
+            if (orderByList is not null)
+            {
+                v = ((ValueRow)v).GetList()[0];
+            }
+
+            return v.ConvertToType(TypeInfo.TypeVarchar);
+        }
+
+        if (orderByList is not null || distinct)
+        {
+            SortWithOrderBy(array);
+        }
+
+        ListaggArguments arguments = (ListaggArguments)extraArguments!;
+        string separator = arguments.GetEffectiveSeparator(session);
+        return ValueVarchar.Get(
+            (arguments.GetOnOverflowTruncate()
+                ? GetListaggTruncate(
+                    array, separator, arguments.GetEffectiveFilter(session), arguments.IsWithoutCount())
+                : GetListaggError(array, separator)).ToString(),
+            session.CastDataProvider);
+    }
+
+    private StringBuilder GetListaggError(Value[] array, string separator)
+    {
+        StringBuilder builder = new(GetListaggItem(array[0]));
+        for (int i = 1, count = array.Length; i < count; i++)
+        {
+            string s = GetListaggItem(array[i]);
+            long length = (long)builder.Length + separator.Length + s.Length;
+            if (length > Engine.Constants.MaxStringLength)
+            {
+                int limit = 81;
+                StringUtils.AppendToLength(builder, separator, limit);
+                StringUtils.AppendToLength(builder, s, limit);
+                throw Message.DbException.GetValueTooLongException(
+                    "CHARACTER VARYING", builder.ToString(0, limit), -1L);
+            }
+
+            _ = builder.Append(separator).Append(s);
+        }
+
+        return builder;
+    }
+
+    private StringBuilder GetListaggTruncate(Value[] array, string separator, string filter, bool withoutCount)
+    {
+        int count = array.Length;
+        string[] strings = new string[count];
+        string s = GetListaggItem(array[0]);
+        strings[0] = s;
+        int estimatedLength = (int)Math.Min(Engine.Constants.MaxStringLength, s.Length * (long)count);
+        StringBuilder builder = new(estimatedLength);
+        _ = builder.Append(s);
+        for (int i = 1; i < count; i++)
+        {
+            strings[i] = s = GetListaggItem(array[i]);
+            int length = builder.Length;
+            long longLength = (long)length + separator.Length + s.Length;
+            if (longLength > Engine.Constants.MaxStringLength)
+            {
+                if (longLength - s.Length >= Engine.Constants.MaxStringLength)
+                {
+                    i--;
+                }
+                else
+                {
+                    _ = builder.Append(separator);
+                    length = (int)longLength;
+                }
+
+                for (; i > 0; i--)
+                {
+                    length -= strings[i].Length;
+                    builder.Length = length;
+                    StringUtils.AppendToLength(builder, filter, Engine.Constants.MaxStringLength + 1);
+                    if (!withoutCount)
+                    {
+                        _ = builder.Append('(').Append(count - i).Append(')');
+                    }
+
+                    if (builder.Length <= Engine.Constants.MaxStringLength)
+                    {
+                        goto Truncated;
+                    }
+
+                    length -= separator.Length;
+                }
+
+                builder.Length = 0;
+                _ = builder.Append(filter).Append('(').Append(count).Append(')');
+                break;
+            }
+
+            _ = builder.Append(separator).Append(s);
+        }
+
+    Truncated:
+        return builder;
+    }
+
+    private string GetListaggItem(Value v)
+    {
+        if (orderByList is not null)
+        {
+            v = ((ValueRow)v).GetList()[0];
+        }
+
+        // NULLs never reach the collection: the update arm excludes them.
+        return v.GetString()!;
     }
 
     /// <inheritdoc/>
@@ -368,6 +521,16 @@ public class Aggregate : AbstractAggregate
             case AggregateType.PercentileDisc:
                 ((AggregateDataCollecting)data).SetSharedArgument(v!);
                 v = remembered is not null ? remembered[1] : orderByList![0].expression!.GetValue(session);
+                break;
+            case AggregateType.Listagg:
+                if (v is ValueNull)
+                {
+                    return;
+                }
+
+                // updateCollecting wraps for ORDER BY lists, but LISTAGG never
+                // carries one here: the reader refuses WITHIN GROUP for it.
+                v = v!.ConvertToType(TypeInfo.TypeVarchar);
                 break;
             default:
                 // Use argument as is
@@ -511,6 +674,9 @@ public class Aggregate : AbstractAggregate
                 goto case AggregateType.Median;
             case AggregateType.PercentileDisc:
                 type = orderByList![0].expression!.GetTypeInfo();
+                break;
+            case AggregateType.Listagg:
+                type = TypeInfo.TypeVarchar;
                 break;
             default:
                 throw Message.DbException.GetInternalError("type=" + aggregateType);
@@ -723,6 +889,11 @@ public class Aggregate : AbstractAggregate
             return AppendTailConditions(builder.Append("COUNT(*)"), sqlFlags, false);
         }
 
+        if (aggregateType == AggregateType.Listagg)
+        {
+            return GetSqlListagg(builder, sqlFlags);
+        }
+
         string name = aggregateType switch
         {
             AggregateType.Count => "COUNT",
@@ -755,22 +926,63 @@ public class Aggregate : AbstractAggregate
         }
 
         _ = builder.Append(')');
-        if (orderByList is not null)
+        AppendWithinGroup(builder, sqlFlags);
+        return AppendTailConditions(builder, sqlFlags, false);
+    }
+
+    private StringBuilder GetSqlListagg(StringBuilder builder, int sqlFlags)
+    {
+        _ = builder.Append("LISTAGG(");
+        if (distinct)
         {
-            _ = builder.Append(" WITHIN GROUP (ORDER BY ");
-            for (int i = 0; i < orderByList.Count; i++)
-            {
-                if (i > 0)
-                {
-                    _ = builder.Append(", ");
-                }
-
-                orderByList[i].GetSql(builder, sqlFlags);
-            }
-
-            _ = builder.Append(')');
+            _ = builder.Append("DISTINCT ");
         }
 
+        args[0].GetUnenclosedSql(builder, sqlFlags);
+        ListaggArguments arguments = (ListaggArguments)extraArguments!;
+        Expression? separator = arguments.GetSeparator();
+        if (separator is not null)
+        {
+            separator.GetUnenclosedSql(builder.Append(", "), sqlFlags);
+        }
+
+        if (arguments.GetOnOverflowTruncate())
+        {
+            _ = builder.Append(" ON OVERFLOW TRUNCATE ");
+            Expression? filter = arguments.GetFilter();
+            if (filter is not null)
+            {
+                filter.GetUnenclosedSql(builder, sqlFlags).Append(' ');
+            }
+
+            _ = builder.Append(arguments.IsWithoutCount() ? "WITHOUT" : "WITH").Append(" COUNT");
+        }
+
+        _ = builder.Append(')');
+        // The reference always renders WITHIN GROUP here; with no ORDER BY list
+        // there is nothing to render, and the reader refuses that clause anyway.
+        AppendWithinGroup(builder, sqlFlags);
         return AppendTailConditions(builder, sqlFlags, false);
+    }
+
+    private void AppendWithinGroup(StringBuilder builder, int sqlFlags)
+    {
+        if (orderByList is null)
+        {
+            return;
+        }
+
+        _ = builder.Append(" WITHIN GROUP (ORDER BY ");
+        for (int i = 0; i < orderByList.Count; i++)
+        {
+            if (i > 0)
+            {
+                _ = builder.Append(", ");
+            }
+
+            orderByList[i].GetSql(builder, sqlFlags);
+        }
+
+        _ = builder.Append(')');
     }
 }

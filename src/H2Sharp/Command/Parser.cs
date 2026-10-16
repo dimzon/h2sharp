@@ -622,7 +622,7 @@ public sealed class Parser
     /// A name followed by anything else is a column that happens to share the spelling.
     /// </summary>
     /// <param name="aggregateType">the aggregate type, when this is a call</param>
-    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT or PERCENTILE_DISC call</returns>
+    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC or LISTAGG call</returns>
     private bool IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType)
     {
         aggregateType = default;
@@ -701,6 +701,12 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.PercentileDisc;
         }
+        else if (name.Equals("LISTAGG", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("GROUP_CONCAT", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("STRING_AGG", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Listagg;
+        }
         else
         {
             return false;
@@ -710,11 +716,11 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT or PERCENTILE_DISC call: the aggregates the engine runs.
+    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC or LISTAGG call: the aggregates the engine runs.
     /// </summary>
     /// <remarks>
     /// The reference reads every aggregate name here and builds the matching type; only
-    /// these four are built, anything else never reaches this branch. DISTINCT and ALL
+    /// the ported ones are built, anything else never reaches this branch. DISTINCT and ALL
     /// spellings follow the reference; FILTER and OVER wait for their machinery, and the
     /// select is marked a group query the way readOver does.
     /// </remarks>
@@ -724,6 +730,7 @@ public sealed class Parser
     private Expressions.Aggregate.Aggregate ReadQueryAggregate(
         Query.Select select, Expressions.Aggregate.AggregateType aggregateType)
     {
+        string functionName = Current.AsIdentifier!;
         Read();
         Expect(Token.OpenParen, "(");
         Expressions.Aggregate.Aggregate aggregate;
@@ -756,6 +763,10 @@ public sealed class Parser
                 aggregateType, [fraction], select, distinct: false);
             aggregate.SetOrderByList([order]);
         }
+        else if (aggregateType == Expressions.Aggregate.AggregateType.Listagg)
+        {
+            aggregate = ReadQueryListagg(select, functionName);
+        }
         else
         {
             bool distinct = IsWord("DISTINCT");
@@ -776,6 +787,99 @@ public sealed class Parser
         }
 
         select.SetGroupQuery();
+        return aggregate;
+    }
+
+    /// <summary>
+    /// Reads a LISTAGG separator: a string literal or a parameter.
+    /// </summary>
+    /// <remarks>
+    /// Parameters are not read on this layer, so in practice only constants pass;
+    /// anything else is a syntax error here, as in the reference.
+    /// </remarks>
+    /// <returns>the separator expression</returns>
+    private Expressions.Expression ReadListaggSeparator()
+    {
+        Expressions.Expression separator = ReadQueryOr();
+        if (!separator.IsConstant())
+        {
+            throw DbException.GetSyntaxError(sql, Current.Start, "separator");
+        }
+
+        return separator;
+    }
+
+    /// <summary>
+    /// Reads a LISTAGG call with its MySQL and PostgreSQL spellings.
+    /// </summary>
+    /// <remarks>
+    /// An optional DISTINCT or ALL, the value, then an optional separator spelled
+    /// per dialect. ON OVERFLOW, ORDER BY inside the parentheses and WITHIN GROUP
+    /// wait for their machinery.
+    /// </remarks>
+    /// <param name="select">the select being read</param>
+    /// <param name="functionName">the spelling used: LISTAGG, GROUP_CONCAT or STRING_AGG</param>
+    /// <returns>the aggregate</returns>
+    private Expressions.Aggregate.Aggregate ReadQueryListagg(Query.Select select, string functionName)
+    {
+        bool distinct = false;
+        Expressions.Expression arg;
+        Expressions.Aggregate.ListaggArguments extraArguments = new();
+        if (functionName.Equals("STRING_AGG", StringComparison.OrdinalIgnoreCase))
+        {
+            // PostgreSQL compatibility: string_agg(expression, delimiter)
+            arg = ReadQueryOr();
+            Expect(Token.Comma, ",");
+            extraArguments.SetSeparator(ReadListaggSeparator());
+            if (CurrentType == ParserUtil.Order)
+            {
+                throw new TODOException("Parser.parseQuerySelect: ORDER BY in STRING_AGG is not ported");
+            }
+        }
+        else
+        {
+            distinct = IsWord("DISTINCT");
+            if (!distinct)
+            {
+                _ = IsWord("ALL");
+            }
+
+            arg = ReadQueryOr();
+            if (functionName.Equals("GROUP_CONCAT", StringComparison.OrdinalIgnoreCase))
+            {
+                if (CurrentType == ParserUtil.Order)
+                {
+                    throw new TODOException("Parser.parseQuerySelect: ORDER BY in GROUP_CONCAT is not ported");
+                }
+
+                if (IsWord("SEPARATOR"))
+                {
+                    extraArguments.SetSeparator(ReadListaggSeparator());
+                }
+            }
+            else
+            {
+                if (ReadIf(Token.Comma))
+                {
+                    extraArguments.SetSeparator(ReadListaggSeparator());
+                }
+
+                if (IsWord("ON", consume: false))
+                {
+                    throw new TODOException("Parser.parseQuerySelect: LISTAGG ON OVERFLOW is not ported");
+                }
+            }
+        }
+
+        Expect(Token.CloseParen, ")");
+        if (IsWord("WITHIN", consume: false))
+        {
+            throw new TODOException("Parser.parseQuerySelect: WITHIN GROUP in LISTAGG is not ported");
+        }
+
+        Expressions.Aggregate.Aggregate aggregate = new(
+            Expressions.Aggregate.AggregateType.Listagg, [arg], select, distinct);
+        aggregate.SetExtraArguments(extraArguments);
         return aggregate;
     }
 
