@@ -90,6 +90,21 @@ public sealed class CommandList : Command
     public override ResultInterface Query(long maxrows) => commands[0].Query(maxrows);
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Every statement, not just the list: the cache checks the list, but a statement
+    /// handed out twice underneath it would run twice, so each one is marked reusable too.
+    /// </remarks>
+    public override void Close()
+    {
+        foreach (CommandContainer container in commands)
+        {
+            container.Close();
+        }
+
+        base.Close();
+    }
+
+    /// <inheritdoc/>
     public override ISet<DbObject> GetDependencies()
     {
         HashSet<DbObject> dependencies = [];

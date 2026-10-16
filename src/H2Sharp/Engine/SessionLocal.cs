@@ -384,6 +384,7 @@ public sealed class SessionLocal : Session
             cached.Reuse();
             return cached;
         }
+
         H2Sharp.Command.Command command = new H2Sharp.Command.Parser(this).PrepareCommand(sql);
 
         if (queryCache is not null && command.IsCacheable())

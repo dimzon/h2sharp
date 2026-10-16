@@ -172,42 +172,51 @@ public sealed class H2Command : DbCommand
     /// A query run this way still runs: ADO.NET answers -1 for it, and the rows it
     /// would have produced are read and dropped rather than left open underneath
     /// the caller. Of several statements, the first answers and the rest run for effect.
+    /// The commands close on the way out, so the next execution finds them reusable
+    /// instead of parsing again.
     /// </remarks>
     public override int ExecuteNonQuery()
     {
         List<Command.CommandContainer> containers = PrepareEngines();
-        long first;
-        if (containers[0].IsQuery())
+        try
         {
-            using Result.ResultInterface result = containers[0].Query(-1);
-            while (result.Next())
+            long first;
+            if (containers[0].IsQuery())
             {
-            }
-
-            first = -1;
-        }
-        else
-        {
-            first = containers[0].UpdateRows(false).GetUpdateCount();
-        }
-
-        for (int i = 1; i < containers.Count; i++)
-        {
-            Command.CommandContainer container = containers[i];
-            if (container.IsQuery())
-            {
-                using Result.ResultInterface rest = container.Query(-1);
-                while (rest.Next())
+                using Result.ResultInterface result = containers[0].Query(-1);
+                while (result.Next())
                 {
                 }
+
+                first = -1;
             }
             else
             {
-                _ = container.UpdateRows(false);
+                first = containers[0].UpdateRows(false).GetUpdateCount();
             }
-        }
 
-        return first < 0 ? -1 : Convert.ToInt32(first);
+            for (int i = 1; i < containers.Count; i++)
+            {
+                Command.CommandContainer container = containers[i];
+                if (container.IsQuery())
+                {
+                    using Result.ResultInterface rest = container.Query(-1);
+                    while (rest.Next())
+                    {
+                    }
+                }
+                else
+                {
+                    _ = container.UpdateRows(false);
+                }
+            }
+
+            return first < 0 ? -1 : Convert.ToInt32(first);
+        }
+        finally
+        {
+            CloseContainers(containers);
+        }
     }
 
     /// <summary>
@@ -216,48 +225,55 @@ public sealed class H2Command : DbCommand
     public override object? ExecuteScalar()
     {
         List<Command.CommandContainer> containers = PrepareEngines();
-        if (!containers[0].IsQuery())
+        try
         {
-            _ = containers[0].UpdateRows(false);
-            for (int i = 1; i < containers.Count; i++)
+            if (!containers[0].IsQuery())
             {
-                _ = containers[i].UpdateRows(false);
-            }
-
-            return null;
-        }
-
-        object? scalar;
-        using (Result.ResultInterface result = containers[0].Query(1))
-        {
-            if (!result.Next())
-            {
-                scalar = null;
-            }
-            else
-            {
-                Values.Value?[] row = result.CurrentRow();
-                scalar = row.Length == 0 ? null : H2ValueMapper.ToObject(row[0]);
-            }
-        }
-
-        for (int i = 1; i < containers.Count; i++)
-        {
-            Command.CommandContainer container = containers[i];
-            if (container.IsQuery())
-            {
-                using Result.ResultInterface rest = container.Query(-1);
-                while (rest.Next())
+                _ = containers[0].UpdateRows(false);
+                for (int i = 1; i < containers.Count; i++)
                 {
+                    _ = containers[i].UpdateRows(false);
+                }
+
+                return null;
+            }
+
+            object? scalar;
+            using (Result.ResultInterface result = containers[0].Query(1))
+            {
+                if (!result.Next())
+                {
+                    scalar = null;
+                }
+                else
+                {
+                    Values.Value?[] row = result.CurrentRow();
+                    scalar = row.Length == 0 ? null : H2ValueMapper.ToObject(row[0]);
                 }
             }
-            else
-            {
-                _ = container.UpdateRows(false);
-            }
-        }
 
-        return scalar;
+            for (int i = 1; i < containers.Count; i++)
+            {
+                Command.CommandContainer container = containers[i];
+                if (container.IsQuery())
+                {
+                    using Result.ResultInterface rest = container.Query(-1);
+                    while (rest.Next())
+                    {
+                    }
+                }
+                else
+                {
+                    _ = container.UpdateRows(false);
+                }
+            }
+
+            return scalar;
+        }
+        finally
+        {
+            CloseContainers(containers);
+        }
     }
 
     /// <summary>
@@ -296,6 +312,7 @@ public sealed class H2Command : DbCommand
                 moreSets ? containers.GetRange(1, containers.Count - 1) : [];
             Action onClose = () =>
             {
+                CloseContainers(containers);
                 openReaders--;
                 if (behavior.HasFlag(CommandBehavior.CloseConnection))
                 {
@@ -423,6 +440,32 @@ public sealed class H2Command : DbCommand
     /// Parameters are numbered across the whole text, so one ordered list binds every
     /// statement of it.
     /// </remarks>
+    /// <summary>
+    /// Closes every container of one execution, returning them to the cache.
+    /// </summary>
+    /// <param name="containers">the containers that ran</param>
+    private static void CloseContainers(List<Command.CommandContainer> containers)
+    {
+        foreach (Command.CommandContainer container in containers)
+        {
+            container.Close();
+        }
+    }
+
+    private static readonly List<H2Parameter> NoParameters = [];
+
+    /// <summary>
+    /// Prepares the text, binds the values, and hands back the running commands: one per
+    /// statement the text holds.
+    /// </summary>
+    /// <remarks>
+    /// The engine only knows positional parameters, so named ones are rewritten before
+    /// the text reaches it, and the values are bound by the positions they took. A
+    /// placeholder with no value is refused here rather than read as NULL there: NULL is
+    /// a value the caller could have meant, a missing one is a mistake in the call.
+    /// Parameters are numbered across the whole text, and every container of one parse
+    /// shares the same list, so one pass binds every statement of it.
+    /// </remarks>
     /// <returns>the prepared containers, in order</returns>
     private List<Command.CommandContainer> PrepareEngines()
     {
@@ -439,7 +482,7 @@ public sealed class H2Command : DbCommand
         }
 
         string text = commandText;
-        List<H2Parameter> ordered = [];
+        List<H2Parameter> ordered = NoParameters;
         if (parameters.Count > 0)
         {
             (text, ordered) = H2ParameterRewriter.Rewrite(commandText, parameterCollection);
@@ -461,30 +504,27 @@ public sealed class H2Command : DbCommand
             Command.CommandContainer container => [container],
             _ => throw new InvalidOperationException("The statement is not a runnable command"),
         };
-        foreach (Command.CommandContainer container in containers)
+        foreach (Expressions.ParameterInterface engineParameter in containers[0].GetParameters())
         {
-            foreach (Expressions.ParameterInterface engineParameter in container.GetParameters())
+            Expressions.Parameter parameter = (Expressions.Parameter)engineParameter;
+            // The tokenizer numbers placeholders from 1, like the ?N form: the first
+            // placeholder is index 1, so the ordered values shift by one.
+            int index = parameter.GetIndex() - 1;
+            if (index < 0 || index >= ordered.Count)
             {
-                Expressions.Parameter parameter = (Expressions.Parameter)engineParameter;
-                // The tokenizer numbers placeholders from 1, like the ?N form: the first
-                // placeholder is index 1, so the ordered values shift by one.
-                int index = parameter.GetIndex() - 1;
-                if (index < 0 || index >= ordered.Count)
-                {
-                    throw new InvalidOperationException(
-                        "No value was given for parameter #" + parameter.GetIndex());
-                }
-
-                object? value = ordered[index].Value;
-                if (value is null)
-                {
-                    throw new InvalidOperationException(
-                        "Parameter '" + ordered[index].ParameterName + "' has no value;"
-                        + " use DBNull.Value for NULL");
-                }
-
-                parameter.SetValue(H2ValueMapper.ToValue(value), false);
+                throw new InvalidOperationException(
+                    "No value was given for parameter #" + parameter.GetIndex());
             }
+
+            object? value = ordered[index].Value;
+            if (value is null)
+            {
+                throw new InvalidOperationException(
+                    "Parameter '" + ordered[index].ParameterName + "' has no value;"
+                    + " use DBNull.Value for NULL");
+            }
+
+            parameter.SetValue(H2ValueMapper.ToValue(value), false);
         }
 
         return containers;

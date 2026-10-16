@@ -4131,8 +4131,8 @@ DUAL/CAST/UNION в движке, `CommandList` с очередью `NextResult` 
 реального session-транзакшена, `TreatEmptyStringsAsNull` девятым флагом Mode,
 `42104` за пустую базу, xunit 2.4.2 под спеку, фикстура с `;`. Два оверрайда там,
 где спека противоречит самому H2 (проверено на reference-jar: `AS id` даёт `ID`,
-`GetTextReader` на NULL противоречит сам себе). `GetColumnSchema_*` синхронного нет
-в рантайме — три теста физически невыполнимы ни у кого. `H2Sharp.Tests` 937/937.
+`GetTextReader` на NULL противоречит сам себе). Схема колонок строится базой из
+`GetSchemaTable`, регистр — тот же вопрос алиасов. `H2Sharp.Tests` 937/937.
 
 ### Spec suite: DUAL, CAST, соединение, гибкий ридер
 
