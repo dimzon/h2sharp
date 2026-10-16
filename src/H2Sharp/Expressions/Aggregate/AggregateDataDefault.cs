@@ -5,9 +5,9 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * Sliced to the aggregates the engine reads: SUM, MIN and MAX. The other arms
- * refuse where the reference would branch to them, so the next aggregate is new
- * branches, not a new shape.
+ * Sliced to the aggregates the engine reads: SUM, MIN, MAX, ANY and EVERY. The
+ * other arms refuse where the reference would branch to them, so the next
+ * aggregate is new branches, not a new shape.
  */
 using H2Sharp.Engine;
 using H2Sharp.Values;
@@ -69,6 +69,14 @@ internal sealed class AggregateDataDefault : AggregateData
                     value = v;
                 }
 
+                break;
+            case AggregateType.Every:
+                v = v!.ConvertToType(TypeInfo.TypeBoolean);
+                value = value is null ? v : ValueBoolean.Get(value.GetBoolean() && v.GetBoolean());
+                break;
+            case AggregateType.Any:
+                v = v!.ConvertToType(TypeInfo.TypeBoolean);
+                value = value is null ? v : ValueBoolean.Get(value.GetBoolean() || v.GetBoolean());
                 break;
             default:
                 throw Message.DbException.GetInternalError("type=" + aggregateType);

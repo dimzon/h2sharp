@@ -781,11 +781,76 @@ public sealed class SelectTextTests
         CompareText("select_text_varpopdistinct", "SELECT VAR_POP(DISTINCT ID) FROM T", ["=1.25"]);
     }
 
+    [JavaOracleFact]
+    public void EveryAllTrue()
+    {
+        CompareText("select_text_everytrue", "SELECT EVERY(ID > 0) FROM T", ["=TRUE"]);
+    }
+
+    [JavaOracleFact]
+    public void EveryOneFalse()
+    {
+        CompareText("select_text_everyfalse", "SELECT EVERY(ID > 2) FROM T", ["=FALSE"]);
+    }
+
+    [JavaOracleFact]
+    public void AnyOneTrue()
+    {
+        CompareText("select_text_anytrue", "SELECT ANY(ID > 3) FROM T", ["=TRUE"]);
+    }
+
+    [JavaOracleFact]
+    public void AnyNoneTrue()
+    {
+        CompareText("select_text_anyfalse", "SELECT ANY(ID > 100) FROM T", ["=FALSE"]);
+    }
+
+    [JavaOracleFact]
+    public void SomeAlias()
+    {
+        CompareText("select_text_somealias", "SELECT SOME(ID > 3) FROM T", ["=TRUE"]);
+    }
+
+    [JavaOracleFact]
+    public void BoolAndOr()
+    {
+        CompareText(
+            "select_text_boolandor", "SELECT BOOL_AND(ID > 0), BOOL_OR(ID > 100) FROM T", ["=TRUE:FALSE"]);
+    }
+
+    [JavaOracleFact]
+    public void EveryDistinct()
+    {
+        CompareText("select_text_everydistinct", "SELECT EVERY(DISTINCT ID > 0) FROM T", ["=TRUE"]);
+    }
+
+    [JavaOracleFact]
+    public void GroupedEvery()
+    {
+        CompareText(
+            "select_text_groupevery",
+            "SELECT NAME, EVERY(ID > 1) FROM T GROUP BY NAME",
+            ["=-:TRUE", "=b:FALSE", "=c:TRUE"]);
+    }
+
+    [JavaOracleFact]
+    public void EmptyEveryIsNull()
+    {
+        CompareText("select_text_everyempty", "SELECT EVERY(ID > 0) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void EmptyAnyIsNull()
+    {
+        CompareText("select_text_anyempty", "SELECT ANY(ID > 0) FROM T WHERE ID > 100", ["=-"]);
+    }
+
     [Fact]
     public void MedianWaitsForAggregates()
     {
-        // COUNT, SUM, MIN, MAX, AVG, STDDEV and VAR run since their paths landed;
-        // every other aggregate refuses by name rather than misreading as a syntax error.
+        // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY and EVERY run since their
+        // paths landed; every other aggregate refuses by name rather than
+        // misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {

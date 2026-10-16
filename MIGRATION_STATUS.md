@@ -4122,6 +4122,16 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### ANY и EVERY бегут тем же Default-классом
+
+В эталоне это тот же `AggregateDataDefault`, только две новые ветки: конвертация
+в BOOLEAN (у нас `ConvertToType(TypeBoolean)` — публичного `convertToBoolean` в
+портированном семействе нет, эквивалент тот же) и конъюнкция/дизъюнкция.
+DISTINCT для них, как для MIN/MAX, проходит без собирания. Тип — всегда BOOLEAN.
+Ридер знает все пять написаний (SOME, BOOL_OR, BOOL_AND). Проверено: 10 оракулов
+против JDBC (истина/ложь с обеих сторон, алиасы, группировка, DISTINCT,
+пустые множества); `H2Sharp.Tests` **896 зелёных**.
+
 ### STDDEV и VAR бегут методом Велфорда
 
 `AggregateDataStdVar` целиком (включая ветки REGR_SXX/SYY — enum их уже знает,

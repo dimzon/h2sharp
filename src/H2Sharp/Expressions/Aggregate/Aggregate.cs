@@ -5,11 +5,11 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * Sliced to COUNT, SUM, MIN, MAX, AVG and the STDDEV / VAR family: the flat, quick
- * and grouped paths carry any of them — reading, mapping and accumulation. Every
- * other aggregate type refuses where the reference would branch to it (the data
- * factory, the value reader and the type switch), so adding the next one is new
- * branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
+ * Sliced to COUNT, SUM, MIN, MAX, AVG, the STDDEV / VAR family and ANY / EVERY:
+ * the flat, quick and grouped paths carry any of them — reading, mapping and
+ * accumulation. Every other aggregate type refuses where the reference would
+ * branch to it (the data factory, the value reader and the type switch), so
+ * adding the next one is new branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
  * them yet, and a field nothing writes is a promise nothing checks.
  */
 using System;
@@ -91,7 +91,10 @@ public class Aggregate : AbstractAggregate
                 break;
             case AggregateType.Min:
             case AggregateType.Max:
-                // DISTINCT changes nothing for an extremum, duplicates collapse on their own.
+            case AggregateType.Any:
+            case AggregateType.Every:
+                // DISTINCT changes nothing for an extremum or a conjunction,
+                // duplicates collapse on their own.
                 return new AggregateDataDefault(aggregateType, type!);
             case AggregateType.StddevPop:
             case AggregateType.StddevSamp:
@@ -279,6 +282,10 @@ public class Aggregate : AbstractAggregate
                 break;
             case AggregateType.Min:
             case AggregateType.Max:
+                break;
+            case AggregateType.Any:
+            case AggregateType.Every:
+                type = TypeInfo.TypeBoolean;
                 break;
             case AggregateType.Avg:
                 type = GetAvgType(type!) ?? throw Message.DbException.Get(
@@ -479,6 +486,8 @@ public class Aggregate : AbstractAggregate
             AggregateType.StddevSamp => "STDDEV_SAMP",
             AggregateType.VarPop => "VAR_POP",
             AggregateType.VarSamp => "VAR_SAMP",
+            AggregateType.Any => "ANY",
+            AggregateType.Every => "EVERY",
             _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
         };
 
