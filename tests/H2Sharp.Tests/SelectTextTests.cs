@@ -246,6 +246,24 @@ public sealed class SelectTextTests
         }
     }
 
+    private static void CompareDual(string dbName, string sql, List<string>? expected = null)
+    {
+        SessionLocal session = new(
+            new Database(new ConnectionInfo("jdbc:h2:mem:select_dual")), "sa")
+        {
+            CastDataProvider = new TestCastDataProvider(),
+            CompareMode = CompareMode.GetInstance(null, 0),
+        };
+        List<string> actual = RunText(session, sql);
+        List<string> java = RunJavaWithSetup(dbName, sql, string.Empty);
+        if (expected is not null)
+        {
+            Assert.Equal(expected, actual);
+        }
+
+        Assert.Equal(java, actual);
+    }
+
     [JavaOracleFact]
     public void StarSelectReadsAllColumns()
     {
@@ -1017,6 +1035,54 @@ public sealed class SelectTextTests
         {
             store.Dispose();
         }
+    }
+
+    [JavaOracleFact]
+    public void DualInt()
+    {
+        CompareDual("select_dual_int", "SELECT 1 AS C1", ["=1"]);
+    }
+
+    [JavaOracleFact]
+    public void DualLiterals()
+    {
+        CompareDual("select_dual_literals", "SELECT 'a' AS C1, TRUE AS C2, NULL AS C3", ["=a:TRUE:-"]);
+    }
+
+    [JavaOracleFact]
+    public void DualWhereFalse()
+    {
+        CompareDual("select_dual_wherefalse", "SELECT 1 AS C1 WHERE 1 = 0", []);
+    }
+
+    [JavaOracleFact]
+    public void DualCastVarchar()
+    {
+        CompareDual("select_dual_castvarchar", "SELECT CAST(1 AS VARCHAR) AS C1", ["=1"]);
+    }
+
+    [JavaOracleFact]
+    public void DualCastDouble()
+    {
+        CompareDual("select_dual_castdouble", "SELECT CAST(1 AS DOUBLE) AS C1", ["=1.0"]);
+    }
+
+    [JavaOracleFact]
+    public void DualCastNull()
+    {
+        CompareDual("select_dual_castnull", "SELECT CAST(NULL AS INT) AS C1", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void DualCastDate()
+    {
+        CompareDual("select_dual_castdate", "SELECT CAST('2017-06-15' AS DATE) AS C1", ["=2017-06-15"]);
+    }
+
+    [JavaOracleFact]
+    public void DualNegative()
+    {
+        CompareDual("select_dual_negative", "SELECT -1 AS C1", ["=-1"]);
     }
 
     [JavaOracleFact]

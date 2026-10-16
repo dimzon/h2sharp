@@ -58,8 +58,9 @@ public sealed class H2ConnectionBasicsTests
         Assert.Equal(ConnectionState.Open, connection.State);
 
         // Opening an open connection hands out a second session, and the close of either would
-        // take the database from the other. The reference refuses, so this does.
-        Assert.Throws<H2SharpException>(() => connection.Open());
+        // take the database from the other. The reference refuses, so this does, with the
+        // InvalidOperationException the conformance suite demands for a state mistake.
+        Assert.Throws<InvalidOperationException>(() => connection.Open());
 
         connection.Close();
         Assert.Equal(ConnectionState.Closed, connection.State);
@@ -128,15 +129,33 @@ public sealed class H2ConnectionBasicsTests
     }
 
     [Fact]
+    public void DatabaseDataSourceAndServerVersionAnswer()
+    {
+        using H2Connection connection = new("jdbc:h2:mem:answers");
+        Assert.Equal(string.Empty, connection.Database);
+        Assert.Equal(string.Empty, connection.DataSource);
+        Assert.Throws<InvalidOperationException>(() => _ = connection.ServerVersion);
+
+        connection.Open();
+        try
+        {
+            Assert.NotEmpty(connection.Database);
+            Assert.NotEmpty(connection.DataSource);
+            Assert.NotEmpty(connection.ServerVersion);
+        }
+        finally
+        {
+            connection.Close();
+        }
+    }
+
+    [Fact]
     public void EverythingThatIsNotPortedYetRefuses()
     {
         using H2Connection connection = new("jdbc:h2:mem:refusals");
         connection.Open();
         try
         {
-            Assert.Throws<TODOException>(() => _ = connection.Database);
-            Assert.Throws<TODOException>(() => _ = connection.DataSource);
-            Assert.Throws<TODOException>(() => _ = connection.ServerVersion);
             Assert.Throws<TODOException>(() => connection.ChangeDatabase("other"));
             Assert.Throws<TODOException>(() => connection.BeginTransaction());
         }
@@ -159,8 +178,8 @@ public sealed class H2ConnectionBasicsTests
             Assert.NotNull(command);
             command.CommandText = "SELECT 1";
 
-            // Running it is where the parser is missing, and it says so rather than pretending.
-            Assert.Throws<TODOException>(() => _ = command.ExecuteNonQuery());
+            // A query run as a non-query still runs; ADO.NET answers -1 for it.
+            Assert.Equal(-1, command.ExecuteNonQuery());
         }
         finally
         {

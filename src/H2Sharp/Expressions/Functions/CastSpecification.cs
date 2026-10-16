@@ -8,12 +8,8 @@
  *
  * A cast of an expression to a type.
  *
- * A stub, and only the shell is here: CAST is a function in the reference, and the function
- * machinery (type inference across overloads, argument parsing, the catalogue of every function
- * H2 has) is a package of its own that is not ported yet. What this keeps is the shape the rest
- * of the expression tree already depends on — an expression that converts its value to a type —
- * so that "cast a condition to boolean" compiles and refuses, instead of the caller inventing a
- * different way to do it.
+ * A function in the reference, with the template form (CAST with FORMAT) left out: no reader
+ * builds it, and a field nothing writes is a promise nothing checks.
  */
 using System.Text;
 using H2Sharp.Engine;
@@ -28,7 +24,7 @@ namespace H2Sharp.Expressions.Functions;
 /// </summary>
 public sealed class CastSpecification : Expression
 {
-    private readonly Expression expr;
+    private Expression expr;
 
     private readonly TypeInfo castToType;
 
@@ -45,7 +41,10 @@ public sealed class CastSpecification : Expression
 
     /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
-        => throw new TODOException("CastSpecification.getValue: the conversion rules are not ported");
+    {
+        Value v = expr.GetValue(session);
+        return v.CastToValue(castToType, session.CastDataProvider);
+    }
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo()
@@ -62,8 +61,78 @@ public sealed class CastSpecification : Expression
     /// <inheritdoc/>
     public override Expression Optimize(SessionLocal session)
     {
-        _ = expr.Optimize(session);
+        expr = expr.Optimize(session);
+        if (expr.IsConstant())
+        {
+            Value v = GetValue(session);
+            if (v is ValueNull || CanOptimizeCast(
+                expr.GetTypeInfo().GetValueType(), castToType.GetValueType()))
+            {
+                return TypedValueExpression.Get(v, castToType);
+            }
+        }
+
         return this;
+    }
+
+    /// <inheritdoc/>
+    public override bool IsConstant()
+        => expr is ValueExpression
+            && CanOptimizeCast(expr.GetTypeInfo().GetValueType(), castToType.GetValueType());
+
+    private static bool CanOptimizeCast(int src, int dst)
+    {
+        switch (src)
+        {
+            case Value.Time:
+                switch (dst)
+                {
+                    case Value.TimeTz:
+                    case Value.Timestamp:
+                    case Value.TimestampTz:
+                        return false;
+                }
+
+                break;
+            case Value.TimeTz:
+                switch (dst)
+                {
+                    case Value.Time:
+                    case Value.Timestamp:
+                    case Value.TimestampTz:
+                        return false;
+                }
+
+                break;
+            case Value.Date:
+                if (dst == Value.TimestampTz)
+                {
+                    return false;
+                }
+
+                break;
+            case Value.Timestamp:
+                switch (dst)
+                {
+                    case Value.TimeTz:
+                    case Value.TimestampTz:
+                        return false;
+                }
+
+                break;
+            case Value.TimestampTz:
+                switch (dst)
+                {
+                    case Value.Time:
+                    case Value.Date:
+                    case Value.Timestamp:
+                        return false;
+                }
+
+                break;
+        }
+
+        return true;
     }
 
     /// <inheritdoc/>
@@ -75,9 +144,11 @@ public sealed class CastSpecification : Expression
     /// <inheritdoc/>
     public override StringBuilder GetUnenclosedSql(StringBuilder builder, int sqlFlags)
     {
-        return expr.GetSql(builder, sqlFlags, WithoutParentheses)
-            .Append(" ATOMIC")
-            .Append(CastType);
+        _ = builder.Append("CAST(");
+        expr.GetUnenclosedSql(builder, expr is ValueExpression ? sqlFlags | HasSql.NoCasts : sqlFlags)
+            .Append(" AS ");
+        castToType.GetSql(builder, sqlFlags);
+        return builder.Append(')');
     }
 
     /// <summary>

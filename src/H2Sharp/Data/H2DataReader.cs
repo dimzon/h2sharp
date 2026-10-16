@@ -191,7 +191,22 @@ public sealed class H2DataReader : DbDataReader
     public override long GetInt64(int ordinal) => Get<long>(ordinal);
 
     /// <inheritdoc/>
-    public override string GetString(int ordinal) => Get<string>(ordinal);
+    /// <remarks>
+    /// Any type reads as text in its H2 spelling: TRUE stays TRUE rather than becoming True,
+    /// which is what a CLR conversion would print. That is JDBC's getString rule, and the
+    /// engine already spells every value.
+    /// </remarks>
+    public override string GetString(int ordinal)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as String");
+        }
+
+        return cell.GetString()
+            ?? throw new InvalidCastException("Cannot read column " + ordinal + " as String");
+    }
 
     /// <inheritdoc/>
     public override long GetBytes(int ordinal, long fieldOffset, byte[]? buffer, int bufferOffset, int length)
@@ -255,6 +270,11 @@ public sealed class H2DataReader : DbDataReader
     private T Get<T>(int ordinal)
         where T : notnull
     {
+        if (typeof(T) == typeof(string))
+        {
+            return (T)(object)GetString(ordinal);
+        }
+
         object? value = GetValue(ordinal);
         if (value is T matched)
         {
@@ -266,15 +286,76 @@ public sealed class H2DataReader : DbDataReader
             throw new InvalidCastException("Cannot read NULL as " + typeof(T).Name);
         }
 
-        if (value is IConvertible && typeof(T) != typeof(string) && typeof(T) != typeof(bool)
-            && typeof(T) != typeof(DateTime) && typeof(T) != typeof(Guid))
+        // A string parses into whatever it spells: Guid, timestamps, numbers, booleans.
+        if (value is string text)
         {
-            return (T)Convert.ChangeType(value, typeof(T), null);
+            return ParseString<T>(text, ordinal);
+        }
+
+        // Numbers widen and narrow with overflow checks; anything else converts only
+        // when the pair is exact below.
+        if (value is IConvertible && IsNumericType(typeof(T)) && IsNumericType(value.GetType()))
+        {
+            try
+            {
+                return (T)Convert.ChangeType(value, typeof(T), null);
+            }
+            catch (Exception e) when (e is OverflowException or FormatException)
+            {
+                throw new InvalidCastException(
+                    "Cannot read " + value.GetType().Name + " as " + typeof(T).Name, e);
+            }
+        }
+
+        if (typeof(T) == typeof(Guid) && value is byte[] bytes && bytes.Length == 16)
+        {
+            return (T)(object)new Guid(bytes);
+        }
+
+        if (typeof(T) == typeof(byte[]) && value is Guid guid)
+        {
+            return (T)(object)guid.ToByteArray();
+        }
+
+        if (typeof(T) == typeof(DateTimeOffset) && value is DateTime dateTime)
+        {
+            return (T)(object)new DateTimeOffset(dateTime);
         }
 
         throw new InvalidCastException(
             "Cannot read " + value!.GetType().Name + " as " + typeof(T).Name);
     }
+
+    private static T ParseString<T>(string text, int ordinal)
+    {
+        try
+        {
+            if (typeof(T) == typeof(Guid))
+            {
+                return (T)(object)Guid.Parse(text);
+            }
+
+            if (typeof(T) == typeof(DateTimeOffset))
+            {
+                return (T)(object)DateTimeOffset.Parse(
+                    text, System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            return (T)Convert.ChangeType(
+                text, typeof(T), System.Globalization.CultureInfo.InvariantCulture);
+        }
+        catch (Exception e) when (e is FormatException || e is OverflowException
+            || e is InvalidCastException)
+        {
+            throw new InvalidCastException(
+                "Cannot read column " + ordinal + " as " + typeof(T).Name, e);
+        }
+    }
+
+    private static bool IsNumericType(Type type)
+        => type == typeof(sbyte) || type == typeof(byte) || type == typeof(short)
+            || type == typeof(int) || type == typeof(long) || type == typeof(float)
+            || type == typeof(double) || type == typeof(decimal);
 
     private static long CopySlice<T>(
         T[] source, long fieldOffset, T[]? buffer, int bufferOffset, int length)

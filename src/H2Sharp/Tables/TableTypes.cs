@@ -875,6 +875,15 @@ public abstract class Table
     public const int LOCAL_TEMPORARY = 4;
 
     /// <summary>
+    /// A system table.
+    /// </summary>
+    /// <remarks>
+    /// The numbering is local to this hierarchy and not the reference's TableType ordinals:
+    /// it only has to tell the kinds apart where they are compared.
+    /// </remarks>
+    public const int SYSTEM_TABLE = 5;
+
+    /// <summary>
     /// Whether this table is temporary.
     /// </summary>
     /// <remarks>

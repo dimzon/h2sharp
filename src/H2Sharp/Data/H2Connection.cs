@@ -23,6 +23,8 @@ using System;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading;
+using System.Threading.Tasks;
 using H2Sharp.Engine;
 using H2DbException = H2Sharp.Message.DbException;
 
@@ -63,35 +65,104 @@ public sealed class H2Connection : DbConnection
     /// <see cref="DbConnection"/> declares it, so an override that drops it is a nullability
     /// error rather than a warning.
     /// </summary>
+    /// <remarks>
+    /// Set on an open connection is refused, and a string neither side reads is refused
+    /// too: the URL form goes through the engine's parser, the key=value form takes Data
+    /// Source, User ID and Password, and anything else is a typo the open would trip on
+    /// far from where it was written.
+    /// </remarks>
     [AllowNull]
     public override string ConnectionString
     {
         get => connectionString;
-        set => connectionString = value ?? string.Empty;
+        set
+        {
+            if (session is not null)
+            {
+                throw new InvalidOperationException("The connection string cannot be changed while open");
+            }
+
+            string text = value ?? string.Empty;
+            if (text.Length > 0)
+            {
+                ValidateConnectionString(text);
+            }
+
+            connectionString = text;
+        }
+    }
+
+    /// <summary>
+    /// Checks that a connection string is one this provider opens.
+    /// </summary>
+    /// <param name="text">the connection string</param>
+    private static void ValidateConnectionString(string text)
+    {
+        if (text.StartsWith(Engine.Constants.StartUrl, StringComparison.Ordinal))
+        {
+            try
+            {
+                _ = new ConnectionInfo(text);
+            }
+            catch (H2SharpException e)
+            {
+                throw new ArgumentException("Invalid connection string: " + text, e);
+            }
+
+            return;
+        }
+
+        DbConnectionStringBuilder builder;
+        try
+        {
+            builder = new DbConnectionStringBuilder { ConnectionString = text };
+        }
+        catch (ArgumentException e)
+        {
+            throw new ArgumentException("Invalid connection string: " + text, e);
+        }
+
+        foreach (string? key in builder.Keys)
+        {
+            if (key is null || (!key.Equals("Data Source", StringComparison.OrdinalIgnoreCase)
+                && !key.Equals("User ID", StringComparison.OrdinalIgnoreCase)
+                && !key.Equals("Password", StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ArgumentException("Unknown connection string key: " + key);
+            }
+        }
     }
 
     /// <summary>
     /// Gets the name of the current database, or the initial catalog.
     /// </summary>
     /// <remarks>
-    /// Refuses: there is no connection yet, and a name invented from the connection string
-    /// would be a guess that reads like an answer.
+    /// Empty while closed: there is no database yet, and a name invented from the
+    /// connection string would be a guess that reads like an answer.
     /// </remarks>
-    public override string Database => throw new TODOException("H2Connection.Database: no engine yet");
+    public override string Database => session is null ? string.Empty : openedDatabaseName ?? string.Empty;
 
     /// <summary>
     /// Gets the name of the server this connection is attached to.
     /// </summary>
-    public override string DataSource => throw new TODOException("H2Connection.DataSource: no engine yet");
+    /// <remarks>
+    /// The string that names the source, which is the connection string itself: an
+    /// embedded database has no server to name, and the string is the one identifier
+    /// that is stable while the connection is open. Empty while closed.
+    /// </remarks>
+    public override string DataSource => session is null ? string.Empty : connectionString;
+
+    /// <summary>
+    /// The version of H2 this provider ports, as the server reports it.
+    /// </summary>
+    private const string ServerVersionValue = "2.5.259";
 
     /// <summary>
     /// Gets the version of the server this connection is attached to.
     /// </summary>
-    /// <remarks>
-    /// Refuses rather than reporting H2Sharp's own version: a server version is what the
-    /// server says, and a client that answers for it is lying in a way callers act on.
-    /// </remarks>
-    public override string ServerVersion => throw new TODOException("H2Connection.ServerVersion: no engine yet");
+    public override string ServerVersion => session is null
+        ? throw new InvalidOperationException("The connection is closed")
+        : ServerVersionValue;
 
     /// <summary>
     /// Gets the state of the connection.
@@ -126,12 +197,38 @@ public sealed class H2Connection : DbConnection
     {
         if (session is not null)
         {
-            throw H2DbException.FromUser("08003", "The connection is already open");
+            throw new InvalidOperationException("The connection is already open");
+        }
+
+        if (connectionString.Length == 0)
+        {
+            throw new InvalidOperationException("The connection string is empty");
         }
 
         ConnectionInfo connectionInfo = new(connectionString);
         session = H2Sharp.Engine.Engine.OpenSession(connectionInfo);
         openedDatabaseName = connectionInfo.GetName();
+        OnStateChange(new StateChangeEventArgs(ConnectionState.Closed, ConnectionState.Open));
+    }
+
+    /// <summary>
+    /// Opens the connection asynchronously.
+    /// </summary>
+    /// <remarks>
+    /// Synchronous for now: only in-memory databases open, and there is no I/O to await.
+    /// File-backed opens will do I/O, and then this becomes truly asynchronous rather than
+    /// Open on a completed task.
+    /// </remarks>
+    /// <param name="cancellationToken">the token to watch</param>
+    public override Task OpenAsync(CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled(cancellationToken);
+        }
+
+        Open();
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -144,13 +241,44 @@ public sealed class H2Connection : DbConnection
     public override void Close()
     {
         SessionLocal? current = session;
+        if (current is null)
+        {
+            return;
+        }
+
         session = null;
-        current?.Close();
+        current.Close();
         if (openedDatabaseName is not null && H2Sharp.Engine.Engine.RemoveIfClosed(openedDatabaseName))
         {
             openedDatabaseName = null;
         }
+
+        OnStateChange(new StateChangeEventArgs(ConnectionState.Open, ConnectionState.Closed));
     }
+
+    /// <summary>
+    /// Releases the resources of this connection.
+    /// </summary>
+    /// <remarks>
+    /// The base does not close: disposing without closing would leave the session open
+    /// behind a connection nobody holds, so this closes first and lets the base raise
+    /// Disposed after.
+    /// </remarks>
+    /// <param name="disposing">true for managed cleanup</param>
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            Close();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// Gets the factory this connection was made by.
+    /// </summary>
+    protected override DbProviderFactory DbProviderFactory => H2ProviderFactory.Instance;
 
     /// <summary>
     /// Changes the current database for this connection.

@@ -37,6 +37,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
@@ -249,6 +250,21 @@ public sealed class Parser
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parsePrepared: this parser has no session");
         List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        // A trailing semicolon is not a second statement; anything before it is a list,
+        // and a list answers only its first statement while running the rest for effect.
+        // That is CommandList, and it waits for its own slice: shared parameter numbering
+        // across the statements, one visible result, cached as one command.
+        int end = tokens.Count;
+        while (end > 0 && tokens[end - 1].TokenType is Token.Semicolon or Token.EndOfInput)
+        {
+            end--;
+        }
+
+        if (tokens.Take(end).Any(token => token.TokenType == Token.Semicolon))
+        {
+            throw new TODOException("Parser.parsePrepared: multiple statements (CommandList) are not ported");
+        }
+
         Parser parser = new(sql, provider, tokens, current);
         Prepared prepared;
         if (tokens.Count > 0 && IsSelectFirst(tokens[0]))
@@ -324,19 +340,13 @@ public sealed class Parser
                 {
                     item = ReadQueryAggregate(select, aggregateType);
                 }
-                else if (IsNameToken() && tokens[position + 1].TokenType == Token.OpenParen)
+                else if (IsWord("CAST", consume: false))
                 {
-                    // A function call: only COUNT is read, the rest waits for its aggregate.
-                    // Without this a SUM(ID) would read SUM as a column and fail on the
-                    // parenthesis with a syntax error about valid SQL.
-                    throw new TODOException(
-                        "Parser.parseQuerySelect: " + Current.AsIdentifier + " is not ported");
+                    item = ReadQueryCast();
                 }
                 else
                 {
-                    string? tableAlias;
-                    string column = ReadQueryColumnName(out tableAlias);
-                    item = new Expressions.ExpressionColumn(column, tableAlias, 0);
+                    item = ReadQueryOr(select);
                 }
 
                 string? alias = null;
@@ -359,32 +369,42 @@ public sealed class Parser
             while (ReadIf(Token.Comma));
         }
 
-        if (CurrentType == Token.EndOfInput)
+        Tables.Table? fromTable = null;
+        Tables.TableFilter filter;
+        if (IsWord("FROM"))
         {
-            // SELECT 1 and friends: the reference reads an expression select with no tables,
-            // the engine has no table-less walk yet. End of input is the only shape that is
-            // certainly that, anything else stays a syntax error below.
-            throw new TODOException("Parser.parseQuerySelect: selects without FROM are not ported");
+            string tableName = ReadIdentifier(); string? filterAlias = null;
+            if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+            {
+                filterAlias = ReadIdentifier();
+            }
+
+            Schemas.Schema schema = current.GetCurrentSchema();
+            fromTable = schema.GetTableOrView(current, tableName);
+            filter = new(current, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
+        }
+        else
+        {
+            // Select without FROM: the reference reads an expression select with an
+            // implicit DUAL table, one empty row to evaluate the expressions on.
+            filter = new(
+                current, new Tables.DualTable(current.GetDatabase()), null,
+                rightsChecked: true, select, 0, null);
         }
 
-        ExpectWord("FROM");
-        string tableName = ReadIdentifier(); string? filterAlias = null;
-        if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
-        {
-            filterAlias = ReadIdentifier();
-        }
-
-        Schemas.Schema schema = current.GetCurrentSchema();
-        Tables.Table table = schema.GetTableOrView(current, tableName);
-        Tables.TableFilter filter = new(current, table, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
         select.AddTableFilter(filter, isTop: true);
 
         List<Expressions.Expression> selectList = [];
         if (star)
         {
+            if (fromTable is null)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start, "statement");
+            }
+
             // The reference expands the star in init; there is no star expression here to
             // carry there, so the columns land directly.
-            foreach (Tables.Column column in table.GetColumns())
+            foreach (Tables.Column column in fromTable.GetColumns())
             {
                 selectList.Add(new Expressions.ExpressionColumn(column, filter, 0));
             }
@@ -885,6 +905,21 @@ public sealed class Parser
             Expressions.Aggregate.AggregateType.Listagg, [arg], select, distinct);
         aggregate.SetExtraArguments(extraArguments);
         return aggregate;
+    }
+
+    /// <summary>
+    /// Reads a CAST call: the value, then the type it becomes.
+    /// </summary>
+    /// <returns>the cast</returns>
+    private Expressions.Expression ReadQueryCast()
+    {
+        ExpectWord("CAST");
+        Expect(Token.OpenParen, "(");
+        Expressions.Expression arg = ReadQueryOr();
+        ExpectWord("AS");
+        TypeInfo type = ParseDataType(ReadTypeName());
+        Expect(Token.CloseParen, ")");
+        return new Expressions.Functions.CastSpecification(arg, type);
     }
 
     /// <summary>
