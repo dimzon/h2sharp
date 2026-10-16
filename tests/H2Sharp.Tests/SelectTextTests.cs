@@ -845,6 +845,33 @@ public sealed class SelectTextTests
         CompareText("select_text_anyempty", "SELECT ANY(ID > 0) FROM T WHERE ID > 100", ["=-"]);
     }
 
+    [JavaOracleFact]
+    public void EmptyMinMaxQuickIsNull()
+    {
+        SessionLocal session = NewEmptySession(out TransactionStore store);
+        try
+        {
+            List<string> actual = RunText(session, "SELECT MIN(ID), MAX(ID) FROM T");
+            List<string> java = RunJavaWithSetup(
+                "select_text_minmaxquickempty",
+                "SELECT MIN(ID), MAX(ID) FROM T",
+                """stat.execute("CREATE TABLE T(ID INT PRIMARY KEY, NAME VARCHAR)");""");
+            Assert.Equal(["=-:-"], actual);
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [JavaOracleFact]
+    public void MinMaxWithWhereStaysGrouped()
+    {
+        CompareText(
+            "select_text_minmaxwhere", "SELECT MIN(ID), MAX(ID) FROM T WHERE ID > 1", ["=2:4"]);
+    }
+
     [Fact]
     public void MedianWaitsForAggregates()
     {

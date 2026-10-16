@@ -4122,6 +4122,18 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### MIN и MAX бегут быстрым путём через индекс
+
+Портирована вся цепочка: `Table.getIndexForColumn` (минимальный покрывающий
+индекс с нужной первой колонкой), `Index.canGetFirstOrLast/canFindNext`
+(база — false), `Index.findFirstOrLast` (база — внутренняя ошибка),
+`MVPrimaryIndex` (умеет оба, крайние записи tx-карты), `getMinMaxColumnIndex`,
+ветка быстрого значения с разворотом first/last на DESC-индексе и
+`isEverything`-гейт. Быстрый путь включается только без WHERE — тот же гейт,
+что в эталоне. Проверено: старые MIN/MAX-оракулы отвечают через новый путь теми
+же ответами, плюс пустая таблица в NULL и WHERE-отсев; `H2Sharp.Tests`
+**898 зелёных**.
+
 ### ANY и EVERY бегут тем же Default-классом
 
 В эталоне это тот же `AggregateDataDefault`, только две новые ветки: конвертация

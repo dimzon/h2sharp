@@ -135,9 +135,54 @@ public class Aggregate : AbstractAggregate
                 }
 
                 return ValueBigint.Get(table.GetRowCount(session));
+            case AggregateType.Min:
+            case AggregateType.Max:
+                {
+                    bool first = aggregateType == AggregateType.Min;
+                    H2Sharp.Indexes.Index index = GetMinMaxColumnIndex()
+                        ?? throw Message.DbException.GetInternalError("type=" + aggregateType);
+                    int sortType = index.GetColumns()[0].SortType;
+                    if ((sortType & H2Sharp.Result.SortOrder.Descending) != 0)
+                    {
+                        first = !first;
+                    }
+
+                    H2Sharp.Indexes.Cursor cursor = index.FindFirstOrLast(session, first);
+                    H2Sharp.Result.SearchRow? row = cursor.GetSearchRow();
+                    Value v;
+                    if (row is null)
+                    {
+                        v = ValueNull.Instance;
+                    }
+                    else
+                    {
+                        // A missing stored value is NULL the way the reference only knows ValueNull.
+                        v = row.GetValue(((ExpressionColumn)args[0]).GetColumn()!.GetColumnId())
+                            ?? ValueNull.Instance;
+                    }
+
+                    return v;
+                }
+
             default:
                 throw Message.DbException.GetInternalError("type=" + aggregateType);
         }
+    }
+
+    private H2Sharp.Indexes.Index? GetMinMaxColumnIndex()
+    {
+        Expression arg = args[0];
+        if (arg is ExpressionColumn col)
+        {
+            Column? column = col.GetColumn();
+            TableFilter? filter = col.GetTableFilter();
+            if (column is not null && filter is not null)
+            {
+                return filter.GetTable()?.GetIndexForColumn(column, true, false);
+            }
+        }
+
+        return null;
     }
 
     /// <inheritdoc/>
@@ -439,6 +484,9 @@ public class Aggregate : AbstractAggregate
                 case AggregateType.CountAll:
                     Table? quickTable = visitor.GetTable();
                     return quickTable is not null && quickTable.CanGetRowCount(select.GetSession());
+                case AggregateType.Min:
+                case AggregateType.Max:
+                    return GetMinMaxColumnIndex() is not null;
                 default:
                     return false;
             }

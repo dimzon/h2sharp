@@ -1242,6 +1242,42 @@ public abstract class Table
         => throw new TODOException("Table.getIndexes");
 
     /// <summary>
+    /// Gets the index that has the given column as the first element.
+    /// This method returns null if no matching index is found.
+    /// </summary>
+    /// <param name="column">the column</param>
+    /// <param name="needGetFirstOrLast">if the returned index must be able to do first-or-last lookups</param>
+    /// <param name="needFindNext">if the returned index must be able to do next-row lookups</param>
+    /// <returns>the index or null</returns>
+    public virtual Index? GetIndexForColumn(Column column, bool needGetFirstOrLast, bool needFindNext)
+    {
+        Index? result = null;
+        foreach (Index index in GetIndexes())
+        {
+            if (needGetFirstOrLast && !index.CanGetFirstOrLast())
+            {
+                continue;
+            }
+
+            if (needFindNext && !index.CanFindNext())
+            {
+                continue;
+            }
+
+            // Choose the minimal covering index with the needed first
+            // column to work consistently with execution plan from
+            // Optimizer
+            if (index.IsFirstColumn(column) && (result is null
+                || result.GetColumns().Length > index.GetColumns().Length))
+            {
+                result = index;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Finds the index usable for the given row.
     /// </summary>
     /// <param name="session">the session</param>

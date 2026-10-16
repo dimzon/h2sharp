@@ -784,6 +784,28 @@ public abstract class Index : SchemaObject
         => throw new TODOException("Index.find: the storage is not ported");
 
     /// <summary>
+    /// Checks if the index can directly look up the lowest or highest value of a column.
+    /// </summary>
+    /// <returns>true if it can</returns>
+    public virtual bool CanGetFirstOrLast() => false;
+
+    /// <summary>
+    /// Checks if the index can get the next higher value.
+    /// </summary>
+    /// <returns>true if it can</returns>
+    public virtual bool CanFindNext() => false;
+
+    /// <summary>
+    /// Finds the first (or last) value of this index. The cursor returned is positioned
+    /// on the correct row, or on null if no row has been found.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="first">true if the first (lowest for ascending indexes) or last value should be returned</param>
+    /// <returns>a cursor (never null)</returns>
+    public virtual Cursor FindFirstOrLast(SessionLocal session, bool first)
+        => throw DbException.GetInternalError(ToString());
+
+    /// <summary>
     /// Returns a cursor over this index.
     /// </summary>
     /// <remarks>

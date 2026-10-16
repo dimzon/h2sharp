@@ -306,6 +306,19 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
         }
     }
 
+    /// <inheritdoc/>
+    public override bool CanGetFirstOrLast() => true;
+
+    /// <inheritdoc/>
+    public override Indexes.Cursor FindFirstOrLast(SessionLocal session, bool first)
+    {
+        TransactionMap<long, SearchRow> map = GetMap(session.Transaction ??= mvTable.GetTransactionBegin());
+        KeyValuePair<long, SearchRow>? entry = first ? map.FirstEntry() : map.LastEntry();
+        return entry.HasValue
+            ? new SingleRowCursor(SetRowKey((Row)entry.Value.Value, entry.Value.Key))
+            : SingleRowCursor.Empty;
+    }
+
     /// <summary>
     /// A cursor over the rows from the first bound to the last, or over everything when no
     /// bounds were given.
