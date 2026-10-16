@@ -677,7 +677,7 @@ public sealed class Parser
     /// A name followed by anything else is a column that happens to share the spelling.
     /// </summary>
     /// <param name="aggregateType">the aggregate type, when this is a call</param>
-    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC or LISTAGG call</returns>
+    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG or REGR call</returns>
     private bool IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType)
     {
         aggregateType = default;
@@ -762,6 +762,26 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.Listagg;
         }
+        else if (name.Equals("REGR_COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.RegrCount;
+        }
+        else if (name.Equals("REGR_AVGX", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.RegrAvgx;
+        }
+        else if (name.Equals("REGR_AVGY", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.RegrAvgy;
+        }
+        else if (name.Equals("REGR_SXX", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.RegrSxx;
+        }
+        else if (name.Equals("REGR_SYY", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.RegrSyy;
+        }
         else
         {
             return false;
@@ -771,7 +791,7 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC or LISTAGG call: the aggregates the engine runs.
+    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG or REGR call: the aggregates the engine runs.
     /// </summary>
     /// <remarks>
     /// The reference reads every aggregate name here and builds the matching type; only
@@ -821,6 +841,21 @@ public sealed class Parser
         else if (aggregateType == Expressions.Aggregate.AggregateType.Listagg)
         {
             aggregate = ReadQueryListagg(select, functionName);
+        }
+        else if (aggregateType is Expressions.Aggregate.AggregateType.RegrCount
+            or Expressions.Aggregate.AggregateType.RegrAvgx
+            or Expressions.Aggregate.AggregateType.RegrAvgy
+            or Expressions.Aggregate.AggregateType.RegrSxx
+            or Expressions.Aggregate.AggregateType.RegrSyy)
+        {
+            // The two-argument regressions: the values first, then a comma, then the
+            // second one. DISTINCT never applies here, the reference hardcodes it to false.
+            Expressions.Expression first = ReadQueryOr();
+            Expect(Token.Comma, ",");
+            Expressions.Expression second = ReadQueryOr();
+            Expect(Token.CloseParen, ")");
+            aggregate = new Expressions.Aggregate.Aggregate(
+                aggregateType, [first, second], select, distinct: false);
         }
         else
         {

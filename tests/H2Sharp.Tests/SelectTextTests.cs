@@ -1149,13 +1149,110 @@ public sealed class SelectTextTests
         CompareText("select_text_stringagg", "SELECT STRING_AGG(NAME, ';') FROM T", ["=b;b;c"]);
     }
 
+    [JavaOracleFact]
+    public void RegrCount()
+    {
+        // T3 carries a NULL VAL: the pair with the NULL never reaches the counter.
+        CompareDup("select_text_regrcount", "SELECT REGR_COUNT(VAL, ID) FROM T3", ["=3"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrAvgx()
+    {
+        CompareDup("select_text_regravgx", "SELECT REGR_AVGX(VAL, ID) FROM T3", ["=2.0"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrAvgy()
+    {
+        CompareDup("select_text_regravgy", "SELECT REGR_AVGY(VAL, ID) FROM T3", ["=5.666666666666667"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrSxx()
+    {
+        CompareDup("select_text_regrsxx", "SELECT REGR_SXX(VAL, ID) FROM T3", ["=2.0"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrSyy()
+    {
+        CompareDup("select_text_regrsyy", "SELECT REGR_SYY(VAL, ID) FROM T3", ["=2.666666666666666"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrCountEmptyIsZero()
+    {
+        // Unlike every other empty aggregate, a count of no pairs is zero, not NULL.
+        CompareDup(
+            "select_text_regrcountempty", "SELECT REGR_COUNT(VAL, ID) FROM T3 WHERE ID > 100", ["=0"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrAvgEmptyIsNull()
+    {
+        CompareDup(
+            "select_text_regravgempty", "SELECT REGR_AVGY(VAL, ID) FROM T3 WHERE ID > 100", ["=-"]);
+    }
+
+    [Fact]
+    public void RegrAvgxWrongTypeIsRefused()
+    {
+        // The x argument is the gated one for REGR_AVGX: a VARCHAR there refuses.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            H2SharpException e = Assert.Throws<H2SharpException>(
+                () => session.PrepareCommand("SELECT REGR_AVGX(ID, NAME) FROM T"));
+            Assert.Equal(90015, e.H2ErrorCode);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void RegrAvgyWrongTypeIsRefused()
+    {
+        // The y argument is the gated one for REGR_AVGY: a VARCHAR there refuses.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            H2SharpException e = Assert.Throws<H2SharpException>(
+                () => session.PrepareCommand("SELECT REGR_AVGY(NAME, ID) FROM T"));
+            Assert.Equal(90015, e.H2ErrorCode);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void RegrDistinctIsRefused()
+    {
+        // The reference reads no DISTINCT here either: it fails the same way.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            H2SharpException e = Assert.Throws<H2SharpException>(
+                () => session.PrepareCommand("SELECT REGR_COUNT(DISTINCT ID, ID) FROM T"));
+            Assert.Equal(42001, e.H2ErrorCode);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
     [Fact]
     public void ArrayAggWaitsForAggregates()
     {
         // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE,
-        // PERCENTILE_CONT, PERCENTILE_DISC and LISTAGG run since their paths
-        // landed; every other aggregate refuses by name rather than misreading
-        // as a syntax error.
+        // PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG, REGR_COUNT, REGR_AVGX, REGR_AVGY,
+        // REGR_SXX and REGR_SYY run since their paths landed; every other aggregate
+        // refuses by name rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {

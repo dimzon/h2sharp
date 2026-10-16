@@ -6,12 +6,12 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
  * Sliced to COUNT, SUM, MIN, MAX, AVG, the STDDEV / VAR family, ANY / EVERY,
- * MEDIAN, ANY_VALUE, PERCENTILE_CONT / PERCENTILE_DISC and LISTAGG: the flat,
+ * MEDIAN, ANY_VALUE, PERCENTILE_CONT / PERCENTILE_DISC, LISTAGG and the single-row
+ * regressions (REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY): the flat,
  * quick and grouped paths carry any of them — reading, mapping and accumulation.
  * Every other aggregate type refuses where the reference would branch to it (the
  * data factory, the value reader and the type switch), so adding the next one is
- * new branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
- * them yet, and a field nothing writes is a promise nothing checks.
+ * new branches, not a new shape.
  */
 using System;
 using System.Collections.Generic;
@@ -108,6 +108,7 @@ public class Aggregate : AbstractAggregate
         switch (aggregateType)
         {
             case AggregateType.CountAll:
+            case AggregateType.RegrCount:
                 return new AggregateDataCount(true);
             case AggregateType.Count:
                 if (!distinct)
@@ -118,11 +119,13 @@ public class Aggregate : AbstractAggregate
                 break;
             case AggregateType.Sum:
             case AggregateType.Avg:
+            case AggregateType.RegrAvgx:
+            case AggregateType.RegrAvgy:
                 if (!distinct)
                 {
                     return aggregateType switch
                     {
-                        AggregateType.Avg => new AggregateDataAvg(type!),
+                        AggregateType.Avg or AggregateType.RegrAvgx or AggregateType.RegrAvgy => new AggregateDataAvg(type!),
                         _ => new AggregateDataDefault(aggregateType, type!),
                     };
                 }
@@ -139,6 +142,8 @@ public class Aggregate : AbstractAggregate
             case AggregateType.StddevSamp:
             case AggregateType.VarPop:
             case AggregateType.VarSamp:
+            case AggregateType.RegrSxx:
+            case AggregateType.RegrSyy:
                 if (!distinct)
                 {
                     return new AggregateDataStdVar(aggregateType);
@@ -164,7 +169,7 @@ public class Aggregate : AbstractAggregate
                     AggregateDataCollecting.NullCollectionMode.UsedOrImpossible);
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE and LISTAGG are ported (type="
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX and REGR_SYY are ported (type="
                     + aggregateType + ")");
         }
 
@@ -523,6 +528,23 @@ public class Aggregate : AbstractAggregate
                 ((AggregateDataCollecting)data).SetSharedArgument(v!);
                 v = remembered is not null ? remembered[1] : orderByList![0].expression!.GetValue(session);
                 break;
+            case AggregateType.RegrCount:
+            case AggregateType.RegrAvgy:
+            case AggregateType.RegrSyy:
+                if (v is ValueNull || GetSecondValue(session, remembered) is ValueNull)
+                {
+                    return;
+                }
+
+                break;
+            case AggregateType.RegrAvgx:
+            case AggregateType.RegrSxx:
+                if (v is ValueNull || (v = GetSecondValue(session, remembered)) is ValueNull)
+                {
+                    return;
+                }
+
+                break;
             case AggregateType.Listagg:
                 if (v is ValueNull)
                 {
@@ -543,6 +565,9 @@ public class Aggregate : AbstractAggregate
         // ARRAY_AGG-style aggregates carry those lists, so the wrap would be identity.
         data.Add(session, v);
     }
+
+    private Value? GetSecondValue(SessionLocal session, Value?[]? remembered)
+        => remembered is not null ? remembered[1] : args[1].GetValue(session);
 
     /// <inheritdoc/>
     protected override int GetNumExpressions()
@@ -630,6 +655,7 @@ public class Aggregate : AbstractAggregate
                 type = TypeInfo.TypeBigint;
                 break;
             case AggregateType.CountAll:
+            case AggregateType.RegrCount:
                 type = TypeInfo.TypeBigint;
                 break;
             case AggregateType.Sum:
@@ -652,6 +678,8 @@ public class Aggregate : AbstractAggregate
             case AggregateType.StddevSamp:
             case AggregateType.VarPop:
             case AggregateType.VarSamp:
+            case AggregateType.RegrSxx:
+            case AggregateType.RegrSyy:
                 type = TypeInfo.TypeDouble;
                 break;
             case AggregateType.Median:
@@ -675,6 +703,14 @@ public class Aggregate : AbstractAggregate
                 goto case AggregateType.Median;
             case AggregateType.PercentileDisc:
                 type = orderByList![0].expression!.GetTypeInfo();
+                break;
+            case AggregateType.RegrAvgx:
+                type = GetAvgType(args[1].GetTypeInfo()) ?? throw Message.DbException.Get(
+                    Api.ErrorCode.SumOrAvgOnWrongDatatype1, GetTraceSql());
+                break;
+            case AggregateType.RegrAvgy:
+                type = GetAvgType(args[0].GetTypeInfo()) ?? throw Message.DbException.Get(
+                    Api.ErrorCode.SumOrAvgOnWrongDatatype1, GetTraceSql());
                 break;
             case AggregateType.Listagg:
                 type = TypeInfo.TypeVarchar;
@@ -912,6 +948,11 @@ public class Aggregate : AbstractAggregate
             AggregateType.AnyValue => "ANY_VALUE",
             AggregateType.PercentileCont => "PERCENTILE_CONT",
             AggregateType.PercentileDisc => "PERCENTILE_DISC",
+            AggregateType.RegrCount => "REGR_COUNT",
+            AggregateType.RegrAvgx => "REGR_AVGX",
+            AggregateType.RegrAvgy => "REGR_AVGY",
+            AggregateType.RegrSxx => "REGR_SXX",
+            AggregateType.RegrSyy => "REGR_SYY",
             _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
         };
 
