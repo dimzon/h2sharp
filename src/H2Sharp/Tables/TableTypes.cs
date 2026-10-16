@@ -1057,6 +1057,129 @@ public abstract class Table
     /// <returns>the empty row</returns>
     public virtual Row GetTemplateRow() => CreateRow(new Value[GetColumns().Length], DefaultRow.MemoryCalculate);
 
+    /// <summary>
+    /// Prepares the specified row for INSERT: defaults are filled in, all values are
+    /// converted to target data types and validated.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="row">the row</param>
+    /// <param name="overridingSystem">whether system values are overridden, null when not said</param>
+    public virtual void ConvertInsertRow(
+        H2Sharp.Engine.SessionLocal session, Row row, bool? overridingSystem)
+    {
+        Column[] columns = GetColumns();
+        int generated = 0;
+        for (int i = 0; i < columns.Length; i++)
+        {
+            Value? value = row.GetValue(i);
+            Column column = columns[i];
+            if (value is ValueNull && column.IsDefaultOnNull())
+            {
+                value = null;
+            }
+
+            if (column.IsIdentity())
+            {
+                if (overridingSystem is not null)
+                {
+                    if (!overridingSystem.Value)
+                    {
+                        value = null;
+                    }
+                }
+                else if (value is not null && column.IsGeneratedAlways())
+                {
+                    throw Message.DbException.Get(
+                        Api.ErrorCode.GeneratedColumnCannotBeAssigned1,
+                        column.GetSqlWithTable(new StringBuilder(), Util.HasSql.TraceSqlFlags).ToString());
+                }
+            }
+            else if (column.IsGeneratedAlways())
+            {
+                if (value is not null)
+                {
+                    throw Message.DbException.Get(
+                        Api.ErrorCode.GeneratedColumnCannotBeAssigned1,
+                        column.GetSqlWithTable(new StringBuilder(), Util.HasSql.TraceSqlFlags).ToString());
+                }
+
+                generated++;
+                continue;
+            }
+
+            Value converted = column.ValidateConvertUpdateSequence(session, value, row);
+            if (!ReferenceEquals(converted, value))
+            {
+                row.SetValue(i, converted);
+            }
+        }
+
+        if (generated > 0)
+        {
+            for (int i = 0; i < columns.Length; i++)
+            {
+                if (row.GetValue(i) is null)
+                {
+                    row.SetValue(i, columns[i].ValidateConvertUpdateSequence(session, null, row));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Prepares the specified row for UPDATE operation. Default and generated values are
+    /// evaluated, all values are converted to target data types and validated.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="row">the row</param>
+    /// <param name="fromTrigger">true if the row was modified by an INSERT or UPDATE trigger</param>
+    public virtual void ConvertUpdateRow(
+        H2Sharp.Engine.SessionLocal session, Row row, bool fromTrigger)
+    {
+        Column[] columns = GetColumns();
+        int generated = 0;
+        for (int i = 0; i < columns.Length; i++)
+        {
+            Value? value = row.GetValue(i);
+            Column column = columns[i];
+            if (column.IsGenerated())
+            {
+                if (value is not null)
+                {
+                    if (!fromTrigger)
+                    {
+                        throw Message.DbException.Get(
+                            Api.ErrorCode.GeneratedColumnCannotBeAssigned1,
+                            column.GetSqlWithTable(new StringBuilder(), Util.HasSql.TraceSqlFlags).ToString());
+                    }
+
+                    // A missing value reads as null here: the template row holds nulls, not NULLs.
+                    row.SetValue(i, null!);
+                }
+
+                generated++;
+                continue;
+            }
+
+            Value converted = column.ValidateConvertUpdateSequence(session, value, row);
+            if (!ReferenceEquals(converted, value))
+            {
+                row.SetValue(i, converted);
+            }
+        }
+
+        if (generated > 0)
+        {
+            for (int i = 0; i < columns.Length; i++)
+            {
+                if (row.GetValue(i) is null)
+                {
+                    row.SetValue(i, columns[i].ValidateConvertUpdateSequence(session, null, row));
+                }
+            }
+        }
+    }
+
     private readonly RowFactory rowFactory = RowFactory.GetDefaultRowFactory();
 
     /// <summary>
@@ -1284,6 +1407,55 @@ public abstract class Table
     /// <param name="row">the row to search for</param>
     /// <returns>the index, or null</returns>
     public abstract Index? GetIndexFor(H2Sharp.Engine.SessionLocal session, SearchRow row);
+
+    /// <summary>
+    /// Adds a row to this table.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="row">the row</param>
+    /// <returns>the key of the added row</returns>
+    public virtual long AddRow(H2Sharp.Engine.SessionLocal session, Row row)
+        => throw new TODOException("Table.addRow");
+
+    /// <summary>
+    /// Replaces the row with the same key.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="oldRow">the row as it was</param>
+    /// <param name="newRow">the row as it is now</param>
+    public virtual void UpdateRow(H2Sharp.Engine.SessionLocal session, SearchRow oldRow, SearchRow newRow)
+        => throw new TODOException("Table.updateRow");
+
+    /// <summary>
+    /// Removes the row with the given key.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="key">the key</param>
+    public virtual void RemoveRow(H2Sharp.Engine.SessionLocal session, long key)
+        => throw new TODOException("Table.removeRow");
+
+    /// <summary>
+    /// Adds an index to this table.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="indexName">the index name</param>
+    /// <param name="indexId">the object id</param>
+    /// <param name="cols">the columns that are indexed</param>
+    /// <param name="uniqueColumnCount">count of unique columns</param>
+    /// <param name="indexType">the index type</param>
+    /// <param name="create">whether this call creates the index</param>
+    /// <param name="indexComment">the comment, or null</param>
+    /// <returns>the added index</returns>
+    public virtual Index AddIndex(
+        H2Sharp.Engine.SessionLocal session,
+        string? indexName,
+        int indexId,
+        IndexColumn[] cols,
+        int uniqueColumnCount,
+        H2Sharp.Indexes.IndexType indexType,
+        bool create,
+        string? indexComment)
+        => throw new TODOException("Table.addIndex");
 
     /// <summary>
     /// Gets the primary key columns.

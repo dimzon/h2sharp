@@ -278,7 +278,7 @@ public sealed class MVTable : Table
     /// <param name="create">whether this call creates the index</param>
     /// <param name="indexComment">the comment, or null</param>
     /// <returns>the added index</returns>
-    public Index AddIndex(
+    public override Index AddIndex(
         SessionLocal session,
         string? indexName,
         int indexId,
@@ -511,7 +511,7 @@ public sealed class MVTable : Table
     /// <param name="session">the session</param>
     /// <param name="row">the row to add</param>
     /// <returns>the key</returns>
-    public long AddRow(SessionLocal session, Row row)
+    public override long AddRow(SessionLocal session, Row row)
     {
         ArgumentNullException.ThrowIfNull(row);
         using TransactionScope scope = new(this, session);
@@ -524,7 +524,7 @@ public sealed class MVTable : Table
     /// </summary>
     /// <param name="session">the session</param>
     /// <param name="key">the key</param>
-    public void RemoveRow(SessionLocal session, long key)
+    public override void RemoveRow(SessionLocal session, long key)
     {
         using TransactionScope scope = new(this, session);
         SearchRow? existing = primaryIndex.GetRowForKey(scope.Transaction, key);
@@ -542,7 +542,7 @@ public sealed class MVTable : Table
     /// <param name="session">the session</param>
     /// <param name="oldRow">the row as it was</param>
     /// <param name="newRow">the row as it is now</param>
-    public void UpdateRow(SessionLocal session, SearchRow oldRow, SearchRow newRow)
+    public override void UpdateRow(SessionLocal session, SearchRow oldRow, SearchRow newRow)
     {
         using TransactionScope scope = new(this, session);
         primaryIndex.Update(session, oldRow, newRow);

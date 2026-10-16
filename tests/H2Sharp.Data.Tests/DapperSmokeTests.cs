@@ -46,7 +46,10 @@ public sealed class DapperSmokeTests
 
         List<Person> afterInsert = connection.Query<Person>(
             "SELECT ID, NAME, AGE FROM PERSON ORDER BY ID").AsList();
-        Assert.Equal([new Person { Id = 1, Name = "Ada", Age = 36 }], afterInsert);
+        Person insertedPerson = Assert.Single(afterInsert);
+        Assert.Equal(1, insertedPerson.Id);
+        Assert.Equal("Ada", insertedPerson.Name);
+        Assert.Equal(36, insertedPerson.Age);
 
         int updated = connection.Execute(
             "UPDATE PERSON SET AGE = @Age WHERE ID = @Id",

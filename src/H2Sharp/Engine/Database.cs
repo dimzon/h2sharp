@@ -57,6 +57,17 @@ public sealed partial class Database
     private long modificationMetaId;
 
     /// <summary>
+    /// The store this database's tables live in.
+    /// </summary>
+    /// <remarks>
+    /// The reference's Database owns its MVStore, and every table opens its maps on it: a
+    /// table that brought its own store would be invisible to every transaction but its own.
+    /// File-backed databases are refused until the file path mapping lands; opening them on
+    /// an anonymous in-memory store would answer correctly and lose everything on close.
+    /// </remarks>
+    private readonly MvStore.Tx.TransactionStore store;
+
+    /// <summary>
     /// The schemas of this database, by name.
     /// </summary>
     /// <remarks>
@@ -272,7 +283,22 @@ public sealed partial class Database
         Schemas.Schema main = new(this, AllocateObjectId(), Constants.SchemaMain, system: false);
         AddSchema(main);
         SetMainSchema(main);
+
+        if (!memory)
+        {
+            throw new TODOException("Database: persistent databases are not opened yet");
+        }
+
+        MvStore.MVStore mvStore = MvStore.MVStore.Open(null!);
+        store = new MvStore.Tx.TransactionStore(mvStore);
+        store.Init();
     }
+
+    /// <summary>
+    /// Gets the store this database's tables live in.
+    /// </summary>
+    /// <returns>the transaction store</returns>
+    public MvStore.Tx.TransactionStore GetStore() => store;
 
     /// <summary>
     /// Gets the connection information this database was opened with.

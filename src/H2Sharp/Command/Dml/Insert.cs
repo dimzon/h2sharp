@@ -61,9 +61,7 @@ public sealed class Insert : CommandWithValues
     /// The table this statement writes into.
     /// </summary>
     /// <remarks>
-    /// Set by the statement's own parser, as in the reference — which is why it is null here:
-    /// that parser has not been ported, and a statement that guessed its table would write to
-    /// a table nobody named.
+    /// Set by the statement's own parser, as in the reference.
     /// </remarks>
     private Table? table;
 
@@ -78,11 +76,21 @@ public sealed class Insert : CommandWithValues
     }
 
     /// <summary>
+    /// The columns the values are for, in row order.
+    /// </summary>
+    private Column[]? columns;
+
+    private long rowNumber;
+
+    /// <summary>
     /// Sets the columns the values are for.
     /// </summary>
     /// <param name="columns">the columns</param>
     public void SetColumns(Column[] columns)
-        => throw new TODOException("Insert.setColumns: not ported");
+    {
+        ArgumentNullException.ThrowIfNull(columns);
+        this.columns = columns;
+    }
 
     /// <summary>
     /// Sets whether rows that would duplicate a key are skipped rather than refused.
@@ -114,8 +122,34 @@ public sealed class Insert : CommandWithValues
         => throw new TODOException("Insert.addAssignmentForDuplicate: not ported");
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Rows given as VALUES, evaluated here and not at prepare: a row may name a parameter,
+    /// and its value is not known until the statement runs. Triggers, locks, delta collectors
+    /// and INSERT FROM SELECT wait for their machinery; the rows this reads are the VALUES
+    /// ones the parser kept as expressions.
+    /// </remarks>
     public override long Run(ResultTarget? deltaChangeCollector, Tables.DataChangeDeltaTable.ResultOption? deltaChangeCollectionMode)
-        => throw new TODOException("Insert.update: not ported");
+    {
+        SessionLocal session = GetSession();
+        Table target = table ?? throw Message.DbException.GetInternalError("INSERT without a table");
+        Column[] targetColumns = columns
+            ?? throw Message.DbException.GetInternalError("INSERT without columns");
+        rowNumber = 0;
+        foreach (Expression[] expr in ValuesExpressionList)
+        {
+            Row newRow = target.GetTemplateRow();
+            for (int i = 0; i < targetColumns.Length; i++)
+            {
+                newRow.SetValue(targetColumns[i].GetColumnId(), expr[i].GetValue(session));
+            }
+
+            rowNumber++;
+            target.ConvertInsertRow(session, newRow, null);
+            target.AddRow(session, newRow);
+        }
+
+        return rowNumber;
+    }
 
     /// <summary>
     /// Adds one row's values to the statement.
@@ -125,8 +159,7 @@ public sealed class Insert : CommandWithValues
         => throw new TODOException("Insert.addRow: not ported");
 
     /// <inheritdoc/>
-    public override long GetRowCount()
-        => throw new TODOException("Insert.getRowCount: not ported");
+    public override long GetRowCount() => rowNumber;
 
     /// <inheritdoc/>
     public void LimitsWereApplied()
@@ -173,12 +206,19 @@ public sealed class Insert : CommandWithValues
     public override bool IsRetryable() => true;
     /// <inheritdoc/>
     /// <remarks>
-    /// Not ported. In the reference this is where the statement binds its own text: it holds a
-    /// parser from its constructor and reads itself, so by the time doPrepare runs it already
-    /// has its table, its columns and its rows, and all this has to do is check that each row
-    /// has a value for every column. Here the parser reads the text first and there is no way to
-    /// give that result to the statement, so this refuses rather than binding half of it.
+    /// The parser reads the text first and hands this statement its table, columns and rows,
+    /// so prepare only checks that every row has a value for every column.
     /// </remarks>
     protected override void DoPrepare()
-        => throw new TODOException("DoPrepare: the operator does not read its own text yet");
+    {
+        Column[] targetColumns = columns
+            ?? throw Message.DbException.GetInternalError("INSERT without columns");
+        foreach (Expression[] row in ValuesExpressionList)
+        {
+            if (row.Length != targetColumns.Length)
+            {
+                throw Message.DbException.Get(H2Sharp.Api.ErrorCode.ColumnCountDoesNotMatch);
+            }
+        }
+    }
 }

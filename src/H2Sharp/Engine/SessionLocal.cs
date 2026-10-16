@@ -154,7 +154,11 @@ public sealed class SessionLocal : Session
     /// <summary>
     /// Gets where casts come from.
     /// </summary>
-    public CastDataProvider CastDataProvider { get; init; } = null!;
+    /// <remarks>
+    /// A test double by default in tests, the real machine here: a session that nobody overrode
+    /// answers with the regular mode, the real clock and the system zone.
+    /// </remarks>
+    public CastDataProvider CastDataProvider { get; init; } = DefaultCastDataProvider.Instance;
 
     /// <summary>
     /// Gets how values are compared.

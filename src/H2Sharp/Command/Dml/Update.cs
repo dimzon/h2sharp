@@ -16,6 +16,7 @@
  *
  * Not ported: the members are the reference's and each one refuses.
  */
+using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
@@ -39,15 +40,60 @@ public sealed class Update : FilteredDataChangeStatement
     }
 
     /// <summary>
+    /// What to set each column to.
+    /// </summary>
+    private SetClauseList? setClauseList;
+
+    /// <summary>
     /// Sets what to set each column to.
     /// </summary>
     /// <param name="setClauseList">the assignments</param>
     public void SetSetClauseList(SetClauseList setClauseList)
-        => throw new TODOException("Update.setSetClauseList: SetClauseList is not ported");
+    {
+        ArgumentNullException.ThrowIfNull(setClauseList);
+        this.setClauseList = setClauseList;
+    }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Collected first, written after: the scan walks the live index, and writing while it
+    /// walks would move what it has not read yet. The reference stages the rows the same way
+    /// before it writes them. Locks, triggers, delta collectors and FETCH limits wait for
+    /// their layers.
+    /// </remarks>
     public override long Run(ResultTarget? deltaChangeCollector, Tables.DataChangeDeltaTable.ResultOption? deltaChangeCollectionMode)
-        => throw new TODOException("Update.update: not ported");
+    {
+        SessionLocal session = GetSession();
+        Tables.TableFilter filter = GetTableFilter();
+        Tables.Table table = filter.GetTable();
+        SetClauseList assignments = setClauseList
+            ?? throw Message.DbException.GetInternalError("UPDATE without assignments");
+        filter.SetIndex(table.GetScanIndex(session)!, reverse: false);
+        filter.StartQuery(session);
+        filter.Reset();
+        List<Result.Row> matched = [];
+        Expressions.Expression? condition = GetCondition();
+        while (filter.Next())
+        {
+            Result.Row? row = filter.Get();
+            session.SetCurrentRow(row);
+            if (row is not null && (condition is null || condition.GetBooleanValue(session)))
+            {
+                matched.Add(row);
+            }
+        }
+
+        long count = 0;
+        foreach (Result.Row row in matched)
+        {
+            session.SetCurrentRow(row);
+            table.UpdateRow(session, row, assignments.PrepareUpdate(session, row));
+            count++;
+        }
+
+        session.SetCurrentRow(null);
+        return count;
+    }
 
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
@@ -82,12 +128,22 @@ public sealed class Update : FilteredDataChangeStatement
     public override bool IsRetryable() => true;
     /// <inheritdoc/>
     /// <remarks>
-    /// Not ported. In the reference this is where the statement binds its own text: it holds a
-    /// parser from its constructor and reads itself, so by the time doPrepare runs it already
-    /// has its table, its columns and its rows, and all this has to do is check that each row
-    /// has a value for every column. Here the parser reads the text first and there is no way to
-    /// give that result to the statement, so this refuses rather than binding half of it.
+    /// The parser reads the text first and hands this statement its filter, assignments and
+    /// condition, so prepare only maps the columns and optimizes the condition.
     /// </remarks>
     protected override void DoPrepare()
-        => throw new TODOException("DoPrepare: the operator does not read its own text yet");
+    {
+        Tables.TableFilter filter = GetTableFilter();
+        if (setClauseList is not null)
+        {
+            setClauseList.MapColumns(GetSession(), filter);
+        }
+
+        Expressions.Expression? condition = GetCondition();
+        if (condition is not null)
+        {
+            condition.MapColumns(filter, 0, Expressions.Expression.MapInitial);
+            SetCondition(condition.OptimizeCondition(GetSession()));
+        }
+    }
 }

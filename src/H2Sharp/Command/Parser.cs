@@ -178,6 +178,11 @@ public sealed class Parser
 
     private int position;
 
+    /// <summary>
+    /// The parameters read so far, in the order their placeholders appear.
+    /// </summary>
+    private readonly List<Expressions.Parameter> parameterList = [];
+
     private Parser(string sql, CastDataProvider provider, List<Token> tokens, SessionLocal? session)
     {
         this.sql = sql;
@@ -244,34 +249,33 @@ public sealed class Parser
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parsePrepared: this parser has no session");
         List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        Parser parser = new(sql, provider, tokens, current);
+        Prepared prepared;
         if (tokens.Count > 0 && IsSelectFirst(tokens[0]))
         {
             // The reference switches on the first token; the statement words arrive as
             // identifiers, so the peek is by text, unquoted. A flat SELECT builds the engine
             // operator directly, everything else goes through the parse-only statements below.
-            return new Parser(sql, provider, tokens, current).ParseQuerySelect();
+            prepared = parser.ParseQuerySelect();
+        }
+        else
+        {
+            Statement statement = parser.ReadStatement();
+            statement.Sql = sql;
+            prepared = statement switch
+            {
+                CreateTableStatement create => PrepareCreateTable(current, create),
+                DropTableStatement drop => PrepareDropTable(current, drop),
+                InsertStatement insert => PrepareInsert(current, insert),
+                UpdateStatement update => PrepareUpdate(current, update),
+                DeleteStatement delete => PrepareDelete(current, delete),
+                SelectStatement select => new Query.Select(current),
+                _ => new Dml.NoOperation(current),
+            };
         }
 
-        Parser parser = new(sql, provider, tokens, current);
-        Statement statement = parser.ReadStatement();
-        statement.Sql = sql;
-        switch (statement)
-        {
-            case CreateTableStatement create:
-                return PrepareCreateTable(current, create);
-            case DropTableStatement drop:
-                return PrepareDropTable(current, drop);
-            case InsertStatement insert:
-                return new Dml.Insert(current);
-            case UpdateStatement update:
-                return new Dml.Update(current);
-            case DeleteStatement delete:
-                return new Dml.Delete(current);
-            case SelectStatement select:
-                return new Query.Select(current);
-            default:
-                return new Dml.NoOperation(current);
-        }
+        prepared.SetParameterList(parser.parameterList.Count == 0 ? null : parser.parameterList);
+        return prepared;
     }
 
     /// <summary>
@@ -1048,7 +1052,9 @@ public sealed class Parser
         if (Current is Token.ParameterToken parameter)
         {
             Read();
-            return new Expressions.Parameter(parameter.Index);
+            Expressions.Parameter expression = new(parameter.Index);
+            parameterList.Add(expression);
+            return expression;
         }
 
         if (CurrentType == Token.At)
@@ -1091,12 +1097,73 @@ public sealed class Parser
         create.SetSql(statement.Sql, null);
         create.SetTableName(statement.Name);
         create.SetIfNotExists(statement.IfNotExists);
+        List<Tables.IndexColumn> primaryKey = [];
+        int id = 0;
         foreach (ColumnDefinition column in statement.Columns)
         {
-            _ = column;
+            Tables.Column tableColumn = new(column.Name, ParseDataType(column.Type), null, id++);
+            if (column.NotNull)
+            {
+                tableColumn.SetNullable(false);
+            }
+
+            create.AddColumn(tableColumn);
+            if (column.PrimaryKey)
+            {
+                primaryKey.Add(new Tables.IndexColumn(tableColumn));
+            }
+        }
+
+        if (primaryKey.Count > 0)
+        {
+            Ddl.AlterTableAddConstraint key = new(
+                session, CurrentSchema(session), CommandInterface.AlterTableAddConstraintPrimaryKey, false);
+            key.SetIndexColumns([.. primaryKey]);
+            create.AddConstraintCommand(key);
         }
 
         return create;
+    }
+
+    /// <summary>
+    /// Parses a data type as it was written: a name from the type table with an
+    /// optional precision and scale.
+    /// </summary>
+    /// <param name="typeName">the type, such as INT or VARCHAR(100)</param>
+    /// <returns>the type info</returns>
+    private TypeInfo ParseDataType(string typeName)
+    {
+        string name = typeName;
+        long precision = -1;
+        int scale = -1;
+        int paren = typeName.IndexOf('(');
+        if (paren >= 0)
+        {
+            name = typeName[..paren];
+            string[] args = typeName[(paren + 1)..^1].Split(',');
+            if (args.Length > 2)
+            {
+                throw DbException.GetSyntaxError(sql, 0, typeName);
+            }
+
+            if (!long.TryParse(args[0].Trim(), out precision))
+            {
+                throw DbException.GetSyntaxError(sql, 0, typeName);
+            }
+
+            if (args.Length > 1 && !int.TryParse(args[1].Trim(), out scale))
+            {
+                throw DbException.GetSyntaxError(sql, 0, typeName);
+            }
+        }
+
+        DataType? dataType = DataType.GetTypeByName(name.Trim().ToUpperInvariant());
+        if (dataType is null)
+        {
+            throw DbException.GetSyntaxError(sql, 0, typeName);
+        }
+
+        return TypeInfo.GetTypeInfo(dataType.Type, precision, scale, null);
     }
 
     /// <summary>
@@ -1105,6 +1172,54 @@ public sealed class Parser
     /// <param name="session">the session</param>
     /// <param name="statement">the parsed statement</param>
     /// <returns>the prepared statement</returns>
+    /// <summary>
+    /// Builds the INSERT command for a statement the parser read.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="statement">the parsed statement</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareInsert(SessionLocal session, InsertStatement statement)
+    {
+        Tables.Table table = CurrentSchema(session).GetTableOrView(session, statement.Name);
+        Dml.Insert insert = new(session);
+        insert.SetSql(statement.Sql, null);
+        insert.SetTable(table);
+        Tables.Column[] tableColumns = table.GetColumns();
+        Tables.Column[] columns;
+        if (statement.Columns.Count == 0)
+        {
+            columns = tableColumns;
+        }
+        else
+        {
+            columns = new Tables.Column[statement.Columns.Count];
+            for (int i = 0; i < statement.Columns.Count; i++)
+            {
+                string name = statement.Columns[i];
+                Tables.Column? match = null;
+                foreach (Tables.Column candidate in tableColumns)
+                {
+                    if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        match = candidate;
+                        break;
+                    }
+                }
+
+                columns[i] = match
+                    ?? throw DbException.GetSyntaxError(sql, 0, name);
+            }
+        }
+
+        insert.SetColumns(columns);
+        foreach (List<Expressions.Expression> row in statement.Rows)
+        {
+            insert.AddRow([.. row]);
+        }
+
+        return insert;
+    }
+
     private Prepared PrepareDropTable(SessionLocal session, DropTableStatement statement)
     {
         Ddl.DropTable drop = new(session);
@@ -1112,6 +1227,70 @@ public sealed class Parser
         drop.SetIfExists(statement.IfExists);
         drop.AddTable(CurrentSchema(session), statement.Name);
         return drop;
+    }
+
+    /// <summary>
+    /// Builds the UPDATE command for a statement the parser read.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="statement">the parsed statement</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareUpdate(SessionLocal session, UpdateStatement statement)
+    {
+        Tables.Table table = CurrentSchema(session).GetTableOrView(session, statement.Name);
+        Dml.Update update = new(session);
+        update.SetSql(statement.Sql, null);
+        update.SetTableFilter(new Tables.TableFilter(
+            session, table, table.GetTableName(), rightsChecked: true, select: null, 0, null));
+        Dml.SetClauseList assignments = new(table);
+        foreach ((string name, Expression value) in statement.Assignments)
+        {
+            Tables.Column? match = null;
+            foreach (Tables.Column candidate in table.GetColumns())
+            {
+                if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    match = candidate;
+                    break;
+                }
+            }
+
+            if (match is null)
+            {
+                throw DbException.GetSyntaxError(sql, 0, name);
+            }
+
+            assignments.AddSingle(match, null, value);
+        }
+
+        update.SetSetClauseList(assignments);
+        if (statement.Where is not null)
+        {
+            update.SetCondition(statement.Where);
+        }
+
+        return update;
+    }
+
+    /// <summary>
+    /// Builds the DELETE command for a statement the parser read.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="statement">the parsed statement</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareDelete(SessionLocal session, DeleteStatement statement)
+    {
+        Tables.Table table = CurrentSchema(session).GetTableOrView(session, statement.Name);
+        Dml.Delete delete = new(session);
+        delete.SetSql(statement.Sql, null);
+        delete.SetTableFilter(new Tables.TableFilter(
+            session, table, table.GetTableName(), rightsChecked: true, select: null, 0, null));
+        if (statement.Where is not null)
+        {
+            delete.SetCondition(statement.Where);
+        }
+
+        return delete;
     }
 
     /// <summary>
@@ -1545,6 +1724,14 @@ public sealed class Parser
             }
 
             return ValueExpression.Get(Negate(v.GetValueFromLiteral()));
+        }
+
+        if (Current is Token.ParameterToken parameter)
+        {
+            Read();
+            Expressions.Parameter expression = new(parameter.Index);
+            parameterList.Add(expression);
+            return expression;
         }
 
         if (CurrentType == Token.At)

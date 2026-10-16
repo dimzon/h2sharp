@@ -8,17 +8,9 @@
  *
  * DROP TABLE.
  *
- * It is not one table. The statement accumulates the tables it was asked to drop — a DROP TABLE
- * with CASCADE, or a schema's worth of them — and the count it answers is the number of tables
- * gone, not the number of names written. That is the reference's shape and it matters: a DROP
- * TABLE T1, T2 that drops three tables because a third was cascaded answers 3, and a port that
- * counted the names would answer 2 and leave a caller believing nothing else went with them.
- *
- * IF EXISTS is about the statement, not about the table. It turns "there is no such table" from
- * an error into nothing, and it must not turn a drop of a *different* table into silence: the
- * decision is made per table, against what the database has.
- *
- * Not ported: the body. It needs the meta table and the schema registry.
+ * IF EXISTS is about the statement, not about the table. It turns "there is no such table"
+ * from an error into nothing, and it must not turn a drop of a *different* table into
+ * silence: the decision is made per table, against what the database has.
  */
 using System;
 using System.Collections.Generic;
@@ -67,13 +59,46 @@ public sealed class DropTable : DefineCommand
     /// <summary>
     /// Drops the tables.
     /// </summary>
-    /// <returns>the number of tables dropped, counting the ones that went with them</returns>
+    /// <remarks>
+    /// prepareDrop then executeDrop, as in the reference: resolve every name first, then
+    /// remove, so a missing table fails before anything is gone. The RESTRICT dependency
+    /// checks have nothing to check yet — views, materialized views and constraint objects
+    /// are not ported — and neither do the locks: there is no lock manager on this path.
+    /// The index maps stay in the store until it closes; map names are id-keyed, so a
+    /// table created again after a drop opens fresh maps and never sees the old rows.
+    /// </remarks>
+    /// <returns>0</returns>
     public override long Update()
     {
-        throw new TODOException(
-            "DropTable.update: the meta table is not ported (tables=" + tables.Count
-            + ", ifExists=" + ifExists
-            + ", dropAction=" + dropAction + ")");
+        List<(Schema Schema, Tables.Table Table)> drops = [];
+        foreach ((Schema schema, string name) in tables)
+        {
+            Tables.Table? table = schema.FindTableOrView(null, name);
+            if (table is null)
+            {
+                if (!ifExists)
+                {
+                    throw Message.DbException.Get(Api.ErrorCode.TableOrViewNotFound1, name);
+                }
+            }
+            else
+            {
+                drops.Add((schema, table));
+            }
+        }
+
+        if (drops.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach ((Schema schema, Tables.Table table) in drops)
+        {
+            schema.Remove(table);
+            table.RemoveChildrenAndResources(GetSession());
+        }
+
+        return 0;
     }
 
     /// <summary>

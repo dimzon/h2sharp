@@ -149,19 +149,68 @@ public sealed class H2Command : DbCommand
     /// <summary>
     /// Runs the command and returns the rows it affected.
     /// </summary>
-    public override int ExecuteNonQuery() => ExecuteCore();
+    /// <remarks>
+    /// A query run this way still runs: ADO.NET answers -1 for it, and the rows it
+    /// would have produced are read and dropped rather than left open underneath
+    /// the caller.
+    /// </remarks>
+    public override int ExecuteNonQuery()
+    {
+        Command.CommandContainer container = PrepareEngine();
+        if (container.IsQuery())
+        {
+            using Result.ResultInterface result = container.Query(-1);
+            while (result.Next())
+            {
+            }
+
+            return -1;
+        }
+
+        return Convert.ToInt32(container.UpdateRows(false).GetUpdateCount());
+    }
 
     /// <summary>
     /// Runs the command and returns the first column of the first row.
     /// </summary>
-    public override object? ExecuteScalar() => ExecuteCore();
+    public override object? ExecuteScalar()
+    {
+        Command.CommandContainer container = PrepareEngine();
+        if (!container.IsQuery())
+        {
+            _ = container.UpdateRows(false);
+            return null;
+        }
+
+        using Result.ResultInterface result = container.Query(1);
+        if (!result.Next())
+        {
+            return null;
+        }
+
+        Values.Value?[] row = result.CurrentRow();
+        return row.Length == 0 ? null : H2ValueMapper.ToObject(row[0]);
+    }
 
     /// <summary>
     /// Runs the command and returns a reader over its results.
     /// </summary>
     /// <param name="behavior">how the reader behaves</param>
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
-        => throw new TODOException("H2Command.ExecuteReader: the statement produced no reader yet");
+    {
+        Command.CommandContainer container = PrepareEngine();
+        if (!container.IsQuery())
+        {
+            throw new InvalidOperationException("The command is not a query");
+        }
+
+        long maxrows = behavior.HasFlag(CommandBehavior.SingleRow) ? 1 : -1;
+        Result.ResultInterface result = container.Query(maxrows);
+        Action? onClose = behavior.HasFlag(CommandBehavior.CloseConnection) && connection is not null
+            ? connection.Close
+            : null;
+        return new H2DataReader(result, onClose);
+    }
 
     /// <summary>
     /// Prepares the command.
@@ -192,9 +241,16 @@ public sealed class H2Command : DbCommand
     }
 
     /// <summary>
-    /// Runs the statement.
+    /// Prepares the text, binds the values, and hands back the running command.
     /// </summary>
-    private int ExecuteCore()
+    /// <remarks>
+    /// The engine only knows positional parameters, so named ones are rewritten before
+    /// the text reaches it, and the values are bound by the positions they took. A
+    /// placeholder with no value is refused here rather than read as NULL there: NULL is
+    /// a value the caller could have meant, a missing one is a mistake in the call.
+    /// </remarks>
+    /// <returns>the prepared container</returns>
+    private Command.CommandContainer PrepareEngine()
     {
         SessionLocal? current = connection?.Session;
         if (current is null)
@@ -207,7 +263,30 @@ public sealed class H2Command : DbCommand
             throw H2DbException.FromUser("42000", "The command text is empty");
         }
 
-        _ = current.PrepareCommand(commandText);
-        throw new TODOException("H2Command: the statement ran but produced no result yet");
+        string text = commandText;
+        List<H2Parameter> ordered = [];
+        if (parameters.Count > 0)
+        {
+            (text, ordered) = H2ParameterRewriter.Rewrite(commandText, parameterCollection);
+        }
+
+        Command.CommandContainer container = current.PrepareCommand(text) as Command.CommandContainer
+            ?? throw new InvalidOperationException("The statement is not a runnable command");
+        foreach (Expressions.ParameterInterface engineParameter in container.GetParameters())
+        {
+            Expressions.Parameter parameter = (Expressions.Parameter)engineParameter;
+            // The tokenizer numbers placeholders from 1, like the ?N form: the first
+            // placeholder is index 1, so the ordered values shift by one.
+            int index = parameter.GetIndex() - 1;
+            if (index < 0 || index >= ordered.Count)
+            {
+                throw new InvalidOperationException(
+                    "No value was given for parameter #" + parameter.GetIndex());
+            }
+
+            parameter.SetValue(H2ValueMapper.ToValue(ordered[index].Value), false);
+        }
+
+        return container;
     }
 }

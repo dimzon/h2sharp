@@ -20,10 +20,12 @@
  *
  * Not ported: the body needs the index and the constraint machinery.
  */
+using System;
 using H2Sharp.Constraints;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Indexes;
+using H2Sharp.Message;
 using H2Sharp.Schemas;
 using H2Sharp.Tables;
 using H2Sharp.Values;
@@ -84,8 +86,86 @@ public class AlterTableAddConstraint : AlterTable
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Only the primary key runs: it is an index, and the index layer is here. Every other
+    /// constraint waits for the constraint layer with it. The catalog object (ConstraintUnique)
+    /// is not created yet — nothing reads it back without INFORMATION_SCHEMA — but the index
+    /// it would own is, which is what enforces uniqueness and answers MIN and MAX.
+    /// </remarks>
     public override long Update(Table table)
-        => throw new TODOException("AlterTableAddConstraint.update: constraints are not ported");
+    {
+        if (type != CommandInterface.AlterTableAddConstraintPrimaryKey)
+        {
+            throw new TODOException("AlterTableAddConstraint.update: constraints are not ported");
+        }
+
+        SessionLocal session = GetSession();
+        IndexColumn[] keyColumns = MapColumns(table, indexColumns);
+        foreach (H2Sharp.Indexes.Index existing in table.GetIndexes())
+        {
+            if (existing == table.GetPrimaryKey() || !existing.IsPrimaryKey())
+            {
+                continue;
+            }
+
+            IndexColumn[] existingColumns = existing.GetColumns();
+            if (existingColumns.Length == keyColumns.Length)
+            {
+                bool same = true;
+                for (int i = 0; i < existingColumns.Length && same; i++)
+                {
+                    same = ReferenceEquals(existingColumns[i].GetColumn(), keyColumns[i].GetColumn());
+                }
+
+                if (same)
+                {
+                    return 0;
+                }
+            }
+
+            throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
+        }
+
+        H2Sharp.Indexes.Index index = table.AddIndex(
+            session,
+            "PRIMARY_KEY_" + table.GetTableName(),
+            session.GetDatabase().AllocateObjectId(),
+            keyColumns,
+            keyColumns.Length,
+            Indexes.IndexType.CreatePrimaryKey(session.GetDatabase().IsPersistent(), primaryKeyHash),
+            create: true,
+            indexComment: null);
+        index.GetIndexType()!.SetBelongsToConstraint(true);
+        return 0;
+    }
+
+    private static IndexColumn[] MapColumns(Table table, IndexColumn[] columns)
+    {
+        Column[] tableColumns = table.GetColumns();
+        IndexColumn[] mapped = new IndexColumn[columns.Length];
+        for (int i = 0; i < columns.Length; i++)
+        {
+            string name = columns[i].GetName();
+            Column? match = null;
+            foreach (Column candidate in tableColumns)
+            {
+                if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    match = candidate;
+                    break;
+                }
+            }
+
+            if (match is null)
+            {
+                throw DbException.Get(Api.ErrorCode.ColumnNotFound1, name);
+            }
+
+            mapped[i] = new IndexColumn(match);
+        }
+
+        return mapped;
+    }
 
     /// <summary>
     /// Sets what happens when a row this one points at is deleted.

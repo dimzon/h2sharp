@@ -94,19 +94,27 @@ public sealed class PrepareCommandTests
     }
 
     [Fact]
-    public void ADataChangeStatementIsNotReadyToPrepareYet()
+    public void ADataChangeStatementPrepares()
     {
         SessionLocal session = NewSession();
 
-        // The reference binds a data change statement in doPrepare, and by then the statement
-        // has already read its own text: it holds a parser from its constructor, so it has its
-        // table, its columns and its rows before anything is checked. Here the parser reads the
-        // text first and there is no way to hand that result to the statement, so preparing
-        // refuses. That is the honest state -- a statement that prepared with half of itself
-        // bound would be the thing this project forbids.
-        Assert.Throws<TODOException>(() => session.PrepareCommand("INSERT INTO T VALUES (1)"));
-        Assert.Throws<TODOException>(() => session.PrepareCommand("UPDATE T SET ID = 1"));
-        Assert.Throws<TODOException>(() => session.PrepareCommand("DELETE FROM T"));
+        // The parser reads the text first and hands the statement its table, columns and
+        // rows, so preparing binds rather than refuses: INSERT, UPDATE and DELETE prepare
+        // into their own classes, none of them a query.
+        CommandContainer insert = Assert.IsType<CommandContainer>(
+            session.PrepareCommand("INSERT INTO T VALUES (1, 'b')"));
+        Assert.IsType<H2Sharp.Command.Dml.Insert>(insert.GetPreparedCommand());
+        Assert.False(insert.IsQuery());
+
+        CommandContainer update = Assert.IsType<CommandContainer>(
+            session.PrepareCommand("UPDATE T SET ID = 1"));
+        Assert.IsType<H2Sharp.Command.Dml.Update>(update.GetPreparedCommand());
+        Assert.False(update.IsQuery());
+
+        CommandContainer delete = Assert.IsType<CommandContainer>(
+            session.PrepareCommand("DELETE FROM T"));
+        Assert.IsType<H2Sharp.Command.Dml.Delete>(delete.GetPreparedCommand());
+        Assert.False(delete.IsQuery());
     }
 
     [Fact]

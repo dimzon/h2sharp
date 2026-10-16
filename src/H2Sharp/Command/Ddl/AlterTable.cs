@@ -16,8 +16,6 @@
  * Update() is final and it is the same for every subclass, because they all do the same three
  * things: commit whatever the statement does not need, find the table, and run the change on
  * it. What the change *is* is the subclass's update(Table).
- *
- * Not ported: finding the table needs the schema registry.
  */
 using H2Sharp.Engine;
 using H2Sharp.Message;
@@ -79,10 +77,24 @@ public abstract class AlterTable : SchemaCommand
     /// <remarks>
     /// Final and the same for every subclass, as in the reference: commit what this statement
     /// does not need, find the table, and change it. The change itself is
-    /// <see cref="Update(Table)"/>.
+    /// <see cref="Update(Table)"/>. The rights check waits for the user layer — refusing here
+    /// would refuse every ALTER TABLE on a database that has no users yet.
     /// </remarks>
     public override long Update()
-        => throw new TODOException("AlterTable.update: the schema registry is not ported");
+    {
+        Table? table = GetSchema().FindTableOrView(GetSession(), GetTableName());
+        if (table is null)
+        {
+            if (IsIfTableExists())
+            {
+                return 0;
+            }
+
+            throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, GetTableName());
+        }
+
+        return Update(table);
+    }
 
     /// <summary>
     /// Changes the given table.

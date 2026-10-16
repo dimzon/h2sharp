@@ -89,8 +89,24 @@ public abstract class CommandWithColumns : SchemaCommand
     /// </remarks>
     /// <param name="columns">the columns</param>
     protected void ChangePrimaryKeysToNotNull(List<Column> columns)
-        => throw new TODOException(
-            "CommandWithColumns.changePrimaryKeysToNotNull: it needs the names of the key's columns, and IndexColumn here holds a Column rather than a name");
+    {
+        if (primaryKey is null)
+        {
+            return;
+        }
+
+        IndexColumn[] keyColumns = primaryKey.GetIndexColumns();
+        foreach (Column column in columns)
+        {
+            foreach (IndexColumn keyColumn in keyColumns)
+            {
+                if (column.GetName().Equals(keyColumn.GetName(), StringComparison.Ordinal))
+                {
+                    column.SetNullable(false);
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// Creates the constraints that were held aside.

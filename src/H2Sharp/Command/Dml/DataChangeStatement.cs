@@ -125,6 +125,9 @@ public abstract class DataChangeStatement : Prepared
         return Run(null, null);
     }
 
+    /// <inheritdoc/>
+    public sealed override long Update() => Run();
+
     /// <summary>
     /// The number of rows the last run changed.
     /// </summary>

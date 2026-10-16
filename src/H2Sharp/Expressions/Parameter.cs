@@ -87,8 +87,12 @@ public sealed class Parameter : Expression, ParameterInterface
     }
 
     /// <summary>
-    /// Gets the 0-based index of this parameter.
+    /// Gets the 1-based index of this parameter.
     /// </summary>
+    /// <remarks>
+    /// One-based like the ?N form: the first placeholder is 1, and a bare ? takes the
+    /// next number in order. A caller that binds by position shifts by one.
+    /// </remarks>
     public int GetIndex()
     {
         return index;

@@ -29,6 +29,8 @@ public abstract class FilteredDataChangeStatement : DataChangeStatement
 {
     private TableFilter? tableFilter;
 
+    private Expression? condition;
+
     /// <summary>
     /// Creates the statement.
     /// </summary>
@@ -60,16 +62,18 @@ public abstract class FilteredDataChangeStatement : DataChangeStatement
     /// <summary>
     /// Sets the condition that selects the rows to change.
     /// </summary>
-    /// <param name="condition">the condition</param>
-    public void SetCondition(Expression condition)
-        => throw new TODOException("FilteredDataChangeStatement.setCondition: not ported");
+    /// <remarks>
+    /// Null clears it: an optimized-away condition (constant true) is no condition, and a
+    /// statement that kept it would evaluate true per row for nothing.
+    /// </remarks>
+    /// <param name="condition">the condition, or null for all rows</param>
+    public void SetCondition(Expression? condition) => this.condition = condition;
 
     /// <summary>
     /// Gets the condition that selects the rows to change.
     /// </summary>
-    /// <returns>the condition</returns>
-    public Expression GetCondition()
-        => throw new TODOException("FilteredDataChangeStatement.getCondition: not ported");
+    /// <returns>the condition, or null for all rows</returns>
+    public Expression? GetCondition() => condition;
 
     /// <summary>
     /// Sets the FETCH clause, which is what keeps a data change statement read only.

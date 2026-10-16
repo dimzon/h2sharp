@@ -111,24 +111,56 @@ public sealed class CreateTable : CommandWithColumns
     /// </remarks>
     public override long Update()
     {
-        // The message is made of the statement's own state on purpose. It is the only place
-        // these fields are read until the body is ported, and a refusal that names what it was
-        // asked to create is worth more than one that names the method that refused.
-        throw new TODOException(
-            "CreateTable.update: the meta table is not ported (name=" + tableName
-            + ", columns=" + columns.Count
-            + ", temporary=" + temporary
-            + ", globalTemporary=" + globalTemporary
-            + ", onCommitDrop=" + onCommitDrop
-            + ", onCommitTruncate=" + onCommitTruncate
-            + ", persistIndexes=" + persistIndexes
-            + ", persistData=" + persistData
-            + ", withNoData=" + withNoData
-            + ", ifNotExists=" + ifNotExists
-            + ", comment=" + comment
-            + ", tableEngine=" + tableEngine
-            + ", engineParams=" + (tableEngineParams?.Count ?? 0)
-            + ", select=" + (select is not null));
+        if (temporary || globalTemporary || onCommitDrop || onCommitTruncate)
+        {
+            throw new TODOException("CreateTable.update: temporary tables are not ported");
+        }
+
+        if (select is not null || withNoData)
+        {
+            throw new TODOException("CreateTable.update: CREATE TABLE AS SELECT is not ported");
+        }
+
+        if (tableEngine is not null || tableEngineParams is not null)
+        {
+            throw new TODOException("CreateTable.update: table engines are not ported");
+        }
+
+        if (comment is not null)
+        {
+            throw new TODOException("CreateTable.update: table comments are not ported");
+        }
+
+        SessionLocal session = GetSession();
+        Engine.Database db = session.GetDatabase();
+        Schema schema = GetSchema();
+        if (schema.FindTableOrView(session, tableName) is not null)
+        {
+            if (ifNotExists)
+            {
+                return 0;
+            }
+
+            throw Message.DbException.Get(Api.ErrorCode.TableOrViewAlreadyExists1, tableName);
+        }
+
+        ChangePrimaryKeysToNotNull(columns);
+        MvStore.Db.MVTable table = new(
+            db,
+            schema,
+            db.AllocateObjectId(),
+            tableName,
+            [.. columns],
+            db.GetStore(),
+            db.IsPersistent() && persistData);
+        foreach (Column column in columns)
+        {
+            column.SetTable(table, column.GetColumnId());
+        }
+
+        schema.Add(table);
+        CreateConstraints();
+        return 0;
     }
 
     /// <summary>Sets whether the table's indexes are persisted.</summary>

@@ -1,0 +1,259 @@
+/*
+ * Copyright 2026 H2Sharp contributors.
+ * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
+ * Ported from none (new file, no Java counterpart).
+ *
+ * The two directions between the caller's world and the engine's.
+ *
+ * JDBC has no boxing problem: setObject takes anything and the driver converts by the
+ * column type it knows. Here the value arrives untyped and the column type is known only
+ * inside the statement, so the conversion happens twice — once here, guessing from the
+ * CLR type, and once in the engine, which converts to the column it is going into. A
+ * guess that loses information would be silent corruption, so anything without an exact
+ * CLR home refuses by name rather than answering wrongly.
+ *
+ * The conventions where one side has no counterpart are written down, not discovered:
+ * a DateTime keeps no zone because TIMESTAMP has none; a TIME_TZ reads with the date
+ * of DateTime.MinValue because a time with an offset is not a point in time; sub-tick
+ * nanoseconds do not survive into a TimeSpan because a tick is 100 of them.
+ */
+using System;
+using System.Data;
+using System.Globalization;
+using System.Numerics;
+
+using H2Sharp.Api;
+using H2Sharp.Util;
+using H2Sharp.Values;
+
+namespace H2Sharp.Data;
+
+/// <summary>
+/// Converts between caller values and engine values.
+/// </summary>
+internal static class H2ValueMapper
+{
+    /// <summary>
+    /// Converts a caller value to an engine value.
+    /// </summary>
+    /// <param name="value">the caller value, possibly null</param>
+    /// <returns>the engine value</returns>
+    internal static Value ToValue(object? value)
+    {
+        if (value is null or DBNull)
+        {
+            return ValueNull.Instance;
+        }
+
+        if (value.GetType().IsEnum)
+        {
+            return ToValue(Convert.ChangeType(
+                value, Enum.GetUnderlyingType(value.GetType()), CultureInfo.InvariantCulture));
+        }
+
+        return value switch
+        {
+            bool b => ValueBoolean.Get(b),
+            // A byte holds 0..255 and TINYINT holds -128..127: SMALLINT carries all
+            // of it exactly, and the engine narrows to the column it goes into.
+            byte b => ValueSmallint.Get(b),
+            sbyte b => ValueTinyint.Get(b),
+            short s => ValueSmallint.Get(s),
+            int i => ValueInteger.Get(i),
+            long l => ValueBigint.Get(l),
+            BigInteger bi => ValueNumeric.Get(new BigDecimal(bi, 0)),
+            float f => ValueReal.Get(f),
+            double d => ValueDouble.Get(d),
+            decimal m => ValueNumeric.Get(BigDecimal.Parse(
+                m.ToString(CultureInfo.InvariantCulture))),
+            char c => ValueChar.Get(c.ToString()),
+            string s => ValueVarchar.Get(s),
+            byte[] bytes => ValueVarbinary.Get(bytes),
+            DateTime dt => ValueTimestamp.FromDateValueAndNanos(
+                DateTimeUtils.DateValue(dt.Year, dt.Month, dt.Day), dt.TimeOfDay.Ticks * 100L),
+            DateOnly d => ValueDate.FromDateValue(
+                DateTimeUtils.DateValue(d.Year, d.Month, d.Day)),
+            TimeOnly t => ValueTime.FromNanos(t.ToTimeSpan().Ticks * 100L),
+            TimeSpan span => FromTimeSpan(span),
+            DateTimeOffset dto => ValueTimestampTimeZone.FromDateValueAndNanos(
+                DateTimeUtils.DateValue(dto.Year, dto.Month, dto.Day),
+                dto.TimeOfDay.Ticks * 100L,
+                (int)dto.Offset.TotalSeconds),
+            Guid g => ValueUuid.Get(g),
+            _ => throw new TODOException(
+                "H2ValueMapper.ToValue: no engine value for " + value.GetType().Name),
+        };
+    }
+
+    /// <summary>
+    /// Converts an engine value to a caller value: DBNull for NULL, otherwise the CLR
+    /// value of the matching type.
+    /// </summary>
+    /// <param name="value">the engine value, possibly null</param>
+    /// <returns>the caller value</returns>
+    internal static object? ToObject(Value? value)
+    {
+        if (value is null or ValueNull)
+        {
+            return DBNull.Value;
+        }
+
+        return value.GetValueType() switch
+        {
+            Value.Boolean => value.GetBoolean(),
+            Value.Tinyint => (sbyte)value.GetInt(),
+            Value.Smallint => (short)value.GetInt(),
+            Value.Integer => value.GetInt(),
+            Value.Bigint => value.GetLong(),
+            Value.Real => value.GetFloat(),
+            Value.Double => value.GetDouble(),
+            Value.Numeric or Value.Decfloat => ToDecimal(value),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+                => value.GetString(),
+            Value.Binary or Value.Varbinary or Value.Blob => value.GetBytes(),
+            Value.Date => ToDateTime(
+                DateTimeUtils.YearFromDateValue(((ValueDate)value).GetDateValue()),
+                DateTimeUtils.MonthFromDateValue(((ValueDate)value).GetDateValue()),
+                DateTimeUtils.DayFromDateValue(((ValueDate)value).GetDateValue()),
+                0L),
+            Value.Time => new TimeSpan(((ValueTime)value).GetNanos() / 100L),
+            Value.TimeTz => new DateTimeOffset(
+                DateTime.MinValue.Date.AddTicks(((ValueTimeTimeZone)value).GetNanos() / 100L),
+                TimeSpan.FromSeconds(((ValueTimeTimeZone)value).GetTimeZoneOffsetSeconds())),
+            Value.Timestamp => ToDateTime(
+                DateTimeUtils.YearFromDateValue(((ValueTimestamp)value).GetDateValue()),
+                DateTimeUtils.MonthFromDateValue(((ValueTimestamp)value).GetDateValue()),
+                DateTimeUtils.DayFromDateValue(((ValueTimestamp)value).GetDateValue()),
+                ((ValueTimestamp)value).GetTimeNanos()),
+            Value.TimestampTz => new DateTimeOffset(
+                ToDateTime(
+                    DateTimeUtils.YearFromDateValue(((ValueTimestampTimeZone)value).GetDateValue()),
+                    DateTimeUtils.MonthFromDateValue(((ValueTimestampTimeZone)value).GetDateValue()),
+                    DateTimeUtils.DayFromDateValue(((ValueTimestampTimeZone)value).GetDateValue()),
+                    ((ValueTimestampTimeZone)value).GetTimeNanos()),
+                TimeSpan.FromSeconds(((ValueTimestampTimeZone)value).GetTimeZoneOffsetSeconds())),
+            Value.Uuid => ((ValueUuid)value).GetUuid(),
+            Value.IntervalYearToMonth or Value.IntervalDayToSecond
+                or Value.IntervalYear or Value.IntervalMonth or Value.IntervalDay
+                or Value.IntervalHour or Value.IntervalMinute or Value.IntervalSecond
+                or Value.IntervalDayToHour or Value.IntervalDayToMinute
+                or Value.IntervalHourToMinute or Value.IntervalHourToSecond
+                or Value.IntervalMinuteToSecond => ToTimeSpan((ValueInterval)value),
+            _ => throw new TODOException(
+                "H2ValueMapper.ToObject: no caller value for engine type "
+                + Value.GetTypeName(value.GetValueType())),
+        };
+    }
+
+    /// <summary>
+    /// The CLR type a column of the given engine type reads as.
+    /// </summary>
+    /// <param name="type">the engine type</param>
+    /// <returns>the CLR type</returns>
+    internal static Type GetFieldType(TypeInfo type)
+    {
+        return type.GetValueType() switch
+        {
+            Value.Boolean => typeof(bool),
+            Value.Tinyint => typeof(sbyte),
+            Value.Smallint => typeof(short),
+            Value.Integer => typeof(int),
+            Value.Bigint => typeof(long),
+            Value.Numeric or Value.Decfloat => typeof(decimal),
+            Value.Real => typeof(float),
+            Value.Double => typeof(double),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase
+                or Value.Clob => typeof(string),
+            Value.Binary or Value.Varbinary or Value.Blob => typeof(byte[]),
+            Value.Date or Value.Timestamp => typeof(DateTime),
+            Value.Time => typeof(TimeSpan),
+            Value.TimeTz or Value.TimestampTz => typeof(DateTimeOffset),
+            Value.Uuid => typeof(Guid),
+            Value.IntervalYearToMonth or Value.IntervalDayToSecond
+                or Value.IntervalYear or Value.IntervalMonth or Value.IntervalDay
+                or Value.IntervalHour or Value.IntervalMinute or Value.IntervalSecond
+                or Value.IntervalDayToHour or Value.IntervalDayToMinute
+                or Value.IntervalHourToMinute or Value.IntervalHourToSecond
+                or Value.IntervalMinuteToSecond => typeof(TimeSpan),
+            _ => typeof(object),
+        };
+    }
+
+    /// <summary>
+    /// The DbType a parameter value is sent as, for callers that ask.
+    /// </summary>
+    /// <param name="value">the caller value, possibly null</param>
+    /// <returns>the database type</returns>
+    internal static DbType GetDbType(object? value)
+    {
+        if (value is not null && value.GetType().IsEnum)
+        {
+            return GetDbType(Convert.ChangeType(
+                value, Enum.GetUnderlyingType(value.GetType()), CultureInfo.InvariantCulture));
+        }
+
+        return value switch
+        {
+            null or DBNull => DbType.Object,
+            bool => DbType.Boolean,
+            byte or sbyte => DbType.SByte,
+            short => DbType.Int16,
+            int => DbType.Int32,
+            long => DbType.Int64,
+            BigInteger => DbType.VarNumeric,
+            float => DbType.Single,
+            double => DbType.Double,
+            decimal => DbType.Decimal,
+            char or string => DbType.String,
+            byte[] => DbType.Binary,
+            DateTime => DbType.DateTime2,
+            DateOnly => DbType.Date,
+            TimeOnly => DbType.Time,
+            TimeSpan => DbType.Object,
+            DateTimeOffset => DbType.DateTimeOffset,
+            Guid => DbType.Guid,
+            _ => DbType.Object,
+        };
+    }
+
+    private static DateTime ToDateTime(int year, int month, int day, long nanos)
+        => new DateTime(year, month, day).AddTicks(nanos / 100L);
+
+    private static decimal ToDecimal(Value value)
+    {
+        if (value is ValueDecfloat decfloat && !decfloat.IsFinite())
+        {
+            throw new InvalidCastException(
+                "Cannot read " + value.GetString() + " as Decimal");
+        }
+
+        return decimal.Parse(
+            value.GetBigDecimal().ToPlainString(), CultureInfo.InvariantCulture);
+    }
+
+    private static ValueInterval FromTimeSpan(TimeSpan span)
+    {
+        BigInteger total = new BigInteger(span.Ticks) * 100;
+        bool negative = total.Sign < 0;
+        BigInteger absolute = BigInteger.Abs(total);
+        BigInteger day = IntervalUtils.NanosPerDayBi;
+        return ValueInterval.From(
+            IntervalQualifier.DayToSecond, negative,
+            (long)(absolute / day), (long)(absolute % day));
+    }
+
+    private static TimeSpan ToTimeSpan(ValueInterval interval)
+    {
+        if (interval.GetQualifier() != IntervalQualifier.DayToSecond)
+        {
+            throw new TODOException(
+                "H2ValueMapper.ToObject: only DAY TO SECOND intervals read as TimeSpan ("
+                + interval.GetQualifier() + ")");
+        }
+
+        BigInteger total = new BigInteger(interval.GetLeading()) * IntervalUtils.NanosPerDayBi
+            + new BigInteger(interval.GetRemaining());
+        long ticks = (long)(total / 100);
+        return new TimeSpan(interval.IsNegative() ? -ticks : ticks);
+    }
+}

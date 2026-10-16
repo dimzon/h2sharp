@@ -39,8 +39,38 @@ public sealed class Delete : FilteredDataChangeStatement
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Collected first, removed after, for the same reason updates stage their rows: the scan
+    /// walks the live index. The count is the rows removed, not the rows matched.
+    /// </remarks>
     public override long Run(ResultTarget? deltaChangeCollector, Tables.DataChangeDeltaTable.ResultOption? deltaChangeCollectionMode)
-        => throw new TODOException("Delete.update: not ported");
+    {
+        SessionLocal session = GetSession();
+        Tables.TableFilter filter = GetTableFilter();
+        Tables.Table table = filter.GetTable();
+        filter.SetIndex(table.GetScanIndex(session)!, reverse: false);
+        filter.StartQuery(session);
+        filter.Reset();
+        List<long> keys = [];
+        Expressions.Expression? condition = GetCondition();
+        while (filter.Next())
+        {
+            Result.Row? row = filter.Get();
+            session.SetCurrentRow(row);
+            if (row is not null && (condition is null || condition.GetBooleanValue(session)))
+            {
+                keys.Add(row.GetKey());
+            }
+        }
+
+        session.SetCurrentRow(null);
+        foreach (long key in keys)
+        {
+            table.RemoveRow(session, key);
+        }
+
+        return keys.Count;
+    }
 
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
@@ -68,12 +98,17 @@ public sealed class Delete : FilteredDataChangeStatement
     public override bool IsRetryable() => true;
     /// <inheritdoc/>
     /// <remarks>
-    /// Not ported. In the reference this is where the statement binds its own text: it holds a
-    /// parser from its constructor and reads itself, so by the time doPrepare runs it already
-    /// has its table, its columns and its rows, and all this has to do is check that each row
-    /// has a value for every column. Here the parser reads the text first and there is no way to
-    /// give that result to the statement, so this refuses rather than binding half of it.
+    /// The parser reads the text first and hands this statement its filter and condition,
+    /// so prepare only maps the columns and optimizes the condition.
     /// </remarks>
     protected override void DoPrepare()
-        => throw new TODOException("DoPrepare: the operator does not read its own text yet");
+    {
+        Tables.TableFilter filter = GetTableFilter();
+        Expressions.Expression? condition = GetCondition();
+        if (condition is not null)
+        {
+            condition.MapColumns(filter, 0, Expressions.Expression.MapInitial);
+            SetCondition(condition.OptimizeCondition(GetSession()));
+        }
+    }
 }

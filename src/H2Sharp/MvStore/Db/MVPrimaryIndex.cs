@@ -302,7 +302,9 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     {
         foreach (KeyValuePair<long, SearchRow> entry in GetMap(transaction).EntrySet())
         {
-            yield return entry.Value;
+            // A scanned row without its key is a row no write can find again: updates and
+            // deletes locate by key, so the scan sets it the way the cursor path does.
+            yield return SetRowKey((Row)entry.Value, entry.Key)!;
         }
     }
 

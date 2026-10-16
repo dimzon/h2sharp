@@ -16,10 +16,14 @@
  *
  * Not ported: the actions themselves, which need the row being updated.
  */
+using System;
 using System.Collections.Generic;
 using System.Text;
+using H2Sharp.Engine;
 using H2Sharp.Expressions;
+using H2Sharp.Result;
 using H2Sharp.Tables;
+using H2Sharp.Values;
 
 namespace H2Sharp.Command.Dml;
 
@@ -30,7 +34,15 @@ public sealed class SetClauseList
 {
     private readonly Table table;
 
-    private readonly List<SetAction> actions = [];
+    private readonly List<SetSingle> singles = [];
+
+    /// <summary>
+    /// One plain assignment: a column becomes an expression.
+    /// </summary>
+    /// <param name="Column">the column</param>
+    /// <param name="ArrayIndexes">the array element indexes, or null</param>
+    /// <param name="Value">what to set it to</param>
+    private sealed record SetSingle(Column Column, Expression[]? ArrayIndexes, Expression Value);
 
     /// <summary>
     /// Creates the list for a table.
@@ -57,7 +69,20 @@ public sealed class SetClauseList
     /// <param name="arrayIndexes">the index of the array element, or null</param>
     /// <param name="expression">what to set it to</param>
     public void AddSingle(Column column, Expression[]? arrayIndexes, Expression expression)
-        => throw new TODOException("SetClauseList.addSingle: not ported");
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        ArgumentNullException.ThrowIfNull(expression);
+        foreach (SetSingle single in singles)
+        {
+            if (single.Column.GetColumnId() == column.GetColumnId())
+            {
+                throw Message.DbException.Get(
+                    Api.ErrorCode.DuplicateColumnName1, column.GetName());
+            }
+        }
+
+        singles.Add(new SetSingle(column, arrayIndexes, expression));
+    }
 
     /// <summary>
     /// Adds one assignment that sets several columns at once.
@@ -78,16 +103,94 @@ public sealed class SetClauseList
         => throw new TODOException("SetClauseList.getSQL: not ported");
 
     /// <summary>
-    /// One assignment of this list.
+    /// Maps the assigned expressions against the updated table.
     /// </summary>
-    private abstract class SetAction
+    /// <param name="session">the session</param>
+    /// <param name="filter">the filter of the table being updated</param>
+    public void MapColumns(SessionLocal session, Tables.TableFilter filter)
     {
-        /// <summary>
-        /// Appends the SQL of this assignment.
-        /// </summary>
-        /// <param name="builder">the builder</param>
-        /// <param name="sqlFlags">the SQL flags</param>
-        /// <returns>the builder</returns>
-        internal abstract StringBuilder GetSql(StringBuilder builder, int sqlFlags);
+        foreach (SetSingle single in singles)
+        {
+            single.Value.MapColumns(filter, 0, Expression.MapInitial);
+            if (single.ArrayIndexes is not null)
+            {
+                foreach (Expression index in single.ArrayIndexes)
+                {
+                    index.MapColumns(filter, 0, Expression.MapInitial);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Builds the new row for the old one: assigned columns are evaluated, the rest
+    /// is kept, everything is converted to its column type and validated.
+    /// </summary>
+    /// <remarks>
+    /// The reference's prepareUpdate with the unreachable taken out: ON UPDATE expressions,
+    /// generated columns, delta collectors and triggers wait for their layers. Array element
+    /// assignments refuse rather than writing half a row.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="oldRow">the row as it is</param>
+    /// <returns>the row as it becomes</returns>
+    public Row PrepareUpdate(SessionLocal session, Row oldRow)
+    {
+        Column[] columns = table.GetColumns();
+        Row newRow = table.GetTemplateRow();
+        for (int i = 0; i < columns.Length; i++)
+        {
+            Column column = columns[i];
+            Value? newValue = null;
+            bool assigned = false;
+            foreach (SetSingle single in singles)
+            {
+                if (single.Column.GetColumnId() != column.GetColumnId())
+                {
+                    continue;
+                }
+
+                if (single.ArrayIndexes is not null)
+                {
+                    throw new TODOException(
+                        "SetClauseList.prepareUpdate: array element assignment is not ported");
+                }
+
+                newValue = single.Value.GetValue(session);
+                if (newValue is ValueNull && column.IsDefaultOnNull())
+                {
+                    newValue = null;
+                }
+                else if (column.IsGeneratedAlways())
+                {
+                    throw Message.DbException.Get(
+                        Api.ErrorCode.GeneratedColumnCannotBeAssigned1,
+                        column.GetSqlWithTable(new StringBuilder(), Util.HasSql.TraceSqlFlags).ToString());
+                }
+
+                assigned = true;
+                break;
+            }
+
+            if (!assigned)
+            {
+                newValue = column.IsGenerated() ? null : oldRow.GetValue(i);
+            }
+
+            newRow.SetValue(i, newValue!);
+        }
+
+        table.ConvertUpdateRow(session, newRow, false);
+        int mainIndexColumn = table.GetMainIndexColumn();
+        long key = mainIndexColumn == SearchRow.RowidIndex
+            ? oldRow.GetKey()
+            : newRow.GetValue(mainIndexColumn)!.GetLong();
+        if (key != oldRow.GetKey())
+        {
+            throw new TODOException("SetClauseList.prepareUpdate: updating the primary key is not ported");
+        }
+
+        newRow.SetKey(key);
+        return newRow;
     }
 }
