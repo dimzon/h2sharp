@@ -4122,6 +4122,21 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### MEDIAN бежит массивным путём Percentile
+
+Портированы `Percentile.getValue` и весь `interpolate` (числа в NUMERIC,
+TIME/DATE/TIMESTAMP с часовыми поясами, интервалы, прочие типы по правилам
+PERCENTILE_DISC), фабрика в собирание, значение, тип (числа в
+NUMERIC_FLOATING_POINT), SQL-имя, ридер. Индексный путь (`getFromIndex`) не
+портирован сознательно: ему нужен `canFindNext`, которого нет ни у одного
+индекса, а движок его и не просит — MEDIAN не оптимизируется в быстрый запрос.
+`BigDecimal.valueOf(double)` передан как `Parse(DoubleToString)` — тот же
+`Double.toString`-маршрут, что в эталоне. `toBigInteger`/`divideAndRemainder`
+живут приватными хелперами в `Percentile`: слой значений их не несёт, а
+единственный потребитель — темпоральная интерполяция. Проверено: 6 оракулов
+против JDBC (чёт/нечет, строки, группировка, DISTINCT, пустое множество);
+`H2Sharp.Tests` **904 зелёных**.
+
 ### MIN и MAX бегут быстрым путём через индекс
 
 Портирована вся цепочка: `Table.getIndexForColumn` (минимальный покрывающий

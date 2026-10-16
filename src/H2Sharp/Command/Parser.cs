@@ -622,7 +622,7 @@ public sealed class Parser
     /// A name followed by anything else is a column that happens to share the spelling.
     /// </summary>
     /// <param name="aggregateType">the aggregate type, when this is a call</param>
-    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY or EVERY call</returns>
+    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY or MEDIAN call</returns>
     private bool IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType)
     {
         aggregateType = default;
@@ -685,6 +685,10 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.Every;
         }
+        else if (name.Equals("MEDIAN", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Median;
+        }
         else
         {
             return false;
@@ -694,7 +698,7 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY or EVERY call: the aggregates the engine runs.
+    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY or MEDIAN call: the aggregates the engine runs.
     /// </summary>
     /// <remarks>
     /// The reference reads every aggregate name here and builds the matching type; only

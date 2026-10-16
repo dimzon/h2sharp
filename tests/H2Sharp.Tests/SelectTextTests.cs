@@ -872,18 +872,55 @@ public sealed class SelectTextTests
             "select_text_minmaxwhere", "SELECT MIN(ID), MAX(ID) FROM T WHERE ID > 1", ["=2:4"]);
     }
 
-    [Fact]
-    public void MedianWaitsForAggregates()
+    [JavaOracleFact]
+    public void MedianIds()
     {
-        // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY and EVERY run since their
-        // paths landed; every other aggregate refuses by name rather than
+        CompareText("select_text_median", "SELECT MEDIAN(ID) FROM T", ["=2.5"]);
+    }
+
+    [JavaOracleFact]
+    public void MedianOddCount()
+    {
+        CompareText("select_text_medianodd", "SELECT MEDIAN(ID) FROM T WHERE ID > 1", ["=3"]);
+    }
+
+    [JavaOracleFact]
+    public void MedianName()
+    {
+        CompareText("select_text_medianname", "SELECT MEDIAN(NAME) FROM T", ["=b"]);
+    }
+
+    [JavaOracleFact]
+    public void MedianGroupBy()
+    {
+        CompareText(
+            "select_text_mediangroup", "SELECT NAME, MEDIAN(ID) FROM T GROUP BY NAME", ["=-:4", "=b:1.5", "=c:3"]);
+    }
+
+    [JavaOracleFact]
+    public void MedianDistinct()
+    {
+        CompareText("select_text_mediandistinct", "SELECT MEDIAN(DISTINCT ID) FROM T", ["=2.5"]);
+    }
+
+    [JavaOracleFact]
+    public void MedianEmptyIsNull()
+    {
+        CompareText("select_text_medianempty", "SELECT MEDIAN(ID) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [Fact]
+    public void ListaggWaitsForAggregates()
+    {
+        // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY and MEDIAN run since
+        // their paths landed; every other aggregate refuses by name rather than
         // misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
             TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT MEDIAN(ID) FROM T"));
-            Assert.Contains("MEDIAN", e.Message);
+                () => session.PrepareCommand("SELECT LISTAGG(NAME) FROM T"));
+            Assert.Contains("LISTAGG", e.Message);
         }
         finally
         {
