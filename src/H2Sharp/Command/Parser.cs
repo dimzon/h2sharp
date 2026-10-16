@@ -622,7 +622,7 @@ public sealed class Parser
     /// A name followed by anything else is a column that happens to share the spelling.
     /// </summary>
     /// <param name="aggregateType">the aggregate type, when this is a call</param>
-    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN or ANY_VALUE call</returns>
+    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT or PERCENTILE_DISC call</returns>
     private bool IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType)
     {
         aggregateType = default;
@@ -693,6 +693,14 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.AnyValue;
         }
+        else if (name.Equals("PERCENTILE_CONT", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.PercentileCont;
+        }
+        else if (name.Equals("PERCENTILE_DISC", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.PercentileDisc;
+        }
         else
         {
             return false;
@@ -702,7 +710,7 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN or ANY_VALUE call: the aggregates the engine runs.
+    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT or PERCENTILE_DISC call: the aggregates the engine runs.
     /// </summary>
     /// <remarks>
     /// The reference reads every aggregate name here and builds the matching type; only
@@ -724,6 +732,29 @@ public sealed class Parser
             Expect(Token.CloseParen, ")");
             aggregate = new Expressions.Aggregate.Aggregate(
                 Expressions.Aggregate.AggregateType.CountAll, [], select, distinct: false);
+        }
+        else if (aggregateType is Expressions.Aggregate.AggregateType.PercentileCont
+            or Expressions.Aggregate.AggregateType.PercentileDisc)
+        {
+            // readWithinGroup in its simple form: the fraction, then
+            // WITHIN GROUP (ORDER BY expression sortType). DISTINCT never
+            // applies here, the reference hardcodes it to false.
+            Expressions.Expression fraction = ReadQueryOr();
+            Expect(Token.CloseParen, ")");
+            ExpectWord("WITHIN");
+            ExpectWord("GROUP");
+            Expect(Token.OpenParen, "(");
+            ExpectWord("ORDER");
+            ExpectWord("BY");
+            Query.QueryOrderBy order = new()
+            {
+                expression = ReadQueryOr(),
+                sortType = ReadQuerySortType(),
+            };
+            Expect(Token.CloseParen, ")");
+            aggregate = new Expressions.Aggregate.Aggregate(
+                aggregateType, [fraction], select, distinct: false);
+            aggregate.SetOrderByList([order]);
         }
         else
         {

@@ -6,17 +6,20 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
  * Sliced to COUNT, SUM, MIN, MAX, AVG, the STDDEV / VAR family, ANY / EVERY,
- * MEDIAN and ANY_VALUE: the flat, quick and grouped paths carry any of them —
- * reading, mapping and accumulation. Every other aggregate type refuses where the
- * reference would branch to it (the data factory, the value reader and the type
- * switch), so adding the next one is new branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
+ * MEDIAN, ANY_VALUE and PERCENTILE_CONT / PERCENTILE_DISC: the flat, quick and
+ * grouped paths carry any of them — reading, mapping and accumulation. Every
+ * other aggregate type refuses where the reference would branch to it (the data
+ * factory, the value reader and the type switch), so adding the next one is new
+ * branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
  * them yet, and a field nothing writes is a promise nothing checks.
  */
 using System;
+using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
 using H2Sharp.Tables;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Expressions.Aggregate;
@@ -27,6 +30,8 @@ namespace H2Sharp.Expressions.Aggregate;
 public class Aggregate : AbstractAggregate
 {
     private readonly AggregateType aggregateType;
+
+    private List<QueryOrderBy>? orderByList;
 
     /// <summary>
     /// Create a new aggregate object.
@@ -53,6 +58,26 @@ public class Aggregate : AbstractAggregate
     public AggregateType GetAggregateType() => aggregateType;
 
     /// <inheritdoc/>
+    public override void SetEvaluatable(TableFilter tableFilter, bool value)
+    {
+        if (orderByList is not null)
+        {
+            foreach (QueryOrderBy o in orderByList)
+            {
+                o.expression!.SetEvaluatable(tableFilter, value);
+            }
+        }
+
+        base.SetEvaluatable(tableFilter, value);
+    }
+
+    /// <summary>
+    /// Sets the ORDER BY list of a WITHIN GROUP aggregate.
+    /// </summary>
+    /// <param name="orderBy">the ORDER BY list</param>
+    public void SetOrderByList(List<QueryOrderBy> orderBy) => orderByList = orderBy;
+
+    /// <inheritdoc/>
     protected override void UpdateAggregate(SessionLocal session, object aggregateData)
     {
         AggregateData data = (AggregateData)aggregateData;
@@ -60,7 +85,7 @@ public class Aggregate : AbstractAggregate
         // COUNT takes the argument as is; the type-specific arms arrive with their types.
         // The reference wraps values for ORDER BY lists here (updateCollecting), but no
         // reader builds those lists yet, so the wrap would be identity.
-        data.Add(session, v);
+        UpdateData(session, data, v, null);
     }
 
     /// <inheritdoc/>
@@ -115,9 +140,12 @@ public class Aggregate : AbstractAggregate
                 }
 
                 break;
+            case AggregateType.PercentileCont:
+            case AggregateType.PercentileDisc:
+                break;
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN and ANY_VALUE are ported (type="
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE and PERCENTILE are ported (type="
                     + aggregateType + ")");
         }
 
@@ -277,6 +305,36 @@ public class Aggregate : AbstractAggregate
 
                     break;
                 }
+
+            case AggregateType.PercentileCont:
+            case AggregateType.PercentileDisc:
+                {
+                    AggregateDataCollecting collectingData = (AggregateDataCollecting)data;
+                    Value[]? array = collectingData.GetArray();
+                    if (array is null)
+                    {
+                        return ValueNull.Instance;
+                    }
+
+                    Value? shared = collectingData.GetSharedArgument();
+                    if (shared is null || shared == ValueNull.Instance)
+                    {
+                        return ValueNull.Instance;
+                    }
+
+                    BigDecimal arg = shared.GetBigDecimal();
+                    if (arg.Signum() >= 0 && arg.CompareTo(BigDecimal.One) <= 0)
+                    {
+                        return Percentile.GetValue(
+                            session, array, type!.GetValueType(), orderByList,
+                            arg, aggregateType == AggregateType.PercentileCont);
+                    }
+
+                    throw Message.DbException.GetInvalidValueException(
+                        aggregateType == AggregateType.PercentileCont
+                            ? "PERCENTILE_CONT argument" : "PERCENTILE_DISC argument",
+                        arg);
+                }
             default:
                 break;
         }
@@ -299,25 +357,71 @@ public class Aggregate : AbstractAggregate
     {
         AggregateData data = (AggregateData)aggregateData;
         Value? v = args.Length == 0 ? null : array[0];
-        UpdateData(session, data, v);
+        UpdateData(session, data, v, array);
     }
 
-    private void UpdateData(SessionLocal session, AggregateData data, Value? v)
+    private void UpdateData(SessionLocal session, AggregateData data, Value? v, Value?[]? remembered)
     {
+        switch (aggregateType)
+        {
+            case AggregateType.PercentileCont:
+            case AggregateType.PercentileDisc:
+                ((AggregateDataCollecting)data).SetSharedArgument(v!);
+                v = remembered is not null ? remembered[1] : orderByList![0].expression!.GetValue(session);
+                break;
+            default:
+                // Use argument as is
+                break;
+        }
+
         // COUNT takes the argument as is; the type-specific arms arrive with their types.
+        // The reference wraps values for ORDER BY lists here (updateCollecting), but only
+        // ARRAY_AGG-style aggregates carry those lists, so the wrap would be identity.
         data.Add(session, v);
     }
 
     /// <inheritdoc/>
-    protected override int GetNumExpressions() => args.Length;
+    protected override int GetNumExpressions()
+    {
+        int n = args.Length;
+        if (orderByList is not null)
+        {
+            n += orderByList.Count;
+        }
+
+        return n;
+    }
 
     /// <inheritdoc/>
     protected override void RememberExpressions(SessionLocal session, Value?[] array)
     {
-        for (int i = 0; i < args.Length; i++)
+        int offset = 0;
+        for (; offset < args.Length; offset++)
         {
-            array[i] = args[i].GetValue(session);
+            array[offset] = args[offset].GetValue(session);
         }
+
+        if (orderByList is not null)
+        {
+            foreach (QueryOrderBy o in orderByList)
+            {
+                array[offset++] = o.expression!.GetValue(session);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void MapColumnsAnalysis(ColumnResolver resolver, int level, int innerState)
+    {
+        if (orderByList is not null)
+        {
+            foreach (QueryOrderBy o in orderByList)
+            {
+                o.expression!.MapColumns(resolver, level, innerState);
+            }
+        }
+
+        base.MapColumnsAnalysis(resolver, level, innerState);
     }
 
     /// <inheritdoc/>
@@ -327,6 +431,14 @@ public class Aggregate : AbstractAggregate
         if (args.Length == 1)
         {
             type = args[0].GetTypeInfo();
+        }
+
+        if (orderByList is not null)
+        {
+            foreach (QueryOrderBy o in orderByList)
+            {
+                o.expression = o.expression!.Optimize(session);
+            }
         }
 
         switch (aggregateType)
@@ -393,6 +505,12 @@ public class Aggregate : AbstractAggregate
                         break;
                 }
 
+                break;
+            case AggregateType.PercentileCont:
+                type = orderByList![0].expression!.GetTypeInfo();
+                goto case AggregateType.Median;
+            case AggregateType.PercentileDisc:
+                type = orderByList![0].expression!.GetTypeInfo();
                 break;
             default:
                 throw Message.DbException.GetInternalError("type=" + aggregateType);
@@ -558,6 +676,17 @@ public class Aggregate : AbstractAggregate
             }
         }
 
+        if (orderByList is not null)
+        {
+            foreach (QueryOrderBy o in orderByList)
+            {
+                if (!o.expression!.IsEverything(visitor))
+                {
+                    return false;
+                }
+            }
+        }
+
         return true;
     }
 
@@ -568,6 +697,19 @@ public class Aggregate : AbstractAggregate
         foreach (Expression arg in args)
         {
             cost += arg.GetCost();
+        }
+
+        if (orderByList is not null)
+        {
+            foreach (QueryOrderBy o in orderByList)
+            {
+                cost += o.expression!.GetCost();
+            }
+        }
+
+        if (filterCondition is not null)
+        {
+            cost += filterCondition.GetCost();
         }
 
         return cost;
@@ -596,6 +738,8 @@ public class Aggregate : AbstractAggregate
             AggregateType.Every => "EVERY",
             AggregateType.Median => "MEDIAN",
             AggregateType.AnyValue => "ANY_VALUE",
+            AggregateType.PercentileCont => "PERCENTILE_CONT",
+            AggregateType.PercentileDisc => "PERCENTILE_DISC",
             _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
         };
 
@@ -610,6 +754,23 @@ public class Aggregate : AbstractAggregate
             args[i].GetUnenclosedSql(builder, sqlFlags);
         }
 
-        return AppendTailConditions(builder.Append(')'), sqlFlags, false);
+        _ = builder.Append(')');
+        if (orderByList is not null)
+        {
+            _ = builder.Append(" WITHIN GROUP (ORDER BY ");
+            for (int i = 0; i < orderByList.Count; i++)
+            {
+                if (i > 0)
+                {
+                    _ = builder.Append(", ");
+                }
+
+                orderByList[i].GetSql(builder, sqlFlags);
+            }
+
+            _ = builder.Append(')');
+        }
+
+        return AppendTailConditions(builder, sqlFlags, false);
     }
 }

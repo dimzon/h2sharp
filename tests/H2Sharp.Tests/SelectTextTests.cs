@@ -939,12 +939,92 @@ public sealed class SelectTextTests
             "select_text_anyvaluedistinct", "SELECT ANY_VALUE(DISTINCT NAME) FROM T WHERE ID = 3", ["=c"]);
     }
 
+    [JavaOracleFact]
+    public void PercentileContHalf()
+    {
+        CompareText(
+            "select_text_pctcont",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ID) FROM T",
+            ["=2.5"]);
+    }
+
+    [JavaOracleFact]
+    public void PercentileDiscHalf()
+    {
+        CompareText(
+            "select_text_pctdisc",
+            "SELECT PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY ID) FROM T",
+            ["=2"]);
+    }
+
+    [JavaOracleFact]
+    public void PercentileContQuarter()
+    {
+        CompareText(
+            "select_text_pctcontq",
+            "SELECT PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ID) FROM T",
+            ["=1.75"]);
+    }
+
+    [JavaOracleFact]
+    public void PercentileDiscThreeQuarters()
+    {
+        CompareText(
+            "select_text_pctdiscq",
+            "SELECT PERCENTILE_DISC(0.75) WITHIN GROUP (ORDER BY ID) FROM T",
+            ["=3"]);
+    }
+
+    [JavaOracleFact]
+    public void PercentileContDesc()
+    {
+        CompareText(
+            "select_text_pctcontdesc",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ID DESC) FROM T",
+            ["=2.5"]);
+    }
+
+    [JavaOracleFact]
+    public void PercentileContOne()
+    {
+        CompareText(
+            "select_text_pctcontone",
+            "SELECT PERCENTILE_CONT(1) WITHIN GROUP (ORDER BY ID) FROM T",
+            ["=4"]);
+    }
+
+    [JavaOracleFact]
+    public void PercentileEmptyIsNull()
+    {
+        CompareText(
+            "select_text_pctempty",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ID) FROM T WHERE ID > 100",
+            ["=-"]);
+    }
+
+    [Fact]
+    public void PercentileBadFractionIsRefused()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            CommandContainer container = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("SELECT PERCENTILE_CONT(2) WITHIN GROUP (ORDER BY ID) FROM T"));
+            H2SharpException e = Assert.Throws<H2SharpException>(() => container.Query(-1));
+            Assert.Equal(90008, e.H2ErrorCode);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
     [Fact]
     public void ListaggWaitsForAggregates()
     {
-        // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN and ANY_VALUE
-        // run since their paths landed; every other aggregate refuses by name
-        // rather than misreading as a syntax error.
+        // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE,
+        // PERCENTILE_CONT and PERCENTILE_DISC run since their paths landed; every
+        // other aggregate refuses by name rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
