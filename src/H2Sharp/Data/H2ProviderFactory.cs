@@ -12,9 +12,9 @@
  * rather than at the end of the provider's story.
  *
  * One instance is enough and is exposed as Instance, the way SqlClient and Npgsql expose theirs:
- * a factory has no state, so a second one would only be a second place to be wrong. CreateDataAdapter
- * and CreateCommandBuilder are refused rather than returned as stubs that throw later — the two
- * say the same thing, and saying it here keeps the failure next to the thing that is missing.
+ * a factory has no state, so a second one would only be a second place to be wrong. The adapter
+ * fills through its commands and the builder exists for the factory; generating commands from
+ * schema refuses on the builder, where the missing machinery is named.
  */
 using System;
 using System.Data.Common;
@@ -71,13 +71,17 @@ public sealed class H2ProviderFactory : DbProviderFactory
     /// Creates a new data adapter.
     /// </summary>
     public override DbDataAdapter CreateDataAdapter()
-        => throw new NotSupportedException("This provider has no data adapter; use Dapper or read the reader directly");
+    {
+        return new H2DataAdapter();
+    }
 
     /// <summary>
     /// Creates a new command builder.
     /// </summary>
     public override DbCommandBuilder CreateCommandBuilder()
-        => throw new NotSupportedException("This provider has no command builder");
+    {
+        return new H2CommandBuilder();
+    }
 
     /// <summary>
     /// Creates a new data source enumerator, which this provider does not have: it has no
@@ -99,10 +103,10 @@ public sealed class H2ProviderFactory : DbProviderFactory
     /// <summary>
     /// Whether this provider can create a command builder.
     /// </summary>
-    public override bool CanCreateCommandBuilder => false;
+    public override bool CanCreateCommandBuilder => true;
 
     /// <summary>
     /// Whether this provider can create a data adapter.
     /// </summary>
-    public override bool CanCreateDataAdapter => false;
+    public override bool CanCreateDataAdapter => true;
 }

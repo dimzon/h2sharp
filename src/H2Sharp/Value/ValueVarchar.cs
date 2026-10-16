@@ -47,26 +47,19 @@ public sealed class ValueVarchar : ValueStringBase
     /// Get or create a VARCHAR value for the given string.
     /// </summary>
     /// <remarks>
-    /// The empty string becomes NULL when the database is in a mode that treats empty strings as
-    /// null, and that decision lives in the database mode, which is not ported. The overload
-    /// without a provider is the one the tokenizer and the literals use, and it is exact.
+    /// The empty string becomes NULL when the provider's mode treats empty strings as
+    /// null (Oracle), and stays empty otherwise.
     /// </remarks>
     /// <param name="s">the string</param>
     /// <param name="provider">the cast information provider, or <see langword="null"/></param>
     /// <returns>the value</returns>
-    /// <exception cref="NotSupportedException">
-    /// if a provider is given and the empty string would have to be decided against the
-    /// database mode
-    /// </exception>
     public static Value Get(string s, CastDataProvider? provider)
     {
         if (s.Length == 0)
         {
-            if (provider is not null)
+            if (provider is not null && provider.GetMode().TreatEmptyStringsAsNull)
             {
-                throw new NotSupportedException(
-                    "Deciding whether an empty string is NULL needs the database mode, which is "
-                    + "not ported yet. See MIGRATION_STATUS.md.");
+                return ValueNull.Instance;
             }
 
             return Empty;

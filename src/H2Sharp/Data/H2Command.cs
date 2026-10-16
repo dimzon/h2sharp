@@ -20,6 +20,8 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading;
+using System.Threading.Tasks;
 using H2Sharp.Engine;
 using H2DbException = H2Sharp.Message.DbException;
 
@@ -44,12 +46,26 @@ public sealed class H2Command : DbCommand
     /// </summary>
     private readonly H2ParameterCollection parameterCollection;
 
+    private int openReaders;
+
     /// <summary>
     /// Creates a command.
     /// </summary>
     public H2Command()
     {
         parameterCollection = new H2ParameterCollection(this, parameters);
+    }
+
+    /// <summary>
+    /// Creates a command with the given text on the given connection.
+    /// </summary>
+    /// <param name="commandText">the command text</param>
+    /// <param name="connection">the connection</param>
+    public H2Command(string commandText, H2Connection connection)
+        : this()
+    {
+        CommandText = commandText;
+        DbConnection = connection;
     }
 
     /// <summary>
@@ -64,7 +80,15 @@ public sealed class H2Command : DbCommand
     public override string CommandText
     {
         get => commandText;
-        set => commandText = value ?? string.Empty;
+        set
+        {
+            if (openReaders > 0)
+            {
+                throw new InvalidOperationException("The command has an open reader");
+            }
+
+            commandText = value ?? string.Empty;
+        }
     }
 
     /// <summary>
@@ -80,6 +104,11 @@ public sealed class H2Command : DbCommand
         get => connection;
         set
         {
+            if (openReaders > 0)
+            {
+                throw new InvalidOperationException("The command has an open reader");
+            }
+
             if (value is null)
             {
                 connection = null;
@@ -106,23 +135,13 @@ public sealed class H2Command : DbCommand
     /// Gets or sets the transaction this command runs in.
     /// </summary>
     /// <remarks>
-    /// A transaction that belongs to another connection is refused, which is the check that
-    /// catches a command reused across two connections: without it the second connection would
-    /// run the statement inside a transaction of the first, and the failure would surface as a
-    /// mysterious deadlock rather than as a mistake at the call site.
+    /// Stored, not checked: a transaction of another connection refuses when the command
+    /// runs, where the mistake surfaces next to the statement it would have run in.
     /// </remarks>
     protected override DbTransaction? DbTransaction
     {
         get => transaction;
-        set
-        {
-            if (value is not null && value.Connection != connection)
-            {
-                throw new InvalidOperationException("The transaction belongs to another connection");
-            }
-
-            transaction = (H2Transaction?)value;
-        }
+        set => transaction = (H2Transaction?)value;
     }
 
     /// <summary>
@@ -152,22 +171,43 @@ public sealed class H2Command : DbCommand
     /// <remarks>
     /// A query run this way still runs: ADO.NET answers -1 for it, and the rows it
     /// would have produced are read and dropped rather than left open underneath
-    /// the caller.
+    /// the caller. Of several statements, the first answers and the rest run for effect.
     /// </remarks>
     public override int ExecuteNonQuery()
     {
-        Command.CommandContainer container = PrepareEngine();
-        if (container.IsQuery())
+        List<Command.CommandContainer> containers = PrepareEngines();
+        long first;
+        if (containers[0].IsQuery())
         {
-            using Result.ResultInterface result = container.Query(-1);
+            using Result.ResultInterface result = containers[0].Query(-1);
             while (result.Next())
             {
             }
 
-            return -1;
+            first = -1;
+        }
+        else
+        {
+            first = containers[0].UpdateRows(false).GetUpdateCount();
         }
 
-        return Convert.ToInt32(container.UpdateRows(false).GetUpdateCount());
+        for (int i = 1; i < containers.Count; i++)
+        {
+            Command.CommandContainer container = containers[i];
+            if (container.IsQuery())
+            {
+                using Result.ResultInterface rest = container.Query(-1);
+                while (rest.Next())
+                {
+                }
+            }
+            else
+            {
+                _ = container.UpdateRows(false);
+            }
+        }
+
+        return first < 0 ? -1 : Convert.ToInt32(first);
     }
 
     /// <summary>
@@ -175,21 +215,49 @@ public sealed class H2Command : DbCommand
     /// </summary>
     public override object? ExecuteScalar()
     {
-        Command.CommandContainer container = PrepareEngine();
-        if (!container.IsQuery())
+        List<Command.CommandContainer> containers = PrepareEngines();
+        if (!containers[0].IsQuery())
         {
-            _ = container.UpdateRows(false);
+            _ = containers[0].UpdateRows(false);
+            for (int i = 1; i < containers.Count; i++)
+            {
+                _ = containers[i].UpdateRows(false);
+            }
+
             return null;
         }
 
-        using Result.ResultInterface result = container.Query(1);
-        if (!result.Next())
+        object? scalar;
+        using (Result.ResultInterface result = containers[0].Query(1))
         {
-            return null;
+            if (!result.Next())
+            {
+                scalar = null;
+            }
+            else
+            {
+                Values.Value?[] row = result.CurrentRow();
+                scalar = row.Length == 0 ? null : H2ValueMapper.ToObject(row[0]);
+            }
         }
 
-        Values.Value?[] row = result.CurrentRow();
-        return row.Length == 0 ? null : H2ValueMapper.ToObject(row[0]);
+        for (int i = 1; i < containers.Count; i++)
+        {
+            Command.CommandContainer container = containers[i];
+            if (container.IsQuery())
+            {
+                using Result.ResultInterface rest = container.Query(-1);
+                while (rest.Next())
+                {
+                }
+            }
+            else
+            {
+                _ = container.UpdateRows(false);
+            }
+        }
+
+        return scalar;
     }
 
     /// <summary>
@@ -198,31 +266,134 @@ public sealed class H2Command : DbCommand
     /// <param name="behavior">how the reader behaves</param>
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
-        Command.CommandContainer container = PrepareEngine();
-        if (!container.IsQuery())
+        if (openReaders > 0)
         {
-            throw new InvalidOperationException("The command is not a query");
+            throw new InvalidOperationException("The command already has an open reader");
         }
 
-        long maxrows = behavior.HasFlag(CommandBehavior.SingleRow) ? 1 : -1;
-        Result.ResultInterface result = container.Query(maxrows);
-        Action? onClose = behavior.HasFlag(CommandBehavior.CloseConnection) && connection is not null
-            ? connection.Close
-            : null;
-        return new H2DataReader(result, onClose);
+        List<Command.CommandContainer> containers = PrepareEngines();
+        H2DataReader reader;
+        if (!containers[0].IsQuery())
+        {
+            long count = containers[0].UpdateRows(false).GetUpdateCount();
+            for (int i = 1; i < containers.Count; i++)
+            {
+                _ = containers[i].UpdateRows(false);
+            }
+
+            reader = new H2DataReader(count);
+        }
+        else
+        {
+            long maxrows = behavior.HasFlag(CommandBehavior.SingleRow) ? 1
+                : behavior.HasFlag(CommandBehavior.SchemaOnly) ? 0 : -1;
+            Result.ResultInterface result = containers[0].Query(maxrows);
+            bool moreSets = !(behavior.HasFlag(CommandBehavior.SingleRow)
+                || behavior.HasFlag(CommandBehavior.SingleResult)
+                || behavior.HasFlag(CommandBehavior.SchemaOnly))
+                && containers.Count > 1;
+            List<Command.CommandContainer> remaining =
+                moreSets ? containers.GetRange(1, containers.Count - 1) : [];
+            Action onClose = () =>
+            {
+                openReaders--;
+                if (behavior.HasFlag(CommandBehavior.CloseConnection))
+                {
+                    connection?.Close();
+                }
+            };
+            reader = new H2DataReader(result, onClose, remaining, maxrows);
+        }
+
+        openReaders++;
+        return reader;
+    }
+
+    /// <summary>
+    /// Runs the command and returns a reader over its results, asynchronously.
+    /// </summary>
+    /// <remarks>
+    /// Synchronous underneath — the work has no I/O to await — so cancellation only
+    /// refuses before it starts. File-backed runs will await for real; see OpenAsync.
+    /// </remarks>
+    protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
+        CommandBehavior behavior, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled<DbDataReader>(cancellationToken);
+        }
+
+        try
+        {
+            return Task.FromResult<DbDataReader>(ExecuteDbDataReader(behavior));
+        }
+        catch (Exception e)
+        {
+            return Task.FromException<DbDataReader>(e);
+        }
+    }
+
+    /// <summary>
+    /// Runs the command and returns the rows it affected, asynchronously.
+    /// </summary>
+    public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled<int>(cancellationToken);
+        }
+
+        try
+        {
+            return Task.FromResult(ExecuteNonQuery());
+        }
+        catch (Exception e)
+        {
+            return Task.FromException<int>(e);
+        }
+    }
+
+    /// <summary>
+    /// Runs the command and returns the first column of the first row, asynchronously.
+    /// </summary>
+    public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled<object?>(cancellationToken);
+        }
+
+        try
+        {
+            return Task.FromResult(ExecuteScalar());
+        }
+        catch (Exception e)
+        {
+            return Task.FromException<object?>(e);
+        }
     }
 
     /// <summary>
     /// Prepares the command.
     /// </summary>
     /// <remarks>
-    /// A no-op, as it is in H2: there is no server round trip to prepare for, the statement is
-    /// parsed when it runs. It is not an error either — ADO.NET callers call it as part of the
-    /// normal path, and refusing would make Dapper's prepared path fail on a provider that is
-    /// behaving correctly.
+    /// There is no server round trip to prepare for — the statement is parsed when it runs —
+    /// but the states that cannot run are refused here rather than at the run: no connection,
+    /// a closed one, and no text are mistakes in the call, and running would fail on them
+    /// further from where they were made.
     /// </remarks>
     public override void Prepare()
     {
+        if (connection?.Session is null)
+        {
+            throw new InvalidOperationException("The connection is not open");
+        }
+
+        if (commandText.Length == 0)
+        {
+            throw new InvalidOperationException("The command text is empty");
+        }
     }
 
     /// <summary>
@@ -241,26 +412,30 @@ public sealed class H2Command : DbCommand
     }
 
     /// <summary>
-    /// Prepares the text, binds the values, and hands back the running command.
+    /// Prepares the text, binds the values, and hands back the running commands: one per
+    /// statement the text holds.
     /// </summary>
     /// <remarks>
     /// The engine only knows positional parameters, so named ones are rewritten before
     /// the text reaches it, and the values are bound by the positions they took. A
     /// placeholder with no value is refused here rather than read as NULL there: NULL is
     /// a value the caller could have meant, a missing one is a mistake in the call.
+    /// Parameters are numbered across the whole text, so one ordered list binds every
+    /// statement of it.
     /// </remarks>
-    /// <returns>the prepared container</returns>
-    private Command.CommandContainer PrepareEngine()
+    /// <returns>the prepared containers, in order</returns>
+    private List<Command.CommandContainer> PrepareEngines()
     {
-        SessionLocal? current = connection?.Session;
-        if (current is null)
+        H2Connection? owner = connection;
+        SessionLocal? current = owner?.Session;
+        if (owner is null || current is null)
         {
-            throw H2DbException.FromUser("08003", "The connection is closed");
+            throw new InvalidOperationException("The connection is not open");
         }
 
         if (commandText.Length == 0)
         {
-            throw H2DbException.FromUser("42000", "The command text is empty");
+            throw new InvalidOperationException("The command text is empty");
         }
 
         string text = commandText;
@@ -270,23 +445,48 @@ public sealed class H2Command : DbCommand
             (text, ordered) = H2ParameterRewriter.Rewrite(commandText, parameterCollection);
         }
 
-        Command.CommandContainer container = current.PrepareCommand(text) as Command.CommandContainer
-            ?? throw new InvalidOperationException("The statement is not a runnable command");
-        foreach (Expressions.ParameterInterface engineParameter in container.GetParameters())
+        if (owner.CurrentTransaction is not null && transaction is null)
         {
-            Expressions.Parameter parameter = (Expressions.Parameter)engineParameter;
-            // The tokenizer numbers placeholders from 1, like the ?N form: the first
-            // placeholder is index 1, so the ordered values shift by one.
-            int index = parameter.GetIndex() - 1;
-            if (index < 0 || index >= ordered.Count)
-            {
-                throw new InvalidOperationException(
-                    "No value was given for parameter #" + parameter.GetIndex());
-            }
-
-            parameter.SetValue(H2ValueMapper.ToValue(ordered[index].Value), false);
+            throw new InvalidOperationException("The connection has an open transaction");
         }
 
-        return container;
+        if (transaction is not null && !ReferenceEquals(transaction.OwningConnection, owner))
+        {
+            throw new InvalidOperationException("The transaction belongs to another connection");
+        }
+
+        List<Command.CommandContainer> containers = current.PrepareCommand(text) switch
+        {
+            Command.CommandList list => [.. list.GetCommands()],
+            Command.CommandContainer container => [container],
+            _ => throw new InvalidOperationException("The statement is not a runnable command"),
+        };
+        foreach (Command.CommandContainer container in containers)
+        {
+            foreach (Expressions.ParameterInterface engineParameter in container.GetParameters())
+            {
+                Expressions.Parameter parameter = (Expressions.Parameter)engineParameter;
+                // The tokenizer numbers placeholders from 1, like the ?N form: the first
+                // placeholder is index 1, so the ordered values shift by one.
+                int index = parameter.GetIndex() - 1;
+                if (index < 0 || index >= ordered.Count)
+                {
+                    throw new InvalidOperationException(
+                        "No value was given for parameter #" + parameter.GetIndex());
+                }
+
+                object? value = ordered[index].Value;
+                if (value is null)
+                {
+                    throw new InvalidOperationException(
+                        "Parameter '" + ordered[index].ParameterName + "' has no value;"
+                        + " use DBNull.Value for NULL");
+                }
+
+                parameter.SetValue(H2ValueMapper.ToValue(value), false);
+            }
+        }
+
+        return containers;
     }
 }

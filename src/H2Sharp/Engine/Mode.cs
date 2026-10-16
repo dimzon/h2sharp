@@ -163,6 +163,15 @@ public sealed class Mode
     public bool AllowUnrelatedOrderByExpressionsInDistinctQueries { get; }
 
     /// <summary>
+    /// Whether an empty string is NULL.
+    /// </summary>
+    /// <remarks>
+    /// The ninth flag the port carries. Only Oracle turns it on, which is where the table
+    /// below puts it.
+    /// </remarks>
+    public bool TreatEmptyStringsAsNull { get; }
+
+    /// <summary>
     /// The name of the mode, as it is written in a URL.
     /// </summary>
     public string Name { get; }
@@ -181,7 +190,8 @@ public sealed class Mode
         bool minusIsExcept,
         CharPadding charPadding = CharPadding.Always,
         bool convertOnlyToSmallerScale = false,
-        bool allowUnrelatedOrderByExpressionsInDistinctQueries = false)
+        bool allowUnrelatedOrderByExpressionsInDistinctQueries = false,
+        bool treatEmptyStringsAsNull = false)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -193,6 +203,7 @@ public sealed class Mode
         CharPadding = charPadding;
         ConvertOnlyToSmallerScale = convertOnlyToSmallerScale;
         AllowUnrelatedOrderByExpressionsInDistinctQueries = allowUnrelatedOrderByExpressionsInDistinctQueries;
+        TreatEmptyStringsAsNull = treatEmptyStringsAsNull;
     }
 
     /// <summary>
@@ -246,7 +257,7 @@ public sealed class Mode
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
-                CharPadding.Always, convertOnlyToSmallerScale: true),
+                CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets),
         };

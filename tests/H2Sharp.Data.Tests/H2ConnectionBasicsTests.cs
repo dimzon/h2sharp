@@ -157,7 +157,6 @@ public sealed class H2ConnectionBasicsTests
         try
         {
             Assert.Throws<TODOException>(() => connection.ChangeDatabase("other"));
-            Assert.Throws<TODOException>(() => connection.BeginTransaction());
         }
         finally
         {
@@ -166,18 +165,19 @@ public sealed class H2ConnectionBasicsTests
     }
 
     [Fact]
-    public void ACommandNeedsAnOpenConnection()
+    public void ACommandRunsOnlyOnAnOpenConnection()
     {
         using H2Connection connection = new("jdbc:h2:mem:commands");
-        Assert.Throws<H2SharpException>(() => _ = connection.CreateCommand());
+        using DbCommand command = connection.CreateCommand();
+        Assert.NotNull(command);
+        command.CommandText = "SELECT 1";
+
+        // Making it is fine; running it is where the closed connection refuses.
+        Assert.Throws<InvalidOperationException>(() => _ = command.ExecuteNonQuery());
 
         connection.Open();
         try
         {
-            using DbCommand command = connection.CreateCommand();
-            Assert.NotNull(command);
-            command.CommandText = "SELECT 1";
-
             // A query run as a non-query still runs; ADO.NET answers -1 for it.
             Assert.Equal(-1, command.ExecuteNonQuery());
         }

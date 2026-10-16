@@ -217,8 +217,9 @@ public sealed class Parser
     /// <remarks>
     /// The reference reads the statement, prepares it, and wraps it in a
     /// <see cref="CommandContainer"/>, so that what a caller receives is something it can run and
-    /// ask about. The same three steps are here. Several statements in one text become a
-    /// <c>CommandList</c>, which is not ported yet and refuses.
+    /// ask about. The same three steps are here, once per statement: several statements in one
+    /// text become a <see cref="CommandList"/>, which answers only its first statement while the
+    /// rest run for effect or on NextResult.
     /// </remarks>
     /// <param name="sql">the statement text</param>
     /// <returns>the command</returns>
@@ -228,55 +229,64 @@ public sealed class Parser
         SessionLocal current = session ?? throw new TODOException("Parser.prepareCommand: this parser has no session");
 
         BitArray parameters = new(8);
-        Prepared prepared = ParsePrepared(sql, parameters);
-        prepared.Prepare();
-        return new CommandContainer(current, sql, prepared);
+        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        Parser parser = new(sql, provider, tokens, current);
+        List<Prepared> prepared = [];
+        while (!parser.AtEnd())
+        {
+            Prepared next = parser.ParseOneStatement();
+            next.Prepare();
+            prepared.Add(next);
+        }
+
+        if (prepared.Count == 0)
+        {
+            return new CommandContainer(current, sql, new Dml.NoOperation(current));
+        }
+
+        if (prepared.Count == 1)
+        {
+            return new CommandContainer(current, sql, prepared[0]);
+        }
+
+        return new CommandList(current, sql, prepared);
     }
 
     /// <summary>
-    /// Reads the statement and builds the prepared statement for it.
+    /// Whether only semicolons and the end stand between the position and the input end.
     /// </summary>
-    /// <remarks>
-    /// The reference reads one token and switches on it, so that the *first* word decides what
-    /// is being built. Here the text is read into a statement and the switch is on what came
-    /// back, which is the same decision reached by a different road: the reference's token-level
-    /// switch is the part of the parser that is not ported, and this is what stands in its place
-    /// until it is.
-    /// </remarks>
-    /// <param name="sql">the statement text</param>
-    /// <param name="parameters">written with the parameters the statement names</param>
+    /// <returns>true when nothing more is written</returns>
+    private bool AtEnd()
+    {
+        int index = position;
+        while (index < tokens.Count && tokens[index].TokenType == Token.Semicolon)
+        {
+            index++;
+        }
+
+        return index >= tokens.Count || tokens[index].TokenType == Token.EndOfInput;
+    }
+
+    /// <summary>
+    /// Reads the next statement and builds the prepared statement for it.
+    /// </summary>
     /// <returns>the prepared statement</returns>
-    private Prepared ParsePrepared(string sql, BitArray parameters)
+    private Prepared ParseOneStatement()
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parsePrepared: this parser has no session");
-        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
-        // A trailing semicolon is not a second statement; anything before it is a list,
-        // and a list answers only its first statement while running the rest for effect.
-        // That is CommandList, and it waits for its own slice: shared parameter numbering
-        // across the statements, one visible result, cached as one command.
-        int end = tokens.Count;
-        while (end > 0 && tokens[end - 1].TokenType is Token.Semicolon or Token.EndOfInput)
+        while (position < tokens.Count && tokens[position].TokenType == Token.Semicolon)
         {
-            end--;
+            position++;
         }
 
-        if (tokens.Take(end).Any(token => token.TokenType == Token.Semicolon))
-        {
-            throw new TODOException("Parser.parsePrepared: multiple statements (CommandList) are not ported");
-        }
-
-        Parser parser = new(sql, provider, tokens, current);
         Prepared prepared;
-        if (tokens.Count > 0 && IsSelectFirst(tokens[0]))
+        if (position < tokens.Count && IsSelectFirst(tokens[position]))
         {
-            // The reference switches on the first token; the statement words arrive as
-            // identifiers, so the peek is by text, unquoted. A flat SELECT builds the engine
-            // operator directly, everything else goes through the parse-only statements below.
-            prepared = parser.ParseQuerySelect();
+            prepared = ParseQuerySelect();
         }
         else
         {
-            Statement statement = parser.ReadStatement();
+            Statement statement = ReadStatement();
             statement.Sql = sql;
             prepared = statement switch
             {
@@ -290,7 +300,7 @@ public sealed class Parser
             };
         }
 
-        prepared.SetParameterList(parser.parameterList.Count == 0 ? null : parser.parameterList);
+        prepared.SetParameterList(parameterList.Count == 0 ? null : parameterList);
         return prepared;
     }
 
@@ -318,7 +328,7 @@ public sealed class Parser
     /// </para>
     /// </remarks>
     /// <returns>the prepared statement</returns>
-    private Query.Select ParseQuerySelect()
+    private Query.Query ParseQuerySelect()
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parseQuerySelect: this parser has no session");
         ExpectWord("SELECT");
@@ -380,7 +390,7 @@ public sealed class Parser
             }
 
             Schemas.Schema schema = current.GetCurrentSchema();
-            fromTable = schema.GetTableOrView(current, tableName);
+            fromTable = ReadTableOrView(current, schema, tableName);
             filter = new(current, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
         }
         else
@@ -548,7 +558,8 @@ public sealed class Parser
             select.SetLimit(limit);
         }
 
-        if (CurrentType != Token.EndOfInput)
+        bool union = IsWord("UNION", consume: false);
+        if (!union && CurrentType != Token.EndOfInput && CurrentType != Token.Semicolon)
         {
             string word = Current.AsIdentifier ?? Current.ToString() ?? "statement";
             if (IsClauseWord(word))
@@ -562,7 +573,27 @@ public sealed class Parser
         select.Init();
         select.PrepareExpressions();
         select.PreparePlan(current, targetTableFilter: null);
-        return select;
+        if (!union)
+        {
+            return select;
+        }
+
+        Query.Query left = select;
+        while (IsWord("UNION"))
+        {
+            // DISTINCT is the default; ALL keeps every row. Each side after the first
+            // is another full select, so a chain nests to the right.
+            bool distinct = !IsWord("ALL");
+            if (distinct)
+            {
+                _ = IsWord("DISTINCT");
+            }
+
+            Query.Query right = ParseQuerySelect();
+            left = new Query.SelectUnion(left, right, distinct);
+        }
+
+        return left;
     }
 
     /// <summary>
@@ -1215,7 +1246,8 @@ public sealed class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareInsert(SessionLocal session, InsertStatement statement)
     {
-        Tables.Table table = CurrentSchema(session).GetTableOrView(session, statement.Name);
+        Schemas.Schema schema = CurrentSchema(session);
+        Tables.Table table = ReadTableOrView(session, schema, statement.Name);
         Dml.Insert insert = new(session);
         insert.SetSql(statement.Sql, null);
         insert.SetTable(table);
@@ -1272,7 +1304,8 @@ public sealed class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareUpdate(SessionLocal session, UpdateStatement statement)
     {
-        Tables.Table table = CurrentSchema(session).GetTableOrView(session, statement.Name);
+        Schemas.Schema schema = CurrentSchema(session);
+        Tables.Table table = ReadTableOrView(session, schema, statement.Name);
         Dml.Update update = new(session);
         update.SetSql(statement.Sql, null);
         update.SetTableFilter(new Tables.TableFilter(
@@ -1315,7 +1348,8 @@ public sealed class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareDelete(SessionLocal session, DeleteStatement statement)
     {
-        Tables.Table table = CurrentSchema(session).GetTableOrView(session, statement.Name);
+        Schemas.Schema schema = CurrentSchema(session);
+        Tables.Table table = ReadTableOrView(session, schema, statement.Name);
         Dml.Delete delete = new(session);
         delete.SetSql(statement.Sql, null);
         delete.SetTableFilter(new Tables.TableFilter(
@@ -1326,6 +1360,30 @@ public sealed class Parser
         }
 
         return delete;
+    }
+
+    /// <summary>
+    /// Resolves a table or view by name, telling an empty database from a missing table
+    /// the way the reference does: no user tables at all is its own error code.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="schema">the schema</param>
+    /// <param name="tableName">the table name</param>
+    /// <returns>the table or view</returns>
+    private Tables.Table ReadTableOrView(SessionLocal session, Schemas.Schema schema, string tableName)
+    {
+        Tables.Table? table = schema.FindTableOrView(session, tableName);
+        if (table is not null)
+        {
+            return table;
+        }
+
+        if (session.GetDatabase().GetFirstUserTable() is null)
+        {
+            throw DbException.Get(Api.ErrorCode.TableOrViewNotFoundDatabaseEmpty1, tableName);
+        }
+
+        throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
     }
 
     /// <summary>

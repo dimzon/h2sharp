@@ -274,6 +274,13 @@ public abstract class Command : CommandInterface
     protected abstract bool IsRetryable();
 
     /// <summary>
+    /// The retry check for lists holding this command: protected is per-type in C#, so a
+    /// list cannot ask another command, and this asks on its behalf.
+    /// </summary>
+    /// <returns>true if this command can be repeated on locking failure</returns>
+    internal bool IsRetryableForList() => IsRetryable();
+
+    /// <summary>
     /// Gets the database this command runs on.
     /// </summary>
     /// <returns>the database</returns>

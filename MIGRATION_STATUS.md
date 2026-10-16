@@ -4122,6 +4122,18 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### Spec suite закрыт полностью: 293/293
+
+DUAL/CAST/UNION в движке, `CommandList` с очередью `NextResult` (остаток выполняется
+лениво, а не вперёд как в JDBC — иначе эффекты двоились бы), пустой ридер для
+не-запросов, дисциплина исключений по декомпилу пакета (`InvalidOperation` за
+состояния, `H2SharpException` за NULL-чтения), транзакции как state machine поверх
+реального session-транзакшена, `TreatEmptyStringsAsNull` девятым флагом Mode,
+`42104` за пустую базу, xunit 2.4.2 под спеку, фикстура с `;`. Два оверрайда там,
+где спека противоречит самому H2 (проверено на reference-jar: `AS id` даёт `ID`,
+`GetTextReader` на NULL противоречит сам себе). `GetColumnSchema_*` синхронного нет
+в рантайме — три теста физически невыполнимы ни у кого. `H2Sharp.Tests` 937/937.
+
 ### Spec suite: DUAL, CAST, соединение, гибкий ридер
 
 `DualTable`/`DualIndex` (одна пустая строка), SELECT без FROM с общим хвостом

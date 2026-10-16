@@ -37,9 +37,13 @@ public sealed class H2Parameter : DbParameter
     private DbType? dbType;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// String until set: an unset type most often carries text, and the engine converts to
+    /// the column it goes into, so guessing anything narrower would mistype the common case.
+    /// </remarks>
     public override DbType DbType
     {
-        get => dbType ?? DbType.Object;
+        get => dbType ?? DbType.String;
         set => dbType = value;
     }
 
@@ -47,25 +51,32 @@ public sealed class H2Parameter : DbParameter
     public override ParameterDirection Direction { get; set; } = ParameterDirection.Input;
 
     /// <inheritdoc/>
-    public override bool IsNullable { get; set; } = true;
+    public override bool IsNullable { get; set; }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Null means empty: ADO.NET declares the setter [AllowNull], so null is the documented
+    /// way to clear the name rather than a mistake.
+    /// </remarks>
     [AllowNull]
     public override string ParameterName
     {
         get => parameterName;
-        set => parameterName = value ?? throw new ArgumentNullException(nameof(value));
+        set => parameterName = value ?? string.Empty;
     }
 
     /// <inheritdoc/>
     public override int Size { get; set; }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Null means empty, as for the parameter name: it clears rather than mistakes.
+    /// </remarks>
     [AllowNull]
     public override string SourceColumn
     {
         get => sourceColumn;
-        set => sourceColumn = value ?? throw new ArgumentNullException(nameof(value));
+        set => sourceColumn = value ?? string.Empty;
     }
 
     /// <inheritdoc/>
@@ -181,6 +192,7 @@ public sealed class H2ParameterCollection : DbParameterCollection
     /// <inheritdoc/>
     public override void Remove(object value)
     {
+        ArgumentNullException.ThrowIfNull(value);
         if (value is H2Parameter p)
         {
             _ = parameters.Remove(p);

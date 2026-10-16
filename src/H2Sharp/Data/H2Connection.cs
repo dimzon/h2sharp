@@ -41,6 +41,8 @@ public sealed class H2Connection : DbConnection
 
     private string? openedDatabaseName;
 
+    private H2Transaction? currentTransaction;
+
     /// <summary>
     /// Creates a connection with no connection string.
     /// </summary>
@@ -246,6 +248,8 @@ public sealed class H2Connection : DbConnection
             return;
         }
 
+        currentTransaction?.Dispose();
+        currentTransaction = null;
         session = null;
         current.Close();
         if (openedDatabaseName is not null && H2Sharp.Engine.Engine.RemoveIfClosed(openedDatabaseName))
@@ -291,19 +295,55 @@ public sealed class H2Connection : DbConnection
     /// </summary>
     /// <param name="isolationLevel">the isolation level</param>
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
-        => throw new TODOException("H2Connection.BeginDbTransaction");
-
-    /// <summary>
-    /// Creates a command for this connection.
-    /// </summary>
-    protected override DbCommand CreateDbCommand()
     {
         SessionLocal? current = session;
         if (current is null)
         {
-            throw H2DbException.FromUser("08003", "The connection is closed");
+            throw new InvalidOperationException("The connection is not open");
         }
 
+        if (currentTransaction is not null)
+        {
+            throw new InvalidOperationException("The connection already has a transaction");
+        }
+
+        MvStore.Tx.Transaction engineTransaction = current.GetDatabase().GetStore().Begin();
+        current.Transaction = engineTransaction;
+        H2Transaction transaction = new(this, isolationLevel, engineTransaction);
+        currentTransaction = transaction;
+        return transaction;
+    }
+
+    /// <summary>
+    /// Forgets a finished transaction, so the next one may begin.
+    /// </summary>
+    /// <param name="transaction">the transaction that finished</param>
+    internal void ClearTransaction(H2Transaction transaction)
+    {
+        if (ReferenceEquals(currentTransaction, transaction))
+        {
+            currentTransaction = null;
+            if (session is not null)
+            {
+                session.Transaction = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the open transaction, if any.
+    /// </summary>
+    internal H2Transaction? CurrentTransaction => currentTransaction;
+
+    /// <summary>
+    /// Creates a command for this connection.
+    /// </summary>
+    /// <remarks>
+    /// Even while closed: the command fails when it runs, not when it is made, which is
+    /// what lets a caller set the text and the parameters before opening.
+    /// </remarks>
+    protected override DbCommand CreateDbCommand()
+    {
         return new H2Command { Connection = this };
     }
 }

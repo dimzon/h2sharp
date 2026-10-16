@@ -15,7 +15,10 @@
  * The conventions where one side has no counterpart are written down, not discovered:
  * a DateTime keeps no zone because TIMESTAMP has none; a TIME_TZ reads with the date
  * of DateTime.MinValue because a time with an offset is not a point in time; sub-tick
- * nanoseconds do not survive into a TimeSpan because a tick is 100 of them.
+ * nanoseconds do not survive into a TimeSpan because a tick is 100 of them. A value with
+ * no engine home — a stream is read into bytes, anything else refuses as invalid — because
+ * the conformance suite demands InvalidOperationException or NotSupportedException there,
+ * and a TODOException would fail the demand while answering the same question.
  */
 using System;
 using System.Data;
@@ -80,9 +83,17 @@ internal static class H2ValueMapper
                 dto.TimeOfDay.Ticks * 100L,
                 (int)dto.Offset.TotalSeconds),
             Guid g => ValueUuid.Get(g),
-            _ => throw new TODOException(
+            System.IO.Stream stream => ReadStream(stream),
+            _ => throw new InvalidOperationException(
                 "H2ValueMapper.ToValue: no engine value for " + value.GetType().Name),
         };
+    }
+
+    private static Value ReadStream(System.IO.Stream stream)
+    {
+        using System.IO.MemoryStream copy = new();
+        stream.CopyTo(copy);
+        return ValueVarbinary.Get(copy.ToArray());
     }
 
     /// <summary>

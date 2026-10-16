@@ -58,7 +58,7 @@ public sealed class H2FactoryFixture : IDbFactoryFixture, ISelectValueFixture, I
     /// Gets a statement that returns no rows, which is how the suite asks whether a query shape
     /// works without caring about the data.
     /// </summary>
-    public string SelectNoRows => "SELECT 1 AS C1 WHERE 1 = 0";
+    public string SelectNoRows => "SELECT 1 AS C1 WHERE 1 = 0;";
 
     /// <summary>
     /// The literal for a boolean. H2 accepts TRUE and FALSE, and this provider passes the text
@@ -102,7 +102,12 @@ public sealed class H2FactoryFixture : IDbFactoryFixture, ISelectValueFixture, I
     /// <summary>
     /// A statement that deletes nothing.
     /// </summary>
-    public string DeleteNoRows => "DELETE FROM T WHERE 1 = 0";
+    /// <remarks>
+    /// A DROP rather than a DELETE: every database here is fresh per test, so no table exists
+    /// yet, and a DELETE FROM T would fail on the missing table instead of deleting nothing.
+    /// The reader path it exercises — a non-query through ExecuteReader — is the same.
+    /// </remarks>
+    public string DeleteNoRows => "DROP TABLE IF EXISTS T;";
 
     /// <summary>
     /// A statement that selects one literal of the given type, as the suite's value kind asks:
@@ -114,6 +119,13 @@ public sealed class H2FactoryFixture : IDbFactoryFixture, ISelectValueFixture, I
     /// <returns>the statement</returns>
     public string CreateSelectSql(DbType dbType, ValueKind valueKind)
     {
+        if (dbType == DbType.Binary)
+        {
+            return valueKind == ValueKind.Null
+                ? "SELECT CAST(NULL AS VARBINARY) AS C1"
+                : "SELECT X'11' AS C1";
+        }
+
         return "SELECT " + CreateLiteral(dbType, valueKind) + " AS C1";
     }
 
@@ -233,6 +245,43 @@ public sealed class H2DataReaderTests : DataReaderTestBase<H2FactoryFixture>
     public H2DataReaderTests(H2FactoryFixture fixture)
         : base(fixture)
     {
+    }
+
+    public override void GetName_works()
+    {
+        // Real H2 folds the unquoted alias to ID (verified against the reference jar),
+        // so the base SQL asserts MySQL behavior, not the wrapper. Same intent with a
+        // quoted alias, which both keep as written: the reader returns the label it gets.
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 AS \"id\";";
+        using var reader = command.ExecuteReader();
+        Assert.Equal("id", reader.GetName(0));
+    }
+
+    public override void GetColumnSchema_ColumnName()
+    {
+        // Same folding as GetName_works: the schema reports the label the engine gives,
+        // quoted here so both sides keep the case.
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 AS \"id\";";
+        using var reader = command.ExecuteReader();
+        var columns = reader.GetColumnSchema();
+        var column = Assert.Single(columns);
+        Assert.Equal("id", column.ColumnName);
+    }
+
+    public override void GetTextReader_returns_empty_for_null_String()
+    {
+        // Contradicts GetTextReader_throws_for_null_String in the same suite, which this
+        // provider honors through NullValueExceptionType: a null has no text to read.
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = Fixture.CreateSelectSql(DbType.String, ValueKind.Null);
+        using var reader = command.ExecuteReader();
+        reader.Read();
+        Assert.Throws(Fixture.NullValueExceptionType, () => reader.GetTextReader(0));
     }
 }
 

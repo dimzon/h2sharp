@@ -7,7 +7,10 @@
     <PackageVersion Include="Dapper" Version="2.1.66" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
-    <PackageVersion Include="xunit" Version="2.9.2" />
+    <!-- xunit 2.4.2: the specification suite calls SDK surface the 2.9 line removed,
+      so every test project stays on the line the suite was built against. The runner
+      stays new: the old one no longer talks to the test platform. -->
+    <PackageVersion Include="xunit" Version="2.4.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
   <ItemGroup Label="EF Core">

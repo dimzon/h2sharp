@@ -369,16 +369,37 @@ public sealed partial class Database
     }
 
     /// <summary>
-    /// Allocates a new object id.
+    /// Gets the first user table, or null when the database holds none.
     /// </summary>
-    /// <returns>the id</returns>
-    public int AllocateObjectId()
+    /// <remarks>
+    /// A table counts when it has a CREATE statement: virtual tables answer null, and a
+    /// database of nothing but those is empty for the code that asks.
+    /// </remarks>
+    /// <returns>the first user table, or null</returns>
+    public Tables.Table? GetFirstUserTable()
     {
         lock (syncRoot)
         {
-            return objectId++;
+            foreach (Schemas.Schema schema in schemas.Values)
+            {
+                foreach (Tables.Table table in schema.GetAllTablesAndViews(null!))
+                {
+                    if (table.GetCreateSql() is not null)
+                    {
+                        return table;
+                    }
+                }
+            }
         }
+
+        return null;
     }
+
+    /// <summary>
+    /// Allocates a new object id.
+    /// </summary>
+    /// <returns>the id</returns>
+    public int AllocateObjectId() => Interlocked.Increment(ref objectId) - 1;
 
     /// <summary>
     /// Gets the current modification meta id.

@@ -98,7 +98,8 @@ public sealed class InMemoryDatabaseOracleTests
             lines.Add("  create " + Run(a, "CREATE TABLE T(ID INT)"));
             lines.Add("  b sees " + Count(b, "SELECT COUNT(*) FROM T"));
             b.Close();
-            lines.Add("  drop " + Run(a, "DROP TABLE T"));
+            // Cleanup, not compared: the reference prints no drop line.
+            _ = Run(a, "DROP TABLE T");
             a.Close();
 
             using H2Connection c = new("jdbc:h2:" + db);
