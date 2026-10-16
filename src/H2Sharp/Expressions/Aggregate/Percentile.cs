@@ -40,7 +40,7 @@ internal static class Percentile
         BigDecimal percentile, bool interpolate)
     {
         CompareMode compareMode = session.GetCompareMode();
-        Array.Sort(array, Comparer<Value>.Create((x, y) => session.Compare(x!, y!)));
+        Array.Sort(array, session.GetValueComparison());
         int count = array.Length;
         bool reverseIndex = orderByList is not null
             && (orderByList[0].sortType & SortOrder.Descending) != 0;

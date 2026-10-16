@@ -71,6 +71,41 @@ public sealed class SessionLocal : Session
     /// <returns>the random generator</returns>
     public Random GetRandom() => random ??= new Random();
 
+    private IComparer<Values.Value>? valueComparer;
+
+    private Comparison<Values.Value>? valueComparison;
+
+    /// <summary>
+    /// Gets the session as a value comparer, creating it on first use.
+    /// </summary>
+    /// <remarks>
+    /// The reference hands the session itself where a comparator is wanted; C# sets take
+    /// an explicit comparer, so the session carries this thin skin instead of growing one
+    /// per sort, per group and per distinct set. A benign race may build it twice — both
+    /// copies compare the same way, so no lock guards a cache nobody can observe.
+    /// </remarks>
+    /// <returns>the comparer</returns>
+    public IComparer<Values.Value> GetValueComparer()
+        => valueComparer ??= new SessionValueComparer(this);
+
+    /// <summary>
+    /// Gets the session comparison as a delegate, creating it on first use.
+    /// </summary>
+    /// <remarks>
+    /// Same cache as <see cref="GetValueComparer"/>, for the sort overload that takes a
+    /// delegate rather than an interface.
+    /// </remarks>
+    /// <returns>the comparison</returns>
+    public Comparison<Values.Value> GetValueComparison()
+        => valueComparison ??= CompareValues;
+
+    private int CompareValues(Values.Value? left, Values.Value? right) => Compare(left!, right!);
+
+    private sealed class SessionValueComparer(SessionLocal session) : IComparer<Values.Value>
+    {
+        public int Compare(Values.Value? x, Values.Value? y) => session.Compare(x!, y!);
+    }
+
     /// <summary>
     /// Gets the transaction this session is working on, or null when it has none.
     /// </summary>

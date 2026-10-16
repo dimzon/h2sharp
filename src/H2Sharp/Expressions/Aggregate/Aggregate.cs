@@ -377,8 +377,9 @@ public class Aggregate : AbstractAggregate
     private void SortWithOrderBy(Value[] array)
     {
         // orderBySort is not ported — no ordered aggregate is read yet — so the
-        // reference's sort always takes its fallback: session comparison.
-        Array.Sort(array, Comparer<Value>.Create((x, y) => select.GetSession().Compare(x!, y!)));
+        // reference's sort always takes its fallback: session comparison, taken once
+        // rather than re-read through the select on every pair.
+        Array.Sort(array, select.GetSession().GetValueComparison());
     }
 
     private Value GetListagg(SessionLocal session, AggregateData data)

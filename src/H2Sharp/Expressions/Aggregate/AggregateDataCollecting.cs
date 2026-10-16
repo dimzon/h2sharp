@@ -71,7 +71,7 @@ internal sealed class AggregateDataCollecting : AggregateData, IEnumerable<Value
         }
 
         ICollection<Value> c = _values ??= _distinct
-            ? (ICollection<Value>)new SortedSet<Value>(new SessionComparer(session))
+            ? (ICollection<Value>)new SortedSet<Value>(session.GetValueComparer())
             : new List<Value>();
         if (_nullCollectionMode == NullCollectionMode.Excluded && IsNull(v))
         {
@@ -131,14 +131,4 @@ internal sealed class AggregateDataCollecting : AggregateData, IEnumerable<Value
     ///
     /// <returns>value of a shared argument</returns>
     internal Value? GetSharedArgument() => _shared;
-
-    ///
-    /// The session as a value comparer: DISTINCT deduplicates by session
-    /// comparison order, the way the reference hands the session itself to the
-    /// set. C# sets take an explicit comparer, so the session gets a thin skin.
-    ///
-    private sealed class SessionComparer(SessionLocal session) : IComparer<Value>
-    {
-        public int Compare(Value? x, Value? y) => session.Compare(x!, y!);
-    }
 }
