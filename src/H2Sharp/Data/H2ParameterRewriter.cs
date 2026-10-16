@@ -33,9 +33,20 @@ internal static class H2ParameterRewriter
     /// <param name="text">the command text</param>
     /// <param name="parameters">the command parameters, by name</param>
     /// <returns>the rewritten text and the values in placeholder order</returns>
+    private static readonly System.Buffers.SearchValues<char> Interesting =
+        System.Buffers.SearchValues.Create(['\'', '"', '-', '/', '?', '@', ':']);
+
     internal static (string Text, List<H2Parameter> Ordered) Rewrite(
         string text, H2ParameterCollection parameters)
     {
+        // No names, no colons, no question marks outside the fast check below: the text
+        // goes through untouched, without a builder or a copy. The scan it costs is the
+        // price of not lexing, and it is paid once per execution either way.
+        if (text.AsSpan().IndexOfAny(Interesting) < 0)
+        {
+            return (text, []);
+        }
+
         List<H2Parameter> ordered = [];
         StringBuilder builder = new(text.Length);
         bool sawPositional = false;

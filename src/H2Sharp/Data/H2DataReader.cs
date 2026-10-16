@@ -527,10 +527,39 @@ public sealed class H2DataReader : DbDataReader
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The window copies, never the whole text: the string stays where it is and only the
+    /// asked slice moves, and a length question does not even do that.
+    /// </remarks>
     public override long GetChars(int ordinal, long fieldOffset, char[]? buffer, int bufferOffset, int length)
     {
-        char[] chars = GetString(ordinal).ToCharArray();
-        return CopySlice(chars, fieldOffset, buffer, bufferOffset, length);
+        ArgumentOutOfRangeException.ThrowIfNegative(fieldOffset);
+        ArgumentOutOfRangeException.ThrowIfNegative(bufferOffset);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        string text = GetString(ordinal);
+        if (buffer is null)
+        {
+            return text.Length;
+        }
+
+        if (bufferOffset > buffer.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bufferOffset));
+        }
+
+        if ((long)bufferOffset + length > buffer.Length)
+        {
+            throw new ArgumentException("The buffer is too small for the slice");
+        }
+
+        if (fieldOffset >= text.Length)
+        {
+            return 0;
+        }
+
+        int take = Math.Min(text.Length - (int)fieldOffset, length);
+        text.AsSpan((int)fieldOffset, take).CopyTo(buffer.AsSpan(bufferOffset));
+        return take;
     }
 
     /// <inheritdoc/>
