@@ -57,6 +57,8 @@ public class Aggregate : AbstractAggregate
         AggregateData data = (AggregateData)aggregateData;
         Value? v = args.Length == 0 ? null : args[0].GetValue(session);
         // COUNT takes the argument as is; the type-specific arms arrive with their types.
+        // The reference wraps values for ORDER BY lists here (updateCollecting), but no
+        // reader builds those lists yet, so the wrap would be identity.
         data.Add(session, v);
     }
 
@@ -68,25 +70,35 @@ public class Aggregate : AbstractAggregate
             case AggregateType.CountAll:
                 return new AggregateDataCount(true);
             case AggregateType.Count:
+                if (!distinct)
+                {
+                    return new AggregateDataCount(false);
+                }
+
+                break;
             case AggregateType.Sum:
-            case AggregateType.Min:
-            case AggregateType.Max:
             case AggregateType.Avg:
                 if (!distinct)
                 {
                     return aggregateType switch
                     {
-                        AggregateType.Count => new AggregateDataCount(false),
                         AggregateType.Avg => new AggregateDataAvg(type!),
                         _ => new AggregateDataDefault(aggregateType, type!),
                     };
                 }
 
-                throw new TODOException("Aggregate.createAggregateData: DISTINCT aggregates need collecting");
+                break;
+            case AggregateType.Min:
+            case AggregateType.Max:
+                // DISTINCT changes nothing for an extremum, duplicates collapse on their own.
+                return new AggregateDataDefault(aggregateType, type!);
             default:
                 throw new TODOException(
                     "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX and AVG are ported (type=" + aggregateType + ")");
         }
+
+        return new AggregateDataCollecting(
+            distinct, false, AggregateDataCollecting.NullCollectionMode.Ignored);
     }
 
     /// <inheritdoc/>
@@ -119,12 +131,56 @@ public class Aggregate : AbstractAggregate
         // Ported from Aggregate.getAggregatedValue: an empty group hands over no data,
         // the aggregate starts fresh and reports its empty-set value (NULL, or 0).
         AggregateData data = (AggregateData?)aggregateData ?? (AggregateData)CreateAggregateData();
-        if (distinct)
+        switch (aggregateType)
         {
-            throw new TODOException("Aggregate.getAggregatedValue: DISTINCT aggregates need collecting");
+            case AggregateType.Count:
+                if (distinct)
+                {
+                    return ValueBigint.Get(((AggregateDataCollecting)data).GetCount());
+                }
+
+                break;
+            case AggregateType.Sum:
+                if (distinct)
+                {
+                    AggregateDataCollecting collected = (AggregateDataCollecting)data;
+                    if (collected.GetCount() == 0)
+                    {
+                        return ValueNull.Instance;
+                    }
+
+                    return Collect(session, collected, new AggregateDataDefault(aggregateType, type!));
+                }
+
+                break;
+            case AggregateType.Avg:
+                if (distinct)
+                {
+                    AggregateDataCollecting collected = (AggregateDataCollecting)data;
+                    if (collected.GetCount() == 0)
+                    {
+                        return ValueNull.Instance;
+                    }
+
+                    return Collect(session, collected, new AggregateDataAvg(type!));
+                }
+
+                break;
+            default:
+                break;
         }
 
         return data.GetValue(session);
+    }
+
+    private static Value Collect(SessionLocal session, AggregateDataCollecting c, AggregateData d)
+    {
+        foreach (Value v in c)
+        {
+            d.Add(session, v);
+        }
+
+        return d.GetValue(session);
     }
 
     /// <inheritdoc/>

@@ -39,6 +39,63 @@ public sealed class SelectTextTests
     private static SessionLocal NewEmptySession(out TransactionStore store)
         => NewSeededSession(out store, out _, seed: false);
 
+    private static void CompareDup(string dbName, string sql, List<string>? expected = null)
+    {
+        const string Setup = """
+            stat.execute("CREATE TABLE T3(ID INT PRIMARY KEY, VAL INT)");
+            stat.execute("INSERT INTO T3 VALUES (1, 5), (2, 5), (3, 7), (4, NULL)");
+            """;
+        SessionLocal session = NewDupSession(out TransactionStore store);
+        try
+        {
+            List<string> actual = RunText(session, sql);
+            List<string> java = RunJavaWithSetup(dbName, sql, Setup);
+            if (expected is not null)
+            {
+                Assert.Equal(expected, actual);
+            }
+
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    private static SessionLocal NewDupSession(out TransactionStore store)
+    {
+        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_dup")), "sa")
+        {
+            CastDataProvider = new TestCastDataProvider(),
+            CompareMode = CompareMode.GetInstance(null, 0),
+        };
+
+        store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+
+        Schemas.Schema schema = new(session.GetDatabase(), 1, "PUBLIC", false);
+        session.GetDatabase().AddSchema(schema);
+
+        Column id = new("ID", TypeInfo.TypeInteger, null, 0);
+        id.SetNullable(false);
+        Column val = new("VAL", TypeInfo.TypeInteger, null, 1);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T3", [id, val], store, persistData: false);
+        foreach (Column column in table.GetColumns())
+        {
+            column.SetTable(table, column.GetColumnId());
+        }
+
+        table.AddIndex(session, "I", 7, [new IndexColumn(id, ascending: true)], 1,
+            IndexType.CreatePrimaryKey(persistent: false, hash: false), create: true, indexComment: null);
+        table.AddRow(session, new DefaultRow([ValueInteger.Get(1), ValueInteger.Get(5)]));
+        table.AddRow(session, new DefaultRow([ValueInteger.Get(2), ValueInteger.Get(5)]));
+        table.AddRow(session, new DefaultRow([ValueInteger.Get(3), ValueInteger.Get(7)]));
+        table.AddRow(session, new DefaultRow([ValueInteger.Get(4), ValueNull.Instance]));
+        schema.Add(table);
+        return session;
+    }
+
     private static SessionLocal NewLongSession(out TransactionStore store)
     {
         SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_long")), "sa")
@@ -407,21 +464,77 @@ public sealed class SelectTextTests
         }
     }
 
-    [Fact]
-    public void SumDistinctWaitsForCollecting()
+    [JavaOracleFact]
+    public void SumDistinct()
     {
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            CommandContainer container = Assert.IsType<CommandContainer>(
-                session.PrepareCommand("SELECT SUM(DISTINCT ID) FROM T"));
-            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
-            Assert.Contains("collecting", e.Message);
-        }
-        finally
-        {
-            store.Dispose();
-        }
+        CompareText("select_text_sumdistinct", "SELECT SUM(DISTINCT ID) FROM T", ["=10"]);
+    }
+
+    [JavaOracleFact]
+    public void AvgDistinct()
+    {
+        CompareText("select_text_avgdistinct", "SELECT AVG(DISTINCT ID) FROM T", ["=2.5"]);
+    }
+
+    [JavaOracleFact]
+    public void CountDistinctName()
+    {
+        CompareText("select_text_countdistinct", "SELECT COUNT(DISTINCT NAME) FROM T", ["=2"]);
+    }
+
+    [JavaOracleFact]
+    public void MinMaxDistinct()
+    {
+        CompareText(
+            "select_text_minmaxdistinct", "SELECT MIN(DISTINCT ID), MAX(DISTINCT NAME) FROM T", ["=1:c"]);
+    }
+
+    [JavaOracleFact]
+    public void GroupedCountDistinct()
+    {
+        CompareText(
+            "select_text_groupcountdistinct",
+            "SELECT NAME, COUNT(DISTINCT ID) FROM T GROUP BY NAME",
+            ["=-:1", "=b:2", "=c:1"]);
+    }
+
+    [JavaOracleFact]
+    public void SumDistinctDedups()
+    {
+        CompareDup("select_text_sumdistinctdup", "SELECT SUM(DISTINCT VAL) FROM T3", ["=12"]);
+    }
+
+    [JavaOracleFact]
+    public void CountDistinctDedups()
+    {
+        CompareDup("select_text_countdistinctdup", "SELECT COUNT(DISTINCT VAL) FROM T3", ["=2"]);
+    }
+
+    [JavaOracleFact]
+    public void AvgDistinctDedups()
+    {
+        CompareDup("select_text_avgdistinctdup", "SELECT AVG(DISTINCT VAL) FROM T3", ["=6.0"]);
+    }
+
+    [JavaOracleFact]
+    public void EmptyCountDistinctIsZero()
+    {
+        CompareText(
+            "select_text_countdistinctempty", "SELECT COUNT(DISTINCT NAME) FROM T WHERE ID > 100", ["=0"]);
+    }
+
+    [JavaOracleFact]
+    public void EmptySumDistinctIsNull()
+    {
+        CompareText(
+            "select_text_sumdistinctempty", "SELECT SUM(DISTINCT ID) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void EmptyAvgDistinctIsNull()
+    {
+        CompareText(
+            "select_text_avgdistinctempty", "SELECT AVG(DISTINCT ID) FROM T WHERE ID > 100", ["=-"]);
     }
 
     [JavaOracleFact]
@@ -524,21 +637,10 @@ public sealed class SelectTextTests
         CompareText("select_text_countoff", "SELECT COUNT(*) FROM T OFFSET 1", []);
     }
 
-    [Fact]
-    public void CountDistinctWaitsForCollecting()
+    [JavaOracleFact]
+    public void CountDistinct()
     {
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            CommandContainer container = Assert.IsType<CommandContainer>(
-                session.PrepareCommand("SELECT COUNT(DISTINCT ID) FROM T"));
-            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
-            Assert.Contains("collecting", e.Message);
-        }
-        finally
-        {
-            store.Dispose();
-        }
+        CompareText("select_text_countdistinctid", "SELECT COUNT(DISTINCT ID) FROM T", ["=4"]);
     }
 
     [Fact]
@@ -674,23 +776,6 @@ public sealed class SelectTextTests
             H2SharpException e = Assert.Throws<H2SharpException>(
                 () => session.PrepareCommand("SELECT AVG(NAME) FROM T"));
             Assert.Equal(90015, e.H2ErrorCode);
-        }
-        finally
-        {
-            store.Dispose();
-        }
-    }
-
-    [Fact]
-    public void AvgDistinctWaitsForCollecting()
-    {
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            CommandContainer container = Assert.IsType<CommandContainer>(
-                session.PrepareCommand("SELECT AVG(DISTINCT ID) FROM T"));
-            TODOException e = Assert.Throws<TODOException>(() => container.Query(-1));
-            Assert.Contains("collecting", e.Message);
         }
         finally
         {
