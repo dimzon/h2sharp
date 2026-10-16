@@ -5,10 +5,11 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * Sliced to COUNT, SUM, MIN, MAX and AVG: the flat, quick and grouped paths carry any
- * of them — reading, mapping and accumulation. Every other aggregate type refuses
- * where the reference would branch to it (the data factory, the value reader and
- * the type switch), so adding the next one is new branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
+ * Sliced to COUNT, SUM, MIN, MAX, AVG and the STDDEV / VAR family: the flat, quick
+ * and grouped paths carry any of them — reading, mapping and accumulation. Every
+ * other aggregate type refuses where the reference would branch to it (the data
+ * factory, the value reader and the type switch), so adding the next one is new
+ * branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
  * them yet, and a field nothing writes is a promise nothing checks.
  */
 using System;
@@ -92,9 +93,20 @@ public class Aggregate : AbstractAggregate
             case AggregateType.Max:
                 // DISTINCT changes nothing for an extremum, duplicates collapse on their own.
                 return new AggregateDataDefault(aggregateType, type!);
+            case AggregateType.StddevPop:
+            case AggregateType.StddevSamp:
+            case AggregateType.VarPop:
+            case AggregateType.VarSamp:
+                if (!distinct)
+                {
+                    return new AggregateDataStdVar(aggregateType);
+                }
+
+                break;
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX and AVG are ported (type=" + aggregateType + ")");
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV and VAR are ported (type="
+                    + aggregateType + ")");
         }
 
         return new AggregateDataCollecting(
@@ -163,6 +175,22 @@ public class Aggregate : AbstractAggregate
                     }
 
                     return Collect(session, collected, new AggregateDataAvg(type!));
+                }
+
+                break;
+            case AggregateType.StddevPop:
+            case AggregateType.StddevSamp:
+            case AggregateType.VarPop:
+            case AggregateType.VarSamp:
+                if (distinct)
+                {
+                    AggregateDataCollecting collected = (AggregateDataCollecting)data;
+                    if (collected.GetCount() == 0)
+                    {
+                        return ValueNull.Instance;
+                    }
+
+                    return Collect(session, collected, new AggregateDataStdVar(aggregateType));
                 }
 
                 break;
@@ -255,6 +283,12 @@ public class Aggregate : AbstractAggregate
             case AggregateType.Avg:
                 type = GetAvgType(type!) ?? throw Message.DbException.Get(
                     Api.ErrorCode.SumOrAvgOnWrongDatatype1, GetTraceSql());
+                break;
+            case AggregateType.StddevPop:
+            case AggregateType.StddevSamp:
+            case AggregateType.VarPop:
+            case AggregateType.VarSamp:
+                type = TypeInfo.TypeDouble;
                 break;
             default:
                 throw Message.DbException.GetInternalError("type=" + aggregateType);
@@ -441,6 +475,10 @@ public class Aggregate : AbstractAggregate
             AggregateType.Min => "MIN",
             AggregateType.Max => "MAX",
             AggregateType.Avg => "AVG",
+            AggregateType.StddevPop => "STDDEV_POP",
+            AggregateType.StddevSamp => "STDDEV_SAMP",
+            AggregateType.VarPop => "VAR_POP",
+            AggregateType.VarSamp => "VAR_SAMP",
             _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
         };
 

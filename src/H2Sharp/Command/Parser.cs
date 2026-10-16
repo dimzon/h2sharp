@@ -622,7 +622,7 @@ public sealed class Parser
     /// A name followed by anything else is a column that happens to share the spelling.
     /// </summary>
     /// <param name="aggregateType">the aggregate type, when this is a call</param>
-    /// <returns>true for a COUNT, SUM, MIN, MAX or AVG call</returns>
+    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV or VAR call</returns>
     private bool IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType)
     {
         aggregateType = default;
@@ -653,6 +653,27 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.Avg;
         }
+        else if (name.Equals("STDDEV_POP", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("STDDEVP", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.StddevPop;
+        }
+        else if (name.Equals("STDDEV_SAMP", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("STDDEV", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.StddevSamp;
+        }
+        else if (name.Equals("VAR_POP", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("VARP", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.VarPop;
+        }
+        else if (name.Equals("VAR_SAMP", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("VAR", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("VARIANCE", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.VarSamp;
+        }
         else
         {
             return false;
@@ -662,7 +683,7 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads a COUNT, SUM, MIN, MAX or AVG call: the aggregates the engine runs.
+    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV or VAR call: the aggregates the engine runs.
     /// </summary>
     /// <remarks>
     /// The reference reads every aggregate name here and builds the matching type; only

@@ -4122,6 +4122,16 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### STDDEV и VAR бегут методом Велфорда
+
+`AggregateDataStdVar` целиком (включая ветки REGR_SXX/SYY — enum их уже знает,
+фабрика до них дойдёт позже), тип результата всегда DOUBLE без оглядки на
+аргумент, DISTINCT через общее собирание, SQL-имена — канонические имена enum
+(`aggregateType.name()` в эталоне), все девять написаний в ридере (STDDEV,
+STDDEVP, VAR, VARP, VARIANCE и полные). Проверено: 9 оракулов против JDBC
+(популяция/выборка, алиасы одним запросом, одна строка, пустое множество,
+DISTINCT); `H2Sharp.Tests` **886 зелёных**.
+
 ### DISTINCT собирается через AggregateDataCollecting
 
 `AggregateDataCollecting` целиком (включая `NullCollectionMode`, `getArray`,

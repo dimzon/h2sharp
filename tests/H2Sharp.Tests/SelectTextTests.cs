@@ -724,11 +724,68 @@ public sealed class SelectTextTests
         }
     }
 
+    [JavaOracleFact]
+    public void VarPop()
+    {
+        CompareText("select_text_varpop", "SELECT VAR_POP(ID) FROM T", ["=1.25"]);
+    }
+
+    [JavaOracleFact]
+    public void VarSamp()
+    {
+        CompareText("select_text_varsamp", "SELECT VAR_SAMP(ID) FROM T", ["=1.6666666666666667"]);
+    }
+
+    [JavaOracleFact]
+    public void StddevPop()
+    {
+        CompareText("select_text_stddevpop", "SELECT STDDEV_POP(ID) FROM T", ["=1.118033988749895"]);
+    }
+
+    [JavaOracleFact]
+    public void StddevSamp()
+    {
+        CompareText("select_text_stddevsamp", "SELECT STDDEV_SAMP(ID) FROM T", ["=1.2909944487358056"]);
+    }
+
+    [JavaOracleFact]
+    public void StddevVarAliases()
+    {
+        CompareText(
+            "select_text_stddevalias",
+            "SELECT STDDEV(ID), VARIANCE(ID), STDDEVP(ID), VARP(ID) FROM T",
+            ["=1.2909944487358056:1.6666666666666667:1.118033988749895:1.25"]);
+    }
+
+    [JavaOracleFact]
+    public void SingleVarSampIsNull()
+    {
+        CompareText("select_text_varsampsingle", "SELECT VAR_SAMP(ID) FROM T WHERE ID = 3", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void SingleVarPopIsZero()
+    {
+        CompareText("select_text_varpopsingle", "SELECT VAR_POP(ID) FROM T WHERE ID = 3", ["=0.0"]);
+    }
+
+    [JavaOracleFact]
+    public void EmptyStddevIsNull()
+    {
+        CompareText("select_text_stddevempty", "SELECT STDDEV_POP(ID) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void VarPopDistinct()
+    {
+        CompareText("select_text_varpopdistinct", "SELECT VAR_POP(DISTINCT ID) FROM T", ["=1.25"]);
+    }
+
     [Fact]
     public void MedianWaitsForAggregates()
     {
-        // COUNT, SUM, MIN, MAX and AVG run since their paths landed; every other
-        // aggregate refuses by name rather than misreading as a syntax error.
+        // COUNT, SUM, MIN, MAX, AVG, STDDEV and VAR run since their paths landed;
+        // every other aggregate refuses by name rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
