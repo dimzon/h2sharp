@@ -5,11 +5,11 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * Sliced to COUNT, SUM, MIN, MAX, AVG, the STDDEV / VAR family, ANY / EVERY and
- * MEDIAN: the flat, quick and grouped paths carry any of them — reading, mapping
- * and accumulation. Every other aggregate type refuses where the reference would
- * branch to it (the data factory, the value reader and the type switch), so
- * adding the next one is new branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
+ * Sliced to COUNT, SUM, MIN, MAX, AVG, the STDDEV / VAR family, ANY / EVERY,
+ * MEDIAN and ANY_VALUE: the flat, quick and grouped paths carry any of them —
+ * reading, mapping and accumulation. Every other aggregate type refuses where the
+ * reference would branch to it (the data factory, the value reader and the type
+ * switch), so adding the next one is new branches, not a new shape. WITHIN GROUP / ORDER BY lists are not kept: no reader builds
  * them yet, and a field nothing writes is a promise nothing checks.
  */
 using System;
@@ -108,9 +108,16 @@ public class Aggregate : AbstractAggregate
                 break;
             case AggregateType.Median:
                 break;
+            case AggregateType.AnyValue:
+                if (!distinct)
+                {
+                    return new AggregateDataAnyValue();
+                }
+
+                break;
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR and MEDIAN are ported (type="
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN and ANY_VALUE are ported (type="
                     + aggregateType + ")");
         }
 
@@ -254,6 +261,22 @@ public class Aggregate : AbstractAggregate
 
                     return Percentile.GetValue(session, array, type!.GetValueType(), null, Percentile.Half, true);
                 }
+
+            case AggregateType.AnyValue:
+                {
+                    if (distinct)
+                    {
+                        Value[]? values = ((AggregateDataCollecting)data).GetArray();
+                        if (values is null)
+                        {
+                            return ValueNull.Instance;
+                        }
+
+                        return values[session.GetRandom().Next(values.Length)];
+                    }
+
+                    break;
+                }
             default:
                 break;
         }
@@ -339,6 +362,7 @@ public class Aggregate : AbstractAggregate
                 break;
             case AggregateType.Min:
             case AggregateType.Max:
+            case AggregateType.AnyValue:
                 break;
             case AggregateType.Any:
             case AggregateType.Every:
@@ -520,6 +544,12 @@ public class Aggregate : AbstractAggregate
             }
         }
 
+        if (visitor.GetVisitorType() == ExpressionVisitor.Deterministic
+            && aggregateType == AggregateType.AnyValue)
+        {
+            return false;
+        }
+
         foreach (Expression arg in args)
         {
             if (!arg.IsEverything(visitor))
@@ -565,6 +595,7 @@ public class Aggregate : AbstractAggregate
             AggregateType.Any => "ANY",
             AggregateType.Every => "EVERY",
             AggregateType.Median => "MEDIAN",
+            AggregateType.AnyValue => "ANY_VALUE",
             _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
         };
 

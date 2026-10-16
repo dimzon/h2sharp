@@ -59,6 +59,18 @@ public sealed class SessionLocal : Session
 
     private readonly Dictionary<string, Values.Value> parameters = [];
 
+    private Random? random;
+
+    /// <summary>
+    /// Gets the session's random number generator, creating it on first use.
+    /// </summary>
+    /// <remarks>
+    /// <c>java.util.Random</c> in the reference, <c>System.Random</c> here: the streams
+    /// differ, so only single-candidate outcomes are ever asserted, never a particular pick.
+    /// </remarks>
+    /// <returns>the random generator</returns>
+    public Random GetRandom() => random ??= new Random();
+
     /// <summary>
     /// Gets the transaction this session is working on, or null when it has none.
     /// </summary>

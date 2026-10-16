@@ -909,12 +909,42 @@ public sealed class SelectTextTests
         CompareText("select_text_medianempty", "SELECT MEDIAN(ID) FROM T WHERE ID > 100", ["=-"]);
     }
 
+    [JavaOracleFact]
+    public void AnyValueSingle()
+    {
+        CompareText("select_text_anyvaluesingle", "SELECT ANY_VALUE(NAME) FROM T WHERE ID = 3", ["=c"]);
+    }
+
+    [JavaOracleFact]
+    public void AnyValueEmptyIsNull()
+    {
+        CompareText("select_text_anyvalueempty", "SELECT ANY_VALUE(ID) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void AnyValueGroupBy()
+    {
+        // Every group holds one value (NULLs are never collected), so the
+        // arbitrary pick is pinned down and the oracle means something.
+        CompareText(
+            "select_text_anyvaluegroup",
+            "SELECT NAME, ANY_VALUE(NAME) FROM T GROUP BY NAME",
+            ["=-:-", "=b:b", "=c:c"]);
+    }
+
+    [JavaOracleFact]
+    public void AnyValueDistinctSingle()
+    {
+        CompareText(
+            "select_text_anyvaluedistinct", "SELECT ANY_VALUE(DISTINCT NAME) FROM T WHERE ID = 3", ["=c"]);
+    }
+
     [Fact]
     public void ListaggWaitsForAggregates()
     {
-        // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY and MEDIAN run since
-        // their paths landed; every other aggregate refuses by name rather than
-        // misreading as a syntax error.
+        // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN and ANY_VALUE
+        // run since their paths landed; every other aggregate refuses by name
+        // rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
