@@ -1175,6 +1175,67 @@ public sealed class SelectTextTests
     }
 
     [JavaOracleFact]
+    public void BetweenIds()
+    {
+        CompareText(
+            "select_text_betweenids", "SELECT ID FROM T WHERE ID BETWEEN 2 AND 3", ["=2", "=3"]);
+    }
+
+    [JavaOracleFact]
+    public void NotBetweenIds()
+    {
+        CompareText(
+            "select_text_notbetweenids", "SELECT ID FROM T WHERE ID NOT BETWEEN 2 AND 3", ["=1", "=4"]);
+    }
+
+    [JavaOracleFact]
+    public void BetweenNames()
+    {
+        CompareText(
+            "select_text_betweennames", "SELECT ID FROM T WHERE NAME BETWEEN 'a' AND 'b'", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void BetweenSingle()
+    {
+        // The reference rewrites a degenerate frame into a plain equality.
+        CompareText("select_text_betweensingle", "SELECT ID FROM T WHERE ID BETWEEN 2 AND 2", ["=2"]);
+    }
+
+    [JavaOracleFact]
+    public void BetweenNullLowIsEmpty()
+    {
+        CompareText("select_text_betweenulownull", "SELECT ID FROM T WHERE ID BETWEEN NULL AND 3");
+    }
+
+    [JavaOracleFact]
+    public void BetweenNullHighIsEmpty()
+    {
+        CompareText("select_text_betweenuhighnull", "SELECT ID FROM T WHERE ID BETWEEN 2 AND NULL");
+    }
+
+    [JavaOracleFact]
+    public void BetweenReversedIsEmpty()
+    {
+        CompareText(
+            "select_text_betweenreversed", "SELECT ID FROM T WHERE NAME BETWEEN 'b' AND 'a'");
+    }
+
+    [JavaOracleFact]
+    public void BetweenSymmetric()
+    {
+        CompareText(
+            "select_text_betweensymmetric", "SELECT ID FROM T WHERE ID BETWEEN SYMMETRIC 3 AND 2", ["=2", "=3"]);
+    }
+
+    [JavaOracleFact]
+    public void BetweenAsymmetric()
+    {
+        CompareText(
+            "select_text_betweenasymmetric", "SELECT ID FROM T WHERE ID BETWEEN ASYMMETRIC 2 AND 3", ["=2", "=3"]);
+    }
+
+    [JavaOracleFact]
     public void RegrAvgx()
     {
         CompareDup("select_text_regravgx", "SELECT REGR_AVGX(VAL, ID) FROM T3", ["=2.0"]);

@@ -1306,20 +1306,45 @@ public sealed class Parser
     private Expressions.Expression ReadQueryComparison(Query.Select? aggregateSelect = null)
     {
         Expressions.Expression left = ReadQueryTerm(aggregateSelect);
-        while (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
-            or Token.SmallerEqual or Token.BiggerEqual)
+        while (true)
         {
-            int compareType = ReadQueryComparisonType();
-            left = new Expressions.Conditions.Comparison(
-                compareType, left, ReadQueryTerm(aggregateSelect), whenOperand: false);
-        }
+            if (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
+                or Token.SmallerEqual or Token.BiggerEqual)
+            {
+                int compareType = ReadQueryComparisonType();
+                left = new Expressions.Conditions.Comparison(
+                    compareType, left, ReadQueryTerm(aggregateSelect), whenOperand: false);
+                continue;
+            }
 
-        if (CurrentType == ParserUtil.Is)
-        {
-            Read();
-            bool not = ReadIf(ParserUtil.Not);
-            Expect(ParserUtil.Null, "NULL");
-            left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
+            if (CurrentType == ParserUtil.Is)
+            {
+                Read();
+                bool not = ReadIf(ParserUtil.Not);
+                Expect(ParserUtil.Null, "NULL");
+                left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
+                continue;
+            }
+
+            if (CurrentType == ParserUtil.Between
+                || CurrentType == ParserUtil.Not && tokens[position + 1].TokenType == ParserUtil.Between)
+            {
+                bool not = ReadIf(ParserUtil.Not);
+                Expect(ParserUtil.Between, "BETWEEN");
+                bool symmetric = IsWord("SYMMETRIC");
+                if (!symmetric)
+                {
+                    _ = IsWord("ASYMMETRIC");
+                }
+
+                Expressions.Expression a = ReadQueryTerm(aggregateSelect);
+                ExpectWord("AND");
+                left = new Expressions.Conditions.BetweenPredicate(
+                    left, not, whenOperand: false, symmetric, a, ReadQueryTerm(aggregateSelect));
+                continue;
+            }
+
+            break;
         }
 
         return left;

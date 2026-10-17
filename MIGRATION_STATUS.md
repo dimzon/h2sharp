@@ -4122,6 +4122,15 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### BETWEEN бежит как BetweenPredicate
+
+Портирован `BetweenPredicate` целиком (включая `SYMMETRIC`/`ASYMMETRIC`, вырождение в
+`=`/`!=`, индекс-условия через `Comparison.CreateIndexConditions`, который стал
+`internal` — в эталоне он package-private) и ридер `BETWEEN [NOT] [SYMMETRIC|ASYMMETRIC]
+a AND b` в `ReadQueryComparison`. Проверено: 9 оракулов против JDBC (числа, строки,
+`NOT`, вырожденный `2..2`, NULL-границы, обратный порядок, SYMMETRIC/ASYMMETRIC);
+`H2Sharp.Tests` **1015 зелёных**.
+
 ### JSON_ARRAYAGG и JSON_OBJECTAGG бегут на собирании в байты
 
 Портирован срез `JsonConstructorFunction` (только статический `getJsonFunctionFlagsSQL`),

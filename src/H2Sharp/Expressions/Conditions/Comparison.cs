@@ -361,7 +361,7 @@ public sealed class Comparison : Condition
         return true;
     }
 
-    private static void CreateIndexConditions(TableFilter filter, Expression left, Expression right, int compareType)
+    internal static void CreateIndexConditions(TableFilter filter, Expression left, Expression right, int compareType)
     {
         if (compareType == NotEqual || compareType == NotEqualNullSafe)
         {
