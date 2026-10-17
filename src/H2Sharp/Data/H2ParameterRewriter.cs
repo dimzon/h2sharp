@@ -50,6 +50,7 @@ internal static class H2ParameterRewriter
         List<H2Parameter> ordered = [];
         StringBuilder builder = new(text.Length);
         bool sawPositional = false;
+        bool sawName = false;
         int i = 0;
         while (i < text.Length)
         {
@@ -93,6 +94,7 @@ internal static class H2ParameterRewriter
                         "No value was given for parameter '" + name + "'");
                 }
 
+                sawName = true;
                 ordered.Add((H2Parameter)parameters[index]);
                 _ = builder.Append('?');
                 i = end;
@@ -104,18 +106,28 @@ internal static class H2ParameterRewriter
             }
         }
 
-        if (ordered.Count == 0 && sawPositional)
+        if (!sawName)
         {
-            // Plain "?" with no names: the values travel in collection order, which is
-            // the order the placeholders appear in. Mixed with names it would be neither,
-            // and that is refused above by construction: a text with names always fills
-            // the list.
-            foreach (H2Parameter parameter in parameters)
+            // No placeholder was a name, so the walk reproduced the text character for
+            // character: a purely positional text, or one whose quotes and comments merely
+            // passed through. Handing back the original keeps that identity instead of
+            // paying for a builder and a copy on every execution.
+            if (sawPositional)
             {
-                ordered.Add(parameter);
+                // Plain "?" with no names: the values travel in collection order, which is
+                // the order the placeholders appear in. Mixed with names it would be
+                // neither, and that case is refused below, because a text with names always
+                // fills the list.
+                foreach (H2Parameter parameter in parameters)
+                {
+                    ordered.Add(parameter);
+                }
             }
+
+            return (text, ordered);
         }
-        else if (sawPositional)
+
+        if (sawPositional)
         {
             throw new InvalidOperationException(
                 "Named and positional parameters cannot be mixed in one command");

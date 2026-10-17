@@ -237,7 +237,9 @@ internal static class H2ValueMapper
     /// <returns>the BigDecimal with the same value</returns>
     private static BigDecimal FromDecimal(decimal value)
     {
-        int[] bits = decimal.GetBits(value);
+        // GetBits has a span overload: the four ints land on the stack instead of an array.
+        Span<int> bits = stackalloc int[4];
+        decimal.GetBits(value, bits);
         BigInteger unscaled = new BigInteger((uint)bits[0])
             | (new BigInteger((uint)bits[1]) << 32)
             | (new BigInteger((uint)bits[2]) << 64);
@@ -301,15 +303,10 @@ internal static class H2ValueMapper
                 "Cannot read " + value.ToPlainString() + " as Decimal: scale " + scale + " exceeds 28");
         }
 
-        byte[] bytes = unscaled.ToByteArray();
-        if (bytes.Length > 1 && bytes[^1] == 0)
-        {
-            // The sign byte ToByteArray appends when the top bit is set: minimal form
-            // never carries two of them, so one strip is exact.
-            bytes = bytes[..^1];
-        }
-
-        if (bytes.Length > 12)
+        // The magnitude is written little-endian into a fixed buffer: a decimal is at most
+        // 96 bits, so twelve bytes hold it and a wider one is the overflow below.
+        Span<byte> bytes = stackalloc byte[12];
+        if (!unscaled.TryWriteBytes(bytes, out int written, isUnsigned: true, isBigEndian: false))
         {
             throw new OverflowException(
                 "Cannot read " + value.ToPlainString() + " as Decimal: out of range");
@@ -321,7 +318,7 @@ internal static class H2ValueMapper
         return new decimal(unchecked((int)lo), unchecked((int)mid), unchecked((int)hi), negative, (byte)scale);
     }
 
-    private static uint Word(byte[] bytes, int offset)
+    private static uint Word(ReadOnlySpan<byte> bytes, int offset)
     {
         uint word = 0;
         for (int i = 0; i < 4 && offset + i < bytes.Length; i++)
