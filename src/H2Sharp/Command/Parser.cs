@@ -1344,6 +1344,30 @@ public sealed class Parser
                 continue;
             }
 
+            if (CurrentType == ParserUtil.In
+                || CurrentType == ParserUtil.Not && tokens[position + 1].TokenType == ParserUtil.In)
+            {
+                bool not = ReadIf(ParserUtil.Not);
+                Expect(ParserUtil.In, "IN");
+                Expect(Token.OpenParen, "(");
+                if (IsWord("SELECT", consume: false))
+                {
+                    throw new TODOException("Parser.parseQuerySelect: IN with a subquery is not ported");
+                }
+
+                List<Expressions.Expression> values = [];
+                do
+                {
+                    values.Add(ReadQueryTerm(aggregateSelect));
+                }
+                while (ReadIf(Token.Comma));
+
+                Expect(Token.CloseParen, ")");
+                left = new Expressions.Conditions.ConditionInList(
+                    left, not, whenOperand: false, values);
+                continue;
+            }
+
             break;
         }
 

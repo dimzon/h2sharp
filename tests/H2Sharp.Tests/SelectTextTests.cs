@@ -1236,6 +1236,72 @@ public sealed class SelectTextTests
     }
 
     [JavaOracleFact]
+    public void InIds()
+    {
+        CompareText("select_text_inids", "SELECT ID FROM T WHERE ID IN (1, 3)", ["=1", "=3"]);
+    }
+
+    [JavaOracleFact]
+    public void NotInIds()
+    {
+        CompareText("select_text_notinids", "SELECT ID FROM T WHERE ID NOT IN (1, 3)", ["=2", "=4"]);
+    }
+
+    [JavaOracleFact]
+    public void InNames()
+    {
+        CompareText("select_text_innames", "SELECT ID FROM T WHERE NAME IN ('b')", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void InSingle()
+    {
+        CompareText("select_text_insingle", "SELECT ID FROM T WHERE ID IN (1)", ["=1"]);
+    }
+
+    [JavaOracleFact]
+    public void InWithNull()
+    {
+        // A non-matching value against a NULL list element is unknown, so it drops out.
+        CompareText("select_text_inwithnull", "SELECT ID FROM T WHERE ID IN (1, NULL)", ["=1"]);
+    }
+
+    [JavaOracleFact]
+    public void NotInWithNullIsEmpty()
+    {
+        CompareText("select_text_notinwithnull", "SELECT ID FROM T WHERE ID NOT IN (1, NULL)");
+    }
+
+    [JavaOracleFact]
+    public void InSeveral()
+    {
+        CompareText("select_text_inseveral", "SELECT ID FROM T WHERE ID IN (1, 3, 4)", ["=1", "=3", "=4"]);
+    }
+
+    [JavaOracleFact]
+    public void InTwoNames()
+    {
+        CompareText(
+            "select_text_intwonames", "SELECT ID FROM T WHERE NAME IN ('b', 'c')", ["=1", "=2", "=3"]);
+    }
+
+    [Fact]
+    public void InSubqueryWaitsForSubqueries()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            TODOException e = Assert.Throws<TODOException>(
+                () => session.PrepareCommand("SELECT ID FROM T WHERE ID IN (SELECT ID FROM T)"));
+            Assert.Contains("subquery", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [JavaOracleFact]
     public void RegrAvgx()
     {
         CompareDup("select_text_regravgx", "SELECT REGR_AVGX(VAL, ID) FROM T3", ["=2.0"]);

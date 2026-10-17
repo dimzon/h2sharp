@@ -4122,6 +4122,19 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### IN бежит как ConditionIn / ConditionInList / ConditionInConstantSet
+
+Портированы `ConditionIn` (абстрактная база), `ConditionInList` (список выражений) и
+`ConditionInConstantSet` (вырожденный случай — все значения константны, `SortedSet` на
+сессионном компараторе), ридер `x [NOT] IN (v1, v2, ...)` в `ReadQueryComparison` и
+`IndexCondition.GetCurrentValueList` (непустой ранее стаб: читает список, конвертирует в тип
+колонки и сортирует). Отступления записаны: `Settings.optimizeInList` не портирован (путь
+индекс-условия берётся всегда — дефолт настройки); row-IN (`createUniqueIndexConditions`,
+`getAdditional`) не портирован, потому что `ExpressionList` — ещё стаб. Проверено: 9
+оракулов против JDBC (числа, строки, `NOT`, одиночный элемент → `=`, NULL в списке,
+несколько элементов) и поименный отказ `IN (SELECT ...)`; `H2Sharp.Tests`
+**1024 зелёных**.
+
 ### BETWEEN бежит как BetweenPredicate
 
 Портирован `BetweenPredicate` целиком (включая `SYMMETRIC`/`ASYMMETRIC`, вырождение в

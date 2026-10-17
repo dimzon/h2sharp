@@ -211,7 +211,40 @@ public class IndexCondition
     /// <param name="sortTypes">the sort types</param>
     /// <returns>the values</returns>
     public Value?[] GetCurrentValueList(SessionLocal session, int[] sortTypes)
-        => throw new TODOException("IndexCondition.getCurrentValueList: the session has to read them");
+    {
+        IComparer<Value> comparator;
+        if (compoundColumns)
+        {
+            // The row-IN path needs the multi-column convert, which is not ported; a scalar IN
+            // list never takes this branch.
+            throw new TODOException("IndexCondition.getCurrentValueList: compound columns are not ported");
+        }
+
+        comparator = session.GetValueComparer();
+        if ((sortTypes[0] & Result.SortOrder.Descending) != 0)
+        {
+            IComparer<Value> forward = comparator;
+            comparator = Comparer<Value>.Create((o1, o2) => forward.Compare(o2, o1));
+        }
+
+        SortedSet<Value> valueSet = new(comparator);
+        if (compareType == Comparison.InList)
+        {
+            Column col = column!;
+            foreach (Expression e in expressionList!)
+            {
+                Value v = e.GetValue(session);
+                v = col.Convert(session, v);
+                _ = valueSet.Add(v);
+            }
+        }
+        else
+        {
+            _ = valueSet.Add(expression!.GetValue(session));
+        }
+
+        return [.. valueSet];
+    }
 
     /// <summary>
     /// Gets the current result of this condition's query.

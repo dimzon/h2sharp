@@ -334,7 +334,7 @@ public sealed class Comparison : Condition
     /// <param name="colType">the column type</param>
     /// <param name="higherType">the higher type</param>
     /// <returns>true when the index can serve the comparison</returns>
-    private static bool IsSafeIndexCondition(TypeInfo colType, TypeInfo higherType)
+    internal static bool IsSafeIndexCondition(TypeInfo colType, TypeInfo higherType)
     {
         if (!TypeInfo.HaveSameOrdering(colType, higherType))
         {
