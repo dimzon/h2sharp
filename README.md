@@ -2,8 +2,13 @@
 
 Embeddable SQL engine for .NET, ported from [H2 Database](https://github.com/h2database/h2database).
 
-> **Status: early development.** The port is in progress; see [docs/ROADMAP.md](docs/ROADMAP.md)
-> for what is implemented and what is not. Do not use this in production yet.
+> **Status: in progress — a usable subset runs end to end.** An ADO.NET provider over an
+> in-memory engine (DDL, DML, `SELECT` with `GROUP BY`/`UNION`/aggregates, parameters) is
+> working and tested against the reference H2 on the JVM. `JOIN`, subqueries, window
+> functions, constraints/rights and file databases are not ported yet, and many commands
+> refuse with `TODOException` rather than answering wrongly. See
+> [docs/ROADMAP.md](docs/ROADMAP.md) for the per-phase status and
+> [MIGRATION_STATUS.md](MIGRATION_STATUS.md) for the working notes.
 
 ## Goals
 

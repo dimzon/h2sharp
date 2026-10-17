@@ -25,7 +25,7 @@ dead code for the web console. The real parser is recursive descent:
 | `org.h2.command.Parser` (374 KB) | `H2Sharp.Command.Parser` |
 | `org.h2.command.Tokenizer` (61 KB) | `H2Sharp.Command.Tokenizer` |
 | `org.h2.command.Token` | `H2Sharp.Command.Token` |
-| `org.h2.util.ParserUtil` (694 lines of token constants) | `H2Sharp.Command.ParserUtil` |
+| `org.h2.util.ParserUtil` (694 lines of token constants) | `H2Sharp.Util.ParserUtil` |
 
 Do not look for a `.bnf` grammar file. There is none.
 
