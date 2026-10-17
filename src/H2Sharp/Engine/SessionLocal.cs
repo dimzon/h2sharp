@@ -106,6 +106,10 @@ public sealed class SessionLocal : Session
         public int Compare(Values.Value? x, Values.Value? y) => session.Compare(x!, y!);
     }
 
+    private bool autoCommit = true;
+
+    private bool autoCommitAtTransactionEnd;
+
     /// <summary>
     /// Gets the transaction this session is working on, or null when it has none.
     /// </summary>
@@ -118,10 +122,75 @@ public sealed class SessionLocal : Session
     public MvStore.Tx.Transaction? Transaction { get; set; }
 
     /// <summary>
-    /// The scope that owns the transaction above, when one is open. A table restores it when its
-    /// statement is done, so that nested work on the same session does not lose it.
+    /// Gets the transaction this session is working on, beginning one if it has none.
     /// </summary>
-    internal object? TransactionScope { get; set; }
+    /// <returns>the transaction</returns>
+    public MvStore.Tx.Transaction GetTransaction()
+        => Transaction ??= GetDatabase().GetStore().Begin();
+
+    /// <summary>
+    /// Begins a transaction, switching this session out of auto-commit.
+    /// </summary>
+    public void Begin()
+    {
+        autoCommitAtTransactionEnd = true;
+        autoCommit = false;
+    }
+
+    /// <summary>
+    /// Commits the current transaction.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>commit(false)</c> with the parts that need the catalogue and the
+    /// temp-table lifecycle left out: the transaction is committed and forgotten, and auto-commit
+    /// is restored when the transaction was begun for a statement.
+    /// </remarks>
+    public void Commit()
+    {
+        MvStore.Tx.Transaction? transaction = Transaction;
+        if (transaction is not null)
+        {
+            try
+            {
+                transaction.Commit();
+            }
+            finally
+            {
+                Transaction = null;
+            }
+        }
+
+        if (autoCommitAtTransactionEnd)
+        {
+            autoCommit = true;
+            autoCommitAtTransactionEnd = false;
+        }
+    }
+
+    /// <summary>
+    /// Rolls the current transaction back.
+    /// </summary>
+    public void Rollback()
+    {
+        MvStore.Tx.Transaction? transaction = Transaction;
+        if (transaction is not null)
+        {
+            try
+            {
+                transaction.Rollback();
+            }
+            finally
+            {
+                Transaction = null;
+            }
+        }
+
+        if (autoCommitAtTransactionEnd)
+        {
+            autoCommit = true;
+            autoCommitAtTransactionEnd = false;
+        }
+    }
 
     /// <summary>
     /// Gets the value of a column of the row the session is reading.
@@ -256,28 +325,9 @@ public sealed class SessionLocal : Session
     }
 
     /// <summary>
-    /// Commits the current transaction.
-    /// </summary>
-    /// <remarks>
-    /// A no-op, and deliberately so: with nothing prepared there is nothing to commit, and a
-    /// commit that reported rows would be reporting an invention. It becomes the real thing
-    /// with the transaction layer.
-    /// </remarks>
-    public void Commit()
-    {
-    }
-
-    /// <summary>
-    /// Rolls the current transaction back.
-    /// </summary>
-    public void Rollback()
-    {
-    }
-
-    /// <summary>
     /// Gets the column resolver for the given table alias.
     /// </summary>
-    /// <param name="alias">the table alias</param>
+    /// <param name="alias">the alias</param>
     /// <returns>the resolver, or null when this query has no table by that alias</returns>
     public H2Sharp.Tables.ColumnResolver? GetResolver(string alias)
         => throw new TODOException("SessionLocal.getResolver: the query layer is not ported");
@@ -465,8 +515,7 @@ public sealed class SessionLocal : Session
     /// <summary>
     /// Whether this session is in autocommit mode.
     /// </summary>
-    public override bool GetAutoCommit()
-        => throw new TODOException("SessionLocal.getAutoCommit");
+    public override bool GetAutoCommit() => autoCommit;
 
     /// <summary>
     /// Whether this session is only parsing a view, without running anything.
@@ -527,7 +576,18 @@ public sealed class SessionLocal : Session
     /// </summary>
     /// <param name="autoCommit">the new value</param>
     public override void SetAutoCommit(bool autoCommit)
-        => throw new TODOException("SessionLocal.setAutoCommit");
+    {
+        if (autoCommit && !this.autoCommit)
+        {
+            Commit();
+        }
+        else if (!autoCommit && this.autoCommit)
+        {
+            Begin();
+        }
+
+        this.autoCommit = autoCommit;
+    }
 
     /// <summary>
     /// Adds a lob that lives as long as this session does.

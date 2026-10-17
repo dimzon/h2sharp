@@ -1482,7 +1482,8 @@ public abstract class Table
     /// <summary>
     /// Gets the row count, or -1 when not known.
     /// </summary>
-    public abstract long GetRowCountApproximation();
+    /// <param name="session">the session</param>
+    public abstract long GetRowCountApproximation(SessionLocal session);
 
     /// <summary>
     /// Check if the row count can be retrieved quickly.

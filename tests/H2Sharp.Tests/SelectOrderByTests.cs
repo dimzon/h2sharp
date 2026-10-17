@@ -116,7 +116,7 @@ public sealed class SelectOrderByTests
         Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
         MVTable table = new(
             session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-            0, "T", [id, name], store, persistData: false);
+            0, "T", [id, name], persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());
@@ -357,7 +357,7 @@ public sealed class SelectOrderByTests
             Column group = new("G", TypeInfo.TypeVarchar, null, 1);
             MVTable table = new(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                0, "T", [id, group], store, persistData: false);
+                0, "T", [id, group], persistData: false);
             foreach (Column column in table.GetColumns())
             {
                 column.SetTable(table, column.GetColumnId());

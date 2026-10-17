@@ -78,7 +78,7 @@ public sealed class AddIndexDecisionTests
             Column name = new("NAME", TypeInfo.TypeVarchar, null, 2);
             MVTable table = new(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id, n, name], store, persistData: false);
+                3, "T", [id, n, name], persistData: false);
             foreach (Column column in table.GetColumns())
             {
                 column.SetTable(table, column.GetColumnId());

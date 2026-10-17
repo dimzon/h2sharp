@@ -51,7 +51,7 @@ public sealed class TableFilterTests
             Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), null, 3, "TEST",
                 [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             TableFilter first = new(session, table, "T1", rightsChecked: true, null, 0, null);
             TableFilter second = new(session, table, "T2", rightsChecked: true, null, 1, null);
@@ -101,7 +101,7 @@ public sealed class TableFilterTests
             Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), null, 3, "TEST",
                 [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             TableFilter[] filters =
             [
@@ -131,7 +131,7 @@ public sealed class TableFilterTests
             Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), null, 3, "TEST",
                 [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // "A JOIN B JOIN C" pairs A with B before C is seen: C must land at the end of the
             // chain, and a filter that put it anywhere else would pair it with the wrong one.
@@ -221,7 +221,7 @@ public sealed class TableFilterTests
             Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), null, 3, "TEST",
                 [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
             Assert.Same(filter, filter.GetTableFilter());
@@ -244,7 +244,7 @@ public sealed class TableFilterTests
             Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), null, 3, "TEST",
                 [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
             Assert.Same(filter, filter.GetTableFilter());
@@ -268,7 +268,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // The join condition is optimized first and then asked to create its index
             // conditions here, on the nested join and on the join -- so that every filter holds
@@ -309,7 +309,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // Mapping walks the chain, and an outer filter reached from the inside is skipped:
             // its columns belong to rows the inner side never sees. What is asserted is that the
@@ -343,7 +343,7 @@ public sealed class TableFilterTests
             Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
             Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id], store, persistData: false);
+                3, "T", [id], persistData: false);
             id.SetTable(table, 0);
 
             Tables.TableFilter left = new(session, table, "L", rightsChecked: true, null, 0, null);
@@ -391,7 +391,7 @@ public sealed class TableFilterTests
                 3, "T",
                 [new Tables.Column("A", Values.TypeInfo.TypeInteger, null, 0),
                  new Tables.Column("B", Values.TypeInfo.TypeInteger, null, 1)],
-                store, persistData: false);
+                persistData: false);
 
             Tables.TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
             Assert.False(filter.HasDerivedColumnList());
@@ -439,7 +439,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // Nothing was ever inserted, so the scan has no first row: Next answers false on a
             // filter that was started and reset, and there is no row to read afterwards. A scan
@@ -470,7 +470,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // No plan has chosen anything, so there is no index to answer with -- and null is
             // the answer, not a failure to prepare one.
@@ -504,7 +504,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // A null plan is not an error here but a plan that cannot be used: the exception
             // comes later, when the statement runs without one. What is asserted is that
@@ -539,7 +539,7 @@ public sealed class TableFilterTests
             Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
             Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id], store, persistData: false);
+                3, "T", [id], persistData: false);
             id.SetTable(table, 0);
 
             // A plan is chosen first: without it the filter has no index, and Prepare over no
@@ -575,7 +575,7 @@ public sealed class TableFilterTests
             Tables.Column id = new("ID", TypeInfo.TypeInteger, null, 0);
             Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id], store, persistData: false);
+                3, "T", [id], persistData: false);
             id.SetTable(table, 0);
 
             Tables.TableFilter always = new(session, table, "T", rightsChecked: true, null, 0, null);
@@ -639,7 +639,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // The plan walks every filter of the order, collecting the filters themselves and
             // every join condition it meets: that walk is why a plan knows about tables the
@@ -704,7 +704,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // PreparePlan in parse mode builds the fake plan and joins the filters, but measures
             // nothing and prepares nothing: a view parsed now runs later, against tables that
@@ -740,7 +740,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // The base table answers false: it has nothing to lock, and a lock on it would
             // serialize statements that share nothing. What is asserted is that the call walks
@@ -772,7 +772,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // A filter without hints allows everything, and one with hints keeps them: applying
             // them is the planner's job, and a filter that chose its own index would answer
@@ -803,7 +803,7 @@ public sealed class TableFilterTests
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
                 3, "T",
                 [new Tables.Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // The flag itself has no reader -- the reference keeps it private too, and it is
             // only asked by the cursor loop, which is not ported. So what is asserted here is
@@ -844,7 +844,7 @@ public sealed class TableFilterTests
             Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), null, 3, "TEST",
                 [new Column("ID", Values.TypeInfo.TypeInteger, null, 0)],
-                store, persistData: false);
+                persistData: false);
 
             // The first condition is kept as written and every later one ANDs onto it, so that
             // there is one condition per row. A join condition and a filter condition are kept

@@ -4131,10 +4131,16 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
   многострочный UPDATE с двумя SET на таблице из трёх колонок.
 * **C** — `H2Command.ExecuteReader` больше не зовёт `Enum.HasFlag` (бокс на вызов): пять
   проверок стали битовыми `&`.
-* **B** — `MVTable.TransactionScope` помечен явным interim в коде и здесь: транзакция и
-  commit на каждую строковую операцию, потому что `SessionLocal.Commit/Rollback` — TODO.
-  Эталон делает транзакцию сессии + savepoint на statement; это отдельный кусок вместе с
-  транзакционным слоем сессии.
+* **B** — `MVTable.TransactionScope` **снят**: транзакция больше не начинается и не коммитится
+  на каждую строковую операцию. `SessionLocal.GetTransaction()` лениво начинает одну
+  транзакцию на сессию, `Commit()`/`Rollback()` её завершают, `GetAutoCommit()`/`Begin()`/
+  `SetAutoCommit()` — эталонная обвязка auto-commit; `MVTable` работает на сессионной
+  транзакции и на каждую операцию ставит savepoint, откатываясь к нему при ошибке, как
+  эталон. Коммит после DML — в `CommandContainer.UpdateRows` (эталонный `Command.stop`).
+  `MVTable` теперь берёт стор базы (`database.GetStore()`), как эталон; фикстуры перестали
+  передавать таблице отдельный стор, а `GetRowCountApproximation` принимает сессию
+  (эталонная сигнатура). Проверено: видимость строки следующим оператором без явного
+  коммита, `Rollback` отменяет UPDATE, `Commit` его сохраняет.
 
 ### LIKE / ILIKE / REGEXP бегут через CompareLike
 

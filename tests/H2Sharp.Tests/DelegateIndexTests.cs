@@ -71,7 +71,7 @@ public sealed class DelegateIndexTests
             Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
             MVTable table = new(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id, name], store, persistData: false);
+                3, "T", [id, name], persistData: false);
             foreach (Column column in table.GetColumns())
             {
                 column.SetTable(table, column.GetColumnId());

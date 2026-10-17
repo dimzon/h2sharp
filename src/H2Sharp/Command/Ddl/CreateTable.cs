@@ -151,7 +151,6 @@ public sealed class CreateTable : CommandWithColumns
             db.AllocateObjectId(),
             tableName,
             [.. columns],
-            db.GetStore(),
             db.IsPersistent() && persistData);
         foreach (Column column in columns)
         {

@@ -97,7 +97,17 @@ public class CommandContainer : Command
 
     /// <inheritdoc/>
     public override ResultWithGeneratedKeys UpdateRows(object generatedKeysRequest)
-        => ResultWithGeneratedKeys.Of(command.Update());
+    {
+        ResultWithGeneratedKeys result = ResultWithGeneratedKeys.Of(command.Update());
+        // The reference's Command.stop: a transactional statement commits at the end when the
+        // session is in auto-commit, so a single INSERT/UPDATE/DELETE is durable on its own.
+        if (Session.GetAutoCommit())
+        {
+            Session.Commit();
+        }
+
+        return result;
+    }
 
     /// <inheritdoc/>
     public override ResultInterface Query(long maxrows) => command.Run(maxrows);

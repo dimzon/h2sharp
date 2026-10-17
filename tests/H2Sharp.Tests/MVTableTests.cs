@@ -91,7 +91,7 @@ public sealed class MVTableTests : IDisposable
         long[] keys = [.. table.Scan(session).Select(r => r.GetKey())];
 
         Assert.Equal(keys.OrderBy(k => k), keys);
-        Assert.Equal(5, table.GetRowCountApproximation());
+        Assert.Equal(5, table.GetRowCountApproximation(session));
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public sealed class MVTableTests : IDisposable
 
         Assert.NotNull(table.GetRow(session, keep));
         Assert.Null(table.GetRow(session, drop));
-        Assert.Equal(1, table.GetRowCountApproximation());
+        Assert.Equal(1, table.GetRowCountApproximation(session));
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public sealed class MVTableTests : IDisposable
     {
         Column id = new("ID", TypeInfo.TypeInteger, null, 0);
         Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
-        MVTable table = new(session.GetDatabase(), null, 1, "PERSON", [id, name], transactions, persistData: false);
+        MVTable table = new(session.GetDatabase(), null, 1, "PERSON", [id, name], persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());

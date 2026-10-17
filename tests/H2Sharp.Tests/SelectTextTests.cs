@@ -80,7 +80,7 @@ public sealed class SelectTextTests
         Column id = new("ID", TypeInfo.TypeInteger, null, 0);
         id.SetNullable(false);
         Column val = new("VAL", TypeInfo.TypeInteger, null, 1);
-        MVTable table = new(session.GetDatabase(), schema, 0, "T3", [id, val], store, persistData: false);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T3", [id, val], persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());
@@ -113,7 +113,7 @@ public sealed class SelectTextTests
         Column id = new("ID", TypeInfo.TypeInteger, null, 0);
         id.SetNullable(false);
         Column bigval = new("BIGVAL", TypeInfo.TypeBigint, null, 1);
-        MVTable table = new(session.GetDatabase(), schema, 0, "T2", [id, bigval], store, persistData: false);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T2", [id, bigval], persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());
@@ -146,7 +146,7 @@ public sealed class SelectTextTests
         Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
         Column val = new("VAL", TypeInfo.TypeInteger, null, 2);
         MVTable table = new(
-            session.GetDatabase(), schema, 0, "T4", [id, name, val], store, persistData: false);
+            session.GetDatabase(), schema, 0, "T4", [id, name, val], persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());
@@ -181,7 +181,7 @@ public sealed class SelectTextTests
         Column id = new("ID", TypeInfo.TypeInteger, null, 0);
         id.SetNullable(false);
         Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
-        MVTable table = new(session.GetDatabase(), schema, 0, "T", [id, name], store, persistData: false);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T", [id, name], persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());
@@ -1500,6 +1500,71 @@ public sealed class SelectTextTests
                 "SELECT ID, NAME, VAL FROM T4");
             Assert.Equal(["=1:x:99", "=2:x:99", "=3:c:30"], actual);
             Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void AnInsertIsVisibleToTheNextStatementWithoutAnExplicitCommit()
+    {
+        // The session transaction spans statements: a row written by one statement is visible to
+        // the next on the same session, because both run on one transaction rather than each
+        // operation committing on its own.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            session.SetAutoCommit(false);
+            CommandContainer insert = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("INSERT INTO T VALUES (5, 'e')"));
+            _ = insert.UpdateRows(false);
+            List<string> rows = RunText(session, "SELECT NAME FROM T WHERE ID = 5");
+            Assert.Equal(["=e"], rows);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void RollbackUndoesAnUpdate()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            // The seeded rows are committed first, so the rollback undoes the UPDATE and not
+            // the fixture that set the table up.
+            session.Commit();
+            session.SetAutoCommit(false);
+            CommandContainer update = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("UPDATE T SET NAME = 'x' WHERE ID = 1"));
+            _ = update.UpdateRows(false);
+            session.Rollback();
+            List<string> rows = RunText(session, "SELECT NAME FROM T WHERE ID = 1");
+            Assert.Equal(["=b"], rows);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void CommitKeepsAnUpdate()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            session.SetAutoCommit(false);
+            CommandContainer update = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("UPDATE T SET NAME = 'x' WHERE ID = 1"));
+            _ = update.UpdateRows(false);
+            session.Commit();
+            List<string> rows = RunText(session, "SELECT NAME FROM T WHERE ID = 1");
+            Assert.Equal(["=x"], rows);
         }
         finally
         {

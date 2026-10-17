@@ -101,7 +101,6 @@ public sealed class MVTable : Table
         int id,
         string name,
         Column[] columns,
-        TransactionStore store,
         bool persistData)
     {
         this.database = database;
@@ -109,7 +108,9 @@ public sealed class MVTable : Table
         Id = id;
         Name = name;
         this.columns = columns;
-        this.store = store;
+        // The database's own store, as in the reference: a table on another store would be
+        // invisible to every transaction but its own.
+        store = database.GetStore();
         this.persistData = persistData;
         primaryIndex = new MVPrimaryIndex(null!, this, id, null, IndexType.CreatePrimaryKey(persistData, false));
         indexes = new List<Index> { primaryIndex };
@@ -518,9 +519,18 @@ public sealed class MVTable : Table
     public override long AddRow(SessionLocal session, Row row)
     {
         ArgumentNullException.ThrowIfNull(row);
-        using TransactionScope scope = new(this, session);
-        primaryIndex.Add(session, row);
-        return row.GetKey();
+        MvStore.Tx.Transaction transaction = session.GetTransaction();
+        long savepoint = transaction.SetSavepoint();
+        try
+        {
+            primaryIndex.Add(session, row);
+            return row.GetKey();
+        }
+        catch (Exception e)
+        {
+            RollbackSavepoint(transaction, savepoint);
+            throw Message.DbException.Convert(e);
+        }
     }
 
     /// <summary>
@@ -530,14 +540,23 @@ public sealed class MVTable : Table
     /// <param name="key">the key</param>
     public override void RemoveRow(SessionLocal session, long key)
     {
-        using TransactionScope scope = new(this, session);
-        SearchRow? existing = primaryIndex.GetRowForKey(scope.Transaction, key);
-        if (existing is not Row row)
+        MvStore.Tx.Transaction transaction = session.GetTransaction();
+        long savepoint = transaction.SetSavepoint();
+        try
         {
-            throw DbException.Get(ErrorCode.RowNotFoundWhenDeleting1, Name + ": " + key);
-        }
+            SearchRow? existing = primaryIndex.GetRowForKey(transaction, key);
+            if (existing is not Row row)
+            {
+                throw DbException.Get(ErrorCode.RowNotFoundWhenDeleting1, Name + ": " + key);
+            }
 
-        primaryIndex.Remove(session, row);
+            primaryIndex.Remove(session, row);
+        }
+        catch (Exception e)
+        {
+            RollbackSavepoint(transaction, savepoint);
+            throw Message.DbException.Convert(e);
+        }
     }
 
     /// <summary>
@@ -548,8 +567,17 @@ public sealed class MVTable : Table
     /// <param name="newRow">the row as it is now</param>
     public override void UpdateRow(SessionLocal session, SearchRow oldRow, SearchRow newRow)
     {
-        using TransactionScope scope = new(this, session);
-        primaryIndex.Update(session, oldRow, newRow);
+        MvStore.Tx.Transaction transaction = session.GetTransaction();
+        long savepoint = transaction.SetSavepoint();
+        try
+        {
+            primaryIndex.Update(session, oldRow, newRow);
+        }
+        catch (Exception e)
+        {
+            RollbackSavepoint(transaction, savepoint);
+            throw Message.DbException.Convert(e);
+        }
     }
 
     /// <summary>
@@ -564,10 +592,7 @@ public sealed class MVTable : Table
     /// <param name="key">the key</param>
     /// <returns>the row, or null</returns>
     public SearchRow? GetRow(SessionLocal session, long key)
-    {
-        using TransactionScope scope = new(this, session);
-        return primaryIndex.GetRowForKey(scope.Transaction, key);
-    }
+        => primaryIndex.GetRowForKey(session.GetTransaction(), key);
 
     /// <summary>
     /// Every row of this table, in key order.
@@ -580,55 +605,25 @@ public sealed class MVTable : Table
     /// <param name="session">the session</param>
     /// <returns>the rows</returns>
     public List<SearchRow> Scan(SessionLocal session)
-    {
-        using TransactionScope scope = new(this, session);
-        return [.. primaryIndex.Scan(scope.Transaction)];
-    }
+        => [.. primaryIndex.Scan(session.GetTransaction())];
 
     /// <summary>
-    /// Runs one statement's worth of work in a transaction of this table's store, on the session.
+    /// Rolls a transaction back to a savepoint, swallowing a failure to roll back.
     /// </summary>
     /// <remarks>
-    /// A statement is one transaction: it either is in the map or is not. The scope commits on
-    /// the way out whether the work succeeded or threw, because a transaction that was rolled back
-    /// after an exception and one that was left open both make the next statement see a different
-    /// table than the last one did.
+    /// The reference adds the nested failure as suppressed; a plain .NET exception carries
+    /// none, so a failure to roll back is dropped rather than invented.
     /// </remarks>
-    /// <remarks>
-    /// Interim, and known: the scope is opened per row operation, not per statement, so a mass
-    /// INSERT/UPDATE/DELETE pays one transaction and commit per row. The reference wraps each
-    /// operation in the session transaction plus a savepoint and rolls back to it on failure,
-    /// which needs <see cref="SessionLocal.Commit"/>/<c>Rollback</c> — both still TODO. Until the
-    /// session transaction layer exists, this is the shape that keeps each operation atomic; the
-    /// per-row commit and the missing statement savepoint are recorded in MIGRATION_STATUS.
-    /// </remarks>
-    private sealed class TransactionScope : IDisposable
+    /// <param name="transaction">the transaction</param>
+    /// <param name="savepoint">the savepoint to roll back to</param>
+    private static void RollbackSavepoint(MvStore.Tx.Transaction transaction, long savepoint)
     {
-        private readonly SessionLocal session;
-
-        private readonly MVTable.TransactionScope? previous;
-
-        private readonly Transaction transaction;
-
-        internal TransactionScope(MVTable table, SessionLocal session)
+        try
         {
-            this.session = session;
-            previous = session.TransactionScope as MVTable.TransactionScope;
-            transaction = table.store.Begin();
-            session.Transaction = transaction;
-            session.TransactionScope = this;
+            transaction.RollbackToSavepoint(savepoint);
         }
-
-        /// <summary>The transaction this scope opened.</summary>
-        internal Transaction Transaction => transaction;
-
-        public void Dispose()
+        catch (Exception)
         {
-            // The previous scope is restored as well as the transaction, so that work nested on
-            // this session keeps its own transaction instead of the one being closed.
-            session.Transaction = previous?.Transaction;
-            session.TransactionScope = previous;
-            transaction.Commit();
         }
     }
 
@@ -641,18 +636,8 @@ public sealed class MVTable : Table
     }
 
     /// <inheritdoc/>
-    public override long GetRowCountApproximation()
-    {
-        Transaction? t = GetTransactionBegin();
-        if (t is null)
-        {
-            return 0;
-        }
-
-        long count = primaryIndex.GetRowCount(t);
-        t.Commit();
-        return count;
-    }
+    public override long GetRowCountApproximation(SessionLocal session)
+        => primaryIndex.GetRowCount(session.GetTransaction());
 
     /// <inheritdoc/>
     public override bool CanGetRowCount(SessionLocal session) => true;
@@ -660,15 +645,10 @@ public sealed class MVTable : Table
     /// <inheritdoc/>
     public override long GetRowCount(SessionLocal session)
     {
-        Transaction? t = GetTransactionBegin();
-        if (t is null)
-        {
-            return 0;
-        }
-
-        long count = primaryIndex.GetRowCount(t);
-        t.Commit();
-        return count;
+        // The session transaction, not a fresh one: a count taken on another transaction would
+        // not see this statement's own uncommitted rows.
+        Transaction t = session.GetTransaction();
+        return primaryIndex.GetRowCount(t);
     }
 
     /// <inheritdoc/>

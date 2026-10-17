@@ -56,7 +56,7 @@ public sealed class PrepareCommandTests
         Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
         id.SetNullable(false);
         Column name = new("NAME", Values.TypeInfo.TypeVarchar, null, 1);
-        MVTable table = new(session.GetDatabase(), schema, 0, "T", [id, name], store, persistData: false);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T", [id, name], persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());

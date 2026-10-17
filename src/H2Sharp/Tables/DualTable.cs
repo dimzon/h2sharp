@@ -72,7 +72,7 @@ public sealed class DualTable : Table
     public override Index? GetIndexFor(SessionLocal session, SearchRow row) => GetScanIndex(session);
 
     /// <inheritdoc/>
-    public override long GetRowCountApproximation() => 1L;
+    public override long GetRowCountApproximation(SessionLocal session) => 1L;
 
     /// <inheritdoc/>
     public override bool CanGetRowCount(SessionLocal session) => true;
