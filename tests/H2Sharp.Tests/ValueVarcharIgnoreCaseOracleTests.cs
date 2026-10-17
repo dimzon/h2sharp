@@ -198,4 +198,17 @@ public sealed class ValueVarcharIgnoreCaseOracleTests
 
         return sb.ToString();
     }
+
+    [Fact]
+    public void HashCodeIsStableAndEqualForEqualValues()
+    {
+        ValueVarcharIgnoreCase lower = ValueVarcharIgnoreCase.Get("abc");
+        ValueVarcharIgnoreCase upper = ValueVarcharIgnoreCase.Get("ABC");
+        Assert.Equal(lower.GetHashCode(), upper.GetHashCode());
+
+        // The fold is cached in the value, so a second probe answers without recomputing and
+        // still agrees with the first.
+        Assert.Equal(lower.GetHashCode(), lower.GetHashCode());
+        Assert.Equal(upper.GetHashCode(), upper.GetHashCode());
+    }
 }

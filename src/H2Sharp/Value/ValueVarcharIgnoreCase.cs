@@ -25,6 +25,12 @@ public sealed class ValueVarcharIgnoreCase : ValueStringBase
     /// </summary>
     private static readonly ValueVarcharIgnoreCase Empty = new("");
 
+    /// <summary>
+    /// The hash code, cached the way the reference caches it: the fold is a pass over the
+    /// whole string, and a value that probes a hash map more than once should not repeat it.
+    /// </summary>
+    private int hash;
+
     private ValueVarcharIgnoreCase(string value)
         : base(value)
     {
@@ -62,17 +68,24 @@ public sealed class ValueVarcharIgnoreCase : ValueStringBase
     /// </remarks>
     public override int GetHashCode()
     {
-        unchecked
+        int h = hash;
+        if (h == 0)
         {
-            int classHash = GetType().GetHashCode();
-            int stringHash = 0;
-            foreach (char c in StringUtils.ToUpperEnglish(value))
+            unchecked
             {
-                stringHash = (31 * stringHash) + c;
-            }
+                int classHash = GetType().GetHashCode();
+                int stringHash = 0;
+                foreach (char c in StringUtils.ToUpperEnglish(value))
+                {
+                    stringHash = (31 * stringHash) + c;
+                }
 
-            return classHash ^ stringHash;
+                h = classHash ^ stringHash;
+                hash = h;
+            }
         }
+
+        return h;
     }
 
     /// <inheritdoc/>
