@@ -1546,32 +1546,76 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads a searched CASE: CASE WHEN condition THEN result [WHEN ...] [ELSE result] END.
+    /// Reads a CASE: either a searched CASE (CASE WHEN condition THEN result ...) or a simple
+    /// CASE (CASE operand WHEN value [, value ...] THEN result ...).
     /// </summary>
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     /// <returns>the case expression</returns>
     private Expressions.Expression ReadQueryCase(Query.Select? aggregateSelect)
     {
         ExpectWord("CASE");
-        Expressions.SearchedCase result = new();
-        do
+        if (IsWord("WHEN", consume: false))
+        {
+            Expressions.SearchedCase result = new();
+            do
+            {
+                ExpectWord("WHEN");
+                result.AddParameter(ReadQueryOr(aggregateSelect));
+                ExpectWord("THEN");
+                result.AddParameter(ReadQueryOr(aggregateSelect));
+            }
+            while (IsWord("WHEN", consume: false));
+
+            if (IsWord("ELSE", consume: false))
+            {
+                ExpectWord("ELSE");
+                result.AddParameter(ReadQueryOr(aggregateSelect));
+            }
+
+            ExpectWord("END");
+            result.DoneWithParameters();
+            return result;
+        }
+
+        Expressions.Expression operand = ReadQueryOr(aggregateSelect);
+        ExpectWord("WHEN");
+        Expressions.SimpleCase.SimpleWhen when = ReadSimpleWhenClause(aggregateSelect);
+        Expressions.SimpleCase.SimpleWhen? current = when;
+        while (IsWord("WHEN", consume: false))
         {
             ExpectWord("WHEN");
-            result.AddParameter(ReadQueryOr(aggregateSelect));
-            ExpectWord("THEN");
-            result.AddParameter(ReadQueryOr(aggregateSelect));
+            Expressions.SimpleCase.SimpleWhen next = ReadSimpleWhenClause(aggregateSelect);
+            current!.SetWhen(next);
+            current = next;
         }
-        while (IsWord("WHEN", consume: false));
 
+        Expressions.Expression? elseResult = null;
         if (IsWord("ELSE", consume: false))
         {
             ExpectWord("ELSE");
-            result.AddParameter(ReadQueryOr(aggregateSelect));
+            elseResult = ReadQueryOr(aggregateSelect);
         }
 
         ExpectWord("END");
-        result.DoneWithParameters();
-        return result;
+        return new Expressions.SimpleCase(operand, when, elseResult);
+    }
+
+    /// <summary>
+    /// Reads one WHEN of a simple CASE: one or more compared values, then THEN and a result.
+    /// </summary>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <returns>the WHEN</returns>
+    private Expressions.SimpleCase.SimpleWhen ReadSimpleWhenClause(Query.Select? aggregateSelect)
+    {
+        List<Expressions.Expression> operands = [ReadQueryOr(aggregateSelect)];
+        while (ReadIf(Token.Comma))
+        {
+            operands.Add(ReadQueryOr(aggregateSelect));
+        }
+
+        ExpectWord("THEN");
+        return new Expressions.SimpleCase.SimpleWhen(
+            operands.ToArray(), ReadQueryOr(aggregateSelect));
     }
 
     /// <summary>

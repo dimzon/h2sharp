@@ -1409,6 +1409,58 @@ public sealed class SelectTextTests
     }
 
     [JavaOracleFact]
+    public void SimpleCaseElse()
+    {
+        CompareText(
+            "select_text_simplecaseelse",
+            "SELECT CASE ID WHEN 1 THEN 'one' WHEN 2 THEN 'two' ELSE 'other' END FROM T",
+            ["=one", "=two", "=other", "=other"]);
+    }
+
+    [JavaOracleFact]
+    public void SimpleCaseNoElse()
+    {
+        CompareText(
+            "select_text_simplecasenoelse", "SELECT CASE ID WHEN 1 THEN 'one' END FROM T",
+            ["=one", "=-", "=-", "=-"]);
+    }
+
+    [JavaOracleFact]
+    public void SimpleCaseName()
+    {
+        CompareText(
+            "select_text_simplecasename", "SELECT CASE NAME WHEN 'b' THEN 1 ELSE 0 END FROM T",
+            ["=1", "=1", "=0", "=0"]);
+    }
+
+    [JavaOracleFact]
+    public void SimpleCaseTwoWhens()
+    {
+        CompareText(
+            "select_text_simplecasetwowhens",
+            "SELECT CASE ID WHEN 1 THEN 'one' WHEN 2 THEN 'two' END FROM T",
+            ["=one", "=two", "=-", "=-"]);
+    }
+
+    [JavaOracleFact]
+    public void SimpleCaseMultiWhen()
+    {
+        CompareText(
+            "select_text_simplecasemultiwhen",
+            "SELECT CASE ID WHEN 1, 2 THEN 'low' ELSE 'high' END FROM T",
+            ["=low", "=low", "=high", "=high"]);
+    }
+
+    [JavaOracleFact]
+    public void SimpleCaseConstantOperand()
+    {
+        CompareText(
+            "select_text_simplecaseconst",
+            "SELECT CASE 1 WHEN 1 THEN 'a' WHEN 2 THEN 'b' END FROM T",
+            ["=a", "=a", "=a", "=a"]);
+    }
+
+    [JavaOracleFact]
     public void LikeStartsWith()
     {
         CompareText("select_text_likestart", "SELECT ID FROM T WHERE NAME LIKE 'b%'", ["=1", "=2"]);

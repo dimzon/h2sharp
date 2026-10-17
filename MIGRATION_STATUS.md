@@ -4154,6 +4154,15 @@ p [ESCAPE e]` в `ReadQueryComparison`. Отступления записаны:
 endsWith, contains, одиночный символ, полное совпадение, регистр, ILIKE, NOT, ESCAPE,
 REGEXP совпадение/несовпадение/NOT); `H2Sharp.Tests` **1041 зелёный**.
 
+### Simple CASE бежит через SimpleCase
+
+Портирован `SimpleCase` целиком (вложенный `SimpleWhen` со связным списком,
+`combineTypes` заинлайнен приватным хелпером — сам `SimpleCase` в эталоне не
+`OperationN`) и ридер: `ReadQueryCase` теперь различает searched (`CASE WHEN ...`) и
+simple (`CASE operand WHEN value [, value ...] THEN ... [ELSE ...] END`). Проверено: 6
+оракулов против JDBC (ELSE, без ELSE → NULL, по строке, две ветки, несколько значений
+в одной WHEN, константный операнд); `H2Sharp.Tests` **1051 зелёный**.
+
 ### CASE WHEN бежит через SearchedCase и OperationN
 
 Портированы `ExpressionWithVariableParameters` (маленький интерфейс), `OperationN` (база
