@@ -766,6 +766,32 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.ArrayAgg;
         }
+        else if (name.Equals("BIT_AND_AGG", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("BIT_AND", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.BitAndAgg;
+        }
+        else if (name.Equals("BIT_OR_AGG", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("BIT_OR", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.BitOrAgg;
+        }
+        else if (name.Equals("BIT_XOR_AGG", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.BitXorAgg;
+        }
+        else if (name.Equals("BIT_NAND_AGG", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.BitNandAgg;
+        }
+        else if (name.Equals("BIT_NOR_AGG", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.BitNorAgg;
+        }
+        else if (name.Equals("BIT_XNOR_AGG", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.BitXnorAgg;
+        }
         else if (name.Equals("REGR_COUNT", StringComparison.OrdinalIgnoreCase))
         {
             aggregateType = Expressions.Aggregate.AggregateType.RegrCount;

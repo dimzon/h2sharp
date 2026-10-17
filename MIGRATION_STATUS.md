@@ -4183,6 +4183,23 @@ DUAL/CAST/UNION в движке, `CommandList` с очередью `NextResult` 
 дефолтный (regular mode, реальные часы) вместо NRE. Проверено: Dapper-сквозняк
 (Open→DDL→DML→ридер→типы) зелёный, `H2Sharp.Tests` без регрессий.
 
+### BIT_*_AGG бегут через срез BitFunction
+
+`BIT_AND_AGG`, `BIT_OR_AGG`, `BIT_XOR_AGG`, `BIT_NAND_AGG`, `BIT_NOR_AGG`,
+`BIT_XNOR_AGG` и синонимы `BIT_AND`/`BIT_OR` приземлились в тот же
+`AggregateDataDefault`, что и SUM/MIN/MAX: свёртка парой
+`BitFunction.GetBitwise` и финальный `BITNOT` для NAND/NOR/XNOR. Срез
+`BitFunction` — это коды операций BITAND..BITXNOR, `GetBitwise` с двумя
+ветками (байтовой и числовой) и `CheckArgType`; вторая половина эталонного класса
+(`Function` с left/right, optimize, getValue, getSQL) не портирована, потому что
+ни один ридер не строит `BITAND()`-выражение — мёртвый код ради агрегатов не
+тащим. Отступление записано: `CheckArgType` в эталоне бросает через
+`Store.getInvalidExpressionTypeException` (а `Store` у нас не портирован — это
+эпик мета-таблиц), поэтому отказ инлайнен с тем же кодом 90008 и той же веткой
+`UNKNOWN → 50004`. Проверено: 8 оракулов против JDBC (все шесть свёрток,
+синоним BIT_AND, пустое множество) и отказ по типу 90008; `H2Sharp.Tests`
+**978 зелёных**.
+
 ### ARRAY_AGG бежит собиранием в ValueArray
 
 `ARRAY_AGG` — тот же путь, что у LISTAGG: `AggregateDataCollecting` с

@@ -9,8 +9,8 @@
  * MEDIAN, ANY_VALUE, PERCENTILE_CONT / PERCENTILE_DISC, LISTAGG, the single-row
  * regressions (REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY) and the
  * two-row regressions (COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT,
- * REGR_R2, REGR_SXY) and ARRAY_AGG: the flat, quick and grouped paths carry any of
- * them — reading, mapping and accumulation.
+ * REGR_R2, REGR_SXY), ARRAY_AGG and the BIT_*_AGG reductions: the flat,
+ * quick and grouped paths carry any of them — reading, mapping and accumulation.
  * Every other aggregate type refuses where the reference would branch to it (the
  * data factory, the value reader and the type switch), so adding the next one is
  * new branches, not a new shape.
@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
+using H2Sharp.Expressions.Functions;
 using H2Sharp.Tables;
 using H2Sharp.Util;
 using H2Sharp.Values;
@@ -137,8 +138,14 @@ public class Aggregate : AbstractAggregate
             case AggregateType.Max:
             case AggregateType.Any:
             case AggregateType.Every:
-                // DISTINCT changes nothing for an extremum or a conjunction,
-                // duplicates collapse on their own.
+            case AggregateType.BitAndAgg:
+            case AggregateType.BitOrAgg:
+            case AggregateType.BitXorAgg:
+            case AggregateType.BitNandAgg:
+            case AggregateType.BitNorAgg:
+            case AggregateType.BitXnorAgg:
+                // DISTINCT changes nothing for an extremum, a conjunction or a bit
+                // reduction: duplicates collapse on their own.
                 return new AggregateDataDefault(aggregateType, type!);
             case AggregateType.StddevPop:
             case AggregateType.StddevSamp:
@@ -181,7 +188,7 @@ public class Aggregate : AbstractAggregate
                 return new AggregateDataCorr(aggregateType);
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, ARRAY_AGG, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, ARRAY_AGG, the BIT_*_AGG reductions, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
                     + aggregateType + ")");
         }
 
@@ -778,6 +785,14 @@ public class Aggregate : AbstractAggregate
             case AggregateType.ArrayAgg:
                 type = TypeInfo.GetTypeInfo(Value.Array, -1, 0, args[0].GetTypeInfo());
                 break;
+            case AggregateType.BitAndAgg:
+            case AggregateType.BitOrAgg:
+            case AggregateType.BitXorAgg:
+            case AggregateType.BitNandAgg:
+            case AggregateType.BitNorAgg:
+            case AggregateType.BitXnorAgg:
+                type = BitFunction.CheckArgType(args[0]);
+                break;
             case AggregateType.Listagg:
                 type = TypeInfo.TypeVarchar;
                 break;
@@ -1016,6 +1031,12 @@ public class Aggregate : AbstractAggregate
             AggregateType.PercentileDisc => "PERCENTILE_DISC",
             AggregateType.Listagg => "LISTAGG",
             AggregateType.ArrayAgg => "ARRAY_AGG",
+            AggregateType.BitAndAgg => "BIT_AND_AGG",
+            AggregateType.BitOrAgg => "BIT_OR_AGG",
+            AggregateType.BitXorAgg => "BIT_XOR_AGG",
+            AggregateType.BitNandAgg => "BIT_NAND_AGG",
+            AggregateType.BitNorAgg => "BIT_NOR_AGG",
+            AggregateType.BitXnorAgg => "BIT_XNOR_AGG",
             AggregateType.RegrCount => "REGR_COUNT",
             AggregateType.RegrAvgx => "REGR_AVGX",
             AggregateType.RegrAvgy => "REGR_AVGY",

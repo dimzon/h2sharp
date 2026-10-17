@@ -1407,6 +1407,71 @@ public sealed class SelectTextTests
         }
     }
 
+    [JavaOracleFact]
+    public void BitAndAgg()
+    {
+        CompareDup("select_text_bitandagg", "SELECT BIT_AND_AGG(VAL) FROM T3", ["=5"]);
+    }
+
+    [JavaOracleFact]
+    public void BitOrAgg()
+    {
+        CompareDup("select_text_bitoragg", "SELECT BIT_OR_AGG(VAL) FROM T3", ["=7"]);
+    }
+
+    [JavaOracleFact]
+    public void BitXorAgg()
+    {
+        CompareDup("select_text_bitxoragg", "SELECT BIT_XOR_AGG(VAL) FROM T3", ["=7"]);
+    }
+
+    [JavaOracleFact]
+    public void BitNandAgg()
+    {
+        CompareDup("select_text_bitnandagg", "SELECT BIT_NAND_AGG(VAL) FROM T3", ["=-6"]);
+    }
+
+    [JavaOracleFact]
+    public void BitNorAgg()
+    {
+        CompareDup("select_text_bitnoragg", "SELECT BIT_NOR_AGG(VAL) FROM T3", ["=-8"]);
+    }
+
+    [JavaOracleFact]
+    public void BitXnorAgg()
+    {
+        CompareDup("select_text_bitxnoragg", "SELECT BIT_XNOR_AGG(VAL) FROM T3", ["=-8"]);
+    }
+
+    [JavaOracleFact]
+    public void BitAndAlias()
+    {
+        CompareDup("select_text_bitandalias", "SELECT BIT_AND(VAL) FROM T3", ["=5"]);
+    }
+
+    [JavaOracleFact]
+    public void BitAndAggEmptyIsNull()
+    {
+        CompareDup(
+            "select_text_bitandaggempty", "SELECT BIT_AND_AGG(VAL) FROM T3 WHERE ID > 100", ["=-"]);
+    }
+
+    [Fact]
+    public void BitAndAggWrongTypeIsRefused()
+    {
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            H2SharpException e = Assert.Throws<H2SharpException>(
+                () => session.PrepareCommand("SELECT BIT_AND_AGG(NAME) FROM T"));
+            Assert.Equal(90008, e.H2ErrorCode);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
     [Fact]
     public void HistogramWaitsForAggregates()
     {

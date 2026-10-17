@@ -10,6 +10,7 @@
  * aggregate is new branches, not a new shape.
  */
 using H2Sharp.Engine;
+using H2Sharp.Expressions.Functions;
 using H2Sharp.Values;
 
 namespace H2Sharp.Expressions.Aggregate;
@@ -78,6 +79,24 @@ internal sealed class AggregateDataDefault : AggregateData
                 v = v!.ConvertToType(TypeInfo.TypeBoolean);
                 value = value is null ? v : ValueBoolean.Get(value.GetBoolean() || v.GetBoolean());
                 break;
+            case AggregateType.BitAndAgg:
+            case AggregateType.BitNandAgg:
+                value = value is null
+                    ? v
+                    : BitFunction.GetBitwise(BitFunction.Bitand, dataType, value, v);
+                break;
+            case AggregateType.BitOrAgg:
+            case AggregateType.BitNorAgg:
+                value = value is null
+                    ? v
+                    : BitFunction.GetBitwise(BitFunction.Bitor, dataType, value, v);
+                break;
+            case AggregateType.BitXorAgg:
+            case AggregateType.BitXnorAgg:
+                value = value is null
+                    ? v
+                    : BitFunction.GetBitwise(BitFunction.Bitxor, dataType, value, v);
+                break;
             default:
                 throw Message.DbException.GetInternalError("type=" + aggregateType);
         }
@@ -90,6 +109,15 @@ internal sealed class AggregateDataDefault : AggregateData
         if (v is null)
         {
             return ValueNull.Instance;
+        }
+
+        switch (aggregateType)
+        {
+            case AggregateType.BitNandAgg:
+            case AggregateType.BitNorAgg:
+            case AggregateType.BitXnorAgg:
+                v = BitFunction.GetBitwise(BitFunction.Bitnot, dataType, v, null);
+                break;
         }
 
         return v.ConvertToType(dataType);
