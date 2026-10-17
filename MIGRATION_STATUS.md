@@ -4122,6 +4122,20 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### Десятый аудит (#10): `UpdateAction[]`, `Enum.HasFlag`, interim `TransactionScope`
+
+* **A** — `SetClauseList` переписан на эталонный `UpdateAction?[]` по `columnId`: `AddSingle` —
+  O(1) и привязывает `Parameter.SetColumn`, `PrepareUpdate` — проход по массиву (O(C) на
+  строку вместо O(C×S)), добавлены `UpdateAction`/`SetAction`/`SetSimple` (ON UPDATE,
+  SET_DEFAULT, delta/триггеры и row-value по-прежнему отказывают). Проверено оракулом:
+  многострочный UPDATE с двумя SET на таблице из трёх колонок.
+* **C** — `H2Command.ExecuteReader` больше не зовёт `Enum.HasFlag` (бокс на вызов): пять
+  проверок стали битовыми `&`.
+* **B** — `MVTable.TransactionScope` помечен явным interim в коде и здесь: транзакция и
+  commit на каждую строковую операцию, потому что `SessionLocal.Commit/Rollback` — TODO.
+  Эталон делает транзакцию сессии + savepoint на statement; это отдельный кусок вместе с
+  транзакционным слоем сессии.
+
 ### LIKE / ILIKE / REGEXP бегут через CompareLike
 
 Портирован `CompareLike` целиком (инициализация паттерна с `%`/`_` и escape, рекурсивный

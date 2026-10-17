@@ -8,13 +8,17 @@
  *
  * The SET of an UPDATE: what each column becomes.
  *
+ * The actions live in one array indexed by column id, as in the reference, so preparing a row
+ * is a walk over the columns and not a search through the assignments: an UPDATE over a wide
+ * table would otherwise be quadratic per row.
+ *
  * One column and one value is the common case, but the reference also accepts an index into an
  * array column — SET TAGS[2] = 'x' — and that is why the list holds an array of indexes per
- * assignment rather than a column and an expression. The two kinds are told apart here by the
- * index array being empty, and they are printed differently, because the text of an UPDATE has
- * to come back out as it went in.
+ * assignment rather than a column and an expression.
  *
- * Not ported: the actions themselves, which need the row being updated.
+ * Not ported: the reference's ON UPDATE expressions, generated columns, delta collectors and
+ * triggers, which need their own layers; and row-value assignment (SET (a, b) = ...), which
+ * needs ExpressionList. The array element write itself refuses: it would write half a row.
  */
 using System;
 using System.Collections.Generic;
@@ -34,15 +38,7 @@ public sealed class SetClauseList
 {
     private readonly Table table;
 
-    private readonly List<SetSingle> singles = [];
-
-    /// <summary>
-    /// One plain assignment: a column becomes an expression.
-    /// </summary>
-    /// <param name="Column">the column</param>
-    /// <param name="ArrayIndexes">the array element indexes, or null</param>
-    /// <param name="Value">what to set it to</param>
-    private sealed record SetSingle(Column Column, Expression[]? ArrayIndexes, Expression Value);
+    private readonly UpdateAction?[] actions;
 
     /// <summary>
     /// Creates the list for a table.
@@ -51,37 +47,36 @@ public sealed class SetClauseList
     public SetClauseList(Table table)
     {
         this.table = table;
+        actions = new UpdateAction?[table.GetColumns().Length];
     }
 
     /// <summary>
     /// Gets the table being updated.
     /// </summary>
     /// <returns>the table</returns>
-    public Table GetTable()
-    {
-        return table;
-    }
+    public Table GetTable() => table;
 
     /// <summary>
     /// Adds an assignment to one column, possibly into an element of an array column.
     /// </summary>
     /// <param name="column">the column</param>
-    /// <param name="arrayIndexes">the index of the array element, or null</param>
+    /// <param name="arrayIndexes">the indexes of the array elements, or null</param>
     /// <param name="expression">what to set it to</param>
     public void AddSingle(Column column, Expression[]? arrayIndexes, Expression expression)
     {
         ArgumentNullException.ThrowIfNull(column);
         ArgumentNullException.ThrowIfNull(expression);
-        foreach (SetSingle single in singles)
+        int id = column.GetColumnId();
+        if (actions[id] is not null)
         {
-            if (single.Column.GetColumnId() == column.GetColumnId())
-            {
-                throw Message.DbException.Get(
-                    Api.ErrorCode.DuplicateColumnName1, column.GetName());
-            }
+            throw Message.DbException.Get(Api.ErrorCode.DuplicateColumnName1, column.GetName());
         }
 
-        singles.Add(new SetSingle(column, arrayIndexes, expression));
+        actions[id] = new SetSimple(arrayIndexes, expression);
+        if (expression is Parameter parameter)
+        {
+            parameter.SetColumn(column);
+        }
     }
 
     /// <summary>
@@ -91,7 +86,8 @@ public sealed class SetClauseList
     /// <param name="allIndexes">the indexes of each assignment's array element</param>
     /// <param name="expression">what to set them to</param>
     public void AddMultiple(List<Column> columns, List<Expression[]> allIndexes, Expression expression)
-        => throw new TODOException("SetClauseList.addMultiple: not ported");
+        => throw new TODOException(
+            "SetClauseList.addMultiple: row-value assignment needs ExpressionList");
 
     /// <summary>
     /// Appends the SQL of this list, as it appears in the UPDATE.
@@ -107,29 +103,39 @@ public sealed class SetClauseList
     /// </summary>
     /// <param name="session">the session</param>
     /// <param name="filter">the filter of the table being updated</param>
-    public void MapColumns(SessionLocal session, Tables.TableFilter filter)
+    public void MapColumns(SessionLocal session, TableFilter filter)
     {
-        foreach (SetSingle single in singles)
+        for (int i = 0; i < actions.Length; i++)
         {
-            single.Value.MapColumns(filter, 0, Expression.MapInitial);
-            if (single.ArrayIndexes is not null)
-            {
-                foreach (Expression index in single.ArrayIndexes)
-                {
-                    index.MapColumns(filter, 0, Expression.MapInitial);
-                }
-            }
+            actions[i]?.MapAndOptimize(session, filter, null);
         }
     }
 
     /// <summary>
-    /// Builds the new row for the old one: assigned columns are evaluated, the rest
-    /// is kept, everything is converted to its column type and validated.
+    /// Checks whether every assigned expression satisfies the visitor.
+    /// </summary>
+    /// <param name="visitor">the visitor</param>
+    /// <returns>whether all assigned expressions satisfy it</returns>
+    public bool IsEverything(ExpressionVisitor visitor)
+    {
+        foreach (UpdateAction? action in actions)
+        {
+            if (action is not null && !action.IsEverything(visitor))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Builds the new row for the old one: assigned columns are evaluated, the rest is kept,
+    /// everything is converted to its column type and validated.
     /// </summary>
     /// <remarks>
     /// The reference's prepareUpdate with the unreachable taken out: ON UPDATE expressions,
-    /// generated columns, delta collectors and triggers wait for their layers. Array element
-    /// assignments refuse rather than writing half a row.
+    /// generated columns, delta collectors and triggers wait for their layers.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="oldRow">the row as it is</param>
@@ -141,22 +147,19 @@ public sealed class SetClauseList
         for (int i = 0; i < columns.Length; i++)
         {
             Column column = columns[i];
-            Value? newValue = null;
-            bool assigned = false;
-            foreach (SetSingle single in singles)
+            UpdateAction? action = actions[i];
+            Value? newValue;
+            if (action is null || ReferenceEquals(action, UpdateAction.OnUpdate))
             {
-                if (single.Column.GetColumnId() != column.GetColumnId())
-                {
-                    continue;
-                }
-
-                if (single.ArrayIndexes is not null)
-                {
-                    throw new TODOException(
-                        "SetClauseList.prepareUpdate: array element assignment is not ported");
-                }
-
-                newValue = single.Value.GetValue(session);
+                newValue = column.IsGenerated() ? null : oldRow.GetValue(i);
+            }
+            else if (ReferenceEquals(action, UpdateAction.SetDefault))
+            {
+                newValue = !column.IsIdentity() ? null : oldRow.GetValue(i);
+            }
+            else
+            {
+                newValue = action.Update(session, oldRow.GetValue(i)!);
                 if (newValue is ValueNull && column.IsDefaultOnNull())
                 {
                     newValue = null;
@@ -167,14 +170,6 @@ public sealed class SetClauseList
                         Api.ErrorCode.GeneratedColumnCannotBeAssigned1,
                         column.GetSqlWithTable(new StringBuilder(), Util.HasSql.TraceSqlFlags).ToString());
                 }
-
-                assigned = true;
-                break;
-            }
-
-            if (!assigned)
-            {
-                newValue = column.IsGenerated() ? null : oldRow.GetValue(i);
             }
 
             newRow.SetValue(i, newValue!);
@@ -192,5 +187,114 @@ public sealed class SetClauseList
 
         newRow.SetKey(key);
         return newRow;
+    }
+
+    private class UpdateAction
+    {
+        internal static readonly UpdateAction OnUpdate = new();
+
+        internal static readonly UpdateAction SetDefault = new();
+
+        internal virtual Value Update(SessionLocal session, Value oldValue)
+            => throw Message.DbException.GetInternalError();
+
+        internal virtual bool IsEverything(ExpressionVisitor visitor) => true;
+
+        internal virtual void MapAndOptimize(SessionLocal session, ColumnResolver resolver1, ColumnResolver? resolver2)
+        {
+        }
+
+        internal virtual void GetSql(StringBuilder builder, int sqlFlags, Column column)
+            => throw Message.DbException.GetInternalError();
+    }
+
+    private abstract class SetAction : UpdateAction
+    {
+        private readonly Expression[]? arrayIndexes;
+
+        protected SetAction(Expression[]? arrayIndexes)
+        {
+            this.arrayIndexes = arrayIndexes;
+        }
+
+        internal override bool IsEverything(ExpressionVisitor visitor)
+        {
+            if (arrayIndexes is not null)
+            {
+                foreach (Expression e in arrayIndexes)
+                {
+                    if (!e.IsEverything(visitor))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        internal override void MapAndOptimize(
+            SessionLocal session, ColumnResolver resolver1, ColumnResolver? resolver2)
+        {
+            if (arrayIndexes is null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < arrayIndexes.Length; i++)
+            {
+                Expression e = arrayIndexes[i];
+                e.MapColumns(resolver1, 0, Expression.MapInitial);
+                if (resolver2 is not null)
+                {
+                    e.MapColumns(resolver2, 0, Expression.MapInitial);
+                }
+
+                arrayIndexes[i] = e.Optimize(session);
+            }
+        }
+
+        internal override Value Update(SessionLocal session, Value oldValue)
+        {
+            Value newValue = Update(session);
+            if (arrayIndexes is not null)
+            {
+                throw new TODOException(
+                    "SetClauseList.updateArray: array element assignment is not ported");
+            }
+
+            return newValue;
+        }
+
+        protected abstract Value Update(SessionLocal session);
+    }
+
+    private sealed class SetSimple : SetAction
+    {
+        private Expression expression;
+
+        public SetSimple(Expression[]? arrayIndexes, Expression expression)
+            : base(arrayIndexes)
+        {
+            this.expression = expression;
+        }
+
+        protected override Value Update(SessionLocal session) => expression.GetValue(session);
+
+        internal override bool IsEverything(ExpressionVisitor visitor)
+            => base.IsEverything(visitor) && expression.IsEverything(visitor);
+
+        internal override void MapAndOptimize(
+            SessionLocal session, ColumnResolver resolver1, ColumnResolver? resolver2)
+        {
+            base.MapAndOptimize(session, resolver1, resolver2);
+            expression.MapColumns(resolver1, 0, Expression.MapInitial);
+            if (resolver2 is not null)
+            {
+                expression.MapColumns(resolver2, 0, Expression.MapInitial);
+            }
+
+            expression = expression.Optimize(session);
+        }
     }
 }

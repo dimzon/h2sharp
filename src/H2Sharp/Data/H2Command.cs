@@ -301,12 +301,11 @@ public sealed class H2Command : DbCommand
         }
         else
         {
-            long maxrows = behavior.HasFlag(CommandBehavior.SingleRow) ? 1
-                : behavior.HasFlag(CommandBehavior.SchemaOnly) ? 0 : -1;
+            long maxrows = (behavior & CommandBehavior.SingleRow) != 0 ? 1
+                : (behavior & CommandBehavior.SchemaOnly) != 0 ? 0 : -1;
             Result.ResultInterface result = containers[0].Query(maxrows);
-            bool moreSets = !(behavior.HasFlag(CommandBehavior.SingleRow)
-                || behavior.HasFlag(CommandBehavior.SingleResult)
-                || behavior.HasFlag(CommandBehavior.SchemaOnly))
+            bool moreSets = ((behavior & (CommandBehavior.SingleRow
+                | CommandBehavior.SingleResult | CommandBehavior.SchemaOnly)) == 0)
                 && containers.Count > 1;
             List<Command.CommandContainer> remaining =
                 moreSets ? containers.GetRange(1, containers.Count - 1) : [];
@@ -314,7 +313,7 @@ public sealed class H2Command : DbCommand
             {
                 CloseContainers(containers);
                 openReaders--;
-                if (behavior.HasFlag(CommandBehavior.CloseConnection))
+                if ((behavior & CommandBehavior.CloseConnection) != 0)
                 {
                     connection?.Close();
                 }

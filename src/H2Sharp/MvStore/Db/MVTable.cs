@@ -594,6 +594,14 @@ public sealed class MVTable : Table
     /// after an exception and one that was left open both make the next statement see a different
     /// table than the last one did.
     /// </remarks>
+    /// <remarks>
+    /// Interim, and known: the scope is opened per row operation, not per statement, so a mass
+    /// INSERT/UPDATE/DELETE pays one transaction and commit per row. The reference wraps each
+    /// operation in the session transaction plus a savepoint and rolls back to it on failure,
+    /// which needs <see cref="SessionLocal.Commit"/>/<c>Rollback</c> — both still TODO. Until the
+    /// session transaction layer exists, this is the shape that keeps each operation atomic; the
+    /// per-row commit and the missing statement savepoint are recorded in MIGRATION_STATUS.
+    /// </remarks>
     private sealed class TransactionScope : IDisposable
     {
         private readonly SessionLocal session;

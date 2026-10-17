@@ -129,6 +129,41 @@ public sealed class SelectTextTests
         return session;
     }
 
+    private static SessionLocal NewTripleSession(out TransactionStore store)
+    {
+        SessionLocal session = new(
+            new Database(new ConnectionInfo("jdbc:h2:mem:select_triple")), "sa")
+        {
+            CastDataProvider = new TestCastDataProvider(),
+            CompareMode = CompareMode.GetInstance(null, 0),
+        };
+        store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+        Schemas.Schema schema = new(session.GetDatabase(), 1, "PUBLIC", false);
+        session.GetDatabase().AddSchema(schema);
+        Column id = new("ID", TypeInfo.TypeInteger, null, 0);
+        id.SetNullable(false);
+        Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
+        Column val = new("VAL", TypeInfo.TypeInteger, null, 2);
+        MVTable table = new(
+            session.GetDatabase(), schema, 0, "T4", [id, name, val], store, persistData: false);
+        foreach (Column column in table.GetColumns())
+        {
+            column.SetTable(table, column.GetColumnId());
+        }
+
+        table.AddIndex(session, "I", 7, [new IndexColumn(id, ascending: true)], 1,
+            IndexType.CreatePrimaryKey(persistent: false, hash: false), create: true, indexComment: null);
+        table.AddRow(session, new DefaultRow(
+            [ValueInteger.Get(1), ValueVarchar.Get("b"), ValueInteger.Get(10)]));
+        table.AddRow(session, new DefaultRow(
+            [ValueInteger.Get(2), ValueVarchar.Get("b"), ValueInteger.Get(20)]));
+        table.AddRow(session, new DefaultRow(
+            [ValueInteger.Get(3), ValueVarchar.Get("c"), ValueInteger.Get(30)]));
+        schema.Add(table);
+        return session;
+    }
+
     private static SessionLocal NewSeededSession(out TransactionStore store, out Schemas.Schema schema, bool seed)
     {
         SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_text")), "sa")
@@ -244,6 +279,37 @@ public sealed class SelectTextTests
         {
             store.Dispose();
         }
+    }
+
+    private static List<string> RunJavaUpdateThenSelect(string dbName, string update, string select)
+    {
+        string head = """
+            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:{DB}");
+            java.sql.Statement stat = conn.createStatement();
+            """.Replace("{DB}", dbName);
+        string setup = """
+            stat.execute("CREATE TABLE T4(ID INT PRIMARY KEY, NAME VARCHAR, VAL INT)");
+            stat.execute("INSERT INTO T4 VALUES (1, 'b', 10), (2, 'b', 20), (3, 'c', 30)");
+            """;
+        string read = """
+            stat.execute(inputs[0]);
+            java.sql.ResultSet rs = stat.executeQuery(inputs[1]);
+            int columns = rs.getMetaData().getColumnCount();
+            while (rs.next()) {
+                StringBuilder line = new StringBuilder("=");
+                for (int i = 1; i <= columns; i++) {
+                    if (i > 1) {
+                        line.append(':');
+                    }
+                    String s = rs.getString(i);
+                    line.append(rs.wasNull() ? "-" : s);
+                }
+                System.out.println(line);
+            }
+            conn.close();
+            """;
+        return OracleRunner.Run(
+            [update, select], head + setup + read, numbers: null, extraJavaArgs: ["-Duser.language=en"]);
     }
 
     private static void CompareDual(string dbName, string sql, List<string>? expected = null)
@@ -1414,6 +1480,31 @@ public sealed class SelectTextTests
     public void RegexpNot()
     {
         CompareText("select_text_regexpnot", "SELECT ID FROM T WHERE NAME NOT REGEXP 'b'", ["=3"]);
+    }
+
+    [JavaOracleFact]
+    public void UpdateMultiSetMultiRow()
+    {
+        // The SET list is one array indexed by column id: a multi-row UPDATE with several
+        // assignments is the case that made the linear search quadratic per row.
+        SessionLocal session = NewTripleSession(out TransactionStore store);
+        try
+        {
+            CommandContainer container = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("UPDATE T4 SET NAME = 'x', VAL = 99 WHERE NAME = 'b'"));
+            _ = container.UpdateRows(false);
+            List<string> actual = RunText(session, "SELECT ID, NAME, VAL FROM T4");
+            List<string> java = RunJavaUpdateThenSelect(
+                "select_text_updatemulti",
+                "UPDATE T4 SET NAME = 'x', VAL = 99 WHERE NAME = 'b'",
+                "SELECT ID, NAME, VAL FROM T4");
+            Assert.Equal(["=1:x:99", "=2:x:99", "=3:c:30"], actual);
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
     }
 
     [JavaOracleFact]
