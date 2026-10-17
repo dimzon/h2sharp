@@ -7,11 +7,11 @@
  *
  * The state machine is the whole contract the conformance suite checks: begin on a closed
  * connection or beside a live one refuses, commit and rollback clear the connection, a
- * second completion refuses, and anything after disposal is ObjectDisposed. The engine
- * half opens the session transaction the statements then share and commits or rolls it
- * back; per-statement scopes inside table operations still commit on their own, so an
- * explicit transaction isolates only what runs through the session transaction — which
- * is where the gap is written down, not where it is hidden.
+ * second completion refuses, and anything after disposal is ObjectDisposed.
+ *
+ * The engine half is the session transaction: begin switches the session out of auto-commit,
+ * and commit or rollback finishes that transaction. The statements run on it through the
+ * session, so an explicit transaction really does isolate what runs inside it.
  */
 using System;
 using System.Data;
@@ -27,8 +27,6 @@ public sealed class H2Transaction : DbTransaction
 {
     private H2Connection? connection;
 
-    private MvStore.Tx.Transaction? engineTransaction;
-
     private bool completed;
 
     private bool disposed;
@@ -38,13 +36,10 @@ public sealed class H2Transaction : DbTransaction
     /// </summary>
     /// <param name="connection">the connection</param>
     /// <param name="isolationLevel">the isolation level</param>
-    /// <param name="engineTransaction">the session transaction the statements share</param>
-    internal H2Transaction(
-        H2Connection connection, IsolationLevel isolationLevel, MvStore.Tx.Transaction engineTransaction)
+    internal H2Transaction(H2Connection connection, IsolationLevel isolationLevel)
     {
         this.connection = connection;
         IsolationLevel = isolationLevel;
-        this.engineTransaction = engineTransaction;
     }
 
     /// <inheritdoc/>
@@ -72,8 +67,7 @@ public sealed class H2Transaction : DbTransaction
         }
 
         completed = true;
-        engineTransaction?.Commit();
-        engineTransaction = null;
+        connection?.Session?.Commit();
         Detach();
     }
 
@@ -91,8 +85,7 @@ public sealed class H2Transaction : DbTransaction
         }
 
         completed = true;
-        engineTransaction?.Rollback();
-        engineTransaction = null;
+        connection?.Session?.Rollback();
         Detach();
     }
 
@@ -105,10 +98,9 @@ public sealed class H2Transaction : DbTransaction
             if (!completed)
             {
                 completed = true;
-                engineTransaction?.Rollback();
+                connection?.Session?.Rollback();
             }
 
-            engineTransaction = null;
             Detach();
         }
 

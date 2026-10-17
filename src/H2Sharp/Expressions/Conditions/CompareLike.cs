@@ -48,7 +48,8 @@ public sealed class CompareLike : Condition
 
     private const int Match = 0, One = 1, Any = 2;
 
-    private const string DefaultEscape = "";
+    // The reference's DEFAULT_ESCAPE setting, whose default is a single backslash.
+    private const string DefaultEscape = "\\";
 
     private readonly CompareMode compareMode;
 
@@ -611,7 +612,11 @@ public sealed class CompareLike : Condition
             patternString = p;
             try
             {
-                patternRegexp = ignoreCase ? new Regex(p!, RegexOptions.IgnoreCase) : new Regex(p!);
+                // CultureInvariant: the reference's Pattern.compile is locale-independent, and
+                // .NET's IgnoreCase is not (a Turkish dotless i and the like).
+                patternRegexp = ignoreCase
+                    ? new Regex(p!, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+                    : new Regex(p!, RegexOptions.CultureInvariant);
             }
             catch (ArgumentException)
             {

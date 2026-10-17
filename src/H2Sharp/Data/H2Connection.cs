@@ -307,9 +307,11 @@ public sealed class H2Connection : DbConnection
             throw new InvalidOperationException("The connection already has a transaction");
         }
 
-        MvStore.Tx.Transaction engineTransaction = current.GetDatabase().GetStore().Begin();
-        current.Transaction = engineTransaction;
-        H2Transaction transaction = new(this, isolationLevel, engineTransaction);
+        // The session transaction, not a store transaction of its own: the statements share it,
+        // and auto-commit is switched off so the per-statement gate in CommandContainer does not
+        // commit inside an explicit transaction.
+        current.Begin();
+        H2Transaction transaction = new(this, isolationLevel);
         currentTransaction = transaction;
         return transaction;
     }

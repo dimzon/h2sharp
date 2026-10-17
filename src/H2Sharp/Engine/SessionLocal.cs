@@ -278,6 +278,7 @@ public sealed class SessionLocal : Session
     {
         this.database = database;
         this.userName = userName;
+        CompareMode = database.GetCompareMode();
         Schemas.Schema? main = database.GetMainSchema();
         currentSchemaName = main is not null ? main.GetName() : H2Sharp.Engine.Constants.SchemaMain;
         database.AddSession(this);
@@ -575,19 +576,7 @@ public sealed class SessionLocal : Session
     /// Sets whether each statement commits by itself.
     /// </summary>
     /// <param name="autoCommit">the new value</param>
-    public override void SetAutoCommit(bool autoCommit)
-    {
-        if (autoCommit && !this.autoCommit)
-        {
-            Commit();
-        }
-        else if (!autoCommit && this.autoCommit)
-        {
-            Begin();
-        }
-
-        this.autoCommit = autoCommit;
-    }
+    public override void SetAutoCommit(bool autoCommit) => this.autoCommit = autoCommit;
 
     /// <summary>
     /// Adds a lob that lives as long as this session does.

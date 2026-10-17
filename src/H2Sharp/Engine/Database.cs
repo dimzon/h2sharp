@@ -68,6 +68,11 @@ public sealed partial class Database
     private readonly MvStore.Tx.TransactionStore store;
 
     /// <summary>
+    /// The compare mode this database's sessions compare with, as in the reference.
+    /// </summary>
+    private Values.CompareMode compareMode = Values.CompareMode.GetInstance(null, 0);
+
+    /// <summary>
     /// The schemas of this database, by name.
     /// </summary>
     /// <remarks>
@@ -299,6 +304,22 @@ public sealed partial class Database
     /// </summary>
     /// <returns>the transaction store</returns>
     public MvStore.Tx.TransactionStore GetStore() => store;
+
+    /// <summary>
+    /// Gets the compare mode this database's sessions compare with.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps it on the database and hands it to every session; a session that
+    /// invented its own would compare differently from the database it belongs to.
+    /// </remarks>
+    /// <returns>the compare mode</returns>
+    public Values.CompareMode GetCompareMode() => compareMode;
+
+    /// <summary>
+    /// Sets the compare mode this database's sessions compare with.
+    /// </summary>
+    /// <param name="compareMode">the compare mode</param>
+    public void SetCompareMode(Values.CompareMode compareMode) => this.compareMode = compareMode;
 
     /// <summary>
     /// Gets the connection information this database was opened with.

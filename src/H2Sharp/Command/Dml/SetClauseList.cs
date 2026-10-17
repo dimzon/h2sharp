@@ -162,7 +162,7 @@ public sealed class SetClauseList
                 newValue = action.Update(session, oldRow.GetValue(i)!);
                 if (newValue is ValueNull && column.IsDefaultOnNull())
                 {
-                    newValue = null;
+                    newValue = !column.IsIdentity() ? null : oldRow.GetValue(i);
                 }
                 else if (column.IsGeneratedAlways())
                 {

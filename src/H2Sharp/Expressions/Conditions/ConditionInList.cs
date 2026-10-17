@@ -104,6 +104,11 @@ public sealed class ConditionInList : ConditionIn
                 allValuesConstant = false;
             }
 
+            if (left is ExpressionColumn column && e is Parameter parameter)
+            {
+                parameter.SetColumn(column.GetColumn());
+            }
+
             valueList[i] = e;
         }
 
