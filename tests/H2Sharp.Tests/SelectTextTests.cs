@@ -1551,17 +1551,106 @@ public sealed class SelectTextTests
         CompareText("select_text_histogramempty", "SELECT HISTOGRAM(ID) FROM T WHERE ID > 100", ["=[]"]);
     }
 
-    [Fact]
-    public void JsonArrayAggWaitsForAggregates()
+    [JavaOracleFact]
+    public void JsonArrayAggName()
     {
-        // HISTOGRAM and MODE run now; the JSON aggregates and the rest still refuse by name
+        CompareText("select_text_jsonarrayagg", "SELECT JSON_ARRAYAGG(NAME) FROM T", ["=[\"b\",\"b\",\"c\"]"]);
+    }
+
+    [JavaOracleFact]
+    public void JsonArrayAggIds()
+    {
+        CompareText("select_text_jsonarrayaggids", "SELECT JSON_ARRAYAGG(ID) FROM T", ["=[1,2,3,4]"]);
+    }
+
+    [JavaOracleFact]
+    public void JsonArrayAggDistinct()
+    {
+        CompareText(
+            "select_text_jsonarrayaggdistinct", "SELECT JSON_ARRAYAGG(DISTINCT NAME) FROM T", ["=[\"b\",\"c\"]"]);
+    }
+
+    [JavaOracleFact]
+    public void JsonArrayAggNullOnNull()
+    {
+        CompareText(
+            "select_text_jsonarrayaggnull", "SELECT JSON_ARRAYAGG(NAME NULL ON NULL) FROM T",
+            ["=[\"b\",\"b\",\"c\",null]"]);
+    }
+
+    [JavaOracleFact]
+    public void JsonArrayAggEmptyIsNull()
+    {
+        CompareText(
+            "select_text_jsonarrayaggempty", "SELECT JSON_ARRAYAGG(ID) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void JsonObjectAgg()
+    {
+        CompareText(
+            "select_text_jsonobjectagg",
+            "SELECT JSON_OBJECTAGG(KEY ID VALUE NAME) FROM T",
+            ["={\"1\":\"b\",\"2\":\"b\",\"3\":\"c\",\"4\":null}"]);
+    }
+
+    [JavaOracleFact]
+    public void JsonObjectAggColon()
+    {
+        CompareText(
+            "select_text_jsonobjectaggcolon",
+            "SELECT JSON_OBJECTAGG(ID : NAME) FROM T",
+            ["={\"1\":\"b\",\"2\":\"b\",\"3\":\"c\",\"4\":null}"]);
+    }
+
+    [JavaOracleFact]
+    public void JsonObjectAggAbsentOnNull()
+    {
+        CompareText(
+            "select_text_jsonobjectaggabsent",
+            "SELECT JSON_OBJECTAGG(KEY ID VALUE NAME ABSENT ON NULL) FROM T",
+            ["={\"1\":\"b\",\"2\":\"b\",\"3\":\"c\"}"]);
+    }
+
+    [JavaOracleFact]
+    public void JsonObjectAggEmptyIsNull()
+    {
+        CompareText(
+            "select_text_jsonobjectaggempty",
+            "SELECT JSON_OBJECTAGG(KEY ID VALUE NAME) FROM T WHERE ID > 100",
+            ["=-"]);
+    }
+
+    [Fact]
+    public void JsonObjectAggNullKeyIsRefused()
+    {
+        // A NULL key is refused while the rows are gathered, before the value's
+        // ABSENT ON NULL can matter.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            CommandContainer container = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("SELECT JSON_OBJECTAGG(KEY NAME VALUE ID) FROM T"));
+            H2SharpException e = Assert.Throws<H2SharpException>(() => container.Query(-1));
+            Assert.Equal(90008, e.H2ErrorCode);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void GcdAggWaitsForAggregates()
+    {
+        // HISTOGRAM, MODE and the JSON aggregates run now; the rest still refuse by name
         // rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
             TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT JSON_ARRAYAGG(NAME) FROM T"));
-            Assert.Contains("JSON_ARRAYAGG", e.Message);
+                () => session.PrepareCommand("SELECT GCD_AGG(NAME) FROM T"));
+            Assert.Contains("GCD_AGG", e.Message);
         }
         finally
         {

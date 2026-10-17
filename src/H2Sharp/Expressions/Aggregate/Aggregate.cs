@@ -9,7 +9,8 @@
  * MEDIAN, ANY_VALUE, PERCENTILE_CONT / PERCENTILE_DISC, LISTAGG, the single-row
  * regressions (REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY) and the
  * two-row regressions (COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT,
- * REGR_R2, REGR_SXY), ARRAY_AGG, HISTOGRAM, MODE and the BIT_*_AGG reductions: the flat,
+ * REGR_R2, REGR_SXY), ARRAY_AGG, HISTOGRAM, MODE, JSON_ARRAYAGG, JSON_OBJECTAGG and the
+ * BIT_*_AGG reductions: the flat,
  * quick and grouped paths carry any of them — reading, mapping and accumulation.
  * Every other aggregate type refuses where the reference would branch to it (the
  * data factory, the value reader and the type switch), so adding the next one is
@@ -17,12 +18,14 @@
  */
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
 using H2Sharp.Expressions.Functions;
 using H2Sharp.Tables;
 using H2Sharp.Util;
+using H2Sharp.Util.Json;
 using H2Sharp.Values;
 
 namespace H2Sharp.Expressions.Aggregate;
@@ -37,6 +40,22 @@ public class Aggregate : AbstractAggregate
     private List<QueryOrderBy>? orderByList;
 
     private object? extraArguments;
+
+    // The reference declares these on the ExpressionWithFlags interface, which is not ported;
+    // the names and semantics are the reference's.
+    private int flags;
+
+    /// <summary>
+    /// Sets the flags of this aggregate.
+    /// </summary>
+    /// <param name="flags">the flags</param>
+    public void SetFlags(int flags) => this.flags = flags;
+
+    /// <summary>
+    /// Returns the flags of this aggregate.
+    /// </summary>
+    /// <returns>the flags</returns>
+    public int GetFlags() => flags;
 
     /// <summary>
     /// Create a new aggregate object.
@@ -191,9 +210,19 @@ public class Aggregate : AbstractAggregate
                     ignoreNulls: false, Engine.Constants.SelectivityDistinctCount);
             case AggregateType.Mode:
                 return new AggregateDataDistinctWithCounts(ignoreNulls: true, int.MaxValue);
+            case AggregateType.JsonArrayagg:
+                return new AggregateDataCollecting(
+                    distinct, orderByList is not null,
+                    (flags & Util.Json.JsonConstructorUtils.JsonAbsentOnNull) != 0
+                        ? AggregateDataCollecting.NullCollectionMode.Excluded
+                        : AggregateDataCollecting.NullCollectionMode.UsedOrImpossible);
+            case AggregateType.JsonObjectagg:
+                // ROW(key, value) is collected, so NULL values cannot be passed.
+                return new AggregateDataCollecting(
+                    distinct, false, AggregateDataCollecting.NullCollectionMode.UsedOrImpossible);
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, ARRAY_AGG, HISTOGRAM, MODE, the BIT_*_AGG reductions, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, ARRAY_AGG, HISTOGRAM, MODE, JSON_ARRAYAGG, JSON_OBJECTAGG, the BIT_*_AGG reductions, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
                     + aggregateType + ")");
         }
 
@@ -392,6 +421,10 @@ public class Aggregate : AbstractAggregate
                 return GetHistogram(session, data);
             case AggregateType.Mode:
                 return GetMode(session, data);
+            case AggregateType.JsonArrayagg:
+                return GetJsonArrayAgg(session, data);
+            case AggregateType.JsonObjectagg:
+                return GetJsonObjectAgg(session, data);
             default:
                 break;
         }
@@ -480,6 +513,73 @@ public class Aggregate : AbstractAggregate
         }
 
         return v;
+    }
+
+    private Value GetJsonArrayAgg(SessionLocal session, AggregateData data)
+    {
+        Value[]? array = ((AggregateDataCollecting)data).GetArray();
+        if (array is null)
+        {
+            return ValueNull.Instance;
+        }
+
+        if (orderByList is not null)
+        {
+            SortWithOrderBy(array);
+        }
+
+        using MemoryStream baos = new();
+        baos.WriteByte((byte)'[');
+        foreach (Value value in array)
+        {
+            Value v = value;
+            if (orderByList is not null)
+            {
+                v = ((ValueRow)v).GetList()[0];
+            }
+
+            JsonConstructorUtils.JsonArrayAppend(
+                baos, v is not ValueNull ? v : ValueJson.Null, flags);
+        }
+
+        baos.WriteByte((byte)']');
+        return ValueJson.GetInternal(baos.ToArray());
+    }
+
+    private Value GetJsonObjectAgg(SessionLocal session, AggregateData data)
+    {
+        Value[]? array = ((AggregateDataCollecting)data).GetArray();
+        if (array is null)
+        {
+            return ValueNull.Instance;
+        }
+
+        using MemoryStream baos = new();
+        baos.WriteByte((byte)'{');
+        foreach (Value value in array)
+        {
+            Value[] row = ((ValueRow)value).GetList();
+            string? key = row[0].GetString();
+            if (key is null)
+            {
+                throw Message.DbException.GetInvalidValueException("JSON_OBJECTAGG key", "NULL");
+            }
+
+            Value jsonValue = row[1];
+            if (jsonValue is ValueNull || ReferenceEquals(jsonValue, ValueJson.Null))
+            {
+                if ((flags & JsonConstructorUtils.JsonAbsentOnNull) != 0)
+                {
+                    continue;
+                }
+
+                jsonValue = ValueJson.Null;
+            }
+
+            JsonConstructorUtils.JsonObjectAppend(baos, key, jsonValue);
+        }
+
+        return JsonConstructorUtils.JsonObjectFinish(baos, flags);
     }
 
     private static Value Collect(SessionLocal session, AggregateDataCollecting c, AggregateData d)
@@ -717,6 +817,23 @@ public class Aggregate : AbstractAggregate
                     ? remembered[0]
                     : orderByList![0].expression!.GetValue(session);
                 break;
+            case AggregateType.JsonArrayagg:
+                // updateCollecting wraps for ORDER BY lists, but JSON_ARRAYAGG's list is not
+                // read yet, so the value goes as is.
+                break;
+            case AggregateType.JsonObjectagg:
+                {
+                    Value key = v!;
+                    Value value = GetSecondValue(session, remembered)!;
+                    if (key is ValueNull)
+                    {
+                        throw Message.DbException.GetInvalidValueException("JSON_OBJECTAGG key", "NULL");
+                    }
+
+                    v = ValueRow.Get([key, value]);
+                    break;
+                }
+
             default:
                 // Use argument as is
                 break;
@@ -897,6 +1014,10 @@ public class Aggregate : AbstractAggregate
             case AggregateType.Mode:
                 // MODE takes no argument on the expression list; the value it reads is carried
                 // on the ORDER BY list, so there is nothing to type here.
+                break;
+            case AggregateType.JsonObjectagg:
+            case AggregateType.JsonArrayagg:
+                type = TypeInfo.TypeJson;
                 break;
             case AggregateType.BitAndAgg:
             case AggregateType.BitOrAgg:
@@ -1125,6 +1246,16 @@ public class Aggregate : AbstractAggregate
             return GetSqlListagg(builder, sqlFlags);
         }
 
+        if (aggregateType == AggregateType.JsonArrayagg)
+        {
+            return GetSqlJsonArrayAgg(builder, sqlFlags);
+        }
+
+        if (aggregateType == AggregateType.JsonObjectagg)
+        {
+            return GetSqlJsonObjectAgg(builder, sqlFlags);
+        }
+
         string name = aggregateType switch
         {
             AggregateType.Count => "COUNT",
@@ -1146,6 +1277,8 @@ public class Aggregate : AbstractAggregate
             AggregateType.ArrayAgg => "ARRAY_AGG",
             AggregateType.Histogram => "HISTOGRAM",
             AggregateType.Mode => "MODE",
+            AggregateType.JsonArrayagg => "JSON_ARRAYAGG",
+            AggregateType.JsonObjectagg => "JSON_OBJECTAGG",
             AggregateType.BitAndAgg => "BIT_AND_AGG",
             AggregateType.BitOrAgg => "BIT_OR_AGG",
             AggregateType.BitXorAgg => "BIT_XOR_AGG",
@@ -1215,6 +1348,29 @@ public class Aggregate : AbstractAggregate
         // The reference always renders WITHIN GROUP here; with no ORDER BY list
         // there is nothing to render, and the reader refuses that clause anyway.
         AppendWithinGroup(builder, sqlFlags);
+        return AppendTailConditions(builder, sqlFlags, false);
+    }
+
+    private StringBuilder GetSqlJsonArrayAgg(StringBuilder builder, int sqlFlags)
+    {
+        _ = builder.Append("JSON_ARRAYAGG(");
+        if (distinct)
+        {
+            _ = builder.Append("DISTINCT ");
+        }
+
+        args[0].GetUnenclosedSql(builder, sqlFlags);
+        JsonConstructorFunction.GetJsonFunctionFlagsSql(builder, flags, forArray: true);
+        _ = builder.Append(')');
+        return AppendTailConditions(builder, sqlFlags, false);
+    }
+
+    private StringBuilder GetSqlJsonObjectAgg(StringBuilder builder, int sqlFlags)
+    {
+        _ = builder.Append("JSON_OBJECTAGG(");
+        args[0].GetUnenclosedSql(builder, sqlFlags).Append(": ");
+        args[1].GetUnenclosedSql(builder, sqlFlags);
+        JsonConstructorFunction.GetJsonFunctionFlagsSql(builder, flags, forArray: false).Append(')');
         return AppendTailConditions(builder, sqlFlags, false);
     }
 

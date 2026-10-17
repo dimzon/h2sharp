@@ -775,6 +775,14 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.Mode;
         }
+        else if (name.Equals("JSON_ARRAYAGG", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.JsonArrayagg;
+        }
+        else if (name.Equals("JSON_OBJECTAGG", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.JsonObjectagg;
+        }
         else if (name.Equals("BIT_AND_AGG", StringComparison.OrdinalIgnoreCase)
             || name.Equals("BIT_AND", StringComparison.OrdinalIgnoreCase))
         {
@@ -959,6 +967,52 @@ public sealed class Parser
                 },
             ]);
         }
+        else if (aggregateType == Expressions.Aggregate.AggregateType.JsonArrayagg)
+        {
+            // JSON_ARRAYAGG([DISTINCT] expression [NULL|ABSENT ON NULL] [ORDER BY ...]):
+            // the reference reads an ORDER BY list inside the parentheses, which this reader
+            // does not build yet, so that clause refuses by name. The ABSENT ON NULL flag is
+            // the default for an array aggregate.
+            bool distinct = IsWord("DISTINCT");
+            if (!distinct)
+            {
+                _ = IsWord("ALL");
+            }
+
+            Expressions.Expression arg = ReadQueryOr();
+            if (IsWord("ORDER", consume: false))
+            {
+                throw new TODOException("Parser.parseQuerySelect: JSON_ARRAYAGG ORDER BY is not ported");
+            }
+
+            aggregate = new Expressions.Aggregate.Aggregate(
+                aggregateType, [arg], select, distinct);
+            aggregate.SetFlags(Util.Json.JsonConstructorUtils.JsonAbsentOnNull);
+            ReadJsonFunctionFlags(aggregate, forArray: true);
+            Expect(Token.CloseParen, ")");
+        }
+        else if (aggregateType == Expressions.Aggregate.AggregateType.JsonObjectagg)
+        {
+            // JSON_OBJECTAGG([KEY] key VALUE value | key : value) [flags]: without the
+            // KEY/VALUE keywords the default separator is ':'. The value's NULL is kept
+            // unless ABSENT ON NULL is asked for; the key's NULL always refuses.
+            bool withKey = IsWord("KEY");
+            Expressions.Expression key = ReadQueryOr();
+            if (withKey)
+            {
+                ExpectWord("VALUE");
+            }
+            else if (!IsWord("VALUE"))
+            {
+                Expect(Token.Colon, ":");
+            }
+
+            Expressions.Expression value = ReadQueryOr();
+            aggregate = new Expressions.Aggregate.Aggregate(
+                aggregateType, [key, value], select, distinct: false);
+            ReadJsonFunctionFlags(aggregate, forArray: false);
+            Expect(Token.CloseParen, ")");
+        }
         else if (aggregateType is Expressions.Aggregate.AggregateType.RegrCount
             or Expressions.Aggregate.AggregateType.RegrAvgx
             or Expressions.Aggregate.AggregateType.RegrAvgy
@@ -1002,6 +1056,74 @@ public sealed class Parser
 
         select.SetGroupQuery();
         return aggregate;
+    }
+
+    /// <summary>
+    /// Reads the NULL/ABSENT ON NULL and WITH/WITHOUT UNIQUE KEYS clauses of a JSON aggregate.
+    /// </summary>
+    /// <param name="function">the aggregate being read</param>
+    /// <param name="forArray">whether the aggregate is an array aggregate</param>
+    private void ReadJsonFunctionFlags(Expressions.Aggregate.Aggregate function, bool forArray)
+    {
+        bool result = false;
+        int flags = function.GetFlags();
+        if (ReadIf(ParserUtil.Null))
+        {
+            ExpectWord("ON");
+            Expect(ParserUtil.Null, "NULL");
+            flags &= ~Util.Json.JsonConstructorUtils.JsonAbsentOnNull;
+            result = true;
+        }
+        else if (IsWord("ABSENT", consume: false))
+        {
+            ExpectWord("ABSENT");
+            ExpectWord("ON");
+            Expect(ParserUtil.Null, "NULL");
+            flags |= Util.Json.JsonConstructorUtils.JsonAbsentOnNull;
+            result = true;
+        }
+
+        if (!forArray)
+        {
+            if (ReadIfWords("WITH", "UNIQUE", "KEYS"))
+            {
+                flags |= Util.Json.JsonConstructorUtils.JsonWithUniqueKeys;
+                result = true;
+            }
+            else if (ReadIfWords("WITHOUT", "UNIQUE", "KEYS"))
+            {
+                flags &= ~Util.Json.JsonConstructorUtils.JsonWithUniqueKeys;
+                result = true;
+            }
+        }
+
+        if (result)
+        {
+            function.SetFlags(flags);
+        }
+    }
+
+    /// <summary>
+    /// Reads a run of keyword words in order, consuming them only when the whole run matches.
+    /// </summary>
+    /// <param name="words">the words, in order</param>
+    /// <returns>whether the run matched</returns>
+    private bool ReadIfWords(params string[] words)
+    {
+        for (int i = 0; i < words.Length; i++)
+        {
+            if (!IsWord(words[i], consume: false))
+            {
+                return false;
+            }
+        }
+
+        for (int i = 0; i < words.Length; i++)
+        {
+            ExpectWord(words[i]);
+        }
+
+        return true;
     }
 
     /// <summary>

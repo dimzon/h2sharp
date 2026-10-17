@@ -4122,6 +4122,19 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### JSON_ARRAYAGG и JSON_OBJECTAGG бегут на собирании в байты
+
+Портирован срез `JsonConstructorFunction` (только статический `getJsonFunctionFlagsSQL`),
+поле `flags` в `Aggregate` (в эталоне объявлено на `ExpressionWithFlags`, который не
+портирован — имена и семантика эталонные), фабрика собирания, `updateData` (JSON_OBJECTAGG
+склеивает `ROW(key, value)` и отказывает 90008 на NULL-ключе), значение
+(`getJsonArrayAgg`/`getJsonObjectAgg` собирают прямо в `MemoryStream` и зовут
+`JsonConstructorUtils`), тип JSON, SQL-отрисовка с флагами и ридер обеих форм
+(`KEY … VALUE …` / `key : value`, `ABSENT|NULL ON NULL`, `WITH|WITHOUT UNIQUE KEYS`).
+Проверено: 10 оракулов против JDBC (массивы, DISTINCT, NULL ON NULL, пустое множество,
+объекты, `:`, ABSENT ON NULL, ключ NULL кодом 90008) и поименный отказ `GCD_AGG`;
+`H2Sharp.Tests` **1001 зелёный**.
+
 ### HISTOGRAM и MODE бегут на карте значений с счётчиками
 
 Портированы `LongDataCounter` и `AggregateDataDistinctWithCounts` целиком (`SortedDictionary`
