@@ -1305,6 +1305,14 @@ public sealed class Parser
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     private Expressions.Expression ReadQueryComparison(Query.Select? aggregateSelect = null)
     {
+        // NOT belongs to the condition level, as in the reference: "NOT x = y" negates the
+        // whole comparison, not just the operand before it.
+        if (CurrentType == ParserUtil.Not)
+        {
+            Read();
+            return new Expressions.Conditions.ConditionNot(ReadQueryComparison(aggregateSelect));
+        }
+
         Expressions.Expression left = ReadQueryTerm(aggregateSelect);
         while (true)
         {
@@ -1439,12 +1447,6 @@ public sealed class Parser
             Expressions.Expression nested = ReadQueryOr(aggregateSelect);
             Expect(Token.CloseParen, ")");
             return nested;
-        }
-
-        if (CurrentType == ParserUtil.Not)
-        {
-            Read();
-            return new Expressions.Conditions.ConditionNot(ReadQueryTerm(aggregateSelect));
         }
 
         if (IsWord("CASE", consume: false))
