@@ -4122,6 +4122,21 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### HISTOGRAM и MODE бегут на карте значений с счётчиками
+
+Портированы `LongDataCounter` и `AggregateDataDistinctWithCounts` целиком (`SortedDictionary`
+на сессионном компараторе вместо `TreeMap`, `ignoreNulls` и `maxDistinctCount` как в
+эталоне), фабрика (HISTOGRAM — `ignoreNulls=false` и `SELECTIVITY_DISTINCT_COUNT`, MODE —
+`ignoreNulls=true` и `int.MaxValue`), значение (`getHistogram` с `ValueArray` строк
+`ROW(VALUE, COUNT)` и `getMode` с обеими ветками — с `orderByList` и без), тип HISTOGRAM
+(ARRAY of ROW(VALUE, COUNT) через `ExtTypeInfoRow`), SQL-имена, ридер `HISTOGRAM` и
+`MODE`/`STATS_MODE`. Ключевая тонкость портирована дословно: MODE несёт **пустой** список
+аргументов, а значение едет на `ORDER BY`-списке — поэтому `updateData` получил `case MODE`,
+читающий `orderByList[0].expression`, и ридер строит `Aggregate(MODE, [], …)` +
+`SetOrderByList`. Проверено: 9 оракулов против JDBC (MODE со строками/числами, синоним
+`STATS_MODE`, `ORDER BY` обе стороны, пустое множество; HISTOGRAM со строками/числами и
+пустое) и поименный отказ `JSON_ARRAYAGG`; `H2Sharp.Tests` **991 зелёный**.
+
 ### Восьмой и девятый аудиты (#8, #9): кэш, ADO.NET, UNION, кэш хеша
 
 Разобраны по состоянию HEAD; часть пунктов уже была закрыта раньше, часть совпадает с

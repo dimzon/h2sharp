@@ -766,6 +766,15 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.ArrayAgg;
         }
+        else if (name.Equals("HISTOGRAM", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Histogram;
+        }
+        else if (name.Equals("MODE", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("STATS_MODE", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Mode;
+        }
         else if (name.Equals("BIT_AND_AGG", StringComparison.OrdinalIgnoreCase)
             || name.Equals("BIT_AND", StringComparison.OrdinalIgnoreCase))
         {
@@ -921,6 +930,34 @@ public sealed class Parser
             Expect(Token.CloseParen, ")");
             aggregate = new Expressions.Aggregate.Aggregate(
                 aggregateType, [arg], select, distinct);
+        }
+        else if (aggregateType == Expressions.Aggregate.AggregateType.Mode)
+        {
+            // MODE takes no argument on the expression list: the reference builds the aggregate
+            // with an empty args array and carries the value on the ORDER BY list. DISTINCT
+            // never applies here, the reference hardcodes it to false. With ORDER BY the value
+            // repeats inside the clause, as readAggregateOrder wants; the sort type is parsed
+            // after it, before the closing parenthesis.
+            Expressions.Expression arg = ReadQueryOr();
+            if (IsWord("ORDER", consume: false))
+            {
+                ExpectWord("ORDER");
+                ExpectWord("BY");
+                _ = ReadQueryOr();
+            }
+
+            int orderSortType = ReadQuerySortType();
+            Expect(Token.CloseParen, ")");
+            aggregate = new Expressions.Aggregate.Aggregate(
+                aggregateType, [], select, distinct: false);
+            aggregate.SetOrderByList(
+            [
+                new Query.QueryOrderBy
+                {
+                    expression = arg,
+                    sortType = orderSortType,
+                },
+            ]);
         }
         else if (aggregateType is Expressions.Aggregate.AggregateType.RegrCount
             or Expressions.Aggregate.AggregateType.RegrAvgx

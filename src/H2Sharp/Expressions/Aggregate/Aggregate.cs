@@ -9,7 +9,7 @@
  * MEDIAN, ANY_VALUE, PERCENTILE_CONT / PERCENTILE_DISC, LISTAGG, the single-row
  * regressions (REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY) and the
  * two-row regressions (COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT,
- * REGR_R2, REGR_SXY), ARRAY_AGG and the BIT_*_AGG reductions: the flat,
+ * REGR_R2, REGR_SXY), ARRAY_AGG, HISTOGRAM, MODE and the BIT_*_AGG reductions: the flat,
  * quick and grouped paths carry any of them — reading, mapping and accumulation.
  * Every other aggregate type refuses where the reference would branch to it (the
  * data factory, the value reader and the type switch), so adding the next one is
@@ -186,9 +186,14 @@ public class Aggregate : AbstractAggregate
             case AggregateType.RegrIntercept:
             case AggregateType.RegrR2:
                 return new AggregateDataCorr(aggregateType);
+            case AggregateType.Histogram:
+                return new AggregateDataDistinctWithCounts(
+                    ignoreNulls: false, Engine.Constants.SelectivityDistinctCount);
+            case AggregateType.Mode:
+                return new AggregateDataDistinctWithCounts(ignoreNulls: true, int.MaxValue);
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, ARRAY_AGG, the BIT_*_AGG reductions, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, ARRAY_AGG, HISTOGRAM, MODE, the BIT_*_AGG reductions, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
                     + aggregateType + ")");
         }
 
@@ -383,11 +388,98 @@ public class Aggregate : AbstractAggregate
                 return GetListagg(session, data);
             case AggregateType.ArrayAgg:
                 return GetArrayAgg(session, data);
+            case AggregateType.Histogram:
+                return GetHistogram(session, data);
+            case AggregateType.Mode:
+                return GetMode(session, data);
             default:
                 break;
         }
 
         return data.GetValue(session);
+    }
+
+    private Value GetHistogram(SessionLocal session, AggregateData data)
+    {
+        SortedDictionary<Value, LongDataCounter>? distinctValues =
+            ((AggregateDataDistinctWithCounts)data).GetValues();
+        TypeInfo rowType = (TypeInfo)type!.GetExtTypeInfo()!;
+        if (distinctValues is null)
+        {
+            return ValueArray.Get(rowType, [], session);
+        }
+
+        ValueRow[] values = new ValueRow[distinctValues.Count];
+        int i = 0;
+        foreach (KeyValuePair<Value, LongDataCounter> entry in distinctValues)
+        {
+            LongDataCounter counter = entry.Value;
+            values[i] = ValueRow.Get(rowType, [entry.Key, ValueBigint.Get(counter.Count)]);
+            i++;
+        }
+
+        CompareMode compareMode = session.GetCompareMode();
+        Array.Sort(
+            values, (v1, v2) => v1.GetList()[0].CompareTo(v2.GetList()[0], session, compareMode));
+        return ValueArray.Get(rowType, values, session);
+    }
+
+    private Value GetMode(SessionLocal session, AggregateData data)
+    {
+        Value v = ValueNull.Instance;
+        SortedDictionary<Value, LongDataCounter>? distinctValues =
+            ((AggregateDataDistinctWithCounts)data).GetValues();
+        if (distinctValues is null)
+        {
+            return v;
+        }
+
+        long count = 0L;
+        if (orderByList is not null)
+        {
+            bool desc = (orderByList[0].sortType & Result.SortOrder.Descending) != 0;
+            foreach (KeyValuePair<Value, LongDataCounter> entry in distinctValues)
+            {
+                long c = entry.Value.Count;
+                if (c > count)
+                {
+                    v = entry.Key;
+                    count = c;
+                }
+                else if (c == count)
+                {
+                    Value v2 = entry.Key;
+                    int cmp = v.CompareTypeSafe(v2, session.GetCompareMode(), session);
+                    if (desc)
+                    {
+                        if (cmp >= 0)
+                        {
+                            continue;
+                        }
+                    }
+                    else if (cmp <= 0)
+                    {
+                        continue;
+                    }
+
+                    v = v2;
+                }
+            }
+        }
+        else
+        {
+            foreach (KeyValuePair<Value, LongDataCounter> entry in distinctValues)
+            {
+                long c = entry.Value.Count;
+                if (c > count)
+                {
+                    v = entry.Key;
+                    count = c;
+                }
+            }
+        }
+
+        return v;
     }
 
     private static Value Collect(SessionLocal session, AggregateDataCollecting c, AggregateData d)
@@ -618,6 +710,13 @@ public class Aggregate : AbstractAggregate
                 // carries one here: the reader refuses WITHIN GROUP for it.
                 v = v!.ConvertToType(TypeInfo.TypeVarchar);
                 break;
+            case AggregateType.Mode:
+                // MODE carries no argument on the expression list: its value rides on the
+                // ORDER BY list the reader built.
+                v = remembered is not null
+                    ? remembered[0]
+                    : orderByList![0].expression!.GetValue(session);
+                break;
             default:
                 // Use argument as is
                 break;
@@ -784,6 +883,20 @@ public class Aggregate : AbstractAggregate
                 break;
             case AggregateType.ArrayAgg:
                 type = TypeInfo.GetTypeInfo(Value.Array, -1, 0, args[0].GetTypeInfo());
+                break;
+            case AggregateType.Histogram:
+                {
+                    OrderedStringMap<TypeInfo> fields = new(4);
+                    fields.Put("VALUE", type!);
+                    fields.Put("COUNT", TypeInfo.TypeBigint);
+                    type = TypeInfo.GetTypeInfo(
+                        Value.Array, -1, 0,
+                        TypeInfo.GetTypeInfo(Value.Row, -1, -1, new ExtTypeInfoRow(fields)));
+                    break;
+                }
+            case AggregateType.Mode:
+                // MODE takes no argument on the expression list; the value it reads is carried
+                // on the ORDER BY list, so there is nothing to type here.
                 break;
             case AggregateType.BitAndAgg:
             case AggregateType.BitOrAgg:
@@ -1031,6 +1144,8 @@ public class Aggregate : AbstractAggregate
             AggregateType.PercentileDisc => "PERCENTILE_DISC",
             AggregateType.Listagg => "LISTAGG",
             AggregateType.ArrayAgg => "ARRAY_AGG",
+            AggregateType.Histogram => "HISTOGRAM",
+            AggregateType.Mode => "MODE",
             AggregateType.BitAndAgg => "BIT_AND_AGG",
             AggregateType.BitOrAgg => "BIT_OR_AGG",
             AggregateType.BitXorAgg => "BIT_XOR_AGG",

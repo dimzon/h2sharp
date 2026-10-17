@@ -1490,17 +1490,78 @@ public sealed class SelectTextTests
         }
     }
 
-    [Fact]
-    public void HistogramWaitsForAggregates()
+    [JavaOracleFact]
+    public void ModeName()
     {
-        // The ported aggregates above run; every other one refuses by name rather than
-        // misreading as a syntax error.
+        CompareText("select_text_modename", "SELECT MODE(NAME) FROM T", ["=b"]);
+    }
+
+    [JavaOracleFact]
+    public void ModeIds()
+    {
+        // Every id appears once; the mode keeps the first one in value order.
+        CompareText("select_text_modeids", "SELECT MODE(ID) FROM T", ["=1"]);
+    }
+
+    [JavaOracleFact]
+    public void StatsModeAlias()
+    {
+        CompareText("select_text_statsmode", "SELECT STATS_MODE(NAME) FROM T", ["=b"]);
+    }
+
+    [JavaOracleFact]
+    public void ModeDesc()
+    {
+        CompareText("select_text_modedesc", "SELECT MODE(NAME ORDER BY NAME DESC) FROM T", ["=b"]);
+    }
+
+    [JavaOracleFact]
+    public void ModeAsc()
+    {
+        CompareText("select_text_modeasc", "SELECT MODE(NAME ORDER BY NAME) FROM T", ["=b"]);
+    }
+
+    [JavaOracleFact]
+    public void ModeEmptyIsNull()
+    {
+        CompareText("select_text_modeempty", "SELECT MODE(ID) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void HistogramName()
+    {
+        CompareText(
+            "select_text_histogramname",
+            "SELECT HISTOGRAM(NAME) FROM T",
+            ["=[ROW (null, 1), ROW (b, 2), ROW (c, 1)]"]);
+    }
+
+    [JavaOracleFact]
+    public void HistogramIds()
+    {
+        CompareText(
+            "select_text_histogramids",
+            "SELECT HISTOGRAM(ID) FROM T",
+            ["=[ROW (1, 1), ROW (2, 1), ROW (3, 1), ROW (4, 1)]"]);
+    }
+
+    [JavaOracleFact]
+    public void HistogramEmpty()
+    {
+        CompareText("select_text_histogramempty", "SELECT HISTOGRAM(ID) FROM T WHERE ID > 100", ["=[]"]);
+    }
+
+    [Fact]
+    public void JsonArrayAggWaitsForAggregates()
+    {
+        // HISTOGRAM and MODE run now; the JSON aggregates and the rest still refuse by name
+        // rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
             TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT HISTOGRAM(NAME) FROM T"));
-            Assert.Contains("HISTOGRAM", e.Message);
+                () => session.PrepareCommand("SELECT JSON_ARRAYAGG(NAME) FROM T"));
+            Assert.Contains("JSON_ARRAYAGG", e.Message);
         }
         finally
         {
