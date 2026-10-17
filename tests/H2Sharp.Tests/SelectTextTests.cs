@@ -1157,6 +1157,24 @@ public sealed class SelectTextTests
     }
 
     [JavaOracleFact]
+    public void UnionDistinct()
+    {
+        CompareText("select_text_uniondistinct", "SELECT ID FROM T UNION SELECT ID FROM T", ["=1", "=2", "=3", "=4"]);
+    }
+
+    [JavaOracleFact]
+    public void UnionAll()
+    {
+        CompareText("select_text_unionall", "SELECT ID FROM T UNION ALL SELECT ID FROM T");
+    }
+
+    [JavaOracleFact]
+    public void UnionNames()
+    {
+        CompareText("select_text_unionnames", "SELECT NAME FROM T UNION SELECT NAME FROM T");
+    }
+
+    [JavaOracleFact]
     public void RegrAvgx()
     {
         CompareDup("select_text_regravgx", "SELECT REGR_AVGX(VAL, ID) FROM T3", ["=2.0"]);

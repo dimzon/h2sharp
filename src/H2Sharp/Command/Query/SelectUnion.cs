@@ -78,9 +78,12 @@ public sealed class SelectUnion : Query
             result.SetDistinct();
         }
 
-        foreach (Query branch in (Query[])[left, right])
+        // The two branches are walked one after the other. A per-run array of the branches would
+        // be the obvious way to loop, but the reference walks its own branch list and allocates
+        // nothing per run, so the index picks between the two fields instead.
+        for (int branch = 0; branch < 2; branch++)
         {
-            using ResultInterface rows = branch.Run(-1);
+            using ResultInterface rows = (branch == 0 ? left : right).Run(-1);
             int visible = rows.GetVisibleColumnCount();
             while ((limit < 0 || result.GetRowCount() < limit) && rows.Next())
             {
