@@ -9,8 +9,8 @@
  * MEDIAN, ANY_VALUE, PERCENTILE_CONT / PERCENTILE_DISC, LISTAGG, the single-row
  * regressions (REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY) and the
  * two-row regressions (COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT,
- * REGR_R2, REGR_SXY): the flat, quick and grouped paths carry any of them —
- * reading, mapping and accumulation.
+ * REGR_R2, REGR_SXY) and ARRAY_AGG: the flat, quick and grouped paths carry any of
+ * them — reading, mapping and accumulation.
  * Every other aggregate type refuses where the reference would branch to it (the
  * data factory, the value reader and the type switch), so adding the next one is
  * new branches, not a new shape.
@@ -165,6 +165,7 @@ public class Aggregate : AbstractAggregate
             case AggregateType.PercentileDisc:
                 break;
             case AggregateType.Listagg:
+            case AggregateType.ArrayAgg:
                 // NULL values are excluded by Aggregate
                 return new AggregateDataCollecting(
                     distinct, orderByList is not null,
@@ -180,7 +181,7 @@ public class Aggregate : AbstractAggregate
                 return new AggregateDataCorr(aggregateType);
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, ARRAY_AGG, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
                     + aggregateType + ")");
         }
 
@@ -373,6 +374,8 @@ public class Aggregate : AbstractAggregate
 
             case AggregateType.Listagg:
                 return GetListagg(session, data);
+            case AggregateType.ArrayAgg:
+                return GetArrayAgg(session, data);
             default:
                 break;
         }
@@ -396,6 +399,30 @@ public class Aggregate : AbstractAggregate
         // reference's sort always takes its fallback: session comparison, taken once
         // rather than re-read through the select on every pair.
         Array.Sort(array, select.GetSession().GetValueComparison());
+    }
+
+    private Value GetArrayAgg(SessionLocal session, AggregateData data)
+    {
+        Value[]? array = ((AggregateDataCollecting)data).GetArray();
+        if (array is null)
+        {
+            return ValueNull.Instance;
+        }
+
+        if (orderByList is not null || distinct)
+        {
+            SortWithOrderBy(array);
+        }
+
+        if (orderByList is not null)
+        {
+            for (int i = 0; i < array.Length; i++)
+            {
+                array[i] = ((ValueRow)array[i]).GetList()[0];
+            }
+        }
+
+        return ValueArray.Get((TypeInfo)type!.GetExtTypeInfo()!, array, session);
     }
 
     private Value GetListagg(SessionLocal session, AggregateData data)
@@ -748,6 +775,9 @@ public class Aggregate : AbstractAggregate
                 type = GetAvgType(args[0].GetTypeInfo()) ?? throw Message.DbException.Get(
                     Api.ErrorCode.SumOrAvgOnWrongDatatype1, GetTraceSql());
                 break;
+            case AggregateType.ArrayAgg:
+                type = TypeInfo.GetTypeInfo(Value.Array, -1, 0, args[0].GetTypeInfo());
+                break;
             case AggregateType.Listagg:
                 type = TypeInfo.TypeVarchar;
                 break;
@@ -984,6 +1014,8 @@ public class Aggregate : AbstractAggregate
             AggregateType.AnyValue => "ANY_VALUE",
             AggregateType.PercentileCont => "PERCENTILE_CONT",
             AggregateType.PercentileDisc => "PERCENTILE_DISC",
+            AggregateType.Listagg => "LISTAGG",
+            AggregateType.ArrayAgg => "ARRAY_AGG",
             AggregateType.RegrCount => "REGR_COUNT",
             AggregateType.RegrAvgx => "REGR_AVGX",
             AggregateType.RegrAvgy => "REGR_AVGY",

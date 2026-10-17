@@ -4183,6 +4183,20 @@ DUAL/CAST/UNION в движке, `CommandList` с очередью `NextResult` 
 дефолтный (regular mode, реальные часы) вместо NRE. Проверено: Dapper-сквозняк
 (Open→DDL→DML→ридер→типы) зелёный, `H2Sharp.Tests` без регрессий.
 
+### ARRAY_AGG бежит собиранием в ValueArray
+
+`ARRAY_AGG` — тот же путь, что у LISTAGG: `AggregateDataCollecting` с
+`NullCollectionMode.USED_OR_IMPOSSIBLE` (NULL-элементы собираются, а не
+отбрасываются), значение собирается в `ValueArray.Get(componentType, array,
+session)`, где компонентный тип — `type.GetExtTypeInfo()`, построенный в
+`optimize` как `TypeInfo.GetTypeInfo(Value.Array, -1, 0, args[0].getType())`.
+DISTINCT сортирует через уже портированный `sortWithOrderBy` (без orderBySort
+— сессионный компаратор, как в эталоне). Ридер читает DISTINCT/ALL и аргумент;
+ORDER BY внутри скобок не портирован и отказывает поименно, потому что
+`readIfOrderBy` и распаковка `ValueRow` не заведены. Проверено: 4 оракула
+против JDBC (значения с NULL-элементом, DISTINCT, числа, пустое множество) и
+поименный отказ на ORDER BY; `H2Sharp.Tests` **969 зелёных**.
+
 ### COVAR, CORR и двухрядные REGR бегут парным аккумулятором
 
 Продолжение регрессионного среза: `COVAR_POP`, `COVAR_SAMP`, `REGR_SXY`

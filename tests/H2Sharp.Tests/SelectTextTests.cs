@@ -1366,20 +1366,58 @@ public sealed class SelectTextTests
         }
     }
 
-    [Fact]
-    public void ArrayAggWaitsForAggregates()
+    [JavaOracleFact]
+    public void ArrayAgg()
     {
-        // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE,
-        // PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG, REGR_COUNT, REGR_AVGX, REGR_AVGY,
-        // REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT,
-        // REGR_R2 and REGR_SXY run since their paths landed; every other aggregate
-        // refuses by name rather than misreading as a syntax error.
+        CompareText("select_text_arrayagg", "SELECT ARRAY_AGG(NAME) FROM T", ["=[b, b, c, null]"]);
+    }
+
+    [JavaOracleFact]
+    public void ArrayAggDistinct()
+    {
+        CompareText("select_text_arrayaggdistinct", "SELECT ARRAY_AGG(DISTINCT NAME) FROM T", ["=[null, b, c]"]);
+    }
+
+    [JavaOracleFact]
+    public void ArrayAggIds()
+    {
+        CompareText("select_text_arrayaggids", "SELECT ARRAY_AGG(ID) FROM T", ["=[1, 2, 3, 4]"]);
+    }
+
+    [JavaOracleFact]
+    public void ArrayAggEmptyIsNull()
+    {
+        CompareText("select_text_arrayaggempty", "SELECT ARRAY_AGG(NAME) FROM T WHERE ID > 100", ["=-"]);
+    }
+
+    [Fact]
+    public void ArrayAggOrderByWaitsForOrdering()
+    {
+        // ARRAY_AGG itself runs; only the ORDER BY inside the parentheses waits.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
             TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT ARRAY_AGG(NAME) FROM T"));
-            Assert.Contains("ARRAY_AGG", e.Message);
+                () => session.PrepareCommand("SELECT ARRAY_AGG(NAME ORDER BY NAME) FROM T"));
+            Assert.Contains("ORDER BY", e.Message);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
+    [Fact]
+    public void HistogramWaitsForAggregates()
+    {
+        // The ported aggregates above run; every other one refuses by name rather than
+        // misreading as a syntax error.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            TODOException e = Assert.Throws<TODOException>(
+                () => session.PrepareCommand("SELECT HISTOGRAM(NAME) FROM T"));
+            Assert.Contains("HISTOGRAM", e.Message);
         }
         finally
         {

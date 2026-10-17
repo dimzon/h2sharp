@@ -762,6 +762,10 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.Listagg;
         }
+        else if (name.Equals("ARRAY_AGG", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.ArrayAgg;
+        }
         else if (name.Equals("REGR_COUNT", StringComparison.OrdinalIgnoreCase))
         {
             aggregateType = Expressions.Aggregate.AggregateType.RegrCount;
@@ -869,6 +873,28 @@ public sealed class Parser
         else if (aggregateType == Expressions.Aggregate.AggregateType.Listagg)
         {
             aggregate = ReadQueryListagg(select, functionName);
+        }
+        else if (aggregateType == Expressions.Aggregate.AggregateType.ArrayAgg)
+        {
+            // ARRAY_AGG(expression [ORDER BY ...]): the argument is read the same way as
+            // any single-argument aggregate, but the ORDER BY list inside the
+            // parentheses has no reader yet — the reference reads it here via
+            // readIfOrderBy, and without it the list cannot be kept.
+            bool distinct = IsWord("DISTINCT");
+            if (!distinct)
+            {
+                _ = IsWord("ALL");
+            }
+
+            Expressions.Expression arg = ReadQueryOr();
+            if (IsWord("ORDER", consume: false))
+            {
+                throw new TODOException("Parser.parseQuerySelect: ARRAY_AGG ORDER BY is not ported");
+            }
+
+            Expect(Token.CloseParen, ")");
+            aggregate = new Expressions.Aggregate.Aggregate(
+                aggregateType, [arg], select, distinct);
         }
         else if (aggregateType is Expressions.Aggregate.AggregateType.RegrCount
             or Expressions.Aggregate.AggregateType.RegrAvgx
