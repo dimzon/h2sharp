@@ -677,7 +677,7 @@ public sealed class Parser
     /// A name followed by anything else is a column that happens to share the spelling.
     /// </summary>
     /// <param name="aggregateType">the aggregate type, when this is a call</param>
-    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG or REGR call</returns>
+    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG or two-argument regression call</returns>
     private bool IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType)
     {
         aggregateType = default;
@@ -782,6 +782,34 @@ public sealed class Parser
         {
             aggregateType = Expressions.Aggregate.AggregateType.RegrSyy;
         }
+        else if (name.Equals("COVAR_POP", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.CovarPop;
+        }
+        else if (name.Equals("COVAR_SAMP", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.CovarSamp;
+        }
+        else if (name.Equals("CORR", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.Corr;
+        }
+        else if (name.Equals("REGR_SLOPE", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.RegrSlope;
+        }
+        else if (name.Equals("REGR_INTERCEPT", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.RegrIntercept;
+        }
+        else if (name.Equals("REGR_R2", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.RegrR2;
+        }
+        else if (name.Equals("REGR_SXY", StringComparison.OrdinalIgnoreCase))
+        {
+            aggregateType = Expressions.Aggregate.AggregateType.RegrSxy;
+        }
         else
         {
             return false;
@@ -791,7 +819,7 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG or REGR call: the aggregates the engine runs.
+    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG or two-argument regression call: the aggregates the engine runs.
     /// </summary>
     /// <remarks>
     /// The reference reads every aggregate name here and builds the matching type; only
@@ -846,7 +874,14 @@ public sealed class Parser
             or Expressions.Aggregate.AggregateType.RegrAvgx
             or Expressions.Aggregate.AggregateType.RegrAvgy
             or Expressions.Aggregate.AggregateType.RegrSxx
-            or Expressions.Aggregate.AggregateType.RegrSyy)
+            or Expressions.Aggregate.AggregateType.RegrSyy
+            or Expressions.Aggregate.AggregateType.CovarPop
+            or Expressions.Aggregate.AggregateType.CovarSamp
+            or Expressions.Aggregate.AggregateType.Corr
+            or Expressions.Aggregate.AggregateType.RegrSlope
+            or Expressions.Aggregate.AggregateType.RegrIntercept
+            or Expressions.Aggregate.AggregateType.RegrR2
+            or Expressions.Aggregate.AggregateType.RegrSxy)
         {
             // The two-argument regressions: the values first, then a comma, then the
             // second one. DISTINCT never applies here, the reference hardcodes it to false.

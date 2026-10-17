@@ -1246,12 +1246,133 @@ public sealed class SelectTextTests
         }
     }
 
+    [JavaOracleFact]
+    public void CovarPop()
+    {
+        CompareDup("select_text_covar_pop", "SELECT COVAR_POP(VAL, ID) FROM T3", ["=0.6666666666666666"]);
+    }
+
+    [JavaOracleFact]
+    public void CovarSamp()
+    {
+        CompareDup("select_text_covar_samp", "SELECT COVAR_SAMP(VAL, ID) FROM T3", ["=1.0"]);
+    }
+
+    [JavaOracleFact]
+    public void Corr()
+    {
+        CompareDup("select_text_corr", "SELECT CORR(VAL, ID) FROM T3", ["=0.8660254037844387"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrSlope()
+    {
+        CompareDup("select_text_regr_slope", "SELECT REGR_SLOPE(VAL, ID) FROM T3", ["=1.0"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrIntercept()
+    {
+        CompareDup("select_text_regr_intercept", "SELECT REGR_INTERCEPT(VAL, ID) FROM T3", ["=3.666666666666667"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrR2()
+    {
+        CompareDup("select_text_regr_r2", "SELECT REGR_R2(VAL, ID) FROM T3", ["=0.7500000000000002"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrSxy()
+    {
+        CompareDup("select_text_regr_sxy", "SELECT REGR_SXY(VAL, ID) FROM T3", ["=2.0"]);
+    }
+
+    [JavaOracleFact]
+    public void CovarPopEmptyIsNull()
+    {
+        CompareDup(
+            "select_text_covar_popempty", "SELECT COVAR_POP(VAL, ID) FROM T3 WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void CorrEmptyIsNull()
+    {
+        CompareDup(
+            "select_text_corrempty", "SELECT CORR(VAL, ID) FROM T3 WHERE ID > 100", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void CovarPopSingle()
+    {
+        // One pair is enough for the population form: the spread around one point is zero.
+        CompareDup(
+            "select_text_covar_popsingle", "SELECT COVAR_POP(VAL, ID) FROM T3 WHERE ID = 1", ["=0.0"]);
+    }
+
+    [JavaOracleFact]
+    public void CovarSampSingleIsNull()
+    {
+        // But not for the sample form: it divides by count - 1.
+        CompareDup(
+            "select_text_covar_sampsingle", "SELECT COVAR_SAMP(VAL, ID) FROM T3 WHERE ID = 1", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void CorrConstXIsNull()
+    {
+        CompareDup("select_text_corrconstx", "SELECT CORR(VAL, 1) FROM T3", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrSlopeConstXIsNull()
+    {
+        CompareDup("select_text_regr_slopecx", "SELECT REGR_SLOPE(VAL, 1) FROM T3", ["=-"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrSlopeConstYIsZero()
+    {
+        CompareDup("select_text_regr_slopecy", "SELECT REGR_SLOPE(1, ID) FROM T3", ["=0.0"]);
+    }
+
+    [JavaOracleFact]
+    public void RegrR2ConstYIsOne()
+    {
+        // A flat line explains itself perfectly.
+        CompareDup("select_text_regr_r2cy", "SELECT REGR_R2(1, ID) FROM T3", ["=1.0"]);
+    }
+
+    [JavaOracleFact]
+    public void CorrConstYIsNull()
+    {
+        CompareDup("select_text_corrcy", "SELECT CORR(1, ID) FROM T3", ["=-"]);
+    }
+
+    [Fact]
+    public void CovarDistinctIsRefused()
+    {
+        // Same two-argument reader as the single-row regressions: no DISTINCT there either.
+        SessionLocal session = NewSession(out TransactionStore store, out _);
+        try
+        {
+            H2SharpException e = Assert.Throws<H2SharpException>(
+                () => session.PrepareCommand("SELECT COVAR_POP(DISTINCT ID, ID) FROM T"));
+            Assert.Equal(42001, e.H2ErrorCode);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
     [Fact]
     public void ArrayAggWaitsForAggregates()
     {
         // COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE,
         // PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG, REGR_COUNT, REGR_AVGX, REGR_AVGY,
-        // REGR_SXX and REGR_SYY run since their paths landed; every other aggregate
+        // REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT,
+        // REGR_R2 and REGR_SXY run since their paths landed; every other aggregate
         // refuses by name rather than misreading as a syntax error.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try

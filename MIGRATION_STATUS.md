@@ -4183,6 +4183,22 @@ DUAL/CAST/UNION в движке, `CommandList` с очередью `NextResult` 
 дефолтный (regular mode, реальные часы) вместо NRE. Проверено: Dapper-сквозняк
 (Open→DDL→DML→ридер→типы) зелёный, `H2Sharp.Tests` без регрессий.
 
+### COVAR, CORR и двухрядные REGR бегут парным аккумулятором
+
+Продолжение регрессионного среза: `COVAR_POP`, `COVAR_SAMP`, `REGR_SXY`
+(`AggregateDataCovar`), `CORR`, `REGR_SLOPE`, `REGR_INTERCEPT`, `REGR_R2`
+(`AggregateDataCorr`) — оба целиком из эталона, включая Welford-среднее по
+осям в `Corr` и все вырожденные исходы. Нужный для них парный `add(session, y,
+x)` — это `AggregateDataBinarySet`: его `add(session, v)` объявлен `final` и
+бросает внутреннюю ошибку, в порте `sealed override`. Маршрут данных для
+парных — ранний `return` после `add(session, y, x)`, как в эталоне. Типы —
+DOUBLE для всех семи, ридер знает все имена и читает пару с запятой, где
+DISTINCT не читается (42001 с обеих сторон). Проверено: 16 оракулов против
+JDBC (значения, пустое множество, вырожденные: константа по x даёт NULL для
+CORR/SLOPE и 0.0 для SLOPE при константе по y, R2 при константе по y — 1.0,
+COVAR_POP на одной паре — 0.0, COVAR_SAMP — NULL) и поименный 42001;
+`H2Sharp.Tests` **964 зелёных**.
+
 ### REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX и REGR_SYY бегут двумя аргументами
 
 Однорядные регрессии приземлились на готовые классы данных: REGR_COUNT считает в

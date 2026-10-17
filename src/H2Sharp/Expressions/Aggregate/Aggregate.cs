@@ -6,9 +6,11 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
  * Sliced to COUNT, SUM, MIN, MAX, AVG, the STDDEV / VAR family, ANY / EVERY,
- * MEDIAN, ANY_VALUE, PERCENTILE_CONT / PERCENTILE_DISC, LISTAGG and the single-row
- * regressions (REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY): the flat,
- * quick and grouped paths carry any of them — reading, mapping and accumulation.
+ * MEDIAN, ANY_VALUE, PERCENTILE_CONT / PERCENTILE_DISC, LISTAGG, the single-row
+ * regressions (REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY) and the
+ * two-row regressions (COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT,
+ * REGR_R2, REGR_SXY): the flat, quick and grouped paths carry any of them —
+ * reading, mapping and accumulation.
  * Every other aggregate type refuses where the reference would branch to it (the
  * data factory, the value reader and the type switch), so adding the next one is
  * new branches, not a new shape.
@@ -167,9 +169,18 @@ public class Aggregate : AbstractAggregate
                 return new AggregateDataCollecting(
                     distinct, orderByList is not null,
                     AggregateDataCollecting.NullCollectionMode.UsedOrImpossible);
+            case AggregateType.CovarPop:
+            case AggregateType.CovarSamp:
+            case AggregateType.RegrSxy:
+                return new AggregateDataCovar(aggregateType);
+            case AggregateType.Corr:
+            case AggregateType.RegrSlope:
+            case AggregateType.RegrIntercept:
+            case AggregateType.RegrR2:
+                return new AggregateDataCorr(aggregateType);
             default:
                 throw new TODOException(
-                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX and REGR_SYY are ported (type="
+                    "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
                     + aggregateType + ")");
         }
 
@@ -523,6 +534,24 @@ public class Aggregate : AbstractAggregate
     {
         switch (aggregateType)
         {
+            case AggregateType.CovarPop:
+            case AggregateType.CovarSamp:
+            case AggregateType.Corr:
+            case AggregateType.RegrSlope:
+            case AggregateType.RegrIntercept:
+            case AggregateType.RegrR2:
+            case AggregateType.RegrSxy:
+                {
+                    Value? x;
+                    if (v is ValueNull || (x = GetSecondValue(session, remembered)) is ValueNull)
+                    {
+                        return;
+                    }
+
+                    ((AggregateDataBinarySet)data).Add(session, v, x);
+                    return;
+                }
+
             case AggregateType.PercentileCont:
             case AggregateType.PercentileDisc:
                 ((AggregateDataCollecting)data).SetSharedArgument(v!);
@@ -678,8 +707,15 @@ public class Aggregate : AbstractAggregate
             case AggregateType.StddevSamp:
             case AggregateType.VarPop:
             case AggregateType.VarSamp:
+            case AggregateType.CovarPop:
+            case AggregateType.CovarSamp:
+            case AggregateType.Corr:
+            case AggregateType.RegrSlope:
+            case AggregateType.RegrIntercept:
+            case AggregateType.RegrR2:
             case AggregateType.RegrSxx:
             case AggregateType.RegrSyy:
+            case AggregateType.RegrSxy:
                 type = TypeInfo.TypeDouble;
                 break;
             case AggregateType.Median:
@@ -953,6 +989,13 @@ public class Aggregate : AbstractAggregate
             AggregateType.RegrAvgy => "REGR_AVGY",
             AggregateType.RegrSxx => "REGR_SXX",
             AggregateType.RegrSyy => "REGR_SYY",
+            AggregateType.CovarPop => "COVAR_POP",
+            AggregateType.CovarSamp => "COVAR_SAMP",
+            AggregateType.Corr => "CORR",
+            AggregateType.RegrSlope => "REGR_SLOPE",
+            AggregateType.RegrIntercept => "REGR_INTERCEPT",
+            AggregateType.RegrR2 => "REGR_R2",
+            AggregateType.RegrSxy => "REGR_SXY",
             _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
         };
 
