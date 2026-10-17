@@ -1302,6 +1302,47 @@ public sealed class SelectTextTests
     }
 
     [JavaOracleFact]
+    public void CaseElse()
+    {
+        CompareText(
+            "select_text_caseelse",
+            "SELECT CASE WHEN ID = 1 THEN 'one' WHEN ID = 2 THEN 'two' ELSE 'other' END FROM T",
+            ["=one", "=two", "=other", "=other"]);
+    }
+
+    [JavaOracleFact]
+    public void CaseNoElseNull()
+    {
+        CompareText(
+            "select_text_casenonull", "SELECT CASE WHEN ID > 2 THEN ID END FROM T", ["=-", "=-", "=3", "=4"]);
+    }
+
+    [JavaOracleFact]
+    public void CaseSingle()
+    {
+        CompareText(
+            "select_text_casesingle", "SELECT CASE WHEN ID = 1 THEN 'one' END FROM T",
+            ["=one", "=-", "=-", "=-"]);
+    }
+
+    [JavaOracleFact]
+    public void CaseNumeric()
+    {
+        CompareText(
+            "select_text_casenumeric", "SELECT CASE WHEN ID = 1 THEN 1 ELSE 2 END FROM T",
+            ["=1", "=2", "=2", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void CaseTwoWhens()
+    {
+        CompareText(
+            "select_text_casetwowhens",
+            "SELECT CASE WHEN ID = 1 THEN 'one' WHEN ID = 2 THEN 'two' END FROM T",
+            ["=one", "=two", "=-", "=-"]);
+    }
+
+    [JavaOracleFact]
     public void RegrAvgx()
     {
         CompareDup("select_text_regravgx", "SELECT REGR_AVGX(VAL, ID) FROM T3", ["=2.0"]);

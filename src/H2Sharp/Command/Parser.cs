@@ -1418,6 +1418,11 @@ public sealed class Parser
             return new Expressions.Conditions.ConditionNot(ReadQueryTerm(aggregateSelect));
         }
 
+        if (IsWord("CASE", consume: false))
+        {
+            return ReadQueryCase(aggregateSelect);
+        }
+
         if (CurrentType == ParserUtil.Null)
         {
             Read();
@@ -1479,6 +1484,35 @@ public sealed class Parser
         }
 
         throw new TODOException("Parser.parseQuerySelect: this expression is not ported");
+    }
+
+    /// <summary>
+    /// Reads a searched CASE: CASE WHEN condition THEN result [WHEN ...] [ELSE result] END.
+    /// </summary>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <returns>the case expression</returns>
+    private Expressions.Expression ReadQueryCase(Query.Select? aggregateSelect)
+    {
+        ExpectWord("CASE");
+        Expressions.SearchedCase result = new();
+        do
+        {
+            ExpectWord("WHEN");
+            result.AddParameter(ReadQueryOr(aggregateSelect));
+            ExpectWord("THEN");
+            result.AddParameter(ReadQueryOr(aggregateSelect));
+        }
+        while (IsWord("WHEN", consume: false));
+
+        if (IsWord("ELSE", consume: false))
+        {
+            ExpectWord("ELSE");
+            result.AddParameter(ReadQueryOr(aggregateSelect));
+        }
+
+        ExpectWord("END");
+        result.DoneWithParameters();
+        return result;
     }
 
     /// <summary>

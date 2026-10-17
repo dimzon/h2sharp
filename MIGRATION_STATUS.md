@@ -4122,6 +4122,15 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### CASE WHEN бежит через SearchedCase и OperationN
+
+Портированы `ExpressionWithVariableParameters` (маленький интерфейс), `OperationN` (база
+N-арных операций, включая `inlineSubexpressions`), `SearchedCase` и ридер
+`CASE WHEN c THEN r [WHEN ...] [ELSE r] END` в `ReadQueryTerm`. `SimpleCase.combineTypes`
+заинлайнен приватным хелпером (сам `SimpleCase` не портирован). Проверено: 5 оракулов
+против JDBC (ветки с ELSE, без ELSE → NULL, одна ветка, числа, две ветки);
+`H2Sharp.Tests` **1029 зелёных**.
+
 ### IN бежит как ConditionIn / ConditionInList / ConditionInConstantSet
 
 Портированы `ConditionIn` (абстрактная база), `ConditionInList` (список выражений) и
