@@ -4122,6 +4122,18 @@ ReadString+string.Create (некуда вернуть позицию), Fold бе
 **§3.1 (дженерики TransactionMap) — отдельный эпик по решению владельца:**
 стирание до object сидит в 6+ файлах Tx-слоя с invariance-минами C#. Issue #6 закрыт.
 
+### LIKE / ILIKE / REGEXP бегут через CompareLike
+
+Портирован `CompareLike` целиком (инициализация паттерна с `%`/`_` и escape, рекурсивный
+`compareAt`, shortcut-ы в startsWith/endsWith/contains, ILIKE, REGEXP через `Regex`,
+оптимизация `X LIKE '%'` в `SearchedCase`, полное совпадение в `=`, индекс-условия),
+вложенный `LikeType`, `DataType.IsStringType` (добавлен), ридер `x [NOT] LIKE|ILIKE|REGEXP
+p [ESCAPE e]` в `ReadQueryComparison`. Отступления записаны: `Settings.defaultEscape` не
+портирован (дефолт эталона — пустая строка); `regionMatches` передан через
+`string.Compare` с `OrdinalIgnoreCase`. Проверено: 12 оракулов против JDBC (startsWith,
+endsWith, contains, одиночный символ, полное совпадение, регистр, ILIKE, NOT, ESCAPE,
+REGEXP совпадение/несовпадение/NOT); `H2Sharp.Tests` **1041 зелёный**.
+
 ### CASE WHEN бежит через SearchedCase и OperationN
 
 Портированы `ExpressionWithVariableParameters` (маленький интерфейс), `OperationN` (база

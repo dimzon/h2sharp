@@ -355,6 +355,14 @@ public sealed class DataType
     public static bool IsTypeName(string s) => GetTypeByName(s) is not null;
 
     /// <summary>
+    /// Whether the given value type is a character string type.
+    /// </summary>
+    /// <param name="type">the value type</param>
+    /// <returns>true if the type is VARCHAR, CHAR or VARCHAR_IGNORECASE</returns>
+    public static bool IsStringType(int type)
+        => type is Value.Varchar or Value.Char or Value.VarcharIgnorecase;
+
+    /// <summary>
     /// The SQL type a value type is reported as.
     /// </summary>
     /// <param name="type">the type</param>

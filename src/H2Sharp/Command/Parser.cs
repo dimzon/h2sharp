@@ -1368,6 +1368,35 @@ public sealed class Parser
                 continue;
             }
 
+            if (CurrentType == ParserUtil.Like
+                || IsWord("ILIKE", consume: false)
+                || IsWord("REGEXP", consume: false)
+                || CurrentType == ParserUtil.Not && IsLikeFollowing())
+            {
+                bool not = ReadIf(ParserUtil.Not);
+                if (ReadIf(ParserUtil.Like))
+                {
+                    left = ReadLikePredicate(
+                        left, Expressions.Conditions.CompareLike.LikeType.Like, not);
+                }
+                else if (IsWord("ILIKE", consume: false))
+                {
+                    ExpectWord("ILIKE");
+                    left = ReadLikePredicate(
+                        left, Expressions.Conditions.CompareLike.LikeType.ILike, not);
+                }
+                else
+                {
+                    ExpectWord("REGEXP");
+                    Expressions.Expression b = ReadQueryTerm(aggregateSelect);
+                    left = new Expressions.Conditions.CompareLike(
+                        session!.GetCompareMode(), left, not, whenOperand: false, b, escape: null,
+                        Expressions.Conditions.CompareLike.LikeType.Regexp);
+                }
+
+                continue;
+            }
+
             break;
         }
 
@@ -1484,6 +1513,36 @@ public sealed class Parser
         }
 
         throw new TODOException("Parser.parseQuerySelect: this expression is not ported");
+    }
+
+    /// <summary>
+    /// Whether the token after the current NOT opens a LIKE / ILIKE / REGEXP comparison.
+    /// </summary>
+    private bool IsLikeFollowing()
+    {
+        if (position + 1 >= tokens.Count)
+        {
+            return false;
+        }
+
+        string? next = tokens[position + 1].AsIdentifier;
+        return next is "LIKE" or "ILIKE" or "REGEXP";
+    }
+
+    /// <summary>
+    /// Reads a LIKE / ILIKE right-hand side, with an optional ESCAPE clause.
+    /// </summary>
+    /// <param name="left">the expression before LIKE</param>
+    /// <param name="likeType">the type of comparison</param>
+    /// <param name="not">whether this is NOT LIKE</param>
+    /// <returns>the predicate</returns>
+    private Expressions.Expression ReadLikePredicate(
+        Expressions.Expression left, Expressions.Conditions.CompareLike.LikeType likeType, bool not)
+    {
+        Expressions.Expression right = ReadQueryTerm(null);
+        Expressions.Expression? escape = IsWord("ESCAPE") ? ReadQueryTerm(null) : null;
+        return new Expressions.Conditions.CompareLike(
+            session!.GetCompareMode(), left, not, whenOperand: false, right, escape, likeType);
     }
 
     /// <summary>

@@ -1343,6 +1343,80 @@ public sealed class SelectTextTests
     }
 
     [JavaOracleFact]
+    public void LikeStartsWith()
+    {
+        CompareText("select_text_likestart", "SELECT ID FROM T WHERE NAME LIKE 'b%'", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void LikeEndsWith()
+    {
+        CompareText("select_text_likeend", "SELECT ID FROM T WHERE NAME LIKE '%c'", ["=3"]);
+    }
+
+    [JavaOracleFact]
+    public void LikeContains()
+    {
+        CompareText("select_text_likecontains", "SELECT ID FROM T WHERE NAME LIKE '%b%'", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void LikeOneChar()
+    {
+        CompareText("select_text_likeonechar", "SELECT ID FROM T WHERE NAME LIKE '_b'");
+    }
+
+    [JavaOracleFact]
+    public void LikeFullMatch()
+    {
+        // The reference rewrites a full match into a plain equality.
+        CompareText("select_text_likefull", "SELECT ID FROM T WHERE NAME LIKE 'b'", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void LikeCaseSensitive()
+    {
+        CompareText("select_text_likecase", "SELECT ID FROM T WHERE NAME LIKE 'B%'");
+    }
+
+    [JavaOracleFact]
+    public void LikeILike()
+    {
+        CompareText("select_text_likeilike", "SELECT ID FROM T WHERE NAME ILIKE 'B%'", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void LikeNot()
+    {
+        CompareText("select_text_likenot", "SELECT ID FROM T WHERE NAME NOT LIKE 'b%'", ["=3"]);
+    }
+
+    [JavaOracleFact]
+    public void LikeEscapeClause()
+    {
+        CompareText(
+            "select_text_likeescape", "SELECT ID FROM T WHERE NAME LIKE 'b%' ESCAPE '!'", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void Regexp()
+    {
+        CompareText("select_text_regexp", "SELECT ID FROM T WHERE NAME REGEXP 'b'", ["=1", "=2"]);
+    }
+
+    [JavaOracleFact]
+    public void RegexpNoMatch()
+    {
+        CompareText("select_text_regexpnomatch", "SELECT ID FROM T WHERE NAME REGEXP '^c$'");
+    }
+
+    [JavaOracleFact]
+    public void RegexpNot()
+    {
+        CompareText("select_text_regexpnot", "SELECT ID FROM T WHERE NAME NOT REGEXP 'b'", ["=3"]);
+    }
+
+    [JavaOracleFact]
     public void RegrAvgx()
     {
         CompareDup("select_text_regravgx", "SELECT REGR_AVGX(VAL, ID) FROM T3", ["=2.0"]);
