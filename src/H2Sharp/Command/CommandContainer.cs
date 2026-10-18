@@ -96,17 +96,15 @@ public class CommandContainer : Command
     public override ResultInterface? QueryMeta() => command.QueryMeta();
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The statement runs; what surrounds it — the commit of an open transaction before a
+    /// non-transactional statement, the commit at the end when the session is in auto-commit —
+    /// is the reference's <c>Command.executeUpdate</c> wrapper and belongs to
+    /// <see cref="Command.ExecuteUpdate"/>, which is how a caller runs this.
+    /// </remarks>
     public override ResultWithGeneratedKeys UpdateRows(object generatedKeysRequest)
     {
-        ResultWithGeneratedKeys result = ResultWithGeneratedKeys.Of(command.Update());
-        // The reference's Command.stop: a transactional statement commits at the end when the
-        // session is in auto-commit, so a single INSERT/UPDATE/DELETE is durable on its own.
-        if (Session.GetAutoCommit())
-        {
-            Session.Commit();
-        }
-
-        return result;
+        return ResultWithGeneratedKeys.Of(command.Update());
     }
 
     /// <inheritdoc/>

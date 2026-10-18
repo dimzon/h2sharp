@@ -16,8 +16,7 @@
 была в `Assert.Equal` внутри цикла, а не в делегатах; делегаты закешированы в
 `static readonly`-поля, как `byteFrom*`.
 
-**Открыто:** транзакционный DDL (два теста `H2TransactionSemanticsTests`), нужна
-мета-таблица; аудит видимости `public`; ретипизация `TransactionMap<long, V>`.
+**Открыто:** аудит видимости `public`; ретипизация `TransactionMap<long, V>`.
 
 ## Правило работы
 
@@ -4667,3 +4666,46 @@ WHERE, AND/`IS NOT NULL`, DESC+позиция, DISTINCT, алиасы, `X.ID`, �
 умеет `out`-параметр без объекта; C# умеет `ref int`, и оба сайта
 (`FlushAppendBuffer`, `Operate`) переведены на него, класс удалён. Поведение то же
 побитово — та же сумма в тот же `RegisterUnsavedMemory`; `MvStore.Tests` зелёные.
+
+### DDL не транзакционен: он коммитит транзакцию (оракул 2.5.259)
+
+Два красных теста `H2TransactionSemanticsTests` (`Rollback_UndoesCreateTable`,
+`Rollback_UndoesDropTable`) утверждали обратное — «H2 documents transactional DDL». Это
+ложная посылка: документация эталона (`advanced.html`, Transaction Isolation) говорит
+«most data definition language (DDL) statements, such as "create table", commit the
+current transaction», и оракул на JVM 2.5.259 подтверждает построчно: CREATE TABLE в
+открытой транзакции переживает ROLLBACK (таблица есть, пустая), DROP TABLE переживает
+(таблицы нет), INSERT перед DDL закоммичен DDL-ом (count 1), INSERT после DDL
+откатывается (count 0). Механизм эталона: `DefineCommand.transactional = false`, поэтому
+`Command.commitIfNonTransactional()` зовёт `session.commit(true)` до `update()` и снова
+в `stop(commitIfAutoCommit)` после — так коммитятся и открытая транзакция, и работа
+самого DDL.
+
+Портировано: `SessionLocal.Commit(bool ddl)` (флаг `ddl` не восстанавливает auto-commit
+— как в эталоне), `SessionLocal.IsOpen()`, `Command.Stop(bool)`,
+`Command.CommitIfNonTransactional()` (private, дословно) и обёртка
+`Command.ExecuteUpdate(object)` (без savepoint-хвоста — его в порте нет), перенесённая
+в неё auto-commit-ветка из `CommandContainer.UpdateRows`; провайдерский путь
+`H2Command`/`H2DataReader` переведён с `UpdateRows(false)` на `ExecuteUpdate(false)`,
+`H2Transaction.Commit()` — на `Commit(false)`.
+
+**Осознанное отличие, записано в коде:** восстановление auto-commit при `!ddl` идёт
+даже когда store-транзакции нет. В JDBC auto-commit — настройка вызывающего, и commit
+без транзакции её не трогает; здесь переключателем владеет транзакция провайдера
+(`Begin` выключает, завершение включает), а транзакция из одного DDL store-транзакции
+не имеет — без этого соединение после её завершения осталось бы вне auto-commit.
+Тест: `Statements_AfterDdlOnlyTransaction_CommitThemselves`.
+
+Ложные тесты заменены на пять oracle-выверенных: `Ddl_CreateTableSurvivesRollback`,
+`Ddl_CommitPersistsCreateTable`, `Ddl_DropTableSurvivesRollback`,
+`Ddl_CommitsPendingWrites`, `Dml_AfterDdl_RollsBack`. Проверено: `Data.Tests` 338
+зелёных (было 333/335), `H2Sharp.Tests` 1066, `MvStore.Tests` 86, `Engine.Tests` —
+прежние задуманные.
+
+**Осталось от механизма:** `CommandList` в эталоне зовёт `executeUpdate` на каждую
+подкоманду и переадресует `stop` (здесь подкоманды оборачиваются на стороне провайдера,
+который разворачивает список в контейнеры, — но прямой `CommandList.UpdateRows` обёрток
+не даёт); ветка `TRANSACTIONAL` в `CREATE TABLE` (парсер эталона зовёт
+`setTransactional(true)`, здесь парсер её не читает); мета-таблица для инварианта
+`addSchemaObject` — по-прежнему открыта.
+

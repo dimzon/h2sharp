@@ -1589,7 +1589,7 @@ public sealed class SelectTextTests
         {
             // The seeded rows are committed first, so the rollback undoes the UPDATE and not
             // the fixture that set the table up.
-            session.Commit();
+            session.Commit(false);
             session.SetAutoCommit(false);
             CommandContainer update = Assert.IsType<CommandContainer>(
                 session.PrepareCommand("UPDATE T SET NAME = 'x' WHERE ID = 1"));
@@ -1614,7 +1614,7 @@ public sealed class SelectTextTests
             CommandContainer update = Assert.IsType<CommandContainer>(
                 session.PrepareCommand("UPDATE T SET NAME = 'x' WHERE ID = 1"));
             _ = update.UpdateRows(false);
-            session.Commit();
+            session.Commit(false);
             List<string> rows = RunText(session, "SELECT NAME FROM T WHERE ID = 1");
             Assert.Equal(["=x"], rows);
         }

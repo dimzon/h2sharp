@@ -135,7 +135,7 @@ public sealed class H2DataReader : DbDataReader
             current = null;
             if (!next.IsQuery())
             {
-                _ = next.UpdateRows(false);
+                _ = next.ExecuteUpdate(false);
                 continue;
             }
 

@@ -138,14 +138,27 @@ public sealed class SessionLocal : Session
     }
 
     /// <summary>
-    /// Commits the current transaction.
+    /// Commits the current transaction. If the statement was not a data definition statement,
+    /// and if there are temporary tables that should be dropped or truncated at commit, this is
+    /// done as well.
     /// </summary>
     /// <remarks>
-    /// The reference's <c>commit(false)</c> with the parts that need the catalogue and the
-    /// temp-table lifecycle left out: the transaction is committed and forgotten, and auto-commit
-    /// is restored when the transaction was begun for a statement.
+    /// The reference's <c>commit(boolean ddl)</c> with the parts that need the catalogue and the
+    /// temp-table lifecycle left out. The <paramref name="ddl"/> flag is what keeps a data
+    /// definition statement from restoring auto-commit: a DDL command commits an open transaction
+    /// on its way in and its own on its way out, and the session stays outside auto-commit until
+    /// the caller's transaction is completed.
+    /// <para>
+    /// One deliberate difference from the reference: the restore runs even when the session has
+    /// no store transaction to commit. In JDBC auto-commit is the caller's setting, so a commit
+    /// without a transaction leaves it alone; here the provider's transaction owns the switch
+    /// (<c>SessionLocal.Begin</c> turns it off, completion turns it back on), and a transaction
+    /// that only ran DDL has no store transaction — without this the connection would stay out
+    /// of auto-commit after its completion.
+    /// </para>
     /// </remarks>
-    public void Commit()
+    /// <param name="ddl">if the statement was a data definition statement</param>
+    public void Commit(bool ddl)
     {
         MvStore.Tx.Transaction? transaction = Transaction;
         if (transaction is not null)
@@ -160,10 +173,14 @@ public sealed class SessionLocal : Session
             }
         }
 
-        if (autoCommitAtTransactionEnd)
+        if (!ddl)
         {
-            autoCommit = true;
-            autoCommitAtTransactionEnd = false;
+            // The reference's cleanTempTables(false): temporary tables are not ported yet.
+            if (autoCommitAtTransactionEnd)
+            {
+                autoCommit = true;
+                autoCommitAtTransactionEnd = false;
+            }
         }
     }
 
@@ -309,6 +326,16 @@ public sealed class SessionLocal : Session
     public override bool IsClosed()
     {
         return closed;
+    }
+
+    /// <summary>
+    /// Whether this session is open. Suspended sessions do not exist in this port, so this is
+    /// the negation of <see cref="IsClosed"/>.
+    /// </summary>
+    /// <returns>true if it is</returns>
+    public bool IsOpen()
+    {
+        return !closed;
     }
 
     /// <summary>

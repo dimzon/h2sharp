@@ -2,17 +2,14 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * The DbTransaction semantics as the contract states them, written without reading the
- * implementation: ADO.NET says a transaction isolates its statements until Commit or Rollback,
- * that Rollback (including Dispose without completion) undoes them, and that after completion
- * the connection behaves as it did before. DDL is included: H2 documents transactional DDL —
- * CREATE, ALTER and DROP roll back together with the transaction — and nothing in the provider
- * contract exempts it.
- *
- * These tests are red on purpose while the commit-per-statement gap of issue #11 (F1) is open:
- * every statement inside a DbTransaction still commits the session transaction on its way out,
- * so the rollback-family tests below name exactly that member. The state-machine tests are
- * green and stay the ones to keep.
+ * The DbTransaction semantics as the contract states them: ADO.NET says a transaction isolates
+ * its statements until Commit or Rollback, that Rollback (including Dispose without completion)
+ * undoes them, and that after completion the connection behaves as it did before. DML obeys
+ * that. DDL does not: H2 2.5.x documents that "most data definition language (DDL) statements,
+ * such as 'create table', commit the current transaction" (advanced.html, Transaction
+ * Isolation), and the 2.5.259 oracle confirms it scenario for scenario — a DDL statement
+ * commits what is open, its own work included, so a later Rollback has nothing of it to undo.
+ * The DDL tests at the bottom encode exactly that.
  *
  * Dapper is used as the caller convenience only: Execute/Query over IDbConnection with an
  * explicit transaction, nothing written against the provider's own members.
@@ -158,6 +155,26 @@ public sealed class H2TransactionSemanticsTests
     }
 
     [Fact]
+    public void Statements_AfterDdlOnlyTransaction_CommitThemselves()
+    {
+        string name = NewName();
+        using IDbConnection first = OpenNamed(name);
+        using IDbConnection second = OpenNamed(name);
+
+        // The transaction never wrote a row, so its commit has no session transaction to finish;
+        // the connection must still be back in auto-commit when it ends.
+        using (IDbTransaction transaction = first.BeginTransaction())
+        {
+            _ = first.Execute("CREATE TABLE T2(ID INT PRIMARY KEY)", transaction: transaction);
+            transaction.Commit();
+        }
+
+        _ = first.Execute("INSERT INTO T2(ID) VALUES (1)");
+
+        Assert.Equal(1, second.QuerySingle<int>("SELECT COUNT(*) FROM T2"));
+    }
+
+    [Fact]
     public void Connection_Reusable_AfterRollback()
     {
         using IDbConnection connection = Open();
@@ -220,10 +237,10 @@ public sealed class H2TransactionSemanticsTests
         _ = Assert.ThrowsAny<Exception>(transaction.Rollback);
     }
 
-    // ————— Transactional DDL, the H2-documented behaviour —————
+    // ————— DDL commits the transaction, the H2-documented behaviour (oracle: 2.5.259) —————
 
     [Fact]
-    public void Rollback_UndoesCreateTable()
+    public void Ddl_CreateTableSurvivesRollback()
     {
         using IDbConnection connection = Open();
         PrepareTable(connection);
@@ -231,12 +248,13 @@ public sealed class H2TransactionSemanticsTests
         _ = connection.Execute("CREATE TABLE T2(ID INT PRIMARY KEY)", transaction: transaction);
         transaction.Rollback();
 
-        Assert.ThrowsAny<Exception>(
-            () => connection.QuerySingle<int>("SELECT COUNT(*) FROM T2"));
+        // The commit the DDL forced is the point: T2 exists, empty.
+        int count = connection.QuerySingle<int>("SELECT COUNT(*) FROM T2");
+        Assert.Equal(0, count);
     }
 
     [Fact]
-    public void Commit_PersistsCreateTable()
+    public void Ddl_CommitPersistsCreateTable()
     {
         using IDbConnection connection = Open();
         PrepareTable(connection);
@@ -250,7 +268,7 @@ public sealed class H2TransactionSemanticsTests
     }
 
     [Fact]
-    public void Rollback_UndoesDropTable()
+    public void Ddl_DropTableSurvivesRollback()
     {
         using IDbConnection connection = Open();
         PrepareTable(connection);
@@ -259,7 +277,39 @@ public sealed class H2TransactionSemanticsTests
         _ = connection.Execute("DROP TABLE T", transaction: transaction);
         transaction.Rollback();
 
+        // T is gone: the DROP committed, and the rollback has nothing of it to undo.
+        _ = Assert.ThrowsAny<Exception>(
+            () => connection.QuerySingle<int>("SELECT COUNT(*) FROM T"));
+    }
+
+    [Fact]
+    public void Ddl_CommitsPendingWrites()
+    {
+        using IDbConnection connection = Open();
+        PrepareTable(connection);
+        using IDbTransaction transaction = connection.BeginTransaction();
+        _ = connection.Execute("INSERT INTO T(ID, V) VALUES (1, 10)", transaction: transaction);
+        _ = connection.Execute("CREATE TABLE T2(ID INT PRIMARY KEY)", transaction: transaction);
+        transaction.Rollback();
+
+        // The INSERT preceded the DDL, so the DDL committed it.
         int count = connection.QuerySingle<int>("SELECT COUNT(*) FROM T");
         Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void Dml_AfterDdl_RollsBack()
+    {
+        using IDbConnection connection = Open();
+        PrepareTable(connection);
+        using IDbTransaction transaction = connection.BeginTransaction();
+        _ = connection.Execute("CREATE TABLE T2(ID INT PRIMARY KEY)", transaction: transaction);
+        _ = connection.Execute("INSERT INTO T2(ID) VALUES (1)", transaction: transaction);
+        transaction.Rollback();
+
+        // The DDL committed the table and left a new transaction open; the INSERT belongs
+        // to that one and rolls back.
+        int count = connection.QuerySingle<int>("SELECT COUNT(*) FROM T2");
+        Assert.Equal(0, count);
     }
 }

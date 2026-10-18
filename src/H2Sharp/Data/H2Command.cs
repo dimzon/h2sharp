@@ -191,7 +191,7 @@ public sealed class H2Command : DbCommand
             }
             else
             {
-                first = containers[0].UpdateRows(false).GetUpdateCount();
+                first = containers[0].ExecuteUpdate(false).GetUpdateCount();
             }
 
             RunRemaining(containers);
@@ -213,7 +213,7 @@ public sealed class H2Command : DbCommand
         {
             if (!containers[0].IsQuery())
             {
-                _ = containers[0].UpdateRows(false);
+                _ = containers[0].ExecuteUpdate(false);
                 RunRemaining(containers);
                 return null;
             }
@@ -256,10 +256,10 @@ public sealed class H2Command : DbCommand
         H2DataReader reader;
         if (!containers[0].IsQuery())
         {
-            long count = containers[0].UpdateRows(false).GetUpdateCount();
+            long count = containers[0].ExecuteUpdate(false).GetUpdateCount();
             for (int i = 1; i < containers.Count; i++)
             {
-                _ = containers[i].UpdateRows(false);
+                _ = containers[i].ExecuteUpdate(false);
             }
 
             reader = new H2DataReader(count);
@@ -360,7 +360,7 @@ public sealed class H2Command : DbCommand
             }
             else
             {
-                _ = container.UpdateRows(false);
+                _ = container.ExecuteUpdate(false);
             }
         }
     }

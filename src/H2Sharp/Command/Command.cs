@@ -161,8 +161,22 @@ public abstract class Command : CommandInterface
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The reference's <c>stop</c>: a non-transactional statement commits the transaction it ran
+    /// in, and a transactional one commits at the end when the session is in auto-commit, so a
+    /// single INSERT/UPDATE/DELETE is durable on its own. The trace timing is not ported.
+    /// </remarks>
     public virtual void Stop(bool commitIfAutoCommit)
-        => throw new TODOException("Command.stop: the session's commit and auto commit are not ported");
+    {
+        if (Session.IsOpen())
+        {
+            CommitIfNonTransactional();
+            if (commitIfAutoCommit && IsTransactional() && Session.GetAutoCommit())
+            {
+                Session.Commit(false);
+            }
+        }
+    }
 
     /// <summary>
     /// Execute a query and return the result. This method prepares everything and calls
@@ -176,8 +190,24 @@ public abstract class Command : CommandInterface
         => throw new TODOException("Command.executeQuery: the transaction layer is not ported yet");
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The reference wraps the update in savepoints, a statement scope, and a rollback of a
+    /// failed attempt; none of those are ported, so what remains is the part that is: a
+    /// non-transactional statement commits what is open before it runs and its own work after,
+    /// and <c>stop(commitIfAutoCommit: true)</c> runs in every case.
+    /// </remarks>
     public virtual ResultWithGeneratedKeys ExecuteUpdate(object generatedKeysRequest)
-        => throw new TODOException("Command.executeUpdate: the transaction layer is not ported yet");
+    {
+        CommitIfNonTransactional();
+        try
+        {
+            return UpdateRows(generatedKeysRequest);
+        }
+        finally
+        {
+            Stop(true);
+        }
+    }
 
     /// <inheritdoc/>
     public virtual BatchResult ExecuteBatchUpdate(List<Value?[]> batchParameters, object generatedKeysRequest)
@@ -187,7 +217,17 @@ public abstract class Command : CommandInterface
     /// Commits the current transaction when this command is not transactional.
     /// </summary>
     private void CommitIfNonTransactional()
-        => throw new TODOException("Command.commitIfNonTransactional: the transaction layer is not ported");
+    {
+        if (!IsTransactional())
+        {
+            bool autoCommit = Session.GetAutoCommit();
+            Session.Commit(true);
+            if (!autoCommit && Session.GetAutoCommit())
+            {
+                Session.Begin();
+            }
+        }
+    }
 
     /// <summary>
     /// Decides whether an error is one this command may be retried after.

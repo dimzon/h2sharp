@@ -67,7 +67,7 @@ public sealed class H2Transaction : DbTransaction
         }
 
         completed = true;
-        connection?.Session?.Commit();
+        connection?.Session?.Commit(false);
         Detach();
     }
 
