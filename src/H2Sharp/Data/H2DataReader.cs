@@ -174,14 +174,10 @@ public sealed class H2DataReader : DbDataReader
     {
         ThrowIfClosed();
         ArgumentNullException.ThrowIfNull(name);
-        if (result is null)
+        Result.ResultInterface source = State();
+        for (int i = 0, count = source.GetVisibleColumnCount(); i < count; i++)
         {
-            throw new InvalidOperationException("The reader has no rows");
-        }
-
-        for (int i = 0, count = FieldCount; i < count; i++)
-        {
-            if (string.Equals(result.GetColumnName(i), name, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(source.GetColumnName(i), name, StringComparison.OrdinalIgnoreCase))
             {
                 return i;
             }
@@ -237,12 +233,7 @@ public sealed class H2DataReader : DbDataReader
     /// </remarks>
     public override bool GetBoolean(int ordinal)
     {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Boolean");
-        }
-
+        Value cell = NotNull(ordinal, "Boolean");
         if (cell.GetValueType() == Value.Boolean)
         {
             return cell.GetBoolean();
@@ -253,42 +244,19 @@ public sealed class H2DataReader : DbDataReader
             return Convert.ToBoolean(cell.GetString(), CultureInfo.InvariantCulture);
         }
 
-        throw new InvalidCastException(
-            "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Boolean");
+        throw CastNotSupported(cell, "Boolean");
     }
 
     /// <inheritdoc/>
     public override byte GetByte(int ordinal)
-    {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Byte");
-        }
-
-        return cell.GetValueType() switch
-        {
-            Value.Tinyint or Value.Smallint or Value.Integer => Convert.ToByte(cell.GetInt()),
-            Value.Bigint => Convert.ToByte(cell.GetLong()),
-            Value.Real => Convert.ToByte(cell.GetFloat()),
-            Value.Double => Convert.ToByte(cell.GetDouble()),
-            Value.Numeric or Value.Decfloat => Convert.ToByte(H2ValueMapper.ToDecimal(cell)),
-            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
-                => Convert.ToByte(cell.GetString(), CultureInfo.InvariantCulture),
-            _ => throw new InvalidCastException(
-                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Byte"),
-        };
-    }
+        => ReadNumeric(ordinal, "Byte",
+            Convert.ToByte, Convert.ToByte, Convert.ToByte, Convert.ToByte, Convert.ToByte,
+            s => Convert.ToByte(s, CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     public override char GetChar(int ordinal)
     {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Char");
-        }
-
+        _ = NotNull(ordinal, "Char");
         string text = GetString(ordinal);
         if (text.Length == 1)
         {
@@ -301,12 +269,7 @@ public sealed class H2DataReader : DbDataReader
     /// <inheritdoc/>
     public override DateTime GetDateTime(int ordinal)
     {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as DateTime");
-        }
-
+        Value cell = NotNull(ordinal, "DateTime");
         object? value = H2ValueMapper.ToObject(cell);
         if (value is DateTime dateTime)
         {
@@ -318,88 +281,31 @@ public sealed class H2DataReader : DbDataReader
             return Convert.ToDateTime(text, CultureInfo.InvariantCulture);
         }
 
-        throw new InvalidCastException(
-            "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as DateTime");
+        throw CastNotSupported(cell, "DateTime");
     }
 
     /// <inheritdoc/>
     public override decimal GetDecimal(int ordinal)
-    {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Decimal");
-        }
-
-        return cell.GetValueType() switch
-        {
-            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
-            Value.Bigint => cell.GetLong(),
-            Value.Real => Convert.ToDecimal(cell.GetFloat()),
-            Value.Double => Convert.ToDecimal(cell.GetDouble()),
-            Value.Numeric or Value.Decfloat => H2ValueMapper.ToDecimal(cell),
-            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
-                => Convert.ToDecimal(cell.GetString(), CultureInfo.InvariantCulture),
-            _ => throw new InvalidCastException(
-                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Decimal"),
-        };
-    }
+        => ReadNumeric(ordinal, "Decimal",
+            Convert.ToDecimal, Convert.ToDecimal, Convert.ToDecimal, Convert.ToDecimal, Convert.ToDecimal,
+            s => Convert.ToDecimal(s, CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     public override double GetDouble(int ordinal)
-    {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Double");
-        }
-
-        return cell.GetValueType() switch
-        {
-            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
-            Value.Bigint => cell.GetLong(),
-            Value.Real => cell.GetFloat(),
-            Value.Double => cell.GetDouble(),
-            Value.Numeric or Value.Decfloat => Convert.ToDouble(H2ValueMapper.ToDecimal(cell)),
-            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
-                => Convert.ToDouble(cell.GetString(), CultureInfo.InvariantCulture),
-            _ => throw new InvalidCastException(
-                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Double"),
-        };
-    }
+        => ReadNumeric(ordinal, "Double",
+            Convert.ToDouble, Convert.ToDouble, Convert.ToDouble, Convert.ToDouble, Convert.ToDouble,
+            s => Convert.ToDouble(s, CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     public override float GetFloat(int ordinal)
-    {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Single");
-        }
-
-        return cell.GetValueType() switch
-        {
-            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
-            Value.Bigint => cell.GetLong(),
-            Value.Real => cell.GetFloat(),
-            Value.Double => Convert.ToSingle(cell.GetDouble()),
-            Value.Numeric or Value.Decfloat => Convert.ToSingle(H2ValueMapper.ToDecimal(cell)),
-            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
-                => Convert.ToSingle(cell.GetString(), CultureInfo.InvariantCulture),
-            _ => throw new InvalidCastException(
-                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Single"),
-        };
-    }
+        => ReadNumeric(ordinal, "Single",
+            Convert.ToSingle, Convert.ToSingle, Convert.ToSingle, Convert.ToSingle, Convert.ToSingle,
+            s => Convert.ToSingle(s, CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     public override Guid GetGuid(int ordinal)
     {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Guid");
-        }
-
+        Value cell = NotNull(ordinal, "Guid");
         if (cell.GetValueType() == Value.Uuid)
         {
             return ((ValueUuid)cell).GetUuid();
@@ -416,78 +322,26 @@ public sealed class H2DataReader : DbDataReader
             return Guid.Parse(cell.GetString()!);
         }
 
-        throw new InvalidCastException(
-            "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Guid");
+        throw CastNotSupported(cell, "Guid");
     }
 
     /// <inheritdoc/>
     public override short GetInt16(int ordinal)
-    {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Int16");
-        }
-
-        return cell.GetValueType() switch
-        {
-            Value.Tinyint or Value.Smallint or Value.Integer => Convert.ToInt16(cell.GetInt()),
-            Value.Bigint => Convert.ToInt16(cell.GetLong()),
-            Value.Real => Convert.ToInt16(cell.GetFloat()),
-            Value.Double => Convert.ToInt16(cell.GetDouble()),
-            Value.Numeric or Value.Decfloat => Convert.ToInt16(H2ValueMapper.ToDecimal(cell)),
-            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
-                => Convert.ToInt16(cell.GetString(), CultureInfo.InvariantCulture),
-            _ => throw new InvalidCastException(
-                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Int16"),
-        };
-    }
+        => ReadNumeric(ordinal, "Int16",
+            Convert.ToInt16, Convert.ToInt16, Convert.ToInt16, Convert.ToInt16, Convert.ToInt16,
+            s => Convert.ToInt16(s, CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     public override int GetInt32(int ordinal)
-    {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Int32");
-        }
-
-        return cell.GetValueType() switch
-        {
-            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
-            Value.Bigint => Convert.ToInt32(cell.GetLong()),
-            Value.Real => Convert.ToInt32(cell.GetFloat()),
-            Value.Double => Convert.ToInt32(cell.GetDouble()),
-            Value.Numeric or Value.Decfloat => Convert.ToInt32(H2ValueMapper.ToDecimal(cell)),
-            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
-                => Convert.ToInt32(cell.GetString(), CultureInfo.InvariantCulture),
-            _ => throw new InvalidCastException(
-                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Int32"),
-        };
-    }
+        => ReadNumeric(ordinal, "Int32",
+            Convert.ToInt32, Convert.ToInt32, Convert.ToInt32, Convert.ToInt32, Convert.ToInt32,
+            s => Convert.ToInt32(s, CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     public override long GetInt64(int ordinal)
-    {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Int64");
-        }
-
-        return cell.GetValueType() switch
-        {
-            Value.Tinyint or Value.Smallint or Value.Integer => cell.GetInt(),
-            Value.Bigint => cell.GetLong(),
-            Value.Real => Convert.ToInt64(cell.GetFloat()),
-            Value.Double => Convert.ToInt64(cell.GetDouble()),
-            Value.Numeric or Value.Decfloat => Convert.ToInt64(H2ValueMapper.ToDecimal(cell)),
-            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
-                => Convert.ToInt64(cell.GetString(), CultureInfo.InvariantCulture),
-            _ => throw new InvalidCastException(
-                "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Int64"),
-        };
-    }
+        => ReadNumeric(ordinal, "Int64",
+            Convert.ToInt64, Convert.ToInt64, Convert.ToInt64, Convert.ToInt64, Convert.ToInt64,
+            s => Convert.ToInt64(s, CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     /// <remarks>
@@ -497,12 +351,7 @@ public sealed class H2DataReader : DbDataReader
     /// </remarks>
     public override string GetString(int ordinal)
     {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as String");
-        }
-
+        Value cell = NotNull(ordinal, "String");
         return cell.GetString()
             ?? throw new InvalidCastException("Cannot read column " + ordinal + " as String");
     }
@@ -510,20 +359,14 @@ public sealed class H2DataReader : DbDataReader
     /// <inheritdoc/>
     public override long GetBytes(int ordinal, long fieldOffset, byte[]? buffer, int bufferOffset, int length)
     {
-        Value? cell = Cell(ordinal);
-        if (cell is null or ValueNull)
-        {
-            throw new InvalidCastException("Cannot read NULL as Byte[]");
-        }
-
+        Value cell = NotNull(ordinal, "Byte[]");
         if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob
             && cell.GetBytes() is byte[] bytes)
         {
             return CopySlice(bytes, fieldOffset, buffer, bufferOffset, length);
         }
 
-        throw new InvalidCastException(
-            "Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as Byte[]");
+        throw CastNotSupported(cell, "Byte[]");
     }
 
     /// <inheritdoc/>
@@ -532,35 +375,7 @@ public sealed class H2DataReader : DbDataReader
     /// asked slice moves, and a length question does not even do that.
     /// </remarks>
     public override long GetChars(int ordinal, long fieldOffset, char[]? buffer, int bufferOffset, int length)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(fieldOffset);
-        ArgumentOutOfRangeException.ThrowIfNegative(bufferOffset);
-        ArgumentOutOfRangeException.ThrowIfNegative(length);
-        string text = GetString(ordinal);
-        if (buffer is null)
-        {
-            return text.Length;
-        }
-
-        if (bufferOffset > buffer.Length)
-        {
-            throw new ArgumentOutOfRangeException(nameof(bufferOffset));
-        }
-
-        if ((long)bufferOffset + length > buffer.Length)
-        {
-            throw new ArgumentException("The buffer is too small for the slice");
-        }
-
-        if (fieldOffset >= text.Length)
-        {
-            return 0;
-        }
-
-        int take = Math.Min(text.Length - (int)fieldOffset, length);
-        text.AsSpan((int)fieldOffset, take).CopyTo(buffer.AsSpan(bufferOffset));
-        return take;
-    }
+        => CopySlice(GetString(ordinal), fieldOffset, buffer, bufferOffset, length);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -620,6 +435,44 @@ public sealed class H2DataReader : DbDataReader
         return base.GetFieldValue<T>(ordinal);
     }
 
+    private Value NotNull(int ordinal, string target)
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            throw new InvalidCastException("Cannot read NULL as " + target);
+        }
+
+        return cell;
+    }
+
+    private static InvalidCastException CastNotSupported(Value cell, string target)
+        => new("Cannot read " + Value.GetTypeName(cell.GetValueType()) + " as " + target);
+
+    /// <summary>
+    /// The numeric getters differ only in the conversion overload (issue #12 C2): the source
+    /// type picks the arm, and the caller names the conversion for each arm. Every arm answers
+    /// exactly what the per-getter ladders answered, including the overflow checks of
+    /// <see cref="Convert"/> on the narrowing arms.
+    /// </summary>
+    private T ReadNumeric<T>(int ordinal, string target,
+        Func<int, T> fromInt32, Func<long, T> fromInt64, Func<float, T> fromSingle,
+        Func<double, T> fromDouble, Func<decimal, T> fromDecimal, Func<string, T> fromString)
+    {
+        Value cell = NotNull(ordinal, target);
+        return cell.GetValueType() switch
+        {
+            Value.Tinyint or Value.Smallint or Value.Integer => fromInt32(cell.GetInt()),
+            Value.Bigint => fromInt64(cell.GetLong()),
+            Value.Real => fromSingle(cell.GetFloat()),
+            Value.Double => fromDouble(cell.GetDouble()),
+            Value.Numeric or Value.Decfloat => fromDecimal(H2ValueMapper.ToDecimal(cell)),
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+                => fromString(cell.GetString()!),
+            _ => throw CastNotSupported(cell, target),
+        };
+    }
+
     private static H2SharpException NullValueException(string target)
         => Message.DbException.Get(Api.ErrorCode.DataConversionError1, "NULL", target);
 
@@ -629,42 +482,14 @@ public sealed class H2DataReader : DbDataReader
     /// before it starts. See OpenAsync for when this becomes real.
     /// </remarks>
     public override Task<bool> IsDBNullAsync(int ordinal, CancellationToken cancellationToken)
-    {
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return Task.FromCanceled<bool>(cancellationToken);
-        }
-
-        try
-        {
-            return Task.FromResult(IsDBNull(ordinal));
-        }
-        catch (Exception e)
-        {
-            return Task.FromException<bool>(e);
-        }
-    }
+        => SyncTask.Run(() => IsDBNull(ordinal), cancellationToken);
 
     /// <inheritdoc/>
     /// <remarks>
     /// Same synchronicity note as <see cref="IsDBNullAsync"/>.
     /// </remarks>
     public override Task<T> GetFieldValueAsync<T>(int ordinal, CancellationToken cancellationToken)
-    {
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return Task.FromCanceled<T>(cancellationToken);
-        }
-
-        try
-        {
-            return Task.FromResult(GetFieldValue<T>(ordinal));
-        }
-        catch (Exception e)
-        {
-            return Task.FromException<T>(e);
-        }
-    }
+        => SyncTask.Run(() => GetFieldValue<T>(ordinal), cancellationToken);
 
     /// <inheritdoc/>
     public override IEnumerator GetEnumerator()
@@ -690,7 +515,58 @@ public sealed class H2DataReader : DbDataReader
                 cancellationToken);
         }
 
-        List<DbColumn> columns = [];
+        List<DbColumn> columns = new(ColumnDescriptions());
+        return Task.FromResult<System.Collections.ObjectModel.ReadOnlyCollection<DbColumn>>(
+            columns.AsReadOnly());
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Null when there are no columns: a table of no columns would claim a shape the
+    /// statement never had.
+    /// </remarks>
+    public override DataTable? GetSchemaTable()
+    {
+        List<H2DbColumn> columns = ColumnDescriptions();
+        if (columns.Count == 0)
+        {
+            return null;
+        }
+
+        DataTable table = new("SchemaTable");
+        table.Columns.Add("ColumnName", typeof(string));
+        table.Columns.Add("ColumnOrdinal", typeof(int));
+        table.Columns.Add("ColumnSize", typeof(int));
+        table.Columns.Add("NumericPrecision", typeof(int));
+        table.Columns.Add("NumericScale", typeof(int));
+        table.Columns.Add("DataType", typeof(Type));
+        table.Columns.Add("DataTypeName", typeof(string));
+        table.Columns.Add("AllowDBNull", typeof(bool));
+        foreach (H2DbColumn column in columns)
+        {
+            DataRow row = table.NewRow();
+            row["ColumnName"] = column.ColumnName;
+            row["ColumnOrdinal"] = column.ColumnOrdinal;
+            row["ColumnSize"] = column.NumericPrecision ?? -1;
+            row["NumericPrecision"] = column.NumericPrecision ?? (object)DBNull.Value;
+            row["NumericScale"] = column.NumericScale ?? (object)DBNull.Value;
+            row["DataType"] = column.DataType;
+            row["DataTypeName"] = column.DataTypeName;
+            row["AllowDBNull"] = column.AllowDBNull;
+            table.Rows.Add(row);
+        }
+
+        return table;
+    }
+
+    /// <summary>
+    /// Describes every visible column once, so the schema table and the column schema
+    /// cannot disagree (issue #12 C10).
+    /// </summary>
+    /// <returns>the column descriptions, empty when there are no columns</returns>
+    private List<H2DbColumn> ColumnDescriptions()
+    {
+        List<H2DbColumn> columns = [];
         Result.ResultInterface? source = result;
         if (source is not null)
         {
@@ -708,54 +584,40 @@ public sealed class H2DataReader : DbDataReader
             }
         }
 
-        return Task.FromResult<System.Collections.ObjectModel.ReadOnlyCollection<DbColumn>>(
-            columns.AsReadOnly());
+        return columns;
     }
 
-    /// <inheritdoc/>
-    /// <remarks>
-    /// Null when there are no columns: a table of no columns would claim a shape the
-    /// statement never had.
-    /// </remarks>
-    public override DataTable? GetSchemaTable()
+    private static long CopySlice(
+        ReadOnlySpan<char> source, long fieldOffset, char[]? buffer, int bufferOffset, int length)
     {
-        Result.ResultInterface? columns = result;
-        if (columns is null || columns.GetVisibleColumnCount() == 0)
+        ArgumentOutOfRangeException.ThrowIfNegative(fieldOffset);
+        ArgumentOutOfRangeException.ThrowIfNegative(bufferOffset);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        if (buffer is null)
         {
-            return null;
+            // No buffer is a length question, not a read: the whole value, whatever
+            // the offsets say.
+            return source.Length;
         }
 
-        DataTable table = new("SchemaTable");
-        table.Columns.Add("ColumnName", typeof(string));
-        table.Columns.Add("ColumnOrdinal", typeof(int));
-        table.Columns.Add("ColumnSize", typeof(int));
-        table.Columns.Add("NumericPrecision", typeof(int));
-        table.Columns.Add("NumericScale", typeof(int));
-        table.Columns.Add("DataType", typeof(Type));
-        table.Columns.Add("DataTypeName", typeof(string));
-        table.Columns.Add("AllowDBNull", typeof(bool));
-        for (int i = 0, count = columns.GetVisibleColumnCount(); i < count; i++)
+        if (bufferOffset > buffer.Length)
         {
-            TypeInfo type = columns.GetColumnType(i);
-            DataRow row = table.NewRow();
-            row["ColumnName"] = GetName(i);
-            row["ColumnOrdinal"] = i;
-            row["ColumnSize"] = type.GetPrecision() is >= 0 and <= int.MaxValue
-                ? (int)type.GetPrecision()
-                : -1;
-            row["NumericPrecision"] = type.GetPrecision() is >= 0 and <= int.MaxValue
-                ? (int)type.GetPrecision()
-                : (object)DBNull.Value;
-            row["NumericScale"] = type.GetScale() >= 0
-                ? type.GetScale()
-                : (object)DBNull.Value;
-            row["DataType"] = GetFieldType(i);
-            row["DataTypeName"] = GetDataTypeName(i);
-            row["AllowDBNull"] = columns.GetNullable(i) != H2Sharp.Tables.Column.NotNullable;
-            table.Rows.Add(row);
+            throw new ArgumentOutOfRangeException(nameof(bufferOffset));
         }
 
-        return table;
+        if ((long)bufferOffset + length > buffer.Length)
+        {
+            throw new ArgumentException("The buffer is too small for the slice");
+        }
+
+        if (fieldOffset >= source.Length)
+        {
+            return 0;
+        }
+
+        int take = Math.Min(source.Length - (int)fieldOffset, length);
+        source.Slice((int)fieldOffset, take).CopyTo(buffer.AsSpan(bufferOffset));
+        return take;
     }
 
     private static long CopySlice<T>(
@@ -804,28 +666,24 @@ public sealed class H2DataReader : DbDataReader
 
     private Value?[] Row()
     {
-        ThrowIfClosed();
-        if (result is null)
-        {
-            throw new InvalidOperationException("The reader has no rows");
-        }
-
+        _ = State();
         return current
             ?? throw new InvalidOperationException("Read was not called or has no more rows");
     }
 
     private void CheckOrdinal(int ordinal)
     {
-        ThrowIfClosed();
-        if (result is null)
-        {
-            throw new InvalidOperationException("The reader has no rows");
-        }
-
+        _ = State();
         if ((uint)ordinal >= (uint)FieldCount)
         {
             throw new IndexOutOfRangeException("No column at ordinal " + ordinal);
         }
+    }
+
+    private Result.ResultInterface State()
+    {
+        ThrowIfClosed();
+        return result ?? throw new InvalidOperationException("The reader has no rows");
     }
 
     private void ThrowIfClosed()

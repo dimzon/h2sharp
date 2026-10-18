@@ -82,7 +82,7 @@ public sealed class SearchedCase : OperationN
 
             args[i] = condition;
             args[i + 1] = result;
-            typeInfo = CombineTypes(typeInfo, result);
+            typeInfo = SimpleCase.CombineTypes(typeInfo, result);
         }
 
         if ((len & 1) == 0)
@@ -94,7 +94,7 @@ public sealed class SearchedCase : OperationN
             }
 
             args[len] = result;
-            typeInfo = CombineTypes(typeInfo, result);
+            typeInfo = SimpleCase.CombineTypes(typeInfo, result);
         }
         else if (allConst)
         {
@@ -130,27 +130,5 @@ public sealed class SearchedCase : OperationN
         }
 
         return builder.Append(" END");
-    }
-
-    /// <summary>
-    /// Combines the result type with the type of one branch.
-    /// </summary>
-    /// <remarks>
-    /// The reference keeps this on <c>SimpleCase</c>, which is not ported; the arithmetic is the
-    /// reference's and is what <c>CASE</c> needs here.
-    /// </remarks>
-    private static TypeInfo CombineTypes(TypeInfo typeInfo, Expression e)
-    {
-        if (!e.IsNullConstant())
-        {
-            TypeInfo t = e.GetTypeInfo();
-            int valueType = t.GetValueType();
-            if (valueType != Value.Unknown && valueType != Value.Null)
-            {
-                typeInfo = TypeInfo.GetHigherType(typeInfo, t);
-            }
-        }
-
-        return typeInfo;
     }
 }

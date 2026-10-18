@@ -183,7 +183,7 @@ public sealed class SimpleCase : Expression
         return this;
     }
 
-    private static TypeInfo CombineTypes(TypeInfo typeInfo, Expression e)
+    internal static TypeInfo CombineTypes(TypeInfo typeInfo, Expression e)
     {
         if (!e.IsNullConstant())
         {

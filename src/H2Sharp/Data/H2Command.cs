@@ -10,10 +10,9 @@
  * because on this side there is no driver manager and no wire protocol between the caller and
  * the session — a command holds the connection's session and hands the text to it.
  *
- * Running it refuses for now, and says which piece is missing: the parser. Everything around it
- * is real, so that the red tests stop being red for the wrong reason — a command that was still
- * a stub would make "no command at all" and "no parser" look the same failure, and the red list
- * would stop pointing at the work.
+ * Running hands the text to the session's parser, binds the parameter values by the positions
+ * the rewriter gave them, and keeps one container per statement of the text: the first answers,
+ * and the rest run for effect — drained if they are queries, counted if they are updates.
  */
 using System;
 using System.Collections.Generic;
@@ -195,22 +194,7 @@ public sealed class H2Command : DbCommand
                 first = containers[0].UpdateRows(false).GetUpdateCount();
             }
 
-            for (int i = 1; i < containers.Count; i++)
-            {
-                Command.CommandContainer container = containers[i];
-                if (container.IsQuery())
-                {
-                    using Result.ResultInterface rest = container.Query(-1);
-                    while (rest.Next())
-                    {
-                    }
-                }
-                else
-                {
-                    _ = container.UpdateRows(false);
-                }
-            }
-
+            RunRemaining(containers);
             return first < 0 ? -1 : Convert.ToInt32(first);
         }
         finally
@@ -230,11 +214,7 @@ public sealed class H2Command : DbCommand
             if (!containers[0].IsQuery())
             {
                 _ = containers[0].UpdateRows(false);
-                for (int i = 1; i < containers.Count; i++)
-                {
-                    _ = containers[i].UpdateRows(false);
-                }
-
+                RunRemaining(containers);
                 return null;
             }
 
@@ -252,22 +232,7 @@ public sealed class H2Command : DbCommand
                 }
             }
 
-            for (int i = 1; i < containers.Count; i++)
-            {
-                Command.CommandContainer container = containers[i];
-                if (container.IsQuery())
-                {
-                    using Result.ResultInterface rest = container.Query(-1);
-                    while (rest.Next())
-                    {
-                    }
-                }
-                else
-                {
-                    _ = container.UpdateRows(false);
-                }
-            }
-
+            RunRemaining(containers);
             return scalar;
         }
         finally
@@ -334,61 +299,19 @@ public sealed class H2Command : DbCommand
     /// </remarks>
     protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
         CommandBehavior behavior, CancellationToken cancellationToken)
-    {
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return Task.FromCanceled<DbDataReader>(cancellationToken);
-        }
-
-        try
-        {
-            return Task.FromResult<DbDataReader>(ExecuteDbDataReader(behavior));
-        }
-        catch (Exception e)
-        {
-            return Task.FromException<DbDataReader>(e);
-        }
-    }
+        => SyncTask.Run(() => ExecuteDbDataReader(behavior), cancellationToken);
 
     /// <summary>
     /// Runs the command and returns the rows it affected, asynchronously.
     /// </summary>
     public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
-    {
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return Task.FromCanceled<int>(cancellationToken);
-        }
-
-        try
-        {
-            return Task.FromResult(ExecuteNonQuery());
-        }
-        catch (Exception e)
-        {
-            return Task.FromException<int>(e);
-        }
-    }
+        => SyncTask.Run(ExecuteNonQuery, cancellationToken);
 
     /// <summary>
     /// Runs the command and returns the first column of the first row, asynchronously.
     /// </summary>
     public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
-    {
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return Task.FromCanceled<object?>(cancellationToken);
-        }
-
-        try
-        {
-            return Task.FromResult(ExecuteScalar());
-        }
-        catch (Exception e)
-        {
-            return Task.FromException<object?>(e);
-        }
-    }
+        => SyncTask.Run(ExecuteScalar, cancellationToken);
 
     /// <summary>
     /// Prepares the command.
@@ -401,15 +324,7 @@ public sealed class H2Command : DbCommand
     /// </remarks>
     public override void Prepare()
     {
-        if (connection?.Session is null)
-        {
-            throw new InvalidOperationException("The connection is not open");
-        }
-
-        if (commandText.Length == 0)
-        {
-            throw new InvalidOperationException("The command text is empty");
-        }
+        _ = CheckRunnableState();
     }
 
     /// <summary>
@@ -428,17 +343,48 @@ public sealed class H2Command : DbCommand
     }
 
     /// <summary>
-    /// Prepares the text, binds the values, and hands back the running commands: one per
-    /// statement the text holds.
+    /// Runs every container after the first for effect: a query drains, an update counts.
     /// </summary>
-    /// <remarks>
-    /// The engine only knows positional parameters, so named ones are rewritten before
-    /// the text reaches it, and the values are bound by the positions they took. A
-    /// placeholder with no value is refused here rather than read as NULL there: NULL is
-    /// a value the caller could have meant, a missing one is a mistake in the call.
-    /// Parameters are numbered across the whole text, so one ordered list binds every
-    /// statement of it.
-    /// </remarks>
+    /// <param name="containers">the containers of one execution</param>
+    private static void RunRemaining(List<Command.CommandContainer> containers)
+    {
+        for (int i = 1; i < containers.Count; i++)
+        {
+            Command.CommandContainer container = containers[i];
+            if (container.IsQuery())
+            {
+                using Result.ResultInterface rest = container.Query(-1);
+                while (rest.Next())
+                {
+                }
+            }
+            else
+            {
+                _ = container.UpdateRows(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Refuses the states in which the command cannot run and returns the session it runs on.
+    /// </summary>
+    /// <returns>the open session</returns>
+    private SessionLocal CheckRunnableState()
+    {
+        SessionLocal? current = connection?.Session;
+        if (current is null)
+        {
+            throw new InvalidOperationException("The connection is not open");
+        }
+
+        if (commandText.Length == 0)
+        {
+            throw new InvalidOperationException("The command text is empty");
+        }
+
+        return current;
+    }
+
     /// <summary>
     /// Closes every container of one execution, returning them to the cache.
     /// </summary>
@@ -468,17 +414,8 @@ public sealed class H2Command : DbCommand
     /// <returns>the prepared containers, in order</returns>
     private List<Command.CommandContainer> PrepareEngines()
     {
-        H2Connection? owner = connection;
-        SessionLocal? current = owner?.Session;
-        if (owner is null || current is null)
-        {
-            throw new InvalidOperationException("The connection is not open");
-        }
-
-        if (commandText.Length == 0)
-        {
-            throw new InvalidOperationException("The command text is empty");
-        }
+        SessionLocal current = CheckRunnableState();
+        H2Connection owner = connection!;
 
         string text = commandText;
         List<H2Parameter> ordered = NoParameters;

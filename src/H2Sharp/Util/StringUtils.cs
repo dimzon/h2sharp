@@ -2399,6 +2399,58 @@ public static class StringUtils
     }
 
     /// <summary>
+    /// Tests whether two string regions are equal, the way
+    /// <c>java.lang.String.regionMatches(boolean, int, String, int, int)</c> does.
+    /// </summary>
+    /// <remarks>
+    /// The reference calls the JDK method in IntervalUtils and Tokenizer; the port had two
+    /// ASCII-mask copies of it, and a LIKE window that used ordinal comparison (issue #12 C5).
+    /// The case folding here is the JDK's character-by-character rule — upper case first,
+    /// then lower case of the upper — not the <c>&amp; 0xFFDF</c> mask: the mask answers the
+    /// same for ASCII but mangles every non-ASCII letter, while the JDK folds U+017F to 'S'
+    /// and the mask does not. Negative offsets and regions that run past the end answer
+    /// false, as in the JDK.
+    /// </remarks>
+    /// <param name="s">the first string</param>
+    /// <param name="ignoreCase">whether the case is ignored</param>
+    /// <param name="toffset">the start of the region in the first string</param>
+    /// <param name="other">the second string</param>
+    /// <param name="ooffset">the start of the region in the second string</param>
+    /// <param name="length">the region length</param>
+    /// <returns>whether the regions are equal</returns>
+    public static bool RegionMatches(
+        string s, bool ignoreCase, int toffset, string other, int ooffset, int length)
+    {
+        if (toffset < 0 || ooffset < 0
+            || toffset > (long)s.Length - length || ooffset > (long)other.Length - length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < length; i++)
+        {
+            char c1 = s[toffset + i], c2 = other[ooffset + i];
+            if (c1 == c2)
+            {
+                continue;
+            }
+
+            if (ignoreCase)
+            {
+                char u1 = char.ToUpperInvariant(c1), u2 = char.ToUpperInvariant(c2);
+                if (u1 == u2 || char.ToLowerInvariant(u1) == char.ToLowerInvariant(u2))
+                {
+                    continue;
+                }
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Reads one code point starting at <paramref name="i"/> and advances it past
     /// that code point. Mirrors java.lang.String.codePointAt: a valid surrogate pair
     /// yields the astral code point and advances two characters, an unpaired

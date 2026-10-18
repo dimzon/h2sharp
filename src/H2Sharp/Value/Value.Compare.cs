@@ -300,41 +300,15 @@ public abstract partial class Value
     /// Compares two floats the way Java's <c>Float.compare</c> does, with the same two rules
     /// as <see cref="JavaCompareDouble"/>.
     /// </summary>
+    /// <remarks>
+    /// The widening to double is exact for every float, NaN status and the sign of a zero
+    /// included, so the double decisions answer the float question without a second ladder
+    /// (issue #12 C4).
+    /// </remarks>
     /// <param name="a">the first value</param>
     /// <param name="b">the second value</param>
     /// <returns>-1, 0 or 1 as Java's compare answers</returns>
-    internal static int JavaCompareFloat(float a, float b)
-    {
-        if (float.IsNaN(a))
-        {
-            return float.IsNaN(b) ? 0 : 1;
-        }
-
-        if (float.IsNaN(b))
-        {
-            return -1;
-        }
-
-        // Same order of decisions as JavaCompareDouble, and the same reason: the value first, the
-        // sign only when the values are equal.
-        if (a < b)
-        {
-            return -1;
-        }
-
-        if (a > b)
-        {
-            return 1;
-        }
-
-        bool negativeA = float.IsNegative(a), negativeB = float.IsNegative(b);
-        if (negativeA == negativeB)
-        {
-            return 0;
-        }
-
-        return negativeA ? -1 : 1;
-    }
+    internal static int JavaCompareFloat(float a, float b) => JavaCompareDouble(a, b);
 
     private static NotSupportedException NotPortedConversion(string op, string type)
         => new(

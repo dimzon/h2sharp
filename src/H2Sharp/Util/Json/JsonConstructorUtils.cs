@@ -28,6 +28,21 @@ public static class JsonConstructorUtils
     public const int JsonAbsentOnNull = 1;
 
     /// <summary>
+    /// Shortens a string for an error message: a JSON document can be megabytes long, and
+    /// carrying it whole into the message would copy and log it whole.
+    /// </summary>
+    /// <remarks>
+    /// The cut is the reference's own in <c>ValueJson</c> and <c>JsonByteArrayTarget</c>
+    /// (issue #12 C10); the unique-keys message below keeps its different boundary because
+    /// the reference draws it differently there.
+    /// </remarks>
+    /// <param name="s">the string</param>
+    /// <param name="length">how many characters to keep</param>
+    /// <returns>the string, or its beginning followed by an ellipsis</returns>
+    internal static string Truncate(string s, int length)
+        => s.Length > length ? s[..length] + "..." : s;
+
+    /// <summary>
     /// The WITH UNIQUE KEYS flag: the assembled object is checked for repeated names.
     /// </summary>
     public const int JsonWithUniqueKeys = 2;
@@ -86,7 +101,9 @@ public static class JsonConstructorUtils
                 // The reference asks whether the *string* fits but hands over the *bytes* when it
                 // does not, so the message carries a byte array's identity rather than the document.
                 // That is reproduced: it is what a user of H2 sees, and matching it matters more than
-                // producing the message that was presumably meant.
+                // producing the message that was presumably meant. The boundary is the reference's
+                // here and differs from Truncate's (128 is kept and elongated, not cut), so this
+                // site does not share the helper (issue #12 C10).
                 throw DbException.GetInvalidValueException(
                     "JSON WITH UNIQUE KEYS",
                     s.Length < 128 ? result : s[..128] + "...");

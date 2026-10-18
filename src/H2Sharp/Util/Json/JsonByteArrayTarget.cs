@@ -149,7 +149,7 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
                         char c2;
                         if (!char.IsHighSurrogate(c) || ++i >= length || !char.IsLowSurrogate(c2 = s[i]))
                         {
-                            throw DbException.Get(ErrorCode.DataConversionError1, Truncate(s));
+                            throw DbException.Get(ErrorCode.DataConversionError1, JsonConstructorUtils.Truncate(s, 80));
                         }
 
                         int uc = char.ConvertToUtf32(c, c2);
@@ -218,7 +218,7 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
                     {
                         if (!char.IsHighSurrogate(c) || ++i >= end || !char.IsLowSurrogate(s[i]))
                         {
-                            throw DbException.Get(ErrorCode.DataConversionError1, Truncate(s));
+                            throw DbException.Get(ErrorCode.DataConversionError1, JsonConstructorUtils.Truncate(s, 80));
                         }
 
                         length += 4;
@@ -230,15 +230,6 @@ public sealed class JsonByteArrayTarget : JsonTarget<byte[]>
 
         return length;
     }
-
-    /// <summary>
-    /// A long string does not fit in an error message, and the reference cuts it. The cut is worth
-    /// keeping: without it the message would carry the whole string, which for a JSON document can
-    /// be megabytes.
-    /// </summary>
-    /// <param name="s">the string</param>
-    /// <returns>the string, or its beginning</returns>
-    private static string Truncate(string s) => s.Length > 80 ? s[..80] + "..." : s;
 
     /// <summary>
     /// Hands the gathered characters to the stream.

@@ -493,16 +493,7 @@ public sealed class CompareLike : Condition
 
     private static bool RegionMatches(
         string s, bool ignoreCase, int toffset, string other, int ooffset, int len)
-    {
-        if (toffset < 0 || ooffset < 0 || toffset + len > s.Length || ooffset + len > other.Length)
-        {
-            return false;
-        }
-
-        return string.Compare(
-            s, toffset, other, ooffset, len,
-            ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == 0;
-    }
+        => StringUtils.RegionMatches(s, ignoreCase, toffset, other, ooffset, len);
 
     private static bool ContainsIgnoreCase(string src, string what, int start, int length)
     {

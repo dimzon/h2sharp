@@ -1491,7 +1491,10 @@ public sealed class Parser
 
         if (CurrentType == Token.At)
         {
-            throw new TODOException("Parser.parseQuerySelect: named parameters are not ported");
+            // The reference binds @name to a Variable, which is not ported: a session variable
+            // is storage on the session plus an assignment statement, and neither is here.
+            // A named parameter it is not.
+            throw new TODOException("Parser.readTerm: variables (@name) are not ported");
         }
 
         Values.Value? literal = Current.GetValue(provider);
@@ -2181,140 +2184,13 @@ public sealed class Parser
     /// Reads an expression: the reference's precedence, as far as this layer needs it. OR binds
     /// loosest, then AND, then a comparison, then a term.
     /// </summary>
-    public Expression ReadExpression() => ReadOr();
-
-    private Expression ReadOr()
-    {
-        Expression left = ReadAnd();
-        while (CurrentType == ParserUtil.Or)
-        {
-            Read();
-            left = new Expressions.Conditions.ConditionAndOr(
-                Expressions.Conditions.ConditionAndOr.Or, left, ReadAnd());
-        }
-
-        return left;
-    }
-
-    private Expression ReadAnd()
-    {
-        Expression left = ReadComparison();
-        while (CurrentType == ParserUtil.And)
-        {
-            Read();
-            left = new Expressions.Conditions.ConditionAndOr(
-                Expressions.Conditions.ConditionAndOr.And, left, ReadComparison());
-        }
-
-        return left;
-    }
-
-    private Expression ReadComparison()
-    {
-        Expression left = ReadTerm();
-        while (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
-            or Token.SmallerEqual or Token.BiggerEqual)
-        {
-            int compareType = ReadComparisonType();
-            left = new Expressions.Conditions.Comparison(compareType, left, ReadTerm(), whenOperand: false);
-        }
-
-        if (CurrentType == ParserUtil.Is)
-        {
-            Read();
-            bool not = ReadIf(ParserUtil.Not);
-            Expect(ParserUtil.Null, "NULL");
-            left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
-        }
-
-        return left;
-    }
-
-    private int ReadComparisonType()
-    {
-        int type = CurrentType;
-        Read();
-        return type switch
-        {
-            Token.Equal => Expressions.Conditions.Comparison.Equal,
-            Token.NotEqual => Expressions.Conditions.Comparison.NotEqual,
-            Token.Smaller => Expressions.Conditions.Comparison.Smaller,
-            Token.Bigger => Expressions.Conditions.Comparison.Bigger,
-            Token.SmallerEqual => Expressions.Conditions.Comparison.SmallerEqual,
-            Token.BiggerEqual => Expressions.Conditions.Comparison.BiggerEqual,
-            _ => throw DbException.GetInternalError("comparison type " + type),
-        };
-    }
-
-    private Expression ReadTerm()
-    {
-        if (ReadIf(Token.OpenParen))
-        {
-            Expression nested = ReadExpression();
-            Expect(Token.CloseParen, ")");
-            return nested;
-        }
-
-        if (CurrentType == ParserUtil.Not)
-        {
-            Read();
-            return new Expressions.Conditions.ConditionNot(ReadTerm());
-        }
-
-        if (CurrentType == ParserUtil.Null)
-        {
-            Read();
-            return ValueExpression.Get(ValueNull.Instance);
-        }
-
-        if (CurrentType is ParserUtil.True or ParserUtil.False)
-        {
-            bool value = CurrentType == ParserUtil.True;
-            Read();
-            return ValueExpression.Get(ValueBoolean.Get(value));
-        }
-
-        if (CurrentType == Token.MinusSign)
-        {
-            Read();
-            Expression term = ReadTerm();
-
-            // A negative literal is a literal: there is nothing in "-1" that needs a run.
-            if (term is not ValueExpression v)
-            {
-                throw DbException.GetSyntaxError(sql, Current.Start, "number");
-            }
-
-            return ValueExpression.Get(Negate(v.GetValueFromLiteral()));
-        }
-
-        if (Current is Token.ParameterToken parameter)
-        {
-            Read();
-            Expressions.Parameter expression = new(parameter.Index);
-            parameterList.Add(expression);
-            return expression;
-        }
-
-        if (CurrentType == Token.At)
-        {
-            // The reference binds @name to a Variable, which is not ported: a session variable
-            // is storage on the session plus an assignment statement, and neither is here.
-            // A named parameter it is not (those are the ? this layer does not read yet).
-            Read();
-            _ = ReadIdentifier();
-            throw new TODOException("Parser.readTerm: variables (@name) are not ported");
-        }
-
-        Value? literal = Current.GetValue(provider);
-        if (literal is not null)
-        {
-            Read();
-            return ValueExpression.Get(literal);
-        }
-
-        return new ExpressionColumn(ReadIdentifier(), null, 0);
-    }
+    /// <remarks>
+    /// One chain, as in the reference (issue #12 C1): the statement layer used to carry a second,
+    /// weaker copy that stopped at IS NULL, so a WHERE with LIKE / BETWEEN / IN after an UPDATE or
+    /// DELETE was a syntax error the query layer did not have. Passing no aggregate select keeps
+    /// the statement callers on the non-aggregate arms.
+    /// </remarks>
+    public Expression ReadExpression() => ReadQueryOr();
 
     private static Value Negate(Value value)
     {

@@ -157,7 +157,7 @@ public sealed class ValueJson : ValueBytesBase
             // Any failure is a conversion error, and the offending text goes into the message,
             // shortened: a document that is megabytes long would otherwise be copied into an
             // exception message and logged.
-            throw DbException.Get(ErrorCode.DataConversionError1, s.Length > 80 ? s[..80] + "..." : s);
+            throw DbException.Get(ErrorCode.DataConversionError1, JsonConstructorUtils.Truncate(s, 80));
         }
 
         return GetInternal(bytes);

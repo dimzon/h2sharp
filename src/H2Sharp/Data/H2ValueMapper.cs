@@ -121,34 +121,20 @@ internal static class H2ValueMapper
             Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
                 => value.GetString(),
             Value.Binary or Value.Varbinary or Value.Blob => value.GetBytes(),
-            Value.Date => ToDateTime(
-                DateTimeUtils.YearFromDateValue(((ValueDate)value).GetDateValue()),
-                DateTimeUtils.MonthFromDateValue(((ValueDate)value).GetDateValue()),
-                DateTimeUtils.DayFromDateValue(((ValueDate)value).GetDateValue()),
-                0L),
+            Value.Date => FromDateValue(((ValueDate)value).GetDateValue(), 0L),
             Value.Time => new TimeSpan(((ValueTime)value).GetNanos() / 100L),
             Value.TimeTz => new DateTimeOffset(
                 DateTime.MinValue.Date.AddTicks(((ValueTimeTimeZone)value).GetNanos() / 100L),
                 TimeSpan.FromSeconds(((ValueTimeTimeZone)value).GetTimeZoneOffsetSeconds())),
-            Value.Timestamp => ToDateTime(
-                DateTimeUtils.YearFromDateValue(((ValueTimestamp)value).GetDateValue()),
-                DateTimeUtils.MonthFromDateValue(((ValueTimestamp)value).GetDateValue()),
-                DateTimeUtils.DayFromDateValue(((ValueTimestamp)value).GetDateValue()),
-                ((ValueTimestamp)value).GetTimeNanos()),
+            Value.Timestamp => FromDateValue(
+                ((ValueTimestamp)value).GetDateValue(), ((ValueTimestamp)value).GetTimeNanos()),
             Value.TimestampTz => new DateTimeOffset(
-                ToDateTime(
-                    DateTimeUtils.YearFromDateValue(((ValueTimestampTimeZone)value).GetDateValue()),
-                    DateTimeUtils.MonthFromDateValue(((ValueTimestampTimeZone)value).GetDateValue()),
-                    DateTimeUtils.DayFromDateValue(((ValueTimestampTimeZone)value).GetDateValue()),
+                FromDateValue(
+                    ((ValueTimestampTimeZone)value).GetDateValue(),
                     ((ValueTimestampTimeZone)value).GetTimeNanos()),
                 TimeSpan.FromSeconds(((ValueTimestampTimeZone)value).GetTimeZoneOffsetSeconds())),
             Value.Uuid => ((ValueUuid)value).GetUuid(),
-            Value.IntervalYearToMonth or Value.IntervalDayToSecond
-                or Value.IntervalYear or Value.IntervalMonth or Value.IntervalDay
-                or Value.IntervalHour or Value.IntervalMinute or Value.IntervalSecond
-                or Value.IntervalDayToHour or Value.IntervalDayToMinute
-                or Value.IntervalHourToMinute or Value.IntervalHourToSecond
-                or Value.IntervalMinuteToSecond => ToTimeSpan((ValueInterval)value),
+            _ when IsIntervalType(value.GetValueType()) => ToTimeSpan((ValueInterval)value),
             _ => throw new TODOException(
                 "H2ValueMapper.ToObject: no caller value for engine type "
                 + Value.GetTypeName(value.GetValueType())),
@@ -179,12 +165,7 @@ internal static class H2ValueMapper
             Value.Time => typeof(TimeSpan),
             Value.TimeTz or Value.TimestampTz => typeof(DateTimeOffset),
             Value.Uuid => typeof(Guid),
-            Value.IntervalYearToMonth or Value.IntervalDayToSecond
-                or Value.IntervalYear or Value.IntervalMonth or Value.IntervalDay
-                or Value.IntervalHour or Value.IntervalMinute or Value.IntervalSecond
-                or Value.IntervalDayToHour or Value.IntervalDayToMinute
-                or Value.IntervalHourToMinute or Value.IntervalHourToSecond
-                or Value.IntervalMinuteToSecond => typeof(TimeSpan),
+            _ when IsIntervalType(type.GetValueType()) => typeof(TimeSpan),
             _ => typeof(object),
         };
     }
@@ -226,8 +207,19 @@ internal static class H2ValueMapper
         };
     }
 
-    private static DateTime ToDateTime(int year, int month, int day, long nanos)
-        => new DateTime(year, month, day).AddTicks(nanos / 100L);
+    private static DateTime FromDateValue(long dateValue, long nanos)
+        => new DateTime(
+            DateTimeUtils.YearFromDateValue(dateValue),
+            DateTimeUtils.MonthFromDateValue(dateValue),
+            DateTimeUtils.DayFromDateValue(dateValue)).AddTicks(nanos / 100L);
+
+    private static bool IsIntervalType(int type) => type is
+        Value.IntervalYearToMonth or Value.IntervalDayToSecond
+        or Value.IntervalYear or Value.IntervalMonth or Value.IntervalDay
+        or Value.IntervalHour or Value.IntervalMinute or Value.IntervalSecond
+        or Value.IntervalDayToHour or Value.IntervalDayToMinute
+        or Value.IntervalHourToMinute or Value.IntervalHourToSecond
+        or Value.IntervalMinuteToSecond;
 
     /// <summary>
     /// Builds a BigDecimal out of a decimal, bit for bit: the 96-bit integer plus the

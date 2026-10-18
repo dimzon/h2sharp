@@ -130,7 +130,7 @@ public static class IntervalUtils
     public static ValueInterval ParseFormattedInterval(IntervalQualifier qualifier, string s)
     {
         int i = SkipWhitespace(s, 0);
-        if (!RegionMatchesIgnoringCase(s, i, "INTERVAL"))
+        if (!StringUtils.RegionMatches(s, true, i, "INTERVAL", 0, 8))
         {
             return ParseInterval(qualifier, false, s);
         }
@@ -180,7 +180,7 @@ public static class IntervalUtils
         // "else if"s because a word may begin two of them, and which one it is depends on what
         // follows: MINUTE alone is a qualifier and MINUTE TO SECOND is another, and the text
         // "MINUTE TO SECOND" also begins with the word MINUTE.
-        if (RegionMatchesIgnoringCase(s, i, "YEAR"))
+        if (StringUtils.RegionMatches(s, true, i, "YEAR", 0, 4))
         {
             i += 4;
             int j = SkipWhitespaceEnd(s, i);
@@ -189,22 +189,22 @@ public static class IntervalUtils
                 return ParseInterval(IntervalQualifier.Year, negative, v);
             }
 
-            if (j > i && RegionMatchesIgnoringCase(s, j, "TO"))
+            if (j > i && StringUtils.RegionMatches(s, true, j, "TO", 0, 2))
             {
                 j += 2;
                 i = SkipWhitespace(s, j);
-                if (i > j && RegionMatchesIgnoringCase(s, i, "MONTH") && SkipWhitespaceEnd(s, i + 5) == l)
+                if (i > j && StringUtils.RegionMatches(s, true, i, "MONTH", 0, 5) && SkipWhitespaceEnd(s, i + 5) == l)
                 {
                     return ParseInterval(IntervalQualifier.YearToMonth, negative, v);
                 }
             }
         }
-        else if (RegionMatchesIgnoringCase(s, i, "MONTH") && SkipWhitespaceEnd(s, i + 5) == l)
+        else if (StringUtils.RegionMatches(s, true, i, "MONTH", 0, 5) && SkipWhitespaceEnd(s, i + 5) == l)
         {
             return ParseInterval(IntervalQualifier.Month, negative, v);
         }
 
-        if (RegionMatchesIgnoringCase(s, i, "DAY"))
+        if (StringUtils.RegionMatches(s, true, i, "DAY", 0, 3))
         {
             i += 3;
             int j = SkipWhitespaceEnd(s, i);
@@ -213,23 +213,23 @@ public static class IntervalUtils
                 return ParseInterval(IntervalQualifier.Day, negative, v);
             }
 
-            if (j > i && RegionMatchesIgnoringCase(s, j, "TO"))
+            if (j > i && StringUtils.RegionMatches(s, true, j, "TO", 0, 2))
             {
                 j += 2;
                 i = SkipWhitespace(s, j);
                 if (i > j)
                 {
-                    if (RegionMatchesIgnoringCase(s, i, "HOUR") && SkipWhitespaceEnd(s, i + 4) == l)
+                    if (StringUtils.RegionMatches(s, true, i, "HOUR", 0, 4) && SkipWhitespaceEnd(s, i + 4) == l)
                     {
                         return ParseInterval(IntervalQualifier.DayToHour, negative, v);
                     }
 
-                    if (RegionMatchesIgnoringCase(s, i, "MINUTE") && SkipWhitespaceEnd(s, i + 6) == l)
+                    if (StringUtils.RegionMatches(s, true, i, "MINUTE", 0, 6) && SkipWhitespaceEnd(s, i + 6) == l)
                     {
                         return ParseInterval(IntervalQualifier.DayToMinute, negative, v);
                     }
 
-                    if (RegionMatchesIgnoringCase(s, i, "SECOND") && SkipWhitespaceEnd(s, i + 6) == l)
+                    if (StringUtils.RegionMatches(s, true, i, "SECOND", 0, 6) && SkipWhitespaceEnd(s, i + 6) == l)
                     {
                         return ParseInterval(IntervalQualifier.DayToSecond, negative, v);
                     }
@@ -237,7 +237,7 @@ public static class IntervalUtils
             }
         }
 
-        if (RegionMatchesIgnoringCase(s, i, "HOUR"))
+        if (StringUtils.RegionMatches(s, true, i, "HOUR", 0, 4))
         {
             i += 4;
             int j = SkipWhitespaceEnd(s, i);
@@ -246,18 +246,18 @@ public static class IntervalUtils
                 return ParseInterval(IntervalQualifier.Hour, negative, v);
             }
 
-            if (j > i && RegionMatchesIgnoringCase(s, j, "TO"))
+            if (j > i && StringUtils.RegionMatches(s, true, j, "TO", 0, 2))
             {
                 j += 2;
                 i = SkipWhitespace(s, j);
                 if (i > j)
                 {
-                    if (RegionMatchesIgnoringCase(s, i, "MINUTE") && SkipWhitespaceEnd(s, i + 6) == l)
+                    if (StringUtils.RegionMatches(s, true, i, "MINUTE", 0, 6) && SkipWhitespaceEnd(s, i + 6) == l)
                     {
                         return ParseInterval(IntervalQualifier.HourToMinute, negative, v);
                     }
 
-                    if (RegionMatchesIgnoringCase(s, i, "SECOND") && SkipWhitespaceEnd(s, i + 6) == l)
+                    if (StringUtils.RegionMatches(s, true, i, "SECOND", 0, 6) && SkipWhitespaceEnd(s, i + 6) == l)
                     {
                         return ParseInterval(IntervalQualifier.HourToSecond, negative, v);
                     }
@@ -265,7 +265,7 @@ public static class IntervalUtils
             }
         }
 
-        if (RegionMatchesIgnoringCase(s, i, "MINUTE"))
+        if (StringUtils.RegionMatches(s, true, i, "MINUTE", 0, 6))
         {
             i += 6;
             int j = SkipWhitespaceEnd(s, i);
@@ -274,11 +274,11 @@ public static class IntervalUtils
                 return ParseInterval(IntervalQualifier.Minute, negative, v);
             }
 
-            if (j > i && RegionMatchesIgnoringCase(s, j, "TO"))
+            if (j > i && StringUtils.RegionMatches(s, true, j, "TO", 0, 2))
             {
                 j += 2;
                 i = SkipWhitespace(s, j);
-                if (i > j && RegionMatchesIgnoringCase(s, i, "SECOND")
+                if (i > j && StringUtils.RegionMatches(s, true, i, "SECOND", 0, 6)
                     && SkipWhitespaceEnd(s, i + 6) == l)
                 {
                     return ParseInterval(IntervalQualifier.MinuteToSecond, negative, v);
@@ -286,7 +286,7 @@ public static class IntervalUtils
             }
         }
 
-        if (RegionMatchesIgnoringCase(s, i, "SECOND") && SkipWhitespaceEnd(s, i + 6) == l)
+        if (StringUtils.RegionMatches(s, true, i, "SECOND", 0, 6) && SkipWhitespaceEnd(s, i + 6) == l)
         {
             return ParseInterval(IntervalQualifier.Second, negative, v);
         }
@@ -1027,24 +1027,6 @@ public static class IntervalUtils
                 return i;
             }
         }
-    }
-
-    private static bool RegionMatchesIgnoringCase(string s, int start, string expected)
-    {
-        if (start < 0 || start + expected.Length > s.Length)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < expected.Length; i++)
-        {
-            if ((expected[i] & 0xFFDF) != (s[start + i] & 0xFFDF))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /// <remarks>

@@ -1332,7 +1332,7 @@ public sealed class Tokenizer
     {
         int endIndex = FindIdentifierEnd(sql, end, tokenStart);
         int type = endIndex - tokenStart == 7
-            && RegionMatchesIgnoringCase("_ROWID_", 1, sql, tokenStart + 1, 6)
+            && StringUtils.RegionMatches(sql, true, tokenStart + 1, "_ROWID_", 1, 6)
                 ? ParserUtil._ROWID_
                 : ParserUtil.Identifier;
         return ReadIdentifierOrKeyword(sql, tokenStart, tokens, endIndex, type);
@@ -1376,20 +1376,6 @@ public sealed class Tokenizer
         for (int i = 1; i < length; i++)
         {
             if (expected[i] != (s[++start] & 0xFFDF))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static bool RegionMatchesIgnoringCase(
-        string expected, int expectedStart, string s, int start, int length)
-    {
-        for (int i = 0; i < length; i++)
-        {
-            if ((expected[expectedStart + i] & 0xFFDF) != (s[start + i] & 0xFFDF))
             {
                 return false;
             }
