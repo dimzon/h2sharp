@@ -307,6 +307,11 @@ public class ObjectDataType : BasicDataType<object?>
     /// <summary>
     /// Compare two byte strings as unsigned, then by length.
     /// </summary>
+    /// <remarks>
+    /// One BCL call instead of the byte ladder (issue #12 B5): the first differing unsigned
+    /// byte decides, and equal prefixes fall through to the lengths — the same answer ladder
+    /// the reference's compareNotNull answers signum with.
+    /// </remarks>
     public static int CompareNotNull(byte[] data1, byte[] data2)
     {
         if (ReferenceEquals(data1, data2))
@@ -314,16 +319,7 @@ public class ObjectDataType : BasicDataType<object?>
             return 0;
         }
 
-        int len = Math.Min(data1.Length, data2.Length);
-        for (int i = 0; i < len; i++)
-        {
-            if (data1[i] != data2[i])
-            {
-                return data1[i] > data2[i] ? 1 : -1;
-            }
-        }
-
-        return Math.Sign(data1.Length - data2.Length);
+        return ((ReadOnlySpan<byte>)data1).SequenceCompareTo(data2);
     }
 
     /// <summary>
@@ -630,7 +626,7 @@ public class ObjectDataType : BasicDataType<object?>
             }
             else
             {
-                int value = ReverseBits(f);
+                int value = Bits.Reverse(f);
                 if (value >= 0 && value <= DataUtils.CompressedVarIntMax)
                 {
                     _ = buff.Put((byte)TypeFloat).PutVarInt(value);
@@ -652,7 +648,7 @@ public class ObjectDataType : BasicDataType<object?>
             TagFloatFixed => BitConverter.Int32BitsToSingle(
                 ReadFixedInt(buff, ref position)),
             _ => BitConverter.Int32BitsToSingle(
-                ReverseBits(DataUtils.ReadVarInt(buff, ref position))),
+                Bits.Reverse(DataUtils.ReadVarInt(buff, ref position))),
         };
     }
 
@@ -684,7 +680,7 @@ public class ObjectDataType : BasicDataType<object?>
             }
             else
             {
-                long value = ReverseBits(d);
+                long value = Bits.Reverse(d);
                 if (value >= 0 && value <= DataUtils.CompressedVarLongMax)
                 {
                     _ = buff.Put((byte)TypeDouble).PutVarLong(value);
@@ -706,7 +702,7 @@ public class ObjectDataType : BasicDataType<object?>
             TagDoubleFixed => BitConverter.Int64BitsToDouble(
                 DataUtils.ReadFixedLong(buff, ref position)),
             _ => BitConverter.Int64BitsToDouble(
-                ReverseBits(DataUtils.ReadVarLong(buff, ref position))),
+                Bits.Reverse(DataUtils.ReadVarLong(buff, ref position))),
         };
     }
 
@@ -1418,27 +1414,6 @@ public class ObjectDataType : BasicDataType<object?>
         int result = BinaryPrimitives.ReadInt32BigEndian(buff.Slice(position, 4));
         position += 4;
         return result;
-    }
-
-    private static int ReverseBits(int value)
-    {
-        uint v = (uint)value;
-        v = ((v & 0x55555555) << 1) | ((v >> 1) & 0x55555555);
-        v = ((v & 0x33333333) << 2) | ((v >> 2) & 0x33333333);
-        v = ((v & 0x0F0F0F0F) << 4) | ((v >> 4) & 0x0F0F0F0F);
-        v = (v << 24) | ((v & 0xFF00) << 8) | ((v >> 8) & 0xFF00) | (v >> 24);
-        return (int)v;
-    }
-
-    private static long ReverseBits(long value)
-    {
-        ulong v = (ulong)value;
-        v = ((v & 0x5555555555555555UL) << 1) | ((v >> 1) & 0x5555555555555555UL);
-        v = ((v & 0x3333333333333333UL) << 2) | ((v >> 2) & 0x3333333333333333UL);
-        v = ((v & 0x0F0F0F0F0F0F0F0FUL) << 4) | ((v >> 4) & 0x0F0F0F0F0F0F0F0FUL);
-        v = ((v & 0x00FF00FF00FF00FFUL) << 8) | ((v >> 8) & 0x00FF00FF00FF00FFUL);
-        v = ((v & 0x0000FFFF0000FFFFUL) << 16) | ((v >> 16) & 0x0000FFFF0000FFFFUL);
-        return (long)((v << 32) | (v >> 32));
     }
 
     private static int CompareFloat(float a, float b)

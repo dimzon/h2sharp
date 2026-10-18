@@ -81,6 +81,39 @@ public sealed class BitsTests
         => Assert.Throws<ArgumentException>(
             () => Bits.BytesToUuid(new byte[15]));
 
+    // Integer.reverse / Long.reverse: the values the JDK answers, plus the self-inverse
+    // property both references answer, over values that walk every mask-ladder stride.
+    [Theory]
+    [InlineData(1, int.MinValue)]
+    [InlineData(2, 0x40000000)]
+    [InlineData(0x0000F000, 0x000F0000)]
+    [InlineData(0, 0)]
+    [InlineData(-1, -1)]
+    public void Reverse_Int_MatchesJavaIntegerReverse(int value, int expected)
+        => Assert.Equal(expected, Bits.Reverse(value));
+
+    [Theory]
+    [InlineData(1L, long.MinValue)]
+    [InlineData(-1L, -1L)]
+    [InlineData(0L, 0L)]
+    public void Reverse_Long_MatchesJavaLongReverse(long value, long expected)
+        => Assert.Equal(expected, Bits.Reverse(value));
+
+    [Theory]
+    [InlineData(0x01234567)]
+    [InlineData(unchecked((int)0x89ABCDEF))]
+    [InlineData(0x7FFFFFFF)]
+    [InlineData(0x55555555)]
+    [InlineData(-1863261734)] // 0x9180010A, one value per stride
+    public void Reverse_Int_IsSelfInverse(int value)
+        => Assert.Equal(value, Bits.Reverse(Bits.Reverse(value)));
+
+    [Theory]
+    [InlineData(0x0123456789ABCDEFL)]
+    [InlineData(0x5555555555555555L)]
+    public void Reverse_Long_IsSelfInverse(long value)
+        => Assert.Equal(value, Bits.Reverse(Bits.Reverse(value)));
+
     private static string ToHex(byte[] bytes)
     {
         StringBuilder builder = new(bytes.Length * 2);

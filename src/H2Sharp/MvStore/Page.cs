@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -521,28 +522,46 @@ public abstract class Page<K, V> : IPage
 
         ReadOnlyMemory<byte> active = buffer;
         bool compressed = (type & DataUtils.PageCompressed) != 0;
-        if (compressed)
+        byte[]? rentedExpanded = null;
+        try
         {
-            Compressor compressor = (type & DataUtils.PageCompressedHigh) == DataUtils.PageCompressedHigh
-                ? map.GetStore().GetCompressorHigh()
-                : map.GetStore().GetCompressorFast();
-            int lenAdd = DataUtils.ReadVarInt(buffer.Span, ref position);
-            int compLen = end - position;
-            byte[] expanded = new byte[compLen + lenAdd];
-            compressor.Expand(buffer.Slice(position, compLen), expanded);
-            active = expanded;
-            position = 0;
-            end = expanded.Length;
-        }
+            if (compressed)
+            {
+                Compressor compressor = (type & DataUtils.PageCompressedHigh) == DataUtils.PageCompressedHigh
+                    ? map.GetStore().GetCompressorHigh()
+                    : map.GetStore().GetCompressorFast();
+                int lenAdd = DataUtils.ReadVarInt(buffer.Span, ref position);
+                int compLen = end - position;
+                int expandedSize = compLen + lenAdd;
 
-        map.KeyType.Read(AsSpan(active.Slice(0, end)), keys, keyCount, ref position);
-        if (IsLeaf())
+                // The scratch is pooled, not allocated per page (issue #12 B2): the compressor
+                // fills the whole region before anything reads it, the readers just below keep
+                // no reference into it, and the return happens once the reads are done.
+                rentedExpanded = ArrayPool<byte>.Shared.Rent(expandedSize);
+                compressor.Expand(buffer.Slice(position, compLen), rentedExpanded.AsSpan(0, expandedSize));
+                active = rentedExpanded.AsMemory(0, expandedSize);
+                position = 0;
+                end = expandedSize;
+            }
+
+            map.KeyType.Read(AsSpan(active.Slice(0, end)), keys, keyCount, ref position);
+            if (IsLeaf())
+            {
+                ReadPayLoad(active, ref position, end);
+            }
+
+            diskSpaceUsed = pageLength;
+            RecalculateMemory();
+        }
+        finally
         {
-            ReadPayLoad(active, ref position, end);
+            if (rentedExpanded is not null)
+            {
+                // Nothing may hold a slice into the scratch past this point.
+                ArrayPool<byte>.Shared.Return(rentedExpanded);
+                active = default;
+            }
         }
-
-        diskSpaceUsed = pageLength;
-        RecalculateMemory();
     }
 
     /// <summary>
@@ -630,16 +649,26 @@ public abstract class Page<K, V> : IPage
                     compressType = DataUtils.PageCompressedHigh;
                 }
 
-                byte[] comp = new byte[expLen * 2];
-                // Straight from the buffer, as FileStore does for the chunk: ToArray copies the
-                // whole written region per compressed page, while the compressor only reads the
-                // page's slice and never writes its input.
-                int compLen = compressor.Compress(buff.GetBuffer(), compressStart, expLen, comp, 0);
-                int plus = DataUtils.GetVarIntLen(expLen - compLen);
-                if (compLen + plus < expLen)
+                // The compression scratch is pooled (issue #12 B2): the compressor reads the
+                // page's slice, the answer goes straight into the write buffer below, and
+                // nothing keeps the scratch after the write.
+                byte[] comp = ArrayPool<byte>.Shared.Rent(expLen * 2);
+                try
                 {
-                    _ = buff.Position(typePos).Put((byte)(type | compressType));
-                    _ = buff.Position(compressStart).PutVarInt(expLen - compLen).Put(comp, 0, compLen);
+                    // Straight from the buffer, as FileStore does for the chunk: ToArray copies
+                    // the whole written region per compressed page, while the compressor only
+                    // reads the page's slice and never writes its input.
+                    int compLen = compressor.Compress(buff.GetBuffer(), compressStart, expLen, comp, 0);
+                    int plus = DataUtils.GetVarIntLen(expLen - compLen);
+                    if (compLen + plus < expLen)
+                    {
+                        _ = buff.Position(typePos).Put((byte)(type | compressType));
+                        _ = buff.Position(compressStart).PutVarInt(expLen - compLen).Put(comp, 0, compLen);
+                    }
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(comp);
                 }
             }
         }

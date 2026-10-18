@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Message;
@@ -206,24 +207,19 @@ public static class DataUtils
     /// <summary>
     /// How many bytes a variable length long of this value takes.
     /// </summary>
+    /// <remarks>
+    /// The reference answers with a shift loop that cuts seven bits at a time; the logarithm
+    /// inverts it, and the answer is the smallest count of seven-bit halves that covers the
+    /// value (recorded deviation, issue #12 B4 — same answers, one instruction usually).
+    /// A negative value keeps its own answer: ten bytes, because the logical shift the
+    /// reference runs never turns its high bits to zeros before the last group.
+    /// </remarks>
     /// <param name="x">the value</param>
     /// <returns>the length in bytes</returns>
     public static int GetVarLongLen(long x)
-    {
-        int i = 1;
-        while (true)
-        {
-            // The shift has to be the 64 bit one. Shifting a uint instead truncates the value to 32
-            // bits, and every long above 2^32 then reports a length two bytes short.
-            x = (long)((ulong)x >> 7);
-            if (x == 0)
-            {
-                return i;
-            }
-
-            i++;
-        }
-    }
+        => x < 0
+            ? 10
+            : Math.Max(1, (64 - (int)BitOperations.LeadingZeroCount((ulong)x) + 6) / 7);
 
     /// <summary>
     /// Read a variable length integer.

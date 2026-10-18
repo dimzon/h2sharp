@@ -321,7 +321,7 @@ public sealed class ValueDataType : BasicDataType<Value>
                         }
                         else
                         {
-                            buff.Put(Real).PutVarInt((int)ReverseBits((uint)f));
+                            buff.Put(Real).PutVarInt(Bits.Reverse(f));
                         }
                     }
 
@@ -344,7 +344,7 @@ public sealed class ValueDataType : BasicDataType<Value>
                         }
                         else
                         {
-                            buff.Put(Double).PutVarLong((long)ReverseBits((ulong)d));
+                            buff.Put(Double).PutVarLong(Bits.Reverse(d));
                         }
                     }
 
@@ -497,38 +497,16 @@ public sealed class ValueDataType : BasicDataType<Value>
     }
 
     /// <summary>
-    /// Java's <c>Integer.reverse</c>: the bits of a value in the opposite order.
+    /// Java's <c>Integer.reverse</c> and <c>Long.reverse</c>, carried by <see cref="Bits.Reverse(int)"/>
+    /// and <see cref="Bits.Reverse(long)"/> — the calls the reference makes directly on its
+    /// Integer and Long classes.
     /// </summary>
     /// <remarks>
     /// The reference writes a float or a double as its *bit pattern*, reversed, as a var int —
     /// the point being that a float's significant bits are its trailing ones, so a common value
     /// costs three bytes instead of five. The reversal is what makes that true, and it is not
-    /// a byte swap: every bit moves. The mask ladder below is the same five steps the reference
-    /// runs; .NET has byte-order reversal but no bit reversal.
+    /// a byte swap: every bit moves, exactly what <see cref="Bits"/> reverses.
     /// </remarks>
-    /// <param name="value">the bits</param>
-    /// <returns>the bits in reverse order</returns>
-    private static uint ReverseBits(uint value)
-    {
-        value = ((value & 0x55555555) << 1) | ((value >> 1) & 0x55555555);
-        value = ((value & 0x33333333) << 2) | ((value >> 2) & 0x33333333);
-        value = ((value & 0x0f0f0f0f) << 4) | ((value >> 4) & 0x0f0f0f0f);
-        return (value << 24) | ((value & 0xff00) << 8) | ((value >> 8) & 0xff00) | (value >> 24);
-    }
-
-    /// <summary>
-    /// Java's <c>Long.reverse</c>: the bits of a value in the opposite order.
-    /// </summary>
-    /// <param name="value">the bits</param>
-    /// <returns>the bits in reverse order</returns>
-    private static ulong ReverseBits(ulong value)
-    {
-        value = ((value & 0x5555555555555555) << 1) | ((value >> 1) & 0x5555555555555555);
-        value = ((value & 0x3333333333333333) << 2) | ((value >> 2) & 0x3333333333333333);
-        value = ((value & 0x0f0f0f0f0f0f0f0f) << 4) | ((value >> 4) & 0x0f0f0f0f0f0f0f0f);
-        value = ((value & 0x00ff00ff00ff00ff) << 8) | ((value >> 8) & 0x00ff00ff00ff00ff);
-        return (value << 48) | ((value & 0xffff0000) << 16) | ((value >> 16) & 0xffff0000) | (value >> 48);
-    }
 
     /// <summary>
     /// Writes a long with the same tricks as the integer: negative gets its own tag, 0..7 inline.
@@ -633,7 +611,7 @@ public sealed class ValueDataType : BasicDataType<Value>
 
             case Real:
                 return ValueReal.Get(BitConverter.Int32BitsToSingle(
-                    (int)ReverseBits((uint)DataUtils.ReadVarInt(buff, ref position))));
+                    Bits.Reverse(DataUtils.ReadVarInt(buff, ref position))));
 
             case Real0To1:
                 return ValueReal.Get(0f);
@@ -643,7 +621,7 @@ public sealed class ValueDataType : BasicDataType<Value>
 
             case Double:
                 return ValueDouble.Get(BitConverter.Int64BitsToDouble(
-                    (long)ReverseBits((ulong)DataUtils.ReadVarLong(buff, ref position))));
+                    Bits.Reverse(DataUtils.ReadVarLong(buff, ref position))));
 
             case Double0To1:
                 return ValueDouble.Get(0d);

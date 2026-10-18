@@ -107,6 +107,12 @@ public static class Bits
     /// Extracts the most significant 64 bits of a UUID, matching
     /// java.util.UUID.getMostSignificantBits().
     /// </summary>
+    /// <remarks>
+    /// The write is one 16-byte copy onto the stack, not a heap allocation; the fields of a
+    /// Guid are not publicly reachable, so there is no cheaper arithmetic route (issue #12 B3,
+    /// recorded as not actionable: the win the audit promised is stack movement the runtime
+    /// already does in one native write per call).
+    /// </remarks>
     /// <param name="uuid">the UUID</param>
     /// <returns>the most significant bits</returns>
     public static long Msb(Guid uuid)
@@ -213,6 +219,43 @@ public static class Bits
     /// <param name="value">the value</param>
     /// <returns>the byte count</returns>
     public static int ByteCount(BigInteger value) => ((int)value.GetBitLength() + 8) / 8;
+
+    /// <summary>
+    /// Java's <c>Integer.reverse</c>: every bit of the value, in the opposite order.
+    /// </summary>
+    /// <remarks>
+    /// Java-integer member carried here because Java calls it on its Integer class directly
+    /// (the float and double types of the MVStore write their bit patterns reversed). The BCL
+    /// has byte-order reversal only (BinaryPrimitives.ReverseEndianness), no bit reversal, so
+    /// the mask ladder — the same steps the reference stack's intrinsic lowers to — is the
+    /// implementation on every target.
+    /// </remarks>
+    /// <param name="value">the bits</param>
+    /// <returns>the bits in reverse order</returns>
+    public static int Reverse(int value)
+    {
+        uint v = (uint)value;
+        v = ((v & 0x55555555) << 1) | ((v >> 1) & 0x55555555);
+        v = ((v & 0x33333333) << 2) | ((v >> 2) & 0x33333333);
+        v = ((v & 0x0f0f0f0f) << 4) | ((v >> 4) & 0x0f0f0f0f);
+        return (int)((v << 24) | ((v & 0xff00) << 8) | ((v >> 8) & 0xff00) | (v >> 24));
+    }
+
+    /// <summary>
+    /// Java's <c>Long.reverse</c>: every bit of the value, in the opposite order.
+    /// </summary>
+    /// <param name="value">the bits</param>
+    /// <returns>the bits in reverse order</returns>
+    public static long Reverse(long value)
+    {
+        ulong v = (ulong)value;
+        v = ((v & 0x5555555555555555UL) << 1) | ((v >> 1) & 0x5555555555555555UL);
+        v = ((v & 0x3333333333333333UL) << 2) | ((v >> 2) & 0x3333333333333333UL);
+        v = ((v & 0x0f0f0f0f0f0f0f0fUL) << 4) | ((v >> 4) & 0x0f0f0f0f0f0f0f0fUL);
+        v = ((v & 0x00ff00ff00ff00ffUL) << 8) | ((v >> 8) & 0x00ff00ff00ff00ffUL);
+        v = ((v & 0x0000ffff0000ffffUL) << 16) | ((v >> 16) & 0x0000ffff0000ffffUL);
+        return (long)((v << 32) | (v >> 32));
+    }
 
     /// <summary>
     /// The inverse of <see cref="ToBigEndian"/>.
