@@ -66,9 +66,6 @@ public sealed class DualTable : Table
     public override Index[] GetIndexes() => indexes;
 
     /// <inheritdoc/>
-    public override Index? GetPrimaryKey() => null;
-
-    /// <inheritdoc/>
     public override Index? GetIndexFor(SessionLocal session, SearchRow row) => GetScanIndex(session);
 
     /// <inheritdoc/>

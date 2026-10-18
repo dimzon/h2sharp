@@ -1635,7 +1635,6 @@ public sealed class Parser
         create.SetSql(statement.Sql, null);
         create.SetTableName(statement.Name);
         create.SetIfNotExists(statement.IfNotExists);
-        List<Tables.IndexColumn> primaryKey = [];
         int id = 0;
         foreach (ColumnDefinition column in statement.Columns)
         {
@@ -1648,16 +1647,15 @@ public sealed class Parser
             create.AddColumn(tableColumn);
             if (column.PrimaryKey)
             {
-                primaryKey.Add(new Tables.IndexColumn(tableColumn));
+                // One column-level PRIMARY KEY is one constraint over one column, as in the
+                // reference's readColumnConstraints: a second one over different columns is
+                // then two primary keys and error 90017, not one composite key.
+                Ddl.AlterTableAddConstraint key = new(
+                    session, CurrentSchema(session), CommandInterface.AlterTableAddConstraintPrimaryKey, false);
+                key.SetTableName(statement.Name);
+                key.SetIndexColumns([new Tables.IndexColumn(tableColumn)]);
+                create.AddConstraintCommand(key);
             }
-        }
-
-        if (primaryKey.Count > 0)
-        {
-            Ddl.AlterTableAddConstraint key = new(
-                session, CurrentSchema(session), CommandInterface.AlterTableAddConstraintPrimaryKey, false);
-            key.SetIndexColumns([.. primaryKey]);
-            create.AddConstraintCommand(key);
         }
 
         return create;

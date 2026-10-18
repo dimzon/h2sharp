@@ -142,7 +142,12 @@ public sealed class MVTableTests : IDisposable
         Assert.Equal("PERSON", table.GetTableName());
         Assert.Equal(2, table.GetColumnCount());
         Assert.Equal(["ID", "NAME"], table.GetColumns().Select(c => c.GetName()));
-        Assert.NotNull(table.GetPrimaryKey());
+
+        // A table built without a key constraint has no primary key to answer with: the
+        // reference's getPrimaryKey throws INDEX_NOT_FOUND_1 when findPrimaryKey is null, and
+        // the rows live in the scan index.
+        Assert.Null(table.FindPrimaryKey());
+        Assert.NotNull(table.GetScanIndex(session));
         Assert.Contains("CREATE TABLE", table.GetCreateSql(), StringComparison.Ordinal);
 
         // "CHARACTER VARYING", not "VARCHAR": the name table is the reference's, and the
@@ -172,7 +177,7 @@ public sealed class MVTableTests : IDisposable
     {
         Column id = new("ID", TypeInfo.TypeInteger, null, 0);
         Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
-        MVTable table = new(session.GetDatabase(), null, 1, "PERSON", [id, name], persistData: false);
+        MVTable table = new(session.GetDatabase(), null, 1, "PERSON", [id, name], persistIndexes: false, persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());

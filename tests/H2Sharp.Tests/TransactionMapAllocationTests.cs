@@ -102,7 +102,7 @@ public sealed class TransactionMapAllocationTests : IDisposable
     {
         Column id = new("ID", TypeInfo.TypeInteger, null, 0);
         Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
-        MVTable table = new(session.GetDatabase(), null, 1, "PERSON", [id, name], persistData: false);
+        MVTable table = new(session.GetDatabase(), null, 1, "PERSON", [id, name], persistIndexes: false, persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());

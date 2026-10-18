@@ -151,14 +151,39 @@ public sealed class CreateTable : CommandWithColumns
             db.AllocateObjectId(),
             tableName,
             [.. columns],
+            db.IsPersistent() && persistIndexes,
             db.IsPersistent() && persistData);
         foreach (Column column in columns)
         {
             column.SetTable(table, column.GetColumnId());
         }
 
-        schema.Add(table);
-        CreateConstraints();
+        db.LockMeta(session);
+        db.AddSchemaObject(session, table);
+        try
+        {
+            CreateConstraints();
+        }
+        catch (H2SharpException)
+        {
+            // The reference also calls checkPowerOff here; there is no power-off path yet.
+            try
+            {
+                db.RemoveSchemaObject(session, table);
+                if (!transactional)
+                {
+                    session.Commit(true);
+                }
+            }
+            catch
+            {
+                // The reference records the secondary failure as suppressed; C# exceptions
+                // have no suppressed list, and the original failure is what the caller sees.
+            }
+
+            throw;
+        }
+
         return 0;
     }
 

@@ -71,14 +71,16 @@ public sealed class DelegateIndexTests
             Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
             MVTable table = new(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id, name], persistData: false);
+                3, "T", [id, name], persistIndexes: false, persistData: false);
             foreach (Column column in table.GetColumns())
             {
                 column.SetTable(table, column.GetColumnId());
             }
 
             // What addIndex does with the decision: keep the key in the primary, delegate to it.
-            MVPrimaryIndex primary = (MVPrimaryIndex)table.GetPrimaryKey()!;
+            // The storage primary is the scan index; GetPrimaryKey would throw for this
+            // hand-built table, whose key is not a constraint yet.
+            MVPrimaryIndex primary = (MVPrimaryIndex)table.GetScanIndex(session)!;
             primary.SetMainIndexColumn(0);
             MVDelegateIndex del = new(
                 table, 7, "I", primary, IndexType.CreatePrimaryKey(persistent: false, hash: false));

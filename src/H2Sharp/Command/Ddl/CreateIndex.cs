@@ -114,16 +114,4 @@ public class CreateIndex : SchemaCommand
 
     /// <inheritdoc/>
     public override int GetCommandType() => CommandInterface.CreateIndex;
-
-    /// <summary>
-    /// Whether the table this index is on is the table being created.
-    /// </summary>
-    /// <remarks>
-    /// A CREATE INDEX inside CREATE TABLE names the table that statement is making, which does
-    /// not exist yet — so the question is not "does the table exist" but "is the index on the
-    /// same table the statement read". It is what tells a self-referencing constraint from an
-    /// index on another table.
-    /// </remarks>
-    /// <returns>true if it is</returns>
-    public bool IsOnTable() => throw new TODOException("CreateIndex.isOnTable: the parser does not link them yet");
 }

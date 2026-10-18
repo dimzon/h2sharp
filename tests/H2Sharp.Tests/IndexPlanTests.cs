@@ -90,7 +90,7 @@ public sealed class IndexPlanTests
             Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
             Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id], persistData: false);
+                3, "T", [id], persistIndexes: false, persistData: false);
 
             // A column only becomes the column when it belongs to the table: Equals is on the
             // table and the name, and a column created before its table has no table yet.
@@ -123,7 +123,7 @@ public sealed class IndexPlanTests
             Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
             Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id], persistData: false);
+                3, "T", [id], persistIndexes: false, persistData: false);
             id.SetTable(table, 0);
 
             ColumnsIndex index = new(table, 7, "I", [new Tables.IndexColumn(id, ascending: true)]);
@@ -151,7 +151,7 @@ public sealed class IndexPlanTests
             Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
             Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id], persistData: false);
+                3, "T", [id], persistIndexes: false, persistData: false);
             id.SetTable(table, 0);
 
             // A cursor prepared with no conditions has no bounds and no list: there is nothing
@@ -184,7 +184,7 @@ public sealed class IndexPlanTests
             Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
             Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id], persistData: false);
+                3, "T", [id], persistIndexes: false, persistData: false);
             id.SetTable(table, 0);
 
             Tables.TableFilter filter = new(session, table, "T", rightsChecked: true, null, 0, null);
@@ -256,7 +256,7 @@ public sealed class IndexPlanTests
             Tables.Column id = new("ID", Values.TypeInfo.TypeInteger, null, 0);
             Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id], persistData: false);
+                3, "T", [id], persistIndexes: false, persistData: false);
             id.SetTable(table, 0);
 
             DbIndex index = new UniqueIndex(
@@ -291,7 +291,7 @@ public sealed class IndexPlanTests
             Tables.Column name = new("NAME", Values.TypeInfo.TypeVarchar, null, 1);
             Tables.Table table = new H2Sharp.MvStore.Db.MVTable(
                 session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-                3, "T", [id, name], persistData: false);
+                3, "T", [id, name], persistIndexes: false, persistData: false);
 
             DbIndex single = new ColumnsIndex(table, 7, "I1", [new Tables.IndexColumn(id, ascending: true)]);
             DbIndex pair = new ColumnsIndex(

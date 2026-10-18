@@ -225,14 +225,96 @@ public sealed partial class Database
     /// Adds a schema object to the database.
     /// </summary>
     /// <remarks>
-    /// Not ported. Past the lock it registers the object with its schema and writes it to the
-    /// meta table — and the meta table is the unported half. The lock above is real, the
-    /// registry write is what refuses.
+    /// The registry write is real; the meta-table write after it is deferred with the meta
+    /// table, so an added object exists for as long as the process does. The reference has one
+    /// method for every schema object, because there every schema object is a DbObject; here a
+    /// table is not, so the table has its own overload and both share the body.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="obj">the object to add</param>
     public void AddSchemaObject(SessionLocal session, Schemas.SchemaObject obj)
-        => throw new TODOException("Database.addSchemaObject: the meta table is not ported");
+        => AddSchemaObject(session, obj.GetId(), () => obj.GetSchema().Add(obj));
+
+    /// <summary>
+    /// Adds a table to the database.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="table">the table to add</param>
+    public void AddSchemaObject(SessionLocal session, Tables.Table table)
+        => AddSchemaObject(session, table.GetId(), () => table.GetSchema()!.Add(table));
+
+    private void AddSchemaObject(SessionLocal session, int id, Action add)
+    {
+        if (id > 0 && !starting)
+        {
+            CheckWritingAllowed();
+        }
+
+        LockMeta(session);
+        lock (syncRoot)
+        {
+            add();
+
+            // addMeta is deferred with the meta table.
+        }
+
+        ClearQueryCache(id);
+    }
+
+    /// <summary>
+    /// Removes a schema object from the database.
+    /// </summary>
+    /// <remarks>
+    /// The reference handles local temporary tables, indexes and constraints through the
+    /// session's maps before this point; local temporary tables are not ported, and nothing
+    /// here can be one. The dependency checks past the schema removal need views and domains,
+    /// neither of which is ported, so nothing can depend on what is removed yet and the
+    /// children are removed directly.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="obj">the object to remove</param>
+    public void RemoveSchemaObject(SessionLocal session, Schemas.SchemaObject obj)
+        => RemoveSchemaObject(session, obj.GetId(), () => obj.GetSchema().Remove(obj),
+            obj.RemoveChildrenAndResources);
+
+    /// <summary>
+    /// Removes a table from the database.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="table">the table to remove</param>
+    public void RemoveSchemaObject(SessionLocal session, Tables.Table table)
+        => RemoveSchemaObject(session, table.GetId(), () => table.GetSchema()!.Remove(table),
+            table.RemoveChildrenAndResources);
+
+    private void RemoveSchemaObject(
+        SessionLocal session,
+        int id,
+        Action remove,
+        Action<SessionLocal> removeChildrenAndResources)
+    {
+        CheckWritingAllowed();
+        LockMeta(session);
+        lock (syncRoot)
+        {
+            remove();
+            if (!starting)
+            {
+                removeChildrenAndResources(session);
+            }
+
+            // removeMeta is deferred with the meta table.
+        }
+
+        ClearQueryCache(id);
+    }
+
+    private void ClearQueryCache(int id)
+    {
+        if (id > 0 && !starting)
+        {
+            _ = GetNextModificationMetaId();
+        }
+    }
 
     /// <summary>
     /// How many rows a result may hold in memory before it spills. The reference's default,
@@ -280,6 +362,13 @@ public sealed partial class Database
         name = connectionInfo.GetName();
         memory = !connectionInfo.IsPersistent();
         objectId = FirstObjectId;
+
+        string accessModeData = Util.StringUtils.ToLowerEnglish(
+            connectionInfo.GetProperty("ACCESS_MODE_DATA") ?? "rw");
+        if (accessModeData == "r")
+        {
+            readOnly = true;
+        }
 
         // The main schema exists from the moment the database does, before anybody connects. A
         // session opening against a database with no schema would have nothing to create its
@@ -358,18 +447,48 @@ public sealed partial class Database
     }
 
     /// <summary>
-    /// Whether this database may not be written to.
+    /// Whether this database was opened read only.
     /// </summary>
     /// <remarks>
-    /// A database can be opened read only from the connection string, and nothing writes to it
-    /// while that holds — including spilling a result to disk, which is why the result asks this
-    /// before deciding how many rows to keep in memory. The flag is not ported from the
-    /// connection string yet, so it refuses rather than answering "no" for every database: a
-    /// caller that believed it was writable would spill results nobody had asked it to.
+    /// Set from the connection string's ACCESS_MODE_DATA setting, as in the reference. A read
+    /// only database answers no to every write, including spilling a result to disk, which is
+    /// why the result asks this before deciding how many rows to keep in memory.
+    /// </remarks>
+    private volatile bool readOnly;
+
+    /// <summary>
+    /// Whether this database may not be written to.
     /// </summary>
     /// <returns>true if it is read only</returns>
     public bool IsReadOnly()
-        => throw new TODOException("Database.isReadOnly: the connection string setting is not ported");
+    {
+        return readOnly;
+    }
+
+    /// <summary>
+    /// Sets whether this database may not be written to.
+    /// </summary>
+    /// <param name="readOnly">the new value</param>
+    public void SetReadOnly(bool readOnly)
+    {
+        this.readOnly = readOnly;
+    }
+
+    /// <summary>
+    /// Fails when this database may not be written to.
+    /// </summary>
+    /// <remarks>
+    /// The reference's check, ported word for word: every write path asks this before it
+    /// touches the store, so that a read-only database refuses the first write rather than
+    /// one somewhere in the middle.
+    /// </remarks>
+    public void CheckWritingAllowed()
+    {
+        if (readOnly)
+        {
+            throw DbException.Get(Api.ErrorCode.DatabaseIsReadOnly);
+        }
+    }
 
     /// <summary>
     /// Gets the number of rows a result may hold in memory before it is written to disk.

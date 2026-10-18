@@ -80,7 +80,7 @@ public sealed class SelectTextTests
         Column id = new("ID", TypeInfo.TypeInteger, null, 0);
         id.SetNullable(false);
         Column val = new("VAL", TypeInfo.TypeInteger, null, 1);
-        MVTable table = new(session.GetDatabase(), schema, 0, "T3", [id, val], persistData: false);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T3", [id, val], persistIndexes: false, persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());
@@ -113,7 +113,7 @@ public sealed class SelectTextTests
         Column id = new("ID", TypeInfo.TypeInteger, null, 0);
         id.SetNullable(false);
         Column bigval = new("BIGVAL", TypeInfo.TypeBigint, null, 1);
-        MVTable table = new(session.GetDatabase(), schema, 0, "T2", [id, bigval], persistData: false);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T2", [id, bigval], persistIndexes: false, persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());
@@ -146,7 +146,7 @@ public sealed class SelectTextTests
         Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
         Column val = new("VAL", TypeInfo.TypeInteger, null, 2);
         MVTable table = new(
-            session.GetDatabase(), schema, 0, "T4", [id, name, val], persistData: false);
+            session.GetDatabase(), schema, 0, "T4", [id, name, val], persistIndexes: false, persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());
@@ -181,7 +181,7 @@ public sealed class SelectTextTests
         Column id = new("ID", TypeInfo.TypeInteger, null, 0);
         id.SetNullable(false);
         Column name = new("NAME", TypeInfo.TypeVarchar, null, 1);
-        MVTable table = new(session.GetDatabase(), schema, 0, "T", [id, name], persistData: false);
+        MVTable table = new(session.GetDatabase(), schema, 0, "T", [id, name], persistIndexes: false, persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());

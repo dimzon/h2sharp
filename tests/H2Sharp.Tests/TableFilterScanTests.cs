@@ -44,7 +44,7 @@ public sealed class TableFilterScanTests
         Column colName = new("NAME", TypeInfo.TypeVarchar, null, 1);
         MVTable table = new(
             session.GetDatabase(), new Schemas.Schema(session.GetDatabase(), 1, "PUBLIC", false),
-            id, "T", [colId, colName], persistData: false);
+            id, "T", [colId, colName], persistIndexes: false, persistData: false);
         foreach (Column column in table.GetColumns())
         {
             column.SetTable(table, column.GetColumnId());

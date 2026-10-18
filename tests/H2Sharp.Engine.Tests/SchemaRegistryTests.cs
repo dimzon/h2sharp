@@ -110,7 +110,7 @@ public sealed class SchemaRegistryTests
 
         public override Column[] GetColumns() => throw new TODOException("TestTable has no columns");
 
-        public override Index? GetPrimaryKey() => null;
+        public override Index? FindPrimaryKey() => null;
 
         public override Index? GetScanIndex(SessionLocal session) => null;
 

@@ -121,7 +121,7 @@ public sealed class ColumnTests
 
         public override Column[] GetColumns() => [GetColumn(0)];
 
-        public override H2Sharp.Indexes.Index? GetPrimaryKey() => null;
+        public override H2Sharp.Indexes.Index? FindPrimaryKey() => null;
 
         public override H2Sharp.Indexes.Index? GetIndexFor(SessionLocal session, H2Sharp.Result.SearchRow row) => null;
 

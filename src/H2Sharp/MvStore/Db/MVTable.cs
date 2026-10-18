@@ -74,12 +74,14 @@ public sealed class MVTable : Table
     /// <summary>
     /// Tell the table that it was modified.
     /// </summary>
-    public void SetModified()
+    public override void SetModified()
     {
         modificationId = database is null ? -1 : database.GetNextModificationMetaId();
     }
 
     private readonly TransactionStore store;
+
+    private readonly bool persistIndexes;
 
     private readonly bool persistData;
 
@@ -93,7 +95,7 @@ public sealed class MVTable : Table
     /// <param name="id">the object id</param>
     /// <param name="name">the table name</param>
     /// <param name="columns">the columns, in order</param>
-    /// <param name="store">the transaction store the rows live in</param>
+    /// <param name="persistIndexes">whether the indexes are persisted</param>
     /// <param name="persistData">whether the data is persisted</param>
     public MVTable(
         Engine.Database database,
@@ -101,6 +103,7 @@ public sealed class MVTable : Table
         int id,
         string name,
         Column[] columns,
+        bool persistIndexes,
         bool persistData)
     {
         this.database = database;
@@ -111,8 +114,13 @@ public sealed class MVTable : Table
         // The database's own store, as in the reference: a table on another store would be
         // invisible to every transaction but its own.
         store = database.GetStore();
+        this.persistIndexes = persistIndexes;
         this.persistData = persistData;
-        primaryIndex = new MVPrimaryIndex(null!, this, id, null, IndexType.CreatePrimaryKey(persistData, false));
+        // The scan index is always a scan, and scan indexes are always persistent, as the
+        // reference's MVTable constructor says with createScan(true). It is not a primary key
+        // index: a table without a PRIMARY KEY has no key index at all, and FindPrimaryKey
+        // relies on that to tell a keyed table from a keyless one.
+        primaryIndex = new MVPrimaryIndex(null!, this, id, IndexColumn.Wrap(this.columns), IndexType.CreateScan(true));
         indexes = new List<Index> { primaryIndex };
     }
 
@@ -127,6 +135,9 @@ public sealed class MVTable : Table
 
     /// <summary>Whether the data is persisted; an in-memory table keeps it in memory.</summary>
     public bool IsPersistData => persistData;
+
+    /// <inheritdoc/>
+    public override bool IsPersistIndexes() => persistIndexes;
 
     /// <summary>Whether any column of this table holds a large object.</summary>
     public bool ContainsLargeObject => false;
@@ -204,12 +215,6 @@ public sealed class MVTable : Table
     }
 
     /// <inheritdoc/>
-    public override Index? GetPrimaryKey()
-    {
-        return primaryIndex;
-    }
-
-    /// <inheritdoc/>
     /// <remarks>
     /// The primary index, as in the reference. A full scan of this table walks the rows in
     /// key order, which is what the primary index keeps.
@@ -245,6 +250,26 @@ public sealed class MVTable : Table
     }
 
     private Index[]? indexCache;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The reference's body removes the index from the table's list and clears the primary-key
+    /// flag on its columns. The list is the live one here, not the snapshot
+    /// <see cref="GetIndexes"/> hands out, so the member lives where the list does; a snapshot
+    /// taken before this call is rebuilt on the next one.
+    /// </remarks>
+    public override void RemoveIndex(Index index)
+    {
+        _ = indexes.Remove(index);
+        indexCache = null;
+        if (index.GetIndexType()!.IsPrimaryKey())
+        {
+            foreach (IndexColumn col in index.GetColumns())
+            {
+                col.GetColumn().SetPrimaryKey(false);
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the row factory that reads this table's rows.
@@ -695,8 +720,33 @@ public sealed class MVTable : Table
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The reference body starts with the table's LOB storage and ends with the base's
+    /// children — dependent views, synonyms, triggers, constraints, rights and sequences — and
+    /// none of those exist here yet, so what runs is the middle: every index but the scan is
+    /// removed, and each one that has a name is removed from the schema with it. That schema
+    /// removal is not bookkeeping: it releases the name, which is what lets a table dropped and
+    /// created again receive the same PRIMARY_KEY_ name, as it does on the JVM.
+    /// The scan index is closed last, as in the reference; removing its map is deferred with
+    /// the transaction store's removeTable.
+    /// </remarks>
     public override void RemoveChildrenAndResources(SessionLocal session)
     {
+        // remove scan index (at position 0 on the list) last
+        while (indexes.Count > 1)
+        {
+            Index index = indexes[1];
+            index.Remove(session);
+            if (index.GetName() is not null)
+            {
+                database!.RemoveSchemaObject(session, index);
+            }
+
+            // needed for session temporary indexes
+            _ = indexes.Remove(index);
+        }
+
+        indexes.Clear();
         Close();
     }
 

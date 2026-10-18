@@ -1348,9 +1348,63 @@ public abstract class Table
     public abstract H2Sharp.Indexes.Index? GetScanIndex(Engine.SessionLocal session);
 
     /// <summary>
-    /// Gets the primary key index.
+    /// Gets the primary key index if there is one, or null if there is none.
     /// </summary>
-    public abstract Index? GetPrimaryKey();
+    /// <returns>the primary key index or null</returns>
+    public virtual Index? FindPrimaryKey()
+    {
+        foreach (Index idx in GetIndexes())
+        {
+            if (idx.GetIndexType() is { } indexType && indexType.IsPrimaryKey())
+            {
+                return idx;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Gets the primary key index, failing when the table has none.
+    /// </summary>
+    /// <remarks>
+    /// The name in the error is the reference's literal: the index that is missing is the one
+    /// named by the PRIMARY_KEY_ prefix, whether or not a name was ever handed out.
+    /// </remarks>
+    /// <returns>the primary key index</returns>
+    public virtual Index GetPrimaryKey()
+    {
+        Index? index = FindPrimaryKey();
+        if (index is not null)
+        {
+            return index;
+        }
+
+        throw DbException.Get(Api.ErrorCode.IndexNotFound1, Constants.PrefixPrimaryKey);
+    }
+
+    /// <summary>
+    /// Whether the indexes of this table are persisted.
+    /// </summary>
+    /// <remarks>
+    /// In the reference the flag is a field of Table, set by the constructor from the statement
+    /// that created the table. This hierarchy keeps no state in the base, so the answer lives
+    /// with the implementations and the base refuses, as it does for the other table state.
+    /// </remarks>
+    /// <returns>true if the indexes are persisted</returns>
+    public virtual bool IsPersistIndexes()
+        => throw new TODOException("Table.isPersistIndexes");
+
+    /// <summary>
+    /// Tells the table that it was modified.
+    /// </summary>
+    /// <remarks>
+    /// In the reference this is DbObject's, and every schema object answers it; a table here
+    /// does not share that base, so the member stands on the table and the state lives with
+    /// the implementation.
+    /// </remarks>
+    public virtual void SetModified()
+        => throw new TODOException("Table.setModified");
 
     /// <summary>
     /// Gets the index at the given position.

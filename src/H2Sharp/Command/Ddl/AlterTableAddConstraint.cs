@@ -14,11 +14,11 @@
  * pick a class before it knows which constraint was written would have to read the statement
  * twice.
  *
- * The reference is self-referencing for the primary key, which is the one case a table
- * referring to itself raises: the constraint is read before the table exists, so "the table
- * this refers to" is the statement's own name rather than something looked up.
+ * A referential constraint that names the statement's own table is self-referencing, and that
+ * is a question about names, not lookup: the table may not exist yet, so the answer is whether
+ * the referenced schema is this schema and the two names are the same identifier.
  *
- * Not ported: the body needs the index and the constraint machinery.
+ * Not ported: everything but the primary key needs the constraint machinery.
  */
 using System;
 using H2Sharp.Constraints;
@@ -46,8 +46,6 @@ public class AlterTableAddConstraint : AlterTable
     private ConstraintActionType updateAction = ConstraintActionType.NO_ACTION;
 
     private string? constraintName;
-
-    private bool selfReferencing;
 
     private NullsDistinct? nullsDistinct;
 
@@ -90,7 +88,9 @@ public class AlterTableAddConstraint : AlterTable
     /// Only the primary key runs: it is an index, and the index layer is here. Every other
     /// constraint waits for the constraint layer with it. The catalog object (ConstraintUnique)
     /// is not created yet — nothing reads it back without INFORMATION_SCHEMA — but the index
-    /// it would own is, which is what enforces uniqueness and answers MIN and MAX.
+    /// it would own is, which is what enforces uniqueness and answers MIN and MAX. The
+    /// constraint-name checks and the constraint list of the reference's tryUpdate are part of
+    /// that layer: there is no constraint object to collide with or to iterate.
     /// </remarks>
     public override long Update(Table table)
     {
@@ -100,41 +100,46 @@ public class AlterTableAddConstraint : AlterTable
         }
 
         SessionLocal session = GetSession();
+        _ = session.GetDatabase().LockMeta(session);
+        _ = table.Lock(session, Table.ExclusiveLock);
         IndexColumn[] keyColumns = MapColumns(table, indexColumns);
-        foreach (H2Sharp.Indexes.Index existing in table.GetIndexes())
+        index = table.FindPrimaryKey();
+        if (index is not null)
         {
-            if (existing == table.GetPrimaryKey() || !existing.IsPrimaryKey())
+            // if there is an index, it must match with the one declared
+            // we don't test ascending / descending
+            IndexColumn[] pkCols = index.GetColumns();
+            if (pkCols.Length != keyColumns.Length)
             {
-                continue;
+                throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
             }
 
-            IndexColumn[] existingColumns = existing.GetColumns();
-            if (existingColumns.Length == keyColumns.Length)
+            for (int i = 0; i < pkCols.Length; i++)
             {
-                bool same = true;
-                for (int i = 0; i < existingColumns.Length && same; i++)
+                if (!ReferenceEquals(pkCols[i].GetColumn(), keyColumns[i].GetColumn()))
                 {
-                    same = ReferenceEquals(existingColumns[i].GetColumn(), keyColumns[i].GetColumn());
-                }
-
-                if (same)
-                {
-                    return 0;
+                    throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
                 }
             }
-
-            throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
+        }
+        else
+        {
+            Indexes.IndexType indexType = Indexes.IndexType.CreatePrimaryKey(
+                table.IsPersistIndexes(), primaryKeyHash);
+            string indexName = table.GetSchema()!.GetUniqueIndexName(
+                session, table, Engine.Constants.PrefixPrimaryKey);
+            int indexId = session.GetDatabase().AllocateObjectId();
+            try
+            {
+                index = table.AddIndex(session, indexName, indexId, keyColumns, keyColumns.Length,
+                    indexType, create: true, indexComment: null);
+            }
+            finally
+            {
+                GetSchema().FreeUniqueName(indexName);
+            }
         }
 
-        H2Sharp.Indexes.Index index = table.AddIndex(
-            session,
-            "PRIMARY_KEY_" + table.GetTableName(),
-            session.GetDatabase().AllocateObjectId(),
-            keyColumns,
-            keyColumns.Length,
-            Indexes.IndexType.CreatePrimaryKey(session.GetDatabase().IsPersistent(), primaryKeyHash),
-            create: true,
-            indexComment: null);
         index.GetIndexType()!.SetBelongsToConstraint(true);
         return 0;
     }
@@ -203,13 +208,18 @@ public class AlterTableAddConstraint : AlterTable
     /// <summary>
     /// Whether this constraint refers to the table being changed.
     /// </summary>
+    /// <remarks>
+    /// Only a referential constraint can be self-referencing, and it is one when the schema it
+    /// points at is this statement's schema and the two table names are the same identifier.
+    /// The check is about the statement's text, not about a table: the table may not exist yet.
+    /// </remarks>
     /// <returns>true if it does</returns>
-    public bool IsSelfReferencing() => selfReferencing;
-
-    /// <summary>
-    /// Sets that this constraint refers to the table being changed.
-    /// </summary>
-    public void SetSelfReferencing() => selfReferencing = true;
+    public bool IsSelfReferencing()
+    {
+        return type == CommandInterface.AlterTableAddConstraintReferential && refSchema == GetSchema()
+            && refTableName is not null
+            && GetSession().GetDatabase().EqualsIdentifiers(GetTableName(), refTableName);
+    }
 
     /// <inheritdoc/>
     public override int GetCommandType() => type;

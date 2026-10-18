@@ -62,10 +62,13 @@ public sealed class DropTable : DefineCommand
     /// <remarks>
     /// prepareDrop then executeDrop, as in the reference: resolve every name first, then
     /// remove, so a missing table fails before anything is gone. The RESTRICT dependency
-    /// checks have nothing to check yet — views, materialized views and constraint objects
-    /// are not ported — and neither do the locks: there is no lock manager on this path.
-    /// The index maps stay in the store until it closes; map names are id-keyed, so a
-    /// table created again after a drop opens fresh maps and never sees the old rows.
+    /// checks and the locks have nothing to check yet — views, materialized views, constraint
+    /// objects and the lock manager are not ported. The removal itself goes through the
+    /// database, as in the reference, and that is what takes the table's indexes out of the
+    /// schema with it and frees their names — a table dropped and created again receives the
+    /// same PRIMARY_KEY_ name, as it does on the JVM. The index maps stay in the store until
+    /// it closes; map names are id-keyed, so a table created again after a drop opens fresh
+    /// maps and never sees the old rows.
     /// </remarks>
     /// <returns>0</returns>
     public override long Update()
@@ -92,10 +95,13 @@ public sealed class DropTable : DefineCommand
             return 0;
         }
 
-        foreach ((Schema schema, Tables.Table table) in drops)
+        SessionLocal session = GetSession();
+        Engine.Database db = session.GetDatabase();
+        foreach ((Schema _, Tables.Table table) in drops)
         {
-            schema.Remove(table);
-            table.RemoveChildrenAndResources(GetSession());
+            table.SetModified();
+            db.LockMeta(session);
+            db.RemoveSchemaObject(session, table);
         }
 
         return 0;
