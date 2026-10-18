@@ -465,6 +465,9 @@ public static class IntervalUtils
     public static StringBuilder AppendInterval(
         StringBuilder builder, IntervalQualifier qualifier, bool negative, long leading, long remaining)
     {
+        // The reference appends the fields directly, and Java's builder is locale-independent;
+        // .NET's builder formats in the current culture, so the fields go through the invariant
+        // helper below and the output stays the reference's ASCII digits (issue #12 A3).
         _ = builder.Append("INTERVAL '");
         if (negative)
         {
@@ -478,26 +481,26 @@ public static class IntervalUtils
             case IntervalQualifier.Day:
             case IntervalQualifier.Hour:
             case IntervalQualifier.Minute:
-                _ = builder.Append(leading.ToString(CultureInfo.InvariantCulture));
+                _ = StringUtils.AppendInvariant(builder, leading);
                 break;
 
             case IntervalQualifier.Second:
-                DateTimeUtils.AppendNanos(
-                    _ = builder.Append(leading.ToString(CultureInfo.InvariantCulture)), (int)remaining);
+                StringUtils.AppendInvariant(builder, leading);
+                DateTimeUtils.AppendNanos(builder, (int)remaining);
                 break;
 
             case IntervalQualifier.YearToMonth:
-                _ = builder.Append(leading.ToString(CultureInfo.InvariantCulture)).Append('-')
-                    .Append(remaining.ToString(CultureInfo.InvariantCulture));
+                _ = StringUtils.AppendInvariant(builder, leading).Append('-');
+                _ = StringUtils.AppendInvariant(builder, remaining);
                 break;
 
             case IntervalQualifier.DayToHour:
-                _ = builder.Append(leading.ToString(CultureInfo.InvariantCulture)).Append(' ');
+                _ = StringUtils.AppendInvariant(builder, leading).Append(' ');
                 StringUtils.AppendTwoDigits(builder, (int)remaining);
                 break;
 
             case IntervalQualifier.DayToMinute:
-                _ = builder.Append(leading.ToString(CultureInfo.InvariantCulture)).Append(' ');
+                _ = StringUtils.AppendInvariant(builder, leading).Append(' ');
                 int r = (int)remaining;
                 StringUtils.AppendTwoDigits(builder, r / 60).Append(':');
                 StringUtils.AppendTwoDigits(builder, r % 60);
@@ -506,7 +509,7 @@ public static class IntervalUtils
             case IntervalQualifier.DayToSecond:
                 long nanos = remaining % DateTimeUtils.NanosPerMinute;
                 int r2 = (int)(remaining / DateTimeUtils.NanosPerMinute);
-                _ = builder.Append(leading.ToString(CultureInfo.InvariantCulture)).Append(' ');
+                _ = StringUtils.AppendInvariant(builder, leading).Append(' ');
                 StringUtils.AppendTwoDigits(builder, r2 / 60).Append(':');
                 StringUtils.AppendTwoDigits(builder, r2 % 60).Append(':');
                 StringUtils.AppendTwoDigits(builder, (int)(nanos / DateTimeUtils.NanosPerSecond));
@@ -514,12 +517,12 @@ public static class IntervalUtils
                 break;
 
             case IntervalQualifier.HourToMinute:
-                _ = builder.Append(leading.ToString(CultureInfo.InvariantCulture)).Append(':');
+                _ = StringUtils.AppendInvariant(builder, leading).Append(':');
                 StringUtils.AppendTwoDigits(builder, (int)remaining);
                 break;
 
             case IntervalQualifier.HourToSecond:
-                _ = builder.Append(leading.ToString(CultureInfo.InvariantCulture)).Append(':');
+                _ = StringUtils.AppendInvariant(builder, leading).Append(':');
                 StringUtils.AppendTwoDigits(builder, (int)(remaining / DateTimeUtils.NanosPerMinute)).Append(':');
                 long s = remaining % DateTimeUtils.NanosPerMinute;
                 StringUtils.AppendTwoDigits(builder, (int)(s / DateTimeUtils.NanosPerSecond));
@@ -527,7 +530,7 @@ public static class IntervalUtils
                 break;
 
             case IntervalQualifier.MinuteToSecond:
-                _ = builder.Append(leading.ToString(CultureInfo.InvariantCulture)).Append(':');
+                _ = StringUtils.AppendInvariant(builder, leading).Append(':');
                 StringUtils.AppendTwoDigits(builder, (int)(remaining / DateTimeUtils.NanosPerSecond));
                 DateTimeUtils.AppendNanos(builder, (int)(remaining % DateTimeUtils.NanosPerSecond));
                 break;

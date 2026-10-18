@@ -222,15 +222,16 @@ public sealed class ValueBigint : Value
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
     {
         // A bigint that fits in an int is printed as a cast, so that reading the SQL back does
-        // not silently widen the type.
+        // not silently widen the type. The invariant append: the reference's builder.append(long)
+        // is locale-independent, .NET's is not (issue #12 A3).
         if ((sqlFlags & HasSql.NoCasts) == 0 && value == (int)value)
         {
-            return builder.Append("CAST(")
-                .Append(value.ToString(CultureInfo.InvariantCulture))
-                .Append(" AS BIGINT)");
+            _ = builder.Append("CAST(");
+            _ = StringUtils.AppendInvariant(builder, value);
+            return builder.Append(" AS BIGINT)");
         }
 
-        return builder.Append(value.ToString(CultureInfo.InvariantCulture));
+        return StringUtils.AppendInvariant(builder, value);
     }
 
     /// <inheritdoc/>

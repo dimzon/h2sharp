@@ -55,6 +55,16 @@ public static class StringUtils
     private const int MaxStackChars = 128;
 
     /// <summary>
+    /// Powers of ten, read from the logarithm in <see cref="AppendZeroPadded"/>: the value is
+    /// compared against the power the logarithm estimated, and when it reaches it the digit count
+    /// is one more than the log said. Eleven entries, because an int has at most ten digits and
+    /// the comparison can reach the index one past that.
+    /// </summary>
+    private static readonly long[] PowersOfTen =
+        [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000, 1_000_000_000, 10_000_000_000];
+
+
+    /// <summary>
     /// Lowest code point that can appear as a key in
     /// <see cref="CaseFolding.Lower(int)"/>. The pre-check in
     /// <see cref="HasLowerCaseFoldingOverrides"/> uses it to skip the table entirely for
@@ -2217,6 +2227,41 @@ public static class StringUtils
     }
 
     /// <summary>
+    /// Appends a whole number as the ASCII digits the reference's StringBuilder.append(long)
+    /// writes.
+    /// </summary>
+    /// <remarks>
+    /// Recorded deviation (accepted, issue #12 A3): Java's builder appends whole numbers as
+    /// ASCII digits regardless of the locale, while .NET's builder formats in the current
+    /// culture — a culture with digit substitution would answer different code points. The
+    /// number is therefore formatted in the invariant culture into a stack buffer and appended
+    /// as a slice: the reference's exact digits, with no intermediate string.
+    /// </remarks>
+    /// <param name="builder">where to write it</param>
+    /// <param name="value">the number to append</param>
+    /// <returns>the specified string builder</returns>
+    public static StringBuilder AppendInvariant(StringBuilder builder, long value)
+    {
+        Span<char> scratch = stackalloc char[21];
+        if (!value.TryFormat(scratch, out int written, default, CultureInfo.InvariantCulture))
+        {
+            return builder.Append(value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return builder.Append(scratch[0..written]);
+    }
+
+    /// <summary>
+    /// Appends a whole number as the ASCII digits the reference's StringBuilder.append(int)
+    /// writes.
+    /// </summary>
+    /// <param name="builder">where to write it</param>
+    /// <param name="value">the number to append</param>
+    /// <returns>the specified string builder</returns>
+    public static StringBuilder AppendInvariant(StringBuilder builder, int value)
+        => AppendInvariant(builder, (long)value);
+
+    /// <summary>
     /// Append a zero-padded number to a string builder.
     /// </summary>
     /// <param name="builder">the string builder</param>
@@ -2225,14 +2270,48 @@ public static class StringUtils
     /// <returns>the specified string builder</returns>
     public static StringBuilder AppendZeroPadded(StringBuilder builder, int length, int positiveValue)
     {
-        string s = positiveValue.ToString(CultureInfo.InvariantCulture);
-        length -= s.Length;
+        // The digit count is taken by the logarithm, not by building the string: the reference
+        // does Integer.toString and reads its length, but this sits on every formatted field of
+        // every FORMAT row (issue #12 A3). The powers-of-ten correction keeps the floating point
+        // log honest at the exact powers and just above them, where rounding could take one
+        // digit off an exact power of ten.
+        if (positiveValue < 0)
+        {
+            string s = positiveValue.ToString(CultureInfo.InvariantCulture);
+            length -= s.Length;
+            for (; length > 0; length--)
+            {
+                builder.Append('0');
+            }
+
+            return builder.Append(s);
+        }
+
+        if (positiveValue == 0)
+        {
+            length--;
+            for (; length > 0; length--)
+            {
+                builder.Append('0');
+            }
+
+            return builder.Append('0');
+        }
+
+        uint u = (uint)positiveValue;
+        int digits = (int)Math.Log10(u) + 1;
+        if (u >= PowersOfTen[digits])
+        {
+            digits++;
+        }
+
+        length -= digits;
         for (; length > 0; length--)
         {
             builder.Append('0');
         }
 
-        return builder.Append(s);
+        return AppendInvariant(builder, positiveValue);
     }
 
     /// <summary>

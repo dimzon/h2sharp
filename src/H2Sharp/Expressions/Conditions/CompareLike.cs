@@ -16,6 +16,7 @@ using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Indexes;
 using H2Sharp.Tables;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Expressions.Conditions;
@@ -50,6 +51,17 @@ public sealed class CompareLike : Condition
 
     // The reference's DEFAULT_ESCAPE setting, whose default is a single backslash.
     private const string DefaultEscape = "\\";
+
+    /// <summary>
+    /// Compiled regular expressions, keyed by the pattern and whether case is ignored. The
+    /// reference compiles the pattern into a Pattern every time one initializes it; this cache is
+    /// a recorded deviation (accepted, see issue #12 A1): the semantics of a compiled pattern do
+    /// not depend on how it was produced, and a parameter pattern would otherwise pay the full
+    /// interpretation cost per row. Compiled beyond what the reference does, for the same reason.
+    /// </summary>
+    private static readonly SmallLRUCache<(bool IgnoreCase, string Pattern), Regex> RegexCache =
+        SmallLRUCache<(bool IgnoreCase, string Pattern), Regex>.NewInstance(100);
+
 
     private readonly CompareMode compareMode;
 
@@ -463,8 +475,13 @@ public sealed class CompareLike : Condition
         }
         else if (shortcutToContains)
         {
-            string p = patternString![1..^1];
-            result = ignoreCase ? ContainsIgnoreCase(value, p) : value.Contains(p);
+            // The slice view, not a substring: the reference builds one (substring(1, len-1)),
+            // and a row-shape shortcut runs per row, so the allocation is cut here
+            // (issue #12 A2) while the comparison stays byte-identical.
+            result = ignoreCase
+                ? ContainsIgnoreCase(value, patternString!, 1, patternLength - 2)
+                : value.AsSpan().IndexOf(
+                    patternString!.AsSpan(1, patternLength - 2), StringComparison.Ordinal) >= 0;
         }
         else
         {
@@ -487,17 +504,16 @@ public sealed class CompareLike : Condition
             ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == 0;
     }
 
-    private static bool ContainsIgnoreCase(string src, string what)
+    private static bool ContainsIgnoreCase(string src, string what, int start, int length)
     {
-        int length = what.Length;
         if (length == 0)
         {
             // Empty string is contained
             return true;
         }
 
-        char firstLo = char.ToLowerInvariant(what[0]);
-        char firstUp = char.ToUpperInvariant(what[0]);
+        char firstLo = char.ToLowerInvariant(what[start]);
+        char firstUp = char.ToUpperInvariant(what[start]);
         for (int i = src.Length - length; i >= 0; i--)
         {
             // Quick check before calling the more expensive regionMatches()
@@ -507,7 +523,7 @@ public sealed class CompareLike : Condition
                 continue;
             }
 
-            if (RegionMatches(src, true, i, what, 0, length))
+            if (RegionMatches(src, true, i, what, start, length))
             {
                 return true;
             }
@@ -515,6 +531,44 @@ public sealed class CompareLike : Condition
 
         return false;
     }
+
+    /// <summary>
+    /// Gets the compiled regular expression for a pattern, cached across uses.
+    /// </summary>
+    /// <param name="p">the pattern</param>
+    /// <param name="ignoreCase">whether case is ignored</param>
+    /// <returns>the compiled expression</returns>
+    private static Regex GetCompiledRegex(string p, bool ignoreCase)
+    {
+        // CultureInvariant: the reference's Pattern.compile is locale-independent, and .NET's
+        // IgnoreCase is not (a Turkish dotless i and the like). Compiled: the same deviation the
+        // cache is (issue #12 A1) — a compiled Regex answers the same as an interpreted one.
+        static Regex Compile(string p, bool ignoreCase) => ignoreCase
+            ? new Regex(p, RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+            : new Regex(p, RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        (bool, string) key = (ignoreCase, p);
+        lock (RegexCache)
+        {
+            if (RegexCache.TryGetValue(key, out Regex? cached))
+            {
+                return cached;
+            }
+        }
+
+        Regex compiled = Compile(p, ignoreCase);
+        lock (RegexCache)
+        {
+            if (RegexCache.TryGetValue(key, out Regex? raced))
+            {
+                return raced;
+            }
+
+            _ = RegexCache.Put(key, compiled);
+            return compiled;
+        }
+    }
+
 
     private bool CompareAt(string s, int pi, int si, int sLen, char[] pattern, int[] types)
     {
@@ -612,11 +666,7 @@ public sealed class CompareLike : Condition
             patternString = p;
             try
             {
-                // CultureInvariant: the reference's Pattern.compile is locale-independent, and
-                // .NET's IgnoreCase is not (a Turkish dotless i and the like).
-                patternRegexp = ignoreCase
-                    ? new Regex(p!, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
-                    : new Regex(p!, RegexOptions.CultureInvariant);
+                patternRegexp = GetCompiledRegex(p!, ignoreCase);
             }
             catch (ArgumentException)
             {

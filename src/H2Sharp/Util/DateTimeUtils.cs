@@ -797,7 +797,7 @@ public static class DateTimeUtils
         }
         else
         {
-            _ = builder.Append(y.ToString(CultureInfo.InvariantCulture));
+            _ = StringUtils.AppendInvariant(builder, y);
         }
 
         AppendTwoDigits(_ = builder.Append('-'), MonthFromDateValue(dateValue)).Append('-');
@@ -875,7 +875,7 @@ public static class DateTimeUtils
                 }
             }
 
-            _ = builder.Append(nanos.ToString(CultureInfo.InvariantCulture));
+            _ = StringUtils.AppendInvariant(builder, nanos);
         }
 
         return builder;
@@ -921,7 +921,7 @@ public static class DateTimeUtils
     internal static StringBuilder AppendTwoDigits(StringBuilder builder, int i)
         => i >= 0 && i < 100
             ? builder.Append((char)(i / 10 + '0')).Append((char)(i % 10 + '0'))
-            : builder.Append(i.ToString(CultureInfo.InvariantCulture));
+            : StringUtils.AppendInvariant(builder, i);
 
     /// <summary>
     /// Reads a timestamp written as a date and a time, and answers the value it stands for.
