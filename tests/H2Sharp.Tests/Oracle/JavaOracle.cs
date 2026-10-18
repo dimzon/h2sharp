@@ -14,12 +14,58 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace H2Sharp.Tests.Oracle;
 
 internal static class JavaOracle
 {
+    /// <summary>
+    /// Compiling a snippet costs more than running it: the compiler is a second JVM start
+    /// on top of the one that executes the snippet. So the class files a snippet produces
+    /// are kept on disk, keyed by what produced them — the source text, the class and
+    /// package names, the classpath and the stamp of every jar on it — and a second run
+    /// of the same test copies the answer instead of paying for it again.
+    ///
+    /// The cache lives outside the repository (a per-user cache directory) so that nothing
+    /// here can end up committed, and it is disposable: deleting it costs one compile per
+    /// snippet and nothing else. A stale entry cannot be served, because the jar's stamp
+    /// and the compiler's flags are part of the key.
+    /// </summary>
+    private static readonly string CacheRoot = ResolveCacheRoot();
+
+    private static readonly Dictionary<string, SemaphoreSlim> CacheGates = [];
+
+    private static readonly object CacheSync = new();
+
+    private static int cacheHits;
+
+    private static int cacheMisses;
+
+    /// <summary>
+    /// Writes the cache hit counters when the test process ends, so a run can be judged
+    /// without a profiler: what matters is how many compiles the run needed.
+    /// </summary>
+    static JavaOracle()
+    {
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try
+            {
+                File.WriteAllText(
+                    Path.Combine(Path.GetTempPath(), "h2sharp-oracle-cache-stats.txt"),
+                    "hits=" + cacheHits + "\n"
+                    + "misses=" + cacheMisses + "\n"
+                    + "cache_dir=" + CacheRoot + "\n");
+            }
+            catch (IOException)
+            {
+                // best effort
+            }
+        };
+    }
+
     /// <summary>
     /// Absolute path to the reference H2 checkout, or null when it is absent.
     /// </summary>
@@ -80,25 +126,9 @@ internal static class JavaOracle
             throw new InvalidOperationException("Reference root is not available.");
         }
 
-        string work = PrepareWorkDirectory(className, javaSource, inputs: null, numbers: null);
-        try
-        {
-            string? javac = FindJavacExecutable();
-            if (javac is null)
-            {
-                throw new InvalidOperationException("javac not found");
-            }
-
-            RunProcess(javac, work, CompileArguments(work, className, additionalClassPath));
-
-            string java = FindJavaExecutable() ?? throw new InvalidOperationException("java not found");
-            return RunProcess(java, work, RunArguments(
-                work, className, additionalClassPath, extraJavaArgs: null, programArgs: null, packageName: null));
-        }
-        finally
-        {
-            DeleteWorkDirectory(work);
-        }
+        return RunCached(
+            javaSource, className, additionalClassPath, packageName: null,
+            inputs: null, numbers: null, extraJavaArgs: null, programArgs: null);
     }
 
     /// <summary>
@@ -135,22 +165,172 @@ internal static class JavaOracle
             throw new InvalidOperationException("Reference root is not available.");
         }
 
-        string work = PrepareWorkDirectory(className, javaSource, inputs, numbers);
+        return RunCached(
+            javaSource, className, additionalClassPath, packageName,
+            inputs, numbers, extraJavaArgs, programArgs);
+    }
+
+    /// <summary>
+    /// Compiles the snippet into its cache directory if it is not there yet, and runs it
+    /// from that same directory, which is what the classpath names first.
+    /// </summary>
+    /// <remarks>
+    /// The cache directory is the working directory: javac writes the class files into it,
+    /// java reads them from it and reads the snippet's <c>inputs.hex</c> and
+    /// <c>numbers.txt</c> from it. Nothing is copied between directories — the files that
+    /// run the snippet are the files that were compiled.
+    /// <para>
+    /// One gate per key holds for the whole run, not just for the compile: two tests whose
+    /// snippets are identical write the same input files, so they must not overlap, and
+    /// running them one after another also means the second finds the answer already there.
+    /// </para>
+    /// </remarks>
+    private static string RunCached(
+        string javaSource,
+        string className,
+        string[]? additionalClassPath,
+        string? packageName,
+        IReadOnlyList<string>? inputs,
+        IReadOnlyList<int>? numbers,
+        string[]? extraJavaArgs,
+        string[]? programArgs)
+    {
+        string key = CacheKey(javaSource, className, additionalClassPath, packageName);
+        string directory = Path.Combine(CacheRoot, key);
+        SemaphoreSlim gate;
+        lock (CacheSync)
+        {
+            if (!CacheGates.TryGetValue(key, out SemaphoreSlim? existing))
+            {
+                existing = new SemaphoreSlim(1, 1);
+                CacheGates[key] = existing;
+            }
+
+            gate = existing;
+        }
+
+        gate.Wait();
         try
         {
-            string javac = FindJavacExecutable() ?? throw new InvalidOperationException("javac not found");
-            RunProcess(javac, work, CompileArguments(work, className, additionalClassPath));
+            if (HasCompiledClasses(directory, className, packageName))
+            {
+                Interlocked.Increment(ref cacheHits);
+            }
+            else
+            {
+                Interlocked.Increment(ref cacheMisses);
+                TraceMiss(key, className, packageName, javaSource);
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(
+                    Path.Combine(directory, className + ".java"), javaSource, new UTF8Encoding(false));
+                string javac = FindJavacExecutable() ?? throw new InvalidOperationException("javac not found");
+                RunProcess(javac, directory, CompileArguments(directory, className, additionalClassPath));
+            }
+
+            WriteInputs(directory, inputs, numbers);
 
             string java = FindJavaExecutable() ?? throw new InvalidOperationException("java not found");
             return RunProcess(
                 java,
-                work,
-                RunArguments(work, className, additionalClassPath, extraJavaArgs, programArgs, packageName));
+                directory,
+                RunArguments(directory, className, additionalClassPath, extraJavaArgs, programArgs, packageName));
         }
         finally
         {
-            DeleteWorkDirectory(work);
+            gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Whether the snippet's class file is already in the directory. The compiled class sits
+    /// where its package puts it, and a caller may name the class with its package already
+    /// attached ("org.h2.command.TokenOracle"), which puts it one directory deeper.
+    /// </summary>
+    private static bool HasCompiledClasses(string directory, string className, string? packageName)
+    {
+        string relative = (packageName is null ? className : packageName + "." + className)
+            .Replace('.', Path.DirectorySeparatorChar) + ".class";
+        return File.Exists(Path.Combine(directory, relative));
+    }
+
+    private static string CacheKey(
+        string javaSource, string className, string[]? additionalClassPath, string? packageName)
+    {
+        StringBuilder material = new();
+        _ = material.Append(javaSource).Append('\0')
+            .Append(className).Append('\0')
+            .Append(packageName).Append('\0');
+
+        foreach (string entry in additionalClassPath ?? [])
+        {
+            _ = material.Append(entry).Append('\0');
+            FileInfo info = new(entry);
+            _ = material.Append(info.Length).Append(':')
+                .Append(info.LastWriteTimeUtc.Ticks).Append('\0');
+        }
+
+        // The compiler's own version is part of the key: class files of different major
+        // versions are not interchangeable, and a JDK change must not be served from a
+        // stale entry. It is asked once per process — the answer costs a JVM start, which
+        // is exactly what the cache exists to avoid repeating.
+        _ = material.Append(JavacVersion.Value).Append('\0');
+        return Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(material.ToString())));
+    }
+
+    private static readonly Lazy<string> JavacVersion = new(ReadJavacVersion, isThreadSafe: true);
+
+    private static string ReadJavacVersion()
+    {
+        string? javac = FindJavacExecutable();
+        if (javac is null)
+        {
+            return "no-javac";
+        }
+
+        try
+        {
+            ProcessStartInfo psi = new(javac)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
+            };
+            psi.ArgumentList.Add("-version");
+            using Process? process = Process.Start(psi);
+            if (process is null)
+            {
+                return "no-javac";
+            }
+
+            string output = process.StandardOutput.ReadToEnd();
+            _ = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            return output.Trim();
+        }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception)
+        {
+            return "unknown-javac";
+        }
+    }
+
+    private static string ResolveCacheRoot()
+    {
+        string? root = Environment.GetEnvironmentVariable("LOCALAPPDATA");
+        if (root is null)
+        {
+            root = Environment.GetEnvironmentVariable("XDG_CACHE_HOME");
+        }
+
+        string cache = (root is null || root.Length == 0
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache")
+            : Path.Combine(root, "h2sharp"))
+            + Path.DirectorySeparatorChar + "oracle-classes";
+        Directory.CreateDirectory(cache);
+        return cache;
     }
 
     /// <summary>
@@ -214,57 +394,59 @@ internal static class JavaOracle
                 .Replace("\r", "\n", StringComparison.Ordinal)
                 .TrimEnd('\n');
 
-    private static string PrepareWorkDirectory(
-        string className, string javaSource, IReadOnlyList<string>? inputs, IReadOnlyList<int>? numbers)
+    /// <summary>
+    /// Writes the snippet's input files next to the compiled classes, which is where the
+    /// snippet reads them from: both are relative to the directory it runs in.
+    /// </summary>
+    /// <remarks>
+    /// The files are rewritten for every run, because the cache outlives the call: a second
+    /// test with the same snippet but different inputs must see its own.
+    /// </remarks>
+    private static void WriteInputs(
+        string directory, IReadOnlyList<string>? inputs, IReadOnlyList<int>? numbers)
     {
-        string work = Path.Combine(
-            Path.GetTempPath(), "h2sharp-oracle", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(work);
-        File.WriteAllText(
-            Path.Combine(work, className + ".java"), javaSource, new UTF8Encoding(false));
-
-        if (inputs is not null)
+        if (inputs is null)
         {
-            StringBuilder payload = new();
-            foreach (string input in inputs)
-            {
-                payload.Append(ToCodeUnitsHex(input)).Append('\n');
-            }
-
-            File.WriteAllText(
-                Path.Combine(work, "inputs.hex"), payload.ToString(), new UTF8Encoding(false));
-
-            // Numeric parameters live in their own file so a snippet can read them as
-            // int[] without routing them through the string transport.
-            StringBuilder numeric = new();
-            foreach (int value in numbers ?? [])
-            {
-                numeric.Append(value.ToString(CultureInfo.InvariantCulture)).Append('\n');
-            }
-
-            File.WriteAllText(
-                Path.Combine(work, "numbers.txt"), numeric.ToString(), new UTF8Encoding(false));
+            return;
         }
 
-        return work;
+        StringBuilder payload = new();
+        foreach (string input in inputs)
+        {
+            payload.Append(ToCodeUnitsHex(input)).Append('\n');
+        }
+
+        File.WriteAllText(
+            Path.Combine(directory, "inputs.hex"), payload.ToString(), new UTF8Encoding(false));
+
+        // Numeric parameters live in their own file so a snippet can read them as
+        // int[] without routing them through the string transport.
+        StringBuilder numeric = new();
+        foreach (int value in numbers ?? [])
+        {
+            numeric.Append(value.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        }
+
+        File.WriteAllText(
+            Path.Combine(directory, "numbers.txt"), numeric.ToString(), new UTF8Encoding(false));
     }
 
     private static string[] CompileArguments(
-        string work, string className, string[]? additionalClassPath)
+        string directory, string className, string[]? additionalClassPath)
     {
-        List<string> args = new() { "-d", work, "-encoding", "UTF-8" };
+        List<string> args = new() { "-d", directory, "-encoding", "UTF-8" };
         if (additionalClassPath is { Length: > 0 })
         {
             args.Add("-cp");
             args.Add(string.Join(Path.PathSeparator, additionalClassPath));
         }
 
-        args.Add(Path.Combine(work, className + ".java"));
+        args.Add(Path.Combine(directory, className + ".java"));
         return args.ToArray();
     }
 
     private static string[] RunArguments(
-            string work,
+            string directory,
             string className,
             string[]? additionalClassPath,
             string[]? extraJavaArgs,
@@ -278,7 +460,7 @@ internal static class JavaOracle
         }
 
         args.Add("-cp");
-        List<string> classPath = new() { work };
+        List<string> classPath = new() { directory };
         if (additionalClassPath is { Length: > 0 })
         {
             classPath.AddRange(additionalClassPath);
@@ -300,11 +482,21 @@ internal static class JavaOracle
         return args.ToArray();
     }
 
-    private static void DeleteWorkDirectory(string work)
+    private static void TraceMiss(string key, string className, string? packageName, string javaSource)
     {
         try
         {
-            Directory.Delete(work, recursive: true);
+            string head = javaSource.ReplaceLineEndings(" ").Replace('\0', ' ');
+            if (head.Length > 160)
+            {
+                head = head[..160];
+            }
+
+            File.AppendAllText(
+                Path.Combine(Path.GetTempPath(), "h2sharp-oracle-cache-misses.txt"),
+                key + " class=" + className + " package=" + (packageName ?? "-")
+                + " head=" + head
+                + Environment.NewLine);
         }
         catch (IOException)
         {
