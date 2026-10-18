@@ -4819,3 +4819,49 @@ EXISTS с чужими колонками. Тесты `CreateTablePrimaryKeyTest
 Проверено: `CreateTablePrimaryKeyTests` (оракул) зелёный, `H2Sharp.Tests` **1067**,
 `Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` — прежние задуманные.
 
+### ALTER TABLE: ADD/DROP CONSTRAINT
+
+**`AlterTable` без выдуманного хелпера.** `Update()` эталонный: `findTableOrView` → при
+отсутствии `IF EXISTS` → 0, иначе `TABLE_OR_VIEW_NOT_FOUND_1` (42102); проверка прав ждёт
+слой пользователей (отмечено в коде). Мёртвый `RequireTable` удалён — в эталоне такого метода
+нет, и он ничего не вызывал.
+
+**`AlterTableDropConstraint` портирован** (`Command/Ddl/AlterTableDropConstraint.cs`):
+ограничение ищется в *схеме*, затем проверяется, что оно принадлежит названной таблице и не
+DOMAIN; чужое имя для этой таблицы — тот же 90057 `CONSTRAINT_NOT_FOUND_1`, что и
+несуществующее, `IF EXISTS` его подавляет. Цикл RESTRICT для unique-ограничений, на которые
+ссылаются referential, перенесён дословно (90152), но пока пуст: referential-ограничений нет.
+Удаление — через `Database.RemoveSchemaObject`, как в эталоне: это освобождает имя в схеме и
+уносит индекс ограничения. `dropAction` по умолчанию `RESTRICT` константой: настройки
+`DbSettings.dropRestrict` (default true, эталон `:121`) в порту нет — отмечено в коде.
+
+**Парсер:** DTO `AlterTableStatement` (add/drop, `IfTableExists`, `DropConstraintIfExists`,
+`DropAction`), `ReadIfExists(bool)` = `readIf(IF, EXISTS)` (до и после имени, как в
+`parseAlterTableDrop`), dispatch `ALTER` → `ExpectWord("TABLE")` → `ReadAlterTable`.
+`PrepareAlterTable` собирает либо `AlterTableAddConstraint` через общий хелпер
+`CreateAddConstraintCommand` (теперь им пользуется и `PrepareCreateTable` — column-level ключ
+передаётся как one-name `TableConstraintDefinition`), либо `AlterTableDropConstraint` с
+именем/схемой/IF EXISTS/действием. `ADD` читает table-level ограничение (PRIMARY KEY
+[IF NOT EXISTS], HASH) и упирается в TODO для ADD COLUMN; `DROP CONSTRAINT` работает,
+`DROP PRIMARY KEY` (в эталоне резолвит таблицу на разборе и уходит в DROP INDEX) и
+`DROP COLUMN` — TODO с названным отказом; `SET`/`RENAME`/`ALTER` — общий TODO. `INDEX <имя>`
+в table-level PK отклоняется TODO, как и раньше (там был комментарий, теперь отказ).
+
+Оракул `AlterTableConstraintTests` (A/N/B/D, 40 строк, байт-в-байт): именованный ADD на пустой
+таблице (`PRIMARY_KEY_5`, `PKX`), 23505 с полным телом и префиксом `PUBLIC.PKX`, IF NOT EXISTS
+с тем же именем, второй ключ → 90045 (имя) / 90017 (безымянный и другой столбец), nullable
+столбец → 90023 без оставшихся ограничений, NULL в ключ → 23502 `ID`, отсутствующая таблица →
+42102, `ALTER TABLE IF EXISTS` → 0, чужое ограничение → 90057, DROP освобождает имена
+(`T_DATA`, затем READD берёт те же `PKX`/`PRIMARY_KEY_5`), после DROP дубликаты разрешены,
+IF EXISTS в обеих позициях, RESTRICT/CASCADE принимаются.
+
+**Граница:** ADD PRIMARY KEY на таблице **с данными** в эталоне строит `MVSecondaryIndex` и
+перестраивает его по строкам (дубликат при перестройке → 23505 с уборкой индекса). В порту
+`MVSecondaryIndex` — скелет (`NeedRebuild` и карта не портированы), поэтому оракул добавляет
+ключи только к пустым таблицам; READD после DROP сделан до вставки строк. Этот случай
+(включая освобождение имени при неудачной перестройке) ждёт порта `MVSecondaryIndex` и
+отмечен здесь, а не выдан за проверенный.
+
+Проверено: `AlterTableConstraintTests` (оракул) зелёный, `H2Sharp.Tests` **1068**,
+`Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
+

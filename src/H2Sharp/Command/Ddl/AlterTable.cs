@@ -102,24 +102,4 @@ public abstract class AlterTable : SchemaCommand
     /// <param name="table">the table</param>
     /// <returns>0</returns>
     public abstract long Update(Table table);
-
-    /// <summary>
-    /// Throws the "table not found" error unless the statement is IF EXISTS.
-    /// </summary>
-    /// <param name="table">the table, or null</param>
-    /// <returns>the table</returns>
-    protected Table RequireTable(Table? table)
-    {
-        if (table is null)
-        {
-            if (ifTableExists)
-            {
-                throw new TODOException("AlterTable.requireTable: IF EXISTS has nothing to return here");
-            }
-
-            throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
-        }
-
-        return table;
-    }
 }

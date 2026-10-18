@@ -39,6 +39,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using H2Sharp.Constraints;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Message;
@@ -84,6 +85,34 @@ public sealed record TableConstraintDefinition(
     bool IfNotExists,
     List<string> Columns,
     bool Hash);
+
+/// <summary>ALTER TABLE ... ADD/DROP CONSTRAINT.</summary>
+public sealed class AlterTableStatement : Statement
+{
+    /// <inheritdoc/>
+    public override int GetCommandType()
+        => AddConstraint is not null
+            ? CommandInterface.AlterTableAddConstraintPrimaryKey
+            : CommandInterface.AlterTableDropConstraint;
+
+    /// <summary>The table name.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Whether the table name was written with IF EXISTS.</summary>
+    public bool IfTableExists { get; set; }
+
+    /// <summary>The constraint to add, or null when the statement drops one.</summary>
+    public TableConstraintDefinition? AddConstraint { get; set; }
+
+    /// <summary>The name of the constraint to drop, or null when the statement adds one.</summary>
+    public string? DropConstraintName { get; set; }
+
+    /// <summary>Whether the constraint name was written with IF EXISTS.</summary>
+    public bool DropConstraintIfExists { get; set; }
+
+    /// <summary>The CASCADE/RESTRICT written after the name, or null.</summary>
+    public ConstraintActionType? DropAction { get; set; }
+}
 
 /// <summary>CREATE TABLE.</summary>
 public sealed class CreateTableStatement : Statement
@@ -313,6 +342,7 @@ public sealed class Parser
             prepared = statement switch
             {
                 CreateTableStatement create => PrepareCreateTable(current, create),
+                AlterTableStatement alter => PrepareAlterTable(current, alter),
                 DropTableStatement drop => PrepareDropTable(current, drop),
                 InsertStatement insert => PrepareInsert(current, insert),
                 UpdateStatement update => PrepareUpdate(current, update),
@@ -1674,43 +1704,81 @@ public sealed class Parser
                 // then two primary keys and error 90017, not one composite key. The column
                 // goes in by name, as in the reference; the constraint resolves it against
                 // the table when it runs.
-                Ddl.AlterTableAddConstraint key = new(
-                    session, CurrentSchema(session), CommandInterface.AlterTableAddConstraintPrimaryKey, false);
-                key.SetTableName(statement.Name);
-                if (column.ConstraintName is not null)
-                {
-                    key.SetConstraintName(column.ConstraintName);
-                }
-
-                key.SetPrimaryKeyHash(column.PrimaryKeyHash);
-                key.SetIndexColumns([new Tables.IndexColumn(tableColumn.GetName())]);
-                create.AddConstraintCommand(key);
+                create.AddConstraintCommand(CreateAddConstraintCommand(session, statement.Name,
+                    false, new TableConstraintDefinition(column.ConstraintName, false,
+                        [tableColumn.GetName()], column.PrimaryKeyHash)));
             }
         }
 
         foreach (TableConstraintDefinition constraint in statement.Constraints)
         {
-            Ddl.AlterTableAddConstraint key = new(
-                session, CurrentSchema(session), CommandInterface.AlterTableAddConstraintPrimaryKey,
-                constraint.IfNotExists);
-            key.SetTableName(statement.Name);
-            if (constraint.Name is not null)
-            {
-                key.SetConstraintName(constraint.Name);
-            }
-
-            key.SetPrimaryKeyHash(constraint.Hash);
-            List<Tables.IndexColumn> keyColumns = [];
-            foreach (string columnName in constraint.Columns)
-            {
-                keyColumns.Add(new Tables.IndexColumn(columnName));
-            }
-
-            key.SetIndexColumns([.. keyColumns]);
-            create.AddConstraintCommand(key);
+            create.AddConstraintCommand(
+                CreateAddConstraintCommand(session, statement.Name, false, constraint));
         }
 
         return create;
+    }
+
+    /// <summary>
+    /// Builds the ALTER TABLE command for a statement the parser read.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="statement">the parsed statement</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareAlterTable(SessionLocal session, AlterTableStatement statement)
+    {
+        if (statement.AddConstraint is not null)
+        {
+            Ddl.AlterTableAddConstraint add = CreateAddConstraintCommand(
+                session, statement.Name, statement.IfTableExists, statement.AddConstraint);
+            add.SetSql(statement.Sql, null);
+            return add;
+        }
+
+        Ddl.AlterTableDropConstraint drop = new(
+            session, CurrentSchema(session), statement.DropConstraintIfExists);
+        drop.SetSql(statement.Sql, null);
+        drop.SetTableName(statement.Name);
+        drop.SetIfTableExists(statement.IfTableExists);
+        drop.SetConstraintName(statement.DropConstraintName!);
+        if (statement.DropAction is ConstraintActionType action)
+        {
+            drop.SetDropAction(action);
+        }
+
+        return drop;
+    }
+
+    /// <summary>
+    /// Builds the command that adds a primary key, as both CREATE TABLE and ALTER TABLE do.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="tableName">the table</param>
+    /// <param name="ifTableExists">whether the table was written with IF EXISTS</param>
+    /// <param name="constraint">the parsed constraint</param>
+    /// <returns>the command</returns>
+    private Ddl.AlterTableAddConstraint CreateAddConstraintCommand(SessionLocal session,
+        string tableName, bool ifTableExists, TableConstraintDefinition constraint)
+    {
+        Ddl.AlterTableAddConstraint key = new(
+            session, CurrentSchema(session), CommandInterface.AlterTableAddConstraintPrimaryKey,
+            constraint.IfNotExists);
+        key.SetTableName(tableName);
+        key.SetIfTableExists(ifTableExists);
+        if (constraint.Name is not null)
+        {
+            key.SetConstraintName(constraint.Name);
+        }
+
+        key.SetPrimaryKeyHash(constraint.Hash);
+        List<Tables.IndexColumn> keyColumns = [];
+        foreach (string columnName in constraint.Columns)
+        {
+            keyColumns.Add(new Tables.IndexColumn(columnName));
+        }
+
+        key.SetIndexColumns([.. keyColumns]);
+        return key;
     }
 
     /// <summary>
@@ -2009,6 +2077,13 @@ public sealed class Parser
             return ReadCreateTable();
         }
 
+        if (IsWord("ALTER", consume: false))
+        {
+            Read();
+            ExpectWord("TABLE");
+            return ReadAlterTable();
+        }
+
         if (IsWord("DROP"))
         {
             return ReadDropTable();
@@ -2156,7 +2231,88 @@ public sealed class Parser
         while (ReadIf(Token.Comma));
 
         Expect(Token.CloseParen, ")");
+        if (IsWord("INDEX", consume: false))
+        {
+            throw new TODOException(
+                "Parser.readTableConstraint: the INDEX clause of a primary key is not ported");
+        }
+
         return new TableConstraintDefinition(name, ifNotExists, columns, hash);
+    }
+
+    /// <summary>
+    /// Reads ALTER TABLE.
+    /// </summary>
+    /// <remarks>
+    /// Only the constraint forms run: ADD of a table-level constraint and DROP CONSTRAINT. The
+    /// reference's parseAlterTable also has ADD COLUMN, DROP COLUMN, SET, RENAME, ALTER COLUMN
+    /// and DROP PRIMARY KEY (which resolves the table while reading and turns into a DROP INDEX);
+    /// each of those is a valid statement whose command is not ported, so each refuses by name
+    /// instead of failing as a syntax error.
+    /// </remarks>
+    /// <returns>the statement</returns>
+    private AlterTableStatement ReadAlterTable()
+    {
+        AlterTableStatement statement = new();
+        if (CurrentType == ParserUtil.If)
+        {
+            Read();
+            Expect(ParserUtil.Exists, "EXISTS");
+            statement.IfTableExists = true;
+        }
+
+        statement.Name = ReadIdentifier();
+        if (IsWord("ADD"))
+        {
+            if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary)
+            {
+                statement.AddConstraint = ReadTableConstraint();
+                return statement;
+            }
+
+            throw new TODOException("Parser.readAlterTable: ADD COLUMN is not ported");
+        }
+
+        if (IsWord("DROP"))
+        {
+            if (IsWord("CONSTRAINT"))
+            {
+                bool ifExists = ReadIfExists(false);
+                statement.DropConstraintName = ReadIdentifier();
+                statement.DropConstraintIfExists = ReadIfExists(ifExists);
+                statement.DropAction = IsWord("CASCADE")
+                    ? ConstraintActionType.CASCADE
+                    : IsWord("RESTRICT") ? ConstraintActionType.RESTRICT : null;
+                return statement;
+            }
+
+            if (CurrentType == ParserUtil.Primary)
+            {
+                throw new TODOException(
+                    "Parser.readAlterTable: DROP PRIMARY KEY is not ported, it goes through DROP INDEX");
+            }
+
+            throw new TODOException("Parser.readAlterTable: DROP COLUMN is not ported");
+        }
+
+        throw new TODOException("Parser.readAlterTable: only ADD and DROP CONSTRAINT are ported");
+    }
+
+    /// <summary>
+    /// Reads the optional IF EXISTS words.
+    /// </summary>
+    /// <param name="ifExists">the value to keep when they are not written</param>
+    /// <returns>whether IF EXISTS was written or the value was already true</returns>
+    private bool ReadIfExists(bool ifExists)
+    {
+        if (CurrentType == ParserUtil.If)
+        {
+            Read();
+            Expect(ParserUtil.Exists, "EXISTS");
+            ifExists = true;
+        }
+
+        return ifExists;
     }
 
     private DropTableStatement ReadDropTable()
