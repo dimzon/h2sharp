@@ -2,6 +2,23 @@
 
 Памятка для себя. Не документация продукта; читать при возобновлении работы.
 
+### Двенадцатый аудит (#12): дубли и лишние аллокации — в работе
+
+Разобраны **A1** (Regex-кэш в `CompareLike`), **A2** (span-срез в `shortcutToContains`),
+**A3** (`AppendInvariant` + `AppendZeroPadded`), **B1** (`Bits.Reverse`), **B2** (пул
+скретчей страниц), **B4** (`GetVarLongLen` через `LeadingZeroCount`), **B5**
+(`SequenceCompareTo`/`SequenceEqual`), **C1** (одна цепочка выражений в `Parser`),
+**C2** (`NotNull`/`CastNotSupported`/`ReadNumeric`), **C3** (`CombineTypes` на
+`SimpleCase`), **C5** (`StringUtils.RegionMatches`), **C6** (`SyncTask.Run`),
+**C7** (`RunRemaining`/`CheckRunnableState`), **C8** (`CopySlice` для `char`),
+**C9** (`FromDateValue`/`IsIntervalType`), **C10** (`JsonConstructorUtils.Truncate`).
+Проверено замером: `GetByte`/`GetInt32` дают 0 байт на вызов (раньше — 136), причина
+была в `Assert.Equal` внутри цикла, а не в делегатах; делегаты закешированы в
+`static readonly`-поля, как `byteFrom*`.
+
+**Открыто:** транзакционный DDL (два теста `H2TransactionSemanticsTests`), нужна
+мета-таблица; аудит видимости `public`; ретипизация `TransactionMap<long, V>`.
+
 ## Правило работы
 
 1. **Сначала эталон, потом код.** Если поведение можно проверить — проверяй на JVM

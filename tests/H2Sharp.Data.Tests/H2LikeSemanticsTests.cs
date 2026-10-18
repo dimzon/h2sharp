@@ -176,4 +176,30 @@ public sealed class H2LikeSemanticsTests
         H2SharpException databaseException = Assert.IsType<H2SharpException>(exception);
         Assert.Equal(22025, databaseException.H2ErrorCode);
     }
+
+    [Fact]
+    public void GetByteAndGetInt32DoNotAllocatePerCall()
+    {
+        using IDbConnection connection = Open();
+        PrepareNames(connection);
+        using IDbCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT ID FROM T";
+        using IDataReader reader = command.ExecuteReader();
+        Assert.True(reader.Read());
+
+        // Warm the closed generic type, then a call must not allocate: the numeric getters
+        // pass their conversion delegates, and those are created once, not per call.
+        Assert.Equal(1, reader.GetInt32(0));
+        Assert.Equal((byte)1, reader.GetByte(0));
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        byte sum = 0;
+        for (int i = 0; i < 1000; i++)
+        {
+            sum = (byte)(sum + reader.GetByte(0));
+        }
+
+        Assert.Equal(0L, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.NotEqual(0, sum);
+    }
 }

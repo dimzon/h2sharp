@@ -247,11 +247,60 @@ public sealed class H2DataReader : DbDataReader
         throw CastNotSupported(cell, "Boolean");
     }
 
+    private static readonly Func<int, byte> byteFromInt32 = Convert.ToByte;
+    private static readonly Func<long, byte> byteFromInt64 = Convert.ToByte;
+    private static readonly Func<float, byte> byteFromSingle = Convert.ToByte;
+    private static readonly Func<double, byte> byteFromDouble = Convert.ToByte;
+    private static readonly Func<decimal, byte> byteFromDecimal = Convert.ToByte;
+    private static readonly Func<string, byte> byteFromString = s => Convert.ToByte(s, CultureInfo.InvariantCulture);
+
+    private static readonly Func<int, short> shortFromInt32 = Convert.ToInt16;
+    private static readonly Func<long, short> shortFromInt64 = Convert.ToInt16;
+    private static readonly Func<float, short> shortFromSingle = Convert.ToInt16;
+    private static readonly Func<double, short> shortFromDouble = Convert.ToInt16;
+    private static readonly Func<decimal, short> shortFromDecimal = Convert.ToInt16;
+    private static readonly Func<string, short> shortFromString = s => Convert.ToInt16(s, CultureInfo.InvariantCulture);
+
+    private static readonly Func<int, int> intFromInt32 = Convert.ToInt32;
+    private static readonly Func<long, int> intFromInt64 = Convert.ToInt32;
+    private static readonly Func<float, int> intFromSingle = Convert.ToInt32;
+    private static readonly Func<double, int> intFromDouble = Convert.ToInt32;
+    private static readonly Func<decimal, int> intFromDecimal = Convert.ToInt32;
+    private static readonly Func<string, int> intFromString = s => Convert.ToInt32(s, CultureInfo.InvariantCulture);
+
+    private static readonly Func<int, long> longFromInt32 = Convert.ToInt64;
+    private static readonly Func<long, long> longFromInt64 = Convert.ToInt64;
+    private static readonly Func<float, long> longFromSingle = Convert.ToInt64;
+    private static readonly Func<double, long> longFromDouble = Convert.ToInt64;
+    private static readonly Func<decimal, long> longFromDecimal = Convert.ToInt64;
+    private static readonly Func<string, long> longFromString = s => Convert.ToInt64(s, CultureInfo.InvariantCulture);
+
+    private static readonly Func<int, decimal> decimalFromInt32 = Convert.ToDecimal;
+    private static readonly Func<long, decimal> decimalFromInt64 = Convert.ToDecimal;
+    private static readonly Func<float, decimal> decimalFromSingle = Convert.ToDecimal;
+    private static readonly Func<double, decimal> decimalFromDouble = Convert.ToDecimal;
+    private static readonly Func<decimal, decimal> decimalFromDecimal = Convert.ToDecimal;
+    private static readonly Func<string, decimal> decimalFromString = s => Convert.ToDecimal(s, CultureInfo.InvariantCulture);
+
+    private static readonly Func<int, double> doubleFromInt32 = Convert.ToDouble;
+    private static readonly Func<long, double> doubleFromInt64 = Convert.ToDouble;
+    private static readonly Func<float, double> doubleFromSingle = Convert.ToDouble;
+    private static readonly Func<double, double> doubleFromDouble = Convert.ToDouble;
+    private static readonly Func<decimal, double> doubleFromDecimal = Convert.ToDouble;
+    private static readonly Func<string, double> doubleFromString = s => Convert.ToDouble(s, CultureInfo.InvariantCulture);
+
+    private static readonly Func<int, float> floatFromInt32 = Convert.ToSingle;
+    private static readonly Func<long, float> floatFromInt64 = Convert.ToSingle;
+    private static readonly Func<float, float> floatFromSingle = Convert.ToSingle;
+    private static readonly Func<double, float> floatFromDouble = Convert.ToSingle;
+    private static readonly Func<decimal, float> floatFromDecimal = Convert.ToSingle;
+    private static readonly Func<string, float> floatFromString = s => Convert.ToSingle(s, CultureInfo.InvariantCulture);
+
     /// <inheritdoc/>
     public override byte GetByte(int ordinal)
         => ReadNumeric(ordinal, "Byte",
-            Convert.ToByte, Convert.ToByte, Convert.ToByte, Convert.ToByte, Convert.ToByte,
-            s => Convert.ToByte(s, CultureInfo.InvariantCulture));
+            byteFromInt32, byteFromInt64, byteFromSingle, byteFromDouble, byteFromDecimal,
+            byteFromString);
 
     /// <inheritdoc/>
     public override char GetChar(int ordinal)
@@ -287,20 +336,20 @@ public sealed class H2DataReader : DbDataReader
     /// <inheritdoc/>
     public override decimal GetDecimal(int ordinal)
         => ReadNumeric(ordinal, "Decimal",
-            Convert.ToDecimal, Convert.ToDecimal, Convert.ToDecimal, Convert.ToDecimal, Convert.ToDecimal,
-            s => Convert.ToDecimal(s, CultureInfo.InvariantCulture));
+            decimalFromInt32, decimalFromInt64, decimalFromSingle, decimalFromDouble, decimalFromDecimal,
+            decimalFromString);
 
     /// <inheritdoc/>
     public override double GetDouble(int ordinal)
         => ReadNumeric(ordinal, "Double",
-            Convert.ToDouble, Convert.ToDouble, Convert.ToDouble, Convert.ToDouble, Convert.ToDouble,
-            s => Convert.ToDouble(s, CultureInfo.InvariantCulture));
+            doubleFromInt32, doubleFromInt64, doubleFromSingle, doubleFromDouble, doubleFromDecimal,
+            doubleFromString);
 
     /// <inheritdoc/>
     public override float GetFloat(int ordinal)
         => ReadNumeric(ordinal, "Single",
-            Convert.ToSingle, Convert.ToSingle, Convert.ToSingle, Convert.ToSingle, Convert.ToSingle,
-            s => Convert.ToSingle(s, CultureInfo.InvariantCulture));
+            floatFromInt32, floatFromInt64, floatFromSingle, floatFromDouble, floatFromDecimal,
+            floatFromString);
 
     /// <inheritdoc/>
     public override Guid GetGuid(int ordinal)
@@ -328,20 +377,20 @@ public sealed class H2DataReader : DbDataReader
     /// <inheritdoc/>
     public override short GetInt16(int ordinal)
         => ReadNumeric(ordinal, "Int16",
-            Convert.ToInt16, Convert.ToInt16, Convert.ToInt16, Convert.ToInt16, Convert.ToInt16,
-            s => Convert.ToInt16(s, CultureInfo.InvariantCulture));
+            shortFromInt32, shortFromInt64, shortFromSingle, shortFromDouble, shortFromDecimal,
+            shortFromString);
 
     /// <inheritdoc/>
     public override int GetInt32(int ordinal)
         => ReadNumeric(ordinal, "Int32",
-            Convert.ToInt32, Convert.ToInt32, Convert.ToInt32, Convert.ToInt32, Convert.ToInt32,
-            s => Convert.ToInt32(s, CultureInfo.InvariantCulture));
+            intFromInt32, intFromInt64, intFromSingle, intFromDouble, intFromDecimal,
+            intFromString);
 
     /// <inheritdoc/>
     public override long GetInt64(int ordinal)
         => ReadNumeric(ordinal, "Int64",
-            Convert.ToInt64, Convert.ToInt64, Convert.ToInt64, Convert.ToInt64, Convert.ToInt64,
-            s => Convert.ToInt64(s, CultureInfo.InvariantCulture));
+            longFromInt32, longFromInt64, longFromSingle, longFromDouble, longFromDecimal,
+            longFromString);
 
     /// <inheritdoc/>
     /// <remarks>
