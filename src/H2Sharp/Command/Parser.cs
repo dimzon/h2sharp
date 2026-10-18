@@ -64,7 +64,26 @@ public abstract class Statement
 /// <param name="Type">the type as it was written</param>
 /// <param name="NotNull">whether NOT NULL was written</param>
 /// <param name="PrimaryKey">whether PRIMARY KEY was written</param>
-public sealed record ColumnDefinition(string Name, string Type, bool NotNull, bool PrimaryKey);
+/// <param name="ConstraintName">the name written after CONSTRAINT, or null</param>
+/// <param name="PrimaryKeyHash">whether HASH followed PRIMARY KEY</param>
+public sealed record ColumnDefinition(
+    string Name,
+    string Type,
+    bool NotNull,
+    bool PrimaryKey,
+    string? ConstraintName,
+    bool PrimaryKeyHash);
+
+/// <summary>One table-level constraint of a CREATE TABLE.</summary>
+/// <param name="Name">the name written after CONSTRAINT, or null</param>
+/// <param name="IfNotExists">whether IF NOT EXISTS was written</param>
+/// <param name="Columns">the covered columns, by name</param>
+/// <param name="Hash">whether HASH was written</param>
+public sealed record TableConstraintDefinition(
+    string? Name,
+    bool IfNotExists,
+    List<string> Columns,
+    bool Hash);
 
 /// <summary>CREATE TABLE.</summary>
 public sealed class CreateTableStatement : Statement
@@ -77,6 +96,9 @@ public sealed class CreateTableStatement : Statement
 
     /// <summary>The columns, in order.</summary>
     public List<ColumnDefinition> Columns { get; } = [];
+
+    /// <summary>The table-level constraints, in the order they were written.</summary>
+    public List<TableConstraintDefinition> Constraints { get; } = [];
 
     /// <summary>Whether IF NOT EXISTS was written.</summary>
     public bool IfNotExists { get; set; }
@@ -1649,13 +1671,43 @@ public sealed class Parser
             {
                 // One column-level PRIMARY KEY is one constraint over one column, as in the
                 // reference's readColumnConstraints: a second one over different columns is
-                // then two primary keys and error 90017, not one composite key.
+                // then two primary keys and error 90017, not one composite key. The column
+                // goes in by name, as in the reference; the constraint resolves it against
+                // the table when it runs.
                 Ddl.AlterTableAddConstraint key = new(
                     session, CurrentSchema(session), CommandInterface.AlterTableAddConstraintPrimaryKey, false);
                 key.SetTableName(statement.Name);
-                key.SetIndexColumns([new Tables.IndexColumn(tableColumn)]);
+                if (column.ConstraintName is not null)
+                {
+                    key.SetConstraintName(column.ConstraintName);
+                }
+
+                key.SetPrimaryKeyHash(column.PrimaryKeyHash);
+                key.SetIndexColumns([new Tables.IndexColumn(tableColumn.GetName())]);
                 create.AddConstraintCommand(key);
             }
+        }
+
+        foreach (TableConstraintDefinition constraint in statement.Constraints)
+        {
+            Ddl.AlterTableAddConstraint key = new(
+                session, CurrentSchema(session), CommandInterface.AlterTableAddConstraintPrimaryKey,
+                constraint.IfNotExists);
+            key.SetTableName(statement.Name);
+            if (constraint.Name is not null)
+            {
+                key.SetConstraintName(constraint.Name);
+            }
+
+            key.SetPrimaryKeyHash(constraint.Hash);
+            List<Tables.IndexColumn> keyColumns = [];
+            foreach (string columnName in constraint.Columns)
+            {
+                keyColumns.Add(new Tables.IndexColumn(columnName));
+            }
+
+            key.SetIndexColumns([.. keyColumns]);
+            create.AddConstraintCommand(key);
         }
 
         return create;
@@ -2000,12 +2052,30 @@ public sealed class Parser
         Expect(Token.OpenParen, "(");
         do
         {
+            // The reference tries every item as a table constraint first and falls back to a
+            // column; the set of words that can start one is the same one parseTableConstraintIf
+            // switches on. A column named like one of them is written quoted, which is another
+            // token type, so the words are unambiguous here.
+            if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary)
+            {
+                statement.Constraints.Add(ReadTableConstraint());
+                continue;
+            }
+
+            if (CurrentType is ParserUtil.Unique or ParserUtil.Foreign or ParserUtil.Check)
+            {
+                throw new TODOException(
+                    "Parser.readCreateTable: table constraints other than the primary key are not ported");
+            }
+
             string name = ReadIdentifier();
             string type = ReadTypeName();
             bool notNull = false;
             bool primaryKey = false;
+            bool primaryKeyHash = false;
+            string? constraintName = null;
             while (CurrentType is ParserUtil.Not or ParserUtil.Null or ParserUtil.Primary
-                or ParserUtil.Key or ParserUtil.Unique)
+                or ParserUtil.Key or ParserUtil.Unique or ParserUtil.Constraint)
             {
                 switch (CurrentType)
                 {
@@ -2018,10 +2088,18 @@ public sealed class Parser
                         Read();
                         Expect(ParserUtil.Key, "KEY");
                         primaryKey = true;
+                        primaryKeyHash = IsWord("HASH");
                         break;
                     case ParserUtil.Unique:
+                        throw new TODOException(
+                            "Parser.readCreateTable: column constraints other than the primary key are not ported");
+                    case ParserUtil.Constraint:
                         Read();
+                        constraintName = ReadIdentifier();
+                        Expect(ParserUtil.Primary, "PRIMARY");
+                        Expect(ParserUtil.Key, "KEY");
                         primaryKey = true;
+                        primaryKeyHash = IsWord("HASH");
                         break;
                     default:
                         Read();
@@ -2029,12 +2107,56 @@ public sealed class Parser
                 }
             }
 
-            statement.Columns.Add(new ColumnDefinition(name, type, notNull, primaryKey));
+            statement.Columns.Add(new ColumnDefinition(name, type, notNull, primaryKey, constraintName, primaryKeyHash));
         }
         while (ReadIf(Token.Comma));
 
         Expect(Token.CloseParen, ")");
         return statement;
+    }
+
+    /// <summary>
+    /// Reads a table-level constraint of a CREATE TABLE.
+    /// </summary>
+    /// <remarks>
+    /// Only PRIMARY KEY runs: the reference's parseTableConstraintIf also reads UNIQUE, FOREIGN
+    /// KEY and CHECK, and those four go to the same AlterTableAddConstraint whose other
+    /// branches are not ported, so the parser refuses them where the reference would accept the
+    /// statements. The column list is read as names; the table resolves them when the command
+    /// runs, as it does on the JVM.
+    /// </remarks>
+    /// <returns>the constraint</returns>
+    private TableConstraintDefinition ReadTableConstraint()
+    {
+        string? name = null;
+        bool ifNotExists = false;
+        if (CurrentType == ParserUtil.Constraint)
+        {
+            Read();
+            if (CurrentType == ParserUtil.If)
+            {
+                Read();
+                Expect(ParserUtil.Not, "NOT");
+                Expect(ParserUtil.Exists, "EXISTS");
+                ifNotExists = true;
+            }
+
+            name = ReadIdentifier();
+        }
+
+        Expect(ParserUtil.Primary, "PRIMARY");
+        Expect(ParserUtil.Key, "KEY");
+        bool hash = IsWord("HASH");
+        Expect(Token.OpenParen, "(");
+        List<string> columns = [];
+        do
+        {
+            columns.Add(ReadIdentifier());
+        }
+        while (ReadIf(Token.Comma));
+
+        Expect(Token.CloseParen, ")");
+        return new TableConstraintDefinition(name, ifNotExists, columns, hash);
     }
 
     private DropTableStatement ReadDropTable()

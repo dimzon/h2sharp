@@ -22,6 +22,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using H2Sharp.Constraints;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Result;
@@ -238,6 +239,50 @@ public abstract class Index : SchemaObject
     /// </summary>
     /// <returns>the table</returns>
     public Table? GetTable() => table;
+
+    /// <summary>
+    /// Gets the "PRIMARY KEY ON table [(column)]" text a duplicate-key failure names.
+    /// </summary>
+    /// <remarks>
+    /// The SQL of the owning primary key constraint comes first when there is one, which is
+    /// what makes the JVM answer read "PUBLIC.CONSTRAINT_5 PRIMARY KEY ON PUBLIC.T(ID)": the
+    /// prefix is the constraint's schema-qualified name and is not part of this index at all.
+    /// The constraint is found by walking the table's constraints rather than kept as a field,
+    /// because an index may be owned by a constraint that was renamed, and the walk always
+    /// answers with the current name.
+    /// </remarks>
+    /// <param name="mainIndexColumn">the column index</param>
+    /// <returns>the message</returns>
+    protected StringBuilder GetDuplicatePrimaryKeyMessage(int mainIndexColumn)
+    {
+        StringBuilder builder = new(64);
+        if (table is not null)
+        {
+            foreach (Constraints.Constraint constraint in table.GetConstraints())
+            {
+                if (constraint.GetConstraintType() == Constraints.Constraint.Type.PRIMARY_KEY)
+                {
+                    _ = constraint.GetSql(builder, HasSql.TraceSqlFlags).Append(' ');
+                    break;
+                }
+            }
+        }
+
+        if (table is null)
+        {
+            throw new TODOException("Index.getDuplicatePrimaryKeyMessage: no table");
+        }
+
+        _ = table.GetSql(builder.Append("PRIMARY KEY ON "), HasSql.TraceSqlFlags);
+        if (mainIndexColumn >= 0 && mainIndexColumn < indexColumns.Length)
+        {
+            _ = builder.Append('(');
+            _ = IndexColumn.WriteColumns(builder, indexColumns, mainIndexColumn, mainIndexColumn + 1,
+                HasSql.TraceSqlFlags).Append(')');
+        }
+
+        return builder;
+    }
 
     /// <summary>
     /// Whether finding through this index always reads the whole table.

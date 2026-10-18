@@ -721,17 +721,20 @@ public sealed class MVTable : Table
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The reference body starts with the table's LOB storage and ends with the base's
-    /// children — dependent views, synonyms, triggers, constraints, rights and sequences — and
-    /// none of those exist here yet, so what runs is the middle: every index but the scan is
-    /// removed, and each one that has a name is removed from the schema with it. That schema
-    /// removal is not bookkeeping: it releases the name, which is what lets a table dropped and
-    /// created again receive the same PRIMARY_KEY_ name, as it does on the JVM.
-    /// The scan index is closed last, as in the reference; removing its map is deferred with
-    /// the transaction store's removeTable.
+    /// The reference body starts with the table's LOB storage — none here — and then calls the
+    /// base, which removes the children the table knows about, constraints among them; the
+    /// constraint removal goes first because an index removed before its owning constraint
+    /// would leave that constraint naming an index that is gone. What follows is the middle:
+    /// every index but the scan is removed, and each one that has a name is removed from the
+    /// schema with it. That schema removal is not bookkeeping: it releases the name, which is
+    /// what lets a table dropped and created again receive the same PRIMARY_KEY_ name, as it
+    /// does on the JVM. The scan index is closed last, as in the reference; removing its map
+    /// is deferred with the transaction store's removeTable.
     /// </remarks>
     public override void RemoveChildrenAndResources(SessionLocal session)
     {
+        base.RemoveChildrenAndResources(session);
+
         // remove scan index (at position 0 on the list) last
         while (indexes.Count > 1)
         {

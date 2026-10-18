@@ -31,6 +31,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Constraints;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Tables;
@@ -53,6 +54,9 @@ public sealed class Schema : DbObject
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, Index> indexes =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, Constraint> constraints =
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly bool system;
@@ -180,6 +184,25 @@ public sealed class Schema : DbObject
     }
 
     /// <summary>
+    /// Try to find a constraint with this name. This method returns null if no constraint with
+    /// this name exists.
+    /// </summary>
+    /// <remarks>
+    /// The reference also looks the name up among the session's local temporary table
+    /// constraints; session temporary tables are not ported here, so that half of the lookup
+    /// has nothing it could find.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="name">the constraint name</param>
+    /// <returns>the constraint or null</returns>
+    public Constraint? FindConstraint(SessionLocal session, string name)
+    {
+        _ = session;
+        _ = constraints.TryGetValue(name, out Constraint? constraint);
+        return constraint;
+    }
+
+    /// <summary>
     /// Adds a schema object to this schema.
     /// </summary>
     /// <remarks>
@@ -194,18 +217,35 @@ public sealed class Schema : DbObject
     public void Add(SchemaObject obj)
     {
         ArgumentNullException.ThrowIfNull(obj);
-        if (obj is not Index index)
+        switch (obj)
         {
-            throw new TODOException("Schema.add: the object kind is not ported");
-        }
+            case Index index:
+                {
+                    string name = index.GetName()!;
+                    if (!indexes.TryAdd(name, index))
+                    {
+                        throw DbException.GetInternalError("object already exists: " + name);
+                    }
 
-        string name = index.GetName()!;
-        if (!indexes.TryAdd(name, index))
-        {
-            throw DbException.GetInternalError("object already exists: " + name);
-        }
+                    FreeUniqueName(name);
+                    return;
+                }
 
-        FreeUniqueName(name);
+            case Constraint constraint:
+                {
+                    string name = constraint.GetName()!;
+                    if (!constraints.TryAdd(name, constraint))
+                    {
+                        throw DbException.GetInternalError("object already exists: " + name);
+                    }
+
+                    FreeUniqueName(name);
+                    return;
+                }
+
+            default:
+                throw new TODOException("Schema.add: the object kind is not ported");
+        }
     }
 
     /// <summary>
@@ -238,18 +278,35 @@ public sealed class Schema : DbObject
     public void Remove(SchemaObject obj)
     {
         ArgumentNullException.ThrowIfNull(obj);
-        if (obj is not Index index)
+        switch (obj)
         {
-            throw new TODOException("Schema.remove: the object kind is not ported");
-        }
+            case Index index:
+                {
+                    string objName = index.GetName()!;
+                    if (!indexes.TryRemove(objName, out _))
+                    {
+                        throw DbException.GetInternalError("not found: " + objName);
+                    }
 
-        string objName = index.GetName()!;
-        if (!indexes.TryRemove(objName, out _))
-        {
-            throw DbException.GetInternalError("not found: " + objName);
-        }
+                    FreeUniqueName(objName);
+                    return;
+                }
 
-        FreeUniqueName(objName);
+            case Constraint constraint:
+                {
+                    string objName = constraint.GetName()!;
+                    if (!constraints.TryRemove(objName, out _))
+                    {
+                        throw DbException.GetInternalError("not found: " + objName);
+                    }
+
+                    FreeUniqueName(objName);
+                    return;
+                }
+
+            default:
+                throw new TODOException("Schema.remove: the object kind is not ported");
+        }
     }
 
     /// <summary>
@@ -281,7 +338,7 @@ public sealed class Schema : DbObject
     /// </summary>
     public bool IsEmpty()
     {
-        return tablesAndViews.IsEmpty && indexes.IsEmpty;
+        return tablesAndViews.IsEmpty && indexes.IsEmpty && constraints.IsEmpty;
     }
 
     /// <summary>
@@ -335,6 +392,30 @@ public sealed class Schema : DbObject
 
         _ = session;
         return GetUniqueName(table.GetTableName(), indexes, prefix);
+    }
+
+    /// <summary>
+    /// Creates a unique constraint name.
+    /// </summary>
+    /// <remarks>
+    /// The rule and the prefix are the reference's: "CONSTRAINT_" followed by the hashed table
+    /// name, so the first primary key of a table T is CONSTRAINT_5 on the JVM and here. The
+    /// name is looked for among constraints, not among all objects: an index and a constraint
+    /// may carry the same name in the reference, and a lookup in the wrong map would rename
+    /// one of them without cause.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="table">the constraint table</param>
+    /// <returns>the unique name</returns>
+    public string GetUniqueConstraintName(SessionLocal session, Table table)
+    {
+        if (table.IsTemporary() && !table.IsGlobalTemporary())
+        {
+            throw new TODOException("Schema.getUniqueConstraintName: session temporary tables are not ported");
+        }
+
+        _ = session;
+        return GetUniqueName(table.GetTableName(), constraints, "CONSTRAINT_");
     }
 
     /// <summary>

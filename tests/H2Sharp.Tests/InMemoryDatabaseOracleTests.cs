@@ -14,11 +14,12 @@
  * The reference is asked the same questions over JDBC, and the answer is compared as the
  * observable facts rather than as text: same database or not, table visible or not, database
  * back or empty. Those are what a caller depends on; the wording of any message is not.
+ *
+ * Dapper is used as the caller convenience only: Execute/ExecuteScalar over IDbConnection
+ * with an H2SharpException as the statement's failure.
  */
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using Dapper;
 using H2Sharp.Data;
 using H2Sharp.Tests.Oracle;
 using Xunit;
@@ -119,9 +120,7 @@ public sealed class InMemoryDatabaseOracleTests
     {
         try
         {
-            using System.Data.Common.DbCommand command = connection.CreateCommand();
-            command.CommandText = sql;
-            _ = command.ExecuteNonQuery();
+            _ = connection.Execute(sql);
             return "ok";
         }
         catch (H2SharpException ex)
@@ -134,9 +133,7 @@ public sealed class InMemoryDatabaseOracleTests
     {
         try
         {
-            using System.Data.Common.DbCommand command = connection.CreateCommand();
-            command.CommandText = sql;
-            object? value = command.ExecuteScalar();
+            object? value = connection.ExecuteScalar(sql);
             return value?.ToString() ?? "null";
         }
         catch (H2SharpException ex)

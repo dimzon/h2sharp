@@ -4758,3 +4758,64 @@ nullable-поиск — `findPrimaryKey`. Ручные таблицы в тес�
 сообщения, переиспользование имени после DROP. `H2Sharp.Tests` **1067** зелёных,
 `Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` — прежние задуманные.
 
+**Продолжение:** префикс сообщения и table-level/именованные ключи портированы следующим
+заходом — раздел ниже.
+
+### Constraint-слой: ограничение как объект схемы
+
+Портированы `Constraint` (abstract : `SchemaObject`, `IComparable<Constraint>`, enum `Type`
+с CHECK/PRIMARY_KEY/UNIQUE/REFERENTIAL/DOMAIN — члены в reference-стиле uppercase, методы
+enum'а — static-класс `ConstraintTypeRules`, как у `ConstraintActionType`) и
+`ConstraintUnique` целиком: create SQL (с `INDEX <имя>` у копии и NULLS DISTINCT),
+`RemoveChildrenAndResources` с циклом referential-ограничений, передачей индекса владельцу
+(`RemoveIndexOrTransferOwnership`) и инвалидацией, `CheckRow`/`Rebuild` — пустыми (их тела
+не портированы, отмечено). Реестр схемы: `constraints`, ветки `Constraint` в `Add`/`Remove`,
+`FindConstraint` (temp-ветка — отказ), `GetUniqueConstraintName` (литерал `"CONSTRAINT_"`),
+`IsEmpty` учитывает ограничения. У таблицы: `AddConstraint`/`GetConstraints`/
+`RemoveConstraint`/`RemoveIndexOrTransferOwnership`, `RemoveChildrenAndResources` стал
+virtual с эталонным циклом удаления ограничений; `MVTable` зовёт base **до** цикла индексов —
+ограничение, снятое после своего индекса, осталось бы ссылаться на удалённый.
+
+**`AlterTableAddConstraint` — PK-ветка целиком.** Обёртка `Update` с уборкой созданных
+индексов и `FreeUniqueName` в `finally`; `TryUpdate` в эталонном порядке: проверка имени
+(90045; ветка quirks-mode не портирована — режима нет, отмечено), `MapColumns` (42122, когда
+колонки нет, — **во время выполнения**, как в эталоне), цикл 90017, сверка с существующим
+индексом, создание `PRIMARY_KEY_`-индекса с `SetBelongsToConstraint(true)`,
+`AllocateObjectId`, `GenerateConstraintName`, `new ConstraintUnique(...)`,
+`AddConstraintToTable` (`db.AddSchemaObject` + `table.AddConstraint`). Поле
+`createdUniqueConstraint` эталона снято (CS0649, назначалось бы только в непортированной
+referential-ветке), `createdIndexes` для PK-пути пуст — эталон для ключа в этот список не
+пишет.
+
+**`IndexColumn` умеет эталонную name-only форму.** Столбец констрейнта читается до того, как
+есть таблица, поэтому эталон носит имя, а колонку мапит при выполнении; порт получил
+creation по имени и маппинг в `AlterTableAddConstraint.MapColumns` (с сохранением sort-
+маски при пересборке массива — эталон мутирует на месте). Это не косметика: без неё
+`CREATE TABLE T(A INT, CONSTRAINT PKZ PRIMARY KEY(A), CONSTRAINT IF NOT EXISTS PKZ PRIMARY
+KEY(B))` падал бы 42122 на разборе, тогда как эталон сравнивает имена ключей и отвечает
+90017 **до** поиска колонки.
+
+**Парсер:** table-level `[CONSTRAINT [IF NOT EXISTS] имя] PRIMARY KEY [HASH] (колонки)` и
+column-level `CONSTRAINT имя PRIMARY KEY [HASH]`; всё это строит те же команды
+`AlterTableAddConstraintPrimaryKey`. UNIQUE/FOREIGN/CHECK (и колонковые, и table-level)
+отказывают `TODOException` — раньше column-level `UNIQUE` молча становился PK, это
+устранено. `INDEX <имя>` в table-level PK и ASC/DESC в списке колонок ключа не читаются
+(нет вызывателя); список колонок резолвится на выполнении.
+
+**Сообщение о дубликате теперь эталонное целиком.** `Index.GetDuplicatePrimaryKeyMessage`
+переехал в базовый `Index` (в эталоне он один и protected) с циклом по ограничениям, и
+`MVPrimaryIndex` зовёт его; префикс `PUBLIC.CONSTRAINT_5 ` / `PUBLIC.PKX ` присутствует,
+оракульный тест больше не режет сообщение. 90045 через PK-только путь **недостижим**:
+одноимённый ключ с теми же колонками `SetPrimaryKey` игнорирует, с другими — 90017 раньше
+проверки имени; ветка портирована по эталону, но теста не имеет.
+
+Оракул расширен до A/F/G/H/I/J/K (33 строки, байт-в-байт): именованный column-level и
+table-level ключ, переиспользование `CONSTRAINT_5` после DROP, одноимённый ключ, IF NOT
+EXISTS с чужими колонками. Тесты `CreateTablePrimaryKeyTests` и
+`InMemoryDatabaseOracleTests` переведены на Dapper (`Execute`/`ExecuteScalar` поверх
+`IDbConnection`, исключение — по-прежнему `H2SharpException`); Dapper добавлен в
+`H2Sharp.Tests` (в `H2Sharp.Data.Tests` он уже был).
+
+Проверено: `CreateTablePrimaryKeyTests` (оракул) зелёный, `H2Sharp.Tests` **1067**,
+`Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` — прежние задуманные.
+

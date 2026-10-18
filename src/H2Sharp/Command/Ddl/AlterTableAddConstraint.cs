@@ -21,6 +21,7 @@
  * Not ported: everything but the primary key needs the constraint machinery.
  */
 using System;
+using System.Collections.Generic;
 using H2Sharp.Constraints;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
@@ -69,6 +70,8 @@ public class AlterTableAddConstraint : AlterTable
 
     private bool primaryKeyHash;
 
+    private readonly List<H2Sharp.Indexes.Index> createdIndexes = [];
+
     /// <summary>
     /// Creates the statement.
     /// </summary>
@@ -85,65 +88,191 @@ public class AlterTableAddConstraint : AlterTable
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Only the primary key runs: it is an index, and the index layer is here. Every other
-    /// constraint waits for the constraint layer with it. The catalog object (ConstraintUnique)
-    /// is not created yet — nothing reads it back without INFORMATION_SCHEMA — but the index
-    /// it would own is, which is what enforces uniqueness and answers MIN and MAX. The
-    /// constraint-name checks and the constraint list of the reference's tryUpdate are part of
-    /// that layer: there is no constraint object to collide with or to iterate.
+    /// The wrapper owns what the work itself cannot: cleanup. A constraint that fails halfway
+    /// has already made an index, and possibly another constraint, and the reference removes
+    /// whatever was made before it rethrows. The generated name is always released — it was
+    /// reserved from the schema's unique-name set while the statement ran, and a failure that
+    /// kept it reserved would make the same statement fail differently the second time.
     /// </remarks>
     public override long Update(Table table)
     {
-        if (type != CommandInterface.AlterTableAddConstraintPrimaryKey)
+        try
         {
-            throw new TODOException("AlterTableAddConstraint.update: constraints are not ported");
+            return TryUpdate(table);
         }
-
-        SessionLocal session = GetSession();
-        _ = session.GetDatabase().LockMeta(session);
-        _ = table.Lock(session, Table.ExclusiveLock);
-        IndexColumn[] keyColumns = MapColumns(table, indexColumns);
-        index = table.FindPrimaryKey();
-        if (index is not null)
+        catch (H2SharpException e)
         {
-            // if there is an index, it must match with the one declared
-            // we don't test ascending / descending
-            IndexColumn[] pkCols = index.GetColumns();
-            if (pkCols.Length != keyColumns.Length)
-            {
-                throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
-            }
-
-            for (int i = 0; i < pkCols.Length; i++)
-            {
-                if (!ReferenceEquals(pkCols[i].GetColumn(), keyColumns[i].GetColumn()))
-                {
-                    throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
-                }
-            }
-        }
-        else
-        {
-            Indexes.IndexType indexType = Indexes.IndexType.CreatePrimaryKey(
-                table.IsPersistIndexes(), primaryKeyHash);
-            string indexName = table.GetSchema()!.GetUniqueIndexName(
-                session, table, Engine.Constants.PrefixPrimaryKey);
-            int indexId = session.GetDatabase().AllocateObjectId();
+            _ = e;
             try
             {
-                index = table.AddIndex(session, indexName, indexId, keyColumns, keyColumns.Length,
-                    indexType, create: true, indexComment: null);
+                // The reference also removes the unique constraint an unported referential
+                // branch would have made for its referenced columns; the primary key makes no
+                // such constraint, so what can need cleanup here is an index.
+                foreach (H2Sharp.Indexes.Index index in createdIndexes)
+                {
+                    GetSession().GetDatabase().RemoveSchemaObject(GetSession(), index);
+                }
             }
-            finally
+            catch
             {
-                GetSchema().FreeUniqueName(indexName);
+                // The reference records the secondary failure as suppressed; C# exceptions
+                // have no suppressed list, and the original failure is what the caller sees.
             }
+
+            throw;
+        }
+        finally
+        {
+            GetSchema().FreeUniqueName(constraintName);
+        }
+    }
+
+    /// <summary>
+    /// Try to execute the statement.
+    /// </summary>
+    /// <remarks>
+    /// Only the primary key runs: every other constraint needs the check machinery that has
+    /// not been ported, and the switch answers them the way the reference answers an unknown
+    /// type — internally. The primary key creates its index and then the ConstraintUnique that
+    /// owns it, and the pair is what the schema registers: the index enforces uniqueness, the
+    /// constraint carries the name that the duplicate-key message prints and DROP releases.
+    /// </remarks>
+    /// <param name="table">the table</param>
+    /// <returns>the update count</returns>
+    private int TryUpdate(Table table)
+    {
+        if (constraintName is not null && GetSchema().FindConstraint(GetSession(), constraintName) is not null)
+        {
+            if (ifNotExists)
+            {
+                return 0;
+            }
+
+            // The reference's quirks-mode branch renames the constraint instead of failing;
+            // session quirks mode is not ported and is false by default, so the error is the
+            // answer, as it is on a default JVM.
+            throw DbException.Get(Api.ErrorCode.ConstraintAlreadyExists1, constraintName);
         }
 
-        index.GetIndexType()!.SetBelongsToConstraint(true);
+        Engine.Database db = GetSession().GetDatabase();
+        _ = db.LockMeta(GetSession());
+        _ = table.Lock(GetSession(), Table.ExclusiveLock);
+        Constraint constraint;
+        switch (type)
+        {
+            case CommandInterface.AlterTableAddConstraintPrimaryKey:
+                {
+                    IndexColumn[] keyColumns = MapColumns(table, indexColumns);
+                    index = table.FindPrimaryKey();
+                    foreach (Constraint c in table.GetConstraints())
+                    {
+                        if (c.GetConstraintType() == Constraint.Type.PRIMARY_KEY)
+                        {
+                            throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
+                        }
+                    }
+
+                    if (index is not null)
+                    {
+                        // if there is an index, it must match with the one declared
+                        // we don't test ascending / descending
+                        IndexColumn[] pkCols = index.GetColumns();
+                        if (pkCols.Length != keyColumns.Length)
+                        {
+                            throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
+                        }
+
+                        for (int i = 0; i < pkCols.Length; i++)
+                        {
+                            if (!ReferenceEquals(pkCols[i].GetColumn(), keyColumns[i].GetColumn()))
+                            {
+                                throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Indexes.IndexType indexType = Indexes.IndexType.CreatePrimaryKey(
+                            table.IsPersistIndexes(), primaryKeyHash);
+                        string indexName = table.GetSchema()!.GetUniqueIndexName(
+                            GetSession(), table, Engine.Constants.PrefixPrimaryKey);
+                        int indexId = db.AllocateObjectId();
+                        try
+                        {
+                            index = table.AddIndex(GetSession(), indexName, indexId, keyColumns,
+                                keyColumns.Length, indexType, create: true, indexComment: null);
+                        }
+                        finally
+                        {
+                            GetSchema().FreeUniqueName(indexName);
+                        }
+                    }
+
+                    index.GetIndexType()!.SetBelongsToConstraint(true);
+                    int id = db.AllocateObjectId();
+                    string name = GenerateConstraintName(table);
+                    constraint = new ConstraintUnique(GetSchema(), id, name, table, primaryKey: true,
+                        keyColumns, index, indexOwner: true, nullsDistinct: null);
+                    break;
+                }
+
+            default:
+                throw new TODOException("AlterTableAddConstraint.update: only the primary key constraint is ported");
+        }
+
+        // parent relationship is already set with addConstraint
+        constraint.SetComment(comment);
+        AddConstraintToTable(db, table, constraint);
         return 0;
     }
 
+    /// <summary>
+    /// The name of the constraint: the one the statement wrote, or a fresh one from the schema.
+    /// </summary>
+    /// <param name="table">the table</param>
+    /// <returns>the name</returns>
+    private string GenerateConstraintName(Table table)
+    {
+        if (constraintName is null)
+        {
+            constraintName = GetSchema().GetUniqueConstraintName(GetSession(), table);
+        }
+
+        return constraintName;
+    }
+
+    /// <summary>
+    /// Registers the constraint in the database and adds it to the table.
+    /// </summary>
+    /// <remarks>
+    /// The order is the reference's: the schema first, then the table. A table that held a
+    /// constraint the schema does not know would be one that DROP TABLE could not find and
+    /// release.
+    /// </remarks>
+    /// <param name="db">the database</param>
+    /// <param name="table">the table</param>
+    /// <param name="constraint">the constraint</param>
+    private void AddConstraintToTable(Engine.Database db, Table table, Constraint constraint)
+    {
+        if (table.IsTemporary() && !table.IsGlobalTemporary())
+        {
+            throw new TODOException(
+                "AlterTableAddConstraint.addConstraintToTable: session temporary tables are not ported");
+        }
+
+        db.AddSchemaObject(GetSession(), constraint);
+        table.AddConstraint(constraint);
+    }
+
+    /// <summary>
+    /// Resolves the named index columns against the table.
+    /// </summary>
+    /// <remarks>
+    /// The reference maps the columns onto the index columns in place, keeping the sort
+    /// mask; here the array is rebuilt, so the sort mask is carried over explicitly. A
+    /// column name the table does not know is error 42122, which is where a CREATE TABLE
+    /// with a constraint over a column that was never declared fails.
+    /// </remarks>
     private static IndexColumn[] MapColumns(Table table, IndexColumn[] columns)
     {
         Column[] tableColumns = table.GetColumns();
@@ -166,7 +295,7 @@ public class AlterTableAddConstraint : AlterTable
                 throw DbException.Get(Api.ErrorCode.ColumnNotFound1, name);
             }
 
-            mapped[i] = new IndexColumn(match);
+            mapped[i] = new IndexColumn(match, columns[i].SortType);
         }
 
         return mapped;

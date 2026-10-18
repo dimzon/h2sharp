@@ -636,29 +636,4 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
         };
     }
 
-    /// <summary>
-    /// Get "PRIMARY KEY ON &lt;table&gt; [(column)]".
-    /// </summary>
-    /// <remarks>
-    /// The reference prefixes the SQL of the PRIMARY KEY constraint that owns this index, and
-    /// the constraint layer is not ported, so the message starts at "PRIMARY KEY" — the JVM
-    /// prints, for example, "PUBLIC.CONSTRAINT_5 PRIMARY KEY ON PUBLIC.T(ID)" and here the
-    /// same table and column follow without the constraint prefix. The template and the
-    /// quoting around the value are the database's, added where the error is built.
-    /// </remarks>
-    /// <param name="mainIndexColumn">the column index</param>
-    /// <returns>the message</returns>
-    private StringBuilder GetDuplicatePrimaryKeyMessage(int mainIndexColumn)
-    {
-        StringBuilder builder = new();
-        _ = mvTable.GetSql(builder.Append("PRIMARY KEY ON "), HasSql.TraceSqlFlags);
-        if (mainIndexColumn >= 0 && mainIndexColumn < indexColumns.Length)
-        {
-            _ = builder.Append('(');
-            _ = IndexColumn.WriteColumns(builder, indexColumns, mainIndexColumn, mainIndexColumn + 1,
-                HasSql.TraceSqlFlags).Append(')');
-        }
-
-        return builder;
-    }
 }

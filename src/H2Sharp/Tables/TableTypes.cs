@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using H2Sharp.Constraints;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Result;
@@ -28,9 +29,18 @@ namespace H2Sharp.Tables;
 /// <summary>
 /// An index column: a column plus the sort direction it is read in.
 /// </summary>
+/// <remarks>
+/// The reference stores the name and the column separately, and a statement that reads
+/// columns before its table exists — CREATE TABLE's constraints — carries name-only index
+/// columns until the table is there and the statement maps them onto it. This port keeps
+/// the same two shapes; the column is the nullable one, because it is the one that arrives
+/// late.
+/// </remarks>
 public class IndexColumn
 {
-    private readonly Column column;
+    private readonly string columnName;
+
+    private readonly Column? column;
 
     private readonly bool ascending;
 
@@ -53,6 +63,7 @@ public class IndexColumn
     public IndexColumn(Column column, bool ascending)
     {
         this.column = column;
+        columnName = column.GetName();
         this.ascending = ascending;
         SortType = ascending ? Result.SortOrder.Ascending : Result.SortOrder.Descending;
     }
@@ -60,10 +71,6 @@ public class IndexColumn
     /// <summary>
     /// Creates an ascending index column over the given column.
     /// </summary>
-    /// <remarks>
-    /// The reference keeps the name and resolves the column later; here the column arrives
-    /// resolved, so this is the ascending creation with the column already in hand.
-    /// </remarks>
     /// <param name="column">the column</param>
     public IndexColumn(Column column)
         : this(column, ascending: true)
@@ -74,17 +81,29 @@ public class IndexColumn
     /// Creates an index column over the given column with the given sort mask.
     /// </summary>
     /// <remarks>
-    /// The reference builds this from a name and resolves the column onto it; here the column
-    /// arrives resolved, so the name travels with it and only the mask is new. The direction
-    /// flag follows the mask, because the boolean exists only as the mask's shadow.
+    /// The direction flag follows the mask, because the boolean exists only as the mask's
+    /// shadow.
     /// </remarks>
     /// <param name="column">the column</param>
     /// <param name="sortType">the sort type mask</param>
     public IndexColumn(Column column, int sortType)
     {
         this.column = column;
+        columnName = column.GetName();
         ascending = (sortType & Result.SortOrder.Descending) == 0;
         SortType = sortType;
+    }
+
+    /// <summary>
+    /// Creates an ascending index column by name, with the column to be mapped onto a table
+    /// later.
+    /// </summary>
+    /// <param name="columnName">the column name</param>
+    public IndexColumn(string columnName)
+    {
+        this.columnName = columnName;
+        ascending = true;
+        SortType = Result.SortOrder.Ascending;
     }
 
     /// <summary>
@@ -105,9 +124,14 @@ public class IndexColumn
     /// <summary>
     /// Gets the column.
     /// </summary>
+    /// <remarks>
+    /// A name-only index column has none until its statement maps it onto the table it runs
+    /// against; reading it before that is the reference's exception too, a null dereference
+    /// at the caller.
+    /// </remarks>
     public Column GetColumn()
     {
-        return column;
+        return column!;
     }
 
     /// <summary>
@@ -115,7 +139,7 @@ public class IndexColumn
     /// </summary>
     public string GetName()
     {
-        return column.GetName();
+        return columnName;
     }
 
     /// <summary>
@@ -984,6 +1008,76 @@ public abstract class Table
     public virtual void RemoveIndex(Indexes.Index index)
         => throw new TODOException("Table.removeIndex");
 
+    private List<Constraint>? constraints;
+
+    /// <summary>
+    /// Add a constraint to the table.
+    /// </summary>
+    /// <remarks>
+    /// The list is kept from the first constraint on, as in the reference, and an already
+    /// present constraint is not added twice: the table's cleanup removes every member, and a
+    /// list that could hold the same object twice would try to remove it twice.
+    /// </remarks>
+    /// <param name="constraint">the constraint to add</param>
+    public void AddConstraint(Constraint constraint)
+    {
+        if (constraints is null)
+        {
+            constraints = [constraint];
+        }
+        else if (!constraints.Contains(constraint))
+        {
+            constraints.Add(constraint);
+        }
+    }
+
+    /// <summary>
+    /// Gets the constraints of this table.
+    /// </summary>
+    /// <returns>the constraints; empty when there are none</returns>
+    public List<Constraint> GetConstraints()
+    {
+        return constraints ?? [];
+    }
+
+    /// <summary>
+    /// Remove the given constraint from the list.
+    /// </summary>
+    /// <param name="constraint">the constraint to remove</param>
+    public void RemoveConstraint(Constraint constraint)
+    {
+        _ = constraints?.Remove(constraint);
+    }
+
+    /// <summary>
+    /// If the index is still required by a constraint, transfer the ownership to it.
+    /// Otherwise, the index is removed.
+    /// </summary>
+    /// <remarks>
+    /// The reference updates the meta table for each constraint that took the index over; that
+    /// write is deferred with the meta table.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="index">the index that is no longer required</param>
+    public void RemoveIndexOrTransferOwnership(H2Sharp.Engine.SessionLocal session, Indexes.Index index)
+    {
+        bool stillNeeded = false;
+        foreach (Constraint cons in GetConstraints())
+        {
+            if (cons.UsesIndex(index))
+            {
+                cons.SetIndexOwner(index);
+                stillNeeded = true;
+            }
+        }
+
+        if (!stillNeeded)
+        {
+            (GetSchema() ?? throw new TODOException("Table.removeIndexOrTransferOwnership: no schema"))
+                .GetDatabase().RemoveSchemaObject(session, index);
+        }
+    }
+
     /// <summary>
     /// Gets the table type.
     /// </summary>
@@ -1582,8 +1676,24 @@ public abstract class Table
     /// <summary>
     /// Removes all dependent objects and resources.
     /// </summary>
+    /// <remarks>
+    /// The constraints go first, and the order is not cosmetic: dropping the table's indexes
+    /// before the constraints that own them would leave a constraint naming an index that is
+    /// gone. The reference's base body also removes dependent views, synonyms, triggers, rights
+    /// and sequences around this loop; none of those exist here, so what runs is the loop the
+    /// reference has in the middle of them.
+    /// </remarks>
     /// <param name="session">the session</param>
-    public abstract void RemoveChildrenAndResources(H2Sharp.Engine.SessionLocal session);
+    public virtual void RemoveChildrenAndResources(H2Sharp.Engine.SessionLocal session)
+    {
+        while (constraints is not null && constraints.Count > 0)
+        {
+            Constraint constraint = constraints[0];
+            constraints.RemoveAt(0);
+            (GetSchema() ?? throw new TODOException("Table.removeChildrenAndResources: no schema"))
+                .GetDatabase().RemoveSchemaObject(session, constraint);
+        }
+    }
 
     /// <summary>
     /// Whether this table depends on the given object.
