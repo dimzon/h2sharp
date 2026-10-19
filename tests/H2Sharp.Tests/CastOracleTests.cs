@@ -87,6 +87,12 @@ public sealed class CastOracleTests
         "SELECT CAST(1 AS TIMESTAMP WITH TIME ZONE)",
         "SELECT CAST('5' AS INTERVAL YEAR)",
         "SELECT CAST('POINT(1 2)' AS GEOMETRY) IS NOT NULL",
+        "SELECT CAST('2020-01-02' AS DATE FORMAT 'yyyy-MM-dd')",
+        "SELECT CAST('2020-01-02 03:04:05' AS TIMESTAMP FORMAT 'yyyy-MM-dd HH:mm:ss')",
+        "SELECT CAST(CAST('2020-01-02 03:04:05' AS TIMESTAMP) AS VARCHAR FORMAT 'yyyy-MM-dd HH:mm:ss')",
+        "SELECT CAST('2020-01-02' AS DATE FORMAT 'dd.MM.yyyy')",
+        "SELECT CAST(1 AS INTEGER FORMAT 'x')",
+        "SELECT CAST('2020-01-02' AS DATE FORMAT 'yyyy-QQQQ')",
     ];
 
     /// <summary>

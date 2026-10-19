@@ -1336,16 +1336,15 @@ public sealed partial class Parser
         Expressions.Expression arg = ReadQueryOr(aggregateSelect);
         Expect(ParserUtil.As, "AS");
         TypeInfo type = ReadColumnWithType();
+        Expressions.Expression? template = null;
         if (IsWord("FORMAT", consume: false))
         {
-            // The reference reads a format template here and formats the value with it. The
-            // template reader of the reference, DateTimeTemplate, is not ported, and a cast
-            // that drops its template would answer with a value nobody asked for.
-            throw new TODOException("Parser.readTerm: CAST with a FORMAT template is not ported");
+            Read();
+            template = ReadQueryOr(aggregateSelect);
         }
 
         Expect(Token.CloseParen, ")");
-        return new Expressions.Functions.CastSpecification(arg, type);
+        return new Expressions.Functions.CastSpecification(arg, type, template);
     }
 
     /// <summary>

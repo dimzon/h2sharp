@@ -6,13 +6,13 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * A cast of an expression to a type.
- *
- * A function in the reference, with the template form (CAST with FORMAT) left out: no reader
- * builds it, and a field nothing writes is a promise nothing checks.
+ * A cast of an expression to a type, with the format template the reference reads after the
+ * type: CAST(x AS DATE FORMAT 'yyyy-MM-dd') writes the value with the template and reads it
+ * back with it.
  */
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Message;
 using H2Sharp.Tables;
 using H2Sharp.Util;
 using H2Sharp.Values;
@@ -26,6 +26,8 @@ public sealed class CastSpecification : Expression
 {
     private Expression expr;
 
+    private Expression? template;
+
     private readonly TypeInfo castToType;
 
     /// <summary>
@@ -34,16 +36,72 @@ public sealed class CastSpecification : Expression
     /// <param name="expr">the expression to cast</param>
     /// <param name="castToType">the type to cast to</param>
     public CastSpecification(Expression expr, TypeInfo castToType)
+        : this(expr, castToType, null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a cast with a format template.
+    /// </summary>
+    /// <param name="expr">the expression to cast</param>
+    /// <param name="castToType">the type to cast to</param>
+    /// <param name="template">the format template, or null when there is none</param>
+    public CastSpecification(Expression expr, TypeInfo castToType, Expression? template)
     {
         this.expr = expr;
         this.castToType = castToType;
+        this.template = template;
     }
 
     /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
     {
         Value v = expr.GetValue(session);
+        if (template is not null)
+        {
+            v = GetValueWithTemplate(v, template.GetValue(session), session);
+        }
+
         return v.CastToValue(castToType, session.CastDataProvider);
+    }
+
+    /// <summary>
+    /// Converts the value with the template, which is the reference's getValueWithTemplate.
+    /// </summary>
+    /// <param name="value">the value</param>
+    /// <param name="template">the template</param>
+    /// <param name="session">the session</param>
+    /// <returns>the converted value</returns>
+    private Value GetValueWithTemplate(Value value, Value template, SessionLocal session)
+    {
+        if (value is ValueNull)
+        {
+            return ValueNull.Instance;
+        }
+
+        int valueType = value.GetValueType();
+        if (DataType.IsDateTimeType(valueType))
+        {
+            if (DataType.IsCharacterStringType(castToType.GetValueType()))
+            {
+                string? formatted = DateTimeTemplate.Of(template.GetString() ?? string.Empty)
+                    .Format(value);
+                return ValueVarchar.Get(formatted ?? string.Empty, session.CastDataProvider);
+            }
+        }
+        else if (DataType.IsCharacterStringType(valueType))
+        {
+            if (DataType.IsDateTimeType(castToType.GetValueType()))
+            {
+                return DateTimeTemplate.Of(template.GetString() ?? string.Empty)
+                    .Parse(value.GetString() ?? string.Empty, castToType, session.CastDataProvider);
+            }
+        }
+
+        StringBuilder builder = new();
+        _ = value.GetTypeInfo().GetSql(builder, HasSql.TraceSqlFlags).Append(" to ");
+        _ = castToType.GetSql(builder, HasSql.DefaultSqlFlags);
+        throw DbException.GetUnsupportedException("CAST with template from " + builder);
     }
 
     /// <inheritdoc/>
@@ -56,13 +114,19 @@ public sealed class CastSpecification : Expression
     public override void MapColumns(ColumnResolver resolver, int level, int state)
     {
         expr.MapColumns(resolver, level, state);
+        template?.MapColumns(resolver, level, state);
     }
 
     /// <inheritdoc/>
     public override Expression Optimize(SessionLocal session)
     {
         expr = expr.Optimize(session);
-        if (expr.IsConstant())
+        if (template is not null)
+        {
+            template = template.Optimize(session);
+        }
+
+        if (expr.IsConstant() && (template is null || template.IsConstant()))
         {
             Value v = GetValue(session);
             if (v is ValueNull || CanOptimizeCast(
@@ -78,6 +142,7 @@ public sealed class CastSpecification : Expression
     /// <inheritdoc/>
     public override bool IsConstant()
         => expr is ValueExpression
+            && (template is null || template.IsConstant())
             && CanOptimizeCast(expr.GetTypeInfo().GetValueType(), castToType.GetValueType());
 
     private static bool CanOptimizeCast(int src, int dst)
@@ -139,6 +204,7 @@ public sealed class CastSpecification : Expression
     public override void SetEvaluatable(TableFilter tableFilter, bool b)
     {
         expr.SetEvaluatable(tableFilter, b);
+        template?.SetEvaluatable(tableFilter, b);
     }
 
     /// <inheritdoc/>
@@ -148,6 +214,11 @@ public sealed class CastSpecification : Expression
         expr.GetUnenclosedSql(builder, expr is ValueExpression ? sqlFlags | HasSql.NoCasts : sqlFlags)
             .Append(" AS ");
         castToType.GetSql(builder, sqlFlags);
+        if (template is not null)
+        {
+            template.GetSql(builder.Append(" FORMAT "), sqlFlags);
+        }
+
         return builder.Append(')');
     }
 
@@ -160,29 +231,40 @@ public sealed class CastSpecification : Expression
     public override void UpdateAggregate(SessionLocal session, int stage)
     {
         expr.UpdateAggregate(session, stage);
+        template?.UpdateAggregate(session, stage);
     }
 
     /// <inheritdoc/>
     public override bool IsEverything(ExpressionVisitor visitor)
     {
-        return expr.IsEverything(visitor);
+        return expr.IsEverything(visitor) && (template is null || template.IsEverything(visitor));
     }
 
     /// <inheritdoc/>
     public override int GetCost()
     {
-        return expr.GetCost();
+        return expr.GetCost() + (template is null ? 0 : template.GetCost());
     }
 
     /// <inheritdoc/>
     public override int GetSubexpressionCount()
     {
-        return 1;
+        return template is null ? 1 : 2;
     }
 
     /// <inheritdoc/>
     public override Expression? GetSubexpression(int index)
     {
-        return index == 0 ? expr : throw new System.IndexOutOfRangeException();
+        if (index == 0)
+        {
+            return expr;
+        }
+
+        return index == 1 && template is not null
+            ? template
+            : throw new System.IndexOutOfRangeException();
     }
+
+    /// <inheritdoc/>
+    public override TypeInfo? GetTypeIfStaticallyKnown(SessionLocal session) => castToType;
 }
