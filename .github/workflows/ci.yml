@@ -48,6 +48,32 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: artifacts/test-results
 
+  pack:
+    name: Pack the NuGet package
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Pack
+        run: >
+          dotnet pack src/H2Sharp/H2Sharp.csproj
+          --configuration Release
+          --property:PackageOutputPath="$PWD/artifacts/packages"
+          -p:ContinuousIntegrationBuild=true
+
+      # The package is what the Entity Framework Core provider would take, once the engine
+      # is on a feed: it carries the strong name the provider's InternalsVisibleTo names.
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/packages
+
   conformance:
     name: Differential conformance vs reference H2
     runs-on: ubuntu-latest

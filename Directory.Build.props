@@ -12,6 +12,14 @@
     <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <!--
+      The assemblies carry a strong name, so that a consumer can tell them apart from a
+      different build of the same name, and so that the engine's internals can be opened to
+      a named friend: the friend has to be signed too, and its public key has to be named
+      in the InternalsVisibleTo declaration. The key is this project's own; see NOTICE.md.
+    -->
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)H2Sharp.snk</AssemblyOriginatorKeyFile>
+    <SignAssembly>true</SignAssembly>
   </PropertyGroup>
 
   <!--

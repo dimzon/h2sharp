@@ -36,6 +36,20 @@ The exact H2 revision this port tracks is recorded in `reference/H2_COMMIT.txt` 
 Files ported from H2 remain under MPL-2.0 OR EPL-1.0. If you modify a ported file, you must
 make your modified version of that file available under the same license.
 
+## The strong name key
+
+`H2Sharp.snk` in the repository root is the key this project signs its assemblies with, and it
+is committed on purpose. A strong name is not a security feature -- it identifies a build, and
+anyone can read the public key out of any assembly that carries it -- so the private key is not
+a secret in the sense that would make committing it a leak.
+
+It is committed because the key has to be the *same* key everywhere: the Entity Framework Core
+provider is a separate repository, it is signed with a key of its own, and the engine opens
+its internals to it by naming that key. A key that lived only in one place, or one that each
+contributor replaced with their own, would break that arrangement: the friend assembly's
+public key would stop matching the name in the InternalsVisibleTo declaration, and the access
+would stop working.
+
 ## No warranty
 
 EXCEPT AS SET OUT IN THE LICENSE, THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS,
