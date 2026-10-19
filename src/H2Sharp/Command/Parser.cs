@@ -1335,7 +1335,7 @@ public sealed partial class Parser
         Expect(Token.OpenParen, "(");
         Expressions.Expression arg = ReadQueryOr(aggregateSelect);
         Expect(ParserUtil.As, "AS");
-        TypeInfo type = ReadDataType();
+        TypeInfo type = ReadColumnWithType();
         if (IsWord("FORMAT", consume: false))
         {
             // The reference reads a format template here and formats the value with it. The

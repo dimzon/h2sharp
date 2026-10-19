@@ -5086,3 +5086,44 @@ SECURE_RAND/RANDOM_UUID/UUID, `CompressFunctionsMatchReference`,
 Проверено: `H2Sharp.Tests` **1113**, конформанс-набор **188/947** (Functions 116/325, было
 103/325), `Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
 
+**CAST в выражениях и эталонный читатель типов.**
+`CAST` больше не только в списке выбора. Эталон читает его в `readTerm` — как терм, — и порт
+делает то же (`case ParserUtil.Cast` в `ReadQueryTerm`); отдельный случай «CAST в
+select-list» из `parseQuerySelect` убран, потому что в эталоне это один и тот же путь.
+
+Тип читает новый `Command/Parser.DataTypes.cs` — порт эталонных `readIfDataType` и
+`readIfDataType1` с их помощниками (`parseNumericType`, `parseFloatType`, `parseTimeType`,
+`parseTimestampType`, `parseDecfloatType`, `parseEnumType`, `parseGeometryType`,
+`parseRowType`, `readIntervalQualifier`, `readPrecision`) и числовыми ридерами (`readInt`,
+`readLong`, `readPositiveLong`, `readNonNegativeInt`). Читаются: `NATIONAL CHARACTER(3)`,
+`CHARACTER VARYING(5)`, `CHARACTER LARGE OBJECT`, `BINARY LARGE OBJECT`, `BINARY VARYING`,
+`LONG RAW`, `DOUBLE PRECISION`, `FLOAT(24)` (REAL или DOUBLE по точности),
+`DECIMAL(10, 2)`, `DECFLOAT(10)`, `TIME(3)`, `TIME WITH TIME ZONE`, `TIMESTAMP(3)`,
+`TIMESTAMP WITH TIME ZONE`, `INTERVAL YEAR(2) TO MONTH`, `INTERVAL SECOND(2, 1)`,
+масштабированная длина `BLOB(1K)`, `GEOMETRY(POINT, 4326)`, `ENUM('a','b')`.
+
+Что оставлено за эталоном и почему:
+* ветки режима (`dateIsTimestamp0`, `variableBinary`, `numericIsDecfloat`, `disallowedTypes`,
+  `allNumericTypesHavePrecision`, `forBitData`, `charAndByteLengthUnits`) — таких флагов в
+  портовом `Mode` нет, спрашивать нечего;
+* домены — их в порту нет, поэтому имя, которое не тип, даёт 90120 (домен не найден), а
+  квалифицированное имя — 90079 (схема не найдена), как в эталоне;
+* `CAST(x AS type FORMAT 'шаблон')` — ридер шаблонов `DateTimeTemplate` не портирован,
+  отказ по имени;
+* тип-массив (`INT ARRAY`) — в типе порта нет места для типа элемента, отказ по имени.
+
+DDL остался на своём строковом ридере (`ParseDataType`): имя типа в DDL — это то, что
+написал пользователь, и оно печатается обратно. В эталоне ридер один на все типы; это
+расхождение записано как следующий срез.
+
+Оракул: `CastOracleTests.CastsAnswerTheSameAsTheReference` — 54 оператора (числа, строки,
+`CHARACTER`/`NATIONAL`/`BINARY`/`CLOB`/`BLOB`, `FLOAT(24)`, `DECIMAL(10, 2)`, `DECFLOAT`,
+дата-время с зоной и точностью, `INTERVAL YEAR`, `GEOMETRY`, вложенный `CAST`, `CASE`,
+`WHERE`, `LENGTH(CAST(...))`); сравниваются и значения, и коды отказа (22018, 50004, 90079,
+90120, 90150, 90151).
+
+Проверено: `H2Sharp.Tests` **1114**, конформанс-набор **219/947** (было 188: Datatypes
+10/66 → 37/66, Grammar 49/263 → 53/263), `Data.Tests` 343 + 19 красных (новые пины
+`AS`-алиаса, CTE, JOIN и MERGE — порт их ещё не умеет; красные и без этого среза),
+`MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
+

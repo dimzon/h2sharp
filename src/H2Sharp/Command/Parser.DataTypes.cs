@@ -29,6 +29,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using H2Sharp.Api;
+using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
 using H2Sharp.Util.Geometry;
@@ -64,7 +65,7 @@ public sealed partial class Parser
     {
         switch (CurrentType)
         {
-            case Token.Identifier:
+            case ParserUtil.Identifier:
                 if (Current.IsQuoted)
                 {
                     return null;
@@ -72,16 +73,16 @@ public sealed partial class Parser
 
                 break;
             case ParserUtil.Interval:
-            {
-                Read();
-                TypeInfo? typeInfo = ReadIntervalQualifier();
-                if (typeInfo is null)
                 {
-                    throw DbException.GetSyntaxError(sql, Current.Start, "interval");
-                }
+                    Read();
+                    TypeInfo? typeInfo = ReadIntervalQualifier();
+                    if (typeInfo is null)
+                    {
+                        throw DbException.GetSyntaxError(sql, Current.Start, "interval");
+                    }
 
-                return typeInfo;
-            }
+                    return typeInfo;
+                }
 
             case ParserUtil.Null:
                 Read();
@@ -105,19 +106,29 @@ public sealed partial class Parser
         Read();
         if (CurrentType == Token.Dot)
         {
-            // A qualified name is a name, not a type.
-            throw DbException.Get(ErrorCode.UnknownDataType1, originalCase);
+            // A qualified name is a name and not a type. The reference reads the schema of
+            // the name and refuses the name when the schema is not there, and then looks
+            // the name up in the schema as a domain. The port has no domains, so the
+            // lookup has one answer.
+            Read();
+            string name = ReadIdentifier();
+            if (session is not null && session.GetDatabase().FindSchema(originalCase) is null)
+            {
+                throw DbException.Get(ErrorCode.SchemaNotFound1, originalCase);
+            }
+
+            throw DbException.Get(ErrorCode.DomainNotFound1, name);
         }
 
         string original = originalCase.ToUpperInvariant();
         switch (original)
         {
             case "BINARY":
-                if (ReadIfWord("VARYING"))
+                if (IsWord("VARYING"))
                 {
                     original = "BINARY VARYING";
                 }
-                else if (ReadIfWord("LARGE"))
+                else if (IsWord("LARGE"))
                 {
                     ExpectWord("OBJECT");
                     original = "BINARY LARGE OBJECT";
@@ -125,11 +136,11 @@ public sealed partial class Parser
 
                 break;
             case "CHAR":
-                if (ReadIfWord("VARYING"))
+                if (IsWord("VARYING"))
                 {
                     original = "CHAR VARYING";
                 }
-                else if (ReadIfWord("LARGE"))
+                else if (IsWord("LARGE"))
                 {
                     ExpectWord("OBJECT");
                     original = "CHAR LARGE OBJECT";
@@ -137,11 +148,11 @@ public sealed partial class Parser
 
                 break;
             case "CHARACTER":
-                if (ReadIfWord("VARYING"))
+                if (IsWord("VARYING"))
                 {
                     original = "CHARACTER VARYING";
                 }
-                else if (ReadIfWord("LARGE"))
+                else if (IsWord("LARGE"))
                 {
                     ExpectWord("OBJECT");
                     original = "CHARACTER LARGE OBJECT";
@@ -156,7 +167,7 @@ public sealed partial class Parser
             case "DECFLOAT":
                 return ParseDecfloatType();
             case "DOUBLE":
-                if (ReadIfWord("PRECISION"))
+                if (IsWord("PRECISION"))
                 {
                     original = "DOUBLE PRECISION";
                 }
@@ -169,20 +180,20 @@ public sealed partial class Parser
             case "GEOMETRY":
                 return ParseGeometryType();
             case "LONG":
-                if (ReadIfWord("RAW"))
+                if (IsWord("RAW"))
                 {
                     original = "LONG RAW";
                 }
 
                 break;
             case "NATIONAL":
-                if (ReadIfWord("CHARACTER"))
+                if (IsWord("CHARACTER"))
                 {
-                    if (ReadIfWord("VARYING"))
+                    if (IsWord("VARYING"))
                     {
                         original = "NATIONAL CHARACTER VARYING";
                     }
-                    else if (ReadIfWord("LARGE"))
+                    else if (IsWord("LARGE"))
                     {
                         ExpectWord("OBJECT");
                         original = "NATIONAL CHARACTER LARGE OBJECT";
@@ -195,7 +206,7 @@ public sealed partial class Parser
                 else
                 {
                     ExpectWord("CHAR");
-                    if (ReadIfWord("VARYING"))
+                    if (IsWord("VARYING"))
                     {
                         original = "NATIONAL CHAR VARYING";
                     }
@@ -207,11 +218,11 @@ public sealed partial class Parser
 
                 break;
             case "NCHAR":
-                if (ReadIfWord("VARYING"))
+                if (IsWord("VARYING"))
                 {
                     original = "NCHAR VARYING";
                 }
-                else if (ReadIfWord("LARGE"))
+                else if (IsWord("LARGE"))
                 {
                     ExpectWord("OBJECT");
                     original = "NCHAR LARGE OBJECT";
@@ -253,7 +264,7 @@ public sealed partial class Parser
         int type = dataType.Type;
         if ((dataType.SupportsPrecision || dataType.SupportsScale) && ReadIf(Token.OpenParen))
         {
-            if (!ReadIfWord("MAX"))
+            if (!IsWord("MAX"))
             {
                 if (dataType.SupportsPrecision)
                 {
@@ -417,13 +428,13 @@ public sealed partial class Parser
         }
 
         int type = Value.Time;
-        if (ReadIfWord("WITH"))
+        if (IsWord("WITH"))
         {
             ExpectWord("TIME");
             ExpectWord("ZONE");
             type = Value.TimeTz;
         }
-        else if (ReadIfWord("WITHOUT"))
+        else if (IsWord("WITHOUT"))
         {
             ExpectWord("TIME");
             ExpectWord("ZONE");
@@ -461,13 +472,13 @@ public sealed partial class Parser
         }
 
         int type = Value.Timestamp;
-        if (ReadIfWord("WITH"))
+        if (IsWord("WITH"))
         {
             ExpectWord("TIME");
             ExpectWord("ZONE");
             type = Value.TimestampTz;
         }
-        else if (ReadIfWord("WITHOUT"))
+        else if (IsWord("WITHOUT"))
         {
             ExpectWord("TIME");
             ExpectWord("ZONE");
@@ -515,18 +526,18 @@ public sealed partial class Parser
         if (ReadIf(Token.OpenParen))
         {
             int type = 0;
-            if (CurrentType != Token.Identifier || Current.IsQuoted)
+            if (CurrentType != ParserUtil.Identifier || Current.IsQuoted)
             {
                 throw DbException.GetSyntaxError(sql, Current.Start, "geometry type");
             }
 
-            if (!ReadIfWord("GEOMETRY"))
+            if (!IsWord("GEOMETRY"))
             {
                 try
                 {
                     type = EWKTUtils.ParseGeometryType(Current.AsIdentifier!);
                     Read();
-                    if (type / 1_000 == 0 && CurrentType == Token.Identifier && !Current.IsQuoted)
+                    if (type / 1_000 == 0 && CurrentType == ParserUtil.Identifier && !Current.IsQuoted)
                     {
                         type += EWKTUtils.ParseDimensionSystem(Current.AsIdentifier!) * 1_000;
                         Read();
@@ -568,7 +579,7 @@ public sealed partial class Parser
                 throw DbException.Get(ErrorCode.DuplicateColumnName1, name);
             }
 
-            fields.Add(name, type);
+            fields.Put(name, type);
         }
         while (ReadIfMore());
 
@@ -596,7 +607,6 @@ public sealed partial class Parser
 
                 if (ReadIf(ParserUtil.To) && IsWord("MONTH"))
                 {
-                    Read();
                     qualifier = IntervalQualifier.YearToMonth;
                 }
                 else
@@ -701,7 +711,6 @@ public sealed partial class Parser
 
                 if (ReadIf(ParserUtil.To) && IsWord("SECOND"))
                 {
-                    Read();
                     if (ReadIf(Token.OpenParen))
                     {
                         scale = ReadNonNegativeInt();
@@ -763,7 +772,7 @@ public sealed partial class Parser
     private long ReadPrecision(int valueType)
     {
         long p = ReadPositiveLong();
-        if (CurrentType != Token.Identifier || Current.IsQuoted)
+        if (CurrentType != ParserUtil.Identifier || Current.IsQuoted)
         {
             return p;
         }
@@ -800,7 +809,7 @@ public sealed partial class Parser
 
             p *= mul;
             Read();
-            if (CurrentType != Token.Identifier || Current.IsQuoted)
+            if (CurrentType != ParserUtil.Identifier || Current.IsQuoted)
             {
                 return p;
             }
@@ -812,10 +821,10 @@ public sealed partial class Parser
             case Value.VarcharIgnorecase:
             case Value.Clob:
             case Value.Char:
-                if (!ReadIfWord("CHARACTERS") && !ReadIfWord("OCTETS"))
+                if (!IsWord("CHARACTERS") && !IsWord("OCTETS"))
                 {
-                    ReadIfWord("CHAR");
-                    ReadIfWord("BYTE");
+                    IsWord("CHAR");
+                    IsWord("BYTE");
                 }
 
                 break;
@@ -840,13 +849,33 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Reads the type of a column: a type, or the name of a domain.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads a name that is not a type as a domain and looks it up in the
+    /// schema. The port has no domains, so the lookup has one answer, and it is the answer
+    /// the reference gives when the schema has no such domain.
+    /// </remarks>
+    /// <returns>the type</returns>
+    private TypeInfo ReadColumnWithType()
+    {
+        TypeInfo? typeInfo = ReadIfDataType();
+        if (typeInfo is not null)
+        {
+            return typeInfo;
+        }
+
+        throw DbException.Get(ErrorCode.DomainNotFound1, ReadIdentifier());
+    }
+
+    /// <summary>
     /// Reads a string literal.
     /// </summary>
     /// <returns>the string</returns>
     private string ReadString()
     {
         Value? value = Current.GetValue(provider);
-        if (value is null)
+        if (value is null || !DataType.IsCharacterStringType(value.GetValueType()))
         {
             throw DbException.GetSyntaxError(sql, Current.Start, "string");
         }
@@ -854,13 +883,6 @@ public sealed partial class Parser
         Read();
         return value.GetString() ?? string.Empty;
     }
-
-    /// <summary>
-    /// Whether the current token is the given word, and consumes it when it is.
-    /// </summary>
-    /// <param name="word">the word</param>
-    /// <returns>true if the word was read</returns>
-    private bool ReadIfWord(string word) => IsWord(word);
 
     /// <summary>
     /// Reads an integer literal.
