@@ -4927,3 +4927,23 @@ temp-таблицы, `RebuildIndexBlockMerge`, `GetMVMap`, `Index.FindNext` — 
 Проверено: `IndexTests` и `IndexPlanTests` зелёные, `H2Sharp.Tests` **1070**,
 `Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
 
+### SQL conformance-набор и снимок документации (перенос из h2sharp-sql)
+
+Из репозитория-донора `h2sharp-sql` (заморожен) перенесены 947 тестов SQL-поверхности H2
+(`tests/H2SharpSql.Specs`, один тест на строку справочной документации) и замороженный снимок
+документации h2database.com (H2 2.5.252): 8 файлов HTML в `docs/` и SHA-256 в
+`docs/manifest.csv`. Комментарии тестов ссылаются на номера строк снимка, поэтому файлы
+лежат в `docs/` без переименований.
+
+`Infrastructure/TestDatabase.cs` подключён к порту: `Open()` открывает новую пустую базу
+`jdbc:h2:mem:<guid>` через `H2Sharp.Data.H2Connection`. Единственная правка кода тестов —
+nullable-аннотация `TestRow.Name`; csproj приведён к центральному управлению версиями и
+получил `ProjectReference` на `H2Sharp.csproj`. Проект намеренно **не входит в `H2Sharp.sln`** —
+запуск явный: `dotnet test tests/H2SharpSql.Specs/H2SharpSql.Specs.csproj`; устройство и цифры —
+`docs/sql-specs.md`.
+
+Проверено: baseline первого прогона — **102/947** (Commands 11/254, Functions 33/325,
+Grammar 46/263, Datatypes 10/66, SystemTables 0/37, Dml 2/2), топ-пробелы — `EXTRACT` (66),
+`FILTER`/`OVER` (35), `INFORMATION_SCHEMA` (25); основной ритуал не затронут — `H2Sharp.Tests`
+1070, `Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` 4/9.
+
