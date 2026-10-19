@@ -19,6 +19,7 @@ using H2Sharp.Constraints;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Result;
+using H2Sharp.Util;
 using H2Sharp.Values;
 using Index = H2Sharp.Indexes.Index;
 using ResultCursor = H2Sharp.Indexes.Cursor;
@@ -38,6 +39,15 @@ namespace H2Sharp.Tables;
 /// </remarks>
 public class IndexColumn
 {
+    /// <summary>
+    /// Do not append ordering.
+    /// </summary>
+    /// <remarks>
+    /// Port rename: SQL_NO_ORDER → SqlNoOrder per C# constant naming convention.
+    /// Reference: org.h2.table.IndexColumn.java:21
+    /// </remarks>
+    public const int SqlNoOrder = unchecked((int)0x8000_0000);
+
     private readonly string columnName;
 
     private readonly Column? column;
@@ -107,6 +117,19 @@ public class IndexColumn
     }
 
     /// <summary>
+    /// Creates an index column by name with an explicit sort type, with the column to be
+    /// mapped onto a table later.
+    /// </summary>
+    /// <param name="columnName">the column name</param>
+    /// <param name="sortType">the sort order and NULLS placement</param>
+    public IndexColumn(string columnName, int sortType)
+    {
+        this.columnName = columnName;
+        ascending = (sortType & Result.SortOrder.Descending) == 0;
+        SortType = sortType;
+    }
+
+    /// <summary>
     /// Wraps each column in an ascending index column.
     /// </summary>
     /// <param name="columns">the columns</param>
@@ -119,6 +142,46 @@ public class IndexColumn
             list[i] = new IndexColumn(columns[i]);
         }
         return list;
+    }
+
+    /// <summary>
+    /// Resolves named index columns against a table.
+    /// </summary>
+    /// <remarks>
+    /// The reference assigns the resolved column into each index column in place. The port's
+    /// index column is immutable, so the array is rebuilt and the sort mask carried over.
+    /// A name the table does not know is COLUMN_NOT_FOUND_1, which is where a CREATE INDEX
+    /// over a column that was never declared fails.
+    /// </remarks>
+    /// <param name="indexColumns">the columns to map</param>
+    /// <param name="table">the table</param>
+    /// <returns>the mapped columns</returns>
+    public static IndexColumn[] MapColumns(IndexColumn[] indexColumns, Table table)
+    {
+        Column[] tableColumns = table.GetColumns();
+        IndexColumn[] mapped = new IndexColumn[indexColumns.Length];
+        for (int i = 0; i < indexColumns.Length; i++)
+        {
+            string name = indexColumns[i].GetName();
+            Column? match = null;
+            foreach (Column candidate in tableColumns)
+            {
+                if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    match = candidate;
+                    break;
+                }
+            }
+
+            if (match is null)
+            {
+                throw Message.DbException.Get(Api.ErrorCode.ColumnNotFound1, name);
+            }
+
+            mapped[i] = new IndexColumn(match, indexColumns[i].SortType);
+        }
+
+        return mapped;
     }
 
     /// <summary>
@@ -159,9 +222,61 @@ public class IndexColumn
     }
 
     /// <summary>
+    /// Appends the SQL snippet for this index column to the specified string builder.
+    /// </summary>
+    /// <remarks>
+    /// Ported from org.h2.table.IndexColumn.java:149-159.
+    /// Prints the column name (or the column itself), then the sort order suffix
+    /// (DESC, NULLS FIRST, NULLS LAST) unless SqlNoOrder is set.
+    /// </remarks>
+    /// <param name="builder">the builder</param>
+    /// <param name="sqlFlags">formatting flags</param>
+    /// <returns>the builder</returns>
+    public StringBuilder GetSql(StringBuilder builder, int sqlFlags)
+    {
+        if (column is not null)
+        {
+            _ = column.GetSql(builder, sqlFlags);
+        }
+        else
+        {
+            _ = ParserUtil.QuoteIdentifier(builder, columnName, sqlFlags);
+        }
+
+        if ((sqlFlags & SqlNoOrder) == 0)
+        {
+            SortOrder.TypeToString(builder, SortType);
+        }
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Writes all index columns.
+    /// </summary>
+    /// <remarks>
+    /// Delegates to the range version with the full span.
+    /// Reference: org.h2.table.IndexColumn.java:50-51
+    /// </remarks>
+    /// <param name="builder">the builder</param>
+    /// <param name="columns">the columns</param>
+    /// <param name="sqlFlags">formatting flags</param>
+    /// <returns>the builder</returns>
+    public static StringBuilder WriteColumns(
+        StringBuilder builder,
+        IndexColumn[] columns,
+        int sqlFlags)
+    {
+        return WriteColumns(builder, columns, 0, columns.Length, sqlFlags);
+    }
+
+    /// <summary>
     /// Writes a range of index columns, each qualified by its table when the index spans more
     /// than one.
     /// </summary>
+    /// <remarks>
+    /// Reference: org.h2.table.IndexColumn.java:69-78
+    /// </remarks>
     /// <param name="builder">the builder</param>
     /// <param name="columns">the columns</param>
     /// <param name="from">the first position</param>
@@ -182,11 +297,7 @@ public class IndexColumn
                 _ = builder.Append(", ");
             }
 
-            _ = columns[i].GetColumn().GetSql(builder, sqlFlags);
-            if (!columns[i].IsAscending())
-            {
-                _ = builder.Append(" DESC");
-            }
+            _ = columns[i].GetSql(builder, sqlFlags);
         }
 
         return builder;
@@ -1580,7 +1691,7 @@ public abstract class Table
     /// <param name="session">the session</param>
     /// <param name="oldRow">the row as it was</param>
     /// <param name="newRow">the row as it is now</param>
-    public virtual void UpdateRow(H2Sharp.Engine.SessionLocal session, SearchRow oldRow, SearchRow newRow)
+    public virtual void UpdateRow(H2Sharp.Engine.SessionLocal session, Row oldRow, Row newRow)
         => throw new TODOException("Table.updateRow");
 
     /// <summary>

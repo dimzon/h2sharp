@@ -165,7 +165,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
             row.SetKey(row.GetValue(mainIndexColumn)!.GetLong());
         }
 
-        TransactionMap<long, SearchRow> map = GetMap(session.Transaction);
+        TransactionMap<long, SearchRow> map = GetMap(session.GetTransaction());
         long rowKey = row.GetKey();
         try
         {
@@ -203,7 +203,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// <inheritdoc/>
     public override void Remove(SessionLocal session, Row row)
     {
-        TransactionMap<long, SearchRow> map = GetMap(session.Transaction);
+        TransactionMap<long, SearchRow> map = GetMap(session.GetTransaction());
         Row? existing;
         try
         {
@@ -223,7 +223,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
-    public override void Update(SessionLocal session, SearchRow oldRow, SearchRow newRow)
+    public override void Update(SessionLocal session, Row oldRow, Row newRow)
     {
         long key = oldRow.GetKey();
         if (key != newRow.GetKey())
@@ -231,7 +231,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
             throw DbException.GetInternalError(key + " != " + newRow.GetKey());
         }
 
-        TransactionMap<long, SearchRow> map = GetMap(session.Transaction);
+        TransactionMap<long, SearchRow> map = GetMap(session.GetTransaction());
         object? existing;
         try
         {
@@ -559,6 +559,12 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
         }
     }
 
+    /// <inheritdoc/>
+    public override long GetRowCount(SessionLocal session)
+    {
+        return GetMap(session.GetTransaction()).SizeAsLong();
+    }
+
     /// <summary>
     /// The number of rows in this index.
     /// </summary>
@@ -588,7 +594,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// </summary>
     /// <param name="session">the session</param>
     /// <returns>the row count maximum</returns>
-    public long GetRowCountApproximation(SessionLocal session)
+    public override long GetRowCountApproximation(SessionLocal session)
     {
         return GetRowCountMax();
     }

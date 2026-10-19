@@ -24,6 +24,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using H2Sharp.Command.Query;
 using H2Sharp.Tables;
 
 namespace H2Sharp.Expressions;
@@ -144,6 +145,10 @@ public sealed class ExpressionVisitor
 
     private readonly ColumnResolver? resolver;
 
+    private readonly AllColumnsForPlan? columns1;
+
+    private readonly HashSet<Column>? columns2;
+
     private ExpressionVisitor(int type)
     {
         this.type = type;
@@ -162,6 +167,21 @@ public sealed class ExpressionVisitor
         queryLevel = 0;
         this.table = table;
         this.resolver = resolver;
+    }
+
+    private ExpressionVisitor(int type, AllColumnsForPlan columns)
+    {
+        this.type = type;
+        queryLevel = 0;
+        columns1 = columns;
+    }
+
+    private ExpressionVisitor(int type, HashSet<Column> columns, Table? table)
+    {
+        this.type = type;
+        queryLevel = 0;
+        columns2 = columns;
+        this.table = table;
     }
 
     private static ExpressionVisitor[] BuildIndependent()
@@ -281,10 +301,56 @@ public sealed class ExpressionVisitor
         => throw new TODOException("ExpressionVisitor.GetDependenciesVisitor: DbObject is not ported");
 
     /// <summary>
-    /// Get all referenced columns into the given set.
+    /// Create a new visitor to get all referenced columns, grouped by table.
     /// </summary>
+    /// <param name="columns">the columns map</param>
+    /// <returns>the visitor</returns>
+    public static ExpressionVisitor GetColumnsVisitor(AllColumnsForPlan columns)
+        => new(GetColumns1, columns);
+
+    /// <summary>
+    /// Create a new visitor to get all referenced columns into the given set.
+    /// </summary>
+    /// <param name="columns">the columns set</param>
+    /// <param name="table">the table to gather columns from, or null to gather all columns</param>
+    /// <returns>the visitor</returns>
     public static ExpressionVisitor GetColumnsVisitor(HashSet<Column> columns, Table? table)
-        => throw new TODOException("ExpressionVisitor.GetColumnsVisitor: AllColumnsForPlan is not ported");
+        => new(GetColumns2, columns, table);
+
+    /// <summary>
+    /// Adds a column for a <see cref="GetColumns1"/> visitor.
+    /// </summary>
+    /// <param name="column">the column</param>
+    internal void AddColumn1(Column column) => columns1!.Add(column);
+
+    /// <summary>
+    /// Adds a column for a <see cref="GetColumns2"/> visitor when it belongs to the requested
+    /// table.
+    /// </summary>
+    /// <param name="column">the column</param>
+    internal void AddColumn2(Column column)
+    {
+        if (table is null || table == column.GetTable())
+        {
+            _ = columns2!.Add(column);
+        }
+    }
+
+    /// <summary>
+    /// Fills the on-demand all-columns set by walking every filter's select.
+    /// </summary>
+    /// <param name="filters">the filters</param>
+    /// <param name="allColumnsSet">the set to fill</param>
+    public static void AllColumnsForTableFilters(TableFilter[] filters, AllColumnsForPlan allColumnsSet)
+    {
+        foreach (TableFilter filter in filters)
+        {
+            if (filter.GetSelect() is not null)
+            {
+                _ = filter.GetSelect()!.IsEverything(GetColumnsVisitor(allColumnsSet));
+            }
+        }
+    }
 
     /// <summary>
     /// Create a visitor that tracks the newest data modification id seen.

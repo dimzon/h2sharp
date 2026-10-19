@@ -29,6 +29,7 @@ using H2Sharp.Result;
 using H2Sharp.Schemas;
 using H2Sharp.Tables;
 using H2Sharp.Util;
+using H2Sharp.Values;
 
 namespace H2Sharp.Indexes;
 
@@ -90,13 +91,18 @@ public abstract class Index : SchemaObject
     /// </summary>
     protected readonly IndexType? indexType;
 
-    private readonly RowFactory? rowFactory;
+    private RowFactory? rowFactory;
 
-    private readonly RowFactory? uniqueRowFactory;
+    private RowFactory? uniqueRowFactory;
 
     /// <summary>
     /// Initialize the index.
     /// </summary>
+    /// <remarks>
+    /// Ported from org.h2.index.Index.java:100-134.
+    /// Builds rowFactory and uniqueRowFactory from the database's default factory.
+    /// The database is obtained through the table's schema.
+    /// </remarks>
     /// <param name="newTable">the table</param>
     /// <param name="id">the object id</param>
     /// <param name="name">the index name</param>
@@ -128,29 +134,66 @@ public abstract class Index : SchemaObject
             }
         }
 
-        // The row factories need the database's row factory, its compare mode and its table
-        // columns, and the database is the one thing this constructor does not have yet: a
-        // schema in this port does not know its database (Schema.GetDatabase exists but returns
-        // nothing usable yet). They stay null until that path is ported, and the accessors
-        // below refuse instead of handing a null that would fail later far from the cause.
-        rowFactory = null;
-        uniqueRowFactory = null;
+        // Build row factories from the database's default factory.
+        // Reference: org.h2.index.Index.java:100-134
+        Database? database = newTable?.GetSchema()?.GetDatabase();
+        if (database is not null && newTable is not null)
+        {
+            Result.RowFactory databaseRowFactory = database.GetRowFactory();
+            Values.CompareMode compareMode = database.GetCompareMode();
+            Column[] tableColumns = newTable.GetColumns();
+            Typed[] typedColumns = new Typed[tableColumns.Length];
+            for (int i = 0; i < tableColumns.Length; i++)
+            {
+                typedColumns[i] = (Typed)(object)tableColumns[i];
+            }
+
+            IndexColumn[] indexColsForFactory =
+                (newIndexType is not null && newIndexType.IsScan()) ? [] : (newIndexColumns ?? []);
+            rowFactory = databaseRowFactory.CreateRowFactory(
+                null, compareMode, null, typedColumns, indexColsForFactory, true);
+
+            if (uniqueColumnCount > 0)
+            {
+                if (newIndexColumns is null || uniqueColumnCount == newIndexColumns.Length)
+                {
+                    uniqueRowFactory = rowFactory;
+                }
+                else
+                {
+                    IndexColumn[] uniqueCols = new IndexColumn[uniqueColumnCount];
+                    Array.Copy(newIndexColumns, uniqueCols, uniqueColumnCount);
+                    uniqueRowFactory = databaseRowFactory.CreateRowFactory(
+                        null, compareMode, null, typedColumns, uniqueCols, true);
+                }
+            }
+        }
     }
 
     /// <summary>
     /// Gets the row factory that reads rows in the order of this index.
     /// </summary>
-    protected RowFactory GetRowFactory()
+    /// <remarks>
+    /// Reference: org.h2.index.Index.java:531
+    /// Made public virtual so that MVDelegateIndex can override it.
+    /// </remarks>
+    /// <returns>the row factory</returns>
+    public virtual RowFactory GetRowFactory()
     {
-        return rowFactory ?? throw new TODOException("Index.getRowFactory: the database row factory is not ported");
+        return rowFactory ?? throw new TODOException("Index.getRowFactory: row factory not built");
     }
 
     /// <summary>
     /// Gets the row factory that reads rows in the order of the unique columns alone.
     /// </summary>
-    protected RowFactory GetUniqueRowFactory()
+    /// <remarks>
+    /// Reference: org.h2.index.Index.java:541
+    /// Made public virtual so that MVDelegateIndex can override it.
+    /// </remarks>
+    /// <returns>the row factory</returns>
+    public virtual RowFactory GetUniqueRowFactory()
     {
-        return uniqueRowFactory ?? throw new TODOException("Index.getUniqueRowFactory: the database row factory is not ported");
+        return uniqueRowFactory ?? throw new TODOException("Index.getUniqueRowFactory: row factory not built");
     }
 
     /// <inheritdoc/>
@@ -282,6 +325,179 @@ public abstract class Index : SchemaObject
         }
 
         return builder;
+    }
+
+    /// <summary>
+    /// The duplicate-key failure of a secondary index.
+    /// </summary>
+    /// <remarks>
+    /// The message names the owning unique constraint first when there is one, then the index,
+    /// its table and its columns, then the key. A primary key is handled by
+    /// <see cref="GetDuplicatePrimaryKeyMessage"/> instead: its wording is about the key the
+    /// primary map hands out, not about an index entry. The reference attaches the index as
+    /// the exception source; this port's exceptions carry no source field, so only the text
+    /// travels.
+    /// </remarks>
+    /// <param name="key">the duplicated key, or null</param>
+    /// <returns>the failure</returns>
+    protected Exception GetDuplicateKeyException(string? key)
+    {
+        StringBuilder builder = new(128);
+        if (table is not null)
+        {
+            foreach (Constraints.Constraint constraint in table.GetConstraints())
+            {
+                if (constraint.UsesIndex(this)
+                    && Constraints.ConstraintTypeRules.IsUnique(constraint.GetConstraintType()))
+                {
+                    _ = constraint.GetSql(builder, HasSql.TraceSqlFlags).Append(" INDEX ");
+                    break;
+                }
+            }
+
+            _ = GetSql(builder, HasSql.TraceSqlFlags).Append(" ON ");
+            _ = table.GetSql(builder, HasSql.TraceSqlFlags);
+            _ = GetColumnListSql(builder, HasSql.TraceSqlFlags);
+        }
+
+        if (key is not null)
+        {
+            _ = builder.Append(" VALUES ").Append(key);
+        }
+
+        return DbException.Get(Api.ErrorCode.DuplicateKey1, builder.ToString());
+    }
+
+    /// <summary>
+    /// Whether two rows are the same entry in this index.
+    /// </summary>
+    /// <param name="rowOne">the first row</param>
+    /// <param name="rowTwo">the second row</param>
+    /// <returns>true if the index cannot tell them apart</returns>
+    public bool AreRowsEquivalent(SearchRow rowOne, SearchRow rowTwo)
+    {
+        if (ReferenceEquals(rowOne, rowTwo))
+        {
+            return true;
+        }
+
+        if (rowOne.GetKey() != rowTwo.GetKey())
+        {
+            return false;
+        }
+
+        foreach (int index in columnIds)
+        {
+            Values.Value? v1 = rowOne.GetValue(index);
+            Values.Value? v2 = rowTwo.GetValue(index);
+            if (!Equals(v1, v2))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Compare two rows by this index's columns.
+    /// </summary>
+    /// <param name="rowData">the first row</param>
+    /// <param name="compare">the second row</param>
+    /// <returns>0 if both rows are equal, -1 if the first row is smaller, otherwise 1</returns>
+    public int CompareRows(SearchRow rowData, SearchRow compare)
+    {
+        if (ReferenceEquals(rowData, compare))
+        {
+            return 0;
+        }
+
+        for (int i = 0, len = indexColumns.Length; i < len; i++)
+        {
+            int index = columnIds[i];
+            Values.Value? v1 = rowData.GetValue(index);
+            Values.Value? v2 = compare.GetValue(index);
+            if (v1 is null || v2 is null)
+            {
+                // can't compare further
+                return 0;
+            }
+
+            int c = CompareValues(v1, v2, indexColumns[i].SortType);
+            if (c != 0)
+            {
+                return c;
+            }
+        }
+
+        return 0;
+    }
+
+    private int CompareValues(Values.Value a, Values.Value b, int sortType)
+    {
+        if (ReferenceEquals(a, b))
+        {
+            return 0;
+        }
+
+        bool aNull = a is Values.ValueNull;
+        if (aNull || b is Values.ValueNull)
+        {
+            return Engine.DefaultNullOrderingRules.CompareNull(
+                GetDatabase()!.GetDefaultNullOrdering(), aNull, sortType);
+        }
+
+        // The reference passes the database as the cast provider. This port's Database does not
+        // implement CastDataProvider (SessionLocal does), and no session is at hand here; both
+        // values come from the same column, so no cast is needed to compare them.
+        int comp = a.CompareTo(b, null, GetDatabase()!.GetCompareMode());
+        if ((sortType & Result.SortOrder.Descending) != 0)
+        {
+            comp = -comp;
+        }
+
+        return comp;
+    }
+
+    /// <summary>
+    /// Whether the given row has to be checked for uniqueness.
+    /// </summary>
+    /// <param name="searchRow">the row</param>
+    /// <returns>true if a unique index must look for an equal entry</returns>
+    public bool NeedsUniqueCheck(SearchRow searchRow)
+    {
+        Engine.NullsDistinct? nullsDistinct = indexType?.GetEffectiveNullsDistinct();
+        return nullsDistinct is not null
+            && (nullsDistinct == Engine.NullsDistinct.NotDistinct
+                || NeedsUniqueCheck(searchRow, nullsDistinct == Engine.NullsDistinct.Distinct));
+    }
+
+    private bool NeedsUniqueCheck(SearchRow searchRow, bool distinct)
+    {
+        if (distinct)
+        {
+            for (int i = 0; i < uniqueColumnColumn; i++)
+            {
+                int index = columnIds[i];
+                if (searchRow.GetValue(index) == Values.ValueNull.Instance)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        for (int i = 0; i < uniqueColumnColumn; i++)
+        {
+            int index = columnIds[i];
+            if (searchRow.GetValue(index) != Values.ValueNull.Instance)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -743,9 +959,16 @@ public abstract class Index : SchemaObject
     /// <summary>
     /// Gets the number of rows in this index, or -1 when that is not known.
     /// </summary>
+    /// <param name="session">the session</param>
     /// <returns>the row count</returns>
-    public virtual long GetRowCount()
-        => throw new TODOException("Index.getRowCount: the storage is not ported");
+    public abstract long GetRowCount(SessionLocal session);
+
+    /// <summary>
+    /// Gets the approximated number of rows in this index.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the approximated row count</returns>
+    public virtual long GetRowCountApproximation(SessionLocal session) => GetRowCount(session);
 
     /// <summary>
     /// The number of unique columns in this index.
@@ -809,8 +1032,11 @@ public abstract class Index : SchemaObject
     /// <param name="session">the session</param>
     /// <param name="oldRow">the row before the update</param>
     /// <param name="newRow">the row after the update</param>
-    public virtual void Update(SessionLocal session, SearchRow oldRow, SearchRow newRow)
-        => throw new TODOException("Index.update");
+    public virtual void Update(SessionLocal session, Row oldRow, Row newRow)
+    {
+        Remove(session, oldRow);
+        Add(session, newRow);
+    }
 
     /// <summary>
     /// Removes this index from the database.

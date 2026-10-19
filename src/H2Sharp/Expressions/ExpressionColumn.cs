@@ -25,6 +25,7 @@
 using System;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Message;
 using H2Sharp.Tables;
 using H2Sharp.Util;
 using H2Sharp.Values;
@@ -260,7 +261,27 @@ public sealed class ExpressionColumn : Expression
     /// <inheritdoc/>
     public override bool IsEverything(ExpressionVisitor visitor)
     {
-        return true;
+        switch (visitor.GetVisitorType())
+        {
+            case ExpressionVisitor.GetColumns1:
+                if (column is null)
+                {
+                    throw DbException.Get(Api.ErrorCode.ColumnNotFound1, GetTraceSql());
+                }
+
+                visitor.AddColumn1(column);
+                return true;
+            case ExpressionVisitor.GetColumns2:
+                if (column is null)
+                {
+                    throw DbException.Get(Api.ErrorCode.ColumnNotFound1, GetTraceSql());
+                }
+
+                visitor.AddColumn2(column);
+                return true;
+            default:
+                return true;
+        }
     }
 
     /// <inheritdoc/>

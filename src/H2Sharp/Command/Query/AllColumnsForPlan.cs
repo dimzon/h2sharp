@@ -19,6 +19,7 @@
  */
 using System;
 using System.Collections.Generic;
+using H2Sharp.Expressions;
 using H2Sharp.Tables;
 
 namespace H2Sharp.Command.Query;
@@ -77,11 +78,12 @@ public sealed class AllColumnsForPlan
     /// <returns>all table's referenced columns</returns>
     public List<Column>? Get(Tables.Table table)
     {
-        // The walk over the filters fills the map; until it is ported there is nothing to
-        // answer with. The two reads below keep the reference's fields -- the filters to walk
-        // and the map to fill -- rather than dropping state the walk will need.
-        _ = filters;
-        map ??= new();
-        throw new TODOException("AllColumnsForPlan.get: the visitor's walk is not ported");
+        if (map is null)
+        {
+            map = [];
+            ExpressionVisitor.AllColumnsForTableFilters(filters, this);
+        }
+
+        return map.TryGetValue(table, out List<Column>? columns) ? columns : null;
     }
 }

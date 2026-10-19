@@ -162,7 +162,7 @@ public class AlterTableAddConstraint : AlterTable
         {
             case CommandInterface.AlterTableAddConstraintPrimaryKey:
                 {
-                    IndexColumn[] keyColumns = MapColumns(table, indexColumns);
+                    IndexColumn[] keyColumns = IndexColumn.MapColumns(indexColumns, table);
                     index = table.FindPrimaryKey();
                     foreach (Constraint c in table.GetConstraints())
                     {
@@ -262,43 +262,6 @@ public class AlterTableAddConstraint : AlterTable
 
         db.AddSchemaObject(GetSession(), constraint);
         table.AddConstraint(constraint);
-    }
-
-    /// <summary>
-    /// Resolves the named index columns against the table.
-    /// </summary>
-    /// <remarks>
-    /// The reference maps the columns onto the index columns in place, keeping the sort
-    /// mask; here the array is rebuilt, so the sort mask is carried over explicitly. A
-    /// column name the table does not know is error 42122, which is where a CREATE TABLE
-    /// with a constraint over a column that was never declared fails.
-    /// </remarks>
-    private static IndexColumn[] MapColumns(Table table, IndexColumn[] columns)
-    {
-        Column[] tableColumns = table.GetColumns();
-        IndexColumn[] mapped = new IndexColumn[columns.Length];
-        for (int i = 0; i < columns.Length; i++)
-        {
-            string name = columns[i].GetName();
-            Column? match = null;
-            foreach (Column candidate in tableColumns)
-            {
-                if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
-                {
-                    match = candidate;
-                    break;
-                }
-            }
-
-            if (match is null)
-            {
-                throw DbException.Get(Api.ErrorCode.ColumnNotFound1, name);
-            }
-
-            mapped[i] = new IndexColumn(match, columns[i].SortType);
-        }
-
-        return mapped;
     }
 
     /// <summary>

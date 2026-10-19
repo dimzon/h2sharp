@@ -123,7 +123,7 @@ public sealed class MVTableTests : IDisposable
     {
         MVTable table = NewTable();
         long key = table.AddRow(session, Row(1, "before"));
-        SearchRow before = table.GetRow(session, key)!;
+        Row before = (Row)table.GetRow(session, key)!;
 
         Row after = Row(1, "after");
         after.SetKey(key);

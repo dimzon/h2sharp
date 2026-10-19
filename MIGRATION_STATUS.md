@@ -4865,3 +4865,65 @@ IF EXISTS в обеих позициях, RESTRICT/CASCADE принимаютс�
 Проверено: `AlterTableConstraintTests` (оракул) зелёный, `H2Sharp.Tests` **1068**,
 `Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
 
+### Индексы: CREATE INDEX / DROP INDEX / ALTER TABLE DROP PRIMARY KEY
+
+**`MVSecondaryIndex` портирован полностью**: своя карта `index.<id>` с `RowDataType` из row
+factory, `Add`/`Remove`/`Update`, `CheckUnique` дважды (до и после `put`, второй раз с новым
+ключом), буферизованная перестройка слиянием временных карт (`AddRowsToBuffer`/
+`AddBufferedRows`), `MVStoreCursor`. Значение карты — `NullValueDataType`. Транзакционные
+карты в порту объектные, поэтому появился не-эталонный адаптер `ObjectMapDataType<T>` — он
+один объясняет себя комментарием; проверка типа ключа карты пропущена (карта отдаёт адаптер,
+а не `RowDataType`), `GetMVMap` отказывает по той же причине. `MVTable.AddIndex`,
+`PrepareColumns` (nullable-проверка ключа, явное NULLS-упорядочение неключевых индексов),
+`RebuildIndex`/`RebuildIndexBuffered`, освобождение имени при провале перестройки
+(`FreeUniqueName` до `index.Remove`) — эталонные. `RebuildIndexBlockMerge` — TODO (диск не
+портирован, mem идёт buffered).
+
+**Row factory — эталонный путь.** `RowFactory`/`DefaultRowFactory` доведены до эталона
+(`GetRowFactory`/`INSTANCE`, обе перегрузки `CreateRowFactory`, `CreateRow` возвращает
+`DefaultRow`/`SimpleRowValue`/`Sparse` по числу индексированных колонок, обратный `map`),
+добавлены `Result/Sparse.cs` и `Database.GetRowFactory()`; `Index` в конструкторе строит
+`rowFactory` и `uniqueRowFactory` из фабрики БД через схему таблицы
+(`Index.java:100-134`), `MVDelegateIndex.GetRowFactory` делегирует в primary. Самодельная
+`MVTable.TableRowFactory` устранена. Благодаря этому ключи индексов и сообщение 23505
+совпадают с JVM байт-в-байт: `( /* 1 */ 1 )`, а не `( /* key:1 */ 1, 1)` с полной строкой
+таблицы.
+
+**`IndexColumn.WriteColumns`** печатает полный суффикс сортировки через
+`SortOrder.TypeToString` (DESC, NULLS FIRST/LAST) и имеет name-only ветку с
+`ParserUtil.QuoteIdentifier` — отсюда `T(A NULLS FIRST)` в сообщениях. Эталонная константа
+`SQL_NO_ORDER` переименована в `SqlNoOrder` (конвенция C#; отмечено в коде).
+
+**Парсер:** DTO `CreateIndexStatement`/`DropIndexStatement`, `PrepareCreateIndex`/
+`PrepareDropIndex`; `ReadCreateIndex` (UNIQUE + `ReadNullsDistinct`, IF NOT EXISTS, имя, ON,
+`USING BTREE`, колонки с `ReadSortType`, COMMENT/INCLUDE — TODO), `ReadDropIndex` (IF EXISTS,
+MySQL `ON table` игнорируется), `ALTER TABLE DROP PRIMARY KEY` (`Read`+`KEY`,
+`PrepareAlterTable` → DDL `DropIndex` по имени `table.GetPrimaryKey()`). Убраны двойные
+потребления после `IsWord(...)` (UNIQUE, BTREE, ON, NULLS/FIRST, DISTINCT/NOT/ALL) — `IsWord`
+потребляет сам; в `NULLS`-ветке отказ теперь без expected-списка, как `getSyntaxError()`.
+`PrepareCommand` после оператора требует `;` или конца ввода и на хвосте без expected отдаёт
+42000 (раньше `DROP INDEX T_DATA, ...` превращался в 42001 «expected statement»).
+
+**Команды:** `CreateIndex.Update` (имя из `Schema.GetUniqueIndexName`, 42111 при
+`IF NOT EXISTS`, 42102, 90017, `SetUnique(NullsDistinct?, int)`,
+`IndexType.CreatePrimaryKey/CreateUnique/CreateNonUnique`, comment; `create: true`
+захардкожен — поля `Prepared.create` в порту нет, отмечено), `DropIndex` (42112, 90085,
+`GetSession().GetDatabase()`: у `SchemaCommand` нет `GetDatabase`), `Schema.FindIndex` без
+temp-ветки.
+
+**Оракул `IndexTests`** (2 `[JavaOracleFact]`, сценарии A/B/C/D): жизненный цикл
+unique-индекса на пустой и непустой таблице, генерация имени (`INDEX_5`), `T_DATA` в списке,
+23505 с полным телом, IF NOT EXISTS, 42111/42112/90085/42122, DESC NULLS FIRST, неудачная
+перестройка unique на дубликатах освобождает имя, ADD PRIMARY KEY на непустой таблице (это
+тот же `MVSecondaryIndex` — `getRowCountMax() != 0`), DROP PK возвращает дубликаты, повторный
+ADD берёт то же имя. `IndexPlanTests.AnIndexWithADatabaseBuildsItsRowFactory` заменил
+устаревший тест отказа: фабрика строится, а уникальная без unique-колонок по-прежнему
+отказывает (в эталоне на этом месте `null`).
+
+**Граница:** HASH/SPATIAL, INCLUDE, COMMENT-ветка CREATE INDEX, schema-qualified имена,
+temp-таблицы, `RebuildIndexBlockMerge`, `GetMVMap`, `Index.FindNext` — TODO с именованными
+отказами.
+
+Проверено: `IndexTests` и `IndexPlanTests` зелёные, `H2Sharp.Tests` **1070**,
+`Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
+

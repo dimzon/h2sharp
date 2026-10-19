@@ -73,6 +73,16 @@ public sealed partial class Database
     private Values.CompareMode compareMode = Values.CompareMode.GetInstance(null, 0);
 
     /// <summary>
+    /// The row factory this database's tables and indexes use.
+    /// </summary>
+    /// <remarks>
+    /// Reference: org.h2.engine.Database.java:217, 416
+    /// Initialized with the default factory; tables and indexes build their own
+    /// variants through createRowFactory.
+    /// </remarks>
+    private Result.RowFactory rowFactory = Result.RowFactory.GetDefaultRowFactory();
+
+    /// <summary>
     /// The schemas of this database, by name.
     /// </summary>
     /// <remarks>
@@ -409,6 +419,16 @@ public sealed partial class Database
     /// </summary>
     /// <param name="compareMode">the compare mode</param>
     public void SetCompareMode(Values.CompareMode compareMode) => this.compareMode = compareMode;
+
+    /// <summary>
+    /// Gets the row factory this database uses.
+    /// </summary>
+    /// <remarks>
+    /// Reference: org.h2.engine.Database.java:416
+    /// Tables and indexes build their own variants through createRowFactory.
+    /// </remarks>
+    /// <returns>the row factory</returns>
+    public Result.RowFactory GetRowFactory() => rowFactory;
 
     /// <summary>
     /// Gets the connection information this database was opened with.

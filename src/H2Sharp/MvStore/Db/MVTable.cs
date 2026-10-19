@@ -272,19 +272,34 @@ public sealed class MVTable : Table
     }
 
     /// <summary>
-    /// Gets the row factory that reads this table's rows.
+    /// Gets the row factory for this table.
     /// </summary>
     /// <remarks>
-    /// One per table: the column count never changes after construction, and the factory
-    /// itself holds no state, so sharing it is safe and a second instance would only be
-    /// garbage.
+    /// Built from the database's default factory, as the reference does:
+    /// database.getRowFactory().createRowFactory(database, database.getCompareMode(),
+    /// database, columns, null, false). The provider and handler are null here because
+    /// Database does not yet implement CastDataProvider/DataHandler, but the factory
+    /// still produces the correct row shape.
+    /// Reference: org.h2.table.Table.java:482
     /// </remarks>
     public RowFactory GetRowFactory()
     {
-        return rowFactory ??= new TableRowFactory(columns.Length);
+        return rowFactory ??= CreateTableRowFactory();
     }
 
     private RowFactory? rowFactory;
+
+    private RowFactory CreateTableRowFactory()
+    {
+        Typed[] typedColumns = new Typed[columns.Length];
+        for (int i = 0; i < columns.Length; i++)
+        {
+            typedColumns[i] = (Typed)(object)columns[i];
+        }
+
+        return database!.GetRowFactory().CreateRowFactory(
+            null, database!.GetCompareMode(), null, typedColumns, null, false);
+    }
 
     /// <summary>
     /// Adds an index to this table: a delegate over the primary for a single integer key,
@@ -444,9 +459,8 @@ public sealed class MVTable : Table
     /// Rebuilds the index from the table's rows, removing the half-built index when it fails.
     /// </summary>
     /// <remarks>
-    /// The cleanup is thinner than the reference's: freeing the reserved name waits for the
-    /// schema's name registry, and the failure log waits for tracing. What stays is the shape
-    /// that matters — a failed rebuild leaves no half index behind and the failure travels on.
+    /// A failed rebuild frees the reserved name and removes the half-built index, so the same
+    /// names can be taken again. Only the failure log is missing: tracing is not ported.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="index">the index</param>
@@ -455,9 +469,10 @@ public sealed class MVTable : Table
     {
         try
         {
-            if (!session.GetDatabase().IsPersistent() || index is MVSecondaryIndex)
+            if (!session.GetDatabase().IsPersistent())
             {
-                // in-memory
+                // in-memory; the reference also rebuilds a spatial index this way, and spatial
+                // indexes are not ported
                 RebuildIndexBuffered(session, index);
             }
             else
@@ -467,6 +482,7 @@ public sealed class MVTable : Table
         }
         catch (H2SharpException)
         {
+            GetSchema()!.FreeUniqueName(indexName);
             try
             {
                 index.Remove(session);
@@ -486,13 +502,66 @@ public sealed class MVTable : Table
     /// Rebuilds the index by buffering the rows first.
     /// </summary>
     /// <remarks>
-    /// Not ported. It sorts the rows into temporary buffers and merges them into the index,
-    /// which needs row cursors over the table and the buffer lifecycle — both unported.
+    /// The buffer is sorted by the target index before it is added, which is what makes a bulk
+    /// rebuild cheaper than one put per row. The reference also reports progress to the
+    /// database event listener; none is ported, and without one the call is a no-op.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="index">the index</param>
     private void RebuildIndexBuffered(SessionLocal session, Index index)
-        => throw new TODOException("MVTable.rebuildIndexBuffered");
+    {
+        Index scan = GetScanIndex(session)!;
+        long remaining = scan.GetRowCount(session);
+        long total = remaining;
+        Cursor cursor = scan.GetCursor(session, null, null, false)
+            ?? throw new TODOException("MVTable.rebuildIndexBuffered: the scan index has no cursor");
+        int bufferSize = (int)Math.Min(total, database!.GetMaxMemoryRows());
+        List<Row> buffer = new(bufferSize);
+        while (cursor.Next())
+        {
+            Row row = cursor.Get()!;
+            buffer.Add(row);
+            if (buffer.Count >= bufferSize)
+            {
+                AddRowsToIndex(session, buffer, index);
+            }
+
+            remaining--;
+        }
+
+        AddRowsToIndex(session, buffer, index);
+        if (remaining != 0)
+        {
+            throw DbException.GetInternalError("rowcount remaining=" + remaining + ' ' + Name);
+        }
+    }
+
+    /// <summary>
+    /// Sorts buffered rows by the given index and adds them to it.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="list">the rows; cleared on completion</param>
+    /// <param name="index">the index to append to</param>
+    private static void AddRowsToIndex(SessionLocal session, List<Row> list, Index index)
+    {
+        SortRows(list, index);
+        foreach (Row row in list)
+        {
+            index.Add(session, row);
+        }
+
+        list.Clear();
+    }
+
+    /// <summary>
+    /// Sorts the specified list of rows for a specified index.
+    /// </summary>
+    /// <param name="list">the list of rows</param>
+    /// <param name="index">the index to sort for</param>
+    private static void SortRows(List<Row> list, Index index)
+    {
+        list.Sort((a, b) => index.CompareRows(a, b));
+    }
 
     /// <summary>
     /// Rebuilds the index by merging sorted blocks.
@@ -548,7 +617,11 @@ public sealed class MVTable : Table
         long savepoint = transaction.SetSavepoint();
         try
         {
-            primaryIndex.Add(session, row);
+            foreach (Index index in indexes)
+            {
+                index.Add(session, row);
+            }
+
             return row.GetKey();
         }
         catch (Exception e)
@@ -575,7 +648,10 @@ public sealed class MVTable : Table
                 throw DbException.Get(ErrorCode.RowNotFoundWhenDeleting1, Name + ": " + key);
             }
 
-            primaryIndex.Remove(session, row);
+            for (int i = indexes.Count - 1; i >= 0; i--)
+            {
+                indexes[i].Remove(session, row);
+            }
         }
         catch (Exception e)
         {
@@ -590,13 +666,17 @@ public sealed class MVTable : Table
     /// <param name="session">the session</param>
     /// <param name="oldRow">the row as it was</param>
     /// <param name="newRow">the row as it is now</param>
-    public override void UpdateRow(SessionLocal session, SearchRow oldRow, SearchRow newRow)
+    public override void UpdateRow(SessionLocal session, Row oldRow, Row newRow)
     {
+        newRow.SetKey(oldRow.GetKey());
         MvStore.Tx.Transaction transaction = session.GetTransaction();
         long savepoint = transaction.SetSavepoint();
         try
         {
-            primaryIndex.Update(session, oldRow, newRow);
+            foreach (Index index in indexes)
+            {
+                index.Update(session, oldRow, newRow);
+            }
         }
         catch (Exception e)
         {
@@ -716,7 +796,10 @@ public sealed class MVTable : Table
     /// <inheritdoc/>
     public override void Truncate(SessionLocal session)
     {
-        primaryIndex.Truncate(session);
+        for (int i = indexes.Count - 1; i >= 0; i--)
+        {
+            indexes[i].Truncate(session);
+        }
     }
 
     /// <inheritdoc/>
@@ -763,38 +846,5 @@ public sealed class MVTable : Table
     public override bool IsClosed()
     {
         return closed;
-    }
-
-    /// <summary>
-    /// The row factory of one table: rows with exactly as many columns as the table has.
-    /// </summary>
-    /// <remarks>
-    /// A distinct type per table rather than one shared, because the row a reader must build
-    /// depends on the table: a row of an index has fewer columns than the table it belongs to,
-    /// and a factory that guessed the width would fill the wrong number of values.
-    /// </remarks>
-    private sealed class TableRowFactory : RowFactory
-    {
-        private readonly int columnCount;
-
-        internal TableRowFactory(int columnCount)
-        {
-            this.columnCount = columnCount;
-        }
-
-        public override Row CreateRow(Value[] data, int memory) => new DefaultRow(data, memory);
-
-        public override SearchRow CreateRow() => new DefaultRow(columnCount);
-
-        public override RowDataType GetRowDataType()
-            => rowDataType ??= new(null, CompareMode.GetInstance(null, 0), null, null, null, columnCount, true);
-
-        private RowDataType? rowDataType;
-
-        public override int[]? GetIndexes() => null;
-
-        public override TypeInfo[]? GetColumnTypes() => null;
-
-        public override int GetColumnCount() => columnCount;
     }
 }

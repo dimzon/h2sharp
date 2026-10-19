@@ -408,15 +408,16 @@ public sealed class Transaction
     /// Opens a data map with explicit types.
     /// </summary>
     /// <remarks>
-    /// The types only travel to the type registry: every versioned map is keyed and valued by
-    /// plain objects (see <see cref="TransactionStore"/>), so an explicit type changes nothing
-    /// about the map itself.
+    /// Every versioned map is keyed and valued by plain objects (see
+    /// <see cref="TransactionStore"/>), so the types are adapted rather than installed directly.
+    /// They still order the entries: a secondary index passes its row type here, and without
+    /// it the object type would try to serialize the key.
     /// </remarks>
     public TransactionMap<K, V> OpenMap<K, V>(string name, DataType<K>? keyType, DataType<V>? valueType)
     {
-        _ = keyType;
-        _ = valueType;
-        MVMap<object, VersionedValue<object>> map = Store!.OpenVersionedMap(name);
+        MVMap<object, VersionedValue<object>> map = Store!.OpenVersionedMap(name,
+            keyType is null ? null : new ObjectMapDataType<K>(keyType),
+            valueType is null ? null : new ObjectMapDataType<V>(valueType));
         return OpenMapX<K, V>(map);
     }
 

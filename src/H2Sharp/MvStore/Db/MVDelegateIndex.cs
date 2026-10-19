@@ -62,6 +62,14 @@ public sealed class MVDelegateIndex : MVIndex<long, SearchRow>
         }
     }
 
+    /// <summary>
+    /// Delegates to the primary index's row factory.
+    /// </summary>
+    /// <remarks>
+    /// Reference: org.h2.mvstore.db.MVDelegateIndex.java:41-44
+    /// </remarks>
+    public override RowFactory GetRowFactory() => mainIndex.GetRowFactory();
+
     /// <inheritdoc/>
     public override void AddRowsToBuffer(List<Row> rows, string bufferName)
     {
@@ -107,6 +115,18 @@ public sealed class MVDelegateIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    public override long GetRowCount(SessionLocal session)
+    {
+        return mainIndex.GetRowCount(session);
+    }
+
+    /// <inheritdoc/>
+    public override long GetRowCountApproximation(SessionLocal session)
+    {
+        return mainIndex.GetRowCountApproximation(session);
+    }
+
+    /// <inheritdoc/>
     public override bool NeedRebuild()
     {
         return false;
@@ -148,7 +168,7 @@ public sealed class MVDelegateIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
-    public override void Update(SessionLocal session, SearchRow oldRow, SearchRow newRow)
+    public override void Update(SessionLocal session, Row oldRow, Row newRow)
     {
         // nothing to do
     }

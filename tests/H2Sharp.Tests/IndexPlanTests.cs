@@ -50,12 +50,13 @@ public sealed class IndexPlanTests
         }
 
         /// <summary>
-        /// Reads through to the base row factories, which refuse until the database path lands.
+        /// Reads through to the base row factory, which the table's database builds.
         /// </summary>
         internal H2Sharp.Result.RowFactory ProbeRowFactory() => GetRowFactory();
 
         /// <summary>
-        /// Reads through to the base unique factory, same refusal.
+        /// Reads through to the base unique factory. There are no unique columns here, so it
+        /// was never built: the reference returns null at this point and the port refuses.
         /// </summary>
         internal H2Sharp.Result.RowFactory ProbeUniqueRowFactory() => GetUniqueRowFactory();
 
@@ -63,6 +64,11 @@ public sealed class IndexPlanTests
         /// Nothing is stored, so there is nothing to rebuild after opening.
         /// </summary>
         public override bool NeedRebuild() => false;
+
+        /// <summary>
+        /// Nothing is stored, so the count is zero.
+        /// </summary>
+        public override long GetRowCount(SessionLocal session) => 0;
 
         /// <summary>
         /// A test double prices like a scan of nothing: the methods under test here are the
@@ -112,7 +118,7 @@ public sealed class IndexPlanTests
     }
 
     [Fact]
-    public void AnIndexWithoutADatabaseRefusesARowFactory()
+    public void AnIndexWithADatabaseBuildsItsRowFactory()
     {
         SessionLocal session = NewSession();
 
@@ -128,9 +134,11 @@ public sealed class IndexPlanTests
 
             ColumnsIndex index = new(table, 7, "I", [new Tables.IndexColumn(id, ascending: true)]);
 
-            // A loud refusal at the access, not a null that fails later far from the cause:
-            // the factories need the database path, which is not ported.
-            Assert.Throws<H2Sharp.TODOException>(() => index.ProbeRowFactory());
+            // The factory comes from the table's database, and one indexed column is exactly
+            // the single-slot row of the reference. Without unique columns the unique factory
+            // is the reference's null, which the accessor refuses instead of returning.
+            H2Sharp.Result.RowFactory factory = index.ProbeRowFactory();
+            Assert.IsType<H2Sharp.Result.SimpleRowValue>(factory.CreateRow());
             Assert.Throws<H2Sharp.TODOException>(() => index.ProbeUniqueRowFactory());
         }
         finally
@@ -226,6 +234,11 @@ public sealed class IndexPlanTests
         /// Nothing is stored, so there is nothing to rebuild after opening.
         /// </summary>
         public override bool NeedRebuild() => false;
+
+        /// <summary>
+        /// Nothing is stored, so the count is zero.
+        /// </summary>
+        public override long GetRowCount(SessionLocal session) => 0;
 
         public override double GetCost(
             SessionLocal session,

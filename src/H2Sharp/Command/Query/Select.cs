@@ -430,13 +430,54 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Not ported. In the reference this walks the expressions, the condition, the having and
-    /// the tables, answering per visitor kind -- and each branch needs machinery that is not
-    /// here (table determinism, modification ids). A stub that answered true would mark every
-    /// query cacheable and optimizable whether it is or not.
+    /// The column-collecting visitors walk the select list, the join conditions, the condition
+    /// and the HAVING clause, which is what the planner needs to price an index. The other
+    /// visitor kinds answer with machinery that is not ported (table determinism, modification
+    /// ids, dependency sets, evaluatable-subquery setting), so they still refuse by name rather
+    /// than answering a question they cannot answer. The reference's QUALIFY clause is not
+    /// ported, so its expression has nowhere to be walked from.
     /// </remarks>
     public override bool IsEverything(ExpressionVisitor visitor)
-        => throw new TODOException("Select.isEverything: the branches need unported machinery");
+    {
+        switch (visitor.GetVisitorType())
+        {
+            case ExpressionVisitor.GetColumns1:
+            case ExpressionVisitor.GetColumns2:
+                break;
+            default:
+                throw new TODOException("Select.isEverything: the branches need unported machinery");
+        }
+
+        ExpressionVisitor v2 = visitor.IncrementQueryLevel(1);
+        foreach (Expression e in expressions)
+        {
+            if (!e.IsEverything(v2))
+            {
+                return false;
+            }
+        }
+
+        foreach (TableFilter f in filters)
+        {
+            Expression? c = f.GetJoinCondition();
+            if (c is not null && !c.IsEverything(v2))
+            {
+                return false;
+            }
+        }
+
+        if (condition is not null && !condition.IsEverything(v2))
+        {
+            return false;
+        }
+
+        if (having is not null && !having.IsEverything(v2))
+        {
+            return false;
+        }
+
+        return true;
+    }
 
     /// <inheritdoc/>
     /// <remarks>

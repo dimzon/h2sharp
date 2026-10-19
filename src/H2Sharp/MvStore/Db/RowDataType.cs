@@ -105,6 +105,19 @@ public sealed class RowDataType : BasicDataType<SearchRow>
         return valueDataType;
     }
 
+    /// <summary>
+    /// Sets the row factory that builds rows while reading.
+    /// </summary>
+    /// <remarks>
+    /// Reference: org.h2.mvstore.db.RowDataType.java:55-57
+    /// Forwards to valueDataType.setRowFactory.
+    /// </remarks>
+    /// <param name="rowFactory">the row factory</param>
+    public void SetRowFactory(Result.RowFactory rowFactory)
+    {
+        valueDataType.SetRowFactory(rowFactory);
+    }
+
     /// <inheritdoc/>
     public override SearchRow[] CreateStorage(int capacity)
     {

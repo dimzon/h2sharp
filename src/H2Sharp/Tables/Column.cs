@@ -39,7 +39,7 @@ namespace H2Sharp.Tables;
 /// <summary>
 /// A column of a table.
 /// </summary>
-public class Column
+public class Column : Typed
 {
     /// <summary>The name of the rowid pseudo column.</summary>
     public const string RowId = "_ROWID_";

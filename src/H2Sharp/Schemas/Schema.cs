@@ -203,6 +203,24 @@ public sealed class Schema : DbObject
     }
 
     /// <summary>
+    /// Try to find an index with this name.
+    /// </summary>
+    /// <remarks>
+    /// The reference also looks the name up among the session's local temporary table
+    /// indexes; session temporary tables are not ported here, so that half of the lookup has
+    /// nothing it could find.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="name">the object name</param>
+    /// <returns>the index or null</returns>
+    public Index? FindIndex(SessionLocal session, string name)
+    {
+        _ = session;
+        _ = indexes.TryGetValue(name, out Index? index);
+        return index;
+    }
+
+    /// <summary>
     /// Adds a schema object to this schema.
     /// </summary>
     /// <remarks>

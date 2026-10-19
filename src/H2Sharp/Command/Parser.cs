@@ -112,6 +112,9 @@ public sealed class AlterTableStatement : Statement
 
     /// <summary>The CASCADE/RESTRICT written after the name, or null.</summary>
     public ConstraintActionType? DropAction { get; set; }
+
+    /// <summary>Whether PRIMARY KEY was written after DROP.</summary>
+    public bool DropPrimaryKey { get; set; }
 }
 
 /// <summary>CREATE TABLE.</summary>
@@ -140,6 +143,47 @@ public sealed class DropTableStatement : Statement
     public override int GetCommandType() => CommandInterface.DropTable;
 
     /// <summary>The table name.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Whether IF EXISTS was written.</summary>
+    public bool IfExists { get; set; }
+}
+
+/// <summary>CREATE [UNIQUE] INDEX.</summary>
+public sealed class CreateIndexStatement : Statement
+{
+    /// <inheritdoc/>
+    public override int GetCommandType() => CommandInterface.CreateIndex;
+
+    /// <summary>The index name, or null when the name is to be generated.</summary>
+    public string? Name { get; set; }
+
+    /// <summary>The table the index is on.</summary>
+    public string TableName { get; set; } = string.Empty;
+
+    /// <summary>The columns, in order, with their sort types.</summary>
+    public List<IndexColumn> Columns { get; } = [];
+
+    /// <summary>Whether UNIQUE was written.</summary>
+    public bool Unique { get; set; }
+
+    /// <summary>How NULLs compare in a unique index, or null for a non-unique one.</summary>
+    public NullsDistinct? NullsDistinct { get; set; }
+
+    /// <summary>Whether IF NOT EXISTS was written.</summary>
+    public bool IfNotExists { get; set; }
+
+    /// <summary>Whether IF EXISTS was written before the table name.</summary>
+    public bool IfTableExists { get; set; }
+}
+
+/// <summary>DROP INDEX.</summary>
+public sealed class DropIndexStatement : Statement
+{
+    /// <inheritdoc/>
+    public override int GetCommandType() => CommandInterface.DropIndex;
+
+    /// <summary>The index name.</summary>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>Whether IF EXISTS was written.</summary>
@@ -286,6 +330,16 @@ public sealed class Parser
         while (!parser.AtEnd())
         {
             Prepared next = parser.ParseOneStatement();
+
+            // The reference's prepareCommand: a statement ends at a semicolon or at the end of
+            // the input, and anything else is a plain syntax error. The expected-token list is
+            // empty on this path, so the reference's addExpected(SEMICOLON) adds nothing and the
+            // failure is the one-argument form.
+            if (parser.CurrentType != Token.Semicolon && parser.CurrentType != Token.EndOfInput)
+            {
+                throw DbException.GetSyntaxError(sql, parser.Current.Start);
+            }
+
             next.Prepare();
             prepared.Add(next);
         }
@@ -342,8 +396,10 @@ public sealed class Parser
             prepared = statement switch
             {
                 CreateTableStatement create => PrepareCreateTable(current, create),
+                CreateIndexStatement createIndex => PrepareCreateIndex(current, createIndex),
                 AlterTableStatement alter => PrepareAlterTable(current, alter),
                 DropTableStatement drop => PrepareDropTable(current, drop),
+                DropIndexStatement dropIndex => PrepareDropIndex(current, dropIndex),
                 InsertStatement insert => PrepareInsert(current, insert),
                 UpdateStatement update => PrepareUpdate(current, update),
                 DeleteStatement delete => PrepareDelete(current, delete),
@@ -1727,6 +1783,28 @@ public sealed class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareAlterTable(SessionLocal session, AlterTableStatement statement)
     {
+        if (statement.DropPrimaryKey)
+        {
+            Schemas.Schema schema = CurrentSchema(session);
+            Tables.Table? table = schema.FindTableOrView(session, statement.Name);
+            if (table is null)
+            {
+                if (statement.IfTableExists)
+                {
+                    return new Dml.NoOperation(session);
+                }
+
+                throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, statement.Name);
+            }
+
+            // The reference turns DROP PRIMARY KEY into a DROP INDEX on the primary key's
+            // index name, so the constraint goes away through the same path as any index.
+            Ddl.DropIndex dropPrimaryKey = new(session, schema);
+            dropPrimaryKey.SetSql(statement.Sql, null);
+            dropPrimaryKey.SetIndexName(table.GetPrimaryKey().GetName()!);
+            return dropPrimaryKey;
+        }
+
         if (statement.AddConstraint is not null)
         {
             Ddl.AlterTableAddConstraint add = CreateAddConstraintCommand(
@@ -1883,6 +1961,48 @@ public sealed class Parser
         drop.SetSql(statement.Sql, null);
         drop.SetIfExists(statement.IfExists);
         drop.AddTable(CurrentSchema(session), statement.Name);
+        return drop;
+    }
+
+    /// <summary>
+    /// Builds the CREATE INDEX command for a statement the parser read.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="statement">the parsed statement</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareCreateIndex(SessionLocal session, CreateIndexStatement statement)
+    {
+        Ddl.CreateIndex create = new(session, CurrentSchema(session));
+        create.SetSql(statement.Sql, null);
+        create.SetIfTableExists(statement.IfTableExists);
+        create.SetIfNotExists(statement.IfNotExists);
+        create.SetTableName(statement.TableName);
+        if (statement.Name is not null)
+        {
+            create.SetIndexName(statement.Name);
+        }
+
+        create.SetIndexColumns([.. statement.Columns]);
+        if (statement.Unique)
+        {
+            create.SetUnique(statement.NullsDistinct ?? NullsDistinct.Distinct, statement.Columns.Count);
+        }
+
+        return create;
+    }
+
+    /// <summary>
+    /// Builds the DROP INDEX command for a statement the parser read.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="statement">the parsed statement</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareDropIndex(SessionLocal session, DropIndexStatement statement)
+    {
+        Ddl.DropIndex drop = new(session, CurrentSchema(session));
+        drop.SetSql(statement.Sql, null);
+        drop.SetIfExists(statement.IfExists);
+        drop.SetIndexName(statement.Name);
         return drop;
     }
 
@@ -2073,8 +2193,23 @@ public sealed class Parser
         if (IsWord("CREATE", consume: false))
         {
             Read();
-            ExpectWord("TABLE");
-            return ReadCreateTable();
+            if (IsWord("TABLE"))
+            {
+                return ReadCreateTable();
+            }
+
+            if (IsWord("UNIQUE", consume: false) || IsWord("INDEX", consume: false))
+            {
+                return ReadCreateIndex();
+            }
+
+            if (IsWord("HASH", consume: false) || IsWord("SPATIAL", consume: false))
+            {
+                throw new TODOException(
+                    "Parser.parseCreate: HASH and SPATIAL indexes are not ported");
+            }
+
+            throw DbException.GetSyntaxError(sql, Current.Start, "TABLE");
         }
 
         if (IsWord("ALTER", consume: false))
@@ -2086,7 +2221,17 @@ public sealed class Parser
 
         if (IsWord("DROP"))
         {
-            return ReadDropTable();
+            if (IsWord("TABLE", consume: false))
+            {
+                return ReadDropTable();
+            }
+
+            if (IsWord("INDEX", consume: false))
+            {
+                return ReadDropIndex();
+            }
+
+            throw DbException.GetSyntaxError(sql, Current.Start, "TABLE");
         }
 
         if (IsWord("INSERT"))
@@ -2288,8 +2433,10 @@ public sealed class Parser
 
             if (CurrentType == ParserUtil.Primary)
             {
-                throw new TODOException(
-                    "Parser.readAlterTable: DROP PRIMARY KEY is not ported, it goes through DROP INDEX");
+                Read();
+                ExpectWord("KEY");
+                statement.DropPrimaryKey = true;
+                return statement;
             }
 
             throw new TODOException("Parser.readAlterTable: DROP COLUMN is not ported");
@@ -2327,6 +2474,154 @@ public sealed class Parser
         }
 
         return new DropTableStatement { Name = ReadIdentifier(), IfExists = ifExists };
+    }
+
+    /// <summary>
+    /// Reads CREATE [UNIQUE] INDEX.
+    /// </summary>
+    /// <remarks>
+    /// The name is optional: without one the reference generates it when the index is created.
+    /// HASH and SPATIAL are only keywords in compatibility modes and are refused by name. The
+    /// reference reads them with <c>readIfCompat</c>, which this parser does not have. The
+    /// INCLUDE clause and the PostgreSQL <c>USING</c> keywords other than BTREE are valid
+    /// statements whose commands are not ported.
+    /// </remarks>
+    /// <returns>the statement</returns>
+    private CreateIndexStatement ReadCreateIndex()
+    {
+        CreateIndexStatement statement = new();
+        if (IsWord("UNIQUE"))
+        {
+            statement.Unique = true;
+            statement.NullsDistinct = ReadNullsDistinct(NullsDistinct.Distinct);
+        }
+
+        ExpectWord("INDEX");
+        if (!IsWord("ON", consume: false))
+        {
+            if (CurrentType == ParserUtil.If)
+            {
+                Read();
+                Expect(ParserUtil.Not, "NOT");
+                Expect(ParserUtil.Exists, "EXISTS");
+                statement.IfNotExists = true;
+            }
+
+            statement.Name = ReadIdentifier();
+        }
+
+        ExpectWord("ON");
+        statement.TableName = ReadIdentifier();
+        if (IsWord("COMMENT", consume: false))
+        {
+            throw new TODOException("Parser.parseCreate: CREATE INDEX COMMENT is not ported");
+        }
+
+        if (!ReadIf(Token.OpenParen))
+        {
+            ExpectWord("USING");
+            if (!IsWord("BTREE"))
+            {
+                throw new TODOException(
+                    "Parser.parseCreate: CREATE INDEX USING other than BTREE is not ported");
+            }
+
+            Expect(Token.OpenParen, "(");
+        }
+
+        do
+        {
+            string columnName = ReadIdentifier();
+            statement.Columns.Add(new IndexColumn(columnName, ReadSortType()));
+        }
+        while (ReadIf(Token.Comma));
+
+        Expect(Token.CloseParen, ")");
+        if (statement.Unique && IsWord("INCLUDE", consume: false))
+        {
+            throw new TODOException("Parser.parseCreate: CREATE INDEX INCLUDE is not ported");
+        }
+
+        return statement;
+    }
+
+    /// <summary>
+    /// Reads the NULLS DISTINCT / NULLS NOT DISTINCT / NULLS ALL DISTINCT clause.
+    /// </summary>
+    /// <param name="defaultDistinct">the rule to keep when NULLS is not written</param>
+    /// <returns>the rule</returns>
+    private NullsDistinct ReadNullsDistinct(NullsDistinct defaultDistinct)
+    {
+        if (!IsWord("NULLS"))
+        {
+            return defaultDistinct;
+        }
+
+        if (IsWord("DISTINCT"))
+        {
+            return NullsDistinct.Distinct;
+        }
+
+        if (IsWord("NOT"))
+        {
+            ExpectWord("DISTINCT");
+            return NullsDistinct.NotDistinct;
+        }
+
+        if (IsWord("ALL"))
+        {
+            ExpectWord("DISTINCT");
+            return NullsDistinct.AllDistinct;
+        }
+
+        throw DbException.GetSyntaxError(sql, Current.Start);
+    }
+
+    /// <summary>
+    /// Reads the sort order and NULLS placement of one index column.
+    /// </summary>
+    /// <returns>the sort type</returns>
+    private int ReadSortType()
+    {
+        int sortType = !IsWord("ASC") && IsWord("DESC")
+            ? Result.SortOrder.Descending
+            : Result.SortOrder.Ascending;
+        if (IsWord("NULLS"))
+        {
+            if (IsWord("FIRST"))
+            {
+                sortType |= Result.SortOrder.NullsFirst;
+            }
+            else
+            {
+                ExpectWord("LAST");
+                sortType |= Result.SortOrder.NullsLast;
+            }
+        }
+
+        return sortType;
+    }
+
+    /// <summary>
+    /// Reads DROP INDEX.
+    /// </summary>
+    /// <remarks>
+    /// The MySQL form <c>DROP INDEX name ON table</c> is accepted and the table is ignored;
+    /// the index name is what identifies it.
+    /// </remarks>
+    /// <returns>the statement</returns>
+    private DropIndexStatement ReadDropIndex()
+    {
+        ExpectWord("INDEX");
+        bool ifExists = ReadIfExists(false);
+        string name = ReadIdentifier();
+        ifExists = ReadIfExists(ifExists);
+        if (IsWord("ON"))
+        {
+            _ = ReadIdentifier();
+        }
+
+        return new DropIndexStatement { Name = name, IfExists = ifExists };
     }
 
     private InsertStatement ReadInsert()

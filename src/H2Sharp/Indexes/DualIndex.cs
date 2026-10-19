@@ -44,6 +44,12 @@ public sealed class DualIndex : Index
     public override string? GetCreateSql() => null;
 
     /// <inheritdoc/>
+    public override long GetRowCount(SessionLocal session) => 1L;
+
+    /// <inheritdoc/>
+    public override long GetRowCountApproximation(SessionLocal session) => 1L;
+
+    /// <inheritdoc/>
     public override bool CanGetFirstOrLast() => true;
 
     /// <inheritdoc/>

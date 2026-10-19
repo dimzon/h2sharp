@@ -13,13 +13,9 @@
  * comparison knows which of those columns to compare and in which order — the map in the
  * default factory is the inverse of that, from stored column position to written position.
  *
- * Partially ported. The factory has its reference shape (it decides between a normal and a
- * sparse row layout) and the default one, which stores every column; the sparse one is where a
- * row skips the columns the index does not key on, and it refuses until the layout it needs —
- * the column types and the per-index column lists — exists.
+ * Ported from org.h2.result.RowFactory (H2 2.5.x).
  */
 using System;
-using System.Collections.Generic;
 using H2Sharp.Engine;
 using H2Sharp.MvStore.Db;
 using H2Sharp.Store;
@@ -31,6 +27,9 @@ namespace H2Sharp.Result;
 /// <summary>
 /// Creates rows.
 /// </summary>
+/// <remarks>
+/// Ported from org.h2.result.RowFactory (H2 2.5.x).
+/// </remarks>
 public abstract class RowFactory
 {
     private static readonly RowFactory Default = new DefaultRowFactory();
@@ -38,10 +37,38 @@ public abstract class RowFactory
     /// <summary>
     /// Gets the default row factory.
     /// </summary>
+    /// <remarks>
+    /// Reference: org.h2.result.RowFactory.java:29-31
+    /// </remarks>
     /// <returns>the factory</returns>
     public static RowFactory GetDefaultRowFactory()
     {
         return Default;
+    }
+
+    /// <summary>
+    /// Create a new row factory.
+    /// </summary>
+    /// <remarks>
+    /// Reference: org.h2.result.RowFactory.java:48-51
+    /// Default returns this (the singleton). Subclasses may return a new factory.
+    /// </remarks>
+    /// <param name="provider">the cast provider</param>
+    /// <param name="compareMode">the compare mode</param>
+    /// <param name="handler">the data handler</param>
+    /// <param name="columns">the columns</param>
+    /// <param name="indexColumns">the index columns</param>
+    /// <param name="storeKeys">whether row keys are stored</param>
+    /// <returns>the (possibly new) row factory</returns>
+    public virtual RowFactory CreateRowFactory(
+        CastDataProvider? provider,
+        CompareMode compareMode,
+        DataHandler? handler,
+        Typed[]? columns,
+        IndexColumn[]? indexColumns,
+        bool storeKeys)
+    {
+        return this;
     }
 
     /// <summary>
@@ -83,52 +110,149 @@ public abstract class RowFactory
     public abstract int GetColumnCount();
 
     /// <summary>
-    /// Create a new row factory.
+    /// The default implementation of row factory.
     /// </summary>
-    /// <param name="provider">the cast provider</param>
-    /// <param name="compareMode">the compare mode</param>
-    /// <param name="handler">the data handler</param>
-    /// <param name="columns">the columns</param>
-    /// <param name="indexColumns">the index columns</param>
-    /// <param name="storeKeys">whether row keys are stored</param>
-    /// <param name="columnCount">the number of columns</param>
-    /// <param name="columnTypes">the column types</param>
-    /// <returns>the (possibly new) row factory</returns>
-    public virtual RowFactory CreateRowFactory(
-        CastDataProvider? provider,
-        CompareMode compareMode,
-        DataHandler? handler,
-        Typed[]? columns,
-        IndexColumn[]? indexColumns,
-        bool storeKeys,
-        int columnCount,
-        TypeInfo[]? columnTypes)
-    {
-        return this;
-    }
-
-    /// <summary>
-    /// The default implementation of row factory: every column is stored, in order.
-    /// </summary>
-    private sealed class DefaultRowFactory : RowFactory
+    /// <remarks>
+    /// Ported from org.h2.result.RowFactory.DefaultRowFactory (H2 2.5.x).
+    /// </remarks>
+    public sealed class DefaultRowFactory : RowFactory
     {
         private readonly RowDataType dataType;
-
         private readonly int columnCount;
-
+        private readonly int[]? indexes;
         private readonly TypeInfo[]? columnTypes;
+        private readonly int[]? map;
+
+        public static readonly DefaultRowFactory Instance = new DefaultRowFactory();
 
         internal DefaultRowFactory()
         {
             dataType = new RowDataType(null, CompareMode.GetInstance(null, 0), null, null, null, 0, true);
             columnCount = 0;
+            indexes = null;
+            columnTypes = null;
+            map = null;
         }
 
-        internal DefaultRowFactory(RowDataType dataType, int columnCount, TypeInfo[]? columnTypes)
+        private DefaultRowFactory(
+            RowDataType dataType,
+            int columnCount,
+            int[]? indexes,
+            TypeInfo[]? columnTypes)
         {
             this.dataType = dataType;
             this.columnCount = columnCount;
+            this.indexes = indexes;
+            if (indexes == null)
+            {
+                map = null;
+            }
+            else
+            {
+                map = new int[columnCount];
+                for (int i = 0, len = indexes.Length; i < len;)
+                {
+                    map[indexes[i]] = ++i;
+                }
+            }
+
             this.columnTypes = columnTypes;
+        }
+
+        /// <summary>
+        /// Create a new row factory from columns and index columns.
+        /// </summary>
+        /// <remarks>
+        /// Reference: org.h2.result.RowFactory.DefaultRowFactory.java:110-140
+        /// Extracts indexes, sortTypes, and columnTypes from the inputs, then delegates
+        /// to the lower-level createRowFactory.
+        /// </remarks>
+        /// <param name="provider">the cast provider</param>
+        /// <param name="compareMode">the compare mode</param>
+        /// <param name="handler">the data handler</param>
+        /// <param name="columns">the columns</param>
+        /// <param name="indexColumns">the index columns</param>
+        /// <param name="storeKeys">whether row keys are stored</param>
+        /// <returns>the (possibly new) row factory</returns>
+        public override RowFactory CreateRowFactory(
+            CastDataProvider? provider,
+            CompareMode compareMode,
+            DataHandler? handler,
+            Typed[]? columns,
+            IndexColumn[]? indexColumns,
+            bool storeKeys)
+        {
+            int[]? indexes = null;
+            int[]? sortTypes = null;
+            TypeInfo[]? columnTypes = null;
+            int columnCount = 0;
+            if (columns is not null)
+            {
+                columnCount = columns.Length;
+                if (indexColumns is null)
+                {
+                    sortTypes = new int[columnCount];
+                    for (int i = 0; i < columnCount; i++)
+                    {
+                        sortTypes[i] = SortOrder.Ascending;
+                    }
+                }
+                else
+                {
+                    int len = indexColumns.Length;
+                    indexes = new int[len];
+                    sortTypes = new int[len];
+                    for (int i = 0; i < len; i++)
+                    {
+                        IndexColumn indexColumn = indexColumns[i];
+                        indexes[i] = indexColumn.GetColumn().GetColumnId();
+                        sortTypes[i] = indexColumn.SortType;
+                    }
+                }
+
+                columnTypes = new TypeInfo[columnCount];
+                for (int i = 0; i < columnCount; i++)
+                {
+                    columnTypes[i] = columns[i].GetTypeInfo();
+                }
+            }
+
+            return CreateRowFactory(
+                provider, compareMode, handler, sortTypes, indexes, columnTypes, columnCount, storeKeys);
+        }
+
+        /// <summary>
+        /// Create a new row factory.
+        /// </summary>
+        /// <remarks>
+        /// Reference: org.h2.result.RowFactory.DefaultRowFactory.java:155-162
+        /// Builds RowDataType, creates DefaultRowFactory, and wires the factory back
+        /// into RowDataType so that reads produce the correct row type.
+        /// </remarks>
+        /// <param name="provider">the cast provider</param>
+        /// <param name="compareMode">the compare mode</param>
+        /// <param name="handler">the data handler</param>
+        /// <param name="sortTypes">the sort types</param>
+        /// <param name="indexes">the list of indexed columns</param>
+        /// <param name="columnTypes">the list of column data type information</param>
+        /// <param name="columnCount">the number of columns</param>
+        /// <param name="storeKeys">whether row keys are stored</param>
+        /// <returns>the (possibly new) row factory</returns>
+        public RowFactory CreateRowFactory(
+            CastDataProvider? provider,
+            CompareMode compareMode,
+            DataHandler? handler,
+            int[]? sortTypes,
+            int[]? indexes,
+            TypeInfo[]? columnTypes,
+            int columnCount,
+            bool storeKeys)
+        {
+            RowDataType rowDataType = new RowDataType(
+                provider, compareMode, handler, sortTypes, indexes, columnCount, storeKeys);
+            RowFactory rowFactory = new DefaultRowFactory(rowDataType, columnCount, indexes, columnTypes);
+            rowDataType.SetRowFactory(rowFactory);
+            return rowFactory;
         }
 
         public override Row CreateRow(Value[] data, int memory)
@@ -137,8 +261,31 @@ public abstract class RowFactory
             return new DefaultRow(data, memory);
         }
 
+        /// <summary>
+        /// Creates a search row.
+        /// </summary>
+        /// <remarks>
+        /// Three branches match the reference:
+        /// - indexes == null → DefaultRow (all columns)
+        /// - indexes.Length == 1 → SimpleRowValue (single indexed column)
+        /// - otherwise → Sparse (multiple indexed columns)
+        /// Reference: org.h2.result.RowFactory.DefaultRowFactory.java:170-178
+        /// </remarks>
         public override SearchRow CreateRow()
-            => throw new TODOException("RowFactory.createRow(): the concrete row is not ported");
+        {
+            if (indexes is null)
+            {
+                return new DefaultRow(columnCount);
+            }
+            else if (indexes.Length == 1)
+            {
+                return new SimpleRowValue(columnCount, indexes[0]);
+            }
+            else
+            {
+                return new Sparse(columnCount, indexes.Length, map!);
+            }
+        }
 
         public override RowDataType GetRowDataType()
         {
@@ -147,7 +294,7 @@ public abstract class RowFactory
 
         public override int[]? GetIndexes()
         {
-            return null;
+            return indexes;
         }
 
         public override TypeInfo[]? GetColumnTypes()

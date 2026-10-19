@@ -18,9 +18,14 @@
  * CREATE INDEX inside CREATE TABLE is a different thing that happens to be read at the same
  * moment.
  *
- * Not ported: the body needs the index to be built.
+ * The body resolves the table and the optional index name before touching anything, so a
+ * missing table or a taken name fails before an index exists. Users, rights and table locks
+ * are not ported.
  */
+using H2Sharp.Api;
 using H2Sharp.Engine;
+using H2Sharp.Indexes;
+using H2Sharp.Message;
 using H2Sharp.Schemas;
 using H2Sharp.Tables;
 
@@ -85,7 +90,73 @@ public class CreateIndex : SchemaCommand
 
     /// <inheritdoc/>
     public override long Update()
-        => throw new TODOException("CreateIndex.update: the index is not built yet");
+    {
+        Database db = GetSession().GetDatabase();
+        bool persistent = db.IsPersistent();
+        Table? table = GetSchema().FindTableOrView(GetSession(), tableName);
+        if (table is null)
+        {
+            if (ifTableExists)
+            {
+                return 0;
+            }
+
+            throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
+        }
+
+        if (indexName is not null && GetSchema().FindIndex(GetSession(), indexName) is not null)
+        {
+            if (ifNotExists)
+            {
+                return 0;
+            }
+
+            throw DbException.Get(Api.ErrorCode.IndexAlreadyExists1, indexName);
+        }
+
+        // The reference checks the table right of the session's user and takes an exclusive
+        // table lock here; users, rights and the lock manager are not ported.
+        if (!table.IsPersistIndexes())
+        {
+            persistent = false;
+        }
+
+        int id = db.AllocateObjectId();
+        if (indexName is null)
+        {
+            indexName = primaryKey
+                ? table.GetSchema()!.GetUniqueIndexName(GetSession(), table, Constants.PrefixPrimaryKey)
+                : table.GetSchema()!.GetUniqueIndexName(GetSession(), table, Constants.PrefixIndex);
+        }
+
+        IndexType indexType;
+        if (primaryKey)
+        {
+            if (table.FindPrimaryKey() is not null)
+            {
+                throw DbException.Get(Api.ErrorCode.SecondPrimaryKey);
+            }
+
+            indexType = IndexType.CreatePrimaryKey(persistent, hash);
+        }
+        else if (uniqueColumnCount > 0)
+        {
+            // The reference passes null through and lets the index type decide the effective
+            // rule; this port's factory takes a non-null value. The parser always supplies one
+            // for a unique index, so the fallback is only for a caller that did not.
+            indexType = IndexType.CreateUnique(persistent, hash, uniqueColumnCount,
+                nullsDistinct ?? NullsDistinct.Distinct);
+        }
+        else
+        {
+            indexType = IndexType.CreateNonUnique(persistent, hash, spatial);
+        }
+
+        IndexColumn[] mapped = IndexColumn.MapColumns(columns, table);
+        _ = table.AddIndex(GetSession(), indexName, id, mapped, uniqueColumnCount, indexType,
+            create: true, comment);
+        return 0;
+    }
 
     /// <summary>Sets whether this is a primary key index.</summary>
     /// <param name="b">true for a primary key index</param>
@@ -94,7 +165,7 @@ public class CreateIndex : SchemaCommand
     /// <summary>Sets whether this is a unique index.</summary>
     /// <param name="nullsDistinct">how NULLs compare</param>
     /// <param name="uniqueColumnCount">how many columns are unique</param>
-    public void SetUnique(NullsDistinct nullsDistinct, int uniqueColumnCount)
+    public void SetUnique(NullsDistinct? nullsDistinct, int uniqueColumnCount)
     {
         this.nullsDistinct = nullsDistinct;
         this.uniqueColumnCount = uniqueColumnCount;

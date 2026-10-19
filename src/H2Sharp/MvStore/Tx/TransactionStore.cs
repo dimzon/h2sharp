@@ -652,11 +652,33 @@ public class TransactionStore : IDisposable
     }
 
     /// <summary>
+    /// The underlying MVStore.
+    /// </summary>
+    /// <remarks>
+    /// The reference reaches it through <c>store.getMvStore()</c> on its separate
+    /// <c>mvstore.db.Store</c>; here the store is merged with this class.
+    /// </remarks>
+    internal MVStore GetMvStore() => Store;
+
+    /// <summary>
     /// Opens a versioned data map by name. The map always holds objects; key and value types
     /// are registered, not built with.
     /// </summary>
     internal MVMap<object, VersionedValue<object>> OpenVersionedMap(string name)
         => Store.OpenMap(name, new TxMapBuilder(TypeRegistry));
+
+    /// <summary>
+    /// Opens a versioned data map by name with the given key and value types.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>Transaction.openMap(name, keyType, valueType)</c> reaches here. The
+    /// types are object-typed only because this port's transactional maps are (see
+    /// <see cref="ObjectMapDataType{T}"/>); they are still used for comparison, which is what a
+    /// secondary index needs.
+    /// </remarks>
+    internal MVMap<object, VersionedValue<object>> OpenVersionedMap(string name,
+        DataType<object>? keyType, DataType<object>? valueType)
+        => Store.OpenMap(name, new TxMapBuilder(TypeRegistry, keyType, valueType));
 
     /// <summary>
     /// Opens a versioned map by id, or null when it was removed later on.
@@ -939,9 +961,22 @@ public class TransactionStore : IDisposable
     {
         private readonly MVMap<string, DataType<object>> typeRegistry;
 
+        private readonly DataType<object>? valueDataType;
+
         internal TxMapBuilder(MVMap<string, DataType<object>> typeRegistry)
+            : this(typeRegistry, null, null)
+        {
+        }
+
+        internal TxMapBuilder(MVMap<string, DataType<object>> typeRegistry,
+            DataType<object>? keyType, DataType<object>? valueType)
         {
             this.typeRegistry = typeRegistry;
+            valueDataType = valueType;
+            if (keyType is not null)
+            {
+                SetKeyType(keyType);
+            }
         }
 
         private void RegisterDataType(DataType<object> dataType)
@@ -983,9 +1018,10 @@ public class TransactionStore : IDisposable
                 RegisterDataType(GetKeyType()!);
             }
 
-            // The value type is always versioned objects (see the class remark); an explicitly
-            // passed value type only reaches the registry through the key path above, never here.
-            SetValueType(new VersionedValueType<object, object>(new ObjectDataType<object>()));
+            // The value type is always versioned objects (see the class remark); the caller's
+            // value type, when given, is wrapped in the versioned shell it is stored with.
+            SetValueType(new VersionedValueType<object, object>(
+                valueDataType ?? new ObjectDataType<object>()));
 
             config["store"] = store;
             config["key"] = GetKeyType()!;
