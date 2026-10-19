@@ -24,6 +24,17 @@ Embeddable SQL engine for .NET, ported from [H2 Database](https://github.com/h2d
 * Full-text search.
 * Encrypted databases.
 
+## Related projects
+
+* `H2Sharp.EntityFrameworkCore` — an Entity Framework Core provider for this engine, in a
+  sibling checkout (`../h2sharp-efcore`, branch `h2-provider`). It is a fork of the
+  EFCore.PG provider with PostgreSQL's surface replaced by H2's: the type mappings, the
+  migrations SQL generator, the connection and the DDL are H2's, and the SQL it generates is
+  checked against the reference engine on the JVM rather than against this port. It does not
+  work against the port yet: what it needs from the engine is listed in its
+  `docs/DIVERGENCES.md` — identity DDL, `INFORMATION_SCHEMA`, `CREATE SEQUENCE`, `JOIN`, and
+  the `AS` in front of a table alias.
+
 ## Building
 
 ```sh
