@@ -14,7 +14,9 @@
  * quick and grouped paths carry any of them — reading, mapping and accumulation.
  * Every other aggregate type refuses where the reference would branch to it (the
  * data factory, the value reader and the type switch), so adding the next one is
- * new branches, not a new shape.
+ * new branches, not a new shape. The static name map is the reference's entire one,
+ * as with the built-in function list: it says what a name is, and that answer does
+ * not change with the port's progress.
  */
 using System;
 using System.Collections.Generic;
@@ -80,6 +82,101 @@ public class Aggregate : AbstractAggregate
     /// </summary>
     /// <returns>the type of this aggregate</returns>
     public AggregateType GetAggregateType() => aggregateType;
+
+    private static readonly Dictionary<string, AggregateType> Aggregates = new(128);
+
+    static Aggregate()
+    {
+        /*
+         * Update initial size of AGGREGATES after editing the following list.
+         */
+        AddAggregate("COUNT", AggregateType.Count);
+        AddAggregate("SUM", AggregateType.Sum);
+        AddAggregate("MIN", AggregateType.Min);
+        AddAggregate("MAX", AggregateType.Max);
+        AddAggregate("AVG", AggregateType.Avg);
+        AddAggregate("LISTAGG", AggregateType.Listagg);
+        // MySQL compatibility: group_concat(expression, delimiter)
+        AddAggregate("GROUP_CONCAT", AggregateType.Listagg);
+        // PostgreSQL compatibility: string_agg(expression, delimiter)
+        AddAggregate("STRING_AGG", AggregateType.Listagg);
+        AddAggregate("STDDEV_SAMP", AggregateType.StddevSamp);
+        AddAggregate("STDDEV", AggregateType.StddevSamp);
+        AddAggregate("STDDEV_POP", AggregateType.StddevPop);
+        AddAggregate("STDDEVP", AggregateType.StddevPop);
+        AddAggregate("VAR_POP", AggregateType.VarPop);
+        AddAggregate("VARP", AggregateType.VarPop);
+        AddAggregate("VAR_SAMP", AggregateType.VarSamp);
+        AddAggregate("VAR", AggregateType.VarSamp);
+        AddAggregate("VARIANCE", AggregateType.VarSamp);
+        AddAggregate("ANY_VALUE", AggregateType.AnyValue);
+        AddAggregate("ANY", AggregateType.Any);
+        AddAggregate("SOME", AggregateType.Any);
+        // PostgreSQL compatibility
+        AddAggregate("BOOL_OR", AggregateType.Any);
+        AddAggregate("EVERY", AggregateType.Every);
+        // PostgreSQL compatibility
+        AddAggregate("BOOL_AND", AggregateType.Every);
+        AddAggregate("HISTOGRAM", AggregateType.Histogram);
+        AddAggregate("BIT_AND_AGG", AggregateType.BitAndAgg);
+        AddAggregate("BIT_AND", AggregateType.BitAndAgg);
+        AddAggregate("BIT_OR_AGG", AggregateType.BitOrAgg);
+        AddAggregate("BIT_OR", AggregateType.BitOrAgg);
+        AddAggregate("BIT_XOR_AGG", AggregateType.BitXorAgg);
+        AddAggregate("BIT_NAND_AGG", AggregateType.BitNandAgg);
+        AddAggregate("BIT_NOR_AGG", AggregateType.BitNorAgg);
+        AddAggregate("BIT_XNOR_AGG", AggregateType.BitXnorAgg);
+
+        AddAggregate("COVAR_POP", AggregateType.CovarPop);
+        AddAggregate("COVAR_SAMP", AggregateType.CovarSamp);
+        AddAggregate("CORR", AggregateType.Corr);
+        AddAggregate("REGR_SLOPE", AggregateType.RegrSlope);
+        AddAggregate("REGR_INTERCEPT", AggregateType.RegrIntercept);
+        AddAggregate("REGR_COUNT", AggregateType.RegrCount);
+        AddAggregate("REGR_R2", AggregateType.RegrR2);
+        AddAggregate("REGR_AVGX", AggregateType.RegrAvgx);
+        AddAggregate("REGR_AVGY", AggregateType.RegrAvgy);
+        AddAggregate("REGR_SXX", AggregateType.RegrSxx);
+        AddAggregate("REGR_SYY", AggregateType.RegrSyy);
+        AddAggregate("REGR_SXY", AggregateType.RegrSxy);
+
+        AddAggregate("RANK", AggregateType.Rank);
+        AddAggregate("DENSE_RANK", AggregateType.DenseRank);
+        AddAggregate("PERCENT_RANK", AggregateType.PercentRank);
+        AddAggregate("CUME_DIST", AggregateType.CumeDist);
+
+        AddAggregate("PERCENTILE_CONT", AggregateType.PercentileCont);
+        AddAggregate("PERCENTILE_DISC", AggregateType.PercentileDisc);
+        AddAggregate("MEDIAN", AggregateType.Median);
+
+        AddAggregate("ARRAY_AGG", AggregateType.ArrayAgg);
+        AddAggregate("MODE", AggregateType.Mode);
+        // Oracle compatibility
+        AddAggregate("STATS_MODE", AggregateType.Mode);
+        AddAggregate("ENVELOPE", AggregateType.Envelope);
+
+        AddAggregate("JSON_OBJECTAGG", AggregateType.JsonObjectagg);
+        AddAggregate("JSON_ARRAYAGG", AggregateType.JsonArrayagg);
+
+        AddAggregate("GCD_AGG", AggregateType.GcdAgg);
+        AddAggregate("LCM_AGG", AggregateType.LcmAgg);
+    }
+
+    private static void AddAggregate(string name, AggregateType type)
+    {
+        Aggregates.Add(name, type);
+    }
+
+    /// <summary>
+    /// Get the aggregate type for this name, or null if no aggregate has been
+    /// found.
+    /// </summary>
+    /// <param name="name">the aggregate function name</param>
+    /// <returns>null if no aggregate function has been found, or the aggregate type</returns>
+    public static AggregateType? GetAggregateType(string name)
+    {
+        return Aggregates.TryGetValue(name, out AggregateType type) ? type : null;
+    }
 
     /// <inheritdoc/>
     public override void SetEvaluatable(TableFilter tableFilter, bool value)

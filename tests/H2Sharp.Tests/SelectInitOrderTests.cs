@@ -13,10 +13,7 @@
  *
  * Two shapes are asserted without a reference run. A constant order item is dropped
  * before any sort is built, which no row can show. A second init is refused, which is a
- * harness guard both sides have by construction. A DISTINCT query ordering by an
- * unrelated expression waits for the mode machinery: the reference reads its flag off
- * the mode and this side refuses reading it, so that fact pins the refusal and names
- * what is missing.
+ * harness guard both sides have by construction.
  */
 using System.Collections.Generic;
 using H2Sharp;
@@ -110,6 +107,20 @@ public sealed class SelectInitOrderTests
             System.out.println("=" + row[0] + ":" + row[1].getString());
         }
         conn.close();
+        """;
+
+    private const string JavaDistinctSelect = """
+        org.h2.table.TableFilter f = new org.h2.table.TableFilter(
+            session, table, "T", true, null, 0, null);
+        org.h2.command.query.Select select = new org.h2.command.query.Select(session, null);
+        select.addTableFilter(f, true);
+        java.util.ArrayList<org.h2.expression.Expression> exprs = new java.util.ArrayList<>();
+        org.h2.expression.ExpressionColumn idEc = new org.h2.expression.ExpressionColumn(
+            session.getDatabase(), null, "T", "ID");
+        idEc.mapColumns(f, 0, org.h2.expression.Expression.MAP_INITIAL);
+        exprs.add(idEc);
+        select.setExpressions(exprs);
+        select.setDistinct();
         """;
 
     private static MVTable NewKeyedTable(SessionLocal session, TransactionStore store)
@@ -498,12 +509,9 @@ public sealed class SelectInitOrderTests
         }
     }
 
-    [Fact]
-    public void DistinctWithUnrelatedOrderWaitsForTheMode()
+    [JavaOracleFact]
+    public void DistinctWithUnrelatedOrderIsRefused()
     {
-        // The reference reads its allow-flag off the mode here; the mode is not ported and
-        // reading it refuses, so this pins the refusal and names what is missing rather than
-        // comparing a refusal that is not the reference's.
         SessionLocal session = NewSession();
 
         var store = new TransactionStore(MVStore.Open(null!));
@@ -525,8 +533,19 @@ public sealed class SelectInitOrderTests
                 },
             ]);
 
-            TODOException e = Assert.Throws<TODOException>(select.Init);
-            Assert.Contains("getMode", e.Message);
+            H2SharpException csharp = Assert.Throws<H2SharpException>(select.Init);
+            Assert.Equal(90068, csharp.H2ErrorCode);
+
+            List<string> java = OracleRunner.Run(
+                [],
+                JavaSession + JavaTable + JavaDistinctSelect + JavaNameOrder(null, "NAME")
+                + "try { select.init(); System.out.println(\"OK\"); }\n"
+                + "catch (org.h2.message.DbException e) {\n"
+                + "    System.out.println(\"ERR \" + e.getErrorCode());\n"
+                + "}\n"
+                + "conn.close();\n",
+                null, null, null);
+            Assert.Equal(["ERR 90068"], java);
         }
         finally
         {

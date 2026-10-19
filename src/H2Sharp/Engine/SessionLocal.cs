@@ -432,8 +432,13 @@ public sealed class SessionLocal : Session
     /// <summary>
     /// Gets the database mode, which decides how identifiers and aliases are spelled.
     /// </summary>
-    public override Mode GetMode()
-        => throw new TODOException("SessionLocal.getMode: Mode is not ported");
+    /// <remarks>
+    /// The reference asks the database, which keeps the mode from the connection settings. The
+    /// port's Database does not keep one yet, and the tokenizer, the parser and every conversion
+    /// read the mode through the cast provider, so the session answers the same mode those see.
+    /// When Database keeps its own, this asks it instead.
+    /// </remarks>
+    public override Mode GetMode() => CastDataProvider.GetMode();
 
     /// <summary>
     /// Prepares a command for execution.

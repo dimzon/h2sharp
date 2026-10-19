@@ -556,6 +556,70 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     }
 
     /// <summary>
+    /// The exact quotient of this value and the divisor, carried to the fewest digits the value
+    /// allows and never further left than the difference of the two scales.
+    /// </summary>
+    /// <remarks>
+    /// This is the JDK's one-argument divide, and it is the one EXTRACT(EPOCH) needs: the answer
+    /// is exact or it is refused, never rounded. The preferred scale is the difference of the two
+    /// scales, and the answer keeps it when the division comes out even at once — 1.00 divided by
+    /// 2 is 0.50 and not 0.5 — while a quotient that needs more digits takes them: 1 divided by
+    /// 8 is 0.125.
+    /// </remarks>
+    /// <param name="divisor">the value to divide by</param>
+    /// <returns>the exact quotient</returns>
+    /// <exception cref="ArithmeticException">if the divisor is zero</exception>
+    /// <exception cref="ArithmeticException">
+    /// if the quotient has no finite decimal expansion, as one third does not
+    /// </exception>
+    public BigDecimal Divide(BigDecimal divisor)
+    {
+        if (divisor.unscaledValue.IsZero)
+        {
+            throw new DivideByZeroException();
+        }
+
+        if (unscaledValue.IsZero)
+        {
+            return ZeroWithScale(scale - divisor.scale);
+        }
+
+        // A quotient has a finite decimal expansion only if, once it is reduced, its denominator
+        // has no factors but 2 and 5; anything else repeats forever, and no scale could hold it.
+        BigInteger numerator = BigInteger.Abs(unscaledValue);
+        BigInteger denominator = BigInteger.Abs(divisor.unscaledValue);
+        denominator /= BigInteger.GreatestCommonDivisor(numerator, denominator);
+        while (denominator.IsEven)
+        {
+            denominator >>= 1;
+        }
+        while (denominator % 5 == 0)
+        {
+            denominator /= 5;
+        }
+        if (denominator != BigInteger.One)
+        {
+            throw new ArithmeticException(
+                "Non-terminating decimal expansion; no exact representable decimal result.");
+        }
+
+        // With a terminating expansion the loop stops at the first power of ten that makes the
+        // divisor divide the unscaled value evenly, and each step is one digit of the answer.
+        int shift = 0;
+        BigInteger scaled = unscaledValue;
+        while (true)
+        {
+            BigInteger quotient = BigInteger.DivRem(scaled, divisor.unscaledValue, out BigInteger remainder);
+            if (remainder.IsZero)
+            {
+                return new BigDecimal(quotient, scale - divisor.scale + shift);
+            }
+            scaled = BigInteger.Multiply(scaled, 10);
+            shift++;
+        }
+    }
+
+    /// <summary>
     /// The quotient of two values, given to the scale asked for and rounded by the mode.
     /// </summary>
     /// <remarks>

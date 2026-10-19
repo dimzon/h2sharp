@@ -172,6 +172,34 @@ public sealed class Mode
     public bool TreatEmptyStringsAsNull { get; }
 
     /// <summary>
+    /// Whether GREATEST and LEAST ignore NULL values instead of answering NULL as soon as one
+    /// argument is NULL.
+    /// </summary>
+    /// <remarks>
+    /// The tenth flag the port carries. Legacy and SQL Server turn it on, which is where the
+    /// table below puts it.
+    /// </remarks>
+    public bool GreatestLeastIgnoreNulls { get; }
+
+    /// <summary>
+    /// Whether LOG() takes its arguments the other way round, as SQL Server's does.
+    /// </summary>
+    /// <remarks>
+    /// The eleventh flag the port carries. Only SQL Server turns it on, which is where the
+    /// table below puts it.
+    /// </remarks>
+    public bool SwapLogFunctionParameters { get; }
+
+    /// <summary>
+    /// Whether one-argument LOG() is base 10 rather than natural, as PostgreSQL's is.
+    /// </summary>
+    /// <remarks>
+    /// The twelfth flag the port carries. Only PostgreSQL turns it on, which is where the table
+    /// below puts it.
+    /// </remarks>
+    public bool LogIsLogBase10 { get; }
+
+    /// <summary>
     /// The name of the mode, as it is written in a URL.
     /// </summary>
     public string Name { get; }
@@ -191,7 +219,10 @@ public sealed class Mode
         CharPadding charPadding = CharPadding.Always,
         bool convertOnlyToSmallerScale = false,
         bool allowUnrelatedOrderByExpressionsInDistinctQueries = false,
-        bool treatEmptyStringsAsNull = false)
+        bool treatEmptyStringsAsNull = false,
+        bool greatestLeastIgnoreNulls = false,
+        bool swapLogFunctionParameters = false,
+        bool logIsLogBase10 = false)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -204,6 +235,9 @@ public sealed class Mode
         ConvertOnlyToSmallerScale = convertOnlyToSmallerScale;
         AllowUnrelatedOrderByExpressionsInDistinctQueries = allowUnrelatedOrderByExpressionsInDistinctQueries;
         TreatEmptyStringsAsNull = treatEmptyStringsAsNull;
+        GreatestLeastIgnoreNulls = greatestLeastIgnoreNulls;
+        SwapLogFunctionParameters = swapLogFunctionParameters;
+        LogIsLogBase10 = logIsLogBase10;
     }
 
     /// <summary>
@@ -246,11 +280,13 @@ public sealed class Mode
         {
             ["REGULAR"] = new(ModeEnum.Regular, false, false, false, true, true),
             ["STRICT"] = new(ModeEnum.Strict, false, false, false, false, false),
-            ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true),
+            ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true,
+                greatestLeastIgnoreNulls: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true),
-            ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false),
+            ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
+                greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
@@ -259,7 +295,8 @@ public sealed class Mode
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true),
             ["POSTGRESQL"] = new(
-                ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets),
+                ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
+                logIsLogBase10: true),
         };
 
         return modes.ToFrozenDictionary(StringComparer.Ordinal);

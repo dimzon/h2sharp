@@ -4947,3 +4947,83 @@ Grammar 46/263, Datatypes 10/66, SystemTables 0/37, Dml 2/2), топ-пробе�
 `FILTER`/`OVER` (35), `INFORMATION_SCHEMA` (25); основной ритуал не затронут — `H2Sharp.Tests`
 1070, `Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` 4/9.
 
+### Волна встроенных функций 1: диспетчер, математика, строковые скаляры, дата-время
+
+**Диспетчер `readFunction` портирован.** Порядок эталонный: имя → `(` → `ReadBuiltinFunctionIf`
+→ `ReadWindowFunctionIf` → `ReadCompatibilityFunction`; выйдя из всех трёх, порт различает три
+остатка: имя из карты агрегатов, имя из списка builtin и всё остальное. Первые два —
+`TODOException` с именем функции (ветка не портирована), последнее — 90022
+`FUNCTION_NOT_FOUND_1`, ответ эталона после исчерпания его собственных поисков.
+`Aggregate.GetAggregateType` — статическая карта имён эталона целиком (та же логика, что у
+`BuiltinFunctions`: имя — это агрегат независимо от прогресса порта). `ReadWindowFunctionIf`
+узнаёт имена по портированному `WindowFunctionType` (enum + методы эталона статическими
+расширениями `Get`/`GetSql`/`RequiresWindowOrdering`) и отказывает TODO, называя
+окно, а не «нет такой функции». Keyword-функции разбираются в `ReadQueryTerm`: `DAY`, `HOUR`,
+`MINUTE`, `MONTH`, `SECOND`, `YEAR` с `(` идут в `ReadKeywordCompatibilityFunction` (эталонный
+`readKeywordCompatibilityFunctionOrColumn`), остальные keyword-имена (LEFT, RIGHT, CAST,
+CURRENT_*, ROW, TABLE…) отказывают TODO по имени (`readTerm` не портирован). Агрегаты в
+select-list читаются до `ReadFunction`; агрегат вне select-list — TODO с именем.
+
+**Базовые классы.** `Operation1`, `Operation1_2`, `Operation2`, `Function1`, `Function1_2`,
+`Function2`, `FunctionN`, `INamedExpression` — эталонные. `CardinalityExpression` (CARDINALITY,
+ARRAY_MAX_CARDINALITY) портирован; его JSON-ветка — TODO (JSON-модели нет, и такого значения
+порт пока не производит). `CastSpecification` портирован как `Expression`, хотя в эталоне это
+функция (template-форма с FORMAT не читается никем и опущена — отмечено в коде); читается
+только select-list-веткой CAST.
+
+**Математика.** `MathFunction` (`Function1_2`: ABS, SIGN, MOD, FLOOR, CEIL, ROUND, ROUNDMAGIC,
+TRUNC, TRUNCATE), `MathFunction1` (SIN…ATAN, LOG10, LN, EXP, SQRT, DEGREES, RADIANS),
+`MathFunction2` (ATAN2, LOG, POWER). Константа кода функции и метод эталона носят одно имя
+(`round`), поэтому метод переименован в `RoundValue` (прецедент `Value.CastToValue`; отмечено
+в коде). Режимные ветки LOG читают новые флаги Mode. `Store.GetInvalidExpressionTypeException`
+вынесен из BitFunction в новый `MvStore/Db/Store.cs` — срез эталонного `Store` только по этому
+static, остальное (MVStore, таблицы, их жизненный цикл) не портировано.
+
+**Строковые скаляры.** `LengthFunction` (LENGTH, CHAR_LENGTH, CHARACTER_LENGTH, OCTET_LENGTH,
+BIT_LENGTH), `CoalesceFunction` (COALESCE, IFNULL, NVL, GREATEST, LEAST — режимный
+`GreatestLeastIgnoreNulls`), `NullIfFunction` (NULLIF), `ConcatFunction` (CONCAT, CONCAT_WS).
+
+**Дата-время.** `DateTimeFunction` целиком: EXTRACT (все поля, включая EPOCH и
+CENTURY/DECADE/MILLENNIUM), DATE_TRUNC, DATEADD/TIMESTAMPADD, DATEDIFF/TIMESTAMPDIFF, LAST_DAY
+и compat-написания (DAY, DAYOFYEAR, ISO_WEEK…). Отклонения подписаны в коде: методы `dateadd`,
+`datediff`, `lastDay`, `millennium`, `century`, `decade` переименованы в `DateaddValue`,
+`DatediffValue`, `LastDayValue`, `MillenniumValue`, `CenturyValue`, `DecadeValue` — константы
+тех же имён заняты; `WeekFields` (JVM `java.time.temporal.WeekFields` с каскадом
+`DateTimeFormatterBuilder` и `.ISO`-константой) заменён вложенным типом на
+`CultureInfo.CurrentCulture` — это stand-in, а не порт, и отмечено в коде; `ExtractDateTime` —
+`internal` (package-private в эталоне).
+
+**Новые опоры.** `BigDecimal.Divide(BigDecimal)` — одноаргументное точное деление с
+JDK-семантикой: нулевое делимое → `ZeroWithScale(scale − scale делителя)`, gcd-редукция и
+срезание 2/5 из знаменателя определяют периодичность (иначе `ArithmeticException`), цикл ×10
+до нулевого остатка, scale = scale − scale делителя + shift; сверено с JVM (`100/2.00 = 5E+1`,
+`1000/2.00 = 5E+2`, `1.00/2 = 0.50`, `0.1/0.2 = 0.5`, `0/2.00 = 0E+2`).
+`DateTimeUtils.DateAndTimeFromValue`/`DateTimeToValue` (fallback-приведение — эталонное
+`convertTo(TYPE_TIMESTAMP)`, offset Time/TimeTz/TimestampTz сохраняется),
+`DataType.IsCharacterStringType`/`IsNumericType`/`IsDateTimeType`/`AddPrecision`.
+`Engine/Mode.cs` получил три флага: `GreatestLeastIgnoreNulls` (LEGACY, MSSQLSERVER),
+`SwapLogFunctionParameters` (MSSQLSERVER), `LogIsLogBase10` (POSTGRESQL); `SessionLocal.GetMode`
+отвечает `CastDataProvider.GetMode()` — у `Database` своей копии режима ещё нет, отмечено в
+коде, и оракул `DistinctWithUnrelatedOrderIsRefused` (90068) заменил пин отказа на getMode.
+`ModeFunction` — срез: `GetFunction` отвечает null для REGULAR и отказывает по имени режима для
+остальных (совместимостные таблицы функций не портированы); `BuiltinFunctions.IsBuiltinFunction`
+(mode, name) спрашивает его.
+
+**Тесты.** `BuiltinFunctionCallTests` — оракулы: математика (6 наборов), LENGTH-семейство,
+COALESCE/GREATEST/LEAST/NULLIF/IFNULL/NVL, CONCAT/CONCAT_WS, функции поверх строк таблицы,
+неизвестное имя (90022), дата-время (10 наборов на таблице ID/DATE/TIMESTAMP/TIME(6)/INTERVAL;
+C# сеет значения напрямую, JVM — теми же литералами с `TT TIME(6)` — иначе `TIME` по умолчанию
+округлит долю секунды), отказы полей (`EXTRACT('NOPE' …)`/`DATEADD(FOO…)` → 90008, quoted
+`"DAY"` → 42001). Пины на непорченое: BITAND (instance-половина BitFunction), ROW_NUMBER
+(окно), LEFT (readTerm), COUNT(*) вне select-list. Границы парсерных отказов по имени:
+StringFunction/1/2, SubstringFunction, ToCharFunction, TrimFunction, RegexpFunction,
+XMLFunction, ArrayFunction, CompressFunction, SoundexFunction, DayMonthNameFunction,
+JsonConstructorFunction, CryptFunction; плюс известные пробелы волны: дата-литералы
+`DATE '…'`/`TIME '…'`/`INTERVAL '…' UNIT` и CAST внутри выражений (нужен `readTermWithIdentifier`),
+`FILTER`/`OVER`, вложенные агрегаты (`ABS(SUM(ID))`), `LENGTH()` без аргумента (reference-NPE
+воспроизведён), арифметический ридер (`ID * -1`) — отдельный эпик.
+
+Проверено: `H2Sharp.Tests` **1095**, конформанс-набор **138/947** (было 102: Functions 67/325,
+Grammar 48/263, остальные категории без изменений), `Data.Tests` 338, `MvStore.Tests` 86,
+`Engine.Tests` 4/9 (прежние 5 задуманных).
+

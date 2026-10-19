@@ -1616,16 +1616,837 @@ public sealed class Parser
         {
             if (tokens[position + 1].TokenType == Token.OpenParen)
             {
-                // A function call where only HAVING may aggregate: without the aggregate
-                // select this is a WHERE or GROUP BY key, and naming the function beats a
-                // syntax error about valid SQL.
-                throw new TODOException("Parser.parseQuerySelect: " + Current.AsIdentifier + " is not ported");
+                if (aggregateSelect is null && IsAggregateCall(out _))
+                {
+                    // The reference reads an aggregate through readFunction as well, and the
+                    // select it belongs to decides whether it is legal there; outside the select
+                    // list that answer is different SQL, not a missing function.
+                    throw new TODOException(
+                        "Parser.parseQuerySelect: aggregate calls outside the select list are not ported");
+                }
+
+                switch (CurrentType)
+                {
+                    case ParserUtil.Day:
+                    case ParserUtil.Hour:
+                    case ParserUtil.Minute:
+                    case ParserUtil.Month:
+                    case ParserUtil.Second:
+                    case ParserUtil.Year:
+                        // The reference's readKeywordCompatibilityFunctionOrColumn: these six are
+                        // keywords, and one followed by its parenthesis goes straight into the
+                        // compatibility switch, not into readFunction.
+                        return ReadKeywordCompatibilityFunction(aggregateSelect);
+
+                    case ParserUtil.Identifier:
+                        return ReadFunction(aggregateSelect);
+
+                    default:
+                        // Every other function spelled as a keyword — LEFT, RIGHT, the CURRENT_*
+                        // value functions, CAST, ROW, TABLE and the rest — is read by the
+                        // reference's own keyword branches, which are not ported. Naming the
+                        // keyword beats answering that no such function exists.
+                        throw new TODOException(
+                            "Parser.readTerm: the keyword function " + Current.AsIdentifier + " is not ported");
+                }
             }
 
             return new Expressions.ExpressionColumn(ReadQueryColumnName(out string? tableAlias), tableAlias, 0);
         }
 
         throw new TODOException("Parser.parseQuerySelect: this expression is not ported");
+    }
+
+    /// <summary>
+    /// Reads a function call: the name is the current token and is followed by its opening
+    /// parenthesis. The name is matched against the reference's two switches — the built-in
+    /// functions and the compatibility spellings — and a name that neither knows is
+    /// FUNCTION_NOT_FOUND, which is the answer the reference gives once its own lookups are
+    /// exhausted.
+    /// </summary>
+    /// <remarks>
+    /// The reference looks for aggregates and for user-defined functions around these switches;
+    /// here the ported aggregates are read by the select list before this method is reached, and
+    /// no user-defined function can exist because the port has no CREATE ALIAS, so only their
+    /// absence is left to state. A name that is still a reference aggregate when this method
+    /// sees it belongs to a type this reader does not build, and it refuses by name rather than
+    /// pretending the function is missing.
+    /// </remarks>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <returns>the function expression</returns>
+    private Expressions.Expression ReadFunction(Query.Select? aggregateSelect)
+    {
+        string name = Current.AsIdentifier!;
+        Read();
+        Expect(Token.OpenParen, "(");
+        string upperName = StringUtils.ToUpperEnglish(name);
+        Expressions.Expression? expression = ReadBuiltinFunctionIf(upperName, aggregateSelect);
+        if (expression is not null)
+        {
+            return expression;
+        }
+
+        expression = ReadWindowFunctionIf(upperName);
+        if (expression is not null)
+        {
+            return expression;
+        }
+
+        expression = ReadCompatibilityFunction(upperName, aggregateSelect);
+        if (expression is not null)
+        {
+            return expression;
+        }
+
+        if (Expressions.Aggregate.Aggregate.GetAggregateType(upperName) is not null)
+        {
+            throw new TODOException("Parser.readFunction: the aggregate " + name + " is not ported");
+        }
+
+        if (Expressions.Functions.BuiltinFunctions.IsBuiltinFunction(provider.GetMode(), upperName))
+        {
+            // A name the reference calls a built-in but that has no branch above is not "not
+            // found" — the branch is missing, and the answer has to say which.
+            throw new TODOException(
+                "Parser.readFunction: the built-in function " + name + " is not ported");
+        }
+
+        throw DbException.Get(Api.ErrorCode.FunctionNotFound1, name);
+    }
+
+    /// <summary>
+    /// Reads a window function, which the reference recognizes by the same names as its
+    /// <see cref="Expressions.Analysis.WindowFunctionType"/> and reads through
+    /// readWindowFunction. None is ported, so a name that is one of them is refused by name
+    /// rather than reported as missing.
+    /// </summary>
+    /// <param name="name">the name in upper case</param>
+    /// <returns>the expression, or null when the name is not a window function</returns>
+    private Expressions.Expression? ReadWindowFunctionIf(string name)
+    {
+        if (Expressions.Analysis.WindowFunctionTypeExtensions.Get(name) is null)
+        {
+            return null;
+        }
+
+        throw new TODOException("Parser.readWindowFunction: window functions are not ported");
+    }
+
+    /// <summary>
+    /// Reads a built-in function, the reference's readBuiltinFunctionIf. Returns null when the
+    /// name is not read here, so that the caller may try the next switch.
+    /// </summary>
+    /// <param name="upperName">the name in upper case</param>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <returns>the expression, or null</returns>
+    private Expressions.Expression? ReadBuiltinFunctionIf(string upperName, Query.Select? aggregateSelect)
+    {
+        switch (upperName)
+        {
+            case "ABS":
+                return new Expressions.Functions.MathFunction(
+                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Abs);
+            case "MOD":
+                return new Expressions.Functions.MathFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.MathFunction.Mod);
+            case "SIN":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Sin);
+            case "COS":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Cos);
+            case "TAN":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Tan);
+            case "COT":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Cot);
+            case "SINH":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Sinh);
+            case "COSH":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Cosh);
+            case "TANH":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Tanh);
+            case "ASIN":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Asin);
+            case "ACOS":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Acos);
+            case "ATAN":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Atan);
+            case "ATAN2":
+                return new Expressions.Functions.MathFunction2(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.MathFunction2.Atan2);
+            case "LOG":
+                {
+                    Expressions.Expression arg1 = ReadQueryOr(aggregateSelect);
+                    if (ReadIf(Token.Comma))
+                    {
+                        return new Expressions.Functions.MathFunction2(
+                            arg1, ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction2.Log);
+                    }
+
+                    Expect(Token.CloseParen, ")");
+                    return new Expressions.Functions.MathFunction1(arg1,
+                        provider.GetMode().LogIsLogBase10
+                            ? Expressions.Functions.MathFunction1.Log10
+                            : Expressions.Functions.MathFunction1.Ln);
+                }
+
+            case "LOG10":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Log10);
+            case "LN":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Ln);
+            case "EXP":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Exp);
+            case "POWER":
+                return new Expressions.Functions.MathFunction2(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.MathFunction2.Power);
+            case "SQRT":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Sqrt);
+            case "FLOOR":
+                return new Expressions.Functions.MathFunction(
+                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Floor);
+            case "CEIL":
+            case "CEILING":
+                return new Expressions.Functions.MathFunction(
+                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Ceil);
+            case "ROUND":
+                return new Expressions.Functions.MathFunction(
+                    ReadQueryOr(aggregateSelect), ReadIfArgument(aggregateSelect),
+                    Expressions.Functions.MathFunction.Round);
+            case "ROUNDMAGIC":
+                return new Expressions.Functions.MathFunction(
+                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Roundmagic);
+            case "SIGN":
+                return new Expressions.Functions.MathFunction(
+                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Sign);
+            case "TRUNC":
+            case "TRUNCATE":
+                return new Expressions.Functions.MathFunction(
+                    ReadQueryOr(aggregateSelect), ReadIfArgument(aggregateSelect),
+                    Expressions.Functions.MathFunction.Trunc);
+            case "DEGREES":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Degrees);
+            case "RADIANS":
+                return new Expressions.Functions.MathFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Radians);
+
+            // BitFunction (not ported).
+            case "BITAND":
+            case "BITOR":
+            case "BITXOR":
+            case "BITNOT":
+            case "BITNAND":
+            case "BITNOR":
+            case "BITXNOR":
+            case "BITGET":
+            case "BITCOUNT":
+            case "LSHIFT":
+            case "RSHIFT":
+            case "ULSHIFT":
+            case "URSHIFT":
+            case "ROTATELEFT":
+            case "ROTATERIGHT":
+                throw new TODOException("Parser.readBuiltinFunctionIf: BitFunction is not ported");
+
+            case "EXTRACT":
+                {
+                    int field = ReadDateTimeField();
+                    ExpectWord("FROM");
+                    return new Expressions.Functions.DateTimeFunction(
+                        Expressions.Functions.DateTimeFunction.Extract, field,
+                        ReadSingleArgument(aggregateSelect), null);
+                }
+
+            case "DATE_TRUNC":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.DateTrunc, ReadDateTimeField(),
+                    ReadLastArgument(aggregateSelect), null);
+            case "DATEADD":
+            case "TIMESTAMPADD":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Dateadd, ReadDateTimeField(),
+                    ReadNextArgument(aggregateSelect), ReadLastArgument(aggregateSelect));
+            case "DATEDIFF":
+            case "TIMESTAMPDIFF":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Datediff, ReadDateTimeField(),
+                    ReadNextArgument(aggregateSelect), ReadLastArgument(aggregateSelect));
+            case "LAST_DAY":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.LastDay, -1,
+                    ReadSingleArgument(aggregateSelect), null);
+
+            // DateTimeFormatFunction (not ported).
+            case "FORMATDATETIME":
+            case "PARSEDATETIME":
+                throw new TODOException(
+                    "Parser.readBuiltinFunctionIf: DateTimeFormatFunction is not ported");
+
+            // DayMonthNameFunction (not ported).
+            case "DAYNAME":
+            case "MONTHNAME":
+                throw new TODOException("Parser.readBuiltinFunctionIf: DayMonthNameFunction is not ported");
+
+            case "CARDINALITY":
+                return new Expressions.Functions.CardinalityExpression(
+                    ReadSingleArgument(aggregateSelect), false);
+            case "ARRAY_MAX_CARDINALITY":
+                return new Expressions.Functions.CardinalityExpression(
+                    ReadSingleArgument(aggregateSelect), true);
+
+            // StringFunction (not ported).
+            case "LOCATE":
+            case "INSERT":
+            case "REPLACE":
+            case "LPAD":
+            case "RPAD":
+            case "TRANSLATE":
+                throw new TODOException("Parser.readBuiltinFunctionIf: StringFunction is not ported");
+
+            // StringFunction1 (not ported).
+            case "UPPER":
+            case "LOWER":
+            case "ASCII":
+            case "CHAR":
+            case "CHR":
+            case "STRINGENCODE":
+            case "STRINGDECODE":
+            case "STRINGTOUTF8":
+            case "UTF8TOSTRING":
+            case "HEXTORAW":
+            case "RAWTOHEX":
+            case "SPACE":
+            case "QUOTE_IDENT":
+                throw new TODOException("Parser.readBuiltinFunctionIf: StringFunction1 is not ported");
+
+            // StringFunction2 (not ported).
+            case "REPEAT":
+                throw new TODOException("Parser.readBuiltinFunctionIf: StringFunction2 is not ported");
+
+            // SubstringFunction (not ported).
+            case "SUBSTRING":
+                throw new TODOException("Parser.readBuiltinFunctionIf: SubstringFunction is not ported");
+
+            // ToCharFunction (not ported).
+            case "TO_CHAR":
+                throw new TODOException("Parser.readBuiltinFunctionIf: ToCharFunction is not ported");
+
+            case "CHAR_LENGTH":
+            case "CHARACTER_LENGTH":
+            case "LENGTH":
+                // The reference reads these with readIfSingleArgument, which leaves the argument
+                // null for LENGTH(); its LengthFunction then fails while mapping columns, and the
+                // JDBC layer reports that NullPointerException as the general error. The port
+                // keeps the same shape: the null goes into the function and the failure happens
+                // where the reference has it, not here.
+                return new Expressions.Functions.LengthFunction(
+                    ReadIfSingleArgument(aggregateSelect)!, Expressions.Functions.LengthFunction.CharLength);
+            case "OCTET_LENGTH":
+                return new Expressions.Functions.LengthFunction(
+                    ReadIfSingleArgument(aggregateSelect)!, Expressions.Functions.LengthFunction.OctetLength);
+            case "BIT_LENGTH":
+                return new Expressions.Functions.LengthFunction(
+                    ReadIfSingleArgument(aggregateSelect)!, Expressions.Functions.LengthFunction.BitLength);
+
+            // TrimFunction (not ported).
+            case "TRIM":
+            case "LTRIM":
+            case "RTRIM":
+            case "BTRIM":
+                throw new TODOException("Parser.readBuiltinFunctionIf: TrimFunction is not ported");
+
+            // RegexpFunction (not ported).
+            case "REGEXP_LIKE":
+            case "REGEXP_REPLACE":
+            case "REGEXP_SUBSTR":
+                throw new TODOException("Parser.readBuiltinFunctionIf: RegexpFunction is not ported");
+
+            // XMLFunction (not ported).
+            case "XMLATTR":
+            case "XMLCDATA":
+            case "XMLCOMMENT":
+            case "XMLNODE":
+            case "XMLSTARTDOC":
+            case "XMLTEXT":
+                throw new TODOException("Parser.readBuiltinFunctionIf: XMLFunction is not ported");
+
+            // ArrayFunction (not ported).
+            case "TRIM_ARRAY":
+            case "ARRAY_CONTAINS":
+            case "ARRAY_SLICE":
+                throw new TODOException("Parser.readBuiltinFunctionIf: ArrayFunction is not ported");
+
+            // CompressFunction (not ported).
+            case "COMPRESS":
+            case "EXPAND":
+                throw new TODOException("Parser.readBuiltinFunctionIf: CompressFunction is not ported");
+
+            // SoundexFunction (not ported).
+            case "SOUNDEX":
+            case "DIFFERENCE":
+                throw new TODOException("Parser.readBuiltinFunctionIf: SoundexFunction is not ported");
+
+            // JsonConstructorFunction (not ported).
+            case "JSON_OBJECT":
+            case "JSON_ARRAY":
+                throw new TODOException(
+                    "Parser.readBuiltinFunctionIf: JsonConstructorFunction is not ported");
+
+            // CryptFunction (not ported).
+            case "ENCRYPT":
+            case "DECRYPT":
+                throw new TODOException("Parser.readBuiltinFunctionIf: CryptFunction is not ported");
+
+            case "COALESCE":
+                return ReadCoalesceFunction(Expressions.Functions.CoalesceFunction.Coalesce, aggregateSelect);
+            case "GREATEST":
+                return ReadCoalesceFunction(Expressions.Functions.CoalesceFunction.Greatest, aggregateSelect);
+            case "LEAST":
+                return ReadCoalesceFunction(Expressions.Functions.CoalesceFunction.Least, aggregateSelect);
+            case "NULLIF":
+                return new Expressions.Functions.NullIfFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect));
+            case "CONCAT":
+                return ReadConcatFunction(Expressions.Functions.ConcatFunction.Concat, aggregateSelect);
+            case "CONCAT_WS":
+                return ReadConcatFunction(Expressions.Functions.ConcatFunction.ConcatWs, aggregateSelect);
+
+            // HashFunction (not ported).
+            case "HASH":
+            case "ORA_HASH":
+                throw new TODOException("Parser.readBuiltinFunctionIf: HashFunction is not ported");
+
+            // RandFunction (not ported).
+            case "RAND":
+            case "RANDOM":
+            case "SECURE_RAND":
+            case "RANDOM_UUID":
+            case "UUID":
+                throw new TODOException("Parser.readBuiltinFunctionIf: RandFunction is not ported");
+
+            // SessionControlFunction (not ported).
+            case "ABORT_SESSION":
+            case "CANCEL_SESSION":
+                throw new TODOException(
+                    "Parser.readBuiltinFunctionIf: SessionControlFunction is not ported");
+
+            // SysInfoFunction (not ported).
+            case "AUTOCOMMIT":
+            case "DATABASE_PATH":
+            case "H2VERSION":
+            case "LOCK_MODE":
+            case "LOCK_TIMEOUT":
+            case "MEMORY_FREE":
+            case "MEMORY_USED":
+            case "READONLY":
+            case "SESSION_ID":
+            case "TRANSACTION_ID":
+                throw new TODOException("Parser.readBuiltinFunctionIf: SysInfoFunction is not ported");
+
+            // TableInfoFunction (not ported).
+            case "DISK_SPACE_USED":
+            case "ESTIMATED_ENVELOPE":
+                throw new TODOException("Parser.readBuiltinFunctionIf: TableInfoFunction is not ported");
+
+            // FileFunction (not ported).
+            case "FILE_READ":
+            case "FILE_WRITE":
+                throw new TODOException("Parser.readBuiltinFunctionIf: FileFunction is not ported");
+
+            // DataTypeSQLFunction (not ported).
+            case "DATA_TYPE_SQL":
+                throw new TODOException("Parser.readBuiltinFunctionIf: DataTypeSQLFunction is not ported");
+
+            // DBObjectFunction (not ported).
+            case "DB_OBJECT_ID":
+            case "DB_OBJECT_SQL":
+            case "DB_OBJECT_SIZE":
+            case "DB_OBJECT_TOTAL_SIZE":
+            case "DB_OBJECT_APPROXIMATE_SIZE":
+            case "DB_OBJECT_APPROXIMATE_TOTAL_SIZE":
+                throw new TODOException("Parser.readBuiltinFunctionIf: DBObjectFunction is not ported");
+
+            // CSVWriteFunction (not ported).
+            case "CSVWRITE":
+                throw new TODOException("Parser.readBuiltinFunctionIf: CSVWriteFunction is not ported");
+
+            // SignalFunction (not ported).
+            case "SIGNAL":
+                throw new TODOException("Parser.readBuiltinFunctionIf: SignalFunction is not ported");
+
+            // TruncateValueFunction (not ported).
+            case "TRUNCATE_VALUE":
+                throw new TODOException(
+                    "Parser.readBuiltinFunctionIf: TruncateValueFunction is not ported");
+
+            case "ZERO":
+                Expect(Token.CloseParen, ")");
+                return Expressions.ValueExpression.Get(ValueInteger.Get(0));
+            case "PI":
+                Expect(Token.CloseParen, ")");
+                return Expressions.ValueExpression.Get(ValueDouble.Get(Math.PI));
+
+            // GCDFunction (not ported).
+            case "GCD":
+            case "LCM":
+                throw new TODOException("Parser.readBuiltinFunctionIf: GCDFunction is not ported");
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads a compatibility function, the reference's readCompatibilityFunction. Returns null
+    /// when the name is not read here.
+    /// </summary>
+    /// <param name="name">the name in upper case</param>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <returns>the expression, or null</returns>
+    private Expressions.Expression? ReadCompatibilityFunction(string name, Query.Select? aggregateSelect)
+    {
+        switch (name)
+        {
+            // ConcatenationOperation (not ported).
+            case "ARRAY_APPEND":
+            case "ARRAY_CAT":
+                throw new TODOException(
+                    "Parser.readCompatibilityFunction: ConcatenationOperation is not ported");
+
+            // ArrayElementReference (not ported).
+            case "ARRAY_GET":
+                throw new TODOException(
+                    "Parser.readCompatibilityFunction: ArrayElementReference is not ported");
+
+            case "ARRAY_LENGTH":
+                return new Expressions.Functions.CardinalityExpression(
+                    ReadSingleArgument(aggregateSelect), false);
+
+            // SimpleCase (not ported through this spelling).
+            case "DECODE":
+                throw new TODOException("Parser.readCompatibilityFunction: DECODE is not ported");
+
+            // SearchedCase (not ported through this spelling).
+            case "CASEWHEN":
+            case "NVL2":
+                throw new TODOException("Parser.readCompatibilityFunction: " + name + " is not ported");
+
+            // CastSpecification (not ported through this spelling).
+            case "CONVERT":
+                throw new TODOException("Parser.readCompatibilityFunction: CONVERT is not ported");
+
+            case "IFNULL":
+                return new Expressions.Functions.CoalesceFunction(
+                    Expressions.Functions.CoalesceFunction.Coalesce,
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect));
+            case "NVL":
+                return ReadCoalesceFunction(
+                    Expressions.Functions.CoalesceFunction.Coalesce, aggregateSelect);
+
+            // CurrentGeneralValueSpecification (not ported).
+            case "DATABASE":
+            case "SCHEMA":
+                throw new TODOException(
+                    "Parser.readCompatibilityFunction: CurrentGeneralValueSpecification is not ported");
+
+            // CurrentDateTimeValueFunction (not ported).
+            case "CURDATE":
+            case "CURTIME":
+            case "NOW":
+                throw new TODOException(
+                    "Parser.readCompatibilityFunction: CurrentDateTimeValueFunction is not ported");
+
+            // ModeFunction.getCompatibilityDateTimeValueFunction (not ported).
+            case "TODAY":
+            case "SYSDATE":
+            case "SYSTIMESTAMP":
+                throw new TODOException(
+                    "Parser.readCompatibilityFunction: the mode date-time value functions are not ported");
+
+            // EXTRACT
+            case "DAY":
+            case "DAY_OF_MONTH":
+            case "DAYOFMONTH":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.Day,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "DAY_OF_WEEK":
+            case "DAYOFWEEK":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.DayOfWeek,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "DAY_OF_YEAR":
+            case "DAYOFYEAR":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.DayOfYear,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "HOUR":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.Hour,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "ISO_DAY_OF_WEEK":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract,
+                    Expressions.Functions.DateTimeFunction.IsoDayOfWeek,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "ISO_WEEK":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.IsoWeek,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "ISO_YEAR":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract,
+                    Expressions.Functions.DateTimeFunction.IsoWeekYear,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "MINUTE":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.Minute,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "MONTH":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.Month,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "QUARTER":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.Quarter,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "SECOND":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.Second,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "WEEK":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.Week,
+                    ReadSingleArgument(aggregateSelect), null);
+            case "YEAR":
+                return new Expressions.Functions.DateTimeFunction(
+                    Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.Year,
+                    ReadSingleArgument(aggregateSelect), null);
+
+            // StringFunction, with LOCATE's arguments swapped (not ported).
+            case "INSTR":
+            case "POSITION":
+                throw new TODOException("Parser.readCompatibilityFunction: LOCATE is not ported");
+
+            // StringFunction1 (not ported).
+            case "LCASE":
+            case "UCASE":
+                throw new TODOException("Parser.readCompatibilityFunction: StringFunction1 is not ported");
+
+            // SubstringFunction (not ported).
+            case "SUBSTR":
+                throw new TODOException("Parser.readCompatibilityFunction: SubstringFunction is not ported");
+
+            // CompatibilitySequenceValueFunction (not ported).
+            case "CURRVAL":
+            case "NEXTVAL":
+                throw new TODOException(
+                    "Parser.readCompatibilityFunction: CompatibilitySequenceValueFunction is not ported");
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads a date-part keyword that is a function when it is followed by its parenthesis, the
+    /// reference's readKeywordCompatibilityFunctionOrColumn.
+    /// </summary>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <returns>the function expression</returns>
+    private Expressions.Expression ReadKeywordCompatibilityFunction(Query.Select? aggregateSelect)
+    {
+        string name = Current.AsIdentifier!;
+        Read();
+        Expect(Token.OpenParen, "(");
+        Expressions.Expression? expression =
+            ReadCompatibilityFunction(StringUtils.ToUpperEnglish(name), aggregateSelect);
+        if (expression is not null)
+        {
+            return expression;
+        }
+
+        // Every name that reaches here is one of the six keyword date parts, and each has its
+        // branch in the switch above, so this stands for a name that got in without one.
+        throw DbException.GetSyntaxError(sql, Current.Start, "date-time field");
+    }
+
+    private Expressions.Expression ReadSingleArgument(Query.Select? aggregateSelect)
+    {
+        Expressions.Expression arg = ReadQueryOr(aggregateSelect);
+        Expect(Token.CloseParen, ")");
+        return arg;
+    }
+
+    private Expressions.Expression ReadNextArgument(Query.Select? aggregateSelect)
+    {
+        Expect(Token.Comma, ",");
+        return ReadQueryOr(aggregateSelect);
+    }
+
+    private Expressions.Expression ReadLastArgument(Query.Select? aggregateSelect)
+    {
+        Expect(Token.Comma, ",");
+        Expressions.Expression arg = ReadQueryOr(aggregateSelect);
+        Expect(Token.CloseParen, ")");
+        return arg;
+    }
+
+    /// <summary>
+    /// Reads a date-time field, the reference's readDateTimeField.
+    /// </summary>
+    /// <returns>the field</returns>
+    private int ReadDateTimeField()
+    {
+        int field = -1;
+        switch (CurrentType)
+        {
+            case ParserUtil.Identifier:
+                if (!Current.IsQuoted)
+                {
+                    field = Expressions.Functions.DateTimeFunction.GetField(Current.AsIdentifier!);
+                }
+
+                break;
+            case Token.Literal:
+                Values.Value? literal = Current.GetValue(provider);
+                if (literal?.GetValueType() == Values.Value.Varchar)
+                {
+                    field = Expressions.Functions.DateTimeFunction.GetField(literal.GetString()!);
+                }
+
+                break;
+            case ParserUtil.Year:
+                field = Expressions.Functions.DateTimeFunction.Year;
+                break;
+            case ParserUtil.Month:
+                field = Expressions.Functions.DateTimeFunction.Month;
+                break;
+            case ParserUtil.Day:
+                field = Expressions.Functions.DateTimeFunction.Day;
+                break;
+            case ParserUtil.Hour:
+                field = Expressions.Functions.DateTimeFunction.Hour;
+                break;
+            case ParserUtil.Minute:
+                field = Expressions.Functions.DateTimeFunction.Minute;
+                break;
+            case ParserUtil.Second:
+                field = Expressions.Functions.DateTimeFunction.Second;
+                break;
+        }
+
+        if (field < 0)
+        {
+            throw DbException.GetSyntaxError(sql, Current.Start, "date-time field");
+        }
+
+        Read();
+        return field;
+    }
+
+    private Expressions.Expression? ReadIfSingleArgument(Query.Select? aggregateSelect)
+    {
+        if (ReadIf(Token.CloseParen))
+        {
+            return null;
+        }
+
+        Expressions.Expression arg = ReadQueryOr(aggregateSelect);
+        Expect(Token.CloseParen, ")");
+        return arg;
+    }
+
+    private Expressions.Expression? ReadIfArgument(Query.Select? aggregateSelect)
+    {
+        Expressions.Expression? arg = ReadIf(Token.Comma) ? ReadQueryOr(aggregateSelect) : null;
+        Expect(Token.CloseParen, ")");
+        return arg;
+    }
+
+    /// <summary>
+    /// Reads a comma, or the closing parenthesis that ends a list; the reference's
+    /// ParserBase.readIfMore, which the variadic parameter loops ask.
+    /// </summary>
+    /// <returns>true when a comma was read, false when the list ended</returns>
+    private bool ReadIfMore()
+    {
+        if (ReadIf(Token.Comma))
+        {
+            return true;
+        }
+
+        Expect(Token.CloseParen, ")");
+        return false;
+    }
+
+    private Expressions.Expression ReadRemainingParameters(
+        Expressions.OperationN f, Query.Select? aggregateSelect)
+    {
+        while (ReadIfMore())
+        {
+            f.AddParameter(ReadQueryOr(aggregateSelect));
+        }
+
+        f.DoneWithParameters();
+        return f;
+    }
+
+    private Expressions.Expression ReadCoalesceFunction(int function, Query.Select? aggregateSelect)
+    {
+        Expressions.Functions.CoalesceFunction f = new(function);
+        f.AddParameter(ReadQueryOr(aggregateSelect));
+        ReadRemainingParameters(f, aggregateSelect);
+        if (function == Expressions.Functions.CoalesceFunction.Greatest
+            || function == Expressions.Functions.CoalesceFunction.Least)
+        {
+            f.SetIgnoreNulls(ReadIgnoreNulls(provider.GetMode().GreatestLeastIgnoreNulls));
+        }
+
+        return f;
+    }
+
+    private Expressions.Expression ReadConcatFunction(int function, Query.Select? aggregateSelect)
+    {
+        Expressions.Functions.ConcatFunction f = new(function);
+        f.AddParameter(ReadQueryOr(aggregateSelect));
+        f.AddParameter(ReadNextArgument(aggregateSelect));
+        if (function == Expressions.Functions.ConcatFunction.ConcatWs)
+        {
+            f.AddParameter(ReadNextArgument(aggregateSelect));
+        }
+
+        return ReadRemainingParameters(f, aggregateSelect);
+    }
+
+    private bool ReadIgnoreNulls(bool ignoreNulls)
+    {
+        if (ReadIfWords("IGNORE", "NULLS"))
+        {
+            return true;
+        }
+
+        if (ReadIfWords("RESPECT", "NULLS"))
+        {
+            return false;
+        }
+
+        return ignoreNulls;
     }
 
     /// <summary>

@@ -363,6 +363,45 @@ public sealed class DataType
         => type is Value.Varchar or Value.Char or Value.VarcharIgnorecase;
 
     /// <summary>
+    /// Whether the given value type is a character string type.
+    /// </summary>
+    /// <param name="type">the value type</param>
+    /// <returns>true if the value type is a character string type</returns>
+    public static bool IsCharacterStringType(int type)
+        => type >= Value.Char && type <= Value.VarcharIgnorecase;
+
+    /// <summary>
+    /// Whether the given value type is a numeric type.
+    /// </summary>
+    /// <param name="type">the value type</param>
+    /// <returns>true if the value type is a numeric type</returns>
+    public static bool IsNumericType(int type)
+        => type >= Value.Tinyint && type <= Value.Decfloat;
+
+    /// <summary>
+    /// Whether the given value type is a date-time type.
+    /// </summary>
+    /// <param name="type">the value type</param>
+    /// <returns>true if the value type is a date-time type</returns>
+    public static bool IsDateTimeType(int type)
+        => type >= Value.Date && type <= Value.TimestampTz;
+
+    /// <summary>
+    /// Adds two precisions, saturating at <see cref="long.MaxValue"/>.
+    /// </summary>
+    /// <param name="p1">the first summand</param>
+    /// <param name="p2">the second summand</param>
+    /// <returns>
+    /// the sum of summands, or <see cref="long.MaxValue"/> if either argument is negative or the
+    /// sum is out of range
+    /// </returns>
+    public static long AddPrecision(long p1, long p2)
+    {
+        long sum = p1 + p2;
+        return (p1 | p2 | sum) < 0 ? long.MaxValue : sum;
+    }
+
+    /// <summary>
     /// The SQL type a value type is reported as.
     /// </summary>
     /// <param name="type">the type</param>

@@ -1154,6 +1154,79 @@ public static class DateTimeUtils
         - offsetSeconds;
 
     /// <summary>
+    /// Extracts date value and nanos of day from the specified value.
+    /// </summary>
+    /// <param name="value">value to extract fields from</param>
+    /// <param name="provider">the cast information provider</param>
+    /// <returns>array with date value and nanos of day</returns>
+    public static long[] DateAndTimeFromValue(Values.Value value, Engine.CastDataProvider? provider)
+    {
+        long dateValue = EpochDateValue;
+        long timeNanos = 0;
+        if (value is Values.ValueTimestamp timestamp)
+        {
+            dateValue = timestamp.GetDateValue();
+            timeNanos = timestamp.GetTimeNanos();
+        }
+        else if (value is Values.ValueDate date)
+        {
+            dateValue = date.GetDateValue();
+        }
+        else if (value is Values.ValueTime time)
+        {
+            timeNanos = time.GetNanos();
+        }
+        else if (value is Values.ValueTimestampTimeZone timestampTimeZone)
+        {
+            dateValue = timestampTimeZone.GetDateValue();
+            timeNanos = timestampTimeZone.GetTimeNanos();
+        }
+        else if (value is Values.ValueTimeTimeZone timeTimeZone)
+        {
+            timeNanos = timeTimeZone.GetNanos();
+        }
+        else
+        {
+            Values.ValueTimestamp converted = (Values.ValueTimestamp)value.ConvertToForComparison(
+                Values.Value.Timestamp, provider);
+            dateValue = converted.GetDateValue();
+            timeNanos = converted.GetTimeNanos();
+        }
+
+        return [dateValue, timeNanos];
+    }
+
+    /// <summary>
+    /// Creates a new date-time value with the same type as original value. If original value is a
+    /// ValueTimestampTimeZone or ValueTimeTimeZone, returned value will have the same time zone
+    /// offset as original value.
+    /// </summary>
+    /// <param name="original">original value</param>
+    /// <param name="dateValue">date value for the returned value</param>
+    /// <param name="timeNanos">nanos of day for the returned value</param>
+    /// <returns>new value with specified date value and nanos of day</returns>
+    public static Values.Value DateTimeToValue(Values.Value original, long dateValue, long timeNanos)
+    {
+        switch (original.GetValueType())
+        {
+            case Values.Value.Date:
+                return Values.ValueDate.FromDateValue(dateValue);
+            case Values.Value.Time:
+                return Values.ValueTime.FromNanos(timeNanos);
+            case Values.Value.TimeTz:
+                return Values.ValueTimeTimeZone.FromNanos(
+                    timeNanos, ((Values.ValueTimeTimeZone)original).GetTimeZoneOffsetSeconds());
+            case Values.Value.TimestampTz:
+                return Values.ValueTimestampTimeZone.FromDateValueAndNanos(
+                    dateValue, timeNanos,
+                    ((Values.ValueTimestampTimeZone)original).GetTimeZoneOffsetSeconds());
+            case Values.Value.Timestamp:
+            default:
+                return Values.ValueTimestamp.FromDateValueAndNanos(dateValue, timeNanos);
+        }
+    }
+
+    /// <summary>
     /// Reads the offset written after a time, and answers the value it stands for.
     /// </summary>
     private static Values.Value ParseTimestampWithTimeZone(

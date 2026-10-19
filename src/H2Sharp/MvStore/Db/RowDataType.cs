@@ -28,6 +28,7 @@ using System.Collections.Generic;
 using H2Sharp.Engine;
 using H2Sharp.MvStore.Type;
 using H2Sharp.Result;
+using H2Sharp.Store;
 using H2Sharp.Values;
 
 namespace H2Sharp.MvStore.Db;
@@ -60,7 +61,7 @@ public sealed class RowDataType : BasicDataType<SearchRow>
     public RowDataType(
         Engine.CastDataProvider? provider,
         CompareMode compareMode,
-        Store.DataHandler? handler,
+        DataHandler? handler,
         int[]? sortTypes,
         int[]? indexes,
         int columnCount,
