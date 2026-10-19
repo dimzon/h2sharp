@@ -371,6 +371,25 @@ public sealed class DataType
         => type >= Value.Char && type <= Value.VarcharIgnorecase;
 
     /// <summary>
+    /// Whether the given value type is a binary string type.
+    /// </summary>
+    /// <param name="type">the value type</param>
+    /// <returns>true if the value type is a binary string type</returns>
+    public static bool IsBinaryStringType(int type)
+        => type >= Value.Binary && type <= Value.Blob;
+
+    /// <summary>
+    /// Whether the given value type is a binary string type or a compatible
+    /// special data type such as Java object, UUID, geometry object, or JSON.
+    /// </summary>
+    /// <param name="type">the value type</param>
+    /// <returns>true if the value type is a binary string type or a compatible
+    /// special data type</returns>
+    public static bool IsBinaryStringOrSpecialBinaryType(int type)
+        => type is Value.Varbinary or Value.Binary or Value.Blob or Value.JavaObject
+            or Value.Uuid or Value.Geometry or Value.Json;
+
+    /// <summary>
     /// Whether the given value type is a numeric type.
     /// </summary>
     /// <param name="type">the value type</param>

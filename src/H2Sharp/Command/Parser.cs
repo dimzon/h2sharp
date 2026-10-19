@@ -1641,11 +1641,25 @@ public sealed class Parser
                     case ParserUtil.Identifier:
                         return ReadFunction(aggregateSelect);
 
+                    case ParserUtil.Left:
+                        Read();
+                        Expect(Token.OpenParen, "(");
+                        return new Expressions.Functions.StringFunction2(
+                            ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                            Expressions.Functions.StringFunction2.Left);
+
+                    case ParserUtil.Right:
+                        Read();
+                        Expect(Token.OpenParen, "(");
+                        return new Expressions.Functions.StringFunction2(
+                            ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                            Expressions.Functions.StringFunction2.Right);
+
                     default:
-                        // Every other function spelled as a keyword — LEFT, RIGHT, the CURRENT_*
-                        // value functions, CAST, ROW, TABLE and the rest — is read by the
-                        // reference's own keyword branches, which are not ported. Naming the
-                        // keyword beats answering that no such function exists.
+                        // Every other function spelled as a keyword — the CURRENT_* value
+                        // functions, CAST, ROW, TABLE and the rest — is read by the reference's
+                        // own keyword branches, which are not ported. Naming the keyword beats
+                        // answering that no such function exists.
                         throw new TODOException(
                             "Parser.readTerm: the keyword function " + Current.AsIdentifier + " is not ported");
                 }
@@ -1845,23 +1859,64 @@ public sealed class Parser
                 return new Expressions.Functions.MathFunction1(
                     ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Radians);
 
-            // BitFunction (not ported).
             case "BITAND":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Bitand);
             case "BITOR":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Bitor);
             case "BITXOR":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Bitxor);
             case "BITNOT":
+                return new Expressions.Functions.BitFunction(
+                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.BitFunction.Bitnot);
             case "BITNAND":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Bitnand);
             case "BITNOR":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Bitnor);
             case "BITXNOR":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Bitxnor);
             case "BITGET":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Bitget);
             case "BITCOUNT":
+                return new Expressions.Functions.BitFunction(
+                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.BitFunction.Bitcount);
             case "LSHIFT":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Lshift);
             case "RSHIFT":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Rshift);
             case "ULSHIFT":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Ulshift);
             case "URSHIFT":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Urshift);
             case "ROTATELEFT":
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Rotateleft);
             case "ROTATERIGHT":
-                throw new TODOException("Parser.readBuiltinFunctionIf: BitFunction is not ported");
+                return new Expressions.Functions.BitFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.BitFunction.Rotateright);
 
             case "EXTRACT":
                 {
@@ -1909,34 +1964,74 @@ public sealed class Parser
                 return new Expressions.Functions.CardinalityExpression(
                     ReadSingleArgument(aggregateSelect), true);
 
-            // StringFunction (not ported).
             case "LOCATE":
+                return new Expressions.Functions.StringFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadIfArgument(aggregateSelect), Expressions.Functions.StringFunction.Locate);
             case "INSERT":
+                return new Expressions.Functions.StringFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadNextArgument(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.StringFunction.Insert);
             case "REPLACE":
+                return new Expressions.Functions.StringFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadIfArgument(aggregateSelect), Expressions.Functions.StringFunction.Replace);
             case "LPAD":
+                return new Expressions.Functions.StringFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadIfArgument(aggregateSelect), Expressions.Functions.StringFunction.Lpad);
             case "RPAD":
+                return new Expressions.Functions.StringFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadIfArgument(aggregateSelect), Expressions.Functions.StringFunction.Rpad);
             case "TRANSLATE":
-                throw new TODOException("Parser.readBuiltinFunctionIf: StringFunction is not ported");
+                return new Expressions.Functions.StringFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadLastArgument(aggregateSelect), Expressions.Functions.StringFunction.Translate);
 
-            // StringFunction1 (not ported).
             case "UPPER":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Upper);
             case "LOWER":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Lower);
             case "ASCII":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Ascii);
             case "CHAR":
             case "CHR":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Char);
             case "STRINGENCODE":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Stringencode);
             case "STRINGDECODE":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Stringdecode);
             case "STRINGTOUTF8":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Stringtoutf8);
             case "UTF8TOSTRING":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Utf8tostring);
             case "HEXTORAW":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Hextoraw);
             case "RAWTOHEX":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Rawtohex);
             case "SPACE":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Space);
             case "QUOTE_IDENT":
-                throw new TODOException("Parser.readBuiltinFunctionIf: StringFunction1 is not ported");
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.QuoteIdent);
 
-            // StringFunction2 (not ported).
             case "REPEAT":
-                throw new TODOException("Parser.readBuiltinFunctionIf: StringFunction2 is not ported");
+                return new Expressions.Functions.StringFunction2(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.StringFunction2.Repeat);
 
             // SubstringFunction (not ported).
             case "SUBSTRING":
@@ -2238,15 +2333,26 @@ public sealed class Parser
                     Expressions.Functions.DateTimeFunction.Extract, Expressions.Functions.DateTimeFunction.Year,
                     ReadSingleArgument(aggregateSelect), null);
 
-            // StringFunction, with LOCATE's arguments swapped (not ported).
+            // LOCATE, with INSTR's arguments swapped.
             case "INSTR":
-            case "POSITION":
-                throw new TODOException("Parser.readCompatibilityFunction: LOCATE is not ported");
+                {
+                    Expressions.Expression arg1 = ReadQueryOr(aggregateSelect);
+                    return new Expressions.Functions.StringFunction(
+                        ReadNextArgument(aggregateSelect), arg1, ReadIfArgument(aggregateSelect),
+                        Expressions.Functions.StringFunction.Locate);
+                }
 
-            // StringFunction1 (not ported).
+            case "POSITION":
+                // The reference reads the first argument with readConcat(), which is not ported.
+                throw new TODOException(
+                    "Parser.readCompatibilityFunction: POSITION needs readConcat");
+
             case "LCASE":
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Lower);
             case "UCASE":
-                throw new TODOException("Parser.readCompatibilityFunction: StringFunction1 is not ported");
+                return new Expressions.Functions.StringFunction1(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Upper);
 
             // SubstringFunction (not ported).
             case "SUBSTR":

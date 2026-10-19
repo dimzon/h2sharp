@@ -67,8 +67,8 @@ public abstract class AbstractAggregate : Analysis.DataAnalysisOperation
     /// <summary>
     /// Sets the FILTER condition.
     /// </summary>
-    /// <param name="filterCondition">FILTER condition</param>
-    public void SetFilterCondition(Expression filterCondition) => this.filterCondition = filterCondition;
+    /// <param name="filterCondition">FILTER condition, or null</param>
+    public void SetFilterCondition(Expression? filterCondition) => this.filterCondition = filterCondition;
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo() => type!;

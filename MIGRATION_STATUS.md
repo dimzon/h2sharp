@@ -4960,9 +4960,10 @@ Grammar 46/263, Datatypes 10/66, SystemTables 0/37, Dml 2/2), топ-пробе�
 расширениями `Get`/`GetSql`/`RequiresWindowOrdering`) и отказывает TODO, называя
 окно, а не «нет такой функции». Keyword-функции разбираются в `ReadQueryTerm`: `DAY`, `HOUR`,
 `MINUTE`, `MONTH`, `SECOND`, `YEAR` с `(` идут в `ReadKeywordCompatibilityFunction` (эталонный
-`readKeywordCompatibilityFunctionOrColumn`), остальные keyword-имена (LEFT, RIGHT, CAST,
-CURRENT_*, ROW, TABLE…) отказывают TODO по имени (`readTerm` не портирован). Агрегаты в
-select-list читаются до `ReadFunction`; агрегат вне select-list — TODO с именем.
+`readKeywordCompatibilityFunctionOrColumn`), LEFT/RIGHT — через собственные ветки (эталонный
+`readColumnIfNotFunction`: после имени и `(` те же `ReadQueryOr`/`ReadLastArgument`), остальные
+keyword-имена (CAST, CURRENT_*, ROW, TABLE…) отказывают TODO по имени (`readTerm` не портирован).
+Агрегаты в select-list читаются до `ReadFunction`; агрегат вне select-list — TODO с именем.
 
 **Базовые классы.** `Operation1`, `Operation1_2`, `Operation2`, `Function1`, `Function1_2`,
 `Function2`, `FunctionN`, `INamedExpression` — эталонные. `CardinalityExpression` (CARDINALITY,
@@ -5014,16 +5015,38 @@ COALESCE/GREATEST/LEAST/NULLIF/IFNULL/NVL, CONCAT/CONCAT_WS, функции по
 неизвестное имя (90022), дата-время (10 наборов на таблице ID/DATE/TIMESTAMP/TIME(6)/INTERVAL;
 C# сеет значения напрямую, JVM — теми же литералами с `TT TIME(6)` — иначе `TIME` по умолчанию
 округлит долю секунды), отказы полей (`EXTRACT('NOPE' …)`/`DATEADD(FOO…)` → 90008, quoted
-`"DAY"` → 42001). Пины на непорченое: BITAND (instance-половина BitFunction), ROW_NUMBER
-(окно), LEFT (readTerm), COUNT(*) вне select-list. Границы парсерных отказов по имени:
-StringFunction/1/2, SubstringFunction, ToCharFunction, TrimFunction, RegexpFunction,
+`"DAY"` → 42001). Пины на непорченое: ROW_NUMBER (окно), ROW (readTerm), COUNT(*) вне select-list. Границы
+парсерных отказов по имени: SubstringFunction, ToCharFunction, TrimFunction, RegexpFunction,
 XMLFunction, ArrayFunction, CompressFunction, SoundexFunction, DayMonthNameFunction,
-JsonConstructorFunction, CryptFunction; плюс известные пробелы волны: дата-литералы
+JsonConstructorFunction, CryptFunction, POSITION (нужен `readConcat`); плюс известные пробелы
+волны: дата-литералы
 `DATE '…'`/`TIME '…'`/`INTERVAL '…' UNIT` и CAST внутри выражений (нужен `readTermWithIdentifier`),
 `FILTER`/`OVER`, вложенные агрегаты (`ABS(SUM(ID))`), `LENGTH()` без аргумента (reference-NPE
 воспроизведён), арифметический ридер (`ID * -1`) — отдельный эпик.
 
-Проверено: `H2Sharp.Tests` **1095**, конформанс-набор **138/947** (было 102: Functions 67/325,
-Grammar 48/263, остальные категории без изменений), `Data.Tests` 338, `MvStore.Tests` 86,
+**Строковые функции целиком и BitFunction.** `StringFunction` (LOCATE, INSERT, REPLACE, LPAD,
+RPAD, TRANSLATE), `StringFunction1` (UPPER…QUOTE_IDENT), `StringFunction2` (LEFT, RIGHT, REPEAT)
+и `BitFunction` (15 функций BITAND…ROTATERIGHT) портированы вместе с `optimize`/`optimizeNot`.
+Парсер — эталонные `readExpression`/`readNextArgument`/`readIfArgument`/`readLastArgument`,
+keyword-ветки LEFT/RIGHT в `ReadQueryTerm`, compat INSTR (аргументы переставлены) и
+LCASE/UCASE; compat POSITION — TODO, первый аргумент эталон читает `readConcat`, которого в
+порту нет. Методы `locate`/`insert`/`translate` переименованы в
+`LocateValue`/`InsertValue`/`TranslateValue` (константы тех же имён заняты; прецедент
+`Value.CastToValue`); эталонный `Aggregate` в `optimizeNot` импортирован псевдонимом
+`AggregateExpression` — имя `Expressions.Aggregate` иначе разрешается в пространство имён.
+LOCATE воспроизводит java-индексацию (clamp; пустая подстрока: `indexOf` → min(from, len),
+`lastIndexOf` → -1 при from<0), сверено пробой JVM. RAWTOHEX/HEXTORAW — обе режимные ветки
+(Oracle/не-Oracle, 4 hex-цифры на char, 22018 на битую длину и не-цифры); UTF-8 — через
+`JavaUtf8` (точная замена Java-кодировщика, включая непарные суррогаты), SPACE — через
+`Encoding.Latin1` (эталонный ISO-8859-1). BitFunction сохранил static `GetBitwise`/
+`CheckArgType` для агрегатов; сдвиги и ротации — с java-маской (`>>>`,
+`BitOperations.RotateLeft` над uint/ulong), BITGET/BITCOUNT по байтам — `Bits.LongFromBigEndian`
+и `BitOperations.PopCount`. Оракулы: 5 наборов битовых (числа, bigint, сдвиги/ротации,
+переписывания BITNOT над выражениями и BIT_*_AGG, binary-таблица через RAWTOHEX), 4 набора
+строковых (LOCATE/INSERT/REPLACE/LPAD/RPAD/TRANSLATE со всеми NULL-краями, StringFunction1,
+LEFT/RIGHT/REPEAT, compat INSTR/LCASE/UCASE) и отказы (HEXTORAW 22018, BITAND(1.5) 90008).
+
+Проверено: `H2Sharp.Tests` **1104**, конформанс-набор **175/947** (было 138: Functions 103/325,
+Grammar 49/263, остальные категории без изменений), `Data.Tests` 338, `MvStore.Tests` 86,
 `Engine.Tests` 4/9 (прежние 5 задуманных).
 

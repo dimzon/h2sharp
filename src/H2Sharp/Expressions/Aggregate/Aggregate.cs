@@ -83,6 +83,18 @@ public class Aggregate : AbstractAggregate
     /// <returns>the type of this aggregate</returns>
     public AggregateType GetAggregateType() => aggregateType;
 
+    /// <summary>
+    /// Returns the select statement.
+    /// </summary>
+    /// <returns>the select statement</returns>
+    public Select GetSelect() => select;
+
+    /// <summary>
+    /// Returns if distinct is used.
+    /// </summary>
+    /// <returns>if distinct is used</returns>
+    public bool IsDistinct() => distinct;
+
     private static readonly Dictionary<string, AggregateType> Aggregates = new(128);
 
     static Aggregate()

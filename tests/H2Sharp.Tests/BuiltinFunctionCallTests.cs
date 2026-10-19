@@ -233,6 +233,66 @@ public sealed class BuiltinFunctionCallTests
         }
     }
 
+    private static SessionLocal NewBinarySession(out TransactionStore store)
+    {
+        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:func_binary")), "sa")
+        {
+            CastDataProvider = new TestCastDataProvider(),
+            CompareMode = CompareMode.GetInstance(null, 0),
+        };
+
+        store = new TransactionStore(MVStore.Open(null!));
+        store.Init();
+
+        Schemas.Schema schema = new(session.GetDatabase(), 1, "PUBLIC", false);
+        session.GetDatabase().AddSchema(schema);
+
+        Column id = new("ID", TypeInfo.TypeInteger, null, 0);
+        id.SetNullable(false);
+        Column v = new("V", TypeInfo.TypeVarbinary, null, 1);
+        Column w = new("W", TypeInfo.TypeVarbinary, null, 2);
+        MVTable table = new(session.GetDatabase(), schema, 0, "B", [id, v, w],
+            persistIndexes: false, persistData: false);
+        foreach (Column column in table.GetColumns())
+        {
+            column.SetTable(table, column.GetColumnId());
+        }
+
+        table.AddIndex(session, "I", 7, [new IndexColumn(id, ascending: true)], 1,
+            IndexType.CreatePrimaryKey(persistent: false, hash: false), create: true, indexComment: null);
+        table.AddRow(session, new DefaultRow([
+            ValueInteger.Get(1),
+            ValueVarbinary.GetNoCopy([0x00, 0xff]),
+            ValueVarbinary.GetNoCopy([0x0f, 0x0f]),
+        ]));
+        table.AddRow(session, new DefaultRow([
+            ValueInteger.Get(2),
+            ValueVarbinary.GetNoCopy([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]),
+            ValueVarbinary.GetNoCopy([0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f]),
+        ]));
+        schema.Add(table);
+        return session;
+    }
+
+    private static void CompareBinary(string dbName, string sql)
+    {
+        SessionLocal session = NewBinarySession(out TransactionStore store);
+        try
+        {
+            List<string> actual = RunText(session, sql);
+            List<string> java = RunJavaWithSetup(dbName, sql, """
+                stat.execute("CREATE TABLE B(ID INT PRIMARY KEY, V VARBINARY, W VARBINARY)");
+                stat.execute("INSERT INTO B VALUES (1, X'00ff', X'0f0f'), "
+                        + "(2, X'123456789abcdef0', X'0f0f0f0f0f0f0f0f')");
+                """);
+            Assert.Equal(java, actual);
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
     private static void CompareRefusal(string dbName, string sql, int expectedCode)
     {
         SessionLocal session = NewDualSession();
@@ -364,13 +424,112 @@ public sealed class BuiltinFunctionCallTests
         Assert.Equal(90022, csharp.H2ErrorCode);
     }
 
-    [Fact]
-    public void BitFunctionsWaitForBitFunction()
+    [JavaOracleFact]
+    public void BitwiseFunctionsMatchReference()
     {
-        SessionLocal session = NewDualSession();
-        TODOException e = Assert.Throws<TODOException>(
-            () => session.PrepareCommand("SELECT BITAND(1, 1)"));
-        Assert.Contains("BitFunction", e.Message);
+        CompareDual(
+            "func_bitwise",
+            "SELECT BITAND(5, 3), BITOR(5, 3), BITXOR(5, 3), BITNOT(5), BITNAND(5, 3), BITNOR(5, 3), "
+            + "BITXNOR(5, 3), BITAND(5000000000, 3), BITOR(5000000000, 3), BITNOT(5000000000)");
+    }
+
+    [JavaOracleFact]
+    public void BitShiftsRotatesGetAndCountMatchReference()
+    {
+        CompareDual(
+            "func_bitops",
+            "SELECT BITGET(5, 0), BITGET(5, 2), BITGET(5, 40), BITGET(5000000000, 35), BITCOUNT(255), "
+            + "BITCOUNT(5000000000), LSHIFT(1, 4), LSHIFT(1, 64), LSHIFT(5000000000, 4), "
+            + "RSHIFT(-16, 2), RSHIFT(-16, -2), ULSHIFT(-1, 1), URSHIFT(-16, 2), URSHIFT(5000000000, 2), "
+            + "ROTATELEFT(1, 1), ROTATERIGHT(1, 1), ROTATELEFT(5000000000, 4), ROTATERIGHT(1, 65)");
+    }
+
+    [JavaOracleFact]
+    public void BitNotRewritesMatchReference()
+    {
+        CompareDual(
+            "func_bitnot_rewrites",
+            "SELECT BITNOT(BITAND(5, 3)), BITNOT(BITOR(5, 3)), BITNOT(BITXOR(5, 3)), "
+            + "BITNOT(BITNAND(5, 3)), BITNOT(BITNOR(5, 3)), BITNOT(BITXNOR(5, 3)), BITNOT(BITNOT(5))");
+    }
+
+    [JavaOracleFact]
+    public void BitNotOverAggregateMatchesReference()
+    {
+        CompareText(
+            "func_bitnot_aggregate",
+            "SELECT BITNOT(BIT_AND_AGG(ID)), BITNOT(BIT_OR_AGG(ID)), BITNOT(BIT_XOR_AGG(ID)) FROM T");
+    }
+
+    [JavaOracleFact]
+    public void BinaryBitFunctionsMatchReference()
+    {
+        CompareBinary(
+            "func_bitwise_binary",
+            "SELECT ID, RAWTOHEX(BITAND(V, W)), RAWTOHEX(BITOR(V, W)), RAWTOHEX(BITXOR(V, W)), "
+            + "RAWTOHEX(BITNOT(V)), RAWTOHEX(BITNAND(V, W)), RAWTOHEX(BITNOR(V, W)), "
+            + "RAWTOHEX(BITXNOR(V, W)), BITGET(V, 0), BITGET(V, 8), BITGET(V, 100), BITCOUNT(V), "
+            + "RAWTOHEX(LSHIFT(V, 4)), RAWTOHEX(RSHIFT(V, -4)), RAWTOHEX(ULSHIFT(V, 4)), "
+            + "RAWTOHEX(URSHIFT(V, 4)), RAWTOHEX(ROTATELEFT(V, 3)), RAWTOHEX(ROTATERIGHT(V, 3)), "
+            + "RAWTOHEX(ROTATELEFT(V, 9)), RAWTOHEX(LSHIFT(V, 100)) FROM B ORDER BY ID");
+    }
+
+    [JavaOracleFact]
+    public void StringFunctionsMatchReference()
+    {
+        CompareDual(
+            "func_string",
+            "SELECT LOCATE('b', 'abcabc'), LOCATE('b', 'abcabc', 3), LOCATE('b', 'abcabc', -1), "
+            + "LOCATE('', 'abc'), LOCATE('', 'abc', 2), LOCATE('', 'abc', 5), LOCATE('', 'abc', -1), "
+            + "LOCATE('', 'abc', -5), LOCATE('x', 'abc', 0), "
+            + "LOCATE(NULL, 'abc'), LOCATE('a', NULL), LOCATE('a', 'abc', NULL), "
+            + "INSERT('abcdef', 3, 2, 'XY'), INSERT('abcdef', 1, 0, 'XY'), INSERT('abcdef', 10, 2, 'XY'), "
+            + "INSERT('abcdef', 3, 100, 'XY'), INSERT(NULL, 2, 1, 'X'), INSERT('abc', 2, 1, NULL), "
+            + "REPLACE('abcabc', 'b', 'X'), REPLACE('abcabc', 'b'), REPLACE('abc', 'x', 'y'), "
+            + "REPLACE('abc', 'b', NULL), REPLACE(NULL, 'b', 'x'), "
+            + "LPAD('abc', 7, 'xy'), LPAD('abc', 7), LPAD('abcdef', 3, 'x'), LPAD('abc', -1, 'x'), "
+            + "LPAD('abc', 5, NULL), RPAD('abc', 7, 'xy'), RPAD('abc', 2, 'x'), RPAD('abc', 0), "
+            + "TRANSLATE('abcdef', 'cd', 'XY'), TRANSLATE('abcdef', 'cde', 'X'), TRANSLATE('abc', '', 'X'), "
+            + "TRANSLATE(NULL, 'a', 'b'), TRANSLATE('abc', NULL, 'b'), TRANSLATE('abc', 'a', NULL)");
+    }
+
+    [JavaOracleFact]
+    public void StringFunction1MatchReference()
+    {
+        CompareDual(
+            "func_string1",
+            "SELECT UPPER('aBc'), LOWER('AbC'), ASCII('A'), ASCII(''), CHAR(65), CHAR(9731), "
+            + "STRINGENCODE('a b+c'), STRINGDECODE('a+b%2Bc'), STRINGDECODE(STRINGENCODE('a b')), "
+            + "RAWTOHEX(STRINGTOUTF8('abc')), UTF8TOSTRING(STRINGTOUTF8('abc')), "
+            + "HEXTORAW('00410042'), RAWTOHEX('AB'), RAWTOHEX(HEXTORAW('0041')), RAWTOHEX(X'00ff'), "
+            + "SPACE(3), SPACE(0), SPACE(-1), QUOTE_IDENT('a\"b'), QUOTE_IDENT('simple')");
+    }
+
+    [JavaOracleFact]
+    public void StringFunction2MatchReference()
+    {
+        CompareDual(
+            "func_string2",
+            "SELECT LEFT('abc', 2), LEFT('abc', 10), LEFT('abc', 0), LEFT('abc', -1), "
+            + "RIGHT('abc', 2), RIGHT('abc', 10), RIGHT('abc', 0), RIGHT('abc', -1), "
+            + "REPEAT('ab', 3), REPEAT('ab', 0), REPEAT('ab', -2), REPEAT('', 5)");
+    }
+
+    [JavaOracleFact]
+    public void CompatibilityStringFunctionsMatchReference()
+    {
+        CompareDual(
+            "func_string_compat",
+            "SELECT INSTR('abcabc', 'b'), INSTR('abcabc', 'b', 3), INSTR('abc', ''), INSTR('', ''), "
+            + "LCASE('AbC'), UCASE('aBc')");
+    }
+
+    [JavaOracleFact]
+    public void InvalidHexAndBitArgumentsAreRefusedOnBothSides()
+    {
+        CompareRefusal("func_hex_odd", "SELECT HEXTORAW('ABC')", 22018);
+        CompareRefusal("func_hex_bad", "SELECT HEXTORAW('zzzz')", 22018);
+        CompareRefusal("func_bit_type", "SELECT BITAND(1.5, 1)", 90008);
     }
 
     [JavaOracleFact]
@@ -477,12 +636,12 @@ public sealed class BuiltinFunctionCallTests
     }
 
     [Fact]
-    public void KeywordFunctionWaitsForReadTerm()
+    public void RemainingKeywordFunctionsWaitForReadTerm()
     {
         SessionLocal session = NewDualSession();
         TODOException e = Assert.Throws<TODOException>(
-            () => session.PrepareCommand("SELECT LEFT('abc', 1)"));
-        Assert.Contains("LEFT", e.Message);
+            () => session.PrepareCommand("SELECT ROW(1)"));
+        Assert.Contains("ROW", e.Message);
     }
 
     [Fact]

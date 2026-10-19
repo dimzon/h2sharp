@@ -74,8 +74,8 @@ public abstract class DataAnalysisOperation : Expression
     /// <summary>
     /// Sets the OVER condition.
     /// </summary>
-    /// <param name="over">OVER condition</param>
-    public void SetOverCondition(Window over) => this.over = over;
+    /// <param name="over">OVER condition, or null</param>
+    public void SetOverCondition(Window? over) => this.over = over;
 
     /// <summary>
     /// Checks whether this expression is an aggregate function.
