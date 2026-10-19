@@ -59,17 +59,17 @@ public sealed class SessionLocal : Session
 
     private readonly Dictionary<string, Values.Value> parameters = [];
 
-    private Random? random;
+    private JavaRandom? random;
 
     /// <summary>
     /// Gets the session's random number generator, creating it on first use.
     /// </summary>
     /// <remarks>
-    /// <c>java.util.Random</c> in the reference, <c>System.Random</c> here: the streams
-    /// differ, so only single-candidate outcomes are ever asserted, never a particular pick.
+    /// The reference's <c>java.util.Random</c>, ported as <see cref="JavaRandom"/> so that
+    /// <c>RAND(seed)</c> draws the same number on both sides.
     /// </remarks>
     /// <returns>the random generator</returns>
-    public Random GetRandom() => random ??= new Random();
+    public JavaRandom GetRandom() => random ??= new JavaRandom(Environment.TickCount64);
 
     private IComparer<Values.Value>? valueComparer;
 

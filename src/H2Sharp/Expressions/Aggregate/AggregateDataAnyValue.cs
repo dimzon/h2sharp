@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 
 using H2Sharp.Engine;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Expressions.Aggregate;
@@ -25,7 +26,7 @@ internal sealed class AggregateDataAnyValue : AggregateData
         }
 
         long filter = _filter;
-        if (filter == long.MinValue || (session.GetRandom().NextInt64() | filter) == filter)
+        if (filter == long.MinValue || (session.GetRandom().NextLong() | filter) == filter)
         {
             _values.Add(v!);
             if (_values.Count == MaxValues)
@@ -38,11 +39,11 @@ internal sealed class AggregateDataAnyValue : AggregateData
     private void Compact(SessionLocal session)
     {
         _filter <<= 1;
-        Random random = session.GetRandom();
+        JavaRandom random = session.GetRandom();
         for (int s = 0, t = 0; t < MaxValues / 2; s += 2, t++)
         {
             int idx = s;
-            if (random.Next(2) != 0)
+            if (random.NextBoolean())
             {
                 idx++;
             }
@@ -61,6 +62,6 @@ internal sealed class AggregateDataAnyValue : AggregateData
             return ValueNull.Instance;
         }
 
-        return _values[session.GetRandom().Next(count)];
+        return _values[session.GetRandom().NextInt(count)];
     }
 }

@@ -626,6 +626,105 @@ public sealed class BuiltinFunctionCallTests
         CompareRefusal("func_field_quoted", "SELECT DATEADD(\"DAY\", 1, 1)", 42001);
     }
 
+    [JavaOracleFact]
+    public void SubstringFunctionsMatchReference()
+    {
+        CompareDual(
+            "func_substring",
+            "SELECT SUBSTRING('abcdef' FROM 2), SUBSTRING('abcdef' FROM 2 FOR 3), SUBSTRING('abcdef', 2), "
+            + "SUBSTRING('abcdef', 2, 3), SUBSTRING('abcdef' FOR 3), SUBSTRING('abcdef' FROM -1), "
+            + "SUBSTRING('abcdef' FROM 0 FOR 3), SUBSTRING('abcdef' FROM 3 FOR 100), "
+            + "SUBSTRING('abcdef' FROM 20), SUBSTRING('abcdef' FROM 5 FOR 0), "
+            + "SUBSTRING('abcdef' FROM -20 FOR 3), SUBSTRING(NULL FROM 1), SUBSTRING('abc' FROM NULL), "
+            + "SUBSTRING('abc' FROM 1 FOR NULL), SUBSTR('abcdef', 2, 3), SUBSTR('abcdef' FROM 2 FOR 2)");
+    }
+
+    [JavaOracleFact]
+    public void SubstringOfBinaryMatchesReference()
+    {
+        CompareBinary(
+            "func_substring_binary",
+            "SELECT ID, RAWTOHEX(SUBSTRING(V FROM 2)), RAWTOHEX(SUBSTRING(V, 1, 2)), "
+            + "RAWTOHEX(SUBSTRING(V FROM -1)), RAWTOHEX(SUBSTRING(V FROM 0 FOR 2)), "
+            + "RAWTOHEX(SUBSTRING(V FROM 3 FOR 100)), RAWTOHEX(SUBSTRING(V FROM 20)) FROM B ORDER BY ID");
+    }
+
+    [JavaOracleFact]
+    public void TrimFunctionsMatchReference()
+    {
+        CompareDual(
+            "func_trim",
+            "SELECT TRIM('  ab  '), TRIM(LEADING 'x' FROM 'xxabxx'), TRIM(TRAILING 'x' FROM 'xxabxx'), "
+            + "TRIM(BOTH 'x' FROM 'xxabxx'), TRIM('x' FROM 'xxabxx'), TRIM(FROM '  ab  '), "
+            + "TRIM(BOTH FROM '  ab  '), TRIM(LEADING FROM '  ab  '), TRIM(TRAILING FROM '  ab  '), "
+            + "TRIM('xxabxx', 'x'), TRIM('xxabxx', 'xy'), "
+            + "LTRIM('xxabxx', 'x'), RTRIM('xxabxx', 'x'), BTRIM('xxabxx', 'x'), "
+            + "LTRIM('  ab  '), RTRIM('  ab  '), BTRIM('  ab  '), TRIM(NULL), "
+            + "TRIM('x' FROM NULL), TRIM(NULL FROM 'abc'), LTRIM(NULL, 'x'), RTRIM('abc', NULL)");
+    }
+
+    [JavaOracleFact]
+    public void SoundexFunctionsMatchReference()
+    {
+        CompareDual(
+            "func_soundex",
+            "SELECT SOUNDEX('Robert'), SOUNDEX('Rupert'), SOUNDEX('Tymczak'), SOUNDEX('Pfister'), "
+            + "SOUNDEX('Ashcraft'), SOUNDEX('aBc'), SOUNDEX(''), SOUNDEX(NULL), "
+            + "DIFFERENCE('Robert', 'Rupert'), DIFFERENCE('abc', 'xyz'), DIFFERENCE(NULL, 'abc')");
+    }
+
+    [JavaOracleFact]
+    public void DayMonthNamesMatchReference()
+    {
+        CompareDateTime(
+            "func_day_month_name",
+            "SELECT ID, DAYNAME(D), MONTHNAME(D), DAYNAME(TS), MONTHNAME(TS) FROM T ORDER BY ID");
+    }
+
+    [JavaOracleFact]
+    public void DayMonthNamesBeforeEpochMatchReference()
+    {
+        CompareDateTime(
+            "func_day_month_name_old",
+            "SELECT ID, DAYNAME(DATEADD('YEAR', -70, D)), MONTHNAME(DATEADD('YEAR', -70, D)), "
+            + "DAYNAME(DATEADD('YEAR', -35, D)), MONTHNAME(DATEADD('YEAR', -35, D)) FROM T ORDER BY ID");
+    }
+
+    [JavaOracleFact]
+    public void RandomFunctionsMatchReference()
+    {
+        CompareDual(
+            "func_random",
+            "SELECT RAND(1), RAND(1), RAND(2), RAND(0), RAND(-1), RAND(2147483647), RAND(-2147483648), "
+            + "RAND(NULL), RAND() >= 0, RAND() < 1, "
+            + "OCTET_LENGTH(SECURE_RAND(0)), OCTET_LENGTH(SECURE_RAND(4)), OCTET_LENGTH(SECURE_RAND(-1)), "
+            + "OCTET_LENGTH(RANDOM_UUID()), OCTET_LENGTH(RANDOM_UUID(4)), OCTET_LENGTH(UUID()), "
+            + "OCTET_LENGTH(RANDOM_UUID(7)), CHAR_LENGTH(RAWTOHEX(RANDOM_UUID()))");
+    }
+
+    [JavaOracleFact]
+    public void CompressFunctionsMatchReference()
+    {
+        CompareDual(
+            "func_compress",
+            "SELECT RAWTOHEX(COMPRESS('Hello, world! Hello, world!')), "
+            + "RAWTOHEX(COMPRESS('Hello, world! Hello, world!', 'LZF')), "
+            + "RAWTOHEX(COMPRESS('Hello, world! Hello, world!', 'NO')), "
+            + "RAWTOHEX(COMPRESS('abc')), RAWTOHEX(COMPRESS('')), "
+            + "RAWTOHEX(EXPAND(COMPRESS('abcdefghabcdefghabcdefghabcdefgh', 'DEFLATE'))), "
+            + "RAWTOHEX(EXPAND(COMPRESS('abcdefghabcdefghabcdefghabcdefgh'))), "
+            + "RAWTOHEX(EXPAND(COMPRESS('abcdefghabcdefghabcdefghabcdefgh', 'NO')))");
+    }
+
+    [JavaOracleFact]
+    public void InvalidCompressionArgumentsAreRefusedOnBothSides()
+    {
+        CompareRefusal("func_compress_algorithm", "SELECT COMPRESS('abcdef', 'NOPE')", 90103);
+        CompareRefusal("func_expand_empty", "SELECT EXPAND(X'')", 90104);
+        CompareRefusal("func_expand_truncated", "SELECT EXPAND(X'0201')", 90104);
+        CompareRefusal("func_expand_algorithm", "SELECT EXPAND(X'07')", 90103);
+    }
+
     [Fact]
     public void WindowFunctionsWaitForOver()
     {

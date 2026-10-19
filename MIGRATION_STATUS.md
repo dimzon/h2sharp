@@ -5050,3 +5050,39 @@ LEFT/RIGHT/REPEAT, compat INSTR/LCASE/UCASE) и отказы (HEXTORAW 22018, BI
 Grammar 49/263, остальные категории без изменений), `Data.Tests` 338, `MvStore.Tests` 86,
 `Engine.Tests` 4/9 (прежние 5 задуманных).
 
+**Скалярные функции, вторая партия: SUBSTRING, TRIM, SOUNDEX, DAYNAME, RAND, COMPRESS.**
+Портированы `Function0_1`, `SubstringFunction` (строковая и бинарная ветви, пустая строка →
+NULL в Oracle-режиме, правило точности `optimize`), `TrimFunction` (флаги
+LEADING/TRAILING/MULTI_CHARACTER, `getUnenclosedSQL` с FROM), `SoundexFunction` (таблица
+`SOUNDEX_INDEX` — ISO-8859-1-строка с NUL-дырками, как в эталоне; DIFFERENCE), 
+`DayMonthNameFunction` (эталонный ленивый кэш `DateFormatSymbols(Locale.ENGLISH)` заменён
+статическими массивами с теми же именами; `DateTimeUtils.getDayOfWeek(…, 0)` даёт
+Sunday=1..Saturday=7 — прямой индекс), `RandFunction` и `CompressFunction`. Парсер: эталонные
+`readSubstringFunction` (SUBSTRING и compat SUBSTR; формы FROM/FOR, «X FOR n», запятые) и
+`readTrimFunction` (LEADING/TRAILING/BOTH, обе формы FROM, compat-запятая), LTRIM/RTRIM/BTRIM,
+SOUNDEX/DIFFERENCE, DAYNAME/MONTHNAME, RAND/RANDOM/SECURE_RAND/RANDOM_UUID/UUID,
+COMPRESS/EXPAND. POSITION по-прежнему TODO (`readConcat`).
+
+`RAND(seed)` пересеивает генератор, поэтому портирован **`java.util.Random`** —
+`Util/JavaRandom` (LCG 48 бит, `nextDouble`/`nextLong`/`nextBoolean`/`nextInt(bound)`; был
+тестовым классом для портированных тестов LZF, теперь один на всех). `SessionLocal.GetRandom`
+отдаёт его; вызовы в `AggregateDataAnyValue`/`Aggregate` приведены к эталонным
+`nextLong`/`nextBoolean`/`nextInt`; непосеянный сид — `Environment.TickCount64` (значения без
+сида не сравниваются ни с чем).
+
+`CompressTool` (кадрирование: номер алгоритма + Rice-длина, `CompressNo`/`CompressLZF`/
+`CompressDeflate` из существующего `Compression`) портирован только в части compress/expand
+массива; потоковые обёртки эталона (GZIP/ZIP/BZip2/Kanzi) бэкапного инструмента не портированы.
+Байты COMPRESS сверяются с JVM для LZF/NO; для DEFLATE — оборот через EXPAND (zlib-поток .NET
+может отличаться от JDK при равном содержимом).
+
+Оракулы: 9 наборов (`SubstringFunctionsMatchReference`, `SubstringOfBinaryMatchesReference`,
+`TrimFunctionsMatchReference`, `SoundexFunctionsMatchReference`,
+`DayMonthNamesMatchReference`, `DayMonthNamesBeforeEpochMatchReference`,
+`RandomFunctionsMatchReference` — посеянный RAND(1)/RAND(2)/RAND(-1) и производные
+SECURE_RAND/RANDOM_UUID/UUID, `CompressFunctionsMatchReference`,
+`InvalidCompressionArgumentsAreRefusedOnBothSides` — 90103/90104).
+
+Проверено: `H2Sharp.Tests` **1113**, конформанс-набор **188/947** (Functions 116/325, было
+103/325), `Data.Tests` 338, `MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
+

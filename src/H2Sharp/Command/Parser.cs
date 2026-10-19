@@ -1952,10 +1952,12 @@ public sealed class Parser
                 throw new TODOException(
                     "Parser.readBuiltinFunctionIf: DateTimeFormatFunction is not ported");
 
-            // DayMonthNameFunction (not ported).
             case "DAYNAME":
+                return new Expressions.Functions.DayMonthNameFunction(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.DayMonthNameFunction.DayName);
             case "MONTHNAME":
-                throw new TODOException("Parser.readBuiltinFunctionIf: DayMonthNameFunction is not ported");
+                return new Expressions.Functions.DayMonthNameFunction(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.DayMonthNameFunction.MonthName);
 
             case "CARDINALITY":
                 return new Expressions.Functions.CardinalityExpression(
@@ -2033,9 +2035,8 @@ public sealed class Parser
                     ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
                     Expressions.Functions.StringFunction2.Repeat);
 
-            // SubstringFunction (not ported).
             case "SUBSTRING":
-                throw new TODOException("Parser.readBuiltinFunctionIf: SubstringFunction is not ported");
+                return ReadSubstringFunction(aggregateSelect);
 
             // ToCharFunction (not ported).
             case "TO_CHAR":
@@ -2058,12 +2059,21 @@ public sealed class Parser
                 return new Expressions.Functions.LengthFunction(
                     ReadIfSingleArgument(aggregateSelect)!, Expressions.Functions.LengthFunction.BitLength);
 
-            // TrimFunction (not ported).
             case "TRIM":
+                return ReadTrimFunction(aggregateSelect);
             case "LTRIM":
+                return new Expressions.Functions.TrimFunction(
+                    ReadQueryOr(aggregateSelect), ReadIfArgument(aggregateSelect),
+                    Expressions.Functions.TrimFunction.Leading | Expressions.Functions.TrimFunction.MultiCharacter);
             case "RTRIM":
+                return new Expressions.Functions.TrimFunction(
+                    ReadQueryOr(aggregateSelect), ReadIfArgument(aggregateSelect),
+                    Expressions.Functions.TrimFunction.Trailing | Expressions.Functions.TrimFunction.MultiCharacter);
             case "BTRIM":
-                throw new TODOException("Parser.readBuiltinFunctionIf: TrimFunction is not ported");
+                return new Expressions.Functions.TrimFunction(
+                    ReadQueryOr(aggregateSelect), ReadIfArgument(aggregateSelect),
+                    Expressions.Functions.TrimFunction.Leading | Expressions.Functions.TrimFunction.Trailing
+                        | Expressions.Functions.TrimFunction.MultiCharacter);
 
             // RegexpFunction (not ported).
             case "REGEXP_LIKE":
@@ -2086,15 +2096,21 @@ public sealed class Parser
             case "ARRAY_SLICE":
                 throw new TODOException("Parser.readBuiltinFunctionIf: ArrayFunction is not ported");
 
-            // CompressFunction (not ported).
             case "COMPRESS":
+                return new Expressions.Functions.CompressFunction(
+                    ReadQueryOr(aggregateSelect), ReadIfArgument(aggregateSelect),
+                    Expressions.Functions.CompressFunction.Compress);
             case "EXPAND":
-                throw new TODOException("Parser.readBuiltinFunctionIf: CompressFunction is not ported");
+                return new Expressions.Functions.CompressFunction(
+                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.CompressFunction.Expand);
 
-            // SoundexFunction (not ported).
             case "SOUNDEX":
+                return new Expressions.Functions.SoundexFunction(
+                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.SoundexFunction.Soundex);
             case "DIFFERENCE":
-                throw new TODOException("Parser.readBuiltinFunctionIf: SoundexFunction is not ported");
+                return new Expressions.Functions.SoundexFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.SoundexFunction.Difference);
 
             // JsonConstructorFunction (not ported).
             case "JSON_OBJECT":
@@ -2126,13 +2142,20 @@ public sealed class Parser
             case "ORA_HASH":
                 throw new TODOException("Parser.readBuiltinFunctionIf: HashFunction is not ported");
 
-            // RandFunction (not ported).
             case "RAND":
             case "RANDOM":
+                return new Expressions.Functions.RandFunction(
+                    ReadIfSingleArgument(aggregateSelect), Expressions.Functions.RandFunction.Rand);
             case "SECURE_RAND":
+                return new Expressions.Functions.RandFunction(
+                    ReadSingleArgument(aggregateSelect), Expressions.Functions.RandFunction.SecureRand);
             case "RANDOM_UUID":
+                return new Expressions.Functions.RandFunction(
+                    ReadIfSingleArgument(aggregateSelect), Expressions.Functions.RandFunction.RandomUuid);
             case "UUID":
-                throw new TODOException("Parser.readBuiltinFunctionIf: RandFunction is not ported");
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.RandFunction(
+                    null, Expressions.Functions.RandFunction.RandomUuid);
 
             // SessionControlFunction (not ported).
             case "ABORT_SESSION":
@@ -2354,9 +2377,8 @@ public sealed class Parser
                 return new Expressions.Functions.StringFunction1(
                     ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Upper);
 
-            // SubstringFunction (not ported).
             case "SUBSTR":
-                throw new TODOException("Parser.readCompatibilityFunction: SubstringFunction is not ported");
+                return ReadSubstringFunction(aggregateSelect);
 
             // CompatibilitySequenceValueFunction (not ported).
             case "CURRVAL":
@@ -2483,6 +2505,102 @@ public sealed class Parser
         Expressions.Expression? arg = ReadIf(Token.Comma) ? ReadQueryOr(aggregateSelect) : null;
         Expect(Token.CloseParen, ")");
         return arg;
+    }
+
+    private Expressions.Expression ReadTrimFunction(Query.Select? aggregateSelect)
+    {
+        int flags;
+        bool needFrom;
+        if (IsWord("LEADING"))
+        {
+            flags = Expressions.Functions.TrimFunction.Leading;
+            needFrom = true;
+        }
+        else if (IsWord("TRAILING"))
+        {
+            flags = Expressions.Functions.TrimFunction.Trailing;
+            needFrom = true;
+        }
+        else
+        {
+            needFrom = IsWord("BOTH");
+            flags = Expressions.Functions.TrimFunction.Leading | Expressions.Functions.TrimFunction.Trailing;
+        }
+
+        Expressions.Expression from;
+        Expressions.Expression? space = null;
+        if (needFrom)
+        {
+            if (!IsWord("FROM"))
+            {
+                space = ReadQueryOr(aggregateSelect);
+                ExpectWord("FROM");
+            }
+
+            from = ReadQueryOr(aggregateSelect);
+        }
+        else
+        {
+            if (IsWord("FROM"))
+            {
+                from = ReadQueryOr(aggregateSelect);
+            }
+            else
+            {
+                from = ReadQueryOr(aggregateSelect);
+                if (IsWord("FROM"))
+                {
+                    space = from;
+                    from = ReadQueryOr(aggregateSelect);
+                }
+                else if (ReadIf(Token.Comma))
+                {
+                    space = ReadQueryOr(aggregateSelect);
+                }
+            }
+        }
+
+        Expect(Token.CloseParen, ")");
+        return new Expressions.Functions.TrimFunction(from, space, flags);
+    }
+
+    private Expressions.Expression ReadSubstringFunction(Query.Select? aggregateSelect)
+    {
+        // Standard variants are:
+        // SUBSTRING(X FROM 1)
+        // SUBSTRING(X FROM 1 FOR 1)
+        // Different non-standard variants include:
+        // SUBSTRING(X,1)
+        // SUBSTRING(X,1,1)
+        // SUBSTRING(X FOR 1) -- Postgres
+        Expressions.Functions.SubstringFunction function = new();
+        function.AddParameter(ReadQueryOr(aggregateSelect));
+        if (IsWord("FROM"))
+        {
+            function.AddParameter(ReadQueryOr(aggregateSelect));
+            if (IsWord("FOR"))
+            {
+                function.AddParameter(ReadQueryOr(aggregateSelect));
+            }
+        }
+        else if (IsWord("FOR"))
+        {
+            function.AddParameter(Expressions.ValueExpression.Get(ValueInteger.Get(1)));
+            function.AddParameter(ReadQueryOr(aggregateSelect));
+        }
+        else
+        {
+            ReadIf(Token.Comma);
+            function.AddParameter(ReadQueryOr(aggregateSelect));
+            if (ReadIf(Token.Comma))
+            {
+                function.AddParameter(ReadQueryOr(aggregateSelect));
+            }
+        }
+
+        Expect(Token.CloseParen, ")");
+        function.DoneWithParameters();
+        return function;
     }
 
     /// <summary>
