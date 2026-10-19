@@ -966,7 +966,7 @@ public sealed partial class Parser
     /// <param name="dataType">the type</param>
     /// <param name="precision">the precision</param>
     /// <returns>the exception</returns>
-    private static DbException GetInvalidPrecisionException(DataType dataType, long precision)
+    private static H2SharpException GetInvalidPrecisionException(DataType dataType, long precision)
         => DbException.Get(
             ErrorCode.InvalidValuePrecision,
             precision.ToString(CultureInfo.InvariantCulture),
