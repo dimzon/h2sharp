@@ -52,7 +52,7 @@ public sealed class MvStoreDataTypeOracleTests
         [], [0], [1, 2, 3], [0, 0, 1], [255, 254],
     ];
 
-    [Fact]
+    [JavaOracleFact]
     public void DataTypesAgreeWithTheReference()
     {
         List<string> java = OracleRunner.Run(

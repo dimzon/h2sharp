@@ -27,7 +27,7 @@ namespace H2Sharp.Tests;
 [Collection(OracleCollection.Name)]
 public sealed class ObjectDataTypeOracleTests
 {
-    [Fact]
+    [JavaOracleFact]
     public void ObjectValuesAgreeWithTheReference()
     {
         List<string> java = OracleRunner.Run(

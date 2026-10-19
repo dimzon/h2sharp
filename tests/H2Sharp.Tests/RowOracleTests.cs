@@ -30,7 +30,7 @@ namespace H2Sharp.Tests;
 [Collection(OracleCollection.Name)]
 public sealed class RowOracleTests
 {
-    [Fact]
+    [JavaOracleFact]
     public void RowsAgreeWithTheReference()
     {
         List<string> java = OracleRunner.Run(

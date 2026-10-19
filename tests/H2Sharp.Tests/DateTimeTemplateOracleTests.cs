@@ -70,7 +70,7 @@ public sealed class DateTimeTemplateOracleTests
         public Mode GetMode() => Mode.GetRegular();
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void TemplatesAgreeWithTheReference()
     {
         List<string> java = OracleRunner.Run(

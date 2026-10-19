@@ -110,7 +110,7 @@ public sealed class DataUtilsOracleTests
         Assert.Equal(java, csharp);
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void EncodingsAgreeWithTheReference()
     {
         List<string> java = OracleRunner.Run(

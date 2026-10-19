@@ -31,7 +31,7 @@ namespace H2Sharp.Tests;
 [Collection(OracleCollection.Name)]
 public sealed class ChunkOracleTests
 {
-    [Fact]
+    [JavaOracleFact]
     public void ChunkHeaderAgreesWithTheReference()
     {
         List<string> java = OracleRunner.Run(

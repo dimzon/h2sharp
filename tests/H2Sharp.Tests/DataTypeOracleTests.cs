@@ -127,7 +127,7 @@ public sealed class DataTypeOracleTests
     /// <summary>
     /// How many rows the catalogue has, and which value types they are.
     /// </summary>
-    [Fact]
+    [JavaOracleFact]
     public void TheCatalogueHasTheSameRowsAsTheReference()
     {
         // The count is compared rather than written down: a row that is missing here is a type that

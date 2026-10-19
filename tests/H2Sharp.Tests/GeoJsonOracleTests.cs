@@ -89,7 +89,7 @@ public sealed class GeoJsonOracleTests
         "MULTILINESTRING((1 2,3 4),(5 6,7 8),(9 10,11 12),(13 14,15 16))",
     ];
 
-    [Fact]
+    [JavaOracleFact]
     public void GeoJsonMatchesReference()
     {
         List<string> java = OracleRunner.Run(
@@ -126,7 +126,7 @@ public sealed class GeoJsonOracleTests
         }
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void XymIsRefusedByBothSides()
     {
         // The reference turns the XYM dimension system down in the constructor of its GeoJson target,
@@ -166,7 +166,7 @@ public sealed class GeoJsonOracleTests
         }
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void GeoJsonToEwkbMatchesReference()
     {
         // The other direction, on its own terms: a GeoJSON document in, the EWKT of what it became.

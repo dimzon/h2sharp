@@ -53,7 +53,7 @@ public sealed class CursorOracleTests
         [3, 3, -1],
     ];
 
-    [Fact]
+    [JavaOracleFact]
     public void CursorsAgreeWithTheReference()
     {
         List<string> java = OracleRunner.Run(

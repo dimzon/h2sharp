@@ -36,7 +36,7 @@ public sealed class CaseInsensitiveMapOracleTests
         "ΣΊΣΥΦΟΣ", "σίσυφος", "ﬁle", "FILE", "café", "CAFÉ", " ", "a b", "A B",
     ];
 
-    [Fact]
+    [JavaOracleFact]
     public void CaseInsensitiveMapAgreesWithTheReference()
     {
         List<string> java = OracleRunner.Run(
