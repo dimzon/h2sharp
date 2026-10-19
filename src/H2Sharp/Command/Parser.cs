@@ -262,7 +262,7 @@ public sealed class SelectStatement : Statement
 /// <summary>
 /// Reads a statement out of its tokens.
 /// </summary>
-public sealed class Parser
+public sealed partial class Parser
 {
     private readonly CastDataProvider provider;
 
@@ -457,10 +457,6 @@ public sealed class Parser
                 if (IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType))
                 {
                     item = ReadQueryAggregate(select, aggregateType);
-                }
-                else if (IsWord("CAST", consume: false))
-                {
-                    item = ReadQueryCast();
                 }
                 else
                 {
@@ -1328,16 +1324,26 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// Reads a CAST call: the value, then the type it becomes.
+    /// Reads a CAST call: the value, the type it becomes and, in the reference, the format
+    /// template it is written with.
     /// </summary>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     /// <returns>the cast</returns>
-    private Expressions.Expression ReadQueryCast()
+    private Expressions.Expression ReadCastExpression(Query.Select? aggregateSelect)
     {
-        ExpectWord("CAST");
+        Read();
         Expect(Token.OpenParen, "(");
-        Expressions.Expression arg = ReadQueryOr();
-        ExpectWord("AS");
-        TypeInfo type = ParseDataType(ReadTypeName());
+        Expressions.Expression arg = ReadQueryOr(aggregateSelect);
+        Expect(ParserUtil.As, "AS");
+        TypeInfo type = ReadDataType();
+        if (IsWord("FORMAT", consume: false))
+        {
+            // The reference reads a format template here and formats the value with it. The
+            // template reader of the reference, DateTimeTemplate, is not ported, and a cast
+            // that drops its template would answer with a value nobody asked for.
+            throw new TODOException("Parser.readTerm: CAST with a FORMAT template is not ported");
+        }
+
         Expect(Token.CloseParen, ")");
         return new Expressions.Functions.CastSpecification(arg, type);
     }
@@ -1627,6 +1633,11 @@ public sealed class Parser
 
                 switch (CurrentType)
                 {
+                    case ParserUtil.Cast:
+                        // The reference reads a cast in its term reader, and the select list
+                        // is read through the same reader, so a cast is a term here too.
+                        return ReadCastExpression(aggregateSelect);
+
                     case ParserUtil.Day:
                     case ParserUtil.Hour:
                     case ParserUtil.Minute:

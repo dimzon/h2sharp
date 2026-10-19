@@ -31,7 +31,7 @@ namespace H2Sharp.Tests;
 [Collection(OracleCollection.Name)]
 public sealed class StreamStoreOracleTests
 {
-    [Fact]
+    [JavaOracleFact]
     public void StreamStoreAgreesWithTheReference()
     {
         List<string> java = OracleRunner.Run(

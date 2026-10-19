@@ -31,7 +31,7 @@ namespace H2Sharp.Tests;
 [Collection(OracleCollection.Name)]
 public sealed class WriteBufferOracleTests
 {
-    [Fact]
+    [JavaOracleFact]
     public void WriteBufferAgreesWithTheReference()
     {
         List<string> java = OracleRunner.Run(
@@ -47,7 +47,7 @@ public sealed class WriteBufferOracleTests
         Compare(java, csharp);
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void FreeSpaceBitSetAgreesWithTheReference()
     {
         List<string> java = OracleRunner.Run(

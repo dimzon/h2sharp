@@ -125,7 +125,7 @@ public sealed class ErrorMessagesTests
     public void Format_MatchesMessageFormatQuotingRules(string pattern, string expected)
             => Assert.Equal(expected, ErrorMessages.Format(pattern, "a", 1, 2));
 
-    [Fact]
+    [JavaOracleFact]
     public void Format_ThrowsOnBadPatternLikeJavaMessageFormat()
     {
         // Note that MessageFormat has no "{{" escape: braces are quoted with an

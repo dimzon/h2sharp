@@ -243,7 +243,7 @@ public sealed class MessageFormatOracleTests
         Assert.Equal("{9}", Format("{9}"));
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void Format_ThrowsOnMalformedPatterns()
     {
         Assert.Throws<FormatException>(() => ErrorMessages.Format("{", "A"));

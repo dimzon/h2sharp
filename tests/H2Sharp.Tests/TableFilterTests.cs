@@ -626,7 +626,7 @@ public sealed class TableFilterTests
         }
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void APlanKnowsItsFiltersAndPricesThemThroughThePlanner()
     {
         SessionLocal session = NewSession();

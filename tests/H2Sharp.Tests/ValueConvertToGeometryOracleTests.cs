@@ -84,7 +84,7 @@ public sealed class ValueConvertToGeometryOracleTests
 
     private const string Collection = """{"type":"GeometryCollection","geometries":[{"type":"Point","coordinates":[1,2]}]}""";
 
-    [Fact]
+    [JavaOracleFact]
     public void ConversionsToGeometryAgreeWithTheReference()
     {
         List<string> java = OracleRunner.Run(
