@@ -184,11 +184,19 @@ public sealed class ExpressionColumn : Expression
             columnAlias = foundColumn;
         }
 
-        // First mapping wins, as the reference keeps the first resolver: a later one with a
-        // different filter is an ambiguous column, which waits for its own error.
-        if (found && columnResolver is null)
+        // The first mapping wins, as the reference keeps the first resolver. A column that a
+        // second table also has is an ambiguous column, and the reference says so rather than
+        // answering with one of the two.
+        if (found)
         {
-            columnResolver = resolver;
+            if (columnResolver is null)
+            {
+                columnResolver = resolver;
+            }
+            else if (!ReferenceEquals(columnResolver, resolver))
+            {
+                throw DbException.Get(Api.ErrorCode.AmbiguousColumnName1, columnAlias);
+            }
         }
 
         return found;
@@ -205,9 +213,16 @@ public sealed class ExpressionColumn : Expression
             return;
         }
 
-        for (; level < queryLevel; level++)
+        if (tableAlias != null && !tableAlias.Equals(resolver.GetTableAlias(), StringComparison.Ordinal))
         {
-            _ = resolver.IncrementQueryLevel(1);
+            // The reference leaves a column alone when it names another table: in a join
+            // every table is a resolver of its own, and the column belongs to one of them.
+            return;
+        }
+
+        if (level < queryLevel)
+        {
+            throw new TODOException("ExpressionColumn.MapColumns: the query level is not ported");
         }
 
         if (state != MapInWindow && MapColumn(resolver, null, false))
@@ -224,7 +239,9 @@ public sealed class ExpressionColumn : Expression
 
         if (state == MapInitial || state == MapInAggregate)
         {
-            queryLevel++;
+            // The reference leaves the column alone when the resolver does not have it: in a
+            // join every table is a resolver of its own, and the column belongs to one of
+            // them, so the next resolver is asked as well.
             return;
         }
 
@@ -263,6 +280,21 @@ public sealed class ExpressionColumn : Expression
     {
         switch (visitor.GetVisitorType())
         {
+            case ExpressionVisitor.Evaluatable:
+                // If this column belongs to a 'higher level' query, it is just a parameter
+                // there, and it can be answered without a row.
+                if (visitor.GetQueryLevel() < queryLevel)
+                {
+                    return true;
+                }
+
+                if (GetTableFilter() is null)
+                {
+                    return false;
+                }
+
+                return GetTableFilter()!.IsEvaluatable();
+
             case ExpressionVisitor.GetColumns1:
                 if (column is null)
                 {

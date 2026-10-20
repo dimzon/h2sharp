@@ -5366,3 +5366,42 @@ NO MINVALUE] [MAXVALUE n | NO MAXVALUE] [CYCLE | NO CYCLE] [CACHE n]`, `ALTER SE
 (было 19: закрыты все формы с `AS` и без него, кроме тех, где не хватает `JOIN`, производной
 таблицы, `VALUES`, `WITH` и `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.
 
+**`JOIN`: две таблицы читаются как одна.**
+Пункт E issue #13 (`JOIN`, `LEFT JOIN`) — самый крупный блокер провайдеров: без джойна
+запрос EF Core с навигацией не читается.
+
+Движок был готов давно: `Tables/TableFilter.cs` — это эталонный `org.h2.table.TableFilter` с
+`joinCondition`, `join`, `nestedJoin`, `joinOuter` и вложенным циклом (`next()` сначала
+пробует джойн ✗); `Command/Query/Optimizer.cs` — эталонный `Optimizer`, который в конце
+плана связывает фильтры (`f2[i].addJoin(f2[i+1], false, null)`); `Tables/Plan.cs` и
+`PlanItem.cs` — эталонные. Не хватало только разбора.
+
+Порт (`Command/Parser.cs`):
+* `ReadTablePrimary` — эталонное `readTablePrimary`: таблица, её алиас (`readFromAlias`),
+  таблица диапазонов и таблица изменённых строк;
+* `ReadTableReference` — эталонное `readTableReference`: цикл джойнов (`INNER`, `JOIN`,
+  `LEFT`/`RIGHT [OUTER]`, `CROSS`, `NATURAL`);
+* `ReadJoinSpecification` — эталонное `readJoinSpecification`: условие `ON` и список `USING`;
+* `AddJoin`/`AddJoinColumn` — эталонный `addJoin`/`addJoinColumn` (вложенный джойн, общие
+  колонки);
+* часть `FROM` — эталонное `parseSelectFromPart`: фильтры добавляются в запрос, а внутренний
+  джойн делается плоским (его условие становится условием запроса ✗ — так делает эталон,
+  чтобы оптимизатору было где работать).
+
+Три правки в слое выражений, без которых джойн не работал, — все по эталону:
+* `ExpressionColumn.MapColumns`: эталонная проверка «колонка называет другую таблицу» (в джойне
+  у каждой таблицы свой резолвер, и колонка принадлежит одному из них) и эталонное «не нашлось
+  — спросим следующий резолвер» вместо прежнего «уровень запроса вверх»;
+* `ExpressionColumn.IsEverything`: эталонная ветка `EVALUATABLE` (колонка вычислима там, где
+  вычислим её фильтр) — без неё условие джойна попадало в фильтр, который ещё не прочитан;
+* `ExpressionColumn.MapColumn`: эталонная ошибка `90059` (`AmbiguousColumnName1`), когда колонку
+  нашли две таблицы.
+
+Оракул (`tests/H2Sharp.Tests/JoinOracleTests.cs`, 5 тестов): внутренний джойн, внешние джойны
+слева и справа, алиасы, три таблицы подряд, `NATURAL` и `CROSS` — совпадают с JVM. Тест через
+ADO.NET (`tests/H2Sharp.Data.Tests/H2JoinTests.cs`) — тот же круг через провайдера.
+
+Проверено: `H2Sharp.Tests` **1142**, конформанс-набор **346/947** (было 343), `Data.Tests` 372
++ 6 красных (было 9: закрыты три теста джойна в `H2AliasSemanticsTests`; остались производная
+таблица (2), `VALUES` (2), `WITH` (1), `MERGE` (1)), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+

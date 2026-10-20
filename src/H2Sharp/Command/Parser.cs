@@ -497,6 +497,323 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Reads a table and the joins to it, as the reference's readTableReference does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="select">the select the table belongs to</param>
+    /// <returns>the filter of the table the join chain starts at</returns>
+    private Tables.TableFilter ReadTableReference(SessionLocal session, Query.Select select)
+    {
+        Tables.TableFilter top = ReadTablePrimary(session, select);
+        Tables.TableFilter last = top;
+        Tables.TableFilter join;
+        while (true)
+        {
+            switch (CurrentType)
+            {
+                case ParserUtil.Right:
+                    {
+                        Read();
+                        _ = IsWord("OUTER");
+                        Expect(ParserUtil.Join, "JOIN");
+                        // The right hand side is the 'inner' table usually.
+                        join = ReadTableReference(session, select);
+                        Expressions.Expression? on = ReadJoinSpecification(top, join, rightJoin: true);
+                        AddJoin(join, top, outer: true, on);
+                        top = join;
+                        break;
+                    }
+
+                case ParserUtil.Left:
+                    {
+                        Read();
+                        _ = IsWord("OUTER");
+                        Expect(ParserUtil.Join, "JOIN");
+                        join = ReadTableReference(session, select);
+                        Expressions.Expression? on = ReadJoinSpecification(top, join, rightJoin: false);
+                        AddJoin(top, join, outer: true, on);
+                        break;
+                    }
+
+                case ParserUtil.Inner:
+                    {
+                        Read();
+                        Expect(ParserUtil.Join, "JOIN");
+                        join = ReadTableReference(session, select);
+                        Expressions.Expression? on = ReadJoinSpecification(top, join, rightJoin: false);
+                        AddJoin(top, join, outer: false, on);
+                        break;
+                    }
+
+                case ParserUtil.Join:
+                    {
+                        Read();
+                        join = ReadTableReference(session, select);
+                        Expressions.Expression? on = ReadJoinSpecification(top, join, rightJoin: false);
+                        AddJoin(top, join, outer: false, on);
+                        break;
+                    }
+
+                case ParserUtil.Cross:
+                    {
+                        Read();
+                        Expect(ParserUtil.Join, "JOIN");
+                        join = ReadTablePrimary(session, select);
+                        AddJoin(top, join, outer: false, null);
+                        break;
+                    }
+
+                case ParserUtil.Natural:
+                    {
+                        Read();
+                        Expect(ParserUtil.Join, "JOIN");
+                        join = ReadTablePrimary(session, select);
+                        Expressions.Expression? on = null;
+                        foreach (Tables.Column column1 in last.GetColumns())
+                        {
+                            Tables.Column? column2 = FindColumn(join, last.GetColumnName(column1));
+                            if (column2 is not null)
+                            {
+                                on = AddJoinColumn(on, last, join, column1, column2, rightJoin: false);
+                            }
+                        }
+
+                        AddJoin(top, join, outer: false, on);
+                        break;
+                    }
+
+                default:
+                    return top;
+            }
+
+            last = join;
+        }
+    }
+
+    /// <summary>
+    /// Reads a table and its alias, as the reference's readTablePrimary does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="select">the select the table belongs to</param>
+    /// <returns>the filter of the table</returns>
+    private Tables.TableFilter ReadTablePrimary(SessionLocal session, Query.Select select)
+    {
+        string tableName = ReadIdentifier();
+        Schemas.Schema schema = session.GetCurrentSchema();
+        if (ReadIf(Token.Dot))
+        {
+            // The reference reads the schema of the name and looks the table up in it.
+            string schemaName = tableName;
+            tableName = ReadIdentifier();
+            schema = session.GetDatabase().FindSchema(schemaName)
+                ?? throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schemaName);
+        }
+
+        Tables.Table fromTable;
+        bool hasAlias = true;
+        if (CurrentType == Token.OpenParen
+            && (tableName.Equals(Tables.RangeTable.Name, StringComparison.OrdinalIgnoreCase)
+                || tableName.Equals(Tables.RangeTable.Alias, StringComparison.OrdinalIgnoreCase)))
+        {
+            // The range table is a table function: SYSTEM_RANGE(min, max[, step]).
+            Read();
+            Expressions.Expression min = ReadQueryOr();
+            Expect(Token.Comma, ",");
+            Expressions.Expression max = ReadQueryOr();
+            Expressions.Expression? step = null;
+            if (ReadIf(Token.Comma))
+            {
+                step = ReadQueryOr();
+            }
+
+            Expect(Token.CloseParen, ")");
+            fromTable = step is null
+                ? new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max)
+                : new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max, step);
+        }
+        else if (IsWord("TABLE"))
+        {
+            // The data change delta table: FINAL TABLE (INSERT INTO ...). The rows of the
+            // table are the rows the statement changed, and the name in front of it says
+            // which version of them the caller gets. It takes no alias: the reference
+            // leaves the table before it reads one.
+            fromTable = ReadDataChangeDeltaTable(session, schema, tableName);
+            hasAlias = false;
+        }
+        else
+        {
+            fromTable = ReadTableOrView(session, schema, tableName);
+        }
+
+        string? filterAlias = hasAlias ? ReadFromAlias() : null;
+        return new(
+            session, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
+    }
+
+    /// <summary>
+    /// Reads the condition of a join, as the reference's readJoinSpecification does.
+    /// </summary>
+    /// <param name="filter1">the filter on the left of the join</param>
+    /// <param name="filter2">the filter on the right of the join</param>
+    /// <param name="rightJoin">whether the join is a right one</param>
+    /// <returns>the condition, or null when the join has none</returns>
+    private Expressions.Expression? ReadJoinSpecification(
+        Tables.TableFilter filter1, Tables.TableFilter filter2, bool rightJoin)
+    {
+        Expressions.Expression? on = null;
+        if (IsWord("ON"))
+        {
+            on = ReadQueryOr();
+        }
+        else if (IsWord("USING") && ReadIf(Token.OpenParen))
+        {
+            do
+            {
+                string columnName = ReadIdentifier();
+                on = AddJoinColumn(
+                    on,
+                    filter1,
+                    filter2,
+                    FindColumn(filter1, columnName),
+                    FindColumn(filter2, columnName),
+                    rightJoin);
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
+        }
+
+        return on;
+    }
+
+    /// <summary>
+    /// Adds one join to another, as the reference's addJoin does.
+    /// </summary>
+    /// <param name="top">the parent join</param>
+    /// <param name="join">the child join</param>
+    /// <param name="outer">whether the child join is an outer join</param>
+    /// <param name="on">the condition of the join</param>
+    private void AddJoin(
+        Tables.TableFilter top, Tables.TableFilter join, bool outer, Expressions.Expression? on)
+    {
+        if (join.GetJoin() is not null)
+        {
+            // The join has a join of its own, so the two of them are nested: the inner one
+            // is read as a table of its own, and the outer one joins that.
+            string joinTable = "_JOIN_" + Current.Start;
+            Tables.TableFilter nested = new(
+                session ?? throw new TODOException("Parser.readTableReference: this parser has no session"),
+                new Tables.DualTable((session ?? throw new TODOException(
+                    "Parser.readTableReference: this parser has no session")).GetDatabase()),
+                joinTable, rightsChecked: true, select: null, 0, null);
+            nested.SetNestedJoin(join);
+            join = nested;
+        }
+
+        top.AddJoin(join, outer, on);
+    }
+
+    /// <summary>
+    /// Adds a column pair to the condition of a join, as the reference's addJoinColumn does.
+    /// </summary>
+    /// <param name="on">the condition so far, or null</param>
+    /// <param name="filter1">the filter on the left of the join</param>
+    /// <param name="filter2">the filter on the right of the join</param>
+    /// <param name="column1">the column on the left</param>
+    /// <param name="column2">the column on the right</param>
+    /// <param name="rightJoin">whether the join is a right one</param>
+    /// <returns>the condition</returns>
+    private Expressions.Expression AddJoinColumn(
+        Expressions.Expression? on,
+        Tables.TableFilter filter1,
+        Tables.TableFilter filter2,
+        Tables.Column? column1,
+        Tables.Column? column2,
+        bool rightJoin)
+    {
+        if (column1 is null || column2 is null)
+        {
+            throw DbException.GetSyntaxError(sql, Current.Start, "column");
+        }
+
+        if (rightJoin)
+        {
+            filter1.AddCommonJoinColumns(column1, column2, filter2);
+            filter2.AddCommonJoinColumnToExclude(column2);
+        }
+        else
+        {
+            filter1.AddCommonJoinColumns(column1, column1, filter1);
+            filter2.AddCommonJoinColumnToExclude(column2);
+        }
+
+        Expressions.Expression tableExpr = new Expressions.ExpressionColumn(
+            filter1.GetColumnName(column1), filter1.GetTableAlias(), 0);
+        Expressions.Expression joinExpr = new Expressions.ExpressionColumn(
+            filter2.GetColumnName(column2), filter2.GetTableAlias(), 0);
+        Expressions.Expression equal = new Expressions.Conditions.Comparison(
+            Expressions.Conditions.Comparison.Equal, tableExpr, joinExpr, whenOperand: false);
+        if (on is null)
+        {
+            return equal;
+        }
+
+        return new Expressions.Conditions.ConditionAndOr(
+            Expressions.Conditions.ConditionAndOr.And, on, equal);
+    }
+
+    /// <summary>
+    /// Finds the column of a table by name, as the reference's TableFilter.getColumn does.
+    /// </summary>
+    /// <param name="filter">the filter of the table</param>
+    /// <param name="name">the name of the column</param>
+    /// <returns>the column, or null when the table has no such column</returns>
+    private static Tables.Column? FindColumn(Tables.TableFilter filter, string name)
+    {
+        foreach (Tables.Column column in filter.GetColumns())
+        {
+            if (column.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                return column;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Collects the filters of a join, as the reference's visit of a nested join does.
+    /// </summary>
+    /// <param name="filter">the filter to visit</param>
+    /// <returns>the filters</returns>
+    private static List<Tables.TableFilter> CollectFilters(Tables.TableFilter filter)
+    {
+        List<Tables.TableFilter> filters = [];
+        filter.Visit(new FilterCollector(filters));
+        return filters;
+    }
+
+    /// <summary>
+    /// Collects the filters a visit walks over.
+    /// </summary>
+    private sealed class FilterCollector : Tables.TableFilter.TableFilterVisitor
+    {
+        private readonly List<Tables.TableFilter> filters;
+
+        /// <summary>
+        /// Creates the collector.
+        /// </summary>
+        /// <param name="filters">the list to add to</param>
+        internal FilterCollector(List<Tables.TableFilter> filters)
+        {
+            this.filters = filters;
+        }
+
+        /// <inheritdoc/>
+        public void Accept(Tables.TableFilter f) => filters.Add(f);
+    }
+
+    /// <summary>
     /// Reads the alias of a table, as the reference's readFromAlias does.
     /// </summary>
     /// <remarks>
@@ -939,78 +1256,78 @@ public sealed partial class Parser
             while (ReadIf(Token.Comma));
         }
 
-        Tables.Table? fromTable = null;
-        Tables.TableFilter filter;
+        List<Tables.TableFilter> fromFilters = [];
         if (IsWord("FROM"))
         {
-            string tableName = ReadIdentifier();
-            Schemas.Schema schema = current.GetCurrentSchema();
-            if (ReadIf(Token.Dot))
+            // The reference reads the FROM part as a list of tables and the joins between
+            // them, and gives the query the filters of all of them.
+            do
             {
-                // The reference reads the schema of the name and looks the table up in it.
-                string schemaName = tableName;
-                tableName = ReadIdentifier();
-                schema = current.GetDatabase().FindSchema(schemaName)
-                    ?? throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schemaName);
-            }
-
-            if (CurrentType == Token.OpenParen
-                && (tableName.Equals(Tables.RangeTable.Name, StringComparison.OrdinalIgnoreCase)
-                    || tableName.Equals(Tables.RangeTable.Alias, StringComparison.OrdinalIgnoreCase)))
-            {
-                // The range table is a table function: SYSTEM_RANGE(min, max[, step]).
-                Read();
-                Expressions.Expression min = ReadQueryOr();
-                Expect(Token.Comma, ",");
-                Expressions.Expression max = ReadQueryOr();
-                Expressions.Expression? step = null;
-                if (ReadIf(Token.Comma))
+                Tables.TableFilter top = ReadTableReference(current, select);
+                select.AddTableFilter(top, isTop: true);
+                fromFilters.Add(top);
+                bool isOuter = false;
+                for (; ; )
                 {
-                    step = ReadQueryOr();
-                }
+                    Tables.TableFilter? nested = top.GetNestedJoin();
+                    if (nested is not null)
+                    {
+                        foreach (Tables.TableFilter f in CollectFilters(nested))
+                        {
+                            select.AddTableFilter(f, isTop: false);
+                            fromFilters.Add(f);
+                        }
+                    }
 
-                Expect(Token.CloseParen, ")");
-                fromTable = step is null
-                    ? new Tables.RangeTable(current.GetDatabase().GetMainSchema()!, min, max)
-                    : new Tables.RangeTable(current.GetDatabase().GetMainSchema()!, min, max, step);
-                filter = new(current, fromTable, tableName, rightsChecked: true, select, 0, null);
-            }
-            else if (IsWord("TABLE"))
-            {
-                // The data change delta table: FINAL TABLE (INSERT INTO ...). The rows of the
-                // table are the rows the statement changed, and the name in front of it says
-                // which version of them the caller gets.
-                fromTable = ReadDataChangeDeltaTable(current, schema, tableName);
-                string? filterAlias = null;
-                if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
-                {
-                    filterAlias = ReadIdentifier();
-                }
+                    Tables.TableFilter? join = top.GetJoin();
+                    if (join is null)
+                    {
+                        break;
+                    }
 
-                filter = new(current, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
+                    isOuter |= join.IsJoinOuter();
+                    if (isOuter)
+                    {
+                        select.AddTableFilter(join, isTop: false);
+                        fromFilters.Add(join);
+                    }
+                    else
+                    {
+                        // The reference makes an inner join flat, so that the optimizer can
+                        // work better: the condition of the join becomes the condition of
+                        // the query, and the joined table becomes a table of its own.
+                        Expressions.Expression? on = join.GetJoinCondition();
+                        if (on is not null)
+                        {
+                            select.AddCondition(on);
+                        }
+
+                        join.RemoveJoinCondition();
+                        top.RemoveJoin();
+                        select.AddTableFilter(join, isTop: true);
+                        fromFilters.Add(join);
+                    }
+
+                    top = join;
+                }
             }
-            else
-            {
-                string? filterAlias = ReadFromAlias();
-                fromTable = ReadTableOrView(current, schema, tableName);
-                filter = new(current, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
-            }
+            while (ReadIf(Token.Comma));
         }
         else
         {
             // Select without FROM: the reference reads an expression select with an
             // implicit DUAL table, one empty row to evaluate the expressions on.
-            filter = new(
+            Tables.TableFilter filter = new(
                 current, new Tables.DualTable(current.GetDatabase()), null,
                 rightsChecked: true, select, 0, null);
+            select.AddTableFilter(filter, isTop: true);
+            fromFilters.Add(filter);
         }
-
-        select.AddTableFilter(filter, isTop: true);
 
         List<Expressions.Expression> selectList = [];
         if (star is not null)
         {
-            if (fromTable is null)
+            if (fromFilters.Count == 0)
             {
                 throw DbException.GetSyntaxError(sql, Current.Start, "statement");
             }
@@ -1018,18 +1335,18 @@ public sealed partial class Parser
             // The reference expands the star in init; there is no star expression here to
             // carry there, so the columns land directly. A star with a table in front of
             // it names the columns of that table.
-            Tables.Table target = fromTable;
-            if (star.Length > 0)
+            foreach (Tables.TableFilter f in fromFilters)
             {
-                if (!filter.GetTableAlias().Equals(star, StringComparison.OrdinalIgnoreCase))
+                if (star.Length > 0
+                    && !f.GetTableAlias().Equals(star, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw DbException.GetSyntaxError(sql, Current.Start, star);
+                    continue;
                 }
-            }
 
-            foreach (Tables.Column column in target.GetColumns())
-            {
-                selectList.Add(new Expressions.ExpressionColumn(column, filter, 0));
+                foreach (Tables.Column column in f.GetTable().GetColumns())
+                {
+                    selectList.Add(new Expressions.ExpressionColumn(column, f, 0));
+                }
             }
         }
         else
@@ -1091,7 +1408,8 @@ public sealed partial class Parser
                 }
                 else
                 {
-                    item.expression = new Expressions.ExpressionColumn(ReadQueryColumnName(out string? orderTable), orderTable, 0);
+                    string orderColumn = ReadQueryColumnName(out string? orderTable);
+                    item.expression = new Expressions.ExpressionColumn(orderColumn, orderTable, 0);
                 }
 
                 item.sortType = ReadQuerySortType();
@@ -1266,8 +1584,15 @@ public sealed partial class Parser
             || word.Equals("INTERSECT", StringComparison.OrdinalIgnoreCase)
             || word.Equals("MINUS", StringComparison.OrdinalIgnoreCase)
             || word.Equals("FOR", StringComparison.OrdinalIgnoreCase)
-            || word.Equals("SET", StringComparison.OrdinalIgnoreCase);
-
+            || word.Equals("SET", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("JOIN", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("LEFT", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("RIGHT", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("INNER", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("CROSS", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("NATURAL", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("ON", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("USING", StringComparison.OrdinalIgnoreCase);
     /// <summary>
     /// Reads a column name with an optional table prefix.
     /// </summary>
@@ -2279,7 +2604,8 @@ public sealed partial class Parser
                 }
             }
 
-            return new Expressions.ExpressionColumn(ReadQueryColumnName(out string? tableAlias), tableAlias, 0);
+            string columnName = ReadQueryColumnName(out string? tableAlias);
+            return new Expressions.ExpressionColumn(columnName, tableAlias, 0);
         }
 
         throw new TODOException("Parser.parseQuerySelect: this expression is not ported");
