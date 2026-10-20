@@ -246,6 +246,9 @@ public sealed class UpdateStatement : Statement
     /// <summary>The table name.</summary>
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>The alias of the table, or null when it has none.</summary>
+    public string? Alias { get; set; }
+
     /// <summary>What to set each column to.</summary>
     public List<(string Column, Expression Value)> Assignments { get; } = [];
 
@@ -261,6 +264,9 @@ public sealed class DeleteStatement : Statement
 
     /// <summary>The table name.</summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>The alias of the table, or null when it has none.</summary>
+    public string? Alias { get; set; }
 
     /// <summary>The condition, or null.</summary>
     public Expression? Where { get; set; }
@@ -488,6 +494,29 @@ public sealed partial class Parser
     {
         string? name = position + 1 < tokens.Count ? tokens[position + 1].AsIdentifier : null;
         return name is not null && name.Equals(word, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Reads the alias of a table, as the reference's readFromAlias does.
+    /// </summary>
+    /// <remarks>
+    /// The alias may be written with the AS or without it, and the two forms mean the same
+    /// thing: "FROM T t" and "FROM T AS t" are the same query.
+    /// </remarks>
+    /// <returns>the alias, or null when there is none</returns>
+    private string? ReadFromAlias()
+    {
+        if (IsWord("AS"))
+        {
+            return ReadIdentifier();
+        }
+
+        if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+        {
+            return ReadIdentifier();
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -842,9 +871,26 @@ public sealed partial class Parser
             select.SetDistinct();
         }
 
-        bool star = ReadIf(Token.Asterisk);
+        // The star of a select list, with the table it names: null when there is no star,
+        // the empty string for the star of every table, and the alias for the star of one
+        // table ("SELECT t.* FROM T AS t").
+        string? star = null;
+        if (ReadIf(Token.Asterisk))
+        {
+            star = string.Empty;
+        }
+        else if (IsNameToken()
+            && position + 2 < tokens.Count
+            && tokens[position + 1].TokenType == Token.Dot
+            && tokens[position + 2].TokenType == Token.Asterisk)
+        {
+            star = ReadIdentifier();
+            Read();
+            Read();
+        }
+
         List<Expressions.Expression> selectItems = [];
-        if (!star)
+        if (star is null)
         {
             do
             {
@@ -877,7 +923,10 @@ public sealed partial class Parser
                 }
                 else if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
                 {
-                    throw new TODOException("Parser.parseQuerySelect: bare column aliases are not ported");
+                    // The reference reads the alias of a select item the same way it reads the
+                    // alias of a table: with the AS or without it, and the two forms mean
+                    // the same thing.
+                    alias = ReadIdentifier();
                 }
 
                 if (alias is not null)
@@ -942,12 +991,7 @@ public sealed partial class Parser
             }
             else
             {
-                string? filterAlias = null;
-                if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
-                {
-                    filterAlias = ReadIdentifier();
-                }
-
+                string? filterAlias = ReadFromAlias();
                 fromTable = ReadTableOrView(current, schema, tableName);
                 filter = new(current, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
             }
@@ -964,7 +1008,7 @@ public sealed partial class Parser
         select.AddTableFilter(filter, isTop: true);
 
         List<Expressions.Expression> selectList = [];
-        if (star)
+        if (star is not null)
         {
             if (fromTable is null)
             {
@@ -972,8 +1016,18 @@ public sealed partial class Parser
             }
 
             // The reference expands the star in init; there is no star expression here to
-            // carry there, so the columns land directly.
-            foreach (Tables.Column column in fromTable.GetColumns())
+            // carry there, so the columns land directly. A star with a table in front of
+            // it names the columns of that table.
+            Tables.Table target = fromTable;
+            if (star.Length > 0)
+            {
+                if (!filter.GetTableAlias().Equals(star, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw DbException.GetSyntaxError(sql, Current.Start, star);
+                }
+            }
+
+            foreach (Tables.Column column in target.GetColumns())
             {
                 selectList.Add(new Expressions.ExpressionColumn(column, filter, 0));
             }
@@ -1211,7 +1265,8 @@ public sealed partial class Parser
             || word.Equals("EXCEPT", StringComparison.OrdinalIgnoreCase)
             || word.Equals("INTERSECT", StringComparison.OrdinalIgnoreCase)
             || word.Equals("MINUS", StringComparison.OrdinalIgnoreCase)
-            || word.Equals("FOR", StringComparison.OrdinalIgnoreCase);
+            || word.Equals("FOR", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("SET", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Reads a column name with an optional table prefix.
@@ -3909,7 +3964,8 @@ public sealed partial class Parser
         Dml.Update update = new(session);
         update.SetSql(statement.Sql, null);
         update.SetTableFilter(new Tables.TableFilter(
-            session, table, table.GetTableName(), rightsChecked: true, select: null, 0, null));
+            session, table, statement.Alias ?? table.GetTableName(),
+            rightsChecked: true, select: null, 0, null));
         Dml.SetClauseList assignments = new(table);
         foreach ((string name, Expression value) in statement.Assignments)
         {
@@ -3953,7 +4009,8 @@ public sealed partial class Parser
         Dml.Delete delete = new(session);
         delete.SetSql(statement.Sql, null);
         delete.SetTableFilter(new Tables.TableFilter(
-            session, table, table.GetTableName(), rightsChecked: true, select: null, 0, null));
+            session, table, statement.Alias ?? table.GetTableName(),
+            rightsChecked: true, select: null, 0, null));
         if (statement.Where is not null)
         {
             delete.SetCondition(statement.Where);
@@ -4702,6 +4759,7 @@ public sealed partial class Parser
     private UpdateStatement ReadUpdate()
     {
         UpdateStatement statement = new() { Name = ReadIdentifier() };
+        statement.Alias = ReadFromAlias();
         ExpectWord("SET");
         do
         {
@@ -4719,6 +4777,7 @@ public sealed partial class Parser
     {
         ExpectWord("FROM");
         DeleteStatement statement = new() { Name = ReadIdentifier() };
+        statement.Alias = ReadFromAlias();
         statement.Where = ReadWhere();
         return statement;
     }
