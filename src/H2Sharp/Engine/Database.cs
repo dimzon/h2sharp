@@ -94,6 +94,11 @@ public sealed partial class Database
     private readonly Dictionary<string, Schemas.Schema> schemas = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The name of the schema of the metadata views.
+    /// </summary>
+    public const string InformationSchemaName = "INFORMATION_SCHEMA";
+
+    /// <summary>
     /// The schema new objects go into when the session has not chosen another.
     /// </summary>
     /// <remarks>
@@ -102,6 +107,16 @@ public sealed partial class Database
     /// without blocking sessions that only resolve names.
     /// </remarks>
     private volatile Schemas.Schema? mainSchema;
+
+    /// <summary>
+    /// The schema of the metadata views, the INFORMATION_SCHEMA.
+    /// </summary>
+    /// <remarks>
+    /// The reference creates it with the database and fills it with the views of the
+    /// metadata. The views here are computed when they are read, so the schema holds the
+    /// tables and nothing else.
+    /// </remarks>
+    private readonly Schemas.Schema informationSchema;
 
     /// <summary>
     /// Finds a schema.
@@ -387,6 +402,15 @@ public sealed partial class Database
         Schemas.Schema main = new(this, AllocateObjectId(), Constants.SchemaMain, system: false);
         AddSchema(main);
         SetMainSchema(main);
+
+        // The metadata views live in their own schema, as in the reference: the views are
+        // tables of a system schema, and the schema is what a query names them through.
+        informationSchema = new(this, AllocateObjectId(), InformationSchemaName, system: true);
+        AddSchema(informationSchema);
+        for (int type = 0; type < Tables.InformationSchemaTable.MetaTableTypeCount; type++)
+        {
+            informationSchema.Add(new Tables.InformationSchemaTable(informationSchema, AllocateObjectId(), type));
+        }
 
         if (!memory)
         {

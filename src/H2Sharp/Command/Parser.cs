@@ -463,6 +463,18 @@ public sealed partial class Parser
                     item = ReadQueryOr(select);
                 }
 
+                // The reference reads a select item as an expression, and an expression may
+                // be a comparison: "SELECT COUNT(*) > 0 FROM T" is a select item that
+                // answers a boolean. The aggregate is read inside the term reader there, so
+                // the comparison that follows it is read as part of the same expression.
+                while (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller
+                    or Token.Bigger or Token.SmallerEqual or Token.BiggerEqual)
+                {
+                    int compareType = ReadQueryComparisonType();
+                    item = new Expressions.Conditions.Comparison(
+                        compareType, item, ReadQueryTerm(select), whenOperand: false);
+                }
+
                 string? alias = null;
                 if (IsWord("AS"))
                 {
@@ -487,15 +499,49 @@ public sealed partial class Parser
         Tables.TableFilter filter;
         if (IsWord("FROM"))
         {
-            string tableName = ReadIdentifier(); string? filterAlias = null;
-            if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+            string tableName = ReadIdentifier();
+            Schemas.Schema schema = current.GetCurrentSchema();
+            if (ReadIf(Token.Dot))
             {
-                filterAlias = ReadIdentifier();
+                // The reference reads the schema of the name and looks the table up in it.
+                string schemaName = tableName;
+                tableName = ReadIdentifier();
+                schema = current.GetDatabase().FindSchema(schemaName)
+                    ?? throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schemaName);
             }
 
-            Schemas.Schema schema = current.GetCurrentSchema();
-            fromTable = ReadTableOrView(current, schema, tableName);
-            filter = new(current, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
+            if (CurrentType == Token.OpenParen
+                && (tableName.Equals(Tables.RangeTable.Name, StringComparison.OrdinalIgnoreCase)
+                    || tableName.Equals(Tables.RangeTable.Alias, StringComparison.OrdinalIgnoreCase)))
+            {
+                // The range table is a table function: SYSTEM_RANGE(min, max[, step]).
+                Read();
+                Expressions.Expression min = ReadQueryOr();
+                Expect(Token.Comma, ",");
+                Expressions.Expression max = ReadQueryOr();
+                Expressions.Expression? step = null;
+                if (ReadIf(Token.Comma))
+                {
+                    step = ReadQueryOr();
+                }
+
+                Expect(Token.CloseParen, ")");
+                fromTable = step is null
+                    ? new Tables.RangeTable(current.GetDatabase().GetMainSchema()!, min, max)
+                    : new Tables.RangeTable(current.GetDatabase().GetMainSchema()!, min, max, step);
+                filter = new(current, fromTable, tableName, rightsChecked: true, select, 0, null);
+            }
+            else
+            {
+                string? filterAlias = null;
+                if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+                {
+                    filterAlias = ReadIdentifier();
+                }
+
+                fromTable = ReadTableOrView(current, schema, tableName);
+                filter = new(current, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
+            }
         }
         else
         {

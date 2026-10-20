@@ -5131,3 +5131,43 @@ DDL остался на своём строковом ридере (`ParseDataTy
 `AS`-алиаса, CTE, JOIN и MERGE — порт их ещё не умеет; красные и без этого среза),
 `MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
 
+**INFORMATION_SCHEMA: каталог метаданных и таблица SYSTEM_RANGE.**
+Портированы `org.h2.table.InformationSchemaTable` (33 представления каталога; списки колонок
+перенесены из эталонного `getColumns()` дословно) и его индекс — `Indexes/InformationSchemaIndex.cs`
+со своим курсором: строки представления считаются при чтении, поэтому вид всегда текущий.
+Схема `INFORMATION_SCHEMA` создаётся вместе с базой (`Database`), как в эталоне. Легаси-каталог
+(`InformationSchemaTableLegacy`) не портирован: эталон достаёт его по флагу сессии, которого
+в порту нет.
+
+Наполняются представления, для которых в порте есть объекты: `INFORMATION_SCHEMA_CATALOG_NAME`,
+`SCHEMATA`, `TABLES`, `VIEWS`, `COLUMNS`, `TABLE_CONSTRAINTS`, `KEY_COLUMN_USAGE`,
+`CONSTRAINT_COLUMN_USAGE`, `INDEXES`, `INDEX_COLUMNS`, `COLLATIONS` (только `OFF`: в порту нет
+ICU, поэтому локалей нет), `SETTINGS` (только `info.VERSION_MAJOR` и `info.VERSION_MINOR`:
+настроек у базы нет). Пустыми остаются те, чьи объекты в порте ещё не заведены: `USERS`,
+`ROLES`, `RIGHTS`, `TABLE_PRIVILEGES`, `COLUMN_PRIVILEGES`, `PARAMETERS`, `ROUTINES`,
+`CONSTANTS`, `DOMAINS`, `DOMAIN_CONSTRAINTS`, `ELEMENT_TYPES`, `ENUM_VALUES`, `FIELDS`,
+`CHECK_CONSTRAINTS`, `REFERENTIAL_CONSTRAINTS`, `TRIGGERS`, `SYNONYMS`, `LOCKS`, `IN_DOUBT`,
+`QUERY_STATISTICS`, `SESSION_STATE`, `SESSIONS`, `SEQUENCES` — сами представления есть, с
+эталонными колонками, и наполнятся, когда появятся их объекты.
+
+Парсер: квалифицированное имя в `FROM` (`INFORMATION_SCHEMA.TABLES`; неизвестная схема →
+90079, как в эталоне) и `SYSTEM_RANGE(min, max[, step])` с псевдонимом `GENERATE_SERIES` —
+`Tables/RangeTable.cs` и `Indexes/RangeIndex.cs` (курсор диапазона в порту уже был). Список
+выбора читается как выражение, и выражение может быть сравнением: `SELECT COUNT(*) > 0
+FROM …` теперь читается, а агрегат — внутри ридера термов, как в эталоне.
+
+Оракул: `InformationSchemaOracleTests.TheCatalogueAnswersTheSameAsTheReference` — 12 вопросов
+(SCHEMATA, TABLES целиком, COLUMNS целиком — все 33 представления и все их колонки,
+TABLE_CONSTRAINTS, KEY_COLUMN_USAGE, CONSTRAINT_COLUMN_USAGE, INDEXES, INDEX_COLUMNS, VIEWS,
+COLLATIONS, SYSTEM_RANGE в обе стороны); сравниваются все строки и все ячейки.
+
+Осталось в категории `SystemTables` 20 тестов: им нужен DDL, которого в порте ещё нет —
+`CREATE USER`/`ROLE`/`GRANT`, `CREATE ALIAS`, `CREATE SEQUENCE`, `CREATE DOMAIN`/`CONSTANT`/
+`TRIGGER`/`SYNONYM`/`VIEW`, ограничения `CHECK` и внешние ключи, колонки `ARRAY`/`ENUM`/`ROW`
+и `SESSION_ID()`.
+
+Проверено: `H2Sharp.Tests` **1115**, конформанс-набор **251/947** (было 219: SystemTables
+0/37 → 17/37, Commands 11/254 → 17/254, Grammar 49/263 → 61/263, Datatypes 37/66 → 38/66),
+`Data.Tests` 343 + 19 красных (те же пины `AS`-алиаса, CTE, JOIN и MERGE), `MvStore.Tests` 86,
+`Engine.Tests` 4/9 (прежние 5 задуманных).
+

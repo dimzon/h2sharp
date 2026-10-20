@@ -1089,6 +1089,16 @@ public abstract class Table
     public virtual bool Lock(H2Sharp.Engine.SessionLocal session, int lockType) => false;
 
     /// <summary>
+    /// Whether this table is a view.
+    /// </summary>
+    /// <remarks>
+    /// The reference's Table.isView, which the SQL table type of the metadata catalogue is
+    /// built from: a view is a VIEW there, and anything else is a BASE TABLE.
+    /// </remarks>
+    /// <returns>true if this table is a view</returns>
+    public virtual bool IsView() => false;
+
+    /// <summary>
     /// Gets the table name.
     /// </summary>
     public abstract string GetTableName();
