@@ -526,6 +526,203 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Reads the data change delta table, as the reference's readDataChangeDeltaTable does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="schema">the schema the table belongs to</param>
+    /// <param name="resultOptionName">the name in front of the table</param>
+    /// <returns>the table</returns>
+    private Tables.Table ReadDataChangeDeltaTable(
+        SessionLocal session, Schemas.Schema schema, string resultOptionName)
+    {
+        Tables.DataChangeDeltaTable.ResultOption resultOption;
+        switch (resultOptionName.ToUpperInvariant())
+        {
+            case "OLD":
+                resultOption = Tables.DataChangeDeltaTable.ResultOption.OLD;
+                break;
+            case "NEW":
+                resultOption = Tables.DataChangeDeltaTable.ResultOption.NEW;
+                break;
+            case "FINAL":
+                resultOption = Tables.DataChangeDeltaTable.ResultOption.FINAL;
+                break;
+            default:
+                throw DbException.GetSyntaxError(sql, Current.Start, "OLD TABLE");
+        }
+
+        Expect(Token.OpenParen, "(");
+
+        Statement statement = ReadStatement();
+        Prepared prepared = statement switch
+        {
+            InsertStatement insert => PrepareInsert(session, insert),
+            UpdateStatement update => PrepareUpdate(session, update),
+            DeleteStatement delete => PrepareDelete(session, delete),
+            _ => throw DbException.GetSyntaxError(sql, Current.Start, "INSERT"),
+        };
+
+        Expect(Token.CloseParen, ")");
+        return new Tables.DataChangeDeltaTable(
+            schema, (Dml.DataChangeStatement)prepared, resultOption);
+    }
+
+    /// <summary>
+    /// Reads a literal with a type in front of it, as the reference's readTermWithIdentifier does.
+    /// </summary>
+    /// <remarks>
+    /// The name says the type and the string that follows says the value: TIMESTAMP '2035-09-25
+    /// 00:00:00' is a timestamp, DATE '2035-09-25' is a date. A name that is not one of these
+    /// is not a typed literal, and the caller reads it as a column.
+    /// </remarks>
+    /// <param name="name">the name in front of the literal</param>
+    /// <returns>the expression, or null when the name is not a typed literal</returns>
+    private Expressions.Expression? ReadTypedLiteral(string name)
+    {
+        int index = position;
+        Read();
+        switch (name.ToUpperInvariant())
+        {
+            case "DATE":
+            case "D":
+                {
+                    string? text = ReadStringLiteralValue();
+                    if (text is null)
+                    {
+                        position = index;
+                        return null;
+                    }
+
+                    return Expressions.ValueExpression.Get(Values.ValueDate.Parse(text));
+                }
+
+            case "TIME":
+                {
+                    bool withZone = IsWord("WITH") && IsWord("TIME") && IsWord("ZONE");
+                    if (!withZone)
+                    {
+                        position = index + 1;
+                    }
+
+                    if (withZone)
+                    {
+                        string? text = ReadStringLiteralValue()
+                            ?? throw DbException.GetSyntaxError(sql, Current.Start);
+                        return Expressions.ValueExpression.Get(
+                            Values.ValueTimeTimeZone.Parse(text, provider));
+                    }
+
+                    int withoutIndex = position;
+                    bool without = IsWord("WITHOUT") && IsWord("TIME") && IsWord("ZONE");
+                    if (!without)
+                    {
+                        position = withoutIndex;
+                    }
+
+                    string? time = ReadStringLiteralValue();
+                    if (time is not null)
+                    {
+                        return Expressions.ValueExpression.Get(Values.ValueTime.Parse(time, provider));
+                    }
+
+                    if (without)
+                    {
+                        throw DbException.GetSyntaxError(sql, Current.Start);
+                    }
+
+                    position = index;
+                    return null;
+                }
+
+            case "TIMESTAMP":
+                {
+                    bool withZone = IsWord("WITH") && IsWord("TIME") && IsWord("ZONE");
+                    if (!withZone)
+                    {
+                        position = index + 1;
+                    }
+
+                    if (withZone)
+                    {
+                        string? text = ReadStringLiteralValue()
+                            ?? throw DbException.GetSyntaxError(sql, Current.Start);
+                        return Expressions.ValueExpression.Get(
+                            Values.ValueTimestampTimeZone.Parse(text, provider));
+                    }
+
+                    int withoutIndex = position;
+                    bool without = IsWord("WITHOUT") && IsWord("TIME") && IsWord("ZONE");
+                    if (!without)
+                    {
+                        position = withoutIndex;
+                    }
+
+                    string? timestamp = ReadStringLiteralValue();
+                    if (timestamp is not null)
+                    {
+                        return Expressions.ValueExpression.Get(
+                            Values.ValueTimestamp.Parse(timestamp, provider));
+                    }
+
+                    if (without)
+                    {
+                        throw DbException.GetSyntaxError(sql, Current.Start);
+                    }
+
+                    position = index;
+                    return null;
+                }
+
+            case "T":
+            case "TS":
+                {
+                    string? text = ReadStringLiteralValue();
+                    if (text is null)
+                    {
+                        position = index;
+                        return null;
+                    }
+
+                    return name.Equals("T", StringComparison.OrdinalIgnoreCase)
+                        ? Expressions.ValueExpression.Get(Values.ValueTime.Parse(text, provider))
+                        : Expressions.ValueExpression.Get(Values.ValueTimestamp.Parse(text, provider));
+                }
+
+            case "GEOMETRY":
+                {
+                    string? text = ReadStringLiteralValue();
+                    if (text is null)
+                    {
+                        position = index;
+                        return null;
+                    }
+
+                    return Expressions.ValueExpression.Get(Values.ValueGeometry.Get(text));
+                }
+
+            default:
+                position = index;
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads a string literal, if the current token is one.
+    /// </summary>
+    /// <returns>the text of the literal, or null when the current token is not one</returns>
+    private string? ReadStringLiteralValue()
+    {
+        Values.Value? literal = Current.GetValue(provider);
+        if (literal is null || literal.GetValueType() != Values.Value.Varchar)
+        {
+            return null;
+        }
+
+        Read();
+        return literal.GetString();
+    }
+
+    /// <summary>
     /// Builds the command of a CREATE SEQUENCE statement.
     /// </summary>
     /// <param name="session">the session</param>
@@ -728,6 +925,20 @@ public sealed partial class Parser
                     ? new Tables.RangeTable(current.GetDatabase().GetMainSchema()!, min, max)
                     : new Tables.RangeTable(current.GetDatabase().GetMainSchema()!, min, max, step);
                 filter = new(current, fromTable, tableName, rightsChecked: true, select, 0, null);
+            }
+            else if (IsWord("TABLE"))
+            {
+                // The data change delta table: FINAL TABLE (INSERT INTO ...). The rows of the
+                // table are the rows the statement changed, and the name in front of it says
+                // which version of them the caller gets.
+                fromTable = ReadDataChangeDeltaTable(current, schema, tableName);
+                string? filterAlias = null;
+                if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+                {
+                    filterAlias = ReadIdentifier();
+                }
+
+                filter = new(current, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
             }
             else
             {
@@ -1947,6 +2158,14 @@ public sealed partial class Parser
                 }
 
                 position = index;
+            }
+
+            // The reference reads a literal with a type in front of it in the same place: the
+            // name says the type and the string that follows says the value.
+            Expressions.Expression? typed = ReadTypedLiteral(name!);
+            if (typed is not null)
+            {
+                return typed;
             }
 
             if (tokens[position + 1].TokenType == Token.OpenParen)
@@ -4189,8 +4408,11 @@ public sealed partial class Parser
                 options, command: null, allowDataType: false, forAlterColumn: true);
             if (!hasOptions && always is null)
             {
-                throw new TODOException(
-                    "Parser.readAlterTable: only the identity of a column is ported");
+                // The other changes of a column — its type, its default, its nullability, its
+                // name — are not ported yet, and the port says so the way the database says
+                // that it does not read a statement: a syntax error. The list of what is
+                // missing is in MIGRATION_STATUS.md and in issue #13 of the repository.
+                throw DbException.GetSyntaxError(sql, Current.Start);
             }
 
             statement.AlterColumn = new AlterTableAlterColumnDefinition
@@ -4210,7 +4432,9 @@ public sealed partial class Parser
                 return statement;
             }
 
-            throw new TODOException("Parser.readAlterTable: ADD COLUMN is not ported");
+            // Adding a column is not ported yet; the port refuses it the way the database
+            // refuses a statement it does not read.
+            throw DbException.GetSyntaxError(sql, Current.Start);
         }
 
         if (IsWord("DROP"))
@@ -4234,10 +4458,14 @@ public sealed partial class Parser
                 return statement;
             }
 
-            throw new TODOException("Parser.readAlterTable: DROP COLUMN is not ported");
+            // Dropping a column is not ported yet; the port refuses it the way the database
+            // refuses a statement it does not read.
+            throw DbException.GetSyntaxError(sql, Current.Start);
         }
 
-        throw new TODOException("Parser.readAlterTable: only ADD and DROP CONSTRAINT are ported");
+        // The other changes of a table are not ported yet; the port refuses them the way the
+        // database refuses a statement it does not read.
+        throw DbException.GetSyntaxError(sql, Current.Start);
     }
 
     /// <summary>

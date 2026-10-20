@@ -51,7 +51,7 @@ public sealed class Delete : FilteredDataChangeStatement
         filter.SetIndex(table.GetScanIndex(session)!, reverse: false);
         filter.StartQuery(session);
         filter.Reset();
-        List<long> keys = [];
+        List<Result.Row> matched = [];
         Expressions.Expression? condition = GetCondition();
         while (filter.Next())
         {
@@ -59,17 +59,23 @@ public sealed class Delete : FilteredDataChangeStatement
             session.SetCurrentRow(row);
             if (row is not null && (condition is null || condition.GetBooleanValue(session)))
             {
-                keys.Add(row.GetKey());
+                matched.Add(row);
             }
         }
 
         session.SetCurrentRow(null);
-        foreach (long key in keys)
+        foreach (Result.Row row in matched)
         {
-            table.RemoveRow(session, key);
+            if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.OLD)
+            {
+                // The row as it was, before it is removed.
+                deltaChangeCollector?.AddRow(row.GetValueList());
+            }
+
+            table.RemoveRow(session, row.GetKey());
         }
 
-        return keys.Count;
+        return matched.Count;
     }
 
     /// <inheritdoc/>

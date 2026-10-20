@@ -145,7 +145,15 @@ public sealed class Insert : CommandWithValues
 
             rowNumber++;
             target.ConvertInsertRow(session, newRow, null);
+            if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.NEW)
+            {
+                // The row as it is now: the defaults are evaluated, the triggers have not run.
+                deltaChangeCollector?.AddRow([.. newRow.GetValueList()]);
+            }
+
             target.AddRow(session, newRow);
+            Tables.DataChangeDeltaTable.CollectForInsert(
+                session, target, deltaChangeCollector, deltaChangeCollectionMode, newRow);
         }
 
         return rowNumber;

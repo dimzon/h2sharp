@@ -5289,3 +5289,54 @@ NO MINVALUE] [MAXVALUE n | NO MAXVALUE] [CYCLE | NO CYCLE] [CACHE n]`, `ALTER SE
 `Data.Tests` 356 + 19 красных (те же пины `AS`-алиаса, CTE, JOIN и MERGE) + 4 новых,
 `MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
 
+**`FINAL TABLE`: строки, которые изменил оператор, отдаются вызывающему.**
+Пункт A issue #13: в H2 2.5 нет `RETURNING` (эталон его отвергает синтаксической ошибкой), нет
+`SCOPE_IDENTITY()`, `IDENTITY()` и `LAST_INSERT_ID()` — строка, которую сделала вставка,
+читается через `FINAL TABLE (INSERT INTO …)`. Это и есть форма, которую пишут оба провайдера
+(EF Core — `H2UpdateSqlGenerator`, linq2db — `H2SharpSqlBuilder.BuildInsertQuery`).
+
+Порт: `Tables/VirtualConstructedTable.cs` и `Tables/DataChangeDeltaTable.cs` (эталонные
+`org.h2.table.VirtualConstructedTable` и `org.h2.table.DataChangeDeltaTable`), индекс
+`Indexes/VirtualConstructedTableIndex.cs` с курсором по результату (эталонный
+`VirtualTableCursor`). Таблица отдаёт клонов колонок изменённой таблицы, а её строки —
+результат самого оператора: `DataChangeStatement.Run(collector, mode)`.
+
+Сбор строк — по эталону, по режимам: `NEW` — до записи (умолчания посчитаны, триггеры ещё не
+работали), `FINAL` — после, `OLD` — старая строка (для `UPDATE` и `DELETE`). Правки:
+`Insert.Run` (`NEW` до `AddRow`, `FINAL` после), `Update.Run` (`OLD`/`NEW` до записи, `FINAL`
+после), `Delete.Run` (`OLD`; Delete теперь держит строки, а не только ключи).
+
+Разбор: в `FROM` после имени таблицы читается `TABLE (` — это эталонное
+`readDataChangeDeltaTable`; имя перед ним должно быть `OLD`, `NEW` или `FINAL`, иначе
+синтаксическая ошибка (42001) — как в эталоне. Внутри скобок читается оператор
+(`INSERT`/`UPDATE`/`DELETE`).
+
+Оракул (`tests/H2Sharp.Tests/DataChangeDeltaTableOracleTests.cs`, 4 теста): `FINAL TABLE` с
+вставкой, три версии строки (`NEW`/`OLD`/`FINAL`), неверное имя, несколько строк и удаление —
+совпадают с JVM. Тест через ADO.NET
+(`tests/H2Sharp.Data.Tests/H2DataChangeDeltaTableTests.cs`) — ровно та форма, которую пишут
+провайдеры: кавыченные имена и параметр.
+
+**Литерал с типом: `DEFAULT TIMESTAMP '2035-09-25T00:00:00'`.**
+Пункт D issue #13: провайдер EF Core (`HasDefaultValue`) пишет умолчание с типом перед
+литералом, и порт такое умолчание не читал. Эталон читает это в ридере терма
+(`readTermWithIdentifier`): имя говорит тип, строка после него — значение. Порт теперь
+читает `DATE`/`D`, `TIME`, `TIMESTAMP` (в том числе `WITH TIME ZONE` и `WITHOUT TIME ZONE`),
+`T`, `TS` и `GEOMETRY` — эталонными `ValueDate/ValueTime/ValueTimestamp/….Parse`.
+
+Оракул (`tests/H2Sharp.Tests/TypedLiteralOracleTests.cs`, 2 теста): сами литералы и умолчание
+с типизированным литералом — совпадают с JVM. Тест через ADO.NET — та форма, которую пишет
+провайдер.
+
+**Форма отказа `ALTER TABLE`.**
+Пункт C issue #13: провайдеры подписались на то, что непортированный `ALTER TABLE` отвечает
+ошибкой базы с кодом 42001, а не `TODOException` — после переноса identity-колонок отказ
+стал `TODOException`, и три теста EF Core стали красными. Порт снова отвечает синтаксической
+ошибкой 42001 (`Parser.ReadAlterTable`), и gap записан здесь и в issue #13: не портированы
+`ADD COLUMN`, `DROP COLUMN`, `RENAME`, `SET DEFAULT`, `SET NOT NULL`, `SELECTIVITY`, смена типа.
+
+Проверено: `H2Sharp.Tests` **1137**, конформанс-набор **342/947** (было 285: +57 — типизированные
+литералы и форма отказа `ALTER TABLE` закрыли много грамматических тестов), `Data.Tests` 359
++ 19 красных (те же пины `AS`-алиаса, CTE, JOIN и MERGE) + 3 новых, `MvStore.Tests` 86,
+`Engine.Tests` 4/9 (прежние 5 задуманных).
+

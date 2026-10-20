@@ -87,7 +87,24 @@ public sealed class Update : FilteredDataChangeStatement
         foreach (Result.Row row in matched)
         {
             session.SetCurrentRow(row);
-            table.UpdateRow(session, row, assignments.PrepareUpdate(session, row));
+            Result.Row newRow = assignments.PrepareUpdate(session, row);
+            if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.OLD)
+            {
+                // The row as it was, before the write.
+                deltaChangeCollector?.AddRow(row.GetValueList());
+            }
+            else if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.NEW)
+            {
+                // The row as it is now: the defaults are evaluated, the triggers have not run.
+                deltaChangeCollector?.AddRow([.. newRow.GetValueList()]);
+            }
+
+            table.UpdateRow(session, row, newRow);
+            if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.FINAL)
+            {
+                deltaChangeCollector?.AddRow(newRow.GetValueList());
+            }
+
             count++;
         }
 
