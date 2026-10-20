@@ -67,13 +67,25 @@ public abstract class Statement
 /// <param name="PrimaryKey">whether PRIMARY KEY was written</param>
 /// <param name="ConstraintName">the name written after CONSTRAINT, or null</param>
 /// <param name="PrimaryKeyHash">whether HASH followed PRIMARY KEY</param>
+/// <param name="IdentityOptions">the options of the identity column, or null</param>
+/// <param name="IdentityGeneratedAlways">whether the identity value is always generated</param>
+/// <param name="Default">the default expression, or null</param>
+/// <param name="Generated">the generated expression, or null</param>
+/// <param name="OnUpdate">the expression of the value on update, or null</param>
+/// <param name="DefaultOnNull">whether the default is used for a null value</param>
 public sealed record ColumnDefinition(
     string Name,
     string Type,
     bool NotNull,
     bool PrimaryKey,
     string? ConstraintName,
-    bool PrimaryKeyHash);
+    bool PrimaryKeyHash,
+    Ddl.SequenceOptions? IdentityOptions = null,
+    bool IdentityGeneratedAlways = false,
+    Expression? Default = null,
+    Expression? Generated = null,
+    Expression? OnUpdate = null,
+    bool DefaultOnNull = false);
 
 /// <summary>One table-level constraint of a CREATE TABLE.</summary>
 /// <param name="Name">the name written after CONSTRAINT, or null</param>
@@ -1459,6 +1471,68 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Reads a sum of products, as the reference's readSum does.
+    /// </summary>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    private Expressions.Expression ReadQuerySum(Query.Select? aggregateSelect = null)
+    {
+        Expressions.Expression r = ReadQueryFactor(aggregateSelect);
+        while (true)
+        {
+            if (CurrentType == Token.PlusSign)
+            {
+                Read();
+                r = new Expressions.BinaryOperation(
+                    Expressions.BinaryOperation.OpType.PLUS, r, ReadQueryFactor(aggregateSelect));
+            }
+            else if (CurrentType == Token.MinusSign)
+            {
+                Read();
+                r = new Expressions.BinaryOperation(
+                    Expressions.BinaryOperation.OpType.MINUS, r, ReadQueryFactor(aggregateSelect));
+            }
+            else
+            {
+                return r;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads a product of terms, as the reference's readFactor does.
+    /// </summary>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    private Expressions.Expression ReadQueryFactor(Query.Select? aggregateSelect = null)
+    {
+        Expressions.Expression r = ReadQueryTerm(aggregateSelect);
+        while (true)
+        {
+            if (CurrentType == Token.Asterisk)
+            {
+                Read();
+                r = new Expressions.BinaryOperation(
+                    Expressions.BinaryOperation.OpType.MULTIPLY, r, ReadQueryTerm(aggregateSelect));
+            }
+            else if (CurrentType == Token.Slash)
+            {
+                Read();
+                r = new Expressions.BinaryOperation(
+                    Expressions.BinaryOperation.OpType.DIVIDE, r, ReadQueryTerm(aggregateSelect));
+            }
+            else if (CurrentType == Token.Percent)
+            {
+                Read();
+                r = new Expressions.Functions.MathFunction(
+                    r, ReadQueryTerm(aggregateSelect), Expressions.Functions.MathFunction.Mod);
+            }
+            else
+            {
+                return r;
+            }
+        }
+    }
+
+    /// <summary>
     /// Reads a comparison with an optional IS NULL tail.
     /// </summary>
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
@@ -1472,7 +1546,7 @@ public sealed partial class Parser
             return new Expressions.Conditions.ConditionNot(ReadQueryComparison(aggregateSelect));
         }
 
-        Expressions.Expression left = ReadQueryTerm(aggregateSelect);
+        Expressions.Expression left = ReadQuerySum(aggregateSelect);
         while (true)
         {
             if (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
@@ -1480,7 +1554,7 @@ public sealed partial class Parser
             {
                 int compareType = ReadQueryComparisonType();
                 left = new Expressions.Conditions.Comparison(
-                    compareType, left, ReadQueryTerm(aggregateSelect), whenOperand: false);
+                    compareType, left, ReadQuerySum(aggregateSelect), whenOperand: false);
                 continue;
             }
 
@@ -1504,10 +1578,10 @@ public sealed partial class Parser
                     _ = IsWord("ASYMMETRIC");
                 }
 
-                Expressions.Expression a = ReadQueryTerm(aggregateSelect);
+                Expressions.Expression a = ReadQuerySum(aggregateSelect);
                 ExpectWord("AND");
                 left = new Expressions.Conditions.BetweenPredicate(
-                    left, not, whenOperand: false, symmetric, a, ReadQueryTerm(aggregateSelect));
+                    left, not, whenOperand: false, symmetric, a, ReadQuerySum(aggregateSelect));
                 continue;
             }
 
@@ -1525,7 +1599,7 @@ public sealed partial class Parser
                 List<Expressions.Expression> values = [];
                 do
                 {
-                    values.Add(ReadQueryTerm(aggregateSelect));
+                    values.Add(ReadQuerySum(aggregateSelect));
                 }
                 while (ReadIf(Token.Comma));
 
@@ -1555,7 +1629,7 @@ public sealed partial class Parser
                 else
                 {
                     ExpectWord("REGEXP");
-                    Expressions.Expression b = ReadQueryTerm(aggregateSelect);
+                    Expressions.Expression b = ReadQuerySum(aggregateSelect);
                     left = new Expressions.Conditions.CompareLike(
                         session!.GetCompareMode(), left, not, whenOperand: false, b, escape: null,
                         Expressions.Conditions.CompareLike.LikeType.Regexp);
@@ -2853,6 +2927,33 @@ public sealed partial class Parser
                 tableColumn.SetNullable(false);
             }
 
+            if (column.IdentityOptions is not null)
+            {
+                // An identity column is never nullable, and the sequence of it is created
+                // when the table is.
+                tableColumn.SetIdentityOptions(column.IdentityOptions, column.IdentityGeneratedAlways);
+            }
+
+            if (column.Generated is not null)
+            {
+                tableColumn.SetGeneratedExpression(column.Generated);
+            }
+
+            if (column.Default is not null)
+            {
+                tableColumn.SetDefaultExpression(session, column.Default);
+            }
+
+            if (column.OnUpdate is not null)
+            {
+                tableColumn.SetOnUpdateExpression(session, column.OnUpdate);
+            }
+
+            if (column.DefaultOnNull)
+            {
+                tableColumn.SetDefaultOnNull(true);
+            }
+
             create.AddColumn(tableColumn);
             if (column.PrimaryKey)
             {
@@ -2926,6 +3027,110 @@ public sealed partial class Parser
         }
 
         return drop;
+    }
+
+    /// <summary>
+    /// Reads the options of a sequence, as the reference's parseSequenceOptions.
+    /// </summary>
+    /// <param name="options">the options to fill</param>
+    private void ReadSequenceOptions(Ddl.SequenceOptions options)
+    {
+        while (true)
+        {
+            if (IsWord("START") && IsWord("WITH"))
+            {
+                options.SetStartValue(ReadExpression());
+            }
+            else if (IsWord("RESTART"))
+            {
+                options.SetRestartValue(IsWord("WITH")
+                    ? ReadExpression()
+                    : Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+            }
+            else if (!ReadBasicSequenceOption(options))
+            {
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads one option of a sequence, as the reference's parseBasicSequenceOption.
+    /// </summary>
+    /// <param name="options">the options to fill</param>
+    /// <returns>true if an option was read</returns>
+    private bool ReadBasicSequenceOption(Ddl.SequenceOptions options)
+    {
+        if (IsWord("INCREMENT"))
+        {
+            _ = IsWord("BY");
+            options.SetIncrement(ReadExpression());
+        }
+        else if (IsWord("MINVALUE"))
+        {
+            options.SetMinValue(ReadExpression());
+        }
+        else if (IsWord("MAXVALUE"))
+        {
+            options.SetMaxValue(ReadExpression());
+        }
+        else if (IsWord("CYCLE"))
+        {
+            options.SetCycle(Schemas.Sequence.Cycle.CYCLE);
+        }
+        else if (IsWord("NO"))
+        {
+            if (IsWord("MINVALUE"))
+            {
+                options.SetMinValue(Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+            }
+            else if (IsWord("MAXVALUE"))
+            {
+                options.SetMaxValue(Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+            }
+            else if (IsWord("CYCLE"))
+            {
+                options.SetCycle(Schemas.Sequence.Cycle.NO_CYCLE);
+            }
+            else if (IsWord("CACHE"))
+            {
+                options.SetCacheSize(Expressions.ValueExpression.Get(Values.ValueBigint.Get(1)));
+            }
+            else
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start, "sequence option");
+            }
+        }
+        else if (IsWord("EXHAUSTED"))
+        {
+            options.SetCycle(Schemas.Sequence.Cycle.EXHAUSTED);
+        }
+        else if (IsWord("CACHE"))
+        {
+            options.SetCacheSize(ReadExpression());
+        }
+        else if (IsWord("NOMINVALUE"))
+        {
+            options.SetMinValue(Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+        }
+        else if (IsWord("NOMAXVALUE"))
+        {
+            options.SetMaxValue(Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+        }
+        else if (IsWord("NOCYCLE"))
+        {
+            options.SetCycle(Schemas.Sequence.Cycle.NO_CYCLE);
+        }
+        else if (IsWord("NOCACHE"))
+        {
+            options.SetCacheSize(Expressions.ValueExpression.Get(Values.ValueBigint.Get(1)));
+        }
+        else
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -3403,6 +3608,74 @@ public sealed partial class Parser
             bool primaryKey = false;
             bool primaryKeyHash = false;
             string? constraintName = null;
+
+            // The reference's parseColumnForTable: NOT NULL, then the default or the
+            // generated expression, then ON UPDATE, and the constraints after that.
+            if (CurrentType == ParserUtil.Not)
+            {
+                Read();
+                Expect(ParserUtil.Null, "NULL");
+                notNull = true;
+            }
+
+            Ddl.SequenceOptions? identityOptions = null;
+            bool identityGeneratedAlways = false;
+            Expression? defaultExpression = null;
+            Expression? generatedExpression = null;
+            Expression? onUpdateExpression = null;
+            bool defaultOnNull = false;
+            if (IsWord("AS"))
+            {
+                generatedExpression = ReadExpression();
+            }
+            else if (IsWord("DEFAULT"))
+            {
+                if (IsWord("ON") && IsWord("NULL"))
+                {
+                    defaultOnNull = true;
+                }
+                else
+                {
+                    defaultExpression = ReadExpression();
+                }
+            }
+            else if (IsWord("GENERATED"))
+            {
+                bool always = IsWord("ALWAYS");
+                if (!always)
+                {
+                    ExpectWord("BY");
+                    ExpectWord("DEFAULT");
+                }
+
+                ExpectWord("AS");
+                if (IsWord("IDENTITY"))
+                {
+                    Ddl.SequenceOptions options = new();
+                    if (ReadIf(Token.OpenParen))
+                    {
+                        ReadSequenceOptions(options);
+                        Expect(Token.CloseParen, ")");
+                    }
+
+                    identityOptions = options;
+                    identityGeneratedAlways = always;
+                }
+                else if (!always)
+                {
+                    throw DbException.GetSyntaxError(sql, Current.Start, "IDENTITY");
+                }
+                else
+                {
+                    generatedExpression = ReadExpression();
+                }
+            }
+
+            if (generatedExpression is null && IsWord("ON") && IsWord("UPDATE"))
+            {
+                onUpdateExpression = ReadExpression();
+            }
+
             while (CurrentType is ParserUtil.Not or ParserUtil.Null or ParserUtil.Primary
                 or ParserUtil.Key or ParserUtil.Unique or ParserUtil.Constraint)
             {
@@ -3436,7 +3709,10 @@ public sealed partial class Parser
                 }
             }
 
-            statement.Columns.Add(new ColumnDefinition(name, type, notNull, primaryKey, constraintName, primaryKeyHash));
+            statement.Columns.Add(new ColumnDefinition(
+                name, type, notNull, primaryKey, constraintName, primaryKeyHash,
+                identityOptions, identityGeneratedAlways, defaultExpression, generatedExpression,
+                onUpdateExpression, defaultOnNull));
         }
         while (ReadIf(Token.Comma));
 

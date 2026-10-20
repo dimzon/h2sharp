@@ -560,6 +560,23 @@ public sealed partial class TypeInfo : ExtTypeInfo
     };
 
     /// <summary>
+    /// This type as a DECFLOAT type, so that every number takes part in exact arithmetic
+    /// after a conversion.
+    /// </summary>
+    /// <returns>the DECFLOAT type</returns>
+    public TypeInfo ToDecfloatType() => valueType switch
+    {
+        Value.Boolean or Value.Tinyint or Value.Smallint or Value.Integer
+            => GetTypeInfo(Value.Decfloat, GetDecimalPrecision(), 0, null),
+        Value.Bigint => TypeDecfloatBigint,
+        Value.Numeric => GetTypeInfo(Value.Decfloat, GetPrecision(), 0, null),
+        Value.Real => GetTypeInfo(Value.Decfloat, 24, 0, null),
+        Value.Double => GetTypeInfo(Value.Decfloat, 53, 0, null),
+        Value.Decfloat => this,
+        _ => TypeDecfloat,
+    };
+
+    /// <summary>
     /// Whether the two types are the same, comparing array element types recursively.
     /// </summary>
     /// <param name="t1">the first type</param>

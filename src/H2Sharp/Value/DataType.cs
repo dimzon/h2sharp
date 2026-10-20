@@ -406,6 +406,14 @@ public sealed class DataType
         => type >= Value.Date && type <= Value.TimestampTz;
 
     /// <summary>
+    /// Whether the type is one of the interval types.
+    /// </summary>
+    /// <param name="type">the value type</param>
+    /// <returns>true if it is an interval type</returns>
+    public static bool IsIntervalType(int type)
+        => type >= Value.IntervalYear && type <= Value.IntervalMinuteToSecond;
+
+    /// <summary>
     /// Adds two precisions, saturating at <see cref="long.MaxValue"/>.
     /// </summary>
     /// <param name="p1">the first summand</param>

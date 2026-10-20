@@ -59,6 +59,9 @@ public sealed class Schema : DbObject
     private readonly ConcurrentDictionary<string, Constraint> constraints =
         new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, Sequence> sequences =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly bool system;
 
     private readonly HashSet<string> temporaryUniqueNames = new(StringComparer.OrdinalIgnoreCase);
@@ -221,6 +224,23 @@ public sealed class Schema : DbObject
     }
 
     /// <summary>
+    /// Try to find a sequence with this name.
+    /// </summary>
+    /// <param name="name">the object name</param>
+    /// <returns>the sequence or null</returns>
+    public Sequence? FindSequence(string name)
+    {
+        _ = sequences.TryGetValue(name, out Sequence? sequence);
+        return sequence;
+    }
+
+    /// <summary>
+    /// Gets all the sequences of this schema.
+    /// </summary>
+    /// <returns>the sequences</returns>
+    public List<Sequence> GetAllSequences() => [.. sequences.Values];
+
+    /// <summary>
     /// Adds a schema object to this schema.
     /// </summary>
     /// <remarks>
@@ -253,6 +273,18 @@ public sealed class Schema : DbObject
                 {
                     string name = constraint.GetName()!;
                     if (!constraints.TryAdd(name, constraint))
+                    {
+                        throw DbException.GetInternalError("object already exists: " + name);
+                    }
+
+                    FreeUniqueName(name);
+                    return;
+                }
+
+            case Sequence sequence:
+                {
+                    string name = sequence.GetName()!;
+                    if (!sequences.TryAdd(name, sequence))
                     {
                         throw DbException.GetInternalError("object already exists: " + name);
                     }
@@ -314,6 +346,18 @@ public sealed class Schema : DbObject
                 {
                     string objName = constraint.GetName()!;
                     if (!constraints.TryRemove(objName, out _))
+                    {
+                        throw DbException.GetInternalError("not found: " + objName);
+                    }
+
+                    FreeUniqueName(objName);
+                    return;
+                }
+
+            case Sequence sequence:
+                {
+                    string objName = sequence.GetName()!;
+                    if (!sequences.TryRemove(objName, out _))
                     {
                         throw DbException.GetInternalError("not found: " + objName);
                     }

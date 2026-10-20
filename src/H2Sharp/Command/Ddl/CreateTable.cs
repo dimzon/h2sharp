@@ -158,10 +158,25 @@ public sealed class CreateTable : CommandWithColumns
             column.SetTable(table, column.GetColumnId());
         }
 
+        // The sequences of the identity columns are created after the table, because the
+        // column needs the table to resolve its names, and the expressions of the generated
+        // columns are prepared after that, because their resolver needs the columns of the
+        // table.
+        List<Sequence> sequences = GenerateSequences(columns, temporary);
         db.LockMeta(session);
         db.AddSchemaObject(session, table);
         try
         {
+            foreach (Column column in columns)
+            {
+                column.PrepareExpressions(session);
+            }
+
+            foreach (Sequence sequence in sequences)
+            {
+                table.AddSequence(sequence);
+            }
+
             CreateConstraints();
         }
         catch (H2SharpException)

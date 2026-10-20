@@ -160,7 +160,25 @@ public abstract class CommandWithColumns : SchemaCommand
     /// <param name="temporary">whether they are temporary</param>
     /// <returns>the sequences</returns>
     protected List<Sequence> GenerateSequences(List<Column> columns, bool temporary)
-        => throw new TODOException("CommandWithColumns.generateSequences: sequences are not created yet");
+    {
+        List<Sequence> sequences = [];
+        foreach (Column c in columns)
+        {
+            if (c.HasIdentityOptions())
+            {
+                int objId = GetSession().GetDatabase().AllocateObjectId();
+                c.InitializeSequence(GetSession(), GetSchema(), objId, temporary);
+            }
+
+            Sequence? seq = c.GetSequence();
+            if (seq is not null)
+            {
+                sequences.Add(seq);
+            }
+        }
+
+        return sequences;
+    }
 
     /// <summary>
     /// Gets the constraints held aside.

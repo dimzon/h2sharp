@@ -71,6 +71,22 @@ public class Column : Typed
 
     private bool isGeneratedAlways;
 
+    /// <summary>
+    /// The options of the identity column, when the column is one and the sequence of it
+    /// has not been created yet.
+    /// </summary>
+    private Command.Ddl.SequenceOptions? identityOptions;
+
+    /// <summary>
+    /// The sequence of the identity column, once it is created.
+    /// </summary>
+    private Schemas.Sequence? sequence;
+
+    /// <summary>
+    /// The resolver the expression of a generated column is mapped through.
+    /// </summary>
+    private GeneratedColumnResolver? generatedTableFilter;
+
     private int selectivity;
 
     private string? comment;
@@ -398,9 +414,103 @@ public class Column : Typed
     /// <returns>whether this column is an identity column</returns>
     public bool IsIdentity()
     {
-        // A sequence is not ported yet, so an identity column can only be recognised by its
-        // default expression, which is what GENERATED ALWAYS AS IDENTITY creates.
-        return isGeneratedAlways && defaultExpression is not null && IsIdentityDefault();
+        // The reference's isIdentity: a column is an identity one when it has a sequence or
+        // when it is waiting for one.
+        return sequence is not null || identityOptions is not null;
+    }
+
+    /// <summary>
+    /// Whether this column has the options of an identity column.
+    /// </summary>
+    /// <returns>whether it has</returns>
+    public bool HasIdentityOptions() => identityOptions is not null;
+
+    /// <summary>
+    /// The options of the identity column, or null when the column is not one.
+    /// </summary>
+    /// <returns>the options</returns>
+    public Command.Ddl.SequenceOptions? GetIdentityOptions() => identityOptions;
+
+    /// <summary>
+    /// Sets the options of the identity column.
+    /// </summary>
+    /// <remarks>
+    /// The reference's setIdentityOptions: an identity column has no default and no on-update
+    /// expression, and it is never nullable.
+    /// </remarks>
+    /// <param name="options">the options</param>
+    /// <param name="generatedAlways">whether the value is always generated</param>
+    public void SetIdentityOptions(Command.Ddl.SequenceOptions options, bool generatedAlways)
+    {
+        identityOptions = options;
+        isGeneratedAlways = generatedAlways;
+        RemoveNonIdentityProperties();
+    }
+
+    /// <summary>
+    /// Removes the properties an identity column may not have.
+    /// </summary>
+    private void RemoveNonIdentityProperties()
+    {
+        nullable = false;
+        onUpdateExpression = null;
+        defaultExpression = null;
+    }
+
+    /// <summary>
+    /// The sequence of this column, when it is an identity column.
+    /// </summary>
+    /// <returns>the sequence, or null</returns>
+    public Schemas.Sequence? GetSequence() => sequence;
+
+    /// <summary>
+    /// Sets the sequence of this column.
+    /// </summary>
+    /// <param name="newSequence">the sequence</param>
+    /// <param name="generatedAlways">whether the value is always generated</param>
+    public void SetSequence(Schemas.Sequence newSequence, bool generatedAlways)
+    {
+        sequence = newSequence;
+        isGeneratedAlways = generatedAlways;
+        identityOptions = null;
+        nullable = false;
+    }
+
+    /// <summary>
+    /// Creates the sequence of this identity column and puts it in the schema.
+    /// </summary>
+    /// <remarks>
+    /// The reference's initializeSequence. The name of the sequence is a random one, so that
+    /// two tables cannot have the same, and the column is not nullable from now on.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="schema">the schema the sequence belongs to</param>
+    /// <param name="id">the object id of the sequence</param>
+    /// <param name="temporary">whether the sequence is temporary</param>
+    public void InitializeSequence(
+        Engine.SessionLocal session,
+        Schemas.Schema schema,
+        int id,
+        bool temporary)
+    {
+        if (identityOptions is null)
+        {
+            throw Message.DbException.GetInternalError();
+        }
+
+        string sequenceName;
+        do
+        {
+            sequenceName = "SYSTEM_SEQUENCE_"
+                + Util.StringUtils.ToUpperEnglish(
+                    ValueUuid.GetNewRandom(4).GetString().Replace("-", "_"));
+        }
+        while (schema.FindSequence(sequenceName) is not null);
+
+        identityOptions.SetDataType(type);
+        Schemas.Sequence seq = new(session, schema, id, sequenceName, identityOptions, true);
+        session.GetDatabase().AddSchemaObject(session, seq);
+        SetSequence(seq, isGeneratedAlways);
     }
 
     /// <summary>
@@ -561,7 +671,24 @@ public class Column : Typed
     /// <returns>the new or converted value</returns>
     public Value ValidateConvertUpdateSequence(Engine.SessionLocal session, Value? value, Row? row)
     {
-        Value v = value ?? GetDefaultOrGenerated(session, row);
+        Value v;
+        if (value is null)
+        {
+            if (sequence is not null)
+            {
+                // An identity column takes the next value of its sequence.
+                v = session.GetNextValueFor(sequence, null);
+            }
+            else
+            {
+                v = GetDefaultOrGenerated(session, row);
+            }
+        }
+        else
+        {
+            v = value;
+        }
+
         if (v is ValueNull && !nullable)
         {
             throw DbException.Get(ErrorCode.NullNotAllowed, name);
@@ -577,10 +704,64 @@ public class Column : Typed
         }
     }
 
+    /// <summary>
+    /// Prepares the expressions of this column: the expression of a generated column is mapped
+    /// through the resolver of the row that is being written, and then optimized.
+    /// </summary>
+    /// <remarks>
+    /// The reference's prepareExpressions. The mapping comes first: an expression that names
+    /// the other columns of the row cannot be optimized before it knows them.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    public void PrepareExpressions(Engine.SessionLocal session)
+    {
+        if (defaultExpression is not null)
+        {
+            if (isGeneratedAlways)
+            {
+                generatedTableFilter = new GeneratedColumnResolver(table!);
+                defaultExpression.MapColumns(generatedTableFilter, 0, Expression.MapInitial);
+            }
+
+            defaultExpression = defaultExpression.Optimize(session);
+        }
+
+        if (onUpdateExpression is not null)
+        {
+            onUpdateExpression = onUpdateExpression.Optimize(session);
+        }
+    }
+
     private Value GetDefaultOrGenerated(Engine.SessionLocal session, Row? row)
     {
         Expression? localDefault = defaultExpression;
-        return localDefault is null ? ValueNull.Instance : localDefault.GetValue(session);
+        if (localDefault is null)
+        {
+            return ValueNull.Instance;
+        }
+
+        if (isGeneratedAlways)
+        {
+            // The expression of a generated column reads the row that is being written, so
+            // the row is put into the resolver for the time of the evaluation.
+            GeneratedColumnResolver? filter = generatedTableFilter;
+            if (filter is null)
+            {
+                return localDefault.GetValue(session);
+            }
+
+            filter.Set(row);
+            try
+            {
+                return localDefault.GetValue(session);
+            }
+            finally
+            {
+                filter.Set(null);
+            }
+        }
+
+        return localDefault.GetValue(session);
     }
 
     private H2SharpException GetDataConversionError(Value value, H2SharpException cause)
@@ -656,12 +837,5 @@ public class Column : Typed
     public override string ToString()
     {
         return name + ":" + columnId + ":" + GetSql(HasSql.DefaultSqlFlags);
-    }
-
-    private bool IsIdentityDefault()
-    {
-        // An identity column's default is a sequence, which is not ported; until it is, a
-        // generated default is the only thing that can look like one.
-        return true;
     }
 }

@@ -5196,3 +5196,42 @@ COLLATIONS, SYSTEM_RANGE в обе стороны); сравниваются в�
 + 19 красных (те же пины `AS`-алиаса, CTE, JOIN и MERGE), `MvStore.Tests` 86, `Engine.Tests`
 4/9 (прежние 5 задуманных).
 
+**Identity-колонки и генерируемые колонки.**
+`GENERATED [ALWAYS | BY DEFAULT] AS IDENTITY [(options)]`, `AS (expr)`, `DEFAULT expr` и
+`ON UPDATE expr` читаются в колонке `CREATE TABLE` (эталонный `parseColumnForTable`), опции
+последовательности — эталонным `parseSequenceOptions`. Последовательность identity-колонки
+создаётся при создании таблицы (`CommandWithColumns.generateSequences`): имя
+`SYSTEM_SEQUENCE_<uuid>`, владелец — таблица. Значение при вставке берётся из неё
+(`Column.validateConvertUpdateSequence` → `SessionLocal.getNextValueFor`).
+
+Генерируемая колонка считается через `Tables/GeneratedColumnResolver.cs` — порт
+`org.h2.table.GeneratedColumnResolver`: выражение видит значения той же строки, а её
+колонки — только негенерируемые; маппинг и оптимизация — в `Column.prepareExpressions`,
+счёт — вторым проходом в `Table.convertInsertRow` (так и в эталоне).
+
+Чтобы `AS (A+B)` вообще читалось, пришлось портировать арифметику выражений: в порту не
+было уровней суммы и произведения. Теперь `Expressions/BinaryOperation.cs` (сложение,
+вычитание, умножение, деление — с эталонными правилами расширения типов) и в парсере
+`ReadQuerySum`/`ReadQueryFactor` между сравнением и термом. Операции над интервалами и над
+датой-временем отказывают по имени: нужны `IntervalOperation` и классы даты-времени.
+
+`Schemas/Sequence.cs` получил `getNext` с механикой margin и кэша, `getCurrentValue` и
+`Cycle.EXHAUSTED`; `Flush` никуда не пишет — последовательности порта живут в памяти, как и
+схемы. Схема научилась хранить последовательности (`findSequence`, `getAllSequences`), и
+таблица снимает свои последовательности вместе с собой.
+
+Поведение обычного режима эталонa: ручная вставка в identity-BY-DEFAULT **не** двигает
+последовательность вперёд (флаг режима `updateSequenceOnManualIdentityInsertion` включён
+только в LEGACY) — порт ведёт себя так же.
+
+Оракул (`tests/H2Sharp.Tests/IdentityOracleTests.cs`): значения identity, `START WITH 100`,
+ручная вставка в `ALWAYS` (90154), `GENERATED ALWAYS AS (A+B)`, identity-поля
+`INFORMATION_SCHEMA.COLUMNS` — совпадают с JVM. Тест через ADO.NET
+(`tests/H2Sharp.Data.Tests/H2IdentityTests.cs`) — тот же круг через провайдера.
+
+План среза и карта эталонных мест — в `docs/notes/identity-and-generated-columns.md`.
+
+Проверено: `H2Sharp.Tests` **1122**, конформанс-набор **261/947** (было 254), `Data.Tests` 349
++ 19 красных (те же пины `AS`-алиаса, CTE, JOIN и MERGE) + 3 новых, `MvStore.Tests` 86,
+`Engine.Tests` 4/9 (прежние 5 задуманных).
+

@@ -1188,21 +1188,55 @@ public sealed class InformationSchemaTable : Table
             string isGenerated;
             string? generationExpression = null;
             string? onUpdate = null;
-            if (c.IsGenerated())
+            string isIdentity;
+            string? identityGeneration = null;
+            Value? identityStart = null;
+            Value? identityIncrement = null;
+            Value? identityMaximum = null;
+            Value? identityMinimum = null;
+            string? identityCycle = null;
+            Value? identityBase = null;
+            Value? identityCache = null;
+            Schemas.Sequence? sequence = c.GetSequence();
+            if (sequence is not null)
             {
-                isGenerated = "ALWAYS";
-                generationExpression = c.GetDefaultExpression() is null
-                    ? null
-                    : c.GetDefaultExpression()!.GetUnenclosedSql(new StringBuilder(), HasSql.DefaultSqlFlags)
-                        .ToString();
+                // An identity column takes its value from a sequence, and it has no default.
+                columnDefault = null;
+                isGenerated = "NEVER";
+                generationExpression = null;
+                isIdentity = "YES";
+                identityGeneration = c.IsGeneratedAlways() ? "ALWAYS" : "BY DEFAULT";
+                identityStart = ValueBigint.Get(sequence.GetStartValue());
+                identityIncrement = ValueBigint.Get(sequence.GetIncrement());
+                identityMaximum = ValueBigint.Get(sequence.GetMaxValue());
+                identityMinimum = ValueBigint.Get(sequence.GetMinValue());
+                Schemas.Sequence.Cycle cycle = sequence.GetCycle();
+                identityCycle = cycle == Schemas.Sequence.Cycle.CYCLE ? "YES" : "NO";
+                identityBase = cycle != Schemas.Sequence.Cycle.EXHAUSTED
+                    ? ValueBigint.Get(sequence.GetBaseValue())
+                    : null;
+                identityCache = ValueBigint.Get(sequence.GetCacheSize());
             }
             else
             {
-                columnDefault = c.GetDefaultExpression() is null
-                    ? null
-                    : c.GetDefaultExpression()!.GetUnenclosedSql(new StringBuilder(), HasSql.DefaultSqlFlags)
-                        .ToString();
-                isGenerated = "NEVER";
+                if (c.IsGenerated())
+                {
+                    isGenerated = "ALWAYS";
+                    generationExpression = c.GetDefaultExpression() is null
+                        ? null
+                        : c.GetDefaultExpression()!.GetUnenclosedSql(new StringBuilder(), HasSql.DefaultSqlFlags)
+                            .ToString();
+                }
+                else
+                {
+                    columnDefault = c.GetDefaultExpression() is null
+                        ? null
+                        : c.GetDefaultExpression()!.GetUnenclosedSql(new StringBuilder(), HasSql.DefaultSqlFlags)
+                            .ToString();
+                    isGenerated = "NEVER";
+                }
+
+                isIdentity = "NO";
             }
 
             if (c.GetOnUpdateExpression() is not null)
@@ -1271,19 +1305,19 @@ public sealed class InformationSchemaTable : Table
                 // DTD_IDENTIFIER
                 (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
                 // IS_IDENTITY
-                "NO",
+                isIdentity,
                 // IDENTITY_GENERATION
-                null,
+                identityGeneration,
                 // IDENTITY_START
-                null,
+                identityStart,
                 // IDENTITY_INCREMENT
-                null,
+                identityIncrement,
                 // IDENTITY_MAXIMUM
-                null,
+                identityMaximum,
                 // IDENTITY_MINIMUM
-                null,
+                identityMinimum,
                 // IDENTITY_CYCLE
-                null,
+                identityCycle,
                 // IS_GENERATED
                 isGenerated,
                 // GENERATION_EXPRESSION
@@ -1300,9 +1334,9 @@ public sealed class InformationSchemaTable : Table
                 // GEOMETRY_SRID
                 dt.GeometrySrid,
                 // IDENTITY_BASE
-                null,
+                identityBase,
                 // IDENTITY_CACHE
-                null,
+                identityCache,
                 // COLUMN_ON_UPDATE
                 onUpdate,
                 // IS_VISIBLE

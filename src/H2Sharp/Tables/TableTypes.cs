@@ -1132,6 +1132,11 @@ public abstract class Table
     private List<Constraint>? constraints;
 
     /// <summary>
+    /// The sequences that belong to this table: the sequences of its identity columns.
+    /// </summary>
+    private List<Schemas.Sequence>? sequences;
+
+    /// <summary>
     /// Add a constraint to the table.
     /// </summary>
     /// <remarks>
@@ -1814,7 +1819,32 @@ public abstract class Table
             (GetSchema() ?? throw new TODOException("Table.removeChildrenAndResources: no schema"))
                 .GetDatabase().RemoveSchemaObject(session, constraint);
         }
+
+        // The sequences of the identity columns belong to the table and go with it.
+        while (sequences is not null && sequences.Count > 0)
+        {
+            Schemas.Sequence sequence = sequences[0];
+            sequences.RemoveAt(0);
+            (GetSchema() ?? throw new TODOException("Table.removeChildrenAndResources: no schema"))
+                .GetDatabase().RemoveSchemaObject(session, sequence);
+        }
     }
+
+    /// <summary>
+    /// Adds a sequence that belongs to this table, which is the sequence of an identity column.
+    /// </summary>
+    /// <param name="sequence">the sequence</param>
+    public void AddSequence(Schemas.Sequence sequence)
+    {
+        sequences ??= [];
+        sequences.Add(sequence);
+    }
+
+    /// <summary>
+    /// Gets the sequences that belong to this table.
+    /// </summary>
+    /// <returns>the sequences</returns>
+    public List<Schemas.Sequence> GetSequences() => sequences is null ? [] : [.. sequences];
 
     /// <summary>
     /// Whether this table depends on the given object.

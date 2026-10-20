@@ -24,6 +24,7 @@
  */
 using System;
 using System.Text;
+using H2Sharp.Api;
 using H2Sharp.Command.Ddl;
 using H2Sharp.Engine;
 using H2Sharp.Message;
@@ -51,13 +52,19 @@ public sealed class Sequence : SchemaObject
 
     private readonly long maxValue;
 
-    private readonly Cycle cycle;
+    private Cycle cycle;
 
     private readonly long cacheSize;
 
     private bool belongsToTable;
 
     private long baseValue;
+
+    /// <summary>
+    /// How far the sequence has cached its values: the values up to here are already
+    /// counted out and do not have to be written down again.
+    /// </summary>
+    private long margin;
 
     /// <summary>
     /// Creates a sequence.
@@ -81,6 +88,14 @@ public sealed class Sequence : SchemaObject
         cycle = options.GetCycle();
         cacheSize = options.GetCacheSize(session);
         baseValue = options.GetRestartValue(session, startValue);
+        if (cycle == Cycle.EXHAUSTED)
+        {
+            // An exhausted sequence starts over: the reference does the same, so that
+            // ALTER SEQUENCE ... RESTART works on one.
+            baseValue = startValue;
+        }
+
+        margin = baseValue;
         this.belongsToTable = belongsToTable;
     }
 
@@ -241,17 +256,149 @@ public sealed class Sequence : SchemaObject
     /// <summary>Gets the next value.</summary>
     /// <param name="session">the session</param>
     /// <returns>the next value</returns>
+    /// <summary>
+    /// The next value of this sequence.
+    /// </summary>
+    /// <remarks>
+    /// The reference's getNext. The values are counted out in blocks of the cache size, so
+    /// that the block can be written down once; the margin is how far the block reaches. When
+    /// the sequence runs out, it either starts over or is exhausted, and an exhausted
+    /// sequence refuses to answer.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <returns>the value</returns>
     public Value GetNext(SessionLocal session)
-        => throw new TODOException("Sequence.getNext: the store is not ported");
+    {
+        long result;
+        bool needsFlush;
+        lock (this)
+        {
+            if (cycle == Cycle.EXHAUSTED)
+            {
+                throw DbException.Get(ErrorCode.SequenceExhausted, GetName());
+            }
 
-    /// <summary>Writes the current value without a margin.</summary>
+            result = baseValue;
+            long newBase = result + increment;
+            needsFlush = increment > 0 ? Increment(result, newBase) : Decrement(result, newBase);
+        }
+
+        if (needsFlush)
+        {
+            Flush(session);
+        }
+
+        return ValueBigint.Get(result).CastToValue(dataType, session.CastDataProvider);
+    }
+
+    /// <summary>
+    /// Counts the sequence up, and starts it over when it runs out.
+    /// </summary>
+    /// <param name="oldBase">the value before</param>
+    /// <param name="newBase">the value after</param>
+    /// <returns>whether the block has to be written down</returns>
+    private bool Increment(long oldBase, long newBase)
+    {
+        bool needsFlush = false;
+
+        // An old base that is not negative and a new one that is means the counter
+        // went over the end of the world.
+        if (newBase > maxValue || (~oldBase & newBase) < 0)
+        {
+            newBase = minValue;
+            needsFlush = true;
+            if (cycle == Cycle.CYCLE)
+            {
+                margin = newBase + increment * (cacheSize - 1);
+            }
+            else
+            {
+                margin = newBase;
+                cycle = Cycle.EXHAUSTED;
+            }
+        }
+        else if (newBase > margin)
+        {
+            long newMargin = newBase + increment * (cacheSize - 1);
+            if (newMargin > maxValue || (~newBase & newMargin) < 0)
+            {
+                // The values near the end of the sequence are not cached, for simplicity.
+                newMargin = newBase;
+            }
+
+            margin = newMargin;
+            needsFlush = true;
+        }
+
+        baseValue = newBase;
+        return needsFlush;
+    }
+
+    /// <summary>
+    /// Counts the sequence down, and starts it over when it runs out.
+    /// </summary>
+    /// <param name="oldBase">the value before</param>
+    /// <param name="newBase">the value after</param>
+    /// <returns>whether the block has to be written down</returns>
+    private bool Decrement(long oldBase, long newBase)
+    {
+        bool needsFlush = false;
+
+        // An old base that is negative and a new one that is not means the counter went
+        // over the end of the world.
+        if (newBase < minValue || (oldBase & ~newBase) < 0)
+        {
+            newBase = maxValue;
+            needsFlush = true;
+            if (cycle == Cycle.CYCLE)
+            {
+                margin = newBase + increment * (cacheSize - 1);
+            }
+            else
+            {
+                margin = newBase;
+                cycle = Cycle.EXHAUSTED;
+            }
+        }
+        else if (newBase < margin)
+        {
+            long newMargin = newBase + increment * (cacheSize - 1);
+            if (newMargin < minValue || (newBase & ~newMargin) < 0)
+            {
+                // The values near the end of the sequence are not cached, for simplicity.
+                newMargin = newBase;
+            }
+
+            margin = newMargin;
+            needsFlush = true;
+        }
+
+        baseValue = newBase;
+        return needsFlush;
+    }
+
+    /// <summary>
+    /// Writes the current value without a margin.
+    /// </summary>
+    /// <remarks>
+    /// The sequences of this port live in memory, so there is nothing to write down: the
+    /// store of the sequences is not ported, and a database of this port is in memory
+    /// anyway.
+    /// </remarks>
     public void FlushWithoutMargin()
-        => throw new TODOException("Sequence.flushWithoutMargin: the store is not ported");
+    {
+    }
 
-    /// <summary>Writes the current value.</summary>
+    /// <summary>
+    /// Writes the current value.
+    /// </summary>
+    /// <remarks>
+    /// Nothing to write down: the sequences of this port live in memory.
+    /// </remarks>
     /// <param name="session">the session</param>
     public void Flush(SessionLocal session)
-        => throw new TODOException("Sequence.flush: the store is not ported");
+    {
+    }
 
     /// <summary>Closes this sequence.</summary>
     public void Close()
@@ -268,8 +415,11 @@ public sealed class Sequence : SchemaObject
     public long GetBaseValue() => baseValue;
 
     /// <summary>Gets the current value.</summary>
-    public long GetCurrentValue()
-        => throw new TODOException("Sequence.getCurrentValue: the store is not ported");
+    /// <remarks>
+    /// The value that was handed out last, which is the base value less the increment.
+    /// </remarks>
+    /// <returns>the current value</returns>
+    public long GetCurrentValue() => baseValue - increment;
 
     /// <summary>Sets whether this sequence belongs to a table.</summary>
     /// <param name="b">true if it does</param>
@@ -286,7 +436,10 @@ public sealed class Sequence : SchemaObject
         /// <summary>Sequence is cycled.</summary>
         CYCLE,
 
-        /// <summary>Sequence is not cycled.</summary>
+        /// <summary>Sequence is not cycled and isn't exhausted yet.</summary>
         NO_CYCLE,
+
+        /// <summary>Sequence is not cycled and was already exhausted.</summary>
+        EXHAUSTED,
     }
 }

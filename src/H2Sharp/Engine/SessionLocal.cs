@@ -668,6 +668,24 @@ public sealed class SessionLocal : Session
     }
 
     /// <summary>
+    /// The next value of a sequence, as the reference's getNextValueFor.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps the value of a sequence per statement, so that the same statement
+    /// read twice gives the same number, and it keeps the current value of every sequence for
+    /// CURRVAL. The flags of the mode that turn those on are not set in the regular mode, and
+    /// this port has no modes to set them in, so the value is always a new one.
+    /// </remarks>
+    /// <param name="sequence">the sequence</param>
+    /// <param name="prepared">the statement, or null</param>
+    /// <returns>the value</returns>
+    public Value GetNextValueFor(H2Sharp.Schemas.Sequence sequence, H2Sharp.Command.Prepared? prepared)
+    {
+        _ = prepared;
+        return sequence.GetNext(this);
+    }
+
+    /// <summary>
     /// The name of the schema unqualified names are read from.
     /// </summary>
     /// <remarks>
