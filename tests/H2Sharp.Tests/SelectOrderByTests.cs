@@ -186,12 +186,12 @@ public sealed class SelectOrderByTests
             select.PreparePlan(session, targetTableFilter: null);
             if (limit >= 0)
             {
-                select.SetLimit(limit);
+                select.SetFetch(ValueExpression.Get(ValueBigint.Get(limit)));
             }
 
             if (offset > 0)
             {
-                select.SetOffset(offset);
+                select.SetOffset(ValueExpression.Get(ValueBigint.Get(offset)));
             }
 
             List<string> actual = Print(select.Run(-1));

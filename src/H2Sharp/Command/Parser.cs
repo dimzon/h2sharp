@@ -1423,12 +1423,14 @@ public sealed partial class Parser
         // Standard SQL OFFSET / FETCH, then MySQL-style LIMIT, in the reference's order and
         // only when no fetch was set: vacuous for a flat select read once (no union branch
         // could have set one), but the shape is kept so the union port finds it in place.
+        // The counts are expressions, as in the reference: a limit may name a parameter, and
+        // the value of a parameter is not known until the statement runs.
         bool hasOffsetOrFetch = false;
         if (CurrentType == ParserUtil.Offset)
         {
             Read();
             hasOffsetOrFetch = true;
-            select.SetOffset(ReadQueryLimitValue());
+            select.SetOffset(ReadQueryLimitExpression());
             _ = IsWord("ROW") || IsWord("ROWS");
         }
 
@@ -1443,14 +1445,14 @@ public sealed partial class Parser
 
             if (IsWord("ROW") || IsWord("ROWS"))
             {
-                select.SetLimit(1);
+                select.SetFetch(Expressions.ValueExpression.Get(Values.ValueInteger.Get(1)));
             }
             else
             {
-                select.SetLimit(ReadQueryLimitValue());
+                select.SetFetch(ReadQueryLimitExpression());
                 if (IsWord("PERCENT"))
                 {
-                    throw new TODOException("Parser.parseQuerySelect: FETCH PERCENT is not ported");
+                    select.SetFetchPercent(true);
                 }
 
                 if (!IsWord("ROW"))
@@ -1473,20 +1475,20 @@ public sealed partial class Parser
         // Mode is ported.
         if (!hasOffsetOrFetch && provider.GetMode().Limit && IsWord("LIMIT"))
         {
-            long limit = ReadQueryLimitValue();
+            Expressions.Expression limit = ReadQueryLimitExpression();
             if (CurrentType == ParserUtil.Offset)
             {
                 Read();
-                select.SetOffset(ReadQueryLimitValue());
+                select.SetOffset(ReadQueryLimitExpression());
             }
             else if (ReadIf(Token.Comma))
             {
                 // MySQL: [offset, ] rowcount.
                 select.SetOffset(limit);
-                limit = ReadQueryLimitValue();
+                limit = ReadQueryLimitExpression();
             }
 
-            select.SetLimit(limit);
+            select.SetFetch(limit);
         }
 
         bool union = IsWord("UNION", consume: false);
@@ -1525,6 +1527,22 @@ public sealed partial class Parser
         }
 
         return left;
+    }
+
+    /// <summary>
+    /// Reads a LIMIT, OFFSET or FETCH count: an expression, as the reference reads it.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads any expression here and evaluates it per run; the engine holds
+    /// only a long, so anything but a literal refuses by name rather than binding wrong.
+    /// A negative passes through and runs as no limit, which is what the engine already
+    /// does with a negative fetch.
+    /// </remarks>
+    /// <returns>the count</returns>
+    private Expressions.Expression ReadQueryLimitExpression()
+    {
+        return ReadQueryOr().Optimize(session ?? throw new TODOException(
+            "Parser.readQueryLimit: this parser has no session"));
     }
 
     /// <summary>

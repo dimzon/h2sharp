@@ -17,6 +17,7 @@
  * every member here refuses. The shape is kept because it is the shape the command layer and
  * the data change statements are written against.
  */
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -47,6 +48,21 @@ public abstract class Query : Prepared
     private int orderByIndex = -1;
 
     private int limitOffset = -1;
+
+    /// <summary>
+    /// The expression that says how many rows to skip, or null.
+    /// </summary>
+    private Expression? offsetExpr;
+
+    /// <summary>
+    /// The expression that says how many rows to read, or null.
+    /// </summary>
+    private Expression? fetchExpr;
+
+    /// <summary>
+    /// Whether the fetch is a percentage of the rows rather than a number of them.
+    /// </summary>
+    private bool fetchPercent;
 
     /// <summary>
     /// Creates a query.
@@ -547,4 +563,112 @@ public abstract class Query : Prepared
     /// </summary>
     /// <returns>the index</returns>
     public int GetLimitOffset() => limitOffset;
+
+    /// <summary>
+    /// Sets the expression that says how many rows to skip.
+    /// </summary>
+    /// <param name="offset">the expression</param>
+    public void SetOffset(Expression offset)
+    {
+        ArgumentNullException.ThrowIfNull(offset);
+        offsetExpr = offset;
+    }
+
+    /// <summary>
+    /// Gets the expression that says how many rows to skip.
+    /// </summary>
+    /// <returns>the expression, or null</returns>
+    public Expression? GetOffset() => offsetExpr;
+
+    /// <summary>
+    /// Sets the expression that says how many rows to read.
+    /// </summary>
+    /// <param name="fetch">the expression</param>
+    public void SetFetch(Expression fetch)
+    {
+        ArgumentNullException.ThrowIfNull(fetch);
+        fetchExpr = fetch;
+    }
+
+    /// <summary>
+    /// Gets the expression that says how many rows to read.
+    /// </summary>
+    /// <returns>the expression, or null</returns>
+    public Expression? GetFetch() => fetchExpr;
+
+    /// <summary>
+    /// Sets whether the fetch is a percentage of the rows rather than a number of them.
+    /// </summary>
+    /// <param name="fetchPercent">true for a percentage</param>
+    public void SetFetchPercent(bool fetchPercent) => this.fetchPercent = fetchPercent;
+
+    /// <summary>
+    /// Whether the fetch is a percentage of the rows rather than a number of them.
+    /// </summary>
+    /// <returns>true for a percentage</returns>
+    public bool IsFetchPercent() => fetchPercent;
+
+    /// <summary>
+    /// The number of rows to skip and the number of rows to read.
+    /// </summary>
+    /// <remarks>
+    /// The reference's OffsetFetch: the two numbers are read out of the expressions when the
+    /// query runs, because a limit may name a parameter and its value is not known until then.
+    /// </remarks>
+    /// <param name="offset">the number of rows to skip</param>
+    /// <param name="fetch">the number of rows to read, -1 for all of them</param>
+    /// <param name="fetchPercent">whether the fetch is a percentage</param>
+    public readonly record struct OffsetFetch(long Offset, long Fetch, bool FetchPercent);
+
+    /// <summary>
+    /// Evaluates the OFFSET and FETCH expressions.
+    /// </summary>
+    /// <param name="maxRows">the additional limit</param>
+    /// <returns>the evaluated values</returns>
+    public OffsetFetch GetOffsetFetch(long maxRows)
+    {
+        long offset;
+        if (offsetExpr is not null)
+        {
+            Value v = offsetExpr.GetValue(GetSession());
+            if (v == ValueNull.Instance || (offset = v.GetLong()) < 0)
+            {
+                throw DbException.GetInvalidValueException("result OFFSET", v);
+            }
+        }
+        else
+        {
+            offset = 0;
+        }
+
+        long fetch = maxRows == 0 ? -1 : maxRows;
+        if (fetchExpr is not null)
+        {
+            Value v = fetchExpr.GetValue(GetSession());
+            long l;
+            if (v == ValueNull.Instance || (l = v.GetLong()) < 0)
+            {
+                throw DbException.GetInvalidValueException("result FETCH", v);
+            }
+
+            fetch = fetch < 0 ? l : Math.Min(l, fetch);
+        }
+
+        bool percent = fetchPercent;
+        if (percent)
+        {
+            if (fetch > 100)
+            {
+                throw DbException.GetInvalidValueException("result FETCH PERCENT", fetch);
+            }
+
+            // 0 PERCENT means 0
+            if (fetch == 0)
+            {
+                percent = false;
+            }
+        }
+
+        return new OffsetFetch(offset, fetch, percent);
+    }
 }

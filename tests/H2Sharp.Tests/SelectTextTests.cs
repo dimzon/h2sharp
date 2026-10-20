@@ -744,14 +744,16 @@ public sealed class SelectTextTests
     }
 
     [Fact]
-    public void FetchPercentWaitsForPercent()
+    public void FetchPercentIsRead()
     {
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT ID FROM T ORDER BY ID FETCH FIRST 50 PERCENT ROWS ONLY"));
-            Assert.Contains("PERCENT", e.Message);
+            // The reference reads the percentage, and so does the port: the count is an
+            // expression, and the percentage is a flag on the result.
+            CommandContainer command = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("SELECT ID FROM T ORDER BY ID FETCH FIRST 50 PERCENT ROWS ONLY"));
+            Assert.NotNull(command);
         }
         finally
         {
@@ -760,14 +762,16 @@ public sealed class SelectTextTests
     }
 
     [Fact]
-    public void LimitExpressionWaitsForExpressions()
+    public void TheLimitMayNameAParameter()
     {
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT ID FROM T ORDER BY ID LIMIT ?"));
-            Assert.Contains("integer literal", e.Message);
+            // The reference reads the count as an expression, so a limit may name a parameter;
+            // the value of the parameter is not known until the statement runs.
+            CommandContainer command = Assert.IsType<CommandContainer>(
+                session.PrepareCommand("SELECT ID FROM T ORDER BY ID LIMIT ?"));
+            Assert.NotNull(command);
         }
         finally
         {

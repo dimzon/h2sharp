@@ -5405,3 +5405,34 @@ ADO.NET (`tests/H2Sharp.Data.Tests/H2JoinTests.cs`) — тот же круг ч�
 + 6 красных (было 9: закрыты три теста джойна в `H2AliasSemanticsTests`; остались производная
 таблица (2), `VALUES` (2), `WITH` (1), `MERGE` (1)), `MvStore.Tests` 86, `Engine.Tests` 4/9.
 
+**`LIMIT`/`OFFSET`/`FETCH` — счётчики читаются как выражения.**
+Пункт E issue #13 («`LIMIT` с параметром»): провайдер linq2db пишет `Take()` и `First()` как
+`LIMIT ?`, а порт принимал только целый литерал.
+
+В эталоне счётчик — выражение, а не число: `readFetchOrLimit` читает `readExpression()` и
+оптимизирует; `Query.getOffsetFetch(maxRows)` вычисляет `offset` и `fetch` **в момент
+выполнения** (значение параметра на момент разбора неизвестно).
+
+Порт:
+* `Command/Query/Query.cs` — эталонные `setOffset(Expression)`, `setFetch(Expression)`,
+  `setFetchPercent(boolean)`, `getOffsetFetch(long)` и вложенный `OffsetFetch` (порт теперь
+  держит выражения, а не `long`);
+* `Command/Query/Select.cs` — `Run` считает `offset`/`fetch` через `GetOffsetFetch` и
+  передаёт процент результату (эталонный `finishResult`);
+* `Command/Parser.cs` — `OFFSET`, `FETCH FIRST/NEXT n ROWS [ONLY]`, `FETCH ... PERCENT` и
+  MySQL-форма `LIMIT [offset,] n` читаются выражениями (эталонный порядок чтения: сначала
+  `OFFSET`, потом `FETCH`, потом `LIMIT`).
+
+Побочный эффект: `FETCH PERCENT` теперь тоже читается (эталон умеет), и два теста порта,
+которые записывали этот пробел как `TODOException` (`SelectTextTests.FetchPercentWaitsForPercent`
+и `LimitExpressionWaitsForExpressions`), переписаны на новое поведение.
+
+Оракул (`tests/H2Sharp.Tests/LimitOracleTests.cs`, 2 теста): все формы `LIMIT`/`OFFSET`/`FETCH`
+(включая `PERCENT` и MySQL-форму) и лимит с параметром — совпадают с JVM (для параметра
+эталон опрашивается через `PreparedStatement`). Тест через ADO.NET
+(`tests/H2Sharp.Data.Tests/H2LimitTests.cs`) — тот же круг через провайдера.
+
+Проверено: `H2Sharp.Tests` **1144**, конформанс-набор **346/947**, `Data.Tests` 377 + 6 красных
+(те же шесть: производная таблица, `VALUES`, `WITH`, `MERGE`), `MvStore.Tests` 86,
+`Engine.Tests` 4/9.
+

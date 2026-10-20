@@ -156,7 +156,7 @@ public sealed class SelectDistinctTests
             select.PreparePlan(session, targetTableFilter: null);
             if (limit >= 0)
             {
-                select.SetLimit(limit);
+                select.SetFetch(ValueExpression.Get(ValueBigint.Get(limit)));
             }
 
             List<string> actual = Print(select.Run(-1), columns.Length);

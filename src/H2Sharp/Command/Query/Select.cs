@@ -129,10 +129,6 @@ public sealed class Select : Query
     /// </summary>
     private bool checkInit;
 
-    private long limit = -1;
-
-    private long offset;
-
     private bool isFetchDistinct;
 
     private string? forUpdate;
@@ -671,8 +667,15 @@ public sealed class Select : Query
             throw new TODOException("Select.query: windowed, distinct on and locking queries are not ported");
         }
 
-        long offset = this.offset;
-        long fetch = limit >= 0 ? limit : this.limit;
+        long offset;
+        long fetch;
+        bool fetchPercent;
+        {
+            OffsetFetch offsetFetch = GetOffsetFetch(limit);
+            offset = offsetFetch.Offset;
+            fetch = offsetFetch.Fetch;
+            fetchPercent = offsetFetch.FetchPercent;
+        }
         Expression[] array = expressionArray ?? [.. expressions];
         int columnCount = array.Length;
         int resultWidth = resultColumnCount > 0 ? resultColumnCount : array.Length;
@@ -721,6 +724,7 @@ public sealed class Select : Query
         if (fetch >= 0)
         {
             result.SetLimit(fetch);
+            result.SetFetchPercent(fetchPercent);
         }
 
         if (offset != 0)
@@ -1209,17 +1213,10 @@ public sealed class Select : Query
     /// <param name="isOrderByTop">true for ORDER BY ... TOP</param>
     public void SetOrderByTop(bool isOrderByTop) => this.isOrderByTop = isOrderByTop;
 
-    /// <summary>Sets the maximum number of rows.</summary>
-    /// <param name="limit">the limit, -1 for no limit</param>
-    public void SetLimit(long limit) => this.limit = limit;
-
-    /// <summary>Sets the number of rows to skip.</summary>
-    /// <param name="offset">the offset</param>
-    public void SetOffset(long offset) => this.offset = offset;
-
     /// <summary>Sets whether FETCH is DISTINCT.</summary>
     /// <param name="isFetchDistinct">true for FETCH DISTINCT</param>
     public void SetFetchDistinct(bool isFetchDistinct) => this.isFetchDistinct = isFetchDistinct;
+
 
     /// <summary>Sets the table this statement locks.</summary>
     /// <param name="forUpdate">the table name</param>
