@@ -464,16 +464,19 @@ public class Column : Typed
     public Schemas.Sequence? GetSequence() => sequence;
 
     /// <summary>
-    /// Sets the sequence of this column.
+    /// Sets the sequence of this column, or takes it away.
     /// </summary>
-    /// <param name="newSequence">the sequence</param>
+    /// <param name="newSequence">the sequence, or null when the column has none</param>
     /// <param name="generatedAlways">whether the value is always generated</param>
-    public void SetSequence(Schemas.Sequence newSequence, bool generatedAlways)
+    public void SetSequence(Schemas.Sequence? newSequence, bool generatedAlways)
     {
         sequence = newSequence;
         isGeneratedAlways = generatedAlways;
         identityOptions = null;
-        nullable = false;
+        if (newSequence is not null)
+        {
+            nullable = false;
+        }
     }
 
     /// <summary>

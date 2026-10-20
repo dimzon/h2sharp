@@ -176,4 +176,55 @@
 * `Expressions/BinaryOperation.cs` — операция над двумя выражениями.
 * `Value/DataType.cs` — `IsIntervalType`; `Value/TypeInfo.cs` — `ToDecfloatType`.
 * `Tables/InformationSchemaTable.cs` — identity-поля `COLUMNS`.
+
+## Продолжение среза: последовательности
+
+Срез identity доведён до конца отдельно — сами последовательности, их каталог и изменение
+identity-колонки. Что появилось:
+
+| Место | Что там |
+|---|---|
+| `Command/Ddl/CreateSequence.cs`, `AlterSequence.cs`, `DropSequence.cs`, `TruncateTable.cs` | эталонные команды `CREATE`/`ALTER`/`DROP SEQUENCE` и `TRUNCATE TABLE` |
+| `Command/Ddl/AlterTableAlterColumn.cs` | эталонный `ALTER TABLE … ALTER COLUMN` (пока только identity) |
+| `Command/Ddl/SequenceOptions.cs` | `GetRestartValue` → `long?` (null, если restart не задан), `GetCacheSize` → `long?` |
+| `Expressions/SequenceValue.cs` | `NEXT VALUE FOR` / `CURRENT VALUE FOR` |
+| `Expressions/Functions/CompatibilitySequenceValueFunction.cs` | эталонные `NEXTVAL`/`CURRVAL` |
+| `Schemas/Sequence.cs` | `Modify` (эталонная семантика), `CheckOptions`, `GetMaxCacheSize` |
+| `Schemas/Schema.cs` | `GetSequence` (90036, `SequenceNotFound1`) |
+| `Engine/SessionLocal.cs` | `GetCurrentValueFor`, карта текущих значений сессии |
+| `Command/Parser.cs` | `PrepareCreateSequence`/`PrepareAlterSequence`/`PrepareDropSequence`/`PrepareTruncateTable`, `ReadSequence`, `ParseExpression(string)` (порт эталонного `parseExpression(String)`) |
+
+Тонкости, которые пришлось узнать (оракул, а не чтение):
+
+* `SequenceOptions.getRestartValue` возвращает **null**, если restart не задан. Значение
+  `long?` в порте — это не украшение: иначе `ALTER SEQUENCE … RESTART` без значения терял бы
+  текущее значение последовательности. `RESTART` без числа — «вернуться к стартовому», и
+  знак этого в порте — `ValueExpression.Null` (в эталоне это `DEFAULT`).
+* `SequenceOptions.getCacheSize` — тоже null, если кэш не задан.
+* Последовательность проверяет опции **в конструкторе** (`checkOptions`): `MAXVALUE 1
+  START WITH 1 CYCLE` на JVM отвечает 90009, и порт отвечает тем же.
+* `Schema.getSequence` бросает 90036 (`SequenceNotFound1`), а `findSequence` возвращает null.
+* `nextval('S')` разбирает имя **как выражение**: отсюда квалифицированное имя даёт схему, а
+  недопустимое имя — синтаксическая ошибка. Порт для этого умеет `Parser.ParseExpression(string)`
+  (порт эталонного `parseExpression(String)`).
+* Опция владения читается **одним** токеном, `BELONGS_TO_TABLE`. Трёхсловное написание из
+  документации (`BELONGS TO TABLE`) в эталоне — синтаксическая ошибка, и оракул это подтверждает:
+  `CREATE SEQUENCE … BELONGS TO TABLE` на JVM отвечает 42000, а `BELONGS_TO_TABLE` проходит.
+* Имя последовательности может быть с именем схемы: `CREATE SEQUENCE S.SEQ` — эталонное
+  `readIdentifierWithSchema`. В порту это `Parser.ReadIdentifierWithSchema` (то же имя схемы
+  может стоять перед именем базы и тогда пропускается). Неизвестная схема — 90079
+  (`SchemaNotFound1`), как в эталоне.
+
+Грамматика, взятая из эталонной (`docs/grammar.html`):
+
+```
+CREATE SEQUENCE [ IF NOT EXISTS ] name [ AS dataType ] [ START WITH long ]
+    [ INCREMENT [ BY ] long ] [ MINVALUE long | NO MINVALUE ] [ MAXVALUE long | NO MAXVALUE ]
+    [ CYCLE | NO CYCLE ] [ CACHE long ] [ BELONGS_TO_TABLE ]
+ALTER SEQUENCE [ IF EXISTS ] name [ RESTART [ WITH long ] ] [ … те же опции … ]
+DROP SEQUENCE [ IF EXISTS ] name
+```
+
+Остальное `ALTER TABLE … ALTER COLUMN` (RENAME, SET DEFAULT, SELECTIVITY, смена типа,
+INVISIBLE) — не портировано и отказывает по имени; `COMMENT ON` не портирован вовсе.
 * `Tables/TableTypes.cs` — последовательности таблицы (снимаются вместе с ней).

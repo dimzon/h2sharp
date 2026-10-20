@@ -44,17 +44,17 @@ public sealed class Sequence : SchemaObject
 
     private readonly TypeInfo dataType;
 
-    private readonly long increment;
+    private long increment;
 
-    private readonly long startValue;
+    private long startValue;
 
-    private readonly long minValue;
+    private long minValue;
 
-    private readonly long maxValue;
+    private long maxValue;
 
     private Cycle cycle;
 
-    private readonly long cacheSize;
+    private long cacheSize;
 
     private bool belongsToTable;
 
@@ -86,8 +86,10 @@ public sealed class Sequence : SchemaObject
         minValue = options.GetMinValue(this, session);
         maxValue = options.GetMaxValue(this, session);
         cycle = options.GetCycle();
-        cacheSize = options.GetCacheSize(session);
-        baseValue = options.GetRestartValue(session, startValue);
+        long? writtenCacheSize = options.GetCacheSize(session);
+        bool mayAdjustCacheSize = writtenCacheSize is null;
+        cacheSize = writtenCacheSize ?? DefaultCacheSize;
+        baseValue = options.GetRestartValue(session, startValue) ?? startValue;
         if (cycle == Cycle.EXHAUSTED)
         {
             // An exhausted sequence starts over: the reference does the same, so that
@@ -95,6 +97,10 @@ public sealed class Sequence : SchemaObject
             baseValue = startValue;
         }
 
+        // The options are checked against each other: a sequence whose start is outside
+        // its bounds, or whose cache does not fit its range, is not a sequence.
+        cacheSize = CheckOptions(
+            baseValue, startValue, minValue, maxValue, increment, cacheSize, mayAdjustCacheSize);
         margin = baseValue;
         this.belongsToTable = belongsToTable;
     }
@@ -102,13 +108,146 @@ public sealed class Sequence : SchemaObject
     /// <summary>
     /// Changes the sequence.
     /// </summary>
-    /// <param name="baseValue">the new base value</param>
-    /// <param name="startValue">the new start value</param>
-    /// <param name="minValue">the new minimum</param>
-    /// <param name="maxValue">the new maximum</param>
-    /// <param name="increment">the new increment</param>
-    public void Modify(long? baseValue, long? startValue, long? minValue, long? maxValue, long? increment)
-        => throw new TODOException("Sequence.modify: sequences are not stored yet");
+    /// <remarks>
+    /// The reference's modify: a value that is not given keeps its value, and the options
+    /// are checked against each other, because a sequence whose start is outside its bounds
+    /// is not a sequence.
+    /// </remarks>
+    /// <param name="newBaseValue">the new base value, or null</param>
+    /// <param name="newStartValue">the new start value, or null</param>
+    /// <param name="newMinValue">the new minimum, or null</param>
+    /// <param name="newMaxValue">the new maximum, or null</param>
+    /// <param name="newIncrement">the new increment, or null</param>
+    /// <param name="newCycle">the new cycle, or null</param>
+    /// <param name="newCacheSize">the new cache size, or null</param>
+    public void Modify(
+        long? newBaseValue,
+        long? newStartValue,
+        long? newMinValue,
+        long? newMaxValue,
+        long? newIncrement,
+        Cycle? newCycle,
+        long? newCacheSize)
+    {
+        long baseValueAsLong = newBaseValue ?? baseValue;
+        long startValueAsLong = newStartValue ?? startValue;
+        long minValueAsLong = newMinValue ?? minValue;
+        long maxValueAsLong = newMaxValue ?? maxValue;
+        long incrementAsLong = newIncrement ?? increment;
+        long cacheSizeAsLong;
+        bool mayAdjustCacheSize;
+        if (newCacheSize is not null)
+        {
+            cacheSizeAsLong = newCacheSize.Value;
+            mayAdjustCacheSize = false;
+        }
+        else
+        {
+            cacheSizeAsLong = cacheSize;
+            mayAdjustCacheSize = true;
+        }
+
+        cacheSizeAsLong = CheckOptions(
+            baseValueAsLong, startValueAsLong, minValueAsLong, maxValueAsLong, incrementAsLong,
+            cacheSizeAsLong, mayAdjustCacheSize);
+        Cycle cycle = newCycle ?? this.cycle;
+        if (newCycle is null)
+        {
+            if (cycle == Cycle.EXHAUSTED && newBaseValue is not null)
+            {
+                cycle = Cycle.NO_CYCLE;
+            }
+        }
+        else if (cycle == Cycle.EXHAUSTED)
+        {
+            baseValueAsLong = startValueAsLong;
+        }
+
+        margin = baseValue = baseValueAsLong;
+        this.startValue = startValueAsLong;
+        this.minValue = minValueAsLong;
+        this.maxValue = maxValueAsLong;
+        this.increment = incrementAsLong;
+        this.cacheSize = cacheSizeAsLong;
+        this.cycle = cycle;
+    }
+
+    /// <summary>
+    /// Checks the options of the sequence against each other.
+    /// </summary>
+    /// <remarks>
+    /// The reference's checkOptions. The base value and the start value must lie inside the
+    /// bounds, the increment must not be zero, and the cache size is brought down to what
+    /// the range allows.
+    /// </remarks>
+    /// <param name="baseValue">the base value</param>
+    /// <param name="startValue">the start value</param>
+    /// <param name="minValue">the minimum value</param>
+    /// <param name="maxValue">the maximum value</param>
+    /// <param name="increment">the increment</param>
+    /// <param name="cacheSize">the cache size</param>
+    /// <param name="mayAdjustCacheSize">whether the cache size may be brought down</param>
+    /// <returns>the cache size</returns>
+    private long CheckOptions(
+        long baseValue,
+        long startValue,
+        long minValue,
+        long maxValue,
+        long increment,
+        long cacheSize,
+        bool mayAdjustCacheSize)
+    {
+        if (minValue <= baseValue && baseValue <= maxValue
+            && minValue <= startValue && startValue <= maxValue
+            && minValue < maxValue && increment != 0L)
+        {
+            long range = maxValue - minValue;
+            if (Math.Abs(increment) <= range && cacheSize >= 0L)
+            {
+                if (cacheSize <= 1L)
+                {
+                    return 1L;
+                }
+
+                long maxCacheSize = GetMaxCacheSize(range, increment);
+                if (cacheSize <= maxCacheSize)
+                {
+                    return cacheSize;
+                }
+
+                if (mayAdjustCacheSize)
+                {
+                    return maxCacheSize;
+                }
+            }
+        }
+
+        throw DbException.Get(
+            ErrorCode.SequenceAttributesInvalid7,
+            GetName(),
+            baseValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            startValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            minValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            maxValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            increment.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            cacheSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// The largest cache the range of the sequence allows.
+    /// </summary>
+    /// <param name="range">the range of the sequence</param>
+    /// <param name="increment">the increment</param>
+    /// <returns>the largest cache size</returns>
+    private static long GetMaxCacheSize(long range, long increment)
+    {
+        if (increment > 0L)
+        {
+            return Math.Min(range / increment, 100_000);
+        }
+
+        return Math.Min(range / -increment, 100_000);
+    }
 
     /// <summary>
     /// Gets the default minimum value of a sequence.
@@ -409,7 +548,10 @@ public sealed class Sequence : SchemaObject
 
     /// <inheritdoc/>
     public override void RemoveChildrenAndResources(SessionLocal session)
-        => throw new TODOException("Sequence.removeChildrenAndResources: the store is not ported");
+    {
+        // The sequences of this port live in memory, so there is nothing to remove: the
+        // store of the sequences is not ported.
+    }
 
     /// <summary>Gets the base value.</summary>
     public long GetBaseValue() => baseValue;

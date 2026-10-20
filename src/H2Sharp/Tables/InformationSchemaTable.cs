@@ -1083,6 +1083,23 @@ public sealed class InformationSchemaTable : Table
                 }
 
                 break;
+            case Sequences:
+                foreach (Schemas.Schema schema in database.GetSchemas())
+                {
+                    foreach (Schemas.Sequence sequence in schema.GetAllSequences())
+                    {
+                        // The sequence of an identity column belongs to its table and is not
+                        // a sequence of the schema.
+                        if (sequence.GetBelongsToTable())
+                        {
+                            continue;
+                        }
+
+                        AddSequence(session, rows, catalog, sequence);
+                    }
+                }
+
+                break;
             case Locks:
             case InDoubt:
             case QueryStatistics:
@@ -1105,7 +1122,6 @@ public sealed class InformationSchemaTable : Table
             case ReferentialConstraints:
             case Triggers:
             case Synonyms:
-            case Sequences:
                 // The objects these views list do not exist in this port yet, so the views
                 // are empty. They are here with the columns of the reference, so that a query
                 // against one of them is answered rather than refused.
@@ -1147,6 +1163,62 @@ public sealed class InformationSchemaTable : Table
         }
 
         return constraints;
+    }
+
+    /// <summary>
+    /// The row of the SEQUENCES view for one sequence.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="rows">the rows</param>
+    /// <param name="catalog">the catalog name</param>
+    /// <param name="sequence">the sequence</param>
+    private static void AddSequence(
+        SessionLocal session,
+        List<Value[]> rows,
+        string catalog,
+        Schemas.Sequence sequence)
+    {
+        DataTypeInformation dt = DataTypeInformation.ValueOf(sequence.GetDataType());
+        Schemas.Sequence.Cycle cycle = sequence.GetCycle();
+        Add(
+            rows,
+            // SEQUENCE_CATALOG
+            catalog,
+            // SEQUENCE_SCHEMA
+            sequence.GetSchema()?.GetName(),
+            // SEQUENCE_NAME
+            sequence.GetName(),
+            // DATA_TYPE
+            dt.DataType,
+            // NUMERIC_PRECISION
+            ValueInteger.Get(sequence.GetEffectivePrecision()),
+            // NUMERIC_PRECISION_RADIX
+            dt.NumericPrecisionRadix,
+            // NUMERIC_SCALE
+            dt.NumericScale,
+            // START_VALUE
+            ValueBigint.Get(sequence.GetStartValue()),
+            // MINIMUM_VALUE
+            ValueBigint.Get(sequence.GetMinValue()),
+            // MAXIMUM_VALUE
+            ValueBigint.Get(sequence.GetMaxValue()),
+            // INCREMENT
+            ValueBigint.Get(sequence.GetIncrement()),
+            // CYCLE_OPTION
+            cycle == Schemas.Sequence.Cycle.CYCLE ? "YES" : "NO",
+            // DECLARED_DATA_TYPE
+            dt.DeclaredDataType,
+            // DECLARED_NUMERIC_PRECISION
+            dt.DeclaredNumericPrecision,
+            // DECLARED_NUMERIC_SCALE
+            dt.DeclaredNumericScale,
+            // extensions
+            // BASE_VALUE
+            cycle != Schemas.Sequence.Cycle.EXHAUSTED ? ValueBigint.Get(sequence.GetBaseValue()) : null,
+            // CACHE
+            ValueBigint.Get(sequence.GetCacheSize()),
+            // REMARKS
+            null);
     }
 
     /// <summary>

@@ -1847,6 +1847,12 @@ public abstract class Table
     public List<Schemas.Sequence> GetSequences() => sequences is null ? [] : [.. sequences];
 
     /// <summary>
+    /// Removes a sequence that belonged to this table.
+    /// </summary>
+    /// <param name="sequence">the sequence</param>
+    public void RemoveSequence(Schemas.Sequence sequence) => sequences?.Remove(sequence);
+
+    /// <summary>
     /// Whether this table depends on the given object.
     /// </summary>
     /// <param name="other">the other object</param>

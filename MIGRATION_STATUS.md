@@ -5235,3 +5235,57 @@ COLLATIONS, SYSTEM_RANGE в обе стороны); сравниваются в�
 + 19 красных (те же пины `AS`-алиаса, CTE, JOIN и MERGE) + 3 новых, `MvStore.Tests` 86,
 `Engine.Tests` 4/9 (прежние 5 задуманных).
 
+**Последовательности: `CREATE`/`ALTER`/`DROP`, `NEXT VALUE FOR`, каталог, `ALTER COLUMN`.**
+`CREATE SEQUENCE [IF NOT EXISTS] имя [AS тип] [START WITH n] [INCREMENT [BY] n] [MINVALUE n |
+NO MINVALUE] [MAXVALUE n | NO MAXVALUE] [CYCLE | NO CYCLE] [CACHE n]`, `ALTER SEQUENCE имя
+[RESTART [WITH n]] […]`, `DROP SEQUENCE [IF EXISTS] имя` — эталонными
+`parseSequenceOptions`/`parseBasicSequenceOption`; команды — `Command/Ddl/CreateSequence.cs`,
+`AlterSequence.cs`, `DropSequence.cs`. `NEXT VALUE FOR` и `CURRENT VALUE FOR` читаются в
+ридере термов (`Expressions/SequenceValue.cs`), а эталонные `NEXTVAL`/`CURRVAL` — порт
+`Expressions/Functions/CompatibilitySequenceValueFunction.cs`: однопараметрическая форма
+разбирает имя как выражение, и квалифицированное имя даёт схему.
+
+Тонкости, которые стоит помнить (обе — из оракула, а не из чтения):
+
+* `SequenceOptions.getRestartValue` возвращает **null**, если restart не задан; иначе
+  последовательность потеряла бы текущее значение. Порт: `GetRestartValue` → `long?`.
+  `RESTART` без значения — это «вернуться к стартовому», и в порту его знак — `ValueExpression.Null`.
+* `SequenceOptions.getCacheSize` тоже возвращает null, если кэш не задан; порт: `GetCacheSize` → `long?`.
+* Последовательность проверяет свои опции **в конструкторе** (`checkOptions`): `CREATE SEQUENCE
+  … MAXVALUE 1 START WITH 1 CYCLE` на JVM отвечает 90009, и порт отвечает тем же.
+* Опция владения читается **одним** токеном — `BELONGS_TO_TABLE`. Трёхсловное написание
+  `BELONGS TO TABLE` из грамматики документации в эталоне — синтаксическая ошибка: оракул
+  показал 42000 на JVM, и порт теперь отвечает так же.
+* Имя последовательности может стоять с именем схемы (`CREATE SEQUENCE S.SEQ`, эталонное
+  `readIdentifierWithSchema`); в порту это `Parser.ReadIdentifierWithSchema`, неизвестная схема —
+  90079, как в эталоне.
+
+`ALTER TABLE … ALTER COLUMN` для identity-колонки: `RESTART [WITH n]`, `SET INCREMENT BY n`,
+`SET GENERATED ALWAYS|BY DEFAULT`, `DROP IDENTITY` — эталонным `parseSequenceOptions` с
+`forAlterColumn`; `TRUNCATE TABLE … [RESTART|CONTINUE] IDENTITY` — `Command/Ddl/TruncateTable.cs`.
+`Schema.getSequence` (90036, `SequenceNotFound1`) — порт `Schemas/Schema.GetSequence`.
+
+Разбор и подготовка у порта идут в два шага, и разобранное `ALTER COLUMN` едет в
+записи-определении `AlterTableAlterColumnDefinition` (в файле парсера, рядом с уже
+существующей `ColumnDefinition`) — команда `Command/Ddl/AlterTableAlterColumn.cs` это эталонная
+`org.h2.command.ddl.AlterTableAlterColumn` с эталонными константами вида
+`ALTER_TABLE_ALTER_COLUMN_DROP_IDENTITY`.
+
+Каталог: `INFORMATION_SCHEMA.SEQUENCES` наполняется (последовательности, принадлежащие таблице,
+в ней не показываются — как в эталоне).
+
+Оракул (`tests/H2Sharp.Tests/SequenceOracleTests.cs`, 9 тестов): значения, опции, изменения,
+каталог, изменение identity, усечение, совместимые функции, написание опции владения,
+квалифицированное имя — совпадают с JVM. Тест через ADO.NET
+(`tests/H2Sharp.Data.Tests/H2SequenceTests.cs`) — тот же круг через провайдера.
+
+Что в срезе не портировано и отказывает по имени: остальные формы `ALTER TABLE … ALTER COLUMN`
+(`RENAME`, `SET DEFAULT`, `SELECTIVITY`, смена типа, `INVISIBLE`), `COMMENT ON SEQUENCE` (весь
+`COMMENT ON` не портирован), персистентность последовательностей (живут в памяти, как схемы).
+`CREATE SCHEMA` в порте тоже нет, поэтому квалифицированное имя проверено на `PUBLIC`.
+
+Проверено: `H2Sharp.Tests` **1131**, конформанс-набор **285/947** (было 261: Commands
+17/254 → 24/254, Grammar 61/263 → 81/263, Datatypes 38/66 → 41/66, SystemTables 17/37 → 18/37),
+`Data.Tests` 356 + 19 красных (те же пины `AS`-алиаса, CTE, JOIN и MERGE) + 4 новых,
+`MvStore.Tests` 86, `Engine.Tests` 4/9 (прежние 5 задуманных).
+

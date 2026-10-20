@@ -100,13 +100,28 @@ public class SequenceOptions
     public void SetStartValue(Expression? start) => startValue = start;
 
     /// <summary>Gets the value to restart from.</summary>
+    /// <remarks>
+    /// The reference's getRestartValue: null when no restart was written, so that the
+    /// sequence keeps the value it has; the start value when the restart was written
+    /// without a value of its own; and the value of the expression otherwise.
+    /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="startValue">the start value</param>
-    /// <returns>the restart value</returns>
-    public long GetRestartValue(SessionLocal session, long startValue)
+    /// <returns>the restart value, or null when there is none</returns>
+    public long? GetRestartValue(SessionLocal session, long startValue)
     {
         ArgumentNullException.ThrowIfNull(session);
-        return restartValue is null ? startValue : restartValue.GetValue(session).GetLong();
+        if (restartValue is null)
+        {
+            return null;
+        }
+
+        if (ReferenceEquals(restartValue, Expressions.ValueExpression.Null))
+        {
+            return startValue;
+        }
+
+        return restartValue.GetValue(session).GetLong();
     }
 
     /// <summary>Sets the value to restart from.</summary>
@@ -286,12 +301,16 @@ public class SequenceOptions
     public void SetCycle(Sequence.Cycle cycle) => this.cycle = cycle;
 
     /// <summary>Gets the number of values handed out at once.</summary>
+    /// <remarks>
+    /// The reference's getCacheSize: null when the size was not written, so that the
+    /// sequence can bring it down to what its range allows.
+    /// </remarks>
     /// <param name="session">the session</param>
-    /// <returns>the cache size</returns>
-    public long GetCacheSize(SessionLocal session)
+    /// <returns>the cache size, or null when it was not written</returns>
+    public long? GetCacheSize(SessionLocal session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        return cacheSize is null ? Sequence.DefaultCacheSize : cacheSize.GetValue(session).GetLong();
+        return cacheSize is null ? null : cacheSize.GetValue(session).GetLong();
     }
 
     /// <summary>Sets the number of values handed out at once.</summary>

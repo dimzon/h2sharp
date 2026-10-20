@@ -59,6 +59,11 @@ public sealed class SessionLocal : Session
 
     private readonly Dictionary<string, Values.Value> parameters = [];
 
+    /// <summary>
+    /// The values the sequences handed out in this session, by sequence.
+    /// </summary>
+    private readonly Dictionary<H2Sharp.Schemas.Sequence, Value> currentValueFor = [];
+
     private JavaRandom? random;
 
     /// <summary>
@@ -682,7 +687,29 @@ public sealed class SessionLocal : Session
     public Value GetNextValueFor(H2Sharp.Schemas.Sequence sequence, H2Sharp.Command.Prepared? prepared)
     {
         _ = prepared;
-        return sequence.GetNext(this);
+        Value value = sequence.GetNext(this);
+        currentValueFor[sequence] = value;
+        return value;
+    }
+
+    /// <summary>
+    /// The value a sequence handed out last in this session.
+    /// </summary>
+    /// <remarks>
+    /// The reference's getCurrentValueFor: the value is the one the session last took from
+    /// the sequence, and a session that never took one has no current value.
+    /// </remarks>
+    /// <param name="sequence">the sequence</param>
+    /// <returns>the value</returns>
+    public Value GetCurrentValueFor(H2Sharp.Schemas.Sequence sequence)
+    {
+        if (currentValueFor.TryGetValue(sequence, out Value? value))
+        {
+            return value;
+        }
+
+        throw DbException.Get(
+            Api.ErrorCode.CurrentSequenceValueIsNotDefinedInSession1, sequence.GetName());
     }
 
     /// <summary>

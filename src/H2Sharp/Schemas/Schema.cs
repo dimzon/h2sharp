@@ -235,6 +235,22 @@ public sealed class Schema : DbObject
     }
 
     /// <summary>
+    /// Gets the sequence with this name, as the reference's getSequence does.
+    /// </summary>
+    /// <param name="name">the sequence name</param>
+    /// <returns>the sequence</returns>
+    public Sequence GetSequence(string name)
+    {
+        Sequence? sequence = FindSequence(name);
+        if (sequence is null)
+        {
+            throw DbException.Get(ErrorCode.SequenceNotFound1, name);
+        }
+
+        return sequence;
+    }
+
+    /// <summary>
     /// Gets all the sequences of this schema.
     /// </summary>
     /// <returns>the sequences</returns>

@@ -127,6 +127,25 @@ public sealed class AlterTableStatement : Statement
 
     /// <summary>Whether PRIMARY KEY was written after DROP.</summary>
     public bool DropPrimaryKey { get; set; }
+
+    /// <summary>The column that is changed, or null when the statement does not change one.</summary>
+    public AlterTableAlterColumnDefinition? AlterColumn { get; set; }
+}
+
+/// <summary>ALTER TABLE ... ALTER COLUMN.</summary>
+public sealed class AlterTableAlterColumnDefinition
+{
+    /// <summary>The name of the column.</summary>
+    public string ColumnName { get; init; } = string.Empty;
+
+    /// <summary>Whether the column loses its identity.</summary>
+    public bool DropIdentity { get; init; }
+
+    /// <summary>Whether the value is always generated, or null when it was not written.</summary>
+    public bool? Always { get; init; }
+
+    /// <summary>The options of the sequence of the column.</summary>
+    public Ddl.SequenceOptions Options { get; init; } = new();
 }
 
 /// <summary>CREATE TABLE.</summary>
@@ -370,6 +389,26 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Parses a SQL code snippet that represents an expression, as the reference's
+    /// parseExpression does.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads the snippet with the parser of the session it belongs to, and this
+    /// does the same: the snippet is tokenized on its own, and the expression is read out of
+    /// those tokens.
+    /// </remarks>
+    /// <param name="sql">the code snippet</param>
+    /// <returns>the expression</returns>
+    public Expression ParseExpression(string sql)
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+        BitArray parameters = new(8);
+        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        Parser parser = new(sql, provider, tokens, session);
+        return parser.ReadExpression();
+    }
+
+    /// <summary>
     /// Whether only semicolons and the end stand between the position and the input end.
     /// </summary>
     /// <returns>true when nothing more is written</returns>
@@ -401,6 +440,22 @@ public sealed partial class Parser
         {
             prepared = ParseQuerySelect();
         }
+        else if (IsWord("CREATE", consume: false) && NextIs("SEQUENCE"))
+        {
+            prepared = PrepareCreateSequence(current);
+        }
+        else if (IsWord("ALTER", consume: false) && NextIs("SEQUENCE"))
+        {
+            prepared = PrepareAlterSequence(current);
+        }
+        else if (IsWord("DROP", consume: false) && NextIs("SEQUENCE"))
+        {
+            prepared = PrepareDropSequence(current);
+        }
+        else if (IsWord("TRUNCATE", consume: false))
+        {
+            prepared = PrepareTruncateTable(current);
+        }
         else
         {
             Statement statement = ReadStatement();
@@ -422,6 +477,137 @@ public sealed partial class Parser
 
         prepared.SetParameterList(parameterList.Count == 0 ? null : parameterList);
         return prepared;
+    }
+
+    /// <summary>
+    /// Whether the word after the current one is the given word.
+    /// </summary>
+    /// <param name="word">the word</param>
+    /// <returns>true if it is</returns>
+    private bool NextIs(string word)
+    {
+        string? name = position + 1 < tokens.Count ? tokens[position + 1].AsIdentifier : null;
+        return name is not null && name.Equals(word, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Reads a name that may name its schema, as the reference's readIdentifierWithSchema does.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads the schema name into the parser and the statement is built against
+    /// it; a name without a schema belongs to the schema of the session. The name of the
+    /// database may stand in front of the schema name, and then it is skipped.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="schema">the schema the name belongs to</param>
+    /// <returns>the name</returns>
+    private string ReadIdentifierWithSchema(SessionLocal session, out Schemas.Schema schema)
+    {
+        string name = ReadIdentifier();
+        schema = CurrentSchema(session);
+        if (ReadIf(Token.Dot))
+        {
+            string first = name;
+            name = ReadIdentifier();
+            if (CurrentType == Token.Dot
+                && first.Equals(session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
+            {
+                Read();
+                schema = session.GetDatabase().GetSchema(name);
+                name = ReadIdentifier();
+            }
+            else
+            {
+                schema = session.GetDatabase().GetSchema(first);
+            }
+        }
+
+        return name;
+    }
+
+    /// <summary>
+    /// Builds the command of a CREATE SEQUENCE statement.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the command</returns>
+    private Ddl.CreateSequence PrepareCreateSequence(SessionLocal session)
+    {
+        ExpectWord("CREATE");
+        ExpectWord("SEQUENCE");
+        bool ifNotExists = ReadIfNotExists();
+        string sequenceName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        Ddl.CreateSequence command = new(session, schema);
+        command.SetIfNotExists(ifNotExists);
+        command.SetSequenceName(sequenceName);
+        Ddl.SequenceOptions options = new();
+        ReadSequenceOptions(options, command, allowDataType: true, forAlterColumn: false);
+        command.SetOptions(options);
+        return command;
+    }
+
+    /// <summary>
+    /// Builds the command of an ALTER SEQUENCE statement.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the command</returns>
+    private Ddl.AlterSequence PrepareAlterSequence(SessionLocal session)
+    {
+        ExpectWord("ALTER");
+        ExpectWord("SEQUENCE");
+        bool ifExists = ReadIfExists(false);
+        string sequenceName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        Ddl.AlterSequence command = new(session, schema);
+        command.SetSequenceName(sequenceName);
+        command.SetIfExists(ifExists);
+        Ddl.SequenceOptions options = new();
+        ReadSequenceOptions(options, command: null, allowDataType: false, forAlterColumn: false);
+        command.SetOptions(options);
+        return command;
+    }
+
+    /// <summary>
+    /// Builds the command of a DROP SEQUENCE statement.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the command</returns>
+    private Ddl.DropSequence PrepareDropSequence(SessionLocal session)
+    {
+        ExpectWord("DROP");
+        ExpectWord("SEQUENCE");
+        bool ifExists = ReadIfExists(false);
+        string sequenceName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        Ddl.DropSequence command = new(session, schema);
+        command.SetSequenceName(sequenceName);
+        command.SetIfExists(ifExists);
+        return command;
+    }
+
+    /// <summary>
+    /// Builds the command of a TRUNCATE TABLE statement.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the command</returns>
+    private Ddl.TruncateTable PrepareTruncateTable(SessionLocal session)
+    {
+        ExpectWord("TRUNCATE");
+        ExpectWord("TABLE");
+        string tableName = ReadIdentifier();
+        Schemas.Schema schema = CurrentSchema(session);
+        Tables.Table table = ReadTableOrView(session, schema, tableName);
+        bool restart = false;
+        if (IsWord("CONTINUE") && IsWord("IDENTITY"))
+        {
+            restart = false;
+        }
+        else if (IsWord("RESTART") && IsWord("IDENTITY"))
+        {
+            restart = true;
+        }
+
+        Ddl.TruncateTable command = new(session);
+        command.SetTable(table);
+        command.SetRestart(restart);
+        return command;
     }
 
     /// <summary>
@@ -1739,6 +1925,30 @@ public sealed partial class Parser
 
         if (Current.AsIdentifier is not null)
         {
+            int index = position;
+            string? name = Current.AsIdentifier;
+            if (name is not null
+                && (name.Equals("NEXT", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("CURRENT", StringComparison.OrdinalIgnoreCase)))
+            {
+                // The reference reads the value of a sequence in its term reader: NEXT VALUE
+                // FOR takes the next value of the sequence, CURRENT VALUE FOR the one it
+                // handed out last in this session.
+                bool current = name.Equals("CURRENT", StringComparison.OrdinalIgnoreCase);
+                Read();
+                if (IsWord("VALUE") && IsWord("FOR"))
+                {
+                    Schemas.Sequence sequence = ReadSequence(
+                        session ?? throw new TODOException(
+                            "Parser.readTerm: this parser has no session"));
+                    return current
+                        ? new Expressions.SequenceValue(sequence)
+                        : new Expressions.SequenceValue(sequence, null);
+                }
+
+                position = index;
+            }
+
             if (tokens[position + 1].TokenType == Token.OpenParen)
             {
                 if (aggregateSelect is null && IsAggregateCall(out _))
@@ -1799,6 +2009,23 @@ public sealed partial class Parser
         }
 
         throw new TODOException("Parser.parseQuerySelect: this expression is not ported");
+    }
+
+    /// <summary>
+    /// Reads the name of a sequence and finds it, as the reference's readSequence.
+    /// </summary>
+    /// <param name="schema">the schema</param>
+    /// <returns>the sequence</returns>
+    private Schemas.Sequence ReadSequence(SessionLocal session)
+    {
+        string sequenceName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        Schemas.Sequence? sequence = schema.FindSequence(sequenceName);
+        if (sequence is null)
+        {
+            throw DbException.Get(Api.ErrorCode.SequenceNotFound1, sequenceName);
+        }
+
+        return sequence;
     }
 
     /// <summary>
@@ -2360,6 +2587,27 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Reads a compatibility sequence value function, the reference's
+    /// readCompatibilitySequenceValueFunction.
+    /// </summary>
+    /// <param name="current">whether the current value is read instead of the next one</param>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <returns>the expression</returns>
+    private Expressions.Expression ReadCompatibilitySequenceValueFunction(
+        bool current, Query.Select? aggregateSelect)
+    {
+        Expressions.Expression arg1 = ReadQueryOr(aggregateSelect);
+        Expressions.Expression? arg2 = null;
+        if (ReadIf(Token.Comma))
+        {
+            arg2 = ReadQueryOr(aggregateSelect);
+        }
+
+        Expect(Token.CloseParen, ")");
+        return new Expressions.Functions.CompatibilitySequenceValueFunction(arg1, arg2, current);
+    }
+
+    /// <summary>
     /// Reads a compatibility function, the reference's readCompatibilityFunction. Returns null
     /// when the name is not read here.
     /// </summary>
@@ -2510,11 +2758,10 @@ public sealed partial class Parser
             case "SUBSTR":
                 return ReadSubstringFunction(aggregateSelect);
 
-            // CompatibilitySequenceValueFunction (not ported).
+            // CompatibilitySequenceValueFunction.
             case "CURRVAL":
             case "NEXTVAL":
-                throw new TODOException(
-                    "Parser.readCompatibilityFunction: CompatibilitySequenceValueFunction is not ported");
+                return ReadCompatibilitySequenceValueFunction(name == "CURRVAL", aggregateSelect);
 
             default:
                 return null;
@@ -2985,6 +3232,53 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareAlterTable(SessionLocal session, AlterTableStatement statement)
     {
+        if (statement.AlterColumn is not null)
+        {
+            Schemas.Schema schema = CurrentSchema(session);
+            Tables.Table? table = schema.FindTableOrView(session, statement.Name);
+            if (table is null)
+            {
+                if (statement.IfTableExists)
+                {
+                    return new Dml.NoOperation(session);
+                }
+
+                throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, statement.Name);
+            }
+
+            Tables.Column? column = null;
+            foreach (Tables.Column candidate in table.GetColumns())
+            {
+                if (candidate.GetName().Equals(statement.AlterColumn.ColumnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    column = candidate;
+                    break;
+                }
+            }
+
+            if (column is null)
+            {
+                throw DbException.Get(Api.ErrorCode.ColumnNotFound1, statement.AlterColumn.ColumnName);
+            }
+
+            if (statement.AlterColumn.DropIdentity)
+            {
+                Ddl.AlterTableAlterColumn dropIdentity = new(session, schema);
+                dropIdentity.SetSql(statement.Sql, null);
+                dropIdentity.SetTableName(statement.Name);
+                dropIdentity.SetIfTableExists(statement.IfTableExists);
+                dropIdentity.SetOldColumn(column);
+                dropIdentity.SetType(CommandInterface.AlterTableAlterColumnDropIdentity);
+                return dropIdentity;
+            }
+
+            Ddl.AlterSequence alter = new(session, schema);
+            alter.SetSql(statement.Sql, null);
+            alter.SetColumn(column, statement.AlterColumn.Always);
+            alter.SetOptions(statement.AlterColumn.Options);
+            return alter;
+        }
+
         if (statement.DropPrimaryKey)
         {
             Schemas.Schema schema = CurrentSchema(session);
@@ -3033,11 +3327,30 @@ public sealed partial class Parser
     /// Reads the options of a sequence, as the reference's parseSequenceOptions.
     /// </summary>
     /// <param name="options">the options to fill</param>
-    private void ReadSequenceOptions(Ddl.SequenceOptions options)
+    /// <param name="command">the statement the options belong to, or null</param>
+    /// <param name="allowDataType">whether the type of the sequence may be named</param>
+    /// <param name="forAlterColumn">whether the options belong to an identity column</param>
+    private bool ReadSequenceOptions(
+        Ddl.SequenceOptions options,
+        Ddl.CreateSequence? command,
+        bool allowDataType,
+        bool forAlterColumn)
     {
+        bool result = false;
         while (true)
         {
-            if (IsWord("START") && IsWord("WITH"))
+            if (allowDataType && IsWord("AS"))
+            {
+                TypeInfo dataType = ParseDataType(ReadTypeName());
+                if (!DataType.IsNumericType(dataType.GetValueType()))
+                {
+                    throw DbException.GetUnsupportedException(
+                        "CREATE SEQUENCE AS " + dataType.GetSql(new StringBuilder(), HasSql.TraceSqlFlags));
+                }
+
+                options.SetDataType(dataType);
+            }
+            else if (IsWord("START") && IsWord("WITH"))
             {
                 options.SetStartValue(ReadExpression());
             }
@@ -3047,11 +3360,55 @@ public sealed partial class Parser
                     ? ReadExpression()
                     : Expressions.ValueExpression.Get(Values.ValueNull.Instance));
             }
+            else if (command is not null && ReadCreateSequenceOption(command))
+            {
+                // The option belongs to the statement itself.
+            }
+            else if (forAlterColumn)
+            {
+                int index = position;
+                if (IsWord("SET"))
+                {
+                    if (!ReadBasicSequenceOption(options))
+                    {
+                        position = index;
+                        break;
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
             else if (!ReadBasicSequenceOption(options))
             {
                 break;
             }
+
+            result = true;
         }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reads an option of the CREATE SEQUENCE statement itself, as the reference's
+    /// parseCreateSequenceOption.
+    /// </summary>
+    /// <param name="command">the statement</param>
+    /// <returns>true if an option was read</returns>
+    private bool ReadCreateSequenceOption(Ddl.CreateSequence command)
+    {
+        // The reference reads the ownership option as one token, spelled with an underscore:
+        // "BELONGS_TO_TABLE". The three-word spelling of the documentation is a syntax error
+        // there, and the oracle says so too.
+        if (IsWord("BELONGS_TO_TABLE"))
+        {
+            command.SetBelongsToTable(true);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -3654,7 +4011,7 @@ public sealed partial class Parser
                     Ddl.SequenceOptions options = new();
                     if (ReadIf(Token.OpenParen))
                     {
-                        ReadSequenceOptions(options);
+                        ReadSequenceOptions(options, command: null, allowDataType: false, forAlterColumn: false);
                         Expect(Token.CloseParen, ")");
                     }
 
@@ -3792,6 +4149,59 @@ public sealed partial class Parser
         }
 
         statement.Name = ReadIdentifier();
+        if (IsWord("ALTER"))
+        {
+            Read();
+            _ = IsWord("COLUMN");
+            _ = ReadIfExists(false);
+            string columnName = ReadIdentifier();
+            if (IsWord("DROP", consume: false) && NextIs("IDENTITY"))
+            {
+                Read();
+                Read();
+                statement.AlterColumn = new AlterTableAlterColumnDefinition
+                {
+                    ColumnName = columnName,
+                    DropIdentity = true,
+                };
+                return statement;
+            }
+
+            bool? always = null;
+            if (IsWord("SET", consume: false) && NextIs("GENERATED"))
+            {
+                Read();
+                Read();
+                if (IsWord("ALWAYS"))
+                {
+                    always = true;
+                }
+                else
+                {
+                    ExpectWord("BY");
+                    ExpectWord("DEFAULT");
+                    always = false;
+                }
+            }
+
+            Ddl.SequenceOptions options = new();
+            bool hasOptions = ReadSequenceOptions(
+                options, command: null, allowDataType: false, forAlterColumn: true);
+            if (!hasOptions && always is null)
+            {
+                throw new TODOException(
+                    "Parser.readAlterTable: only the identity of a column is ported");
+            }
+
+            statement.AlterColumn = new AlterTableAlterColumnDefinition
+            {
+                ColumnName = columnName,
+                Always = always,
+                Options = options,
+            };
+            return statement;
+        }
+
         if (IsWord("ADD"))
         {
             if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary)
@@ -3845,6 +4255,23 @@ public sealed partial class Parser
         }
 
         return ifExists;
+    }
+
+    /// <summary>
+    /// Reads the IF NOT EXISTS of a statement, as the reference's readIfNotExists.
+    /// </summary>
+    /// <returns>true if it was written</returns>
+    private bool ReadIfNotExists()
+    {
+        if (CurrentType == ParserUtil.If)
+        {
+            Read();
+            Expect(ParserUtil.Not, "NOT");
+            Expect(ParserUtil.Exists, "EXISTS");
+            return true;
+        }
+
+        return false;
     }
 
     private DropTableStatement ReadDropTable()
