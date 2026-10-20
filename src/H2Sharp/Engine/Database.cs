@@ -473,6 +473,35 @@ public sealed partial class Database
     }
 
     /// <summary>
+    /// Gets the short name of the database: the part of the name after the last separator,
+    /// in upper case.
+    /// </summary>
+    /// <remarks>
+    /// The reference's parseDatabaseShortName. The name of a database is a path or a URL
+    /// like "mem:db" or "file:/tmp/db", and the catalogue names the database by the last
+    /// piece of it: "DB", and "UNNAMED" when the name has no piece at all.
+    /// </remarks>
+    /// <returns>the short name</returns>
+    public string GetShortName()
+    {
+        string n = name;
+        int l = n.Length;
+        int i = l;
+        while (--i >= 0)
+        {
+            char ch = n[i];
+            if (ch is '/' or ':' or '\\')
+            {
+                break;
+            }
+        }
+
+        n = ++i == l ? "UNNAMED" : n[i..];
+        return Util.StringUtils.TruncateString(
+            Util.StringUtils.ToUpperEnglish(n), Constants.MaxIdentifierLength);
+    }
+
+    /// <summary>
     /// Whether this database is in memory.
     /// </summary>
     /// <returns>true if it is</returns>

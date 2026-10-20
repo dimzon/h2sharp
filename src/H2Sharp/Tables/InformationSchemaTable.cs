@@ -937,7 +937,7 @@ public sealed class InformationSchemaTable : Table
     {
         List<Value[]> rows = [];
         Database database = session.GetDatabase();
-        string catalog = database.GetName();
+        string catalog = database.GetShortName();
         string mainSchemaName = database.GetMainSchema()?.GetName() ?? string.Empty;
         string collation = database.GetCompareMode().GetName();
         switch (type)
@@ -1187,6 +1187,7 @@ public sealed class InformationSchemaTable : Table
             string? columnDefault = null;
             string isGenerated;
             string? generationExpression = null;
+            string? onUpdate = null;
             if (c.IsGenerated())
             {
                 isGenerated = "ALWAYS";
@@ -1204,53 +1205,114 @@ public sealed class InformationSchemaTable : Table
                 isGenerated = "NEVER";
             }
 
+            if (c.GetOnUpdateExpression() is not null)
+            {
+                onUpdate = c.GetOnUpdateExpression()!
+                    .GetUnenclosedSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
+            }
+
+            // The values are in the order of the columns the view declares, and there is one
+            // value for every column of it: the reader walks the row by that order, and a row
+            // that is shorter leaves it outside the array.
             Add(
                 rows,
+                // TABLE_CATALOG
                 catalog,
+                // TABLE_SCHEMA
                 table.GetSchema()?.GetName(),
+                // TABLE_NAME
                 table.GetTableName(),
+                // COLUMN_NAME
                 c.GetName(),
+                // ORDINAL_POSITION
                 ValueInteger.Get(i + 1),
+                // COLUMN_DEFAULT
                 columnDefault,
+                // IS_NULLABLE
                 c.IsNullable() == Column.Nullable ? "YES" : "NO",
+                // DATA_TYPE
                 dt.DataType,
+                // CHARACTER_MAXIMUM_LENGTH
                 dt.CharacterPrecision,
+                // CHARACTER_OCTET_LENGTH
                 dt.CharacterPrecision,
+                // NUMERIC_PRECISION
                 dt.NumericPrecision,
+                // NUMERIC_PRECISION_RADIX
                 dt.NumericPrecisionRadix,
+                // NUMERIC_SCALE
                 dt.NumericScale,
+                // DATETIME_PRECISION
                 dt.DateTimePrecision,
+                // INTERVAL_TYPE
                 dt.IntervalType,
+                // INTERVAL_PRECISION
                 dt.IntervalPrecision,
+                // CHARACTER_SET_CATALOG
                 characterSetCatalog,
+                // CHARACTER_SET_SCHEMA
                 characterSetSchema,
+                // CHARACTER_SET_NAME
                 characterSetName,
+                // COLLATION_CATALOG
+                characterSetCatalog,
+                // COLLATION_SCHEMA
+                characterSetSchema,
+                // COLLATION_NAME
                 collationName,
+                // DOMAIN_CATALOG
                 null,
+                // DOMAIN_SCHEMA
                 null,
+                // DOMAIN_NAME
                 null,
+                // MAXIMUM_CARDINALITY
                 dt.MaximumCardinality,
-                null,
+                // DTD_IDENTIFIER
+                (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                // IS_IDENTITY
                 "NO",
+                // IDENTITY_GENERATION
                 null,
+                // IDENTITY_START
                 null,
+                // IDENTITY_INCREMENT
                 null,
+                // IDENTITY_MAXIMUM
                 null,
+                // IDENTITY_MINIMUM
                 null,
+                // IDENTITY_CYCLE
                 null,
+                // IS_GENERATED
                 isGenerated,
+                // GENERATION_EXPRESSION
                 generationExpression,
+                // DECLARED_DATA_TYPE
                 dt.DeclaredDataType,
+                // DECLARED_NUMERIC_PRECISION
                 dt.DeclaredNumericPrecision,
+                // DECLARED_NUMERIC_SCALE
                 dt.DeclaredNumericScale,
+                // extensions
+                // GEOMETRY_TYPE
                 dt.GeometryType,
+                // GEOMETRY_SRID
                 dt.GeometrySrid,
+                // IDENTITY_BASE
                 null,
+                // IDENTITY_CACHE
                 null,
+                // COLUMN_ON_UPDATE
+                onUpdate,
+                // IS_VISIBLE
                 ValueBoolean.Get(c.GetVisible()),
+                // DEFAULT_ON_NULL
                 ValueBoolean.Get(c.IsDefaultOnNull()),
-                null,
-                null);
+                // SELECTIVITY
+                ValueInteger.Get(c.GetSelectivity()),
+                // REMARKS
+                c.GetComment());
         }
     }
 

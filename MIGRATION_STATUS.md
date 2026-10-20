@@ -5171,3 +5171,28 @@ COLLATIONS, SYSTEM_RANGE в обе стороны); сравниваются в�
 `Data.Tests` 343 + 19 красных (те же пины `AS`-алиаса, CTE, JOIN и MERGE), `MvStore.Tests` 86,
 `Engine.Tests` 4/9 (прежние 5 задуманных).
 
+**LOB в памяти пишутся в строку, и CRUD через провайдера.**
+`MvStore/Db/ValueDataType.cs` теперь пишет и читает BLOB и CLOB: байты лоба, который лежит
+в памяти, идут в строку целиком — как в эталоне для `LobDataInMemory`, — а лоб, живущий в
+базе, пишется ссылкой; хранилище лобов не портировано, и такой лоб отказывается по имени.
+`Values/ValueLob.cs`: `copyToResult` возвращает сам лоб, когда он не привязан к таблице (эталон
+делает то же), и отказывается для привязанного — копировать некуда.
+
+Тест через ADO.NET (`Data.Tests/H2CrudAndLobTests`): таблица создаётся, строка пишется
+параметрами, читается, меняется и удаляется; CLOB и BLOB проходят целиком (5 КБ текста и
+2 000 байт), меняются, и приходят назад теми же типами — `CHARACTER LARGE OBJECT` и
+`BINARY LARGE OBJECT`, а не строками; NULL и пустые значения различаются. Оракул
+(`LobOracleTests.AClobAndABlobAnswerTheSameAsTheReference`) читает те же значения на JVM и
+сравнивает их.
+
+Попутно найдено тестом каталога: у базы нет короткого имени (`Database.GetShortName()` — часть
+имени после последнего разделителя, в верхнем регистре; им называется каталог), строка
+`COLUMNS` заполнялась не во всех колонках (эталон: `COLLATION_CATALOG`, `COLLATION_SCHEMA`,
+`DTD_IDENTIFIER`, `SELECTIVITY`, `REMARKS`), а `DECIMAL`/`DEC` в DDL не несли эталонные
+расширенные параметры типа (`ExtTypeInfoNumeric.Decimal`) — без них `DECLARED_DATA_TYPE`
+отвечал бы `NUMERIC`.
+
+Проверено: `H2Sharp.Tests` **1117**, конформанс-набор **254/947** (было 251), `Data.Tests` 349
++ 19 красных (те же пины `AS`-алиаса, CTE, JOIN и MERGE), `MvStore.Tests` 86, `Engine.Tests`
+4/9 (прежние 5 задуманных).
+

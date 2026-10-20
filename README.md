@@ -35,6 +35,15 @@ Embeddable SQL engine for .NET, ported from [H2 Database](https://github.com/h2d
   `docs/DIVERGENCES.md` — identity DDL, `INFORMATION_SCHEMA`, `CREATE SEQUENCE`, `JOIN`, and
   the `AS` in front of a table alias.
 
+* `H2Sharp.Linq2Db` — a [linq2db](https://github.com/linq2db/linq2db) provider for this
+  engine, in a sibling checkout (`../h2sharp-linq2db`). It is written against linq2db's public
+  API and against the engine's public API, and it speaks H2: the identifiers are always quoted,
+  the types are H2's, the paging is `LIMIT`/`OFFSET`, the functions of H2 are offered as
+  `H2SharpSpecificExtensions`, and the catalogue is read from `INFORMATION_SCHEMA` the way
+  H2 2.5 keeps it. What it still needs from the engine is listed in its
+  `docs/DIVERGENCES.md` — identity DDL, `CREATE SEQUENCE`, `CREATE ALIAS`, `COMMENT ON`,
+  foreign keys in DDL, `OVER`, and the `LIMIT` with a number in a parameter.
+
 ## Building
 
 ```sh

@@ -69,6 +69,24 @@ public sealed class InformationSchemaOracleTests
     ];
 
     /// <summary>
+    /// The whole COLUMNS view, every column of it, in the order the reference declares them.
+    /// </summary>
+    private static readonly string[] AllColumns =
+    [
+        "TABLE_CATALOG", "TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME", "ORDINAL_POSITION",
+        "COLUMN_DEFAULT", "IS_NULLABLE", "DATA_TYPE", "CHARACTER_MAXIMUM_LENGTH",
+        "CHARACTER_OCTET_LENGTH", "NUMERIC_PRECISION", "NUMERIC_PRECISION_RADIX", "NUMERIC_SCALE",
+        "DATETIME_PRECISION", "INTERVAL_TYPE", "INTERVAL_PRECISION", "CHARACTER_SET_CATALOG",
+        "CHARACTER_SET_SCHEMA", "CHARACTER_SET_NAME", "COLLATION_CATALOG", "COLLATION_SCHEMA",
+        "COLLATION_NAME", "DOMAIN_CATALOG", "DOMAIN_SCHEMA", "DOMAIN_NAME", "MAXIMUM_CARDINALITY",
+        "DTD_IDENTIFIER", "IS_IDENTITY", "IDENTITY_GENERATION", "IDENTITY_START", "IDENTITY_INCREMENT",
+        "IDENTITY_MAXIMUM", "IDENTITY_MINIMUM", "IDENTITY_CYCLE", "IS_GENERATED",
+        "GENERATION_EXPRESSION", "DECLARED_DATA_TYPE", "DECLARED_NUMERIC_PRECISION",
+        "DECLARED_NUMERIC_SCALE", "GEOMETRY_TYPE", "GEOMETRY_SRID", "IDENTITY_BASE", "IDENTITY_CACHE",
+        "COLUMN_ON_UPDATE", "IS_VISIBLE", "DEFAULT_ON_NULL", "SELECTIVITY", "REMARKS",
+    ];
+
+    /// <summary>
     /// The same questions, asked of both sides.
     /// </summary>
     [JavaOracleFact]
@@ -76,6 +94,38 @@ public sealed class InformationSchemaOracleTests
     {
         List<string> port = RunPort(Setup, Queries);
         List<string> java = RunJava(Setup, Queries);
+        Assert.Equal(java.Count, port.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(
+                java[i] == port[i],
+                $"line {i}\n  java:   {java[i]}\n  csharp: {port[i]}");
+        }
+    }
+
+    /// <summary>
+    /// The COLUMNS view with every column of it, asked of both sides.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    ///     A row of a view is read by the order of the columns the view declares, and the reader
+    ///     walks the row by that order. A row that is shorter leaves it outside the array, and a
+    ///     row whose values are in the wrong order answers with the wrong cell. Asking for a part
+    ///     of the view hides both: the cells that are not asked for are never read, and the ones
+    ///     that are read may be the right ones with the wrong meaning.
+    /// </para>
+    /// </remarks>
+    [JavaOracleFact]
+    public void EveryColumnOfTheColumnsViewAgreesWithTheReference()
+    {
+        string[] queries =
+        [
+            "SELECT " + string.Join(", ", AllColumns) + " FROM INFORMATION_SCHEMA.COLUMNS "
+                + "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION",
+        ];
+
+        List<string> port = RunPort(Setup, queries);
+        List<string> java = RunJava(Setup, queries);
         Assert.Equal(java.Count, port.Count);
         for (int i = 0; i < java.Count; i++)
         {

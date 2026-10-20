@@ -2998,7 +2998,15 @@ public sealed partial class Parser
             throw DbException.GetSyntaxError(sql, 0, typeName);
         }
 
-        return TypeInfo.GetTypeInfo(dataType.Type, precision, scale, null);
+        // DECIMAL and DEC are the same type as NUMERIC and say so: the extended parameters
+        // of the type are what tell the two apart, and the reference keeps that difference
+        // in them.
+        string upperName = name.Trim().ToUpperInvariant();
+        ExtTypeInfo? extTypeInfo = upperName is "DECIMAL" or "DEC"
+            ? ExtTypeInfoNumeric.Decimal
+            : null;
+
+        return TypeInfo.GetTypeInfo(dataType.Type, precision, scale, extTypeInfo);
     }
 
     /// <summary>

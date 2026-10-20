@@ -40,6 +40,7 @@ using H2Sharp.Result;
 using H2Sharp.Util;
 using H2Sharp.Store;
 using H2Sharp.Values;
+using H2Sharp.Values.Lobs;
 
 namespace H2Sharp.MvStore.Db;
 
@@ -482,8 +483,43 @@ public sealed class ValueDataType : BasicDataType<Value>
                 throw new TODOException("ValueDataType.write: INTERVAL");
 
             case Value.Blob:
+                {
+                    buff.Put(Blob);
+                    ValueBlob lob = (ValueBlob)v;
+                    LobData lobData = lob.GetLobData();
+                    if (lobData is LobDataInMemory memory)
+                    {
+                        byte[] small = memory.GetSmall()!;
+                        buff.PutVarInt(small.Length).Put(small, 0, small.Length);
+                    }
+                    else
+                    {
+                        // A lob that lives in the database is written as a reference to it, and
+                        // the storage of the lobs is not ported.
+                        throw new TODOException("ValueDataType.write: LOB in the database");
+                    }
+
+                    break;
+                }
+
             case Value.Clob:
-                throw new TODOException("ValueDataType.write: LOB");
+                {
+                    buff.Put(Clob);
+                    ValueClob lob = (ValueClob)v;
+                    LobData lobData = lob.GetLobData();
+                    if (lobData is LobDataInMemory memory)
+                    {
+                        byte[] small = memory.GetSmall()!;
+                        buff.PutVarInt(small.Length).Put(small, 0, small.Length)
+                            .PutVarLong(lob.CharLength());
+                    }
+                    else
+                    {
+                        throw new TODOException("ValueDataType.write: LOB in the database");
+                    }
+
+                    break;
+                }
 
             case Value.Geometry:
                 throw new TODOException("ValueDataType.write: GEOMETRY");
@@ -671,8 +707,31 @@ public sealed class ValueDataType : BasicDataType<Value>
                 throw new TODOException("ValueDataType.read: INTERVAL");
 
             case Blob:
+                {
+                    int smallLen = DataUtils.ReadVarInt(buff, ref position);
+                    if (smallLen >= 0)
+                    {
+                        byte[] small = buff.Slice(position, smallLen).ToArray();
+                        position += smallLen;
+                        return ValueBlob.CreateSmall(small);
+                    }
+
+                    throw new TODOException("ValueDataType.read: LOB in the database");
+                }
+
             case Clob:
-                throw new TODOException("ValueDataType.read: LOB");
+                {
+                    int smallLen = DataUtils.ReadVarInt(buff, ref position);
+                    if (smallLen >= 0)
+                    {
+                        byte[] small = buff.Slice(position, smallLen).ToArray();
+                        position += smallLen;
+                        long charLength = DataUtils.ReadVarLong(buff, ref position);
+                        return ValueClob.CreateSmall(small, charLength);
+                    }
+
+                    throw new TODOException("ValueDataType.read: LOB in the database");
+                }
 
             case Geometry:
                 throw new TODOException("ValueDataType.read: GEOMETRY");

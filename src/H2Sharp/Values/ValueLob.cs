@@ -100,14 +100,21 @@ public abstract class ValueLob : Value
     /// </summary>
     /// <remarks>
     /// The reference copies a lob that lives in the database into the result's own storage, and
-    /// returns itself when the lob is a memory one or the storage is read only. The storage it
-    /// would copy into is not ported — a lob has no home here but in memory — so this refuses
-    /// rather than returning itself and letting a result hold a reference to storage that may be
-    /// gone by the time the caller reads the row.
+    /// returns itself when the lob is a memory one or the storage is read only. This port has
+    /// no storage of its own, so a lob that is not tied to a table is its own copy — which is
+    /// what the reference returns for it as well — and a lob that is tied to one has nowhere
+    /// to be copied to and is refused by name.
     /// </remarks>
     /// <returns>the lob to put in the result</returns>
     public virtual ValueLob CopyToResult()
-        => throw new TODOException("ValueLob.copyToResult: lob storage is not ported");
+    {
+        if (LobData.IsLinkedToTable())
+        {
+            throw new TODOException("ValueLob.copyToResult: lob storage is not ported");
+        }
+
+        return this;
+    }
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo()
