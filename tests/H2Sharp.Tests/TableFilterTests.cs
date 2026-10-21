@@ -413,12 +413,11 @@ public sealed class TableFilterTests
             Assert.Equal("X", filter.GetColumnName(columns[0]));
             Assert.Equal("Y", filter.GetColumnName(columns[1]));
 
-            // Finding by those names is FindColumn's own member, and it needs the database's
-            // identifier comparison plus the table's own lookup -- neither of which is ported.
-            // What is asserted here is the list itself: it is accepted exactly when it names
-            // every column once, and the two refusals above are the reference's errors rather
-            // than something the lookup would have to invent later.
-            Assert.ThrowsAny<Exception>(() => filter.FindColumn("X"));
+            // Finding by those names is FindColumn's own member: a derived name finds the
+            // column it names, and a name the list does not have finds nothing.
+            Assert.Same(columns[0], filter.FindColumn("X"));
+            Assert.Same(columns[1], filter.FindColumn("Y"));
+            Assert.Null(filter.FindColumn("Z"));
         }
         finally
         {

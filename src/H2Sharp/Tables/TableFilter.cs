@@ -843,14 +843,31 @@ public class TableFilter : ColumnResolver
     /// Finds a column by name: a derived column first, then the table's own.
     /// </summary>
     /// <remarks>
-    /// Not ported. The derived map is where a view's own names live, and it is filled while the
-    /// view is read; without it a name that only exists inside a view would fall through to the
-    /// table behind it and be answered with the wrong column.
+    /// A derived table hides the columns of the table behind it under the names the statement
+    /// gave them, and a name that only exists inside the derived table must not fall through
+    /// to the table behind it: the answer would be a column the query cannot see.
     /// </remarks>
     /// <param name="name">the name</param>
     /// <returns>the column</returns>
     public Column? FindColumn(string? name)
-        => throw new TODOException("TableFilter.findColumn: the derived map is not filled yet");
+    {
+        Dictionary<Column, string>? map = derivedColumnMap;
+        if (map is not null)
+        {
+            Database db = session.GetDatabase();
+            foreach (KeyValuePair<Column, string> entry in map)
+            {
+                if (db.EqualsIdentifiers(entry.Value, name ?? string.Empty))
+                {
+                    return entry.Key;
+                }
+            }
+
+            return null;
+        }
+
+        return table!.FindColumn(name ?? string.Empty);
+    }
 
     /// <summary>
     /// Reads a column out of the row the cursor is on.

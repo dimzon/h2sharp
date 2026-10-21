@@ -127,7 +127,6 @@ public sealed class Select : Query
     /// Whether init ran: a second run would resolve the order list twice and append its
     /// expressions twice, so it is refused as the reference refuses it.
     /// </summary>
-    private bool checkInit;
 
     private bool isFetchDistinct;
 
@@ -574,6 +573,18 @@ public sealed class Select : Query
     /// own list rather than a copy.
     /// </remarks>
     public override Expression[] GetExpressions() => expressionArray ?? [.. expressions];
+
+    /// <inheritdoc/>
+    public override HashSet<Tables.Table> GetTables()
+    {
+        HashSet<Tables.Table> set = [];
+        foreach (Tables.TableFilter filter in filters)
+        {
+            _ = set.Add(filter.GetTable());
+        }
+
+        return set;
+    }
 
     /// <inheritdoc/>
     public override int GetColumnCount() => visibleColumnCount;

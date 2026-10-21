@@ -148,6 +148,12 @@ public abstract class Query : Prepared
     public abstract Expression[] GetExpressions();
 
     /// <summary>
+    /// Gets the tables this query reads.
+    /// </summary>
+    /// <returns>the tables</returns>
+    public abstract HashSet<Tables.Table> GetTables();
+
+    /// <summary>
     /// Gets the number of visible columns.
     /// </summary>
     /// <returns>the number of columns</returns>
@@ -193,6 +199,47 @@ public abstract class Query : Prepared
     /// Prepares the expressions of this query.
     /// </summary>
     public abstract void PrepareExpressions();
+
+    /// <summary>
+    /// Whether the query is initialized.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps the flag in the query itself, and the check is what tells the
+    /// table a query makes whether it has to initialize it first.
+    /// </remarks>
+    protected bool checkInit;
+
+    /// <summary>
+    /// Makes a table out of this query, as the reference's toTable does.
+    /// </summary>
+    /// <remarks>
+    /// The table is a derived table: its rows are the rows of the query, and the names the
+    /// statement gave the columns are the names the table's columns are known by.
+    /// </remarks>
+    /// <param name="alias">the name of the table</param>
+    /// <param name="columnTemplates">the names the statement gave the columns, or null</param>
+    /// <param name="forCreateView">whether the table is made for a view</param>
+    /// <param name="topQuery">the query the table is a part of, or null</param>
+    /// <returns>the table</returns>
+    public Tables.Table ToTable(
+        string alias,
+        Tables.Column[]? columnTemplates,
+        bool forCreateView,
+        Query? topQuery)
+    {
+        if (!checkInit)
+        {
+            Init();
+        }
+
+        SessionLocal session = GetSession();
+        return new Tables.DerivedTable(
+            session,
+            alias,
+            columnTemplates,
+            this,
+            topQuery);
+    }
 
     /// <summary>
     /// The order by list, or null when the query has none. The parser fills it; preparing

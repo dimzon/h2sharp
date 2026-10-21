@@ -5534,3 +5534,51 @@ Issue #15 — от провайдера EF Core: `SaveChanges` с тремя с�
 Проверено: `H2Sharp.Tests` **1149**, конформанс-набор **347/947**, `Data.Tests` 380 + 6 красных
 (те же шесть: производная таблица, `VALUES`, `WITH`, `MERGE`), `MvStore.Tests` 86,
 `Engine.Tests` 4/9.
+
+**Производная таблица: запрос в скобках стоит за таблицей.**
+Пункт D issue #13 — самый крупный блокер провайдеров: `FromSql` у EF Core над сущностью с
+ключом кладёт сырой SQL в производную таблицу с псевдонимом, а linq2db кладёт туда любой
+`FromSql` — то есть без производной таблицы у linq2db не проходит ни один `FromSql`.
+
+В эталоне производная таблица — это `org.h2.table.DerivedTable` (наследник
+`org.h2.table.QueryExpressionTable`), а строки она берёт у запроса через индекс
+`org.h2.index.RegularQueryExpressionIndex` и курсор `org.h2.index.QueryExpressionCursor`.
+
+Порт:
+* `Tables/QueryExpressionTable.cs` — эталонный `QueryExpressionTable`: колонки из выражений
+  запроса (`InitColumns`), приблизительное число строк, «это представление»;
+* `Tables/DerivedTable.cs` — эталонный `DerivedTable`;
+* `Indexes/QueryExpressionIndex.cs`, `Indexes/RegularQueryExpressionIndex.cs`,
+  `Indexes/QueryExpressionCursor.cs` — эталонные классы индекса и курсора;
+* `Command/Query/Query.cs` — эталонный `Query.toTable` (`ToTable`) и `Query.getTables`
+  (`GetTables`, у `Select` и `SelectUnion`);
+* `Command/Parser.cs` — `readTablePrimary` читает скобки: запрос в скобках — производная
+  таблица (`isDerivedTable` → `readDerivedTableWithCorrelation`), иначе — скобки вокруг
+  соединения таблиц; псевдоним читается `readFromAlias` (уже был), список имён колонок —
+  `readDerivedColumnNames`, имена колонок — `createQueryColumnTemplateList`;
+* `Tables/TableFilter.cs` — `findColumn` больше не заглушка: производное имя находит свою
+  колонку, а чужое имя не находит ничего; `Tables/TableTypes.cs` — `Table.findColumn`.
+
+Два отступления от эталона, оба записаны в коде:
+* эталон готовит внутренний запрос заново, по его тексту, и копирует значения параметров в
+  новые параметры; порт оставляет тот же объект запроса, который разобран вместе с
+  оператором, — параметры у них одни и те же, и значения, которые ставит вызывающий, и так
+  доходят до внутреннего запроса;
+* эталон проталкивает условия индекса во внутренний запрос и кэширует индекс по маске
+  условий; порт отдаёт все строки внутреннего запроса, а условие применяет фильтр таблицы —
+  так же, как это делают остальные виртуальные таблицы порта.
+
+Побочный эффект: `Parser.ParseQuerySelect` больше не требует, чтобы SELECT был всей
+оператор: эталон проверяет конец оператора в `prepareCommand`, а запрос в скобках — часть
+оператора (`parseEndOfQuery` в эталоне тоже читает только хвост).
+
+Оракул (`tests/H2Sharp.Tests/DerivedTableOracleTests.cs`, 2 теста): производная таблица с
+псевдонимом и без, со списком имён колонок и без, с `COUNT`/`SUM`, с условием, с
+`ORDER BY`, в соединении с обычной таблицей, а также ошибки эталона (несовпадение числа
+колонок, повтор имени) — совпадают с JVM. Тест через ADO.NET
+(`tests/H2Sharp.Data.Tests/H2DerivedTableTests.cs`) — тот же круг через провайдера; два
+красных теста `H2AliasSemanticsTests` (производная таблица с `AS` и без) стали зелёными.
+
+Проверено: `H2Sharp.Tests` **1151**, конформанс-набор **349/947** (было 347), `Data.Tests`
+385 + 4 красных (было 6: закрыты два теста производной таблицы; остались `VALUES` (2), `WITH`
+(1), `MERGE` (1)), `MvStore.Tests` 86, `Engine.Tests` 4/9.

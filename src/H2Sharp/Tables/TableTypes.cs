@@ -1111,6 +1111,32 @@ public abstract class Table
         => throw new TODOException("Table.getId");
 
     /// <summary>
+    /// Finds a column by name, as the reference's findColumn does.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps a map of the columns by name, and the map compares the names the
+    /// way the database compares identifiers; here the columns are looked at one by one, and
+    /// the comparison is the database's.
+    /// </remarks>
+    /// <param name="columnName">the name of the column</param>
+    /// <returns>the column, or null when the table has no column of that name</returns>
+    public virtual Column? FindColumn(string columnName)
+    {
+        Engine.Database? database = GetSchema()?.GetDatabase();
+        foreach (Column column in GetColumns())
+        {
+            if (database is null
+                ? column.GetName().Equals(columnName, StringComparison.Ordinal)
+                : database.EqualsIdentifiers(column.GetName(), columnName))
+            {
+                return column;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Gets the schema name of this table, or null when it has none.
     /// </summary>
     public virtual string? GetSchemaName()

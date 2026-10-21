@@ -61,6 +61,14 @@ public sealed class SelectUnion : Query
     public override Expression[] GetExpressions() => left.GetExpressions();
 
     /// <inheritdoc/>
+    public override HashSet<Tables.Table> GetTables()
+    {
+        HashSet<Tables.Table> set = left.GetTables();
+        set.UnionWith(right.GetTables());
+        return set;
+    }
+
+    /// <inheritdoc/>
     public override int GetColumnCount() => left.GetColumnCount();
 
     /// <inheritdoc/>

@@ -593,6 +593,249 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Reads a derived table: a query in parentheses that stands for a table, as the
+    /// reference's readDerivedTableWithCorrelation does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="select">the select the table belongs to</param>
+    /// <returns>the filter of the table</returns>
+    private Tables.TableFilter ReadDerivedTable(SessionLocal session, Query.Select select)
+    {
+        Query.Query query = ParseQuerySelect(endOfStatement: false);
+        Expect(Token.CloseParen, ")");
+        string? alias = ReadFromAlias();
+        List<string>? derivedColumnNames = null;
+        Tables.Column[]? columnTemplates = null;
+        string tableAlias;
+        if (alias is not null)
+        {
+            derivedColumnNames = ReadDerivedColumnNames();
+            if (derivedColumnNames is not null)
+            {
+                columnTemplates = CreateQueryColumnTemplateList(derivedColumnNames, query, cte: false);
+            }
+
+            tableAlias = alias;
+        }
+        else
+        {
+            // The reference gives a table without an alias a name of its own, so that the
+            // columns of the table can be told apart from the columns of the query above.
+            tableAlias = "_DERIVED_TABLE_" + Current.Start;
+        }
+
+        Tables.Table table = query.ToTable(tableAlias, columnTemplates, forCreateView: false, topQuery: null);
+        Tables.TableFilter filter = new(
+            session, table, tableAlias, rightsChecked: true, select, 0, null);
+        if (derivedColumnNames is not null)
+        {
+            filter.SetDerivedColumns(derivedColumnNames);
+        }
+
+        return filter;
+    }
+
+    /// <summary>
+    /// Reads the names a table gives its own columns, as the reference's readDerivedColumnNames
+    /// does.
+    /// </summary>
+    /// <returns>the names, or null when the table has none</returns>
+    private List<string>? ReadDerivedColumnNames()
+    {
+        if (!ReadIf(Token.OpenParen))
+        {
+            return null;
+        }
+
+        List<string> derivedColumnNames = [];
+        do
+        {
+            derivedColumnNames.Add(ReadIdentifier());
+        }
+        while (ReadIfMore());
+        return derivedColumnNames;
+    }
+
+    /// <summary>
+    /// Reads the alias of a table that is in parentheses, as the reference's readCorrelation
+    /// does.
+    /// </summary>
+    /// <param name="tableFilter">the filter of the table</param>
+    /// <returns>the filter</returns>
+    private Tables.TableFilter ReadCorrelation(Tables.TableFilter tableFilter)
+    {
+        string? alias = ReadFromAlias();
+        if (alias is not null)
+        {
+            tableFilter.SetAlias(alias);
+            List<string>? derivedColumnNames = ReadDerivedColumnNames();
+            if (derivedColumnNames is not null)
+            {
+                tableFilter.SetDerivedColumns(derivedColumnNames);
+            }
+        }
+
+        return tableFilter;
+    }
+
+    /// <summary>
+    /// Whether what is in front of the parser is a query in parentheses, as the reference's
+    /// isDerivedTable does.
+    /// </summary>
+    /// <remarks>
+    /// The tokens are looked at ahead of the parser: the question is what the parentheses
+    /// hold, and the parser cannot know that before it has read them.
+    /// </remarks>
+    /// <returns>true when the parentheses hold a query</returns>
+    private bool IsDerivedQuery()
+    {
+        int offset = position;
+        int level = 0;
+        while (tokens[offset].TokenType == Token.OpenParen)
+        {
+            level++;
+            offset++;
+        }
+
+        bool query = IsDirectQuery(offset);
+        if (query && level > 0)
+        {
+            offset = ScanToCloseParen(offset + 1);
+            if (offset < 0)
+            {
+                return false;
+            }
+
+            while (true)
+            {
+                switch (tokens[offset].TokenType)
+                {
+                    case Token.Semicolon:
+                    case Token.EndOfInput:
+                        return false;
+                    case Token.OpenParen:
+                        offset = ScanToCloseParen(offset + 1);
+                        if (offset < 0)
+                        {
+                            return false;
+                        }
+
+                        break;
+                    case Token.CloseParen:
+                        if (--level == 0)
+                        {
+                            return true;
+                        }
+
+                        offset++;
+                        break;
+                    case ParserUtil.Join:
+                        return false;
+                    default:
+                        offset++;
+                        break;
+                }
+            }
+        }
+
+        return query;
+    }
+
+    /// <summary>
+    /// Whether the token at the given place starts a query, as the reference's isDirectQuery
+    /// does.
+    /// </summary>
+    /// <param name="offset">the place of the token</param>
+    /// <returns>true when the token starts a query</returns>
+    private bool IsDirectQuery(int offset)
+    {
+        // The statement words are identifiers in this port, so the words are compared by
+        // their text and not by a token kind.
+        string? name = tokens[offset].AsIdentifier;
+        if (name is null)
+        {
+            return false;
+        }
+
+        if (name.Equals("SELECT", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("VALUES", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("WITH", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (name.Equals("TABLE", StringComparison.OrdinalIgnoreCase))
+        {
+            return tokens[offset + 1].TokenType != Token.OpenParen;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Finds the closing parenthesis that matches the one at the given place, as the
+    /// reference's scanToCloseParen does.
+    /// </summary>
+    /// <param name="offset">the place of the opening parenthesis</param>
+    /// <returns>the place of the closing parenthesis, or -1 when there is none</returns>
+    private int ScanToCloseParen(int offset)
+    {
+        for (int level = 0; ;)
+        {
+            switch (tokens[offset].TokenType)
+            {
+                case Token.Semicolon:
+                case Token.EndOfInput:
+                    return -1;
+                case Token.OpenParen:
+                    level++;
+                    break;
+                case Token.CloseParen:
+                    if (--level < 0)
+                    {
+                        return offset + 1;
+                    }
+
+                    break;
+            }
+
+            offset++;
+        }
+    }
+
+    /// <summary>
+    /// Creates the columns of a table out of the columns of a query, as the reference's
+    /// createQueryColumnTemplateList does.
+    /// </summary>
+    /// <param name="cols">the names the statement gave, or null</param>
+    /// <param name="query">the query</param>
+    /// <param name="cte">whether the table is a common table expression</param>
+    /// <returns>the columns</returns>
+    private static Tables.Column[] CreateQueryColumnTemplateList(
+        IReadOnlyList<string> cols,
+        Query.Query query,
+        bool cte)
+    {
+        SessionLocal current = query.GetSession();
+        query.Prepare();
+        Expression[] expressions = query.GetExpressions();
+        List<Tables.Column> columnTemplateList = [];
+        for (int i = 0; i < expressions.Length; ++i)
+        {
+            Expression columnExp = expressions[i];
+
+            // The name the statement gave wins; without it the name of the expression is the
+            // name, and for a common table expression the name of the column.
+            string columnName = cols.Count > i
+                ? cols[i]
+                : cte ? columnExp.GetColumnName(current, i) : columnExp.GetAlias(current, i);
+            columnTemplateList.Add(new Tables.Column(columnName, columnExp.GetTypeInfo()));
+        }
+
+        return [.. columnTemplateList];
+    }
+
+    /// <summary>
     /// Reads a table and its alias, as the reference's readTablePrimary does.
     /// </summary>
     /// <param name="session">the session</param>
@@ -600,6 +843,20 @@ public sealed partial class Parser
     /// <returns>the filter of the table</returns>
     private Tables.TableFilter ReadTablePrimary(SessionLocal session, Query.Select select)
     {
+        if (ReadIf(Token.OpenParen))
+        {
+            if (IsDerivedQuery())
+            {
+                // A derived table: a query in parentheses that stands for a table.
+                return ReadDerivedTable(session, select);
+            }
+
+            // A parenthesized joined table: (T1 JOIN T2).
+            Tables.TableFilter tableFilter = ReadTableReference(session, select);
+            Expect(Token.CloseParen, ")");
+            return ReadCorrelation(tableFilter);
+        }
+
         string tableName = ReadIdentifier();
         Schemas.Schema schema = session.GetCurrentSchema();
         if (ReadIf(Token.Dot))
@@ -1179,7 +1436,8 @@ public sealed partial class Parser
     /// </para>
     /// </remarks>
     /// <returns>the prepared statement</returns>
-    private Query.Query ParseQuerySelect()
+    /// <param name="endOfStatement">whether the select must be the whole statement</param>
+    private Query.Query ParseQuerySelect(bool endOfStatement = true)
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parseQuerySelect: this parser has no session");
         ExpectWord("SELECT");
@@ -1494,7 +1752,7 @@ public sealed partial class Parser
         }
 
         bool union = IsWord("UNION", consume: false);
-        if (!union && CurrentType != Token.EndOfInput && CurrentType != Token.Semicolon)
+        if (!union && endOfStatement && CurrentType != Token.EndOfInput && CurrentType != Token.Semicolon)
         {
             string word = Current.AsIdentifier ?? Current.ToString() ?? "statement";
             if (IsClauseWord(word))
