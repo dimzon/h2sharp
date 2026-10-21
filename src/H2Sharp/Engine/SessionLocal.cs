@@ -71,10 +71,12 @@ public sealed class SessionLocal : Session
     /// </summary>
     /// <remarks>
     /// The reference's <c>java.util.Random</c>, ported as <see cref="JavaRandom"/> so that
-    /// <c>RAND(seed)</c> draws the same number on both sides.
+    /// <c>RAND(seed)</c> draws the same number on both sides. A test that has to see the same
+    /// numbers every run hands the session a generator of its own.
     /// </remarks>
     /// <returns>the random generator</returns>
-    public JavaRandom GetRandom() => random ??= new JavaRandom(Environment.TickCount64);
+    public JavaRandom GetRandom()
+        => random ??= RandomGeneratorProvider?.Invoke() ?? new JavaRandom(Environment.TickCount64);
 
     private IComparer<Values.Value>? valueComparer;
 
@@ -285,6 +287,26 @@ public sealed class SessionLocal : Session
     /// answers with the regular mode, the real clock and the system zone.
     /// </remarks>
     public CastDataProvider CastDataProvider { get; init; } = DefaultCastDataProvider.Instance;
+
+    /// <summary>
+    /// Gets the factory of the random number generator, when a test set one.
+    /// </summary>
+    /// <remarks>
+    /// The reference has no such a member: it draws random numbers from the generator of the
+    /// runtime. A test that has to see the same numbers every run sets a factory here, and the
+    /// session asks it once, the first time a statement needs a number.
+    /// </remarks>
+    public Func<JavaRandom>? RandomGeneratorProvider { get; init; }
+
+    /// <summary>
+    /// Gets the factory of UUIDs, when a test set one.
+    /// </summary>
+    /// <remarks>
+    /// The reference has no such a member: it builds UUIDs out of the clock and the random
+    /// generator of the runtime. A test that has to see the same UUID every run sets a factory
+    /// here, and the statement that needs a UUID asks it.
+    /// </remarks>
+    public Func<Guid>? UuidProvider { get; init; }
 
     /// <summary>
     /// Gets how values are compared.

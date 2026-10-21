@@ -14,8 +14,13 @@ namespace H2Sharp.Util;
 /// <c>RAND(seed)</c> reseeds it before drawing a number. A generator of one's own would draw a
 /// different number for the same seed, so the generator is ported too and the session hands out
 /// this one, exactly as the reference hands out the JDK's.
+/// <para>
+/// The class is not sealed and its methods are virtual, so that a test can hand out a generator
+/// that answers with the numbers it wants. The JDK's <c>java.util.Random</c> is not final
+/// either, and the reference's own tests subclass it for the same reason.
+/// </para>
 /// </remarks>
-public sealed class JavaRandom
+public class JavaRandom
 {
     private const long Multiplier = 0x5DEEC_E66D;
 
@@ -44,7 +49,7 @@ public sealed class JavaRandom
     /// the int with its sign, and so does this.
     /// </remarks>
     /// <param name="seed">the seed</param>
-    public void SetSeed(long seed)
+    public virtual void SetSeed(long seed)
     {
         this.seed = (seed ^ Multiplier) & Mask;
     }
@@ -59,14 +64,14 @@ public sealed class JavaRandom
     /// The next 32 bits.
     /// </summary>
     /// <returns>the next 32 bits</returns>
-    public int NextInt() => Next(32);
+    public virtual int NextInt() => Next(32);
 
     /// <summary>
     /// A number in <c>[0, bound)</c>.
     /// </summary>
     /// <param name="bound">the bound, which must be positive</param>
     /// <returns>the number</returns>
-    public int NextInt(int bound)
+    public virtual int NextInt(int bound)
     {
         if (bound <= 0)
         {
@@ -91,26 +96,26 @@ public sealed class JavaRandom
     /// The next 64 bits.
     /// </summary>
     /// <returns>the next 64 bits</returns>
-    public long NextLong() => ((long)Next(32) << 32) + Next(32);
+    public virtual long NextLong() => ((long)Next(32) << 32) + Next(32);
 
     /// <summary>
     /// The next boolean.
     /// </summary>
     /// <returns>the next boolean</returns>
-    public bool NextBoolean() => Next(1) != 0;
+    public virtual bool NextBoolean() => Next(1) != 0;
 
     /// <summary>
     /// A number in <c>[0, 1)</c>.
     /// </summary>
     /// <returns>the number</returns>
-    public double NextDouble() => (((long)Next(26) << 27) + Next(27)) * DoubleUnit;
+    public virtual double NextDouble() => (((long)Next(26) << 27) + Next(27)) * DoubleUnit;
 
     /// <summary>
     /// Fills the buffer with the next bytes of the generator: one 32-bit word at a time, most
     /// significant byte first, and the tail of a word goes on filling where the buffer ends.
     /// </summary>
     /// <param name="bytes">where to fill</param>
-    public void NextBytes(byte[] bytes)
+    public virtual void NextBytes(byte[] bytes)
     {
         int i = 0;
         while (i < bytes.Length)

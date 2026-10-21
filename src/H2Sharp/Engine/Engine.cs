@@ -23,6 +23,7 @@
  */
 using System;
 using System.Collections.Generic;
+using H2Sharp.Util;
 using H2Sharp.Api;
 using H2Sharp.Message;
 
@@ -46,10 +47,23 @@ public static class Engine
     /// The persistent, remote and authenticated branches of the reference are not here yet and
     /// refuse rather than pretend: opening a file database without the file store would give a
     /// database that answers every query from an empty in-memory store.
+    /// <para>
+    /// The three delegates are the seams a test needs; the reference has no such a member, and
+    /// a delegate that is not set leaves the session as it is without a test.
+    /// </para>
     /// </remarks>
     /// <param name="connectionInfo">the connection information</param>
+    /// <param name="systemClockProvider">the clock, or null for the machine's clock</param>
+    /// <param name="randomGeneratorProvider">the generator of random numbers, or null for the
+    /// session's own</param>
+    /// <param name="uuidProvider">the generator of UUIDs, or null for the ones the port builds
+    /// itself</param>
     /// <returns>the session</returns>
-    public static SessionLocal OpenSession(ConnectionInfo connectionInfo)
+    public static SessionLocal OpenSession(
+        ConnectionInfo connectionInfo,
+        Func<DateTimeOffset>? systemClockProvider = null,
+        Func<JavaRandom>? randomGeneratorProvider = null,
+        Func<Guid>? uuidProvider = null)
     {
         string name = connectionInfo.GetName();
         if (connectionInfo.IsRemote())
@@ -108,7 +122,14 @@ public static class Engine
         // Start the threads while already synchronizing on the holder, so that a database which
         // starts one cannot deadlock against another database opening here.
         database.Opened();
-        return new SessionLocal(database, connectionInfo.GetUserName());
+        return new SessionLocal(database, connectionInfo.GetUserName())
+        {
+            CastDataProvider = systemClockProvider is null
+                ? DefaultCastDataProvider.Instance
+                : new DelegatedCastDataProvider(systemClockProvider),
+            RandomGeneratorProvider = randomGeneratorProvider,
+            UuidProvider = uuidProvider,
+        };
     }
 
     /// <summary>

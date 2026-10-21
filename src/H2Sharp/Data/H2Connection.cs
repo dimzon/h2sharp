@@ -26,6 +26,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using H2Sharp.Engine;
+using H2Sharp.Util;
 using H2DbException = H2Sharp.Message.DbException;
 
 namespace H2Sharp.Data;
@@ -33,7 +34,12 @@ namespace H2Sharp.Data;
 /// <summary>
 /// A connection to an H2Sharp database. This is the entry point of the ADO.NET provider.
 /// </summary>
-public sealed class H2Connection : DbConnection
+/// <remarks>
+/// The connection implements <see cref="IH2Test"/> explicitly: the seams a test needs are
+/// not members of a connection that nobody is testing, and a caller who wants them casts
+/// the connection to the interface first.
+/// </remarks>
+public sealed class H2Connection : DbConnection, IH2Test
 {
     private string connectionString = string.Empty;
 
@@ -42,6 +48,33 @@ public sealed class H2Connection : DbConnection
     private string? openedDatabaseName;
 
     private H2Transaction? currentTransaction;
+
+    private Func<DateTimeOffset>? systemClockProvider;
+
+    private Func<JavaRandom>? randomGeneratorProvider;
+
+    private Func<Guid>? uuidProvider;
+
+    /// <inheritdoc/>
+    Func<DateTimeOffset>? IH2Test.SystemClockProvider
+    {
+        get => systemClockProvider;
+        set => systemClockProvider = value;
+    }
+
+    /// <inheritdoc/>
+    Func<JavaRandom>? IH2Test.RandomGeneratorProvider
+    {
+        get => randomGeneratorProvider;
+        set => randomGeneratorProvider = value;
+    }
+
+    /// <inheritdoc/>
+    Func<Guid>? IH2Test.UuidProvider
+    {
+        get => uuidProvider;
+        set => uuidProvider = value;
+    }
 
     /// <summary>
     /// Creates a connection with no connection string.
@@ -208,7 +241,8 @@ public sealed class H2Connection : DbConnection
         }
 
         ConnectionInfo connectionInfo = new(connectionString);
-        session = H2Sharp.Engine.Engine.OpenSession(connectionInfo);
+        session = H2Sharp.Engine.Engine.OpenSession(
+            connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider);
         openedDatabaseName = connectionInfo.GetName();
         OnStateChange(new StateChangeEventArgs(ConnectionState.Closed, ConnectionState.Open));
     }

@@ -88,7 +88,11 @@ public sealed class RandFunction : Function0_1
                 v = ValueVarbinary.GetNoCopy(MathUtils.SecureRandomBytes(v!.GetInt()));
                 break;
             case RandomUuid:
-                v = ValueUuid.GetNewRandom(v != null ? v.GetInt() : 4);
+                // A test that holds the UUIDs still sets a factory on the session, and the
+                // statement gets the UUID the factory answers with.
+                v = session.UuidProvider is null
+                    ? ValueUuid.GetNewRandom(v != null ? v.GetInt() : 4)
+                    : ValueUuid.Get(session.UuidProvider());
                 break;
             default:
                 throw DbException.GetInternalError("function=" + function);
