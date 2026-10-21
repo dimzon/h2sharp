@@ -156,6 +156,19 @@ public sealed partial class Database
     }
 
     /// <summary>
+    /// Removes a schema.
+    /// </summary>
+    /// <param name="schema">the schema</param>
+    public void RemoveSchema(Schemas.Schema schema)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        lock (syncRoot)
+        {
+            _ = schemas.Remove(schema.GetName());
+        }
+    }
+
+    /// <summary>
     /// Gets the schema new objects go into, or null before there is one.
     /// </summary>
     /// <returns>the main schema, or null</returns>

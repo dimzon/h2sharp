@@ -172,10 +172,16 @@ public sealed class H2Connection : DbConnection, IH2Test
     /// Gets the name of the current database, or the initial catalog.
     /// </summary>
     /// <remarks>
+    /// The reference's JDBC names the catalogue after the short name of the database: the
+    /// last piece of the name, "DB" for "mem:db" and "UNNAMED" for a name with no piece.
+    /// The whole connection string is not a name: it is the way the database was reached.
+    /// <para>
     /// Empty while closed: there is no database yet, and a name invented from the
     /// connection string would be a guess that reads like an answer.
+    /// </para>
     /// </remarks>
-    public override string Database => session is null ? string.Empty : openedDatabaseName ?? string.Empty;
+    public override string Database
+        => session is null ? string.Empty : CurrentDatabase?.GetShortName() ?? string.Empty;
 
     /// <summary>
     /// Gets the name of the server this connection is attached to.

@@ -5666,3 +5666,21 @@ JVM. Тест через ADO.NET (`tests/H2Sharp.Data.Tests/H2SchemaTests.cs`) �
 
 Проверено: `H2Sharp.Tests` **1154**, конформанс-набор **351/947** (было 350), `Data.Tests` 392
 + 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+
+**`DROP ALL OBJECTS` и имя каталога.**
+Два пункта из списка F issue #13.
+
+* `DROP ALL OBJECTS` — эталонный `org.h2.command.ddl.DropDatabase`: база пустеет, остаются
+  главная схема и схема каталога, а таблицы, последовательности и остальные схемы уходят.
+  Порт: `Command/Ddl/DropDatabase.cs` и разбор `DROP ALL OBJECTS` в `readTablePrimary`.
+* Имя каталога: JDBC эталона называет каталог коротким именем базы — «DB» для «mem:db» и
+  «UNNAMED» для имени без куска. Порт отдавал в `H2Connection.Database` весь путь из строки
+  подключения («mem:db»); теперь это короткое имя.
+
+Оракул (`tests/H2Sharp.Tests/DropAllObjectsOracleTests.cs`): после `DROP ALL OBJECTS` таблицы
+нет, а каталог на месте и показывает, что таблиц в нём нет, — совпадает с JVM. Тесты через
+ADO.NET (`tests/H2Sharp.Data.Tests/H2DropAllObjectsTests.cs` и `H2CatalogTests.cs`) — тот же
+круг через провайдера.
+
+Проверено: `H2Sharp.Tests` **1155**, конформанс-набор **352/947** (было 350), `Data.Tests` 394
++ 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.

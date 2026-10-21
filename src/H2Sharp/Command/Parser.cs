@@ -480,6 +480,11 @@ public sealed partial class Parser
         {
             prepared = PrepareCreateSequence(current);
         }
+
+        else if (IsWord("DROP", consume: false) && NextIs("ALL"))
+        {
+            prepared = PrepareDropAllObjects(current);
+        }
         else if (IsWord("CREATE", consume: false) && NextIs("SCHEMA"))
         {
             prepared = PrepareCreateSchema(current);
@@ -1528,6 +1533,22 @@ public sealed partial class Parser
 
         Read();
         return literal.GetString();
+    }
+
+
+    /// <summary>
+    /// Builds the command of a DROP ALL OBJECTS statement, as the reference's parseDrop does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the command</returns>
+    private Ddl.DropDatabase PrepareDropAllObjects(SessionLocal session)
+    {
+        ExpectWord("DROP");
+        ExpectWord("ALL");
+        ExpectWord("OBJECTS");
+        Ddl.DropDatabase command = new(session);
+        command.SetDropAllObjects(true);
+        return command;
     }
 
     /// <summary>
