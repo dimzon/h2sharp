@@ -593,6 +593,76 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Reads the rows of a VALUES clause, as the reference's parseValues does.
+    /// </summary>
+    /// <remarks>
+    /// Every row must have the same number of values: the columns of the table are the
+    /// columns of the first row, and a row with more or fewer values does not fit them.
+    /// </remarks>
+    /// <returns>the query the rows are read into</returns>
+    private Query.Query ReadValues()
+    {
+        ExpectWord("VALUES");
+        List<List<Expressions.Expression>> rows = [];
+        List<Expressions.Expression> row = ReadValuesRow();
+        rows.Add(row);
+        int columnCount = row.Count;
+        while (ReadIf(Token.Comma))
+        {
+            row = ReadValuesRow();
+            if (row.Count != columnCount)
+            {
+                throw DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
+            }
+
+            rows.Add(row);
+        }
+
+        return new Query.TableValueConstructor(
+            session ?? throw new TODOException("Parser.parseValues: this parser has no session"), rows);
+    }
+
+    /// <summary>
+    /// Reads one row of a VALUES clause, as the reference's parseValuesRow does.
+    /// </summary>
+    /// <returns>the values of the row</returns>
+    private List<Expressions.Expression> ReadValuesRow()
+    {
+        List<Expressions.Expression> row = [];
+        if (!ReadIf(Token.OpenParen))
+        {
+            row.Add(ReadExpression());
+            return row;
+        }
+
+        do
+        {
+            row.Add(ReadExpression());
+        }
+        while (ReadIf(Token.Comma));
+
+        Expect(Token.CloseParen, ")");
+        return row;
+    }
+
+    /// <summary>
+    /// Reads a query in parentheses, as the reference's parseQueryExpression does.
+    /// </summary>
+    /// <remarks>
+    /// A query in parentheses is a select, or the rows a VALUES clause names.
+    /// </remarks>
+    /// <returns>the query</returns>
+    private Query.Query ParseQueryExpression()
+    {
+        if (IsWord("VALUES", consume: false))
+        {
+            return ReadValues();
+        }
+
+        return ParseQuerySelect(endOfStatement: false);
+    }
+
+    /// <summary>
     /// Reads a derived table: a query in parentheses that stands for a table, as the
     /// reference's readDerivedTableWithCorrelation does.
     /// </summary>
@@ -601,7 +671,7 @@ public sealed partial class Parser
     /// <returns>the filter of the table</returns>
     private Tables.TableFilter ReadDerivedTable(SessionLocal session, Query.Select select)
     {
-        Query.Query query = ParseQuerySelect(endOfStatement: false);
+        Query.Query query = ParseQueryExpression();
         Expect(Token.CloseParen, ")");
         string? alias = ReadFromAlias();
         List<string>? derivedColumnNames = null;
@@ -857,51 +927,63 @@ public sealed partial class Parser
             return ReadCorrelation(tableFilter);
         }
 
-        string tableName = ReadIdentifier();
-        Schemas.Schema schema = session.GetCurrentSchema();
-        if (ReadIf(Token.Dot))
-        {
-            // The reference reads the schema of the name and looks the table up in it.
-            string schemaName = tableName;
-            tableName = ReadIdentifier();
-            schema = session.GetDatabase().FindSchema(schemaName)
-                ?? throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schemaName);
-        }
-
         Tables.Table fromTable;
         bool hasAlias = true;
-        if (CurrentType == Token.OpenParen
-            && (tableName.Equals(Tables.RangeTable.Name, StringComparison.OrdinalIgnoreCase)
-                || tableName.Equals(Tables.RangeTable.Alias, StringComparison.OrdinalIgnoreCase)))
+        string tableName;
+        if (IsWord("VALUES", consume: false))
         {
-            // The range table is a table function: SYSTEM_RANGE(min, max[, step]).
-            Read();
-            Expressions.Expression min = ReadQueryOr();
-            Expect(Token.Comma, ",");
-            Expressions.Expression max = ReadQueryOr();
-            Expressions.Expression? step = null;
-            if (ReadIf(Token.Comma))
-            {
-                step = ReadQueryOr();
-            }
-
-            Expect(Token.CloseParen, ")");
-            fromTable = step is null
-                ? new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max)
-                : new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max, step);
-        }
-        else if (IsWord("TABLE"))
-        {
-            // The data change delta table: FINAL TABLE (INSERT INTO ...). The rows of the
-            // table are the rows the statement changed, and the name in front of it says
-            // which version of them the caller gets. It takes no alias: the reference
-            // leaves the table before it reads one.
-            fromTable = ReadDataChangeDeltaTable(session, schema, tableName);
+            // The table of a table value constructor: the rows a VALUES clause names.
+            Query.Query values = ReadValues();
+            tableName = "_VALUES_" + Current.Start.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            fromTable = values.ToTable(tableName, null, forCreateView: false, topQuery: null);
             hasAlias = false;
         }
         else
         {
-            fromTable = ReadTableOrView(session, schema, tableName);
+            tableName = ReadIdentifier();
+            Schemas.Schema schema = session.GetCurrentSchema();
+            if (ReadIf(Token.Dot))
+            {
+                // The reference reads the schema of the name and looks the table up in it.
+                string schemaName = tableName;
+                tableName = ReadIdentifier();
+                schema = session.GetDatabase().FindSchema(schemaName)
+                    ?? throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schemaName);
+            }
+
+            if (CurrentType == Token.OpenParen
+                && (tableName.Equals(Tables.RangeTable.Name, StringComparison.OrdinalIgnoreCase)
+                    || tableName.Equals(Tables.RangeTable.Alias, StringComparison.OrdinalIgnoreCase)))
+            {
+                // The range table is a table function: SYSTEM_RANGE(min, max[, step]).
+                Read();
+                Expressions.Expression min = ReadQueryOr();
+                Expect(Token.Comma, ",");
+                Expressions.Expression max = ReadQueryOr();
+                Expressions.Expression? step = null;
+                if (ReadIf(Token.Comma))
+                {
+                    step = ReadQueryOr();
+                }
+
+                Expect(Token.CloseParen, ")");
+                fromTable = step is null
+                    ? new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max)
+                    : new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max, step);
+            }
+            else if (IsWord("TABLE"))
+            {
+                // The data change delta table: FINAL TABLE (INSERT INTO ...). The rows of the
+                // table are the rows the statement changed, and the name in front of it says
+                // which version of them the caller gets. It takes no alias: the reference
+                // leaves the table before it reads one.
+                fromTable = ReadDataChangeDeltaTable(session, schema, tableName);
+                hasAlias = false;
+            }
+            else
+            {
+                fromTable = ReadTableOrView(session, schema, tableName);
+            }
         }
 
         string? filterAlias = hasAlias ? ReadFromAlias() : null;
@@ -1080,19 +1162,21 @@ public sealed partial class Parser
     /// thing: "FROM T t" and "FROM T AS t" are the same query.
     /// </remarks>
     /// <returns>the alias, or null when there is none</returns>
-    private string? ReadFromAlias()
+    private string? ReadFromAlias(string? alias = null)
     {
         if (IsWord("AS"))
         {
             return ReadIdentifier();
         }
 
-        if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+        // A name that is already there is not replaced by an implicit one: the reference
+        // reads the alias of a table that has one only when the name was written out.
+        if (alias is null && IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
         {
             return ReadIdentifier();
         }
 
-        return null;
+        return alias;
     }
 
     /// <summary>
