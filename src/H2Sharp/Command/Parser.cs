@@ -154,8 +154,15 @@ public sealed class CreateTableStatement : Statement
     /// <inheritdoc/>
     public override int GetCommandType() => CommandInterface.CreateTable;
 
-    /// <summary>The table name.</summary>
+    /// <summary>
+    /// The table name.
+    /// </summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The name of the schema the table belongs to, or null when the name says nothing.
+    /// </summary>
+    public string? Schema { get; set; }
 
     /// <summary>The columns, in order.</summary>
     public List<ColumnDefinition> Columns { get; } = [];
@@ -230,6 +237,9 @@ public sealed class InsertStatement : Statement
     /// <summary>The table name.</summary>
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>The name of the schema the table belongs to, or null when the name says nothing.</summary>
+    public string? Schema { get; set; }
+
     /// <summary>The columns the values are for, or empty for all of them in order.</summary>
     public List<string> Columns { get; } = [];
 
@@ -245,6 +255,9 @@ public sealed class UpdateStatement : Statement
 
     /// <summary>The table name.</summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>The name of the schema the table belongs to, or null when the name says nothing.</summary>
+    public string? Schema { get; set; }
 
     /// <summary>The alias of the table, or null when it has none.</summary>
     public string? Alias { get; set; }
@@ -264,6 +277,9 @@ public sealed class DeleteStatement : Statement
 
     /// <summary>The table name.</summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>The name of the schema the table belongs to, or null when the name says nothing.</summary>
+    public string? Schema { get; set; }
 
     /// <summary>The alias of the table, or null when it has none.</summary>
     public string? Alias { get; set; }
@@ -463,6 +479,10 @@ public sealed partial class Parser
         else if (IsWord("CREATE", consume: false) && NextIs("SEQUENCE"))
         {
             prepared = PrepareCreateSequence(current);
+        }
+        else if (IsWord("CREATE", consume: false) && NextIs("SCHEMA"))
+        {
+            prepared = PrepareCreateSchema(current);
         }
         else if (IsWord("ALTER", consume: false) && NextIs("SEQUENCE"))
         {
@@ -1256,6 +1276,29 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Reads a name that may name its schema, as the reference's readIdentifierWithSchema does,
+    /// and gives back the name of the schema.
+    /// </summary>
+    /// <remarks>
+    /// The name of the schema is not looked up here: the statement is read before the session
+    /// is known, and the schema is looked up when the statement is built.
+    /// </remarks>
+    /// <param name="schemaName">the name of the schema, or null</param>
+    /// <returns>the name</returns>
+    private string ReadIdentifierWithSchemaName(out string? schemaName)
+    {
+        string name = ReadIdentifier();
+        schemaName = null;
+        if (ReadIf(Token.Dot))
+        {
+            schemaName = name;
+            name = ReadIdentifier();
+        }
+
+        return name;
+    }
+
+    /// <summary>
     /// Reads a name that may name its schema, as the reference's readIdentifierWithSchema does.
     /// </summary>
     /// <remarks>
@@ -1485,6 +1528,32 @@ public sealed partial class Parser
 
         Read();
         return literal.GetString();
+    }
+
+    /// <summary>
+    /// Builds the command of a CREATE SCHEMA statement.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the command</returns>
+    private Ddl.CreateSchema PrepareCreateSchema(SessionLocal session)
+    {
+        ExpectWord("CREATE");
+        ExpectWord("SCHEMA");
+        bool ifNotExists = ReadIfNotExists();
+        string schemaName = ReadIdentifier();
+        Ddl.CreateSchema command = new(session);
+        command.SetIfNotExists(ifNotExists);
+        command.SetSchemaName(schemaName);
+        if (IsWord("AUTHORIZATION"))
+        {
+            // The reference gives the schema to the user the clause names and refuses the
+            // statement when there is no such user. This port has no users yet, so the name
+            // is read and kept, and the schema has no owner.
+            Read();
+            command.SetAuthorization(ReadIdentifier());
+        }
+
+        return command;
     }
 
     /// <summary>
@@ -4223,7 +4292,10 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareCreateTable(SessionLocal session, CreateTableStatement statement)
     {
-        Ddl.CreateTable create = new(session, CurrentSchema(session));
+        Schemas.Schema schema = statement.Schema is null
+            ? CurrentSchema(session)
+            : session.GetDatabase().GetSchema(statement.Schema);
+        Ddl.CreateTable create = new(session, schema);
         create.SetSql(statement.Sql, null);
         create.SetTableName(statement.Name);
         create.SetIfNotExists(statement.IfNotExists);
@@ -4647,7 +4719,9 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareInsert(SessionLocal session, InsertStatement statement)
     {
-        Schemas.Schema schema = CurrentSchema(session);
+        Schemas.Schema schema = statement.Schema is null
+            ? CurrentSchema(session)
+            : session.GetDatabase().GetSchema(statement.Schema);
         Tables.Table table = ReadTableOrView(session, schema, statement.Name);
         Dml.Insert insert = new(session);
         insert.SetSql(statement.Sql, null);
@@ -4747,7 +4821,9 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareUpdate(SessionLocal session, UpdateStatement statement)
     {
-        Schemas.Schema schema = CurrentSchema(session);
+        Schemas.Schema schema = statement.Schema is null
+            ? CurrentSchema(session)
+            : session.GetDatabase().GetSchema(statement.Schema);
         Tables.Table table = ReadTableOrView(session, schema, statement.Name);
         Dml.Update update = new(session);
         update.SetSql(statement.Sql, null);
@@ -4792,7 +4868,9 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareDelete(SessionLocal session, DeleteStatement statement)
     {
-        Schemas.Schema schema = CurrentSchema(session);
+        Schemas.Schema schema = statement.Schema is null
+            ? CurrentSchema(session)
+            : session.GetDatabase().GetSchema(statement.Schema);
         Tables.Table table = ReadTableOrView(session, schema, statement.Name);
         Dml.Delete delete = new(session);
         delete.SetSql(statement.Sql, null);
@@ -5030,7 +5108,8 @@ public sealed partial class Parser
             statement.IfNotExists = true;
         }
 
-        statement.Name = ReadIdentifier();
+        statement.Name = ReadIdentifierWithSchemaName(out string? schemaName);
+        statement.Schema = schemaName;
         Expect(Token.OpenParen, "(");
         do
         {
@@ -5539,7 +5618,8 @@ public sealed partial class Parser
     private InsertStatement ReadInsert()
     {
         ExpectWord("INTO");
-        InsertStatement statement = new() { Name = ReadIdentifier() };
+        InsertStatement statement = new() { Name = ReadIdentifierWithSchemaName(out string? insertSchema) };
+        statement.Schema = insertSchema;
         if (CurrentType == Token.OpenParen)
         {
             Read();
@@ -5573,7 +5653,8 @@ public sealed partial class Parser
 
     private UpdateStatement ReadUpdate()
     {
-        UpdateStatement statement = new() { Name = ReadIdentifier() };
+        UpdateStatement statement = new() { Name = ReadIdentifierWithSchemaName(out string? updateSchema) };
+        statement.Schema = updateSchema;
         statement.Alias = ReadFromAlias();
         ExpectWord("SET");
         do
@@ -5591,7 +5672,8 @@ public sealed partial class Parser
     private DeleteStatement ReadDelete()
     {
         ExpectWord("FROM");
-        DeleteStatement statement = new() { Name = ReadIdentifier() };
+        DeleteStatement statement = new() { Name = ReadIdentifierWithSchemaName(out string? deleteSchema) };
+        statement.Schema = deleteSchema;
         statement.Alias = ReadFromAlias();
         statement.Where = ReadWhere();
         return statement;
