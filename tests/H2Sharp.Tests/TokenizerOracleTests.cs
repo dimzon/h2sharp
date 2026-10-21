@@ -276,7 +276,7 @@ public sealed class TokenizerOracleTests
             Tokenizer tokenizer = new(provider, false, false, null);
             try
             {
-                foreach (Token token in tokenizer.Tokenize(statement, false, new BitArray(256)))
+                foreach (Token token in tokenizer.Tokenize(statement, false, []))
                 {
                     kinds.Add(token.TokenType);
                 }
@@ -365,14 +365,14 @@ public sealed class TokenizerOracleTests
         List<string> lines = [];
         TestProvider provider = new();
         Tokenizer tokenizer = new(provider, identifiersToUpper, identifiersToLower, null);
-        BitArray parameters = new(Token.Tokens.Length + 8);
+        BitList parameters = new();
         try
         {
             List<Token> tokens = tokenizer.Tokenize(sql, false, parameters);
             int count = 0;
             for (int i = 0; i < parameters.Count; i++)
             {
-                if (parameters.Get(i))
+                if (parameters[i])
                 {
                     count++;
                 }

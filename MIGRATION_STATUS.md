@@ -782,6 +782,7 @@ Java-имена и разрешать их: получился бы файл, к
 | `synchronized` / `ReentrantLock` | `lock` / `SemaphoreSlim` | — |
 | `Integer.decode` в свойствах | свой `TryParseInt` | Нет в .NET |
 | `Java system properties` (`-Dh2.x`) | **переменные окружения** `h2.x` | Нет аналога в .NET; записано в PORTING.md |
+| `java.util.BitSet` (растущее множество бит) | `Util/BitList.cs` | В BCL есть только `BitArray`, а он не растёт; `BitList` копирует растущий список бит из отдельного проекта `BitList` |
 
 ## Следующие шаги (по порядку)
 
@@ -5436,3 +5437,36 @@ ADO.NET (`tests/H2Sharp.Data.Tests/H2JoinTests.cs`) — тот же круг ч�
 (те же шесть: производная таблица, `VALUES`, `WITH`, `MERGE`), `MvStore.Tests` 86,
 `Engine.Tests` 4/9.
 
+**Параметров не восемь: их столько, сколько в тексте (issue #15).**
+Issue #15 — от провайдера EF Core: `SaveChanges` с тремя строками по пять колонок падал с
+`ArgumentOutOfRangeException ... Actual value was 8`.
+
+Причина: эталон помечает использованные параметры в `java.util.BitSet`, который **растёт**
+(эталонный `Tokenizer.assignParameterIndex` делает `parameters.set(index - 1)`, а
+`BitSet.set` расширяет множество), а порт помечал их в `BitArray(8)` — список из восьми
+бит, который не растёт. Девятый параметр вылезал за его конец.
+
+Эталон ещё и проверяет число параметров: `ParserBase.initialize` читает
+`usedParameters.length()` (длина `BitSet` — это старший помеченный индекс плюс один) и, если
+она больше `Constants.MAX_PARAMETER_INDEX` (100 000), бросает
+`DbException.getInvalidValueException("parameter index", l)` — код 90008.
+
+Порт:
+* `Util/BitList.cs` — растущий список бит (взят из отдельного проекта `BitList`, чтобы порт
+  не зависел от внешнего репозитория). В BCL есть только `BitArray`, а он не растёт;
+* `Command/Tokenizer.cs` — `AssignParameterIndex` расширяет список до индекса и помечает бит
+  (эталонное `parameters.set(index - 1)`);
+* `Command/Parser.cs` — `CheckParameterIndex` после разбора токенов: при длине больше
+  `Constants.MaxParameterIndex` — `DbException.GetInvalidValueException("parameter index", l)`.
+
+Побочный эффект: публичный `Parser.Parse(sql, provider, parameters)` теперь принимает
+`BitList` вместо `BitArray` (эталонного `BitSet` в BCL нет).
+
+Оракул (`tests/H2Sharp.Tests/ParameterLimitTests.cs`, 2 теста): 15 параметров (с чтением
+значений) и 100 001 параметр (предел) — совпадают с JVM: тот же ответ и тот же код ошибки.
+Тест через ADO.NET (`tests/H2Sharp.Data.Tests/H2ManyParametersTests.cs`) — вставка трёх строк
+по пять колонок одной командой, то есть случай из issue.
+
+Проверено: `H2Sharp.Tests` **1146**, конформанс-набор **346/947**, `Data.Tests` 378 + 6 красных
+(те же шесть: производная таблица, `VALUES`, `WITH`, `MERGE`), `MvStore.Tests` 86,
+`Engine.Tests` 4/9.

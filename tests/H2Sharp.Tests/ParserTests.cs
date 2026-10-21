@@ -18,6 +18,7 @@ using System.Text;
 using H2Sharp.Command;
 using H2Sharp.Expressions;
 using H2Sharp.Expressions.Conditions;
+using H2Sharp.Util;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -213,7 +214,7 @@ public sealed class ParserTests
     }
 
     private static Statement Parse(string sql)
-        => Command.Parser.Parse(sql, new TestCastDataProvider(), new BitArray(8));
+        => Command.Parser.Parse(sql, new TestCastDataProvider(), new BitList());
 
     private static string Render(Expression expression)
         => expression.GetUnenclosedSql(new StringBuilder(), 0).ToString();

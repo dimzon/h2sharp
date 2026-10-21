@@ -360,8 +360,9 @@ public sealed partial class Parser
         ArgumentNullException.ThrowIfNull(sql);
         SessionLocal current = session ?? throw new TODOException("Parser.prepareCommand: this parser has no session");
 
-        BitArray parameters = new(8);
+        BitList parameters = new();
         List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        CheckParameterIndex(parameters);
         Parser parser = new(sql, provider, tokens, current);
         List<Prepared> prepared = [];
         while (!parser.AtEnd())
@@ -408,8 +409,9 @@ public sealed partial class Parser
     public Expression ParseExpression(string sql)
     {
         ArgumentNullException.ThrowIfNull(sql);
-        BitArray parameters = new(8);
+        BitList parameters = new();
         List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        CheckParameterIndex(parameters);
         Parser parser = new(sql, provider, tokens, session);
         return parser.ReadExpression();
     }
@@ -4411,12 +4413,32 @@ public sealed partial class Parser
     /// <param name="provider">where casts and the mode come from</param>
     /// <param name="parameters">written back with the parameters the statement names</param>
     /// <returns>the statement</returns>
-    public static Statement Parse(string sql, CastDataProvider provider, BitArray parameters)
+    public static Statement Parse(string sql, CastDataProvider provider, BitList parameters)
     {
         Parser parser = new(sql, provider, Tokenizer.TokenizeForTest(sql, false, parameters, provider));
+        CheckParameterIndex(parameters);
         Statement statement = parser.ReadStatement();
         statement.Sql = sql;
         return statement;
+    }
+
+    /// <summary>
+    /// Checks the number of parameters the statement names.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads the length of the set of used parameters after the statement is
+    /// tokenized and refuses a statement that names more parameters than the limit allows. The
+    /// set grows with the statement, so the limit is the number of parameters and not the size
+    /// of a buffer.
+    /// </remarks>
+    /// <param name="parameters">the parameters the statement names</param>
+    private static void CheckParameterIndex(BitList parameters)
+    {
+        int length = parameters.Count;
+        if (length > Engine.Constants.MaxParameterIndex)
+        {
+            throw DbException.GetInvalidValueException("parameter index", length);
+        }
     }
 
     private Token Current => tokens[position];

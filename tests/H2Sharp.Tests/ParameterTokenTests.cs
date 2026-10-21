@@ -21,6 +21,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using H2Sharp.Command;
+using H2Sharp.Util;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -76,7 +77,7 @@ public sealed class ParameterTokenTests
 
     private static List<Token> Tokenize(string sql)
     {
-        BitArray seen = new(8);
+        BitList seen = new();
         return Tokenizer.TokenizeForTest(sql, false, seen, new TestCastDataProvider());
     }
 
