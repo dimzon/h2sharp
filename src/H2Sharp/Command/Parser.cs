@@ -2500,15 +2500,37 @@ public sealed partial class Parser
         if (CurrentType == Token.MinusSign)
         {
             Read();
-            Expressions.Expression term = ReadQueryTerm(aggregateSelect);
-
-            // A negative literal is a literal: there is nothing in "-1" that needs a run.
-            if (term is not Expressions.ValueExpression negated)
+            Values.Value? minusLiteral = Current.GetValue(provider);
+            if (minusLiteral is not null)
             {
-                throw DbException.GetSyntaxError(sql, Current.Start, "number");
+                // A negative literal is a literal: there is nothing in "-1" that needs a run.
+                Values.Value negated = minusLiteral.Negate();
+                int negatedType = negated.GetValueType();
+                if (negatedType == Values.Value.Bigint && negated.GetLong() == int.MinValue)
+                {
+                    // The reference converts Integer.MIN_VALUE to type 'int'.
+                    negated = Values.ValueInteger.Get(int.MinValue);
+                }
+                else if (negatedType == Values.Value.Numeric
+                    && negated.GetBigDecimal().CompareTo(Values.Value.MinLongDecimal) == 0)
+                {
+                    // The reference converts Long.MIN_VALUE to type 'long'.
+                    negated = Values.ValueBigint.Min;
+                }
+
+                Read();
+                return Expressions.ValueExpression.Get(negated);
             }
 
-            return Expressions.ValueExpression.Get(Negate(negated.GetValueFromLiteral()));
+            // The reference negates the term with a unary operation.
+            return new Expressions.UnaryOperation(ReadQueryTerm(aggregateSelect));
+        }
+
+        if (CurrentType == Token.PlusSign)
+        {
+            // The reference reads the sign and takes the term as it is.
+            Read();
+            return ReadQueryTerm(aggregateSelect);
         }
 
         if (Current is Token.ParameterToken parameter)
@@ -5227,19 +5249,6 @@ public sealed partial class Parser
     /// the statement callers on the non-aggregate arms.
     /// </remarks>
     public Expression ReadExpression() => ReadQueryOr();
-
-    private static Value Negate(Value value)
-    {
-        return value switch
-        {
-            ValueInteger i => ValueInteger.Get(-i.GetInt()),
-            ValueBigint l => ValueBigint.Get(-l.GetLong()),
-            ValueNumeric n => ValueNumeric.Get(n.GetBigDecimal().Negate()),
-            ValueReal r => ValueReal.Get(-r.GetFloat()),
-            ValueDouble d => ValueDouble.Get(-d.GetDouble()),
-            _ => throw DbException.GetInternalError("cannot negate " + value.GetValueType()),
-        };
-    }
 
     private string ReadIdentifier()
     {

@@ -910,7 +910,7 @@ public sealed partial class Parser
             ?? throw DbException.GetSyntaxError(sql, Current.Start, "integer");
         if (minus)
         {
-            value = Negate(value);
+            value = value.Negate();
         }
 
         int i = value.GetInt();
@@ -959,7 +959,7 @@ public sealed partial class Parser
             ?? throw DbException.GetSyntaxError(sql, Current.Start, "long");
         if (minus)
         {
-            value = Negate(value);
+            value = value.Negate();
         }
 
         long i = value.GetLong();
