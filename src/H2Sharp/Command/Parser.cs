@@ -316,6 +316,11 @@ public sealed partial class Parser
     /// </summary>
     private readonly List<Expressions.Parameter> parameterList = [];
 
+    /// <summary>
+    /// The common table expressions this statement names, by name.
+    /// </summary>
+    private readonly Dictionary<string, Tables.CTE> ctes = [];
+
     private Parser(string sql, CastDataProvider provider, List<Token> tokens, SessionLocal? session)
     {
         this.sql = sql;
@@ -446,6 +451,13 @@ public sealed partial class Parser
         Prepared prepared;
         if (position < tokens.Count && IsSelectFirst(tokens[position]))
         {
+            if (IsWord("WITH", consume: false))
+            {
+                // The common table expressions come first, and the query that follows them
+                // may read them.
+                ReadWith();
+            }
+
             prepared = ParseQuerySelect();
         }
         else if (IsWord("CREATE", consume: false) && NextIs("SEQUENCE"))
@@ -659,7 +671,71 @@ public sealed partial class Parser
             return ReadValues();
         }
 
+        if (IsWord("WITH", consume: false))
+        {
+            ReadWith();
+            return ParseQuerySelect(endOfStatement: false);
+        }
+
         return ParseQuerySelect(endOfStatement: false);
+    }
+
+    /// <summary>
+    /// Reads the common table expressions of a WITH clause, as the reference's
+    /// parseSingleCommonTableExpression does.
+    /// </summary>
+    /// <remarks>
+    /// The tables the clause names are the tables of this statement: a query that follows the
+    /// clause may read them, and a query inside a table of this statement may read them too.
+    /// The reference keeps them in a chain of query scopes, one per WITH clause; this port
+    /// keeps them in the parser, which reads one statement.
+    /// </remarks>
+    private void ReadWith()
+    {
+        SessionLocal current = session
+            ?? throw new TODOException("Parser.parseWith: this parser has no session");
+        ExpectWord("WITH");
+        if (IsWord("RECURSIVE", consume: false))
+        {
+            // The reference reads a recursive expression with a table of its own that stands
+            // in for the expression while it reads it, and an index that feeds the rows back
+            // into the query. Neither is ported yet.
+            throw new TODOException("Parser.parseWith: a recursive common table expression is not ported");
+        }
+
+        do
+        {
+            string name = ReadIdentifier();
+            List<string>? columnNames = null;
+            if (ReadIf(Token.OpenParen))
+            {
+                columnNames = [];
+                do
+                {
+                    columnNames.Add(ReadIdentifier());
+                }
+                while (ReadIf(Token.Comma));
+
+                Expect(Token.CloseParen, ")");
+            }
+
+            ExpectWord("AS");
+            Expect(Token.OpenParen, "(");
+            Query.Query query = ParseQueryExpression();
+            Expect(Token.CloseParen, ")");
+
+            Tables.Column[]? columnTemplates = columnNames is null
+                ? null
+                : CreateQueryColumnTemplateList(columnNames, query, cte: true);
+            if (ctes.ContainsKey(name))
+            {
+                throw DbException.Get(Api.ErrorCode.TableOrViewAlreadyExists1, name);
+            }
+
+            ctes[name] = new Tables.CTE(
+                current.GetDatabase().GetMainSchema(), name, columnTemplates, query, current);
+        }
+        while (ReadIf(Token.Comma));
     }
 
     /// <summary>
@@ -1500,7 +1576,9 @@ public sealed partial class Parser
     /// Whether the token opens a SELECT statement: the word SELECT, written plain.
     /// </summary>
     private static bool IsSelectFirst(Token token)
-        => !token.IsQuoted && "SELECT".Equals(token.AsIdentifier, StringComparison.OrdinalIgnoreCase);
+        => !token.IsQuoted
+            && ("SELECT".Equals(token.AsIdentifier, StringComparison.OrdinalIgnoreCase)
+                || "WITH".Equals(token.AsIdentifier, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Reads a flat SELECT straight into the engine operator: one table, a column list,
@@ -4743,6 +4821,13 @@ public sealed partial class Parser
         if (table is not null)
         {
             return table;
+        }
+
+        // The reference asks the query scope for a table of a common table expression after
+        // the schema has not answered.
+        if (ctes.TryGetValue(tableName, out Tables.CTE? cte))
+        {
+            return cte;
         }
 
         if (session.GetDatabase().GetFirstUserTable() is null)
