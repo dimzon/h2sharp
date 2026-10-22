@@ -37,11 +37,21 @@ namespace H2Sharp.Data;
 internal static class H2ValueMapper
 {
     /// <summary>
-    /// Converts a caller value to an engine value.
+    /// Converts a caller value to an engine value, with the type the caller declared.
     /// </summary>
+    /// <remarks>
+    /// The declared type matters for one value only. A <see cref="TimeSpan"/> is a length of
+    /// time, and the engine has two types for it: a TIME is a time of day, and an INTERVAL
+    /// DAY TO SECOND is a length. The caller says which by the type it declared — ADO.NET's
+    /// <see cref="DbType.Time"/> is the time of day, the way the reference's JDBC takes a
+    /// <c>java.sql.Time</c> or a <c>LocalTime</c> for a TIME column, and a <c>Duration</c> for
+    /// an INTERVAL. A value with no declared type is a length, because that is what a
+    /// <see cref="TimeSpan"/> is in .NET.
+    /// </remarks>
     /// <param name="value">the caller value, possibly null</param>
+    /// <param name="dbType">the type the caller declared, or null when it declared none</param>
     /// <returns>the engine value</returns>
-    internal static Value ToValue(object? value)
+    internal static Value ToValue(object? value, DbType? dbType)
     {
         if (value is null or DBNull)
         {
@@ -50,8 +60,9 @@ internal static class H2ValueMapper
 
         if (value.GetType().IsEnum)
         {
-            return ToValue(Convert.ChangeType(
-                value, Enum.GetUnderlyingType(value.GetType()), CultureInfo.InvariantCulture));
+            return ToValue(
+                Convert.ChangeType(value, Enum.GetUnderlyingType(value.GetType()), CultureInfo.InvariantCulture),
+                dbType);
         }
 
         return value switch
@@ -76,7 +87,9 @@ internal static class H2ValueMapper
             DateOnly d => ValueDate.FromDateValue(
                 DateTimeUtils.DateValue(d.Year, d.Month, d.Day)),
             TimeOnly t => ValueTime.FromNanos(t.ToTimeSpan().Ticks * 100L),
-            TimeSpan span => FromTimeSpan(span),
+            TimeSpan span => dbType == DbType.Time
+                ? ValueTime.FromNanos(span.Ticks * 100L)
+                : FromTimeSpan(span),
             DateTimeOffset dto => ValueTimestampTimeZone.FromDateValueAndNanos(
                 DateTimeUtils.DateValue(dto.Year, dto.Month, dto.Day),
                 dto.TimeOfDay.Ticks * 100L,

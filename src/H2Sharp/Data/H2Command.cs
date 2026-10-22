@@ -460,7 +460,10 @@ public sealed class H2Command : DbCommand
                     + " use DBNull.Value for NULL");
             }
 
-            parameter.SetValue(H2ValueMapper.ToValue(value), false);
+            // The declared type of the parameter goes with the value: a TimeSpan declared as a
+            // time of day is a TIME, and the same value without that declaration is an
+            // INTERVAL DAY TO SECOND.
+            parameter.SetValue(H2ValueMapper.ToValue(value, ordered[index].DbType), false);
         }
 
         return containers;

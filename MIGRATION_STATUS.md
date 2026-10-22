@@ -5734,3 +5734,32 @@ CastDataProvider`), и отвечает она через сессию теку�
 
 Проверено: `H2Sharp.Tests` **1156**, конформанс-набор **357/947** (было 352), `Data.Tests` 397
 + 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+**`TIME` из `TimeSpan`: время суток и промежуток времени — разные вещи.**
+Пункт F issue #13: «`TIME` из `TimeSpan` | `Data conversion error converting "INTERVAL DAY TO
+SECOND to TIME"` | столбец `time` в обоих провайдерах».
+
+В .NET и то, и другое — `TimeSpan`, а в базе это два типа: `TIME` — время суток,
+`INTERVAL DAY TO SECOND` — промежуток. Эталон различает их типом, который прислал вызывающий:
+JDBC кладёт в параметр `java.sql.Time` (или `LocalTime`) для `TIME` и `Duration` для
+`INTERVAL`. В .NET то же говорит объявленный тип параметра: `DbType.Time` — это время суток.
+
+Порт: `Data/H2ValueMapper.cs` — `ToValue` принимает объявленный тип параметра, и `TimeSpan`
+с объявленным `DbType.Time` становится `TIME`, а без объявленного типа (или с любым другим) —
+`INTERVAL DAY TO SECOND`, как и было. `Data/H2Command.cs` передаёт объявленный тип параметра
+в маппер.
+
+Одно отступление от эталона, записанное в коде: у JDBC нет «типа по умолчанию, если
+вызывающий ничего не объявил» — там тип приходит из перегруженного `setObject`, и
+`LocalTime` всегда означает `TIME`. В ADO.NET объявленный тип — часть контракта
+`DbParameter`, и `TimeSpan` без объявленного типа остаётся промежутком: в .NET `TimeSpan`
+это длина, и `TimeOnly` — время суток. Провайдер EF Core шлёт `TimeOnly` (он уже так делает),
+linq2db шлёт `TimeSpan` с `DbType.Time` — и теперь это доезжает как `TIME`.
+
+Оракул (`tests/H2Sharp.Tests/TimeAndIntervalOracleTests.cs`): колонка `TIME` принимает время
+и отказывает промежутку с тем же кодом, что и эталон (`22018`), — совпадает с JVM. Тесты
+через ADO.NET (`tests/H2Sharp.Data.Tests/H2TimeParameterTests.cs`): `TimeSpan` с
+`DbType.Time` ложится в колонку `TIME` и читается обратно; `TimeSpan` без объявленного типа
+доезжает как `INTERVAL DAY TO SECOND`; время длиннее суток отказывается.
+
+Проверено: `H2Sharp.Tests` **1157**, конформанс-набор **357/947**, `Data.Tests` 400
++ 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.
