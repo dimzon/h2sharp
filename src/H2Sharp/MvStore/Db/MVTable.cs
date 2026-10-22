@@ -277,9 +277,9 @@ public sealed class MVTable : Table
     /// <remarks>
     /// Built from the database's default factory, as the reference does:
     /// database.getRowFactory().createRowFactory(database, database.getCompareMode(),
-    /// database, columns, null, false). The provider and handler are null here because
-    /// Database does not yet implement CastDataProvider/DataHandler, but the factory
-    /// still produces the correct row shape.
+    /// database, columns, null, false). The database is the provider, and it answers with
+    /// the session of the thread: a comparison of a stored value with a value of another
+    /// date and time type has to know the zone of the reader.
     /// Reference: org.h2.table.Table.java:482
     /// </remarks>
     public RowFactory GetRowFactory()
@@ -298,7 +298,7 @@ public sealed class MVTable : Table
         }
 
         return database!.GetRowFactory().CreateRowFactory(
-            null, database!.GetCompareMode(), null, typedColumns, null, false);
+            database, database!.GetCompareMode(), null, typedColumns, null, false);
     }
 
     /// <summary>

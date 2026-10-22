@@ -108,7 +108,8 @@ public class CommandContainer : Command
     }
 
     /// <inheritdoc/>
-    public override ResultInterface Query(long maxrows) => command.Run(maxrows);
+    public override ResultInterface Query(long maxrows)
+        => RunWithThreadLocalSession(() => command.Run(maxrows));
 
     /// <inheritdoc/>
     public override bool IsCacheable() => command.IsCacheable();

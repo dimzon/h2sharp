@@ -189,6 +189,31 @@ public abstract class Command : CommandInterface
     public virtual ResultInterface ExecuteQuery(long maxrows, int fetchSize, bool scrollable)
         => throw new TODOException("Command.executeQuery: the transaction layer is not ported yet");
 
+    /// <summary>
+    /// Runs the statement with this session as the session of the thread.
+    /// </summary>
+    /// <remarks>
+    /// The reference sets the session of the thread around the running of a statement, and the
+    /// database — the provider of the row factories — asks for it when a comparison has to
+    /// know the zone of the reader. The slot is put back the way it was, so that a statement
+    /// that runs another one does not leave the wrong session behind.
+    /// </remarks>
+    /// <typeparam name="T">what the statement answers</typeparam>
+    /// <param name="run">the statement</param>
+    /// <returns>what the statement answered</returns>
+    protected T RunWithThreadLocalSession<T>(Func<T> run)
+    {
+        Session? old = Session.SetThreadLocalSession();
+        try
+        {
+            return run();
+        }
+        finally
+        {
+            Session.ResetThreadLocalSession(old);
+        }
+    }
+
     /// <inheritdoc/>
     /// <remarks>
     /// The reference wraps the update in savepoints, a statement scope, and a rollback of a
@@ -201,7 +226,7 @@ public abstract class Command : CommandInterface
         CommitIfNonTransactional();
         try
         {
-            return UpdateRows(generatedKeysRequest);
+            return RunWithThreadLocalSession(() => UpdateRows(generatedKeysRequest));
         }
         finally
         {

@@ -34,7 +34,7 @@ namespace H2Sharp.Engine;
 /// <summary>
 /// A database.
 /// </summary>
-public sealed partial class Database
+public sealed partial class Database : CastDataProvider
 {
     /// <summary>
     /// The first object id handed out. The reference allocates the meta table and its index
@@ -466,6 +466,60 @@ public sealed partial class Database
     /// </remarks>
     /// <returns>the row factory</returns>
     public Result.RowFactory GetRowFactory() => rowFactory;
+
+    /// <summary>
+    /// Returns the current timestamp with maximum resolution.
+    /// </summary>
+    /// <remarks>
+    /// The reference's database is the provider of the row factories, and the row factories
+    /// are what compare a stored value with a value of another type — and a comparison of two
+    /// date and time types has to know the zone of the reader, which is the statement that
+    /// runs now. The database answers with the session of the thread, and refuses when there
+    /// is none: a comparison outside a statement has no reader, and the reference refuses it
+    /// the same way.
+    /// </remarks>
+    /// <returns>the current timestamp</returns>
+    public Values.ValueTimestampTimeZone CurrentTimestamp()
+    {
+        SessionLocal? session = SessionLocal.GetThreadLocalSession();
+        if (session is null)
+        {
+            throw Message.DbException.GetUnsupportedException("Unsafe comparison or cast");
+        }
+
+        return session.CurrentTimestamp();
+    }
+
+    /// <summary>
+    /// Returns the current time zone.
+    /// </summary>
+    /// <remarks>
+    /// The zone of the session of the thread, for the reason
+    /// <see cref="CurrentTimestamp"/> gives.
+    /// </remarks>
+    /// <returns>the current time zone</returns>
+    public Util.TimeZoneProvider CurrentTimeZone()
+    {
+        SessionLocal? session = SessionLocal.GetThreadLocalSession();
+        if (session is null)
+        {
+            throw Message.DbException.GetUnsupportedException("Unsafe comparison or cast");
+        }
+
+        return session.CurrentTimeZone();
+    }
+
+    /// <summary>
+    /// Returns are ENUM values 0-based.
+    /// </summary>
+    /// <returns>true if they are</returns>
+    public bool ZeroBasedEnums() => DefaultCastDataProvider.Instance.ZeroBasedEnums();
+
+    /// <summary>
+    /// Returns the database mode.
+    /// </summary>
+    /// <returns>the mode</returns>
+    public Mode GetMode() => DefaultCastDataProvider.Instance.GetMode();
 
     /// <summary>
     /// Gets the connection information this database was opened with.

@@ -151,7 +151,7 @@ public abstract class Index : SchemaObject
             IndexColumn[] indexColsForFactory =
                 (newIndexType is not null && newIndexType.IsScan()) ? [] : (newIndexColumns ?? []);
             rowFactory = databaseRowFactory.CreateRowFactory(
-                null, compareMode, null, typedColumns, indexColsForFactory, true);
+                database, compareMode, null, typedColumns, indexColsForFactory, true);
 
             if (uniqueColumnCount > 0)
             {

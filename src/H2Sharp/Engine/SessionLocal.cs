@@ -329,6 +329,39 @@ public sealed class SessionLocal : Session
     }
 
     /// <summary>
+    /// The session of this thread, the one a comparison between two types asks about.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps it in a <c>ThreadLocal</c> and asks for it from the database, which
+    /// is the provider of the row factories: a comparison of a stored value with a value of
+    /// another type has to know the zone of the reader, and the reader is the statement that
+    /// runs now. A thread may run several sessions one after another, so the slot holds the
+    /// session of the statement and nothing else.
+    /// </remarks>
+    [ThreadStatic]
+    private static SessionLocal? threadLocalSession;
+
+    /// <summary>
+    /// Gets the session of this thread, or null when no statement runs on it.
+    /// </summary>
+    /// <returns>the session, or null</returns>
+    internal static SessionLocal? GetThreadLocalSession() => threadLocalSession;
+
+    /// <inheritdoc/>
+    public override Session? SetThreadLocalSession()
+    {
+        SessionLocal? old = threadLocalSession;
+        threadLocalSession = this;
+        return old;
+    }
+
+    /// <inheritdoc/>
+    public override void ResetThreadLocalSession(Session? oldSession)
+    {
+        threadLocalSession = oldSession as SessionLocal;
+    }
+
+    /// <summary>
     /// Gets the database this session belongs to.
     /// </summary>
     /// <returns>the database</returns>
