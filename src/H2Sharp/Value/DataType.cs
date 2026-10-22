@@ -612,6 +612,46 @@ public sealed class DataType
         return t;
     }
 
+    /// <summary>Whether all distinct values of this type have a distinct ordering position.</summary>
+    public static bool HasTotalOrdering(int type)
+    {
+        switch (type)
+        {
+            case Value.Boolean:
+            case Value.Tinyint:
+            case Value.Smallint:
+            case Value.Integer:
+            case Value.Bigint:
+            case Value.Double:
+            case Value.Real:
+            case Value.Time:
+            case Value.Date:
+            case Value.Timestamp:
+            case Value.Varbinary:
+            case Value.JavaObject:
+            case Value.Uuid:
+            case Value.Geometry:
+            case Value.Enum:
+            case Value.IntervalYear:
+            case Value.IntervalMonth:
+            case Value.IntervalDay:
+            case Value.IntervalHour:
+            case Value.IntervalMinute:
+            case Value.IntervalSecond:
+            case Value.IntervalYearToMonth:
+            case Value.IntervalDayToHour:
+            case Value.IntervalDayToMinute:
+            case Value.IntervalDayToSecond:
+            case Value.IntervalHourToMinute:
+            case Value.IntervalHourToSecond:
+            case Value.IntervalMinuteToSecond:
+            case Value.Binary:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private static DataType CreateGeometry()
     {
         DataType dataType = new();

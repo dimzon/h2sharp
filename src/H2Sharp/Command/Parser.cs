@@ -693,20 +693,24 @@ public sealed partial class Parser
     /// A query in parentheses is a select, or the rows a VALUES clause names.
     /// </remarks>
     /// <returns>the query</returns>
-    private Query.Query ParseQueryExpression()
+    private Query.Query ParseQueryExpression(bool prepare = true)
     {
         if (IsWord("VALUES", consume: false))
         {
-            return ReadValues();
+            Query.Query query = ReadValues();
+            // The reference initializes the table value constructor in parseValues; the
+            // predicates then prepare it after the outer columns are mapped.
+            query.Init();
+            return query;
         }
 
         if (IsWord("WITH", consume: false))
         {
             ReadWith();
-            return ParseQuerySelect(endOfStatement: false);
+            return ParseQuerySelect(endOfStatement: false, prepare: prepare);
         }
 
-        return ParseQuerySelect(endOfStatement: false);
+        return ParseQuerySelect(endOfStatement: false, prepare: prepare);
     }
 
     /// <summary>
@@ -1963,7 +1967,7 @@ public sealed partial class Parser
     /// </remarks>
     /// <returns>the prepared statement</returns>
     /// <param name="endOfStatement">whether the select must be the whole statement</param>
-    private Query.Query ParseQuerySelect(bool endOfStatement = true)
+    private Query.Query ParseQuerySelect(bool endOfStatement = true, bool prepare = true)
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parseQuerySelect: this parser has no session");
         ExpectWord("SELECT");
@@ -2290,8 +2294,12 @@ public sealed partial class Parser
         }
 
         select.Init();
-        select.PrepareExpressions();
-        select.PreparePlan(current, targetTableFilter: null);
+        // Predicate subqueries are initialized now and prepared after outer column mapping,
+        // as in H2's init -> mapColumns -> prepare lifecycle.
+        if (prepare)
+        {
+            select.Prepare();
+        }
         if (!union)
         {
             return select;
@@ -2308,7 +2316,7 @@ public sealed partial class Parser
                 _ = IsWord("DISTINCT");
             }
 
-            Query.Query right = ParseQuerySelect();
+            Query.Query right = ParseQuerySelect(endOfStatement: endOfStatement, prepare: prepare);
             left = new Query.SelectUnion(left, right, distinct);
         }
 
@@ -3172,9 +3180,14 @@ public sealed partial class Parser
                 bool not = ReadIf(ParserUtil.Not);
                 Expect(ParserUtil.In, "IN");
                 Expect(Token.OpenParen, "(");
-                if (IsWord("SELECT", consume: false))
+                if (IsDerivedQuery())
                 {
-                    throw new TODOException("Parser.parseQuerySelect: IN with a subquery is not ported");
+                    Query.Query query = ParseQueryExpression(prepare: false);
+                    Expect(Token.CloseParen, ")");
+                    left = new Expressions.Conditions.ConditionInQuery(
+                        left, not, whenOperand: false, query, all: false,
+                        Expressions.Conditions.Comparison.Equal);
+                    continue;
                 }
 
                 List<Expressions.Expression> values = [];

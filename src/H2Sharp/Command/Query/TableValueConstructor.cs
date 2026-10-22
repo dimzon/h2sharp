@@ -13,6 +13,7 @@ using System.Globalization;
 using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
+using H2Sharp.Expressions.Functions;
 using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Tables;
@@ -156,6 +157,48 @@ public sealed class TableValueConstructor : Query
     }
 
     /// <inheritdoc/>
+    public override void SetEvaluatable(TableFilter tableFilter, bool value)
+    {
+        foreach (List<Expression> row in rows)
+        {
+            foreach (Expression expression in row)
+            {
+                expression.SetEvaluatable(tableFilter, value);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public override void UpdateAggregate(SessionLocal session, int stage)
+    {
+        foreach (List<Expression> row in rows)
+        {
+            foreach (Expression expression in row)
+            {
+                expression.UpdateAggregate(session, stage);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public override bool IsEverything(ExpressionVisitor visitor)
+    {
+        ExpressionVisitor nested = visitor.IncrementQueryLevel(1);
+        foreach (List<Expression> row in rows)
+        {
+            foreach (Expression expression in row)
+            {
+                if (!expression.IsEverything(nested))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc/>
     public override Expression[] GetExpressions() => expressions;
 
     /// <inheritdoc/>
@@ -177,6 +220,10 @@ public sealed class TableValueConstructor : Query
         SessionLocal current = GetSession();
         OffsetFetch offsetFetch = GetOffsetFetch(limit);
         LocalResult result = new(current, expressions, visibleColumnCount, visibleColumnCount);
+        if (distinct)
+        {
+            result.SetDistinct();
+        }
         foreach (List<Expression> row in rows)
         {
             Value?[] values = new Value?[visibleColumnCount];
@@ -188,19 +235,7 @@ public sealed class TableValueConstructor : Query
             result.AddRow(values);
         }
 
-        if (offsetFetch.Fetch >= 0)
-        {
-            result.SetLimit(offsetFetch.Fetch);
-            result.SetFetchPercent(offsetFetch.FetchPercent);
-        }
-
-        if (offsetFetch.Offset != 0)
-        {
-            result.SetOffset(offsetFetch.Offset);
-        }
-
-        result.Done();
-        return result;
+        return FinishResult(result, offsetFetch.Offset, offsetFetch.Fetch, offsetFetch.FetchPercent, null)!;
     }
 
     /// <summary>
@@ -249,8 +284,18 @@ public sealed class TableValueConstructor : Query
 
             // The reference names the columns with an expression column, which knows no type
             // of its own; this port names them with an alias over the first value, so that
-            // the name and the type of the column are both there.
-            columnExpressions.Add(new Alias(row[c], name, aliasColumnName: true));
+            // the name and the type of the column are both there. The alias takes the type of
+            // the first row, and the column's type is the higher type over every row, so a
+            // cast keeps the name and gives the column the type it has in the table — without
+            // it a column whose first row is NULL would report NULL as its type.
+            Expression columnValue = row[c];
+            if (columnValue.GetTypeInfo().GetValueType() != types[c].GetValueType()
+                || columnValue.GetTypeInfo().GetScale() != types[c].GetScale())
+            {
+                columnValue = new CastSpecification(columnValue, types[c]);
+            }
+
+            columnExpressions.Add(new Alias(columnValue, name, aliasColumnName: true));
         }
 
         columns = newColumns;

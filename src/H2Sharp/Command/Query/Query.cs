@@ -64,6 +64,93 @@ public abstract class Query : Prepared
     /// </summary>
     private bool fetchPercent;
 
+    /// <summary>Whether duplicate rows are removed.</summary>
+    protected bool distinct;
+
+    /// <summary>The ordering of an IN predicate result, or null for an ordinary result.</summary>
+    protected int[]? inPredicateSortTypes;
+
+    private bool neverLazy;
+
+    /// <summary>Whether preparation has completed.</summary>
+    protected bool isPrepared;
+
+    /// <summary>Requires a materialized result. This port currently materializes all queries.</summary>
+    public void SetNeverLazy(bool value) => neverLazy = value;
+
+    /// <summary>Whether this query must not return a lazy result.</summary>
+    public bool IsNeverLazy() => neverLazy;
+
+    /// <summary>Marks this result as an IN predicate value list.</summary>
+    public void SetInPredicateResult() => inPredicateSortTypes ??= [];
+
+    /// <summary>Whether this query produces an IN predicate value list.</summary>
+    public bool IsInPredicateResult() => inPredicateSortTypes is not null;
+
+    /// <summary>Sets the ordering of an IN predicate value list.</summary>
+    public void SetInPredicateResultSortTypes(int[] sortTypes) => inPredicateSortTypes = sortTypes;
+
+    /// <summary>Whether this query removes duplicates.</summary>
+    public virtual bool IsAnyDistinct() => distinct;
+
+    /// <summary>
+    /// Enables DISTINCT only when it cannot change which rows OFFSET / FETCH retain.
+    /// </summary>
+    public void SetDistinctIfPossible()
+    {
+        if (!IsAnyDistinct() && offsetExpr is null && fetchExpr is null)
+        {
+            distinct = true;
+        }
+    }
+
+    /// <inheritdoc/>
+    public override void Prepare()
+    {
+        if (!checkInit)
+        {
+            throw DbException.GetInternalError("not initialized");
+        }
+
+        if (isPrepared)
+        {
+            return;
+        }
+
+        PrepareExpressions();
+        PreparePlan(GetSession(), null);
+        isPrepared = true;
+    }
+
+    /// <summary>Returns the cost bounded as an expression cost, as in Query.getCostAsExpression.</summary>
+    public int GetCostAsExpression() => (int)Math.Min(1_000_000d, 10d + 10d * GetCost());
+
+    /// <summary>Returns the scalar type for one column, or the ROW type for multiple columns.</summary>
+    public TypeInfo GetRowDataType()
+    {
+        Expression[] expressions = GetExpressions();
+        int count = GetColumnCount();
+        if (count == 1)
+        {
+            return expressions[0].GetTypeInfo();
+        }
+
+        // ExtTypeInfoRow's existing port takes TypeInfo[] in place of Java's Typed[].
+        TypeInfo[] types = new TypeInfo[count];
+        for (int i = 0; i < count; i++)
+        {
+            types[i] = expressions[i].GetTypeInfo();
+        }
+
+        return TypeInfo.GetTypeInfo(Value.Row, -1L, -1, new ExtTypeInfoRow(types, count));
+    }
+
+    /// <summary>Propagates evaluatability into the expressions of this query.</summary>
+    public abstract void SetEvaluatable(TableFilter tableFilter, bool value);
+
+    /// <summary>Updates aggregate expressions, including those in nested queries.</summary>
+    public abstract void UpdateAggregate(SessionLocal session, int stage);
+
     /// <summary>
     /// Creates a query.
     /// </summary>
@@ -717,5 +804,97 @@ public abstract class Query : Prepared
         }
 
         return new OffsetFetch(offset, fetch, percent);
+    }
+
+    /// <summary>
+    /// Applies limits before converting the result into an IN value list, as Query.finishResult
+    /// does. Deduplicating before a limit would change IN (SELECT ... LIMIT ...).
+    /// </summary>
+    protected LocalResult? FinishResult(
+        LocalResult result, long offset, long fetch, bool fetchPercent, ResultTarget? target)
+    {
+        if (offset != 0)
+        {
+            result.SetOffset(offset);
+        }
+
+        if (fetch >= 0)
+        {
+            result.SetLimit(fetch);
+            result.SetFetchPercent(fetchPercent);
+        }
+
+        // FETCH WITH TIES is still refused by the parser; its finishResult branch waits for it.
+        result.Done();
+        if (inPredicateSortTypes is not null)
+        {
+            result = ConvertToInPredicateValueListIfNecessary(result);
+        }
+
+        if (target is not null)
+        {
+            while (result.Next())
+            {
+                target.AddRow(result.CurrentRow());
+            }
+
+            result.Close();
+            return null;
+        }
+
+        return result;
+    }
+
+    private LocalResult ConvertToInPredicateValueListIfNecessary(LocalResult result)
+    {
+        if (distinct)
+        {
+            if (inPredicateSortTypes is null)
+            {
+                return result;
+            }
+
+            if (sort is not null)
+            {
+                int[] sortTypes = sort.GetSortTypes();
+                int count = inPredicateSortTypes.Length;
+                if (sortTypes.Length >= count)
+                {
+                    int i = 0;
+                    for (; i < count; i++)
+                    {
+                        if ((sortTypes[i] & SortOrder.Descending)
+                            != (inPredicateSortTypes[i] & SortOrder.Descending))
+                        {
+                            break;
+                        }
+                    }
+
+                    if (i == count)
+                    {
+                        return result;
+                    }
+                }
+            }
+        }
+
+        return ConvertToInPredicateValueList(result);
+    }
+
+    /// <summary>Converts the completed result into a distinct, optionally ordered IN value list.</summary>
+    public LocalResult ConvertToInPredicateValueList(ResultInterface result)
+    {
+        int count = GetColumnCount();
+        LocalResult distinctResult = new(GetSession(), GetExpressions(), count, count);
+        distinctResult.SetInPredicateValueListResult(inPredicateSortTypes!);
+        result.Reset();
+        while (result.Next())
+        {
+            distinctResult.AddRow(result.CurrentRow());
+        }
+
+        result.Close();
+        distinctResult.Done();
+        return distinctResult;
     }
 }

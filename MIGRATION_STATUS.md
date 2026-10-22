@@ -5847,3 +5847,50 @@ T WHERE TS = TIMESTAMP WITH TIME ZONE '...'`, `... WHERE TS = CURRENT_TIMESTAMP`
 
 Проверено: `H2Sharp.Tests` **1159**, конформанс-набор **361/947** (было 357), `Data.Tests` 402
 (красных нет), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+
+**`IN (подзапрос)` — предикат над запросом, а не над списком значений.**
+Пункт F issue #13 («`IN` (подзапрос) | `Parser.parseQuerySelect: IN with a subquery is not
+ported`»).
+
+Эталон: `org.h2.expression.condition.PredicateWithSubquery` (общая база предикатов над
+запросом) и `ConditionInQuery` (IN / NOT IN / ANY / ALL). Инициализация запроса, затем
+`mapColumns` внешнего запроса, затем `prepare` — этот порядок и есть то, что делает
+коррелированный подзапрос возможным.
+
+Порт:
+* `Expressions/Conditions/PredicateWithSubquery.cs` и `ConditionInQuery.cs` — эталонные
+  классы: пустой результат (`not ^ all`), сравнение через `ContainsDistinct`, медленный путь
+  `getValueSlow`, NULL-безопасный `ANY`/`ALL`, `getNotIfPossible`, печать SQL и индексное
+  условие `IN (запрос)`;
+* `Command/Query/Query.cs` — жизненный цикл эталона: `Prepare()` (init → prepareExpressions →
+  preparePlan) с флагом `isPrepared`, `SetNeverLazy`, `SetInPredicateResult`/`SetInPredicateResultSortTypes`,
+  `SetDistinctIfPossible`, `GetRowDataType`, `GetCostAsExpression`, `SetEvaluatable`,
+  `UpdateAggregate` и `FinishResult`/`ConvertToInPredicateValueList` (преобразование
+  результата в список значений IN);
+* `Command/Prepared.cs` — `SetSession` меняет сессию (было: отказ), как в эталоне;
+* `Select`/`SelectUnion`/`TableValueConstructor` — `SetEvaluatable`, `UpdateAggregate`,
+  `IsEverything`, `GetCost`, и ветка UNION/`VALUES` для предикатов;
+* разбор: `ParseQueryExpression(prepare)` / `ParseQuerySelect(prepare)` — подзапрос
+  инициализируется, но подготавливается позже; ветка `IN (запрос)` вместо отказа;
+* `ExpressionColumn.MapColumns` — эталонная `mapColumns`/`mapColumn`: привязка по имени,
+  первый резолвер побеждает, другой резолвер на том же уровне — `90059`; ветки
+  `NOT_FROM_RESOLVER` и `INDEPENDENT` в `IsEverything`;
+* `IndexCondition.GetCurrentResult` и `DataType.HasTotalOrdering` — эталонные.
+
+Отступления от эталона, записанные в коде: `DbSettings` (`OPTIMIZE_IN_LIST`,
+`OPTIMIZE_IN_SELECT`, `OPTIMIZE_EVALUATABLE_SUBQUERIES`) не портирован — взяты эталонные
+значения по умолчанию (`true`); `AllColumnsForPlan` строится иначе; ленивых результатов нет,
+поэтому `SetNeverLazy` ничего не переключает. Побочно исправлено: таблица `VALUES` отдавала
+тип колонки по первой строке (из-за задокументированного `Alias`), и `NULL` в первой строке
+делал тип колонки `NULL` — теперь тип колонки приводится к типу таблицы.
+
+Оракул (`tests/H2Sharp.Tests/InQueryOracleTests.cs`): `IN`/`NOT IN` по подзапросу, пустой
+подзапрос, NULL слева и в подзапросе, `VALUES`-подзапрос, `UNION ALL`, подзапрос с
+`ORDER BY`/`LIMIT`/`OFFSET`, многостолбцовый подзапрос, ошибки `90110`/`22018`;
+коррелированный подзапрос, вложенные предикаты, `WITH` внутри подзапроса, `UPDATE`/`DELETE`
+с `IN (подзапрос)` — совпадает с JVM. Тесты текста запроса
+(`SelectTextTests.InSubquery`, `InSubqueryCorrelated`) и ADO.NET
+(`tests/H2Sharp.Data.Tests/H2InQueryTests.cs`).
+
+Проверено: `H2Sharp.Tests` **1162**, конформанс-набор **363/947** (было 361), `Data.Tests` 404
+(красных нет), `MvStore.Tests` 86, `Engine.Tests` 4/9.

@@ -63,8 +63,6 @@ public sealed class Select : Query
 
     private bool isQuickAggregateQuery;
 
-    private bool distinct;
-
     private bool isDistinct;
 
     private Expression? condition;
@@ -304,7 +302,7 @@ public sealed class Select : Query
     /// the DISTINCT ON marker stands in its place until it is.
     /// </remarks>
     /// <returns>true for either distinct flavor</returns>
-    public bool IsAnyDistinct() => distinct || isDistinct;
+    public override bool IsAnyDistinct() => distinct || isDistinct;
 
     /// <inheritdoc/>
     public override void MapColumns(ColumnResolver resolver, int level, bool outer)
@@ -323,6 +321,29 @@ public sealed class Select : Query
         {
             tableFilter.MapColumns(resolver, level, outer);
         }
+    }
+
+    /// <inheritdoc/>
+    public override void SetEvaluatable(TableFilter tableFilter, bool value)
+    {
+        foreach (Expression expression in expressions)
+        {
+            expression.SetEvaluatable(tableFilter, value);
+        }
+
+        condition?.SetEvaluatable(tableFilter, value);
+    }
+
+    /// <inheritdoc/>
+    public override void UpdateAggregate(SessionLocal current, int stage)
+    {
+        foreach (Expression expression in expressions)
+        {
+            expression.UpdateAggregate(current, stage);
+        }
+
+        condition?.UpdateAggregate(current, stage);
+        having?.UpdateAggregate(current, stage);
     }
 
     /// <inheritdoc/>
@@ -439,8 +460,14 @@ public sealed class Select : Query
             case ExpressionVisitor.GetColumns1:
             case ExpressionVisitor.GetColumns2:
                 break;
+            case ExpressionVisitor.Deterministic:
+            case ExpressionVisitor.SetMaxDataModificationId:
+            case ExpressionVisitor.GetDependencies:
+                throw new TODOException("Select.isEverything: this visitor needs unported table metadata");
             default:
-                throw new TODOException("Select.isEverything: the branches need unported machinery");
+                // The reference's optimizeEvaluatableSubqueries setting defaults to true;
+                // DbSettings is not ported, so the default traversal is used here.
+                break;
         }
 
         ExpressionVisitor v2 = visitor.IncrementQueryLevel(1);
@@ -732,19 +759,7 @@ public sealed class Select : Query
             }
         }
 
-        if (fetch >= 0)
-        {
-            result.SetLimit(fetch);
-            result.SetFetchPercent(fetchPercent);
-        }
-
-        if (offset != 0)
-        {
-            result.SetOffset(offset);
-        }
-
-        result.Done();
-        return result;
+        return FinishResult(result, offset, fetch, fetchPercent, null)!;
     }
 
     /// <summary>
@@ -1649,5 +1664,9 @@ public sealed class Select : Query
 
     /// <summary>Sets the session this statement runs on.</summary>
     /// <param name="session">the session</param>
-    public new void SetSession(SessionLocal session) => this.session = session;
+    public override void SetSession(SessionLocal session)
+    {
+        base.SetSession(session);
+        this.session = session;
+    }
 }

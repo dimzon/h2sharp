@@ -253,7 +253,10 @@ public class IndexCondition
     /// <param name="sortTypes">the sort types</param>
     /// <returns>the result</returns>
     public ResultInterface? GetCurrentResult(SessionLocal session, int[] sortTypes)
-        => throw new TODOException("IndexCondition.getCurrentResult: the query has to run");
+    {
+        expressionQuery!.SetInPredicateResultSortTypes(sortTypes);
+        return expressionQuery.Run(0);
+    }
 
     /// <summary>
     /// Gets the SQL of this condition.

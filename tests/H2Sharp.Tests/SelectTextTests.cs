@@ -1355,20 +1355,21 @@ public sealed class SelectTextTests
             "select_text_intwonames", "SELECT ID FROM T WHERE NAME IN ('b', 'c')", ["=1", "=2", "=3"]);
     }
 
-    [Fact]
-    public void InSubqueryWaitsForSubqueries()
+    [JavaOracleFact]
+    public void InSubquery()
     {
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT ID FROM T WHERE ID IN (SELECT ID FROM T)"));
-            Assert.Contains("subquery", e.Message);
-        }
-        finally
-        {
-            store.Dispose();
-        }
+        // The rows are the fixture's, and the reference is the oracle for them.
+        CompareText(
+            "select_text_insubquery",
+            "SELECT ID FROM T WHERE ID IN (SELECT ID FROM T WHERE ID > 1) ORDER BY ID");
+    }
+
+    [JavaOracleFact]
+    public void InSubqueryCorrelated()
+    {
+        CompareText(
+            "select_text_insubquerycorrelated",
+            "SELECT ID FROM T t WHERE ID IN (SELECT ID FROM T WHERE ID = t.ID) ORDER BY ID");
     }
 
     [JavaOracleFact]

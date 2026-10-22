@@ -205,14 +205,6 @@ public sealed class ExpressionColumn : Expression
     /// <inheritdoc/>
     public override void MapColumns(ColumnResolver resolver, int level, int state)
     {
-        if (ReferenceEquals(columnResolver, resolver))
-        {
-            // Already mapped here: the reference ignores re-mapping to the same resolver,
-            // and mapping again would fail the name search below (it passes the table
-            // alias where a column alias is expected) and drift the query level.
-            return;
-        }
-
         if (tableAlias != null && !tableAlias.Equals(resolver.GetTableAlias(), StringComparison.Ordinal))
         {
             // The reference leaves a column alone when it names another table: in a join
@@ -220,32 +212,27 @@ public sealed class ExpressionColumn : Expression
             return;
         }
 
-        if (level < queryLevel)
+        Column? found = resolver.FindColumn(columnAlias!);
+        if (found is not null)
         {
-            throw new TODOException("ExpressionColumn.MapColumns: the query level is not ported");
+            MapColumn(resolver, found, level);
         }
+    }
 
-        if (state != MapInWindow && MapColumn(resolver, null, false))
+    // Reference: ExpressionColumn.mapColumn(resolver, col, level). The first binding wins;
+    // another binding is ambiguous only at the same level, not in an enclosing query.
+    private void MapColumn(ColumnResolver resolver, Column found, int level)
+    {
+        if (columnResolver is null)
         {
-            if (state == MapInitial && level == 0)
-            {
-                // Not worth the trouble
-                queryLevel = 0;
-                level = 0;
-            }
-
-            return;
+            queryLevel = level;
+            column = found;
+            columnResolver = resolver;
         }
-
-        if (state == MapInitial || state == MapInAggregate)
+        else if (queryLevel == level && !ReferenceEquals(columnResolver, resolver))
         {
-            // The reference leaves the column alone when the resolver does not have it: in a
-            // join every table is a resolver of its own, and the column belongs to one of
-            // them, so the next resolver is asked as well.
-            return;
+            throw DbException.Get(Api.ErrorCode.AmbiguousColumnName1, columnAlias);
         }
-
-        throw new TODOException("ExpressionColumn.MapColumns: the column was not found");
     }
 
     /// <inheritdoc/>
@@ -280,6 +267,10 @@ public sealed class ExpressionColumn : Expression
     {
         switch (visitor.GetVisitorType())
         {
+            case ExpressionVisitor.NotFromResolver:
+                return columnResolver != visitor.GetResolver();
+            case ExpressionVisitor.Independent:
+                return queryLevel < visitor.GetQueryLevel();
             case ExpressionVisitor.Evaluatable:
                 // If this column belongs to a 'higher level' query, it is just a parameter
                 // there, and it can be answered without a row.

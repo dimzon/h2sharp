@@ -41,7 +41,7 @@ namespace H2Sharp.Command;
 /// </summary>
 public abstract class Prepared
 {
-    private readonly SessionLocal session;
+    private SessionLocal session;
 
     private readonly long modificationMetaId;
 
@@ -244,7 +244,7 @@ public abstract class Prepared
     /// </summary>
     /// <param name="currentSession">the session</param>
     public virtual void SetSession(SessionLocal currentSession)
-        => throw new TODOException("Prepared.setSession: the session is fixed at creation");
+        => session = currentSession;
 
     /// <summary>
     /// Set the prepare always flag.

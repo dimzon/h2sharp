@@ -37,8 +37,6 @@ public sealed class SelectUnion : Query
 
     private readonly Query right;
 
-    private readonly bool distinct;
-
     /// <summary>
     /// Creates a union of two prepared queries.
     /// </summary>
@@ -51,6 +49,7 @@ public sealed class SelectUnion : Query
         this.left = left;
         this.right = right;
         this.distinct = distinct;
+        checkInit = true;
         if (left.GetColumnCount() != right.GetColumnCount())
         {
             throw Message.DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
@@ -78,6 +77,8 @@ public sealed class SelectUnion : Query
     /// <inheritdoc/>
     public override ResultInterface Run(long limit)
     {
+        // query(0) means no API limit in H2, including when evaluated as a subquery.
+        limit = limit == 0 ? -1 : limit;
         SessionLocal session = GetSession();
         Expression[] expressions = GetExpressions();
         LocalResult result = new(session, expressions, GetColumnCount(), GetColumnCount());
@@ -106,8 +107,7 @@ public sealed class SelectUnion : Query
             }
         }
 
-        result.Done();
-        return result;
+        return FinishResult(result, 0, -1, false, null)!;
     }
 
     /// <inheritdoc/>
@@ -118,10 +118,40 @@ public sealed class SelectUnion : Query
     /// <inheritdoc/>
     public override void MapColumns(ColumnResolver resolver, int level, bool outer)
     {
+        left.MapColumns(resolver, level, outer);
+        right.MapColumns(resolver, level, outer);
     }
 
     /// <inheritdoc/>
+    public override void SetEvaluatable(TableFilter tableFilter, bool value)
+    {
+        left.SetEvaluatable(tableFilter, value);
+        right.SetEvaluatable(tableFilter, value);
+    }
+
+    /// <inheritdoc/>
+    public override void UpdateAggregate(SessionLocal session, int stage)
+    {
+        left.UpdateAggregate(session, stage);
+        right.UpdateAggregate(session, stage);
+    }
+
+    /// <inheritdoc/>
+    public override bool IsEverything(ExpressionVisitor visitor)
+        => left.IsEverything(visitor) && right.IsEverything(visitor);
+
+    /// <inheritdoc/>
+    public override long GetCost() => left.GetCost() + right.GetCost();
+
+    /// <inheritdoc/>
     public override void PrepareExpressions()
+    {
+        left.Prepare();
+        right.Prepare();
+    }
+
+    /// <inheritdoc/>
+    public override void PreparePlan(SessionLocal session, TableFilter? targetTableFilter)
     {
     }
 
