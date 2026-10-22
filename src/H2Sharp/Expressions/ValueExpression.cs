@@ -41,6 +41,17 @@ public class ValueExpression : Expression
     /// <summary>The literal FALSE.</summary>
     public static readonly ValueExpression False = new(ValueBoolean.False);
 
+    /// <summary>
+    /// The expression the DEFAULT keyword stands for where a value may be omitted, as in
+    /// INSERT ... VALUES (DEFAULT).
+    /// </summary>
+    /// <remarks>
+    /// A singleton on purpose: the statements compare it by identity to tell "the caller wrote
+    /// DEFAULT" from "the caller wrote a value", and a fresh instance would be a value that
+    /// happens to be NULL. The reference keeps it the same way.
+    /// </remarks>
+    public static readonly ValueExpression Default = new(ValueNull.Instance);
+
     // Protected rather than private, as the reference keeps it package-visible for this
     // subclass: C# has no package-private, and a getter would be a member the reference
     // has nowhere.

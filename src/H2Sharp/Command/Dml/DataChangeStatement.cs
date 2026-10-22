@@ -161,9 +161,21 @@ public abstract class DataChangeStatement : Prepared
     /// Locks the row the condition selects and rechecks the condition under the lock, so that a
     /// row which changed since the scan was read is not written over.
     /// </summary>
+    /// <remarks>
+    /// The reference locks the row when the table is row-lockable and rechecks the condition on
+    /// the row that came back from the lock. The port has no row locking — a lock is a
+    /// transaction feature that is not ported — so the row the filter holds is the row, and the
+    /// recheck has nothing to recheck against. The reference's own body says the same when the
+    /// table is not row-lockable, which is why this is the same answer for the tables the port
+    /// has, and not a shortcut.
+    /// </remarks>
     /// <param name="targetTableFilter">the table being scanned</param>
     /// <param name="condition">the condition</param>
-    /// <returns>the locked row, or null</returns>
-    protected Row LockAndRecheckCondition(TableFilter targetTableFilter, Expression condition)
-        => throw new TODOException("DataChangeStatement.lockAndRecheckCondition: TableFilter is not ported");
+    /// <returns>the row, or null</returns>
+    protected Row? LockAndRecheckCondition(TableFilter targetTableFilter, Expression? condition)
+    {
+        ArgumentNullException.ThrowIfNull(targetTableFilter);
+        _ = condition;
+        return targetTableFilter.Get();
+    }
 }

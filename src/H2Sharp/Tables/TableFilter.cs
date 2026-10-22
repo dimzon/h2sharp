@@ -936,14 +936,8 @@ public class TableFilter : ColumnResolver
     /// <summary>
     /// Finds the rowid column of the table this filter reads.
     /// </summary>
-    /// <remarks>
-    /// Not ported. It is <c>table.getRowIdColumn()</c>, and that method is not ported either:
-    /// answering without it would need knowing which column is the rowid, and there are three
-    /// candidates the reference treats differently depending on the table.
-    /// </remarks>
     /// <returns>the column</returns>
-    public Column? GetRowIdColumn()
-        => throw new TODOException("TableFilter.getRowIdColumn: Table.getRowIdColumn is not ported");
+    public Column? GetRowIdColumn() => table!.GetRowIdColumn();
 
     /// <summary>
     /// Gets the filter this resolver reads from: itself.

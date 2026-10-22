@@ -501,6 +501,10 @@ public sealed partial class Parser
         {
             prepared = PrepareTruncateTable(current);
         }
+        else if (IsWord("MERGE", consume: false))
+        {
+            prepared = PrepareMergeUsing(current);
+        }
         else
         {
             Statement statement = ReadStatement();
@@ -541,7 +545,7 @@ public sealed partial class Parser
     /// <param name="session">the session</param>
     /// <param name="select">the select the table belongs to</param>
     /// <returns>the filter of the table the join chain starts at</returns>
-    private Tables.TableFilter ReadTableReference(SessionLocal session, Query.Select select)
+    private Tables.TableFilter ReadTableReference(SessionLocal session, Query.Select? select)
     {
         Tables.TableFilter top = ReadTablePrimary(session, select);
         Tables.TableFilter last = top;
@@ -812,7 +816,7 @@ public sealed partial class Parser
     /// <param name="session">the session</param>
     /// <param name="select">the select the table belongs to</param>
     /// <returns>the filter of the table</returns>
-    private Tables.TableFilter ReadDerivedTable(SessionLocal session, Query.Select select)
+    private Tables.TableFilter ReadDerivedTable(SessionLocal session, Query.Select? select)
     {
         Query.Query query = ParseQueryExpression();
         Expect(Token.CloseParen, ")");
@@ -1054,7 +1058,7 @@ public sealed partial class Parser
     /// <param name="session">the session</param>
     /// <param name="select">the select the table belongs to</param>
     /// <returns>the filter of the table</returns>
-    private Tables.TableFilter ReadTablePrimary(SessionLocal session, Query.Select select)
+    private Tables.TableFilter ReadTablePrimary(SessionLocal session, Query.Select? select)
     {
         if (ReadIf(Token.OpenParen))
         {
@@ -1591,6 +1595,234 @@ public sealed partial class Parser
         Ddl.DropDatabase command = new(session);
         command.SetDropAllObjects(true);
         return command;
+    }
+
+    /// <summary>
+    /// Builds the command of a MERGE INTO ... USING ... ON ... WHEN ... statement, as the
+    /// reference's parseMerge and parseMergeUsing do.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the command</returns>
+    private Prepared PrepareMergeUsing(SessionLocal session)
+    {
+        ExpectWord("MERGE");
+        ExpectWord("INTO");
+        Tables.TableFilter targetTableFilter = ReadSimpleTableFilter(session);
+        ExpectWord("USING");
+        Dml.MergeUsing command = new(session, targetTableFilter);
+        command.SetSourceTableFilter(ReadTableReference(session, select: null));
+        ExpectWord("ON");
+        command.SetOnCondition(ReadQueryOr());
+
+        ExpectWord("WHEN");
+        do
+        {
+            bool matched = IsWord("MATCHED");
+            if (matched)
+            {
+                ReadWhenMatched(command);
+            }
+            else
+            {
+                ReadWhenNotMatched(command);
+            }
+        }
+        while (IsWord("WHEN", consume: true));
+
+        command.SetSql(sql, null);
+        return command;
+    }
+
+    /// <summary>
+    /// Reads a WHEN MATCHED clause, as the reference's parseWhenMatched does.
+    /// </summary>
+    /// <param name="command">the statement</param>
+    private void ReadWhenMatched(Dml.MergeUsing command)
+    {
+        Expressions.Expression? and = ReadIf(ParserUtil.And) ? ReadQueryOr() : null;
+        ExpectWord("THEN");
+        Dml.MergeUsing.When when;
+        if (IsWord("UPDATE"))
+        {
+            Dml.MergeUsing.WhenMatchedThenUpdate update = new(command);
+            update.SetSetClauseList(ReadUpdateSetClause(command.GetTargetTableFilter()));
+            when = update;
+        }
+        else
+        {
+            ExpectWord("DELETE");
+            when = new Dml.MergeUsing.WhenMatchedThenDelete(command);
+        }
+
+        // The reference reads a WHERE after a matched clause only in the modes whose
+        // mergeWhere flag is set. The port has the regular mode only, where it is not.
+        when.SetAndCondition(and);
+        command.AddWhen(when);
+    }
+
+    /// <summary>
+    /// Reads a WHEN NOT MATCHED clause, as the reference's parseWhenNotMatched does.
+    /// </summary>
+    /// <param name="command">the statement</param>
+    private void ReadWhenNotMatched(Dml.MergeUsing command)
+    {
+        ExpectWord("NOT");
+        ExpectWord("MATCHED");
+        Expressions.Expression? and = ReadIf(ParserUtil.And) ? ReadQueryOr() : null;
+        ExpectWord("THEN");
+        ExpectWord("INSERT");
+        Tables.Column[]? columns = ReadIf(Token.OpenParen)
+            ? ReadColumnList(command.GetTargetTableFilter().GetTable()!)
+            : null;
+        bool? overridingSystem = ReadIfOverriding();
+        ExpectWord("VALUES");
+        Expect(Token.OpenParen, "(");
+        List<Expressions.Expression> values = [];
+        if (!ReadIf(Token.CloseParen))
+        {
+            do
+            {
+                values.Add(ReadExpressionOrDefault());
+            }
+            while (ReadIfMore());
+        }
+
+        Dml.MergeUsing.WhenNotMatched when = new(command, columns, overridingSystem, [.. values]);
+        when.SetAndCondition(and);
+        command.AddWhen(when);
+    }
+
+    /// <summary>
+    /// Reads a table and its alias into a filter, as the reference's readSimpleTableFilter does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the filter</returns>
+    private Tables.TableFilter ReadSimpleTableFilter(SessionLocal session)
+    {
+        string name = ReadIdentifierWithSchemaName(out string? schemaName);
+        Schemas.Schema schema = schemaName is null
+            ? session.GetCurrentSchema()
+            : session.GetDatabase().GetSchema(schemaName);
+        Tables.Table table = ReadTableOrView(session, schema, name);
+        return new(session, table, ReadFromAlias(), rightsChecked: true, select: null, 0, null);
+    }
+
+    /// <summary>
+    /// Reads a SET clause list, as the reference's readUpdateSetClause does.
+    /// </summary>
+    /// <remarks>
+    /// The simple form is ported: a column, and what it becomes. The row-value form
+    /// <c>(a, b) = (x, y)</c> and the array element form <c>a[1] = x</c> wait for the
+    /// expression list and the array index reader; the port's UPDATE does not read them either.
+    /// </remarks>
+    /// <param name="filter">the filter of the updated table</param>
+    /// <returns>the assignments</returns>
+    private Dml.SetClauseList ReadUpdateSetClause(Tables.TableFilter filter)
+    {
+        ExpectWord("SET");
+        Dml.SetClauseList list = new(filter.GetTable()!);
+        do
+        {
+            if (CurrentType == Token.OpenParen)
+            {
+                throw new TODOException(
+                    "Parser.readUpdateSetClause: row-value assignment needs ExpressionList");
+            }
+
+            if (CurrentType is Token.OpenBracket)
+            {
+                throw new TODOException(
+                    "Parser.readUpdateSetClause: array element assignment needs the array index reader");
+            }
+
+            Tables.Column column = ParseColumn(filter.GetTable()!);
+            Expect(Token.Equal, "=");
+            list.AddSingle(column, null, ReadExpressionOrDefault());
+        }
+        while (ReadIf(Token.Comma));
+
+        return list;
+    }
+
+    /// <summary>
+    /// Reads a column of a table, as the reference's parseColumn does.
+    /// </summary>
+    /// <param name="table">the table</param>
+    /// <returns>the column</returns>
+    private Tables.Column ParseColumn(Tables.Table table)
+    {
+        if (CurrentType == ParserUtil._ROWID_)
+        {
+            Read();
+            return table.GetRowIdColumn()!;
+        }
+
+        return table.GetColumn(ReadIdentifier());
+    }
+
+    /// <summary>
+    /// Reads a list of columns of a table, as the reference's parseColumnList does.
+    /// </summary>
+    /// <remarks>
+    /// The opening parenthesis is the caller's: the reference reads it before calling and reads
+    /// the closing one here, which is what makes <c>()</c> a list of no columns.
+    /// </remarks>
+    /// <param name="table">the table</param>
+    /// <returns>the columns</returns>
+    private Tables.Column[] ReadColumnList(Tables.Table table)
+    {
+        List<Tables.Column> columns = [];
+        HashSet<Tables.Column> set = [];
+        if (!ReadIf(Token.CloseParen))
+        {
+            do
+            {
+                Tables.Column column = ParseColumn(table);
+                if (!set.Add(column))
+                {
+                    throw DbException.Get(Api.ErrorCode.DuplicateColumnName1, column.GetName());
+                }
+
+                columns.Add(column);
+            }
+            while (ReadIfMore());
+        }
+
+        return [.. columns];
+    }
+
+    /// <summary>
+    /// Reads OVERRIDING USER VALUE or OVERRIDING SYSTEM VALUE, if one is written.
+    /// </summary>
+    /// <returns>false for USER, true for SYSTEM, null when neither is written</returns>
+    private bool? ReadIfOverriding()
+    {
+        bool? overridingSystem = null;
+        if (ReadIfWords("OVERRIDING", "USER", "VALUE"))
+        {
+            overridingSystem = false;
+        }
+        else if (ReadIfWords("OVERRIDING", "SYSTEM", "VALUE"))
+        {
+            overridingSystem = true;
+        }
+
+        return overridingSystem;
+    }
+
+    /// <summary>
+    /// Reads an expression, or the DEFAULT keyword, as the reference's readExpressionOrDefault
+    /// does.
+    /// </summary>
+    /// <returns>the expression</returns>
+    private Expressions.Expression ReadExpressionOrDefault()
+    {
+        if (IsWord("DEFAULT"))
+        {
+            return Expressions.ValueExpression.Default;
+        }
+
+        return ReadQueryOr();
     }
 
     /// <summary>

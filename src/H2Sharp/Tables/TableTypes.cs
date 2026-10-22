@@ -1089,6 +1089,17 @@ public abstract class Table
     public virtual bool Lock(H2Sharp.Engine.SessionLocal session, int lockType) => false;
 
     /// <summary>
+    /// Get the row id column if this table has one.
+    /// </summary>
+    /// <remarks>
+    /// The base table has none, as in the reference: a view or a range table has no rows of
+    /// its own to identify. A table that stores rows overrides this with the pseudo column
+    /// that names the row, which is what MERGE ... USING remembers duplicated target rows by.
+    /// </remarks>
+    /// <returns>the row id column, or null</returns>
+    public virtual Column? GetRowIdColumn() => null;
+
+    /// <summary>
     /// Whether this table is a view.
     /// </summary>
     /// <remarks>
@@ -1442,6 +1453,30 @@ public abstract class Table
     /// </summary>
     /// <returns>the columns</returns>
     public abstract Column[] GetColumns();
+
+    /// <summary>
+    /// Gets the column with the given name.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps a map from the name as the parser read it, which for an unquoted
+    /// name is the upper case one; this walks the columns and compares the same way. A quoted
+    /// name keeps its case on both sides, so the comparison stays ordinal rather than
+    /// case-insensitive.
+    /// </remarks>
+    /// <param name="columnName">the column name</param>
+    /// <returns>the column</returns>
+    public Column GetColumn(string columnName)
+    {
+        foreach (Column column in GetColumns())
+        {
+            if (column.GetName().Equals(columnName, StringComparison.Ordinal))
+            {
+                return column;
+            }
+        }
+
+        throw DbException.Get(Api.ErrorCode.ColumnNotFound1, columnName);
+    }
 
     /// <summary>
     /// Gets the index a full scan reads, priced for the given query.

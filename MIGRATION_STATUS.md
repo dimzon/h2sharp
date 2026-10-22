@@ -5803,3 +5803,47 @@ T WHERE TS = TIMESTAMP WITH TIME ZONE '...'`, `... WHERE TS = CURRENT_TIMESTAMP`
 
 Проверено: `H2Sharp.Tests` **1158**, конформанс-набор **357/947**, `Data.Tests` 400
 + 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+
+**`MERGE INTO ... USING ... ON ... WHEN ...` — строка источника сливается со строкой цели.**
+Пункт F issue #13 («`MERGE` | `[*]MERGE INTO T AS t USING U AS u` → ожидалось "statement"`»)
+и последний красный тест `Data.Tests`.
+
+Эталон: `org.h2.command.dml.MergeUsing` и разбор `parseMerge`/`parseMergeUsing`/
+`parseWhenMatched`/`parseWhenNotMatched`. Строка источника, не нашедшая цели, запоминается и
+сливается с пустой строкой цели, когда обход уходит на следующую строку источника: обход — это
+цепочка фильтров, и чтение следующей строки цели двигает источник.
+
+Порт:
+* `Command/Dml/MergeUsing.cs` — эталонный `MergeUsing` с тремя видами `WHEN`:
+  `WhenMatchedThenUpdate` (присваивания из `SetClauseList`), `WhenMatchedThenDelete` и
+  `WhenNotMatched` (`INSERT` со списком колонок, `OVERRIDING USER/SYSTEM VALUE` и `DEFAULT`);
+  повторная цель ловится по `_ROWID_` и отказывает `23505`, как в эталоне;
+* `Expressions/ValueExpression.cs` — эталонный `DEFAULT` (`ValueExpression.DEFAULT`), без него
+  `INSERT ... VALUES (DEFAULT)` читался как ссылка на колонку;
+* разбор: `PrepareMergeUsing`, `ReadWhenMatched`, `ReadWhenNotMatched`, `ReadSimpleTableFilter`,
+  `ReadUpdateSetClause`, `ReadColumnList`, `ParseColumn`, `ReadIfOverriding`,
+  `ReadExpressionOrDefault`;
+* `Tables/TableTypes.cs` — `GetRowIdColumn` (база — `null`, как в эталоне) и `GetColumn(name)`;
+  `MvStore/Db/MVTable.cs` — `_ROWID_` создаётся по требованию (эталонный `getRowIdColumn`);
+  `Tables/TableFilter.cs` — `GetRowIdColumn` больше не заглушка;
+* `DataChangeStatement.LockAndRecheckCondition` — эталонная форма без ветки блокировки,
+  потому что построчной блокировки в порте нет (её нет и у эталона для неблокируемых таблиц,
+  так что ответ тот же);
+* `SetClauseList.MapColumns` принимает второй резолвер: у `UPDATE` одна таблица, у `MERGE`
+  две, и присваивание может читать колонку источника.
+
+Отступления от эталона, записанные в коде: триггеров и прав в порте нет (вызовы названы в
+файле), построчной блокировки нет (`lockAndRecheckCondition` не перепроверяет условие под
+блокировкой), `UPDATE` пишет строку по одной вместо эталонной партии `LocalResult`
+(это уже было у порта в `UPDATE`), сбор зависимостей не портирован (таблица в порте — не
+`DbObject`), форма `(a, b) = (x, y)` и `a[1] = x` в `SET` отказывают по имени (нужны
+`ExpressionList` и чтение индексов массива).
+
+Оракул (`tests/H2Sharp.Tests/MergeUsingOracleTests.cs`): обновление совпавшей строки и вставка
+несовпавшей, удаление совпавшей, два `WHEN MATCHED` с `AND` и без, `MERGE` без ветки для одной
+из сторон — совпадает с JVM. Тест через ADO.NET
+(`tests/H2Sharp.Data.Tests/H2MergeUsingTests.cs`) — тот же круг через провайдера; красный
+`H2AliasSemanticsTests.A_merge_may_alias_both_tables_with_AS` стал зелёным.
+
+Проверено: `H2Sharp.Tests` **1159**, конформанс-набор **361/947** (было 357), `Data.Tests` 402
+(красных нет), `MvStore.Tests` 86, `Engine.Tests` 4/9.

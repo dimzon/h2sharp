@@ -101,13 +101,18 @@ public sealed class SetClauseList
     /// <summary>
     /// Maps the assigned expressions against the updated table.
     /// </summary>
+    /// <remarks>
+    /// The reference's <c>mapAndOptimize</c> takes two resolvers: an UPDATE has one table, and
+    /// MERGE ... USING has two, so an assignment may read a column of the source as well.
+    /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="filter">the filter of the table being updated</param>
-    public void MapColumns(SessionLocal session, TableFilter filter)
+    /// <param name="filter2">the filter of the source, or null when there is none</param>
+    public void MapColumns(SessionLocal session, TableFilter filter, TableFilter? filter2 = null)
     {
         for (int i = 0; i < actions.Length; i++)
         {
-            actions[i]?.MapAndOptimize(session, filter, null);
+            actions[i]?.MapAndOptimize(session, filter, filter2);
         }
     }
 

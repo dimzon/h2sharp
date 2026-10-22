@@ -72,6 +72,34 @@ public sealed class MVTable : Table
     private long modificationId;
 
     /// <summary>
+    /// The row id pseudo column, created the first time it is asked for.
+    /// </summary>
+    private Column? rowIdColumn;
+
+    /// <summary>
+    /// Gets the row id pseudo column of this table.
+    /// </summary>
+    /// <remarks>
+    /// A table that stores rows always has one, as in the reference: the key it hands out is
+    /// the row's identity, and the column is the name a statement writes to get at it. Built
+    /// on first use because most statements never ask.
+    /// </remarks>
+    /// <returns>the row id column</returns>
+    public override Column GetRowIdColumn()
+    {
+        rowIdColumn ??= CreateRowIdColumn();
+        return rowIdColumn;
+    }
+
+    private Column CreateRowIdColumn()
+    {
+        Column column = new(Column.RowId, Values.TypeInfo.TypeBigint, this, Result.SearchRow.RowidIndex);
+        column.SetRowId(true);
+        column.SetNullable(false);
+        return column;
+    }
+
+    /// <summary>
     /// Tell the table that it was modified.
     /// </summary>
     public override void SetModified()
