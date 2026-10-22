@@ -5763,3 +5763,32 @@ linq2db шлёт `TimeSpan` с `DbType.Time` — и теперь это доез
 
 Проверено: `H2Sharp.Tests` **1157**, конформанс-набор **357/947**, `Data.Tests` 400
 + 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+**`Database` — поставщик, сессия — в потоке.**
+Два отступления от эталона, которые записаны в коде и которые оракул вскрыл на сравнении
+`TIMESTAMP` с `TIMESTAMP WITH TIME ZONE` по индексу: «A conversion between date and time
+types needs a cast data provider».
+
+Эталон: `Database implements CastDataProvider`, и отвечает он через сессию текущего потока
+(`SessionLocal.getThreadLocalSession()`); `Command` ставит сессию в поток на время
+`executeQuery`/`executeUpdate`, а `JdbcResultSet` — на время чтения. Рядом с этим
+`Database.getMode()` и `zeroBasedEnums()` отвечали сами.
+
+Порт: `Database` теперь реализует `CastDataProvider` (члены `CurrentTimestamp`,
+`CurrentTimeZone`, `ZeroBasedEnums`, `GetMode`), `SessionLocal` хранит себя в потоке
+(`[ThreadStatic]`, `SetThreadLocalSession`/`ResetThreadLocalSession`), а `Command` и
+`CommandContainer` ставят её на время работы. Фабрика строк таблицы и индекса берёт базу
+вместо пустого поставщика (`MvStore/Db/MVTable.GetRowFactory`, `Indexes/Index`), так что
+сравнение колонки `TIMESTAMP` со значением `TIMESTAMP WITH TIME ZONE` больше не падает.
+
+Одно отступление от эталона, записанное в коде: `Database.GetMode()` и `ZeroBasedEnums()`
+отвечают из дефолтного поставщика, а не из базы (у базы нет режима и настроек
+enum-ов — они у сессии). Эталон держит их на базе, но в порте база их не знает, и
+сессия читает их у поставщика, которым она сама является.
+
+Оракул (`tests/H2Sharp.Tests/IndexedDateTimeComparisonOracleTests.cs`): `SELECT COUNT(*) FROM
+T WHERE TS = TIMESTAMP WITH TIME ZONE '...'`, `... WHERE TS = CURRENT_TIMESTAMP`,
+`... WHERE TS IN (CURRENT_TIMESTAMP)` по индексированной колонке `TIMESTAMP` — совпадает
+с JVM (включая машину, работающую в UTC).
+
+Проверено: `H2Sharp.Tests` **1158**, конформанс-набор **357/947**, `Data.Tests` 400
++ 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.
