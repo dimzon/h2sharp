@@ -5792,3 +5792,14 @@ T WHERE TS = TIMESTAMP WITH TIME ZONE '...'`, `... WHERE TS = CURRENT_TIMESTAMP`
 
 Проверено: `H2Sharp.Tests` **1158**, конформанс-набор **357/947**, `Data.Tests` 400
 + 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+**`AsyncLocal` вместо `ThreadLocal`: сессия течёт через `await`.**
+Отступление от эталона, записанное в коде: эталон хранит сессию в `ThreadLocal`, и она
+привязана к потоку. В .NET потоки переиспользуются пулом, а `await` может продолжить
+на другом потоке, поэтому thread-local сессия терялась бы при каждом `await` и при
+`Task.Run`. Порт хранит её в `AsyncLocal<SessionLocal?>`, которая течёт через контекст
+выполнения. Семантика для одного синхронного statement та же; для асинхронного кода
+порт работает лучше, чем эталон. `SetThreadLocalSession`/`ResetThreadLocalSession`
+сохраняют контракт эталона (возвращают старое значение, восстанавливают его).
+
+Проверено: `H2Sharp.Tests` **1158**, конформанс-набор **357/947**, `Data.Tests` 400
++ 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.

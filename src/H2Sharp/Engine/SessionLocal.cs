@@ -332,33 +332,32 @@ public sealed class SessionLocal : Session
     /// The session of this thread, the one a comparison between two types asks about.
     /// </summary>
     /// <remarks>
-    /// The reference keeps it in a <c>ThreadLocal</c> and asks for it from the database, which
-    /// is the provider of the row factories: a comparison of a stored value with a value of
-    /// another type has to know the zone of the reader, and the reader is the statement that
-    /// runs now. A thread may run several sessions one after another, so the slot holds the
-    /// session of the statement and nothing else.
+    /// The reference keeps it in a <c>ThreadLocal</c>. The port keeps it in an
+    /// <c>AsyncLocal</c> instead, so that it flows across <c>await</c> and
+    /// <c>Task.Run</c>: a statement that is awaited or that runs its body on another
+    /// thread still has its session. This is an idiom of .NET rather than a literal
+    /// transcription, and the reason for it is in <c>MIGRATION_STATUS.md</c>.
     /// </remarks>
-    [ThreadStatic]
-    private static SessionLocal? threadLocalSession;
+    private static readonly AsyncLocal<SessionLocal?> threadLocalSession = new();
 
     /// <summary>
     /// Gets the session of this thread, or null when no statement runs on it.
     /// </summary>
     /// <returns>the session, or null</returns>
-    internal static SessionLocal? GetThreadLocalSession() => threadLocalSession;
+    internal static SessionLocal? GetThreadLocalSession() => threadLocalSession.Value;
 
     /// <inheritdoc/>
     public override Session? SetThreadLocalSession()
     {
-        SessionLocal? old = threadLocalSession;
-        threadLocalSession = this;
+        SessionLocal? old = threadLocalSession.Value;
+        threadLocalSession.Value = this;
         return old;
     }
 
     /// <inheritdoc/>
     public override void ResetThreadLocalSession(Session? oldSession)
     {
-        threadLocalSession = oldSession as SessionLocal;
+        threadLocalSession.Value = oldSession as SessionLocal;
     }
 
     /// <summary>
