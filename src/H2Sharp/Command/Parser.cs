@@ -505,6 +505,10 @@ public sealed partial class Parser
         {
             prepared = PrepareMergeUsing(current);
         }
+        else if (IsWord("COMMENT", consume: false))
+        {
+            prepared = PrepareComment(current);
+        }
         else
         {
             Statement statement = ReadStatement();
@@ -1585,6 +1589,122 @@ public sealed partial class Parser
         return literal.GetString();
     }
 
+
+    /// <summary>
+    /// Builds the command of a COMMENT ON statement, as the reference's parseComment does.
+    /// </summary>
+    /// <remarks>
+    /// The comment is an expression, most often a string literal. A qualified column name is
+    /// read part by part — [catalog.]schema.table.column — because the generic qualified-name
+    /// reader would not read a dotted column name; a catalog that does not name this database
+    /// is refused, as the reference refuses it. The empty-schema forms that some modes allow
+    /// are not ported: the port only has the regular mode, where they are syntax errors.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <returns>the command</returns>
+    private Ddl.SetComment PrepareComment(SessionLocal session)
+    {
+        ExpectWord("COMMENT");
+        ExpectWord("ON");
+        int type;
+        bool column = false;
+        if (IsWord("TABLE") || IsWord("VIEW"))
+        {
+            type = Engine.DbObject.TableOrView;
+        }
+        else if (IsWord("COLUMN"))
+        {
+            column = true;
+            type = Engine.DbObject.TableOrView;
+        }
+        else if (IsWord("CONSTANT"))
+        {
+            type = Engine.DbObject.Constant;
+        }
+        else if (IsWord("CONSTRAINT"))
+        {
+            type = Engine.DbObject.Constraint;
+        }
+        else if (IsWord("ALIAS"))
+        {
+            type = Engine.DbObject.FunctionAlias;
+        }
+        else if (IsWord("INDEX"))
+        {
+            type = Engine.DbObject.Index;
+        }
+        else if (IsWord("ROLE"))
+        {
+            type = Engine.DbObject.Role;
+        }
+        else if (IsWord("SCHEMA"))
+        {
+            type = Engine.DbObject.Schema;
+        }
+        else if (IsWord("SEQUENCE"))
+        {
+            type = Engine.DbObject.Sequence;
+        }
+        else if (IsWord("TRIGGER"))
+        {
+            type = Engine.DbObject.Trigger;
+        }
+        else if (IsWord("USER"))
+        {
+            type = Engine.DbObject.User;
+        }
+        else if (IsWord("DOMAIN"))
+        {
+            type = Engine.DbObject.Domain;
+        }
+        else
+        {
+            throw DbException.GetSyntaxError(sql, Current.Start);
+        }
+
+        Ddl.SetComment command = new(session);
+        if (column)
+        {
+            string objectName = ReadIdentifier();
+            string? tmpSchemaName = null;
+            Expect(Token.Dot, ".");
+            string columnName = ReadIdentifier();
+            if (ReadIf(Token.Dot))
+            {
+                tmpSchemaName = objectName;
+                objectName = columnName;
+                columnName = ReadIdentifier();
+                if (ReadIf(Token.Dot))
+                {
+                    if (!tmpSchemaName.Equals(
+                        session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw DbException.Get(Api.ErrorCode.DatabaseNotFound1, tmpSchemaName);
+                    }
+
+                    tmpSchemaName = objectName;
+                    objectName = columnName;
+                    columnName = ReadIdentifier();
+                }
+            }
+
+            command.SetSchemaName(tmpSchemaName ?? session.GetCurrentSchema().GetName());
+            command.SetObjectName(objectName);
+            command.SetColumn(true);
+            command.SetColumnName(columnName);
+        }
+        else
+        {
+            string objectName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+            command.SetSchemaName(schema.GetName());
+            command.SetObjectName(objectName);
+        }
+
+        command.SetObjectType(type);
+        ExpectWord("IS");
+        command.SetCommentExpression(ReadExpression());
+        return command;
+    }
 
     /// <summary>
     /// Builds the command of a DROP ALL OBJECTS statement, as the reference's parseDrop does.

@@ -963,7 +963,7 @@ public sealed class InformationSchemaTable : Table
                         CharacterSetName,
                         null,
                         collation,
-                        null);
+                        schema.GetComment());
                 }
 
                 break;
@@ -979,7 +979,7 @@ public sealed class InformationSchemaTable : Table
                         table is InformationSchemaTable ? "NO" : "YES",
                         null,
                         GetStorageType(table),
-                        null,
+                        table.GetComment(),
                         null,
                         GetTableClass(table), ValueBigint.Get(table.GetRowCountApproximation(session)));
                 }
@@ -1079,7 +1079,7 @@ public sealed class InformationSchemaTable : Table
                         "NO",
                         "NO",
                         "VALID",
-                        null);
+                        table.GetComment());
                 }
 
                 break;
@@ -1215,10 +1215,10 @@ public sealed class InformationSchemaTable : Table
             // extensions
             // BASE_VALUE
             cycle != Schemas.Sequence.Cycle.EXHAUSTED ? ValueBigint.Get(sequence.GetBaseValue()) : null,
-            // CACHE
-            ValueBigint.Get(sequence.GetCacheSize()),
-            // REMARKS
-            null);
+                        // CACHE
+                        ValueBigint.Get(sequence.GetCacheSize()),
+                        // REMARKS
+                        sequence.GetComment());
     }
 
     /// <summary>
@@ -1550,7 +1550,7 @@ public sealed class InformationSchemaTable : Table
             indexType?.GetSql(false),
             NullsDistinctToString(indexType?.GetNullsDistinct()),
             ValueBoolean.Get(indexType?.GetBelongsToConstraint() ?? false),
-            null,
+            index.GetComment(),
             index.GetType().Name);
     }
 

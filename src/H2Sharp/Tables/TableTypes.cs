@@ -1047,6 +1047,31 @@ public abstract class Table
     }
 
     /// <summary>
+    /// The comment of this table, or null.
+    /// </summary>
+    /// <remarks>
+    /// In the reference the field lives on DbObject, which this hierarchy does not share:
+    /// Table stands on its own. The member is the reference's, only the shelf moved, and an
+    /// empty comment reads back as none.
+    /// </remarks>
+    private string? comment;
+
+    /// <summary>
+    /// Change the comment of this table.
+    /// </summary>
+    /// <param name="newComment">the comment, or null for no comment</param>
+    public void SetComment(string? newComment)
+    {
+        comment = string.IsNullOrEmpty(newComment) ? null : newComment;
+    }
+
+    /// <summary>
+    /// Get the comment of this table.
+    /// </summary>
+    /// <returns>the comment, or null</returns>
+    public string? GetComment() => comment;
+
+    /// <summary>
     /// Whether this is a global temporary table.
     /// </summary>
     /// <remarks>
