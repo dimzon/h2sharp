@@ -764,6 +764,48 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Reads a current date or time function, as the reference's
+    /// readCurrentDateTimeValueFunction does.
+    /// </summary>
+    /// <remarks>
+    /// The function may name its scale in parentheses: CURRENT_TIMESTAMP(3) is a timestamp with
+    /// three digits after the point. Without a scale the type brings its own.
+    /// <para>
+    /// The reference looks for a user-defined function of the same name first, when the
+    /// database allows a built-in to be overridden, and hands that to the statement instead.
+    /// The port has no user-defined functions yet, so the built-in is always the answer.
+    /// </para>
+    /// </remarks>
+    /// <param name="function">the function, one of the constants of the function class</param>
+    /// <param name="hasParen">whether the opening parenthesis was already read</param>
+    /// <returns>the function</returns>
+    private Expressions.Expression ReadCurrentDateTimeValueFunction(
+        int function, bool hasParen)
+    {
+        int scale = -1;
+        if (hasParen)
+        {
+            if (function != Expressions.Functions.CurrentDateTimeValueFunction.CurrentDate
+                && CurrentType != Token.CloseParen)
+            {
+                scale = ReadInt();
+                if (scale < 0 || scale > Values.ValueTime.MaximumScale)
+                {
+                    throw DbException.Get(
+                        Api.ErrorCode.InvalidValueScale,
+                        scale.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        "0",
+                        Values.ValueTime.MaximumScale.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+            }
+
+            Expect(Token.CloseParen, ")");
+        }
+
+        return new Expressions.Functions.CurrentDateTimeValueFunction(function, scale);
+    }
+
+    /// <summary>
     /// Reads a derived table: a query in parentheses that stands for a table, as the
     /// reference's readDerivedTableWithCorrelation does.
     /// </summary>
@@ -3007,6 +3049,21 @@ public sealed partial class Parser
             return value ? Expressions.ValueExpression.True : Expressions.ValueExpression.False;
         }
 
+        if (CurrentType is ParserUtil.CurrentDate or ParserUtil.CurrentTime or ParserUtil.Localtime
+            or ParserUtil.CurrentTimestamp or ParserUtil.Localtimestamp)
+        {
+            int function = CurrentType switch
+            {
+                ParserUtil.CurrentDate => Expressions.Functions.CurrentDateTimeValueFunction.CurrentDate,
+                ParserUtil.CurrentTime => Expressions.Functions.CurrentDateTimeValueFunction.CurrentTime,
+                ParserUtil.Localtime => Expressions.Functions.CurrentDateTimeValueFunction.Localtime,
+                ParserUtil.CurrentTimestamp => Expressions.Functions.CurrentDateTimeValueFunction.CurrentTimestamp,
+                _ => Expressions.Functions.CurrentDateTimeValueFunction.Localtimestamp,
+            };
+            Read();
+            return ReadCurrentDateTimeValueFunction(function, ReadIf(Token.OpenParen));
+        }
+
         if (CurrentType == Token.MinusSign)
         {
             Read();
@@ -3812,12 +3869,16 @@ public sealed partial class Parser
                 throw new TODOException(
                     "Parser.readCompatibilityFunction: CurrentGeneralValueSpecification is not ported");
 
-            // CurrentDateTimeValueFunction (not ported).
+            // CurrentDateTimeValueFunction.
             case "CURDATE":
+                return ReadCurrentDateTimeValueFunction(
+                    Expressions.Functions.CurrentDateTimeValueFunction.CurrentDate, hasParen: true);
             case "CURTIME":
+                return ReadCurrentDateTimeValueFunction(
+                    Expressions.Functions.CurrentDateTimeValueFunction.Localtime, hasParen: true);
             case "NOW":
-                throw new TODOException(
-                    "Parser.readCompatibilityFunction: CurrentDateTimeValueFunction is not ported");
+                return ReadCurrentDateTimeValueFunction(
+                    Expressions.Functions.CurrentDateTimeValueFunction.Localtimestamp, hasParen: true);
 
             // ModeFunction.getCompatibilityDateTimeValueFunction (not ported).
             case "TODAY":

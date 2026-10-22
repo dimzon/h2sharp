@@ -5684,3 +5684,53 @@ ADO.NET (`tests/H2Sharp.Data.Tests/H2DropAllObjectsTests.cs` и `H2CatalogTests.
 
 Проверено: `H2Sharp.Tests` **1155**, конформанс-набор **352/947** (было 350), `Data.Tests` 394
 + 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+
+**`CURRENT_DATE`, `CURRENT_TIME`, `LOCALTIME`, `CURRENT_TIMESTAMP`, `LOCALTIMESTAMP`.**
+Эталонный `org.h2.expression.function.CurrentDateTimeValueFunction` и разбор этих пяти имён
+(вместе с совместимостными `CURDATE`, `CURTIME` и `NOW`).
+
+Порт:
+* `Expressions/Functions/CurrentDateTimeValueFunction.cs` — эталонный класс: пять функций,
+  у каждой свой тип (`DATE`, `TIME WITH TIME ZONE`, `TIME`, `TIMESTAMP WITH TIME ZONE`,
+  `TIMESTAMP`), значение — «сейчас» сессии, приведённое к этому типу; имя функции печатается
+  вместе со scale, если он был написан;
+* `Command/Parser.cs` — `readCurrentDateTimeValueFunction`: имя, необязательные скобки и
+  необязательный scale целым числом (эталонный `readInt`); scale вне `0..9` — ошибка
+  `90151` («Scale or fractional seconds precision ...»); `CURDATE`, `CURTIME` и `NOW` читаются
+  как совместимостные имена тех же функций.
+
+Одно отступление от эталона, записанное в коде: эталон позволяет пользовательскому алиасу
+(`CREATE FUNCTION ALIAS`) перекрыть встроенную функцию — и при совместимостном имени, и при
+эталонном; порта пользовательских алиасов нет, поэтому `CURDATE`, `CURTIME` и `NOW` всегда
+дают встроенную функцию, а в тексте функции печатается её эталонное имя (`CURRENT_DATE`,
+`LOCALTIME`, `LOCALTIMESTAMP`), как и в эталоне.
+
+Оракул (`tests/H2Sharp.Tests/CurrentDateTimeValueOracleTests.cs`): пять функций без скобок и
+со скобками, `CURRENT_TIMESTAMP(3)` и `CURRENT_TIME(6)`, scale вне диапазона (`99` и `-1`),
+`CURRENT_DATE(3)` (у `CURRENT_DATE` scale не бывает — синтаксическая ошибка, как в эталоне),
+`CURDATE()`, `CURTIME()`, `CURTIME(3)`, `NOW()`, `CURRENT_TIMESTAMP()`, а также значение
+`CURRENT_TIMESTAMP` по умолчанию в колонке — совпадают с JVM. Тесты через ADO.NET
+(`tests/H2Sharp.Data.Tests/H2CurrentDateTimeTests.cs`): тип, который получает вызывающий
+(DATE — `DateTime`, TIME — `TimeSpan`, TIME WITH TIME ZONE и TIMESTAMP WITH TIME ZONE —
+`DateTimeOffset`, TIMESTAMP — `DateTime`), отказ эталона на scale `99` (`90151`) и — через
+шов `IH2Test.SystemClockProvider` — точные значения всех пяти функций при зафиксированных
+часах.
+
+Попутно исправлен дефект, который оракул вскрыл: `Tables/Column.cs` — `validateConvertUpdateSequence`
+теперь преобразует значение для присваивания (`convertForAssignTo`) с сессией в качестве
+поставщика, как в эталоне. Раньше порт терял и поставщика, и режим преобразования, и
+значение `DEFAULT CURRENT_TIMESTAMP` в колонке `TIMESTAMP` не преобразовывалось вовсе: «A
+conversion between date and time types needs a cast data provider».
+
+Остался рядом ещё один дефект того же рода, и он не связан с этим срезом (воспроизводится и
+на обычном литерале `TIMESTAMP WITH TIME ZONE`, и без всяких «сейчас»): сравнение колонки
+`TIMESTAMP` с значением `TIMESTAMP WITH TIME ZONE` на индексированной колонке падает с тем
+же сообщением. Причина — в фабрике строк: `Tables/Column.cs` (`convert`) и
+`MvStore/Db/MVTable.cs` (`getRowFactory`) отдают фабрике пустого поставщика, тогда как
+эталон отдаёт там базу данных, а база данных у эталона — поставщик (`Database implements
+CastDataProvider`), и отвечает она через сессию текущего потока. Порт базы данных
+поставщиком не является, и сессии в потоке у него нет. Это следующий кусок: `Database`
+должен стать поставщиком, а `Session` — хранить себя в потоке, как в эталоне.
+
+Проверено: `H2Sharp.Tests` **1156**, конформанс-набор **357/947** (было 352), `Data.Tests` 397
++ 1 красный (остался `MERGE`), `MvStore.Tests` 86, `Engine.Tests` 4/9.

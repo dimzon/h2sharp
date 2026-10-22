@@ -699,7 +699,10 @@ public class Column : Typed
 
         try
         {
-            return v.ConvertToType(type);
+            // The reference converts for assignment: the session is the provider, so a value
+            // that has to be moved between zones knows the zone of the reader, and the name
+            // of the column is in the message when the value does not fit.
+            return v.ConvertForAssignTo(type, session, name);
         }
         catch (H2SharpException e) when (e.H2ErrorCode == ErrorCode.DataConversionError1)
         {
