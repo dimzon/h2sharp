@@ -611,6 +611,10 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   (`split:` URL и .part-файлы), вторым — BACKUP TO и инструмент Restore; всё это не
   перенесено. Остальное перенесено (блокировка файла, DB_CLOSE_DELAY, конкурентные
   вставки, переоткрытие с слушателем, старый файл 1.1 → FILE_VERSION_ERROR_1).
+* **TestCompatibilityOracle: updatable-половина testVarchar — пропущена.**
+  updateString/updateNString/updateObject + updateRow на CONCUR_UPDATABLE курсоре — у
+  читателя ADO.NET нет записи через курсор; .NET-вызыватель обновляет командой. Вопрос:
+  перенести как отдельный тест «обновление через команду» или ждать updatable-поверхности.
 * **TestMultiDimension — не перенесён.** Тест целиком стоит на инструменте
   `org.h2.tools.MultiDimension` (getInstance/normalize/interleave/deinterleave/
   generatePreparedQuery/getResult), которого в порту нет; перенос инструмента — отдельная
@@ -655,8 +659,8 @@ BigDecimal; вопрос .NET-поверхности), testZloty-половин�
 всего, перенесено 39: добавились TestAlterTableNotFound, TestSelectTableNotFound,
 TestRecursiveQueries, TestViewDropView, TestReadOnly, TestSetCollation,
 TestViewAlterTable, TestIgnoreCatalogs, TestDeadlock, TestMultiConn,
-TestDuplicateKeyUpdate, TestTempTables, TestOpenClose). Порядок: `db/` и `jdbc/` до
-конца, потом `unit/`.
+TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
+TestCompatibilityOracle). Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
