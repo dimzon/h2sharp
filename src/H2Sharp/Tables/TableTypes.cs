@@ -465,6 +465,7 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
                         {
                             inColumn = columns;
                             inList = condition.GetCurrentValueList(s, BuildSortTypes(columns!));
+                            inListIndex = 0;
                         }
                     }
 
@@ -485,6 +486,7 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
                         {
                             inColumn = column;
                             inList = condition.GetCurrentValueList(s, BuildSortTypes([column]));
+                            inListIndex = 0;
                         }
                     }
 

@@ -6554,3 +6554,37 @@ LIMIT, создание/удаление индекса, обычный запр
 Проверено: полный `dotnet test H2Sharp.sln` — `H2Sharp.Tests` **1202/1202**,
 `Data.Tests` **448/448**, `MvStore.Tests` **86/86**. `Engine.Tests` **4/9** —
 прежние пять TestIndex на закрытом подключении. Конформанс **501/947**.
+
+**Сверка JSON #31 и повторный ANY/IN #32 — `0.1.36-alpha.1`.**
+
+Issue #31 проверен на точном CREATE/INSERT/SELECT с quoted-колонками против
+закреплённого JDBC H2 2.5: обычный строковый литерал `'{"a": 1}'` становится
+JSON-строкой. Обе стороны возвращают UTF-8 hex **227b5c22615c223a20317d22**,
+то есть JSON `"{\"a\": 1}"`. Это сохранённое JSON-значение, а не SQL-литерал
+из getter-а. `JSON '{"a": 1}'` даёт объект `{"a":1}` с hex **7b2261223a317d**.
+Сохраняется подтверждённое пользователем правило H2: строка — JSON-строка,
+байты/JsonDocument/JsonElement — документ. Добавлен прямой оракул
+`JsonReadingOracleTests.Issue31PlainStringAssignmentAndJsonLiteralMatchJdbcExactly`;
+JSON runtime не изменён, поскольку поведение совпадает с эталоном.
+
+Issue #32: H2ParameterRewriter уже превращал привязанные @ids/@__ids_0 в ?.
+Прямой ADO.NET-запрос с реальным массивным параметром работает; Dapper
+передаёт один native ARRAY через явный DbType.Object. Голый @name без
+привязанного параметра остаётся SQL-переменной, а не параметром запроса.
+Оракул с повторной привязкой обнаружил настоящий дефект: в
+IndexCursor.Prepare отсутствовали `inListIndex = 0` после получения нового
+списка (для обычной и compound веток IN_LIST/IN_ARRAY). Эти две строки
+перенесены из `org.h2.index.IndexCursor.prepare` H2 2.5 в TableTypes.cs.
+Курсор теперь начинает список заново при каждом выполнении, как эталон.
+
+`ArraySqlOracleTests.Issue32NamedArrayParametersInAnyAndAllMatchJdbc`:
+@__ids_0 через ADO.NET против JDBC ?, = ANY и <> ALL, смена массивов,
+пустой массив, NULL-элемент, SQL NULL и List<int>. Отдельный оракул
+`RepeatedInAndAnyIndexScansStartFromTheFirstValueAgain` проверяет повторный
+IN/ANY через первичный и вторичный индексы. `H2ArrayTests` получил прямой
+тест issue через ADO.NET и Dapper: реальные именованные параметры, смена
+значения, пустой массив, List<int>, ANY/ALL.
+
+Проверено: полный набор — `H2Sharp.Tests` **1205/1205**, `Data.Tests`
+**449/449**, `MvStore.Tests` **86/86**. `Engine.Tests` **4/9** — прежние пять
+TestIndex на закрытом подключении. Конформанс **501/947**.

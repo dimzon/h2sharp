@@ -230,6 +230,75 @@ public sealed class ArraySqlOracleTests
         Assert.Equal(java, port);
     }
 
+    [JavaOracleFact]
+    public void Issue32NamedArrayParametersInAnyAndAllMatchJdbc()
+    {
+        object[] values = [new[] { 1, 2 }, new[] { 3 }, Array.Empty<int>(), new int?[] { 2, null },
+            DBNull.Value, new List<int> { 1, 3 }];
+        using H2Connection connection = Open();
+        using DbCommand setup = connection.CreateCommand();
+        setup.CommandText = "CREATE TABLE T(ID INT PRIMARY KEY)";
+        setup.ExecuteNonQuery();
+        setup.CommandText = "INSERT INTO T VALUES (1), (2), (3)";
+        setup.ExecuteNonQuery();
+        List<string> port = [];
+        foreach (string op in new[] { "= ANY", "<> ALL" })
+        {
+            using DbCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT ID FROM T WHERE ID " + op + "(@__ids_0) ORDER BY ID";
+            DbParameter parameter = command.CreateParameter();
+            parameter.ParameterName = "__ids_0";
+            parameter.DbType = DbType.Object;
+            parameter.Value = values[0];
+            command.Parameters.Add(parameter);
+            command.Prepare();
+            foreach (object value in values)
+            {
+                parameter.Value = value;
+                Record(command, port);
+            }
+        }
+        List<string> java = OracleRunner.Run([], """
+            try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:issue32")) {
+                conn.createStatement().execute("CREATE TABLE T(ID INT PRIMARY KEY)");
+                conn.createStatement().execute("INSERT INTO T VALUES (1), (2), (3)");
+                Object[][] values = { {1, 2}, {3}, {}, {2, null}, null, {1, 3} };
+                for (String op : new String[]{"= ANY", "<> ALL"}) {
+                    try (java.sql.PreparedStatement s = conn.prepareStatement("SELECT ID FROM T WHERE ID " + op + "(?) ORDER BY ID")) {
+                        for (Object[] value : values) {
+                            if (value == null) s.setNull(1, java.sql.Types.ARRAY);
+                            else s.setObject(1, value);
+                            try (java.sql.ResultSet r = s.executeQuery()) {
+                                System.out.println("=T:" + r.getMetaData().getColumnTypeName(1));
+                                while (r.next()) System.out.println("=R:" + r.getString(1));
+                            }
+                        }
+                    }
+                }
+            }
+            """);
+        Assert.Equal(java, port);
+    }
+
+    [JavaOracleFact]
+    public void RepeatedInAndAnyIndexScansStartFromTheFirstValueAgain()
+    {
+        CompareStatements([
+            "CREATE TABLE T(ID INT PRIMARY KEY, N INT)",
+            "INSERT INTO T VALUES (1, 10), (2, 20), (3, 30)",
+            "SELECT ID FROM T WHERE ID IN (1, 2) ORDER BY ID",
+            "SELECT ID FROM T WHERE ID IN (1, 2) ORDER BY ID",
+            "SELECT ID FROM T WHERE ID IN (3) ORDER BY ID",
+            "SELECT ID FROM T WHERE ID = ANY(ARRAY[1, 3]) ORDER BY ID",
+            "SELECT ID FROM T WHERE ID = ANY(ARRAY[1, 3]) ORDER BY ID",
+            "CREATE INDEX T_N ON T(N)",
+            "SELECT ID FROM T WHERE N IN (10, 30) ORDER BY ID",
+            "SELECT ID FROM T WHERE N IN (10, 30) ORDER BY ID",
+            "SELECT ID FROM T WHERE N = ANY(ARRAY[20]) ORDER BY ID",
+            "SELECT ID FROM T WHERE N = ANY(ARRAY[20]) ORDER BY ID",
+        ]);
+    }
+
     private const string JavaFormatter = """
         class Formatter {
         static String render(Object value) throws Exception {

@@ -17,6 +17,46 @@ namespace H2Sharp.Tests;
 public sealed class JsonReadingOracleTests
 {
     [JavaOracleFact]
+    public void Issue31PlainStringAssignmentAndJsonLiteralMatchJdbcExactly()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE J (\"Id\" INT PRIMARY KEY, \"Doc\" JSON)",
+            "INSERT INTO J VALUES (1, '{\"a\": 1}')",
+            "INSERT INTO J VALUES (2, JSON '{\"a\": 1}')",
+            "SELECT \"Doc\" FROM J ORDER BY \"Id\"",
+        ];
+        using H2Connection connection = Open();
+        using DbCommand command = connection.CreateCommand();
+        for (int i = 0; i < statements.Length - 1; i++)
+        {
+            command.CommandText = statements[i];
+            command.ExecuteNonQuery();
+        }
+        command.CommandText = statements[^1];
+        List<string> port = [];
+        using (DbDataReader reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                byte[] bytes = Assert.IsType<byte[]>(reader.GetValue(0));
+                port.Add("=" + Convert.ToHexString(bytes).ToLowerInvariant() + '|' + OracleRunner.Hex(reader.GetString(0)));
+            }
+        }
+        List<string> java = OracleRunner.Run(statements, """
+            try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:issue31")) {
+                for (int i = 0; i < inputs.length - 1; i++) conn.createStatement().execute(inputs[i]);
+                try (java.sql.ResultSet r = conn.createStatement().executeQuery(inputs[inputs.length - 1])) {
+                    while (r.next()) System.out.println("=" + org.h2.util.StringUtils.convertBytesToHex((byte[])r.getObject(1)) + "|" + hex(r.getString(1)));
+                }
+            }
+            """);
+        Assert.Equal(java, port);
+        Assert.StartsWith("=227b5c22615c223a20317d22|", port[0]);
+        Assert.StartsWith("=7b2261223a317d|", port[1]);
+    }
+
+    [JavaOracleFact]
     public void JsonObjectsTextBytesAndMetadataMatchJdbc()
     {
         string[] statements =

@@ -219,6 +219,46 @@ public sealed class H2ArrayTests
             "SELECT ID, NUMBERS, TAGS FROM T WHERE ID = 4").Numbers);
     }
 
+    [Fact]
+    public void Issue32NamedArrayParameterWorksInAnyThroughAdoNetAndDapper()
+    {
+        using H2Connection connection = Open();
+        connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY)");
+        connection.Execute("INSERT INTO T VALUES (1), (2), (3)");
+        using DbCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT ID FROM T WHERE ID = ANY(@ids) ORDER BY ID";
+        Add(command, "ids", new[] { 1, 2 });
+        using (DbDataReader reader = command.ExecuteReader())
+        {
+            Assert.True(reader.Read());
+            Assert.Equal(1, reader.GetInt32(0));
+            Assert.True(reader.Read());
+            Assert.Equal(2, reader.GetInt32(0));
+            Assert.False(reader.Read());
+        }
+        command.Parameters[0].Value = new[] { 3 };
+        Assert.Equal(3, command.ExecuteScalar());
+        command.Parameters[0].Value = Array.Empty<int>();
+        Assert.Null(command.ExecuteScalar());
+
+        // A native SQL ARRAY is one parameter; explicit DbType.Object avoids Dapper's
+        // ordinary IN-list expansion, which is a separate, supported calling convention.
+        DynamicParameters parameters = new();
+        parameters.Add("__ids_0", new[] { 1, 2 }, DbType.Object);
+        const string Sql = "SELECT ID FROM T WHERE ID = ANY(@__ids_0) ORDER BY ID";
+        Assert.Equal(new[] { 1, 2 }, connection.Query<int>(Sql, parameters));
+        parameters = new DynamicParameters();
+        parameters.Add("__ids_0", new List<int> { 1, 3 }, DbType.Object);
+        Assert.Equal(new[] { 1, 3 }, connection.Query<int>(Sql, parameters));
+        parameters = new DynamicParameters();
+        parameters.Add("__ids_0", Array.Empty<int>(), DbType.Object);
+        Assert.Empty(connection.Query<int>(Sql, parameters));
+        parameters = new DynamicParameters();
+        parameters.Add("__ids_0", new[] { 1, 2 }, DbType.Object);
+        Assert.Equal(new[] { 3 }, connection.Query<int>(
+            "SELECT ID FROM T WHERE ID <> ALL(@__ids_0) ORDER BY ID", parameters));
+    }
+
     private static H2Connection Open()
     {
         H2Connection connection = new("jdbc:h2:mem:array_" + Guid.NewGuid().ToString("N"));
