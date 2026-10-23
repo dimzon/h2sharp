@@ -473,7 +473,10 @@ internal static class H2ValueMapper
             scale++;
         }
 
-        while (scale > 28 && unscaled % 10 == BigInteger.Zero)
+        // Trailing zeros can exhaust the 96-bit coefficient even at a legal scale:
+        // 2643.000... at scale 28 must reduce further to fit exactly as decimal.
+        while (scale > 0 && (scale > 28 || unscaled.GetByteCount(isUnsigned: true) > 12)
+            && unscaled % 10 == BigInteger.Zero)
         {
             unscaled /= 10;
             scale--;

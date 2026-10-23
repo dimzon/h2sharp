@@ -3671,7 +3671,18 @@ public sealed partial class Parser
                 return new Expressions.ExpressionList([.. list], false);
             }
             Expect(Token.CloseParen, ")");
+            if (nested is Expressions.BinaryOperation binaryOperation
+                && binaryOperation.GetOperationType() == Expressions.BinaryOperation.OpType.MINUS)
+            {
+                TypeInfo? intervalType = ReadIntervalQualifier();
+                if (intervalType != null) binaryOperation.SetForcedType(intervalType);
+            }
             return nested;
+        }
+
+        if (ReadIf(ParserUtil.Interval))
+        {
+            return ReadInterval();
         }
 
         if (ReadIf(ParserUtil.Row))
@@ -4652,6 +4663,31 @@ public sealed partial class Parser
 
             default:
                 return null;
+        }
+    }
+
+    /// <summary>Reads an interval literal after the INTERVAL keyword.</summary>
+    private Expressions.Expression ReadInterval()
+    {
+        bool negative = ReadIf(Token.MinusSign);
+        if (!negative) ReadIf(Token.PlusSign);
+        Value? literal = Current.GetValue(provider);
+        if (literal == null || literal.GetValueType() != Value.Varchar)
+            throw DbException.GetSyntaxError(sql, Current.Start, "string");
+        string text = literal.GetString()!;
+        Read();
+        TypeInfo? typeInfo = ReadIntervalQualifier();
+        try
+        {
+            ValueInterval interval = Util.IntervalUtils.ParseInterval(
+                Api.IntervalQualifiers.ValueOf(typeInfo!.GetValueType() - Value.IntervalYear), negative, text);
+            if (typeInfo.GetDeclaredPrecision() != -1L || typeInfo.GetDeclaredScale() != -1)
+                return Expressions.TypedValueExpression.Get(interval.CastToValue(typeInfo, provider), typeInfo);
+            return Expressions.ValueExpression.Get(interval);
+        }
+        catch (Exception error)
+        {
+            throw DbException.Get(Api.ErrorCode.InvalidDatetimeConstant2, error, "INTERVAL", text);
         }
     }
 

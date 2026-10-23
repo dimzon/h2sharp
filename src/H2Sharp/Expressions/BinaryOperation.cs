@@ -8,13 +8,11 @@
  *
  * A mathematical expression.
  *
- * What is left out, and why: the operations over intervals and over date and time values
- * need the classes that compute them, and those are not ported yet. The operations over
- * numbers are here, and the ones that are not refuse by name.
  */
 using System;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Expressions.Functions;
 using H2Sharp.Message;
 using H2Sharp.Tables;
 using H2Sharp.Values;
@@ -55,6 +53,8 @@ public class BinaryOperation : Operation2
 
     private readonly OpType opType;
 
+    private TypeInfo? forcedType;
+
     private bool convertRight = true;
 
     /// <summary>
@@ -67,6 +67,13 @@ public class BinaryOperation : Operation2
         : base(left, right)
     {
         this.opType = opType;
+    }
+
+    /// <summary>Sets a forced data type of a datetime minus datetime operation.</summary>
+    public void SetForcedType(TypeInfo forcedType)
+    {
+        if (opType != OpType.MINUS) throw GetUnexpectedForcedTypeException();
+        this.forcedType = forcedType;
     }
 
     /// <inheritdoc/>
@@ -93,11 +100,11 @@ public class BinaryOperation : Operation2
     /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
     {
-        Value l = left.GetValue(session).ConvertToType(type!);
+        Value l = left.GetValue(session).ConvertToType(type!, session);
         Value r = right.GetValue(session);
         if (convertRight)
         {
-            r = r.ConvertToType(type!);
+            r = r.ConvertToType(type!, session);
         }
 
         switch (opType)
@@ -151,14 +158,16 @@ public class BinaryOperation : Operation2
         }
         else if (DataType.IsIntervalType(l) || DataType.IsIntervalType(r))
         {
-            // The operations over intervals need the class that computes them.
-            throw new TODOException(
-                "BinaryOperation.optimize: the operations over intervals are not ported");
+            if (forcedType != null) throw GetUnexpectedForcedTypeException();
+            return OptimizeInterval(l, r);
         }
         else if (DataType.IsDateTimeType(l) || DataType.IsDateTimeType(r))
         {
-            throw new TODOException(
-                "BinaryOperation.optimize: the operations over date and time are not ported");
+            return OptimizeDateTime(session, l, r);
+        }
+        else if (forcedType != null)
+        {
+            throw GetUnexpectedForcedTypeException();
         }
         else
         {
@@ -306,4 +315,176 @@ public class BinaryOperation : Operation2
 
         type = TypeInfo.GetTypeInfo(Value.Decfloat, precision, 0, null);
     }
+
+    private Expression OptimizeInterval(int l, int r)
+    {
+        bool lInterval = false, lNumeric = false, lDateTime = false;
+        if (DataType.IsIntervalType(l)) lInterval = true;
+        else if (DataType.IsNumericType(l)) lNumeric = true;
+        else if (DataType.IsDateTimeType(l)) lDateTime = true;
+        else throw GetUnsupported(l, r);
+        bool rInterval = false, rNumeric = false, rDateTime = false;
+        if (DataType.IsIntervalType(r)) rInterval = true;
+        else if (DataType.IsNumericType(r)) rNumeric = true;
+        else if (DataType.IsDateTimeType(r)) rDateTime = true;
+        else throw GetUnsupported(l, r);
+        switch (opType)
+        {
+            case OpType.PLUS:
+                if (lInterval && rInterval)
+                {
+                    if (DataType.IsYearMonthIntervalType(l) == DataType.IsYearMonthIntervalType(r))
+                        return new IntervalOperation(IntervalOperation.IntervalOpType.INTERVAL_PLUS_INTERVAL, left, right);
+                }
+                else if (lInterval && rDateTime)
+                {
+                    if (r == Value.Time && DataType.IsYearMonthIntervalType(l)) break;
+                    return new IntervalOperation(IntervalOperation.IntervalOpType.DATETIME_PLUS_INTERVAL, right, left);
+                }
+                else if (lDateTime && rInterval)
+                {
+                    if (l == Value.Time && DataType.IsYearMonthIntervalType(r)) break;
+                    return new IntervalOperation(IntervalOperation.IntervalOpType.DATETIME_PLUS_INTERVAL, left, right);
+                }
+                break;
+            case OpType.MINUS:
+                if (lInterval && rInterval)
+                {
+                    if (DataType.IsYearMonthIntervalType(l) == DataType.IsYearMonthIntervalType(r))
+                        return new IntervalOperation(IntervalOperation.IntervalOpType.INTERVAL_MINUS_INTERVAL, left, right);
+                }
+                else if (lDateTime && rInterval)
+                {
+                    if (l == Value.Time && DataType.IsYearMonthIntervalType(r)) break;
+                    return new IntervalOperation(IntervalOperation.IntervalOpType.DATETIME_MINUS_INTERVAL, left, right);
+                }
+                break;
+            case OpType.MULTIPLY:
+                if (lInterval && rNumeric)
+                    return new IntervalOperation(IntervalOperation.IntervalOpType.INTERVAL_MULTIPLY_NUMERIC, left, right);
+                else if (lNumeric && rInterval)
+                    return new IntervalOperation(IntervalOperation.IntervalOpType.INTERVAL_MULTIPLY_NUMERIC, right, left);
+                break;
+            case OpType.DIVIDE:
+                if (lInterval)
+                {
+                    if (rNumeric) return new IntervalOperation(IntervalOperation.IntervalOpType.INTERVAL_DIVIDE_NUMERIC, left, right);
+                    else if (rInterval && DataType.IsYearMonthIntervalType(l) == DataType.IsYearMonthIntervalType(r))
+                        return new IntervalOperation(IntervalOperation.IntervalOpType.INTERVAL_DIVIDE_INTERVAL, left, right);
+                }
+                break;
+        }
+        throw GetUnsupported(l, r);
+    }
+
+    private Expression OptimizeDateTime(SessionLocal session, int l, int r)
+    {
+        switch (opType)
+        {
+            case OpType.PLUS:
+                if (DataType.IsDateTimeType(l))
+                {
+                    if (DataType.IsDateTimeType(r))
+                    {
+                        if (l > r)
+                        {
+                            Swap();
+                            int t = l; l = r; r = t;
+                        }
+                        return new CompatibilityDatePlusTimeOperation(right, left).Optimize(session);
+                    }
+                    Swap();
+                    int temp = l; l = r; r = temp;
+                }
+                switch (l)
+                {
+                    case Value.Integer:
+                        return new DateTimeFunction(DateTimeFunction.Dateadd, DateTimeFunction.Day, left, right).Optimize(session);
+                    case Value.Numeric:
+                    case Value.Real:
+                    case Value.Double:
+                    case Value.Decfloat:
+                        return new DateTimeFunction(DateTimeFunction.Dateadd, DateTimeFunction.Second,
+                            new BinaryOperation(OpType.MULTIPLY, ValueExpression.Get(ValueInteger.Get(60 * 60 * 24)), left), right).Optimize(session);
+                }
+                break;
+            case OpType.MINUS:
+                switch (l)
+                {
+                    case Value.Date:
+                    case Value.Timestamp:
+                    case Value.TimestampTz:
+                        switch (r)
+                        {
+                            case Value.Integer:
+                                if (forcedType != null) throw GetUnexpectedForcedTypeException();
+                                return new DateTimeFunction(DateTimeFunction.Dateadd, DateTimeFunction.Day, new UnaryOperation(right), left).Optimize(session);
+                            case Value.Numeric:
+                            case Value.Real:
+                            case Value.Double:
+                            case Value.Decfloat:
+                                if (forcedType != null) throw GetUnexpectedForcedTypeException();
+                                return new DateTimeFunction(DateTimeFunction.Dateadd, DateTimeFunction.Second,
+                                    new BinaryOperation(OpType.MULTIPLY, ValueExpression.Get(ValueInteger.Get(-60 * 60 * 24)), right), left).Optimize(session);
+                            case Value.Time:
+                            case Value.TimeTz:
+                            case Value.Date:
+                            case Value.Timestamp:
+                            case Value.TimestampTz:
+                                return new IntervalOperation(IntervalOperation.IntervalOpType.DATETIME_MINUS_DATETIME, left, right, forcedType);
+                        }
+                        break;
+                    case Value.Time:
+                    case Value.TimeTz:
+                        if (DataType.IsDateTimeType(r))
+                            return new IntervalOperation(IntervalOperation.IntervalOpType.DATETIME_MINUS_DATETIME, left, right, forcedType);
+                        break;
+                }
+                break;
+            case OpType.MULTIPLY:
+                if (l == Value.Time)
+                {
+                    type = TypeInfo.TypeTime;
+                    convertRight = false;
+                    return this;
+                }
+                else if (r == Value.Time)
+                {
+                    Swap();
+                    type = TypeInfo.TypeTime;
+                    convertRight = false;
+                    return this;
+                }
+                break;
+            case OpType.DIVIDE:
+                if (l == Value.Time)
+                {
+                    type = TypeInfo.TypeTime;
+                    convertRight = false;
+                    return this;
+                }
+                break;
+        }
+        throw GetUnsupported(l, r);
+    }
+
+    private H2SharpException GetUnsupported(int l, int r) => DbException.GetUnsupportedException(
+        Value.GetTypeName(l) + ' ' + GetOperationToken() + ' ' + Value.GetTypeName(r));
+
+    private H2SharpException GetUnexpectedForcedTypeException()
+    {
+        StringBuilder builder = GetUnenclosedSql(new StringBuilder(), Util.HasSql.TraceSqlFlags);
+        int index = builder.Length;
+        return DbException.GetSyntaxError(IntervalOperation.GetForcedTypeSql(builder.Append(' '), forcedType).ToString(), index, "");
+    }
+
+    private void Swap()
+    {
+        Expression temp = left;
+        left = right;
+        right = temp;
+    }
+
+    /// <summary>Returns the type of this binary operation.</summary>
+    public OpType GetOperationType() => opType;
 }

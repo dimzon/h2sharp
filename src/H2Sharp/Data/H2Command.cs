@@ -182,7 +182,7 @@ public sealed class H2Command : DbCommand
             long first;
             if (containers[0].IsQuery())
             {
-                using Result.ResultInterface result = containers[0].Query(-1);
+                using Result.ResultInterface result = containers[0].ExecuteQuery(-1, 0, false);
                 while (result.Next())
                 {
                 }
@@ -219,7 +219,7 @@ public sealed class H2Command : DbCommand
             }
 
             object? scalar;
-            using (Result.ResultInterface result = containers[0].Query(1))
+            using (Result.ResultInterface result = containers[0].ExecuteQuery(1, 0, false))
             {
                 if (!result.Next())
                 {
@@ -268,7 +268,7 @@ public sealed class H2Command : DbCommand
         {
             long maxrows = (behavior & CommandBehavior.SingleRow) != 0 ? 1
                 : (behavior & CommandBehavior.SchemaOnly) != 0 ? 0 : -1;
-            Result.ResultInterface result = containers[0].Query(maxrows);
+            Result.ResultInterface result = containers[0].ExecuteQuery(maxrows, 0, false);
             bool moreSets = ((behavior & (CommandBehavior.SingleRow
                 | CommandBehavior.SingleResult | CommandBehavior.SchemaOnly)) == 0)
                 && containers.Count > 1;
@@ -353,7 +353,7 @@ public sealed class H2Command : DbCommand
             Command.CommandContainer container = containers[i];
             if (container.IsQuery())
             {
-                using Result.ResultInterface rest = container.Query(-1);
+                using Result.ResultInterface rest = container.ExecuteQuery(-1, 0, false);
                 while (rest.Next())
                 {
                 }

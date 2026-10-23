@@ -187,7 +187,20 @@ public abstract class Command : CommandInterface
     /// <param name="scrollable">if the result set must be scrollable (ignored)</param>
     /// <returns>the result set</returns>
     public virtual ResultInterface ExecuteQuery(long maxrows, int fetchSize, bool scrollable)
-        => throw new TODOException("Command.executeQuery: the transaction layer is not ported yet");
+    {
+        // Port of executeQuery's query call and arithmetic-exception conversion. Statement
+        // locking, concurrent-update retries and transaction scope are still not ported.
+        // Exception conversion is deliberately partial: only the ArithmeticException family
+        // exposed by interval BigDecimal division is converted here (as Java Throwable is).
+        try
+        {
+            return Query(maxrows);
+        }
+        catch (ArithmeticException error)
+        {
+            throw DbException.AddSql(DbException.Convert(error), sql);
+        }
+    }
 
     /// <summary>
     /// Runs the statement with this session as the session of the thread.

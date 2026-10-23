@@ -396,6 +396,11 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
         return (long)integer;
     }
 
+    /// <summary>The JDK's toBigInteger: drops the fraction towards zero without narrowing.</summary>
+    public BigInteger ToBigInteger() => scale <= 0
+        ? unscaledValue * PowerOfTen(-scale)
+        : unscaledValue / PowerOfTen(scale);
+
     /// <summary>
     /// This value with its sign the other way round.
     /// </summary>

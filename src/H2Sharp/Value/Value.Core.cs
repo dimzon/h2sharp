@@ -199,7 +199,7 @@ public abstract partial class Value
     /// Get the value as a long.
     /// </summary>
     /// <returns>the long value</returns>
-    public virtual long GetLong() => throw GetUnsupportedException("getLong");
+    public virtual long GetLong() => ConvertToBigintType(null).GetLong();
 
     /// <summary>
     /// Get the value as a double.

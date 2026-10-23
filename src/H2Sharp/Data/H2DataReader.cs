@@ -139,7 +139,7 @@ public sealed class H2DataReader : DbDataReader
                 continue;
             }
 
-            result = next.Query(maxrows);
+            result = next.ExecuteQuery(maxrows, 0, false);
             return true;
         }
 

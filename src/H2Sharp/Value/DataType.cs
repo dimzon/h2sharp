@@ -413,6 +413,10 @@ public sealed class DataType
     public static bool IsIntervalType(int type)
         => type >= Value.IntervalYear && type <= Value.IntervalMinuteToSecond;
 
+    /// <summary>Whether the value type is a year-month interval type.</summary>
+    public static bool IsYearMonthIntervalType(int type)
+        => type == Value.IntervalYear || type == Value.IntervalMonth || type == Value.IntervalYearToMonth;
+
     /// <summary>
     /// Adds two precisions, saturating at <see cref="long.MaxValue"/>.
     /// </summary>
