@@ -606,6 +606,16 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   при решении «только embedded»?** javax.sql.DataSource и XA-транзакции — JEE-поверхность
   для серверов пулов; для встраиваемой БД потребителей у них нет. Предлагаю вычеркнуть
   вместе с server/ — обсудить.
+* **TestMultiDimension — не перенесён.** Тест целиком стоит на инструменте
+  `org.h2.tools.MultiDimension` (getInstance/normalize/interleave/deinterleave/
+  generatePreparedQuery/getResult), которого в порту нет; перенос инструмента — отдельная
+  работа по порту, тест перенести вместе с ним.
+* **TestTempTables: testTempFileResultSet и testTempTableResultSet — пропущены.**
+  Обе половины гоняют TYPE_SCROLL_INSENSITIVE курсоры (beforeFirst и повторное чтение
+  открытого набора). Читатель ADO.NET forward-only; .NET-вызыватель буферизует сам.
+  Переносима часть без скролла (удержание temp-таблицы открытым читателем), скролл —
+  нет. Вопрос: оставить пропущенным или перенести удержание-без-скролла как отдельный
+  тест.
 * **TestDriver.testDriverObject и testURLs — пропущены.** Суть — механика
   DriverManager: register/deregister, getDriver по URL, acceptsURL(null) → SQLException.
   Маппинг-предложение: Driver.Load/Unload регистрируют H2ProviderFactory в
