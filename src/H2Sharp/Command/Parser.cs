@@ -2532,7 +2532,7 @@ public sealed partial class Parser
                 int index = Current.Start;
                 string name = ReadIdentifier();
                 ExpectWord("AS");
-                if (!select.AddWindow(name, ReadWindowSpecification()))
+                if (!select.AddWindow(name, ReadWindowSpecification(select)))
                     throw DbException.GetSyntaxError(sql, index, "unique identifier");
             } while (ReadIf(Token.Comma));
         }
@@ -3133,7 +3133,7 @@ public sealed partial class Parser
         }
         if (IsWord("OVER"))
         {
-            aggregate.SetOverCondition(CurrentType == Token.OpenParen ? ReadWindowSpecification()
+            aggregate.SetOverCondition(CurrentType == Token.OpenParen ? ReadWindowSpecification(select)
                 : new Expressions.Analysis.Window(ReadIdentifier(), null, null, null));
             select.SetWindowQuery();
         }
@@ -3141,17 +3141,17 @@ public sealed partial class Parser
         return aggregate;
     }
 
-    private List<Query.QueryOrderBy>? ReadIfOrderBy()
+    private List<Query.QueryOrderBy>? ReadIfOrderBy(Query.Select? currentSelect = null)
     {
         if (!IsWord("ORDER")) return null;
         ExpectWord("BY");
         List<Query.QueryOrderBy> order = [];
-        do { order.Add(new Query.QueryOrderBy { expression = ReadQueryOr(), sortType = ReadQuerySortType() }); }
+        do { order.Add(new Query.QueryOrderBy { expression = ReadQueryOr(currentSelect), sortType = ReadQuerySortType() }); }
         while (ReadIf(Token.Comma));
         return order;
     }
 
-    private Expressions.Analysis.Window ReadWindowSpecification()
+    private Expressions.Analysis.Window ReadWindowSpecification(Query.Select? currentSelect = null)
     {
         Expect(Token.OpenParen, "(");
         string? parent = null;
@@ -3162,9 +3162,9 @@ public sealed partial class Parser
         if (IsWord("PARTITION"))
         {
             ExpectWord("BY"); partition = [];
-            do { partition.Add(ReadQueryOr()); } while (ReadIf(Token.Comma));
+            do { partition.Add(ReadQueryOr(currentSelect)); } while (ReadIf(Token.Comma));
         }
-        List<Query.QueryOrderBy>? order = ReadIfOrderBy();
+        List<Query.QueryOrderBy>? order = ReadIfOrderBy(currentSelect);
         Expressions.Analysis.WindowFrame? frame = ReadWindowFrame();
         Expect(Token.CloseParen, ")");
         return new Expressions.Analysis.Window(parent, partition, order, frame);
@@ -4083,7 +4083,7 @@ public sealed partial class Parser
             return expression;
         }
 
-        expression = ReadWindowFunctionIf(upperName);
+        expression = ReadWindowFunctionIf(upperName, aggregateSelect);
         if (expression is not null)
         {
             return expression;
@@ -4114,19 +4114,43 @@ public sealed partial class Parser
     /// <summary>
     /// Reads a window function, which the reference recognizes by the same names as its
     /// <see cref="Expressions.Analysis.WindowFunctionType"/> and reads through
-    /// readWindowFunction. None is ported, so a name that is one of them is refused by name
-    /// rather than reported as missing.
+    /// readWindowFunction. The current SELECT is passed explicitly in this parser port.
     /// </summary>
     /// <param name="name">the name in upper case</param>
     /// <returns>the expression, or null when the name is not a window function</returns>
-    private Expressions.Expression? ReadWindowFunctionIf(string name)
+    private Expressions.Expression? ReadWindowFunctionIf(string name, Query.Select? currentSelect)
     {
-        if (Expressions.Analysis.WindowFunctionTypeExtensions.Get(name) is null)
+        Expressions.Analysis.WindowFunctionType? type = Expressions.Analysis.WindowFunctionTypeExtensions.Get(name);
+        if (type is null) return null;
+        if (currentSelect is null) throw DbException.GetSyntaxError(sql, Current.Start, "SELECT");
+        int min = Expressions.Analysis.WindowFunction.GetMinArgumentCount(type.Value);
+        int max = Expressions.Analysis.WindowFunction.GetMaxArgumentCount(type.Value);
+        List<Expression> args = [];
+        if (min > 0)
         {
-            return null;
+            do { args.Add(ReadQueryOr(currentSelect)); }
+            while (args.Count < max && ReadIf(Token.Comma));
+            if (args.Count < min) throw DbException.GetSyntaxError(sql, Current.Start, "argument");
         }
-
-        throw new TODOException("Parser.readWindowFunction: window functions are not ported");
+        Expect(Token.CloseParen, ")");
+        Expressions.Analysis.WindowFunction function = new(type.Value, currentSelect, min == 0 ? null : [.. args]);
+        if (type == Expressions.Analysis.WindowFunctionType.NthValue && IsWord("FROM", consume: false)
+            && (NextIs("FIRST") || NextIs("LAST")))
+        {
+            Read(); function.SetFromLast(IsWord("LAST")); if (IsWord("FIRST", consume: false)) Read();
+        }
+        if (type is Expressions.Analysis.WindowFunctionType.NthValue or Expressions.Analysis.WindowFunctionType.Lead
+            or Expressions.Analysis.WindowFunctionType.Lag or Expressions.Analysis.WindowFunctionType.FirstValue
+            or Expressions.Analysis.WindowFunctionType.LastValue)
+        {
+            if ((IsWord("IGNORE", consume: false) || IsWord("RESPECT", consume: false)) && NextIs("NULLS"))
+            { bool ignore = IsWord("IGNORE"); if (!ignore) Read(); Read(); function.SetIgnoreNulls(ignore); }
+        }
+        ExpectWord("OVER");
+        function.SetOverCondition(CurrentType == Token.OpenParen ? ReadWindowSpecification(currentSelect)
+            : new Expressions.Analysis.Window(ReadIdentifier(), null, null, null));
+        currentSelect.SetWindowQuery();
+        return function;
     }
 
     /// <summary>

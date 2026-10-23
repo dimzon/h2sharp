@@ -6688,3 +6688,38 @@ Release модульного набора linq2db: **75/75** на каждом n
 оставшиеся два BlockedByPort на каждом TFM не связаны с TIME.
 Полный движковый прогон: H2Sharp.Tests **1213/1213**, Data.Tests **455/455**,
 MvStore.Tests **86/86**; Engine.Tests **4/9** с прежними пятью TestIndex.
+
+**Оконные ранг-функции и функции значения — `0.1.38-alpha.1`, issue #42.**
+
+Уточнение issue проверено: COUNT OVER уже работал, а ROW_NUMBER вызывал
+Parser.readWindowFunction TODO. Перенесён WindowFunction из закреплённого
+H2 2.5 поверх существующего DataAnalysisOperation: ROW_NUMBER, RANK,
+DENSE_RANK, PERCENT_RANK, CUME_DIST, NTILE, LEAD/LAG, FIRST_VALUE/LAST_VALUE/
+NTH_VALUE и RATIO_TO_REPORT. Сохраняются argument count, result type,
+partition row ids, peer comparison, offsets/defaults, IGNORE/RESPECT NULLS,
+FROM FIRST/LAST и эталонные ограничения ORDER BY/frame. Итератор фрейма
+берётся из существующего WindowFrame (IEnumerable вместо Java Iterator).
+
+Парсер распознаёт WindowFunctionType, читает аргументы и OVER (или имя
+окна) и помечает текущий Select window-query. Контекст Select передаётся
+в окно/partition/order readers, как поле currentSelect в Java, поэтому
+ROW_NUMBER OVER (ORDER BY SUM(...)) после GROUP BY также разбирается.
+Устаревший тест на TODO для ROW_NUMBER без OVER заменён JVM-сверкой
+синтаксической ошибки. В linq2db A_window_function_runs_in_the_database
+проходит; BlockedByPort снят вместе с функцией.
+
+WindowFunctionOracleTests: три построчных JDBC-сверки — точный ROW_NUMBER,
+partitions/NULL/ties, ранги и доли, NTILE с разным числом buckets,
+constant/no-order окна и ошибки, named WINDOW, DISTINCT; LEAD/LAG с
+offset/default/nulls, FIRST/LAST/NTH_VALUE с фреймами/exclusion/FROM LAST,
+RATIO_TO_REPORT и групповой ORDER BY SUM. H2WindowFunctionTests: два
+ADO.NET/Dapper-теста, server ROW_NUMBER/параметр фильтра и bigint-метаданные
+RANK/DENSE_RANK с совпадениями ключей.
+
+Проверено: H2Sharp.Tests **1216/1216**, Data.Tests **457/457**,
+MvStore.Tests **86/86**. Engine.Tests **4/9** — прежние пять TestIndex.
+Конформанс **525/947** (было 507, +18). Общая сборка решения во время
+параллельного переноса Native.Tests падает на AssertionError.cs (Exception
+без using); движок и изменённые тестовые проекты проверяются отдельно.
+Release-модульный набор linq2db после снятия BlockedByPort с ROW_NUMBER:
+**76/76** на net8.0 и net10.0.

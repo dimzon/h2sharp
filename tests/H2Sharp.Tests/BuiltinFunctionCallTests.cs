@@ -725,13 +725,10 @@ public sealed class BuiltinFunctionCallTests
         CompareRefusal("func_expand_algorithm", "SELECT EXPAND(X'07')", 90103);
     }
 
-    [Fact]
-    public void WindowFunctionsWaitForOver()
+    [JavaOracleFact]
+    public void WindowFunctionsRequireOver()
     {
-        SessionLocal session = NewDualSession();
-        TODOException e = Assert.Throws<TODOException>(
-            () => session.PrepareCommand("SELECT ROW_NUMBER()"));
-        Assert.Contains("window functions", e.Message);
+        CompareRefusal("func_window_missing_over", "SELECT ROW_NUMBER()", 42001);
     }
 
     [JavaOracleFact]
