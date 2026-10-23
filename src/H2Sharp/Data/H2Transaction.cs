@@ -53,6 +53,29 @@ public sealed class H2Transaction : DbTransaction
     /// <inheritdoc/>
     public override IsolationLevel IsolationLevel { get; }
 
+    public override bool SupportsSavepoints => true;
+
+    public override void Save(string savepointName)
+    {
+        CheckActive();
+        connection!.Session!.AddSavepoint(savepointName);
+    }
+    public override void Rollback(string savepointName)
+    {
+        CheckActive();
+        connection!.Session!.RollbackToSavepoint(savepointName);
+    }
+    public override void Release(string savepointName)
+    {
+        CheckActive();
+        // H2 Parser.parseReleaseSavepoint returns NoOperation: release is a no-op.
+    }
+    private void CheckActive()
+    {
+        if (disposed) throw new ObjectDisposedException(nameof(H2Transaction));
+        if (completed) throw new InvalidOperationException("The transaction is already completed");
+    }
+
     /// <inheritdoc/>
     public override void Commit()
     {

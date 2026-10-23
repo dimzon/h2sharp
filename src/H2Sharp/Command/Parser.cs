@@ -529,17 +529,16 @@ public sealed partial class Parser
         recompileAlways = false;
 
         Prepared prepared;
-        if (position < tokens.Count && IsSelectFirst(tokens[position]))
+        if (position < tokens.Count && (IsSelectFirst(tokens[position])
+            || CurrentType == Token.OpenParen || IsWord("VALUES", consume: false)))
         {
-            if (IsWord("WITH", consume: false))
-            {
-                // The common table expressions come first, and the query that follows them
-                // may read them.
-                ReadWith();
-            }
-
-            prepared = ParseQuerySelect(prepare: false);
+            prepared = ParseQueryExpression(prepare: false);
         }
+        else if (IsWord("SAVEPOINT")) prepared = ParseSavepoint();
+        else if (IsWord("RELEASE")) prepared = ParseReleaseSavepoint();
+        else if (IsWord("ROLLBACK")) prepared = ParseRollback();
+        else if (IsWord("COMMIT")) { IsWord("WORK"); prepared = new Dml.TransactionCommand(current, CommandInterface.Commit); }
+        else if (IsWord("BEGIN")) { IsWord("WORK"); prepared = new Dml.TransactionCommand(current, CommandInterface.Begin); }
         else if (IsWord("CREATE", consume: false) && NextIs("SEQUENCE"))
         {
             prepared = PrepareCreateSequence(current);
@@ -630,6 +629,30 @@ public sealed partial class Parser
             commandTokens.Add(new Token.EndOfInputToken(text.Length));
         }
         command.SetSql(text, commandTokens);
+    }
+
+    private Dml.TransactionCommand ParseSavepoint()
+    {
+        Dml.TransactionCommand command = new(session!, CommandInterface.Savepoint);
+        command.SetSavepointName(ReadIdentifier());
+        return command;
+    }
+    private Prepared ParseReleaseSavepoint()
+    {
+        IsWord("SAVEPOINT"); ReadIdentifier();
+        return new Dml.NoOperation(session!);
+    }
+    private Dml.TransactionCommand ParseRollback()
+    {
+        IsWord("WORK");
+        if (ReadIf(ParserUtil.To))
+        {
+            ExpectWord("SAVEPOINT");
+            Dml.TransactionCommand command = new(session!, CommandInterface.RollbackToSavepoint);
+            command.SetSavepointName(ReadIdentifier());
+            return command;
+        }
+        return new Dml.TransactionCommand(session!, CommandInterface.Rollback);
     }
 
     /// <summary>
@@ -799,22 +822,48 @@ public sealed partial class Parser
     /// <returns>the query</returns>
     private Query.Query ParseQueryExpression(bool prepare = true)
     {
-        if (IsWord("VALUES", consume: false))
+        if (IsWord("WITH", consume: false)) ReadWith();
+        Query.Query query = ParseQueryExpressionBody();
+        ParseEndOfQuery(query);
+        query.Init();
+        if (prepare) query.Prepare();
+        return query;
+    }
+
+    private Query.Query ParseQueryExpressionBody()
+    {
+        Query.Query query = ParseQueryTerm();
+        while (true)
         {
-            Query.Query query = ReadValues();
-            // The reference initializes the table value constructor in parseValues; the
-            // predicates then prepare it after the outer columns are mapped.
-            query.Init();
+            Query.SelectUnion.UnionType type;
+            if (ReadIf(ParserUtil.Union))
+            {
+                if (ReadIf(ParserUtil.All)) type = Query.SelectUnion.UnionType.UNION_ALL;
+                else { ReadIf(ParserUtil.Distinct); type = Query.SelectUnion.UnionType.UNION; }
+            }
+            else if (ReadIf(ParserUtil.Except)) type = Query.SelectUnion.UnionType.EXCEPT;
+            else return query;
+            query = new Query.SelectUnion(session!, type, query, ParseQueryTerm());
+        }
+    }
+    private Query.Query ParseQueryTerm()
+    {
+        Query.Query query = ParseQueryPrimary();
+        while (ReadIf(ParserUtil.Intersect))
+            query = new Query.SelectUnion(session!, Query.SelectUnion.UnionType.INTERSECT, query, ParseQueryPrimary());
+        return query;
+    }
+    private Query.Query ParseQueryPrimary()
+    {
+        if (ReadIf(Token.OpenParen))
+        {
+            Query.Query query = ParseQueryExpressionBody();
+            ParseEndOfQuery(query);
+            Expect(Token.CloseParen, ")");
             return query;
         }
-
-        if (IsWord("WITH", consume: false))
-        {
-            ReadWith();
-            return ParseQuerySelect(endOfStatement: false, prepare: prepare);
-        }
-
-        return ParseQuerySelect(endOfStatement: false, prepare: prepare);
+        if (IsWord("VALUES", consume: false)) return ReadValues();
+        return ParseQuerySelect();
     }
 
     /// <summary>
@@ -1616,6 +1665,13 @@ public sealed partial class Parser
         Read();
         switch (name.ToUpperInvariant())
         {
+            case "E":
+                {
+                    string? text = tokens[index].IsQuoted ? null : ReadStringLiteralValue();
+                    if (text is null) { position = index; return null; }
+                    // H2 readTermWithIdentifier: only doubled backslashes are reduced.
+                    return Expressions.ValueExpression.Get(ValueVarchar.Get(StringUtils.ReplaceAll(text, "\\\\", "\\")));
+                }
             case "DATE":
             case "D":
                 {
@@ -2253,7 +2309,7 @@ public sealed partial class Parser
     /// </remarks>
     /// <returns>the prepared statement</returns>
     /// <param name="endOfStatement">whether the select must be the whole statement</param>
-    private Query.Query ParseQuerySelect(bool endOfStatement = true, bool prepare = true)
+    private Query.Query ParseQuerySelect()
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parseQuerySelect: this parser has no session");
         ExpectWord("SELECT");
@@ -2481,6 +2537,12 @@ public sealed partial class Parser
             } while (ReadIf(Token.Comma));
         }
 
+        return select;
+    }
+
+    private void ParseEndOfQuery(Query.Query query)
+    {
+        Query.Select? select = query as Query.Select;
         if (CurrentType == ParserUtil.Order)
         {
             Read();
@@ -2513,7 +2575,7 @@ public sealed partial class Parser
             }
             while (ReadIf(Token.Comma));
 
-            select.SetOrder(order);
+            query.SetOrder(order);
         }
 
         // Standard SQL OFFSET / FETCH, then MySQL-style LIMIT, in the reference's order and
@@ -2526,7 +2588,7 @@ public sealed partial class Parser
         {
             Read();
             hasOffsetOrFetch = true;
-            select.SetOffset(ReadQueryLimitExpression());
+            query.SetOffset(ReadQueryLimitExpression());
             _ = IsWord("ROW") || IsWord("ROWS");
         }
 
@@ -2541,14 +2603,14 @@ public sealed partial class Parser
 
             if (IsWord("ROW") || IsWord("ROWS"))
             {
-                select.SetFetch(Expressions.ValueExpression.Get(Values.ValueInteger.Get(1)));
+                query.SetFetch(Expressions.ValueExpression.Get(Values.ValueInteger.Get(1)));
             }
             else
             {
-                select.SetFetch(ReadQueryLimitExpression());
+                query.SetFetch(ReadQueryLimitExpression());
                 if (IsWord("PERCENT"))
                 {
-                    select.SetFetchPercent(true);
+                    query.SetFetchPercent(true);
                 }
 
                 if (!IsWord("ROW"))
@@ -2575,58 +2637,17 @@ public sealed partial class Parser
             if (CurrentType == ParserUtil.Offset)
             {
                 Read();
-                select.SetOffset(ReadQueryLimitExpression());
+                query.SetOffset(ReadQueryLimitExpression());
             }
             else if (ReadIf(Token.Comma))
             {
                 // MySQL: [offset, ] rowcount.
-                select.SetOffset(limit);
+                query.SetOffset(limit);
                 limit = ReadQueryLimitExpression();
             }
 
-            select.SetFetch(limit);
+            query.SetFetch(limit);
         }
-
-        bool union = IsWord("UNION", consume: false);
-        if (!union && endOfStatement && CurrentType != Token.EndOfInput && CurrentType != Token.Semicolon)
-        {
-            string word = Current.AsIdentifier ?? Current.ToString() ?? "statement";
-            if (IsClauseWord(word))
-            {
-                throw new TODOException("Parser.parseQuerySelect: " + word + " is not ported");
-            }
-
-            throw DbException.GetSyntaxError(sql, Current.Start, "statement");
-        }
-
-        select.Init();
-        // Predicate subqueries are initialized now and prepared after outer column mapping,
-        // as in H2's init -> mapColumns -> prepare lifecycle.
-        if (prepare)
-        {
-            select.Prepare();
-        }
-        if (!union)
-        {
-            return select;
-        }
-
-        Query.Query left = select;
-        while (IsWord("UNION"))
-        {
-            // DISTINCT is the default; ALL keeps every row. Each side after the first
-            // is another full select, so a chain nests to the right.
-            bool distinct = !IsWord("ALL");
-            if (distinct)
-            {
-                _ = IsWord("DISTINCT");
-            }
-
-            Query.Query right = ParseQuerySelect(endOfStatement: endOfStatement, prepare: prepare);
-            left = new Query.SelectUnion(left, right, distinct);
-        }
-
-        return left;
     }
 
     /// <summary>
@@ -3294,16 +3315,14 @@ public sealed partial class Parser
         bool distinct = false;
         Expressions.Expression arg;
         Expressions.Aggregate.ListaggArguments extraArguments = new();
+        List<Query.QueryOrderBy>? order = null;
         if (functionName.Equals("STRING_AGG", StringComparison.OrdinalIgnoreCase))
         {
             // PostgreSQL compatibility: string_agg(expression, delimiter)
             arg = ReadQueryOr();
             Expect(Token.Comma, ",");
             extraArguments.SetSeparator(ReadListaggSeparator());
-            if (CurrentType == ParserUtil.Order)
-            {
-                throw new TODOException("Parser.parseQuerySelect: ORDER BY in STRING_AGG is not ported");
-            }
+            order = ReadIfOrderBy();
         }
         else
         {
@@ -3316,10 +3335,7 @@ public sealed partial class Parser
             arg = ReadQueryOr();
             if (functionName.Equals("GROUP_CONCAT", StringComparison.OrdinalIgnoreCase))
             {
-                if (CurrentType == ParserUtil.Order)
-                {
-                    throw new TODOException("Parser.parseQuerySelect: ORDER BY in GROUP_CONCAT is not ported");
-                }
+                order = ReadIfOrderBy();
 
                 if (IsWord("SEPARATOR"))
                 {
@@ -3341,14 +3357,18 @@ public sealed partial class Parser
         }
 
         Expect(Token.CloseParen, ")");
-        if (IsWord("WITHIN", consume: false))
+        if (IsWord("WITHIN"))
         {
-            throw new TODOException("Parser.parseQuerySelect: WITHIN GROUP in LISTAGG is not ported");
+            ExpectWord("GROUP");
+            Expect(Token.OpenParen, "(");
+            order = ReadIfOrderBy() ?? throw DbException.GetSyntaxError(sql, Current.Start, "ORDER BY");
+            Expect(Token.CloseParen, ")");
         }
 
         Expressions.Aggregate.Aggregate aggregate = new(
             Expressions.Aggregate.AggregateType.Listagg, [arg], select, distinct);
         aggregate.SetExtraArguments(extraArguments);
+        if (order is not null) aggregate.SetOrderByList(order);
         return aggregate;
     }
 
@@ -3778,6 +3798,13 @@ public sealed partial class Parser
             if (ReadIf(Token.CloseParen))
             {
                 return Expressions.ValueExpression.Get(ValueRow.Empty);
+            }
+
+            if (IsDerivedQuery())
+            {
+                Query.Query query = ParseQueryExpression(prepare: false);
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Subquery(query);
             }
 
             Expressions.Expression nested = ReadQueryOr(aggregateSelect);

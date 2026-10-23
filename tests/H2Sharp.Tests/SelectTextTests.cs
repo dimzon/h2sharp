@@ -2119,20 +2119,10 @@ public sealed class SelectTextTests
         }
     }
 
-    [Fact]
-    public void ListaggWithinGroupWaitsForOrdering()
+    [JavaOracleFact]
+    public void ListaggWithinGroupOrdersValues()
     {
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT LISTAGG(NAME) WITHIN GROUP (ORDER BY NAME) FROM T"));
-            Assert.Contains("WITHIN GROUP", e.Message);
-        }
-        finally
-        {
-            store.Dispose();
-        }
+        CompareText("select_text_listagg_order", "SELECT LISTAGG(NAME) WITHIN GROUP (ORDER BY NAME) FROM T");
     }
 
     [JavaOracleFact]

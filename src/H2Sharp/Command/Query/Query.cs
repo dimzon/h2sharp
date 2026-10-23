@@ -93,6 +93,10 @@ public abstract class Query : Prepared
     /// <summary>Whether this query removes duplicates.</summary>
     public virtual bool IsAnyDistinct() => distinct;
 
+    public virtual bool IsConstantQuery() => orderList is null && sort is null
+        && (offsetExpr is null || offsetExpr.IsConstant()) && (fetchExpr is null || fetchExpr.IsConstant());
+    public virtual Expression? GetIfSingleRow() => null;
+
     /// <summary>
     /// Enables DISTINCT only when it cannot change which rows OFFSET / FETCH retain.
     /// </summary>

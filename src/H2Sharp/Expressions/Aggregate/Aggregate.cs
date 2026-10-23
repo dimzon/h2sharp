@@ -918,9 +918,7 @@ public class Aggregate : AbstractAggregate
                     return;
                 }
 
-                // updateCollecting wraps for ORDER BY lists, but LISTAGG never
-                // carries one here: the reader refuses WITHIN GROUP for it.
-                v = v!.ConvertToType(TypeInfo.TypeVarchar);
+                v = UpdateCollecting(session, v!.ConvertToType(TypeInfo.TypeVarchar), remembered);
                 break;
             case AggregateType.Mode:
                 // MODE carries no argument on the expression list: its value rides on the

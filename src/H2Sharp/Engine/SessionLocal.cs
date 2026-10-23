@@ -135,6 +135,41 @@ public sealed class SessionLocal : Session
     public MvStore.Tx.Transaction GetTransaction()
         => Transaction ??= GetDatabase().GetStore().Begin();
 
+    private Dictionary<string, Savepoint>? savepoints;
+
+    public class Savepoint
+    {
+        internal int logIndex;
+        internal long transactionSavepoint;
+    }
+    public Savepoint SetSavepoint() => new() { transactionSavepoint = GetTransaction().SetSavepoint() };
+    public void AddSavepoint(string name)
+    {
+        savepoints ??= new Dictionary<string, Savepoint>(StringComparer.Ordinal);
+        savepoints[name] = SetSavepoint();
+    }
+    public void RollbackToSavepoint(string name)
+    {
+        if (savepoints is null || !savepoints.TryGetValue(name, out Savepoint? savepoint))
+            throw DbException.Get(Api.ErrorCode.SavepointIsInvalid1, name);
+        RollbackTo(savepoint);
+    }
+    public void RollbackTo(Savepoint? savepoint)
+    {
+        int index = savepoint?.logIndex ?? 0;
+        if (Transaction is not null)
+        {
+            if (savepoint is null) { Transaction.Rollback(); Transaction = null; }
+            else Transaction.RollbackToSavepoint(savepoint.transactionSavepoint);
+        }
+        if (savepoints is not null)
+        {
+            foreach (string name in new List<string>(savepoints.Keys))
+                if (savepoints[name].logIndex > index) savepoints.Remove(name);
+        }
+        queryCache?.Clear();
+    }
+
     /// <summary>
     /// Begins a transaction, switching this session out of auto-commit.
     /// </summary>
@@ -189,6 +224,7 @@ public sealed class SessionLocal : Session
                 autoCommitAtTransactionEnd = false;
             }
         }
+        savepoints = null;
     }
 
     /// <summary>
@@ -214,6 +250,8 @@ public sealed class SessionLocal : Session
             autoCommit = true;
             autoCommitAtTransactionEnd = false;
         }
+        savepoints = null;
+        queryCache?.Clear();
     }
 
     /// <summary>

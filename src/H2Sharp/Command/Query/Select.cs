@@ -543,6 +543,20 @@ public sealed class Select : Query
     /// <inheritdoc/>
     public override bool IsUnion() => false;
 
+    private bool HasFromClause() => topTableFilter is not null ? topTableFilter.HasFromClause()
+        : topFilters.Count == 1 ? topFilters[0].HasFromClause() : true;
+    public override bool IsConstantQuery()
+    {
+        if (!base.IsConstantQuery() || isDistinct || condition is not null || isGroupQuery || isWindowQuery || HasFromClause()) return false;
+        for (int i = 0; i < visibleColumnCount; i++) if (!expressions[i].IsConstant()) return false;
+        return true;
+    }
+    public override Expression? GetIfSingleRow()
+    {
+        if (GetOffset() is not null || GetFetch() is not null || condition is not null || isGroupQuery || isWindowQuery || HasFromClause()) return null;
+        return visibleColumnCount == 1 ? expressions[0] : new ExpressionList(expressions.GetRange(0, visibleColumnCount).ToArray(), false);
+    }
+
     /// <inheritdoc/>
     public override int GetUnionType()
         => throw new TODOException("Select.getUnionType: a select is not a union");

@@ -888,6 +888,9 @@ public class TableFilter : ColumnResolver
     /// <returns>true if it has</returns>
     public bool HasAlias() => alias is not null;
 
+    public bool HasFromClause() => !(table is DualTable && join is null && nestedJoin is null
+        && joinCondition is null && filterCondition is null);
+
     /// <summary>
     /// Get the table alias: the alias, or the table's own name when there is none.
     /// </summary>

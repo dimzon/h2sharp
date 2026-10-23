@@ -149,6 +149,9 @@ public sealed class ExpressionVisitor
 
     private readonly HashSet<Column>? columns2;
 
+    // Typed CLR counterpart of the reference visitor's set for this visitor kind.
+    private HashSet<ColumnResolver>? columnResolvers;
+
     private ExpressionVisitor(int type)
     {
         this.type = type;
@@ -366,5 +369,7 @@ public sealed class ExpressionVisitor
     /// <param name="queryDecrement">0 to check whether operation is allowed, 1 to actually perform the decrement</param>
     /// <returns>the new visitor</returns>
     public static ExpressionVisitor GetDecrementQueryLevelVisitor(HashSet<ColumnResolver> columnResolvers, int queryDecrement)
-        => throw new TODOException("ExpressionVisitor.GetDecrementQueryLevelVisitor");
+        => new(DecrementQueryLevel, queryDecrement) { columnResolvers = columnResolvers };
+
+    public HashSet<ColumnResolver> GetColumnResolvers() => columnResolvers!;
 }

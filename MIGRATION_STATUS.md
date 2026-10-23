@@ -6588,3 +6588,73 @@ IN/ANY через первичный и вторичный индексы. `H2Ar
 Проверено: полный набор — `H2Sharp.Tests` **1205/1205**, `Data.Tests`
 **449/449**, `MvStore.Tests` **86/86**. `Engine.Tests` **4/9** — прежние пять
 TestIndex на закрытом подключении. Конформанс **501/947**.
+
+**Свежие провайдерские пробелы #33–#38 — `0.1.37-alpha.1`.**
+
+**#33, set-операции.** Перенесены H2 2.5 `parseQueryExpressionBody`,
+`parseQueryTerm`, `parseQueryPrimary` и общий `parseEndOfQuery`:
+INTERSECT имеет более высокий приоритет, UNION/EXCEPT связываются слева,
+скобки задают отдельный query scope; ORDER/OFFSET/FETCH/LIMIT принадлежат
+результату set-операции, а не последней ветке. Init вызывается после чтения
+всей формы, prepare — после внешнего связывания подзапроса. `SelectUnion`
+сопоставлен с закреплённым Java: UnionType, общий тип и имена проекции,
+convert, materialized queryWithoutCache, distinct/containsDistinct/
+removeDistinct, сортировка и finishResult. Исправлено ранее описанное
+отступление с ORDER BY/LIMIT на ветке UNION. Существующий Query.GetUnionType
+с int-сигнатурой сохранён: enum приводится к int, это отмечено в коде.
+Lazy UNION ALL и target-insertion fast path остаются за пределами
+существующего Query.Run интерфейса; материализованная ветка взята из Java.
+
+**#34, SAVEPOINT.** Перенесены `TransactionCommand` с рабочими ветками
+BEGIN/COMMIT/ROLLBACK/SAVEPOINT/ROLLBACK TO SAVEPOINT и parser readers
+parseSavepoint/parseRollback/parseReleaseSavepoint. RELEASE в H2 2.5
+возвращает NoOperation — сохранено, точка после RELEASE остаётся пригодной
+для rollback. В SessionLocal перенесены Savepoint, setSavepoint,
+addSavepoint, rollbackToSavepoint и rollbackTo: transactionSavepoint
+использует существующий MVStore transaction log; logIndex сохранён как в
+Java. Откат очищает queryCache, завершение транзакции — named savepoints.
+Before-commit hooks, LOB/temp-table lifecycle и transaction statement scope
+по-прежнему не перенесены, как и в существующих Commit/Rollback.
+H2Transaction получил стандартные DbTransaction SupportsSavepoints,
+Save/Rollback(name)/Release для доступа из ADO.NET к тому же поведению.
+
+**#35, LISTAGG.** WITHIN GROUP читает ORDER BY list, GROUP_CONCAT/STRING_AGG
+читают свой внутренний порядок по той же ветке эталона. FILTER уже
+присоединялся общим reader-ом агрегатов. В Aggregate.updateData восстановлен
+эталонный updateCollecting после приведения LISTAGG-значения к VARCHAR,
+чтобы сортировать ROW(value, orderKeys). Устаревший тест на TODO WITHIN GROUP
+заменён оракульным ListaggWithinGroupOrdersValues. ON OVERFLOW остаётся
+отдельным неперенесённым синтаксисом с именованным отказом.
+
+**#36, E-строки.** Перенесена ветка `readTermWithIdentifier` для E:
+удвоенный backslash заменяется одиночным; `\\n`, `\\t`, `\\r` не декодируются
+в управляющие символы. Именно так отвечает закреплённый H2 2.5; это не
+перенос PostgreSQL escape-string decoder. Quoted-идентификатор E остаётся
+именем. BTRIM из issue и двойные backslash/пустая строка сверены с JVM.
+
+**#37, скалярный подзапрос.** Перенесён `Subquery` из Java: query(2), проверка
+второй строки (90053), тип одного столбца или ROW, NULL/NULL-row при отсутствии
+строк, внешние resolver-ы и single-row folding. Добавлены эталонные
+Query/Select/SelectUnion.isConstantQuery, getIfSingleRow, hasFromClause и
+decrement-query-level visitor с веткой ExpressionColumn. Типизированные
+CLR-поля visitor-а соответствуют Java set, как существующие columns1/columns2.
+ROW/ExtTypeInfoRow используют уже принятый TypeInfo[] интерфейс порта.
+CAST(COUNT(*)) теперь разбирается в Select самого подзапроса и связывается
+до подготовки, включая корреляцию, SUM, empty result и multi-row errors.
+
+**#38, COUNT FILTER.** Оракул подтвердил неправильный быстрый подсчёт строк:
+ExpressionColumn.isEverything пропускал OPTIMIZABLE_AGGREGATE. Перенесена
+ветка Java `return false`; фильтр по колонке теперь заставляет COUNT читать
+строки и применять FILTER. Постоянные условия в quick-aggregate пути
+сверяются с закреплённым jar, без введения собственных правил оптимизации.
+
+`FreshIssuesOracleTests`: шесть построчных JVM-сверок, точные SQL всех issues,
+set-operation precedence/paging/types/duplicates/NULL/errors, savepoint
+rollback/overwrite/commit/release, разные LISTAGG order/filter, E-prefix,
+скалярные и ROW-подзапросы/внешние колонки/CAST агрегата, несколько COUNT
+FILTER и grouping. `H2FreshIssuesTests`: пять ADO.NET/Dapper-тестов, включая
+параметры set-операции и стандартные DbTransaction savepoint API.
+
+Проверено: полный набор — `H2Sharp.Tests` **1211/1211**, `Data.Tests`
+**454/454**, `MvStore.Tests` **86/86**. `Engine.Tests` **4/9** — прежние пять
+TestIndex на закрытом подключении. Конформанс **507/947** (было 501, +6).

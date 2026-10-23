@@ -295,6 +295,8 @@ public sealed class ExpressionColumn : Expression
     {
         switch (visitor.GetVisitorType())
         {
+            case ExpressionVisitor.OptimizableAggregate:
+                return false;
             case ExpressionVisitor.NotFromResolver:
                 return columnResolver != visitor.GetResolver();
             case ExpressionVisitor.Independent:
@@ -329,6 +331,18 @@ public sealed class ExpressionColumn : Expression
                 }
 
                 visitor.AddColumn2(column);
+                return true;
+            case ExpressionVisitor.DecrementQueryLevel:
+                if (column is null) throw DbException.Get(Api.ErrorCode.ColumnNotFound1, GetTraceSql());
+                if (visitor.GetColumnResolvers().Contains(columnResolver!))
+                {
+                    if (visitor.GetQueryLevel() > 0)
+                    {
+                        if (queryLevel <= 0) throw DbException.GetInternalError("queryLevel=0");
+                        queryLevel--; return true;
+                    }
+                    return queryLevel > 0;
+                }
                 return true;
             default:
                 return true;
