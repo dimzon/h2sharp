@@ -26,6 +26,7 @@ using System.Text;
 using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Message;
+using H2Sharp.Util;
 
 namespace H2Sharp.Values;
 
@@ -601,6 +602,42 @@ public sealed partial class TypeInfo : ExtTypeInfo
             t1 = (TypeInfo)ext1!;
             t2 = (TypeInfo)ext2!;
         }
+    }
+
+    /// <summary>
+    /// The declared name of this type, which is what JDBC reports for a column.
+    /// </summary>
+    /// <remarks>
+    /// The reference's getDeclaredTypeName: most types report their bare name, but ENUM,
+    /// GEOMETRY and ROW report the full definition and ARRAY reports its component type
+    /// with the ARRAY suffix, because the bare name would not name the type. NUMERIC with
+    /// extended parameters reports DECIMAL, and REAL / DOUBLE with them report FLOAT.
+    /// </remarks>
+    /// <returns>the declared type name</returns>
+    public string GetDeclaredTypeName()
+    {
+        switch (valueType)
+        {
+            case Value.Numeric:
+                return extTypeInfo is not null ? "DECIMAL" : "NUMERIC";
+            case Value.Real:
+            case Value.Double:
+                if (extTypeInfo is not null)
+                {
+                    return "FLOAT";
+                }
+
+                break;
+            case Value.Enum:
+            case Value.Geometry:
+            case Value.Row:
+                return GetSql(HasSql.DefaultSqlFlags);
+            case Value.Array:
+                TypeInfo component = (TypeInfo)extTypeInfo!;
+                return component.GetSql(new StringBuilder(), HasSql.DefaultSqlFlags).Append(" ARRAY").ToString();
+        }
+
+        return Value.GetTypeName(valueType);
     }
 
     /// <inheritdoc/>

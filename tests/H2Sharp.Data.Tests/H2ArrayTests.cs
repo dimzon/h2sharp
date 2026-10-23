@@ -32,7 +32,7 @@ public sealed class H2ArrayTests
         read.CommandText = "SELECT A FROM T ORDER BY ID";
         using DbDataReader reader = read.ExecuteReader();
         Assert.Equal(typeof(int[]), reader.GetFieldType(0));
-        Assert.Equal("ARRAY", reader.GetDataTypeName(0));
+        Assert.Equal("INTEGER ARRAY", reader.GetDataTypeName(0));
         for (int i = 0; i < inputs.Length; i++)
         {
             Assert.True(reader.Read());

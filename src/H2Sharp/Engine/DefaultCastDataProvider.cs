@@ -44,7 +44,11 @@ internal sealed class DefaultCastDataProvider : CastDataProvider
     public Util.TimeZoneProvider CurrentTimeZone() => Util.TimeZoneProvider.GetDefault();
 
     /// <inheritdoc/>
-    public bool ZeroBasedEnums() => true;
+    /// <remarks>
+    /// The reference counts from 1 unless ZERO_BASED_ENUMS is set, which it is not by
+    /// default, so neither does this.
+    /// </remarks>
+    public bool ZeroBasedEnums() => false;
 
     /// <inheritdoc/>
     public Mode GetMode() => Mode.GetRegular();

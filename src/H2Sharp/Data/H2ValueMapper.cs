@@ -224,7 +224,7 @@ internal static class H2ValueMapper
             Value.Double => value.GetDouble(),
             Value.Numeric or Value.Decfloat => ToDecimal(value),
             Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
-                => value.GetString(),
+                or Value.Enum => value.GetString(),
             Value.Binary or Value.Varbinary or Value.Blob => value.GetBytes(),
             Value.Date => FromDateValue(((ValueDate)value).GetDateValue(), 0L),
             Value.Time => new TimeSpan(((ValueTime)value).GetNanos() / 100L),
@@ -348,7 +348,7 @@ internal static class H2ValueMapper
             Value.Real => typeof(float),
             Value.Double => typeof(double),
             Value.Char or Value.Varchar or Value.VarcharIgnorecase
-                or Value.Clob => typeof(string),
+                or Value.Clob or Value.Enum => typeof(string),
             Value.Binary or Value.Varbinary or Value.Blob => typeof(byte[]),
             Value.Date or Value.Timestamp => typeof(DateTime),
             Value.Time => typeof(TimeSpan),

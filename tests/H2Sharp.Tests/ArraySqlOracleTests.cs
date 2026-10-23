@@ -66,8 +66,7 @@ public sealed class ArraySqlOracleTests
                             StringBuilder types = new StringBuilder("=T:");
                             for (int i = 1; i <= count; i++) {
                                 if (i > 1) types.append('|');
-                                types.append(r.getMetaData().getColumnType(i) == java.sql.Types.ARRAY
-                                    ? "ARRAY" : r.getMetaData().getColumnTypeName(i));
+                                types.append(r.getMetaData().getColumnTypeName(i));
                             }
                             System.out.println(types);
                             while (r.next()) {
@@ -221,7 +220,7 @@ public sealed class ArraySqlOracleTests
                 try (java.sql.PreparedStatement s = conn.prepareStatement("SELECT CAST(? AS " + inputs[i] + " ARRAY)")) {
                     s.setObject(1, values[i]);
                     try (java.sql.ResultSet r = s.executeQuery()) {
-                        System.out.println("=T:ARRAY");
+                        System.out.println("=T:" + r.getMetaData().getColumnTypeName(1));
                         while (r.next()) System.out.println("=R:" + Formatter.render(r.getObject(1)));
                     }
                 } catch (java.sql.SQLException e) { System.out.println("=E:" + e.getErrorCode()); }

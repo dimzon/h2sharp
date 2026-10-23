@@ -6028,6 +6028,56 @@ ADO.NET (`tests/H2Sharp.Data.Tests/H2ForeignKeyTests.cs`): коды 23506/23503/
 Проверено: `H2Sharp.Tests` **1172** (красных нет), конформанс-набор **374/947** (было 372),
 `Data.Tests` 413 (красных нет), `MvStore.Tests` 86, `Engine.Tests` 4/9.
 
+**ENUM со строковыми значениями — `0.1.27-alpha.1`.**
+Закрывает issue #25 («порт ждёт голые идентификаторы, эталон требует строки»):
+`ENUM('Guest','Member')` читается, `ENUM(Guest,Member)` отказывается синтаксической
+ошибкой, как у эталона. Грамматика (`docs/grammar.html`): значения — строки.
+
+Эталон: `readIfDataType` → `parseArrayType`-рядом `parseEnumType` (строковые литералы),
+`ValueToObjectConverter.valueToObject` (ENUM → `String`), `InformationSchemaTable`
+(`ENUM_VALUES`: колонки таблицы, `enumValues` с `zeroBasedEnums`), `getDeclaredTypeName`
+(JDBC-имя колонки), `SessionLocal.zeroBasedEnums` (дефолт `false`).
+
+Разбор значений уже читал строки (`ParseEnumType` → `ReadString`) — чинить было нечего:
+прошлый срез перевёл DDL на токенный читатель, и quoted-форма заработала вместе с ним.
+Оракул это сверяет, а не предполагает: без кавычек обе стороны отвечают 42001.
+
+Порт:
+* `H2ValueMapper.ToObject`: `Value.Enum` читается `GetString()` (метка), как JDBC отдаёт
+  `String`; `GetFieldType` — `typeof(string)`. Сравнение и `ORDER BY` уже были порядковыми
+  (`ValueEnumBase.CompareTypeSafe` по `GetInt`), как у эталона, — их не трогал.
+* `H2DataReader.GetDataTypeName` — объявленное имя типа (`TypeInfo.GetDeclaredTypeName`,
+  перенесён дословно: `DECIMAL`/`FLOAT` при расширенных параметрах, `ENUM`/`GEOMETRY`/`ROW`
+  полным SQL, `ARRAY` как `<компонент> ARRAY`, остальное голым именем). Раньше отдавался
+  голый `Value.GetTypeName`, и колонка `ENUM('a','b')` называлась `ENUM`, а массив —
+  `ARRAY`. Тесты, фиксировавшие голые имена (`H2ArrayTests`, `ArraySqlOracleTests`),
+  поправлены на эталонные: JDBC отдаёт то же самое.
+* `INFORMATION_SCHEMA.ENUM_VALUES` заполнен: таблицы, ENUM-колонки, идентификатор —
+  порядковый номер колонки, по строке на метку с её ординалом. Ординал стартует с 0
+  или 1 по `session.ZeroBasedEnums()`, как у эталона.
+* Дефолт `ZeroBasedEnums` — `false`: эталон считает с 1 без `ZERO_BASED_ENUMS`, порт
+  считал с 0. Тестовые провайдеры (`TestCastDataProvider` и др.) явно возвращают
+  `true` и не зависят от дефолта; продакшен-путь (`DefaultCastDataProvider`,
+  `Database.ZeroBasedEnums`) теперь совпадает с эталоном. Затронуты только enum-пути.
+* `TypeInfo.GetDeclaredTypeName` перенесён ради JDBC-имени; поведение остальных типов
+  не меняется, кроме `NUMERIC` с расширенными параметрами (`DECIMAL`),
+  `REAL`/`DOUBLE` с ними (`FLOAT`) и `GEOMETRY`/`ROW` (полный SQL) — это ответы эталона,
+  и полный прогон это подтверждает отсутствием регрессий.
+
+Оракул `EnumOracleTests` (новый, зелёный): DDL с quoted/unquoted значениями,
+вставка допустимой и недопустимой метки (22030), сравнение с строкой, `ORDER BY`
+по порядку перечисления (не по алфавиту), `ENUM_VALUES` построчно, дубликаты (22033),
+пустой список (22032), пустая метка. Исправлены два красных спека:
+`Enum_HoldsTheListedValues`, `EnumValues_ListsTheEnumItems` (плюс попутно
+`PredefinedType_TinyintJavaObjectAndEnum_AreUsable`).
+Конформанс **454/947** (было 451, +3 без регрессий — сверено diff'ом списков
+падающих до и после: новых красных нет).
+
+Проверено: `H2Sharp.Tests` **1179/1179** (6 array + 1 enum oracle, все зелёные),
+`Data.Tests` **423/423**, `MvStore.Tests` **86/86**;
+`Engine.Tests` **4/9** (те же пять `TestIndex` на закрытом подключении).
+Сборка net8.0 / net10.0 без ошибок и предупреждений.
+
 **Массивы целиком — `0.1.26-alpha.1`.**
 Закрывает секцию A issue #14 («тип `ARRAY` и всё, что с ним связано») и issue #23
 (`UNNEST`, включая `WITH ORDINALITY`). Сверка — с H2 2.5 по исходникам (`Parser.java`,

@@ -197,7 +197,7 @@ public sealed class H2DataReader : DbDataReader
     public override string GetDataTypeName(int ordinal)
     {
         CheckOrdinal(ordinal);
-        return Value.GetTypeName(result!.GetColumnType(ordinal).GetValueType());
+        return result!.GetColumnType(ordinal).GetDeclaredTypeName();
     }
 
     /// <inheritdoc/>

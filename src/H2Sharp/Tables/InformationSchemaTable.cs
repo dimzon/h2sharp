@@ -1136,7 +1136,23 @@ public sealed class InformationSchemaTable : Table
             case Domains:
             case DomainConstraints:
             case Fields:
+                break;
             case EnumValues:
+                foreach (Table table in GetAllTables(session))
+                {
+                    Column[] columns = table.GetColumns();
+                    for (int i = 0; i < columns.Length; i++)
+                    {
+                        if (columns[i].GetTypeInfo().GetValueType() == Value.Enum)
+                        {
+                            AddEnumValues(session, rows, catalog,
+                                table.GetSchema()?.GetName(), table.GetTableName(),
+                                (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), columns[i]);
+                        }
+                    }
+                }
+
+                break;
             case CheckConstraints:
             case Triggers:
             case Synonyms:
@@ -1559,6 +1575,50 @@ public sealed class InformationSchemaTable : Table
             "NONE",
             ConstraintActionTypeRules.GetSqlName(constraint.GetUpdateAction()),
             ConstraintActionTypeRules.GetSqlName(constraint.GetDeleteAction()));
+    }
+
+    /// <summary>
+    /// The rows of the ENUM_VALUES view for one enum column.
+    /// </summary>
+    /// <remarks>
+    /// The reference's rows: the table and the column's ordinal position identify the enum,
+    /// then one row per label with its ordinal. The ordinal starts at 0 or 1 the way the
+    /// session's enums do, as in the reference. Domains, routines and constants have no
+    /// enums here, so only table columns are listed. The ordinal travels as text: the view
+    /// declares the column without a type, which is VARCHAR, and the reference's add()
+    /// converts every row value to its view column, so an integer ordinal arrives as text.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="rows">the rows</param>
+    /// <param name="catalog">the catalog name</param>
+    /// <param name="objectSchema">the schema of the table</param>
+    /// <param name="objectName">the table name</param>
+    /// <param name="identifier">the column's ordinal position</param>
+    /// <param name="column">the enum column</param>
+    private static void AddEnumValues(
+        SessionLocal session,
+        List<Value[]> rows,
+        string catalog,
+        string? objectSchema,
+        string objectName,
+        string identifier,
+        Column column)
+    {
+        TypeInfo typeInfo = column.GetTypeInfo();
+        ExtTypeInfoEnum enumerators = (ExtTypeInfoEnum)typeInfo.GetExtTypeInfo()!;
+        int ordinal = session.ZeroBasedEnums() ? 0 : 1;
+        for (int i = 0; i < enumerators.GetCount(); i++, ordinal++)
+        {
+            Add(
+                rows,
+                catalog,
+                objectSchema,
+                objectName,
+                "TABLE",
+                identifier,
+                enumerators.GetEnumerator(i),
+                ValueVarchar.Get(ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
     }
 
     /// <summary>
