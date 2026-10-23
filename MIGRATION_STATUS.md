@@ -647,10 +647,11 @@ SessionLocal.get/setIsolationLevel — TODOException в движке), TestLobOb
 TestLob), TestZloty.testZloty (подкласс java.math.BigDecimal — порт свой sealed
 BigDecimal; вопрос .NET-поверхности), testZloty-половины TestDriver (DriverManager),
 все `unit/`, `store/`, `mvcc/`, `synth/`, `server/`, `auth/`, `jdbcx/`, `ap/` (344 файла
-всего, перенесено 38: добавились TestAlterTableNotFound, TestSelectTableNotFound,
+всего, перенесено 39: добавились TestAlterTableNotFound, TestSelectTableNotFound,
 TestRecursiveQueries, TestViewDropView, TestReadOnly, TestSetCollation,
 TestViewAlterTable, TestIgnoreCatalogs, TestDeadlock, TestMultiConn,
-TestDuplicateKeyUpdate). Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
+TestDuplicateKeyUpdate, TestTempTables). Порядок: `db/` и `jdbc/` до конца, потом
+`unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
