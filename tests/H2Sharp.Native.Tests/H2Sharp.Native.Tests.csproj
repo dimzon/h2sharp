@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>H2Sharp.Native.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\H2Sharp\H2Sharp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The SQL scripts the reference runs through TestScript, copied verbatim from
+      reference/h2/h2/src/test/org/h2/test/scripts. They are data, not code: the
+      runner (Scripts/TestScript.cs) reads them as embedded resources and compares
+      the output with what the file expects.
+    -->
+    <EmbeddedResource Include="Scripts\**\*.sql" />
+  </ItemGroup>
+
+</Project>
