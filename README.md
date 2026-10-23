@@ -90,6 +90,34 @@ Dapper.SqlMapper.AddTypeMap(typeof(int?[]), DbType.Object, useGetFieldValue: tru
 This also allows nullable arrays to be sent as one parameter from an anonymous parameter
 object. Without this mapping, Dapper's default materializer directly casts `GetValue()`.
 
+## JSON with ADO.NET and Dapper
+
+JSON columns read as UTF-8 `byte[]` through `GetValue()` and `ExecuteScalar()`, with
+`GetFieldType()` reporting `byte[]`, as in H2 2.5 JDBC. Passing those bytes back as a
+parameter preserves the JSON document. SQL NULL reads as `DBNull.Value`; JSON `null`
+is the four-byte document `null`.
+
+Use `GetString()`, `GetFieldValue<string>()`, or `GetTextReader()` for JSON text.
+`GetBytes()`, `GetFieldValue<byte[]>()`, and `GetStream()` expose its UTF-8 bytes.
+For ordinary Dapper string mapping, select `CAST(document AS VARCHAR)`.
+
+Parameters accept UTF-8 `byte[]`, `System.Text.Json.JsonDocument`, and
+`System.Text.Json.JsonElement` as documents. An ordinary `string` parameter becomes
+a JSON **string value**, even when its contents look like an object; this is H2's
+conversion rule. STJ values are normalized by the engine when the command runs and
+are not disposed by the provider.
+
+```csharp
+using var document = System.Text.Json.JsonDocument.Parse("{\"a\": 1}");
+var parameters = new Dapper.DynamicParameters();
+parameters.Add("document", document, System.Data.DbType.Object);
+connection.Execute("INSERT INTO J(D) VALUES (@document)", parameters);
+byte[] json = connection.QuerySingle<byte[]>("SELECT D FROM J");
+```
+
+With Dapper, pass STJ values explicitly as `DbType.Object`. A future per-connection
+choice of JSON representation is tracked in [#29](https://github.com/dimzon/h2sharp/issues/29).
+
 ## Regular expressions
 
 `REGEXP`, `~`, `~*`, `!~`, and `!~*` use **.NET regular-expression syntax** and

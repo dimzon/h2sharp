@@ -409,7 +409,7 @@ public sealed class H2DataReader : DbDataReader
     public override long GetBytes(int ordinal, long fieldOffset, byte[]? buffer, int bufferOffset, int length)
     {
         Value cell = NotNull(ordinal, "Byte[]");
-        if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob
+        if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob or Value.Json
             && cell.GetBytes() is byte[] bytes)
         {
             return CopySlice(bytes, fieldOffset, buffer, bufferOffset, length);
@@ -460,6 +460,13 @@ public sealed class H2DataReader : DbDataReader
             throw NullValueException("TextReader");
         }
 
+        // JDBC getCharacterStream reads JSON through Value.getReader / getString;
+        // its default object is byte[], but the explicit text path remains available.
+        if (cell.GetValueType() == Value.Json)
+        {
+            return new StringReader(cell.GetString()!);
+        }
+
         if (H2ValueMapper.ToObject(cell) is string text)
         {
             return new StringReader(text);
@@ -471,6 +478,13 @@ public sealed class H2DataReader : DbDataReader
     /// <inheritdoc/>
     public override T GetFieldValue<T>(int ordinal)
     {
+        // JDBC getObject(column, String.class) uses Value.getString independently of
+        // the default JSON byte[] mapping. Keep the same explicit text conversion here.
+        if (typeof(T) == typeof(string) && Cell(ordinal)?.GetValueType() == Value.Json)
+        {
+            return (T)(object)GetString(ordinal);
+        }
+
         if (typeof(T).IsArray && Cell(ordinal) is ValueArray array)
         {
             return (T)(object)H2ValueMapper.ToArrayObject(array, typeof(T));

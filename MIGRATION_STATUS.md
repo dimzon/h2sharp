@@ -6426,3 +6426,46 @@ quoted-алиасом и параметром, inline-флаги/NULL/ошибк
 **1190/1190**, `Data.Tests` **435/435**, `MvStore.Tests` **86/86**.
 `Engine.Tests` **4/9** — прежние пять TestIndex на закрытом подключении.
 Конформанс **500/947**. Сборка net8.0/net10.0, format и regen --check проходят.
+
+**JSON чтение и System.Text.Json-параметры — `0.1.33-alpha.1`, issue #26.**
+
+Эталон H2 2.5 проверен по `ValueToObjectConverter.valueToDefaultObject` и
+`getDefaultClass`: JSON возвращается как `byte[]`, а не string; текст дают
+`JdbcResultSet.getString` и `getObject(..., String.class)`. Строка при обычном
+присваивании в JSON становится JSON-строкой; VARBINARY разбирается как документ.
+Пользователь подтвердил JDBC-совместимый default ради обратимого чтения/записи.
+
+`H2ValueMapper.ToObject` и `GetFieldType` теперь отображают JSON в UTF-8 byte[].
+`H2DataReader.GetBytes` принимает JSON; `GetFieldValue<string>` и `GetTextReader`
+читают текст по эталонному явному пути. GetValue/GetValues/ExecuteScalar,
+GetFieldValue<byte[]>, GetStream и метаданные согласованы с байтовым default.
+Используется существующий ValueJson.GetBytes с копированием; возвращённые байты
+не меняют хранимый документ. JSON-элементы SQL ARRAY читаются как byte[][].
+
+**Принятая ADO.NET-адаптация, запрошенная пользователем:** входные JsonDocument
+и JsonElement из уже используемого System.Text.Json означают типизированный
+JSON-документ. GetRawText передаётся в существующий ValueJson.FromJson, как
+JDBC `setObject(text, H2Type.JSON)` применяет Format.applyJSON, а не обычный
+VARCHAR→JSON cast. Комментарий адаптации есть в H2ValueMapper. Обычные строки
+не меняют смысл. JSON null из STJ остаётся JSON null, DBNull остаётся SQL NULL.
+STJ-массивы, включая пустые, сохраняют JSON component type. Маппер не владеет
+документом и не закрывает его; значение копируется при выполнении. Undefined
+JsonElement и disposed документы отказывают, а не превращаются в NULL.
+
+`JsonReadingOracleTests`: три теста построчно с закреплённым JDBC — типы и
+JSON-текст/байты для объектов, массивов, чисел высокой точности, Unicode,
+JSON/SQL null, строк, bool; обычные string/byte[]-параметры и повторная запись
+прочитанных байтов; JsonDocument/JsonElement против явного JDBC H2Type.JSON.
+`H2JsonReadingTests`: шесть ADO.NET/Dapper-тестов, getter-ы и потоки, срез
+GetBytes, метаданные, изоляция возвращённой копии, round-trip, JSON ARRAY,
+STJ значения/пустые массивы/время жизни/невалидное состояние. Для Dapper STJ
+передаются DynamicParameters с явным DbType.Object.
+
+По просьбе пользователя создан будущий issue #29: свойство H2Connection
+для выбора byte[] или string с согласованными метаданными и контрактом записи.
+Сейчас default остаётся JDBC; настройка будет отдельным срезом.
+
+Проверено: полный набор с `Category!=BlockedByPort` — `H2Sharp.Tests`
+**1193/1193**, `Data.Tests` **441/441**, `MvStore.Tests` **86/86**.
+`Engine.Tests` **4/9** — прежние пять TestIndex на закрытом подключении.
+Конформанс **500/947**. Сборка net8.0/net10.0, format и regen --check проходят.

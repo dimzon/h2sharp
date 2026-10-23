@@ -26,6 +26,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
 using System.Numerics;
+using System.Text.Json;
 
 using H2Sharp.Api;
 using H2Sharp.Util;
@@ -85,6 +86,10 @@ internal static class H2ValueMapper
             char c => ValueChar.Get(c.ToString()),
             string s => ValueVarchar.Get(s),
             byte[] bytes => ValueVarbinary.Get(bytes),
+            // Approved ADO.NET adaptation: STJ values explicitly mean JSON documents,
+            // like JDBC setObject(value, H2Type.JSON), not VARCHAR JSON-string scalars.
+            JsonDocument document => ValueJson.FromJson(document.RootElement.GetRawText()),
+            JsonElement element => ValueJson.FromJson(element.GetRawText()),
             DateTime dt => ValueTimestamp.FromDateValueAndNanos(
                 DateTimeUtils.DateValue(dt.Year, dt.Month, dt.Day), dt.TimeOfDay.Ticks * 100L),
             DateOnly d => ValueDate.FromDateValue(
@@ -164,6 +169,7 @@ internal static class H2ValueMapper
         }
 
         if (type == typeof(byte[])) return TypeInfo.TypeVarbinary;
+        if (type == typeof(JsonDocument) || type == typeof(JsonElement)) return TypeInfo.TypeJson;
         if (type.IsArray)
         {
             TypeInfo? component = GetElementTypeInfo(type.GetElementType(), dbType);
@@ -225,7 +231,9 @@ internal static class H2ValueMapper
             Value.Numeric or Value.Decfloat => ToDecimal(value),
             Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
                 or Value.Enum => value.GetString(),
-            Value.Binary or Value.Varbinary or Value.Blob => value.GetBytes(),
+            // H2 ValueToObjectConverter.valueToDefaultObject: JSON uses UTF-8 byte[];
+            // passing the returned bytes back as a parameter preserves document semantics.
+            Value.Binary or Value.Varbinary or Value.Blob or Value.Json => value.GetBytes(),
             Value.Date => FromDateValue(((ValueDate)value).GetDateValue(), 0L),
             Value.Time => new TimeSpan(((ValueTime)value).GetNanos() / 100L),
             Value.TimeTz => new DateTimeOffset(
@@ -349,7 +357,7 @@ internal static class H2ValueMapper
             Value.Double => typeof(double),
             Value.Char or Value.Varchar or Value.VarcharIgnorecase
                 or Value.Clob or Value.Enum => typeof(string),
-            Value.Binary or Value.Varbinary or Value.Blob => typeof(byte[]),
+            Value.Binary or Value.Varbinary or Value.Blob or Value.Json => typeof(byte[]),
             Value.Date or Value.Timestamp => typeof(DateTime),
             Value.Time => typeof(TimeSpan),
             Value.TimeTz or Value.TimestampTz => typeof(DateTimeOffset),
