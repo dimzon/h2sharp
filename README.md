@@ -90,6 +90,21 @@ Dapper.SqlMapper.AddTypeMap(typeof(int?[]), DbType.Object, useGetFieldValue: tru
 This also allows nullable arrays to be sent as one parameter from an anonymous parameter
 object. Without this mapping, Dapper's default materializer directly casts `GetValue()`.
 
+## Regular expressions
+
+`REGEXP`, `~`, `~*`, `!~`, and `!~*` use **.NET regular-expression syntax** and
+`System.Text.RegularExpressions`. This is a deliberate project decision. SQL operator
+syntax and precedence follow H2 2.5; patterns are not translated from Java syntax.
+
+`~` searches for a match, `~*` ignores case, and `!~` / `!~*` negate the match.
+Inline options such as `(?m)`, `(?s)`, and `(?x)` are supported. NULL operands produce
+NULL; an invalid pattern raises H2 error `22025`.
+
+```sql
+SELECT 'abc' ~ '^a', 'ABC' ~* '^a';
+SELECT ID FROM TOPICS WHERE TITLE ~* '(?m)^release' ORDER BY ID;
+```
+
 ## Licensing
 
 H2 is dual-licensed under the Mozilla Public License 2.0 and the Eclipse Public License 1.0.

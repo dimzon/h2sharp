@@ -3367,29 +3367,55 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Reads a sum of products, as the reference's readSum does.
+    /// Reads concatenation and compatibility regex operators, as the reference's readConcat does.
     /// </summary>
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     // H2 readConcat: concatenation binds less tightly than arithmetic.
     private Expressions.Expression ReadQueryConcat(Query.Select? aggregateSelect = null)
     {
         Expression op1 = ReadQuerySum(aggregateSelect);
-        while (ReadIf(Token.Concatenation))
+        while (true)
         {
-            Expression op2 = ReadQuerySum(aggregateSelect);
-            if (ReadIf(Token.Concatenation))
+            switch (CurrentType)
             {
-                Expressions.ConcatenationOperation concat = new();
-                concat.AddParameter(op1);
-                concat.AddParameter(op2);
-                do { concat.AddParameter(ReadQuerySum(aggregateSelect)); }
-                while (ReadIf(Token.Concatenation));
-                concat.DoneWithParameters();
-                op1 = concat;
+                case Token.Concatenation:
+                    {
+                        Read();
+                        Expression op2 = ReadQuerySum(aggregateSelect);
+                        if (ReadIf(Token.Concatenation))
+                        {
+                            Expressions.ConcatenationOperation concat = new();
+                            concat.AddParameter(op1);
+                            concat.AddParameter(op2);
+                            do { concat.AddParameter(ReadQuerySum(aggregateSelect)); }
+                            while (ReadIf(Token.Concatenation));
+                            concat.DoneWithParameters();
+                            op1 = concat;
+                        }
+                        else op1 = new Expressions.ConcatenationOperation(op1, op2);
+                        break;
+                    }
+                case Token.Tilde:
+                    op1 = ReadTildeCondition(op1, false, aggregateSelect);
+                    break;
+                case Token.NotTilde:
+                    op1 = ReadTildeCondition(op1, true, aggregateSelect);
+                    break;
+                default:
+                    return op1;
             }
-            else op1 = new Expressions.ConcatenationOperation(op1, op2);
         }
-        return op1;
+    }
+
+    // H2 readTildeCondition: the asterisk selects a case-insensitive VARCHAR cast.
+    private Expression ReadTildeCondition(Expression expression, bool not, Query.Select? aggregateSelect)
+    {
+        Read();
+        if (ReadIf(Token.Asterisk))
+            expression = new Expressions.Functions.CastSpecification(expression, TypeInfo.TypeVarcharIgnorecase);
+        return new Expressions.Conditions.CompareLike(session!.GetCompareMode(), expression, not,
+            whenOperand: false, ReadQuerySum(aggregateSelect), escape: null,
+            Expressions.Conditions.CompareLike.LikeType.Regexp);
     }
 
     private Expressions.Expression ReadQuerySum(Query.Select? aggregateSelect = null)

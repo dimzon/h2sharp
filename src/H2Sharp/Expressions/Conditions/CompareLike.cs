@@ -7,6 +7,9 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
  * Pattern matching comparison expression: WHERE NAME LIKE ?
+ * Project decision: REGEXP and ~ / ~* / !~ / !~* use System.Text.RegularExpressions
+ * and its .NET pattern syntax. The Java regex engine is not ported. This accepted
+ * adaptation is recorded in MIGRATION_STATUS.md; SQL operator parsing follows H2 2.5.
  */
 using System;
 using System.Text;
