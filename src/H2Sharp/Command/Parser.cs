@@ -345,7 +345,7 @@ public sealed partial class Parser
 {
     private readonly CastDataProvider provider;
 
-    private readonly string sql;
+    private string sql;
 
     private readonly List<Token> tokens;
 
@@ -356,7 +356,9 @@ public sealed partial class Parser
     /// <summary>
     /// The parameters read so far, in the order their placeholders appear.
     /// </summary>
-    private readonly List<Expressions.Parameter> parameterList = [];
+    private List<Expressions.Parameter> parameterList = [];
+
+    private bool recompileAlways;
 
     /// <summary>
     /// The common table expressions this statement names, by name.
@@ -388,6 +390,39 @@ public sealed partial class Parser
         provider = session.CastDataProvider;
         tokens = [];
         this.session = session;
+    }
+
+    /// <summary>Supplies the existing parameter objects for command recompilation.</summary>
+    public void SetSuppliedParameters(List<Expressions.Parameter> suppliedParameters)
+    {
+        // ParserBase.setSuppliedParameters. This port's Parameter.GetIndex is currently
+        // one-based (documented in Parameter); slot indexes are zero-based as in Java.
+        int max = 0;
+        foreach (Expressions.Parameter parameter in suppliedParameters)
+            max = Math.Max(max, parameter.GetIndex());
+        if (max > suppliedParameters.Count)
+        {
+            parameterList = new(max);
+            for (int i = 0; i < max; i++) parameterList.Add(null!);
+            foreach (Expressions.Parameter parameter in suppliedParameters)
+                parameterList[parameter.GetIndex() - 1] = parameter;
+        }
+        else parameterList = suppliedParameters;
+    }
+
+    /// <summary>Parses one statement without preparing it, as H2 Parser.parse does.</summary>
+    internal Prepared Parse(string sql, List<Token>? tokens)
+    {
+        SessionLocal current = session ?? throw new TODOException("Parser.parse: this parser has no session");
+        if (tokens is null)
+        {
+            BitList parameters = new();
+            tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+            CheckParameterIndex(parameters);
+        }
+        Parser parser = new(sql, provider, tokens, current);
+        parser.SetSuppliedParameters(parameterList);
+        return parser.ParseOneStatement();
     }
 
     /// <summary>
@@ -490,6 +525,9 @@ public sealed partial class Parser
             position++;
         }
 
+        int start = position;
+        recompileAlways = false;
+
         Prepared prepared;
         if (position < tokens.Count && IsSelectFirst(tokens[position]))
         {
@@ -500,7 +538,7 @@ public sealed partial class Parser
                 ReadWith();
             }
 
-            prepared = ParseQuerySelect();
+            prepared = ParseQuerySelect(prepare: false);
         }
         else if (IsWord("CREATE", consume: false) && NextIs("SEQUENCE"))
         {
@@ -554,8 +592,44 @@ public sealed partial class Parser
             };
         }
 
+        SetSql(prepared, start);
+        prepared.SetPrepareAlways(recompileAlways);
         prepared.SetParameterList(parameterList.Count == 0 ? null : parameterList);
         return prepared;
+    }
+
+    private void SetSql(Prepared command, int start)
+    {
+        // H2 setSQL: reuse the full token stream for one statement, or clone the
+        // current statement's tokens when the parser still has a batch to read.
+        int beginIndex = tokens[start].Start, endIndex = Current.Start;
+        while (beginIndex < endIndex && sql[beginIndex] <= ' ') beginIndex++;
+        while (beginIndex < endIndex && sql[endIndex - 1] <= ' ') endIndex--;
+        string text = sql[beginIndex..endIndex];
+        List<Token> commandTokens;
+        if (start == 0 && CurrentType == Token.EndOfInput)
+        {
+            commandTokens = tokens;
+            if (beginIndex != 0)
+            {
+                for (int i = 0; i < commandTokens.Count - 1; i++)
+                    commandTokens[i].SubtractFromStart(beginIndex);
+            }
+            Current.Start = text.Length;
+            sql = text;
+        }
+        else
+        {
+            commandTokens = new(position - start + 1);
+            for (int i = start; i < position; i++)
+            {
+                Token token = tokens[i].Clone();
+                token.SubtractFromStart(beginIndex);
+                commandTokens.Add(token);
+            }
+            commandTokens.Add(new Token.EndOfInputToken(text.Length));
+        }
+        command.SetSql(text, commandTokens);
     }
 
     /// <summary>
@@ -2426,7 +2500,8 @@ public sealed partial class Parser
                 }
                 else if (expression is Expressions.Parameter)
                 {
-                    throw new TODOException("Parser.parseEndOfQuery: positional ORDER BY parameter needs command recompilation");
+                    recompileAlways = true;
+                    item.columnIndexExpr = expression;
                 }
                 else
                 {
@@ -3820,10 +3895,7 @@ public sealed partial class Parser
 
         if (Current is Token.ParameterToken parameter)
         {
-            Read();
-            Expressions.Parameter expression = new(parameter.Index);
-            parameterList.Add(expression);
-            return expression;
+            return ReadParameter();
         }
 
         if (CurrentType == Token.At)
@@ -5821,6 +5893,16 @@ public sealed partial class Parser
         {
             throw DbException.GetInvalidValueException("parameter index", length);
         }
+    }
+
+    // ParserBase.readParameter returns the same object for every occurrence of an index.
+    private Expressions.Parameter ReadParameter()
+    {
+        int index = ((Token.ParameterToken)Current).Index - 1;
+        Read();
+        while (parameterList.Count <= index)
+            parameterList.Add(new Expressions.Parameter(parameterList.Count + 1));
+        return parameterList[index];
     }
 
     private Token Current => tokens[position];

@@ -104,12 +104,33 @@ public class CommandContainer : Command
     /// </remarks>
     public override ResultWithGeneratedKeys UpdateRows(object generatedKeysRequest)
     {
+        RecompileIfRequired();
         return ResultWithGeneratedKeys.Of(command.Update());
     }
 
     /// <inheritdoc/>
     public override ResultInterface Query(long maxrows)
-        => RunWithThreadLocalSession(() => command.Run(maxrows));
+    {
+        RecompileIfRequired();
+        return RunWithThreadLocalSession(() => command.Run(maxrows));
+    }
+
+    private void RecompileIfRequired()
+    {
+        if (command.NeedRecompile())
+        {
+            command.SetModificationMetaId(0);
+            string sql = command.GetSql();
+            List<Token>? tokens = command.GetSqlTokens();
+            Parser parser = new(Session);
+            parser.SetSuppliedParameters(command.GetParameters() ?? []);
+            command = parser.Parse(sql, tokens);
+            long mod = command.GetModificationMetaId();
+            command.SetModificationMetaId(0);
+            command.Prepare();
+            command.SetModificationMetaId(mod);
+        }
+    }
 
     /// <inheritdoc/>
     public override bool IsCacheable() => command.IsCacheable();

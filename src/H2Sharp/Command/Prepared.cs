@@ -43,7 +43,7 @@ public abstract class Prepared
 {
     private SessionLocal session;
 
-    private readonly long modificationMetaId;
+    private long modificationMetaId;
 
     private List<Parameter>? parameters;
 
@@ -99,7 +99,12 @@ public abstract class Prepared
     /// Check if this command needs to be recompiled.
     /// </summary>
     /// <returns>true if it needs to be recompiled</returns>
-    public virtual bool NeedRecompile() => false;
+    public virtual bool NeedRecompile()
+    {
+        // H2 Prepared.needRecompile; DbSettings.recompileAlways is not ported,
+        // and its reference default is false.
+        return prepareAlways || modificationMetaId < session.GetDatabase().GetModificationMetaId();
+    }
 
     /// <summary>
     /// Get the list of parameters.
@@ -199,6 +204,9 @@ public abstract class Prepared
     /// </summary>
     /// <returns>the modification meta id</returns>
     public long GetModificationMetaId() => modificationMetaId;
+
+    /// <summary>Sets the metadata modification id of this statement.</summary>
+    internal void SetModificationMetaId(long id) => modificationMetaId = id;
 
     /// <summary>
     /// Get the object id of this command.

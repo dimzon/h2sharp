@@ -6511,3 +6511,46 @@ Posts через EXISTS/NOT EXISTS, повторная привязка и из�
 неверного ожидания от внешнего UNNEST **445/445**. `Engine.Tests` **4/9** —
 прежние пять TestIndex на закрытом подключении. Конформанс **501/947**
 (было 500). Сборка net8.0/net10.0, format и regen --check проходят.
+
+**Переподготовка команд и ORDER BY ? — `0.1.35-alpha.1`, issue #28.**
+
+Сверены `Parser.parse`, `ParserBase.setSuppliedParameters`/`readParameter`,
+`Parser.setSQL`, `Prepared.needRecompile`/`setModificationMetaId` и
+`CommandContainer.recompileIfRequired` в закреплённом H2 2.5.
+`ORDER BY` с Parameter теперь сохраняет `columnIndexExpr` и ставит
+`recompileAlways`, как эталон; заглушка удалена. ParseOneStatement разбирает
+SELECT без подготовки, затем выставляет список параметров и prepareAlways;
+подготовка происходит через prepareCommand или recompileIfRequired.
+
+Парсер принимает supplied параметры и повторно использует те же объекты
+для всех вхождений индекса. ReadParameter выбирает слот, а не создаёт новый
+объект на каждое вхождение. Индексы Parameter в текущем порте one-based
+(существующая адаптация); перевод в zero-based слот явно отмечен в коде.
+SetSql сохраняет SQL и токены именно оператора: повторно использует токены
+одного запроса или клонирует срез пакетного, добавляя EndOfInput; пробелы
+и позиции токенов нормализуются в эталонном порядке.
+
+`Prepared.NeedRecompile` проверяет prepareAlways и modificationMetaId.
+DbSettings.recompileAlways пока не перенесён; reference default false
+записан в коде. `SetModificationMetaId` переносится с internal-видимостью.
+`CommandContainer.RecompileIfRequired` перед Query и UpdateRows обнуляет
+meta id старого Prepared, передаёт его связанные параметры в Parser,
+заменяет Prepared разобранным оператором, обнуляет его id на время prepare
+и восстанавливает meta id после успешной подготовки — тот же порядок,
+включая возможность повторить после ошибочной позиции.
+
+`OrderByExpressionOracleTests.PositionalOrderParameterNeedsCommandRecompilation`
+проходит, trait BlockedByPort снят вместе с функцией. Четыре новых
+`CommandRecompileOracleTests` сравнивают построчно JVM и одну и ту же
+CommandContainer порта: смена позиции 1/2/-2, DESC/NULLS, NULL, 0/неверная
+позиция/int.MinValue и восстановление; повторные indexed параметры,
+LIMIT, создание/удаление индекса, обычный запрос и UPDATE после meta change,
+вложенный ORDER BY ? и нормализация SQL с ведущими пробелами. Проверена
+идентичность живых Parameter после замены Prepared.
+`H2OrderParameterTests`: три ADO.NET-теста — смена позиции, ошибка 90068 и
+восстановление, NULL, две команды в batch с отдельными параметрами и токенами,
+один indexed параметр в двух вхождениях.
+
+Проверено: полный `dotnet test H2Sharp.sln` — `H2Sharp.Tests` **1202/1202**,
+`Data.Tests` **448/448**, `MvStore.Tests` **86/86**. `Engine.Tests` **4/9** —
+прежние пять TestIndex на закрытом подключении. Конформанс **501/947**.

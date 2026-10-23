@@ -100,7 +100,6 @@ public sealed class OrderByExpressionOracleTests
     }
 
     [JavaOracleFact]
-    [Trait("Category", "BlockedByPort")]
     public void PositionalOrderParameterNeedsCommandRecompilation()
     {
         using H2Connection connection = Open();
