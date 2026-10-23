@@ -3490,6 +3490,16 @@ public sealed partial class Parser
             return new Expressions.Conditions.ConditionNot(ReadQueryComparison(aggregateSelect));
         }
 
+        // H2 readCondition: EXISTS is a predicate, parsed before readConcat.
+        if (ReadIf(ParserUtil.Exists))
+        {
+            Expect(Token.OpenParen, "(");
+            Query.Query query = ParseQueryExpression(prepare: false);
+            // Preserve the query shape (including UNION / DISTINCT), as in Java.
+            Expect(Token.CloseParen, ")");
+            return new Expressions.Conditions.ExistsPredicate(query);
+        }
+
         Expressions.Expression left = ReadQueryConcat(aggregateSelect);
         while (true)
         {

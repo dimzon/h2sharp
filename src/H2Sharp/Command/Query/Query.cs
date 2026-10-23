@@ -266,6 +266,25 @@ public abstract class Query : Prepared
     /// <returns>the rows</returns>
     public abstract override ResultInterface Run(long limit);
 
+    /// <summary>Execute the EXISTS predicate over the query.</summary>
+    public bool Exists()
+    {
+        // H2 Query.exists's no-cache path. Result caching and SELECT triggers have not
+        // been ported for Query.Run either; this uses the same execution path, never
+        // caching a possibly correlated result. See MIGRATION_STATUS.md.
+        return ExecuteExists();
+    }
+
+    private bool ExecuteExists()
+    {
+        // H2 executeExists: queryWithoutCacheLazyCheck(1, null), hasNext, close.
+        // Run is the current port of the materialized queryWithoutCache path.
+        ResultInterface result = Run(1L);
+        bool exists = result.HasNext();
+        result.Close();
+        return exists;
+    }
+
     /// <summary>
     /// Initializes this query.
     /// </summary>

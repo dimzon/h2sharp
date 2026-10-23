@@ -6,7 +6,7 @@
       The version of the engine. The rules for it, and for the versions of the two providers
       that depend on it, are in docs/VERSIONING.md.
     -->
-    <Version>0.1.33-alpha.1</Version>
+    <Version>0.1.34-alpha.1</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
