@@ -72,7 +72,13 @@ public sealed class Delete : FilteredDataChangeStatement
                 deltaChangeCollector?.AddRow(row.GetValueList());
             }
 
-            table.RemoveRow(session, row.GetKey());
+            // The reference asks fireRow first: with nothing to fire, the row goes without
+            // a call, and with something to fire, the before-row decides.
+            if (!table.FireRow() || !table.FireBeforeRow(session, row, null))
+            {
+                table.RemoveRow(session, row.GetKey());
+                table.FireAfterRow(session, row, null, rollback: false);
+            }
         }
 
         return matched.Count;

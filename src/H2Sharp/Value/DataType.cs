@@ -652,6 +652,62 @@ public sealed class DataType
         }
     }
 
+    /// <summary>
+    /// Whether values of the given data types have session-independent compare results.
+    /// </summary>
+    /// <remarks>
+    /// Ported from org.h2.value.DataType.areStableComparable. DATE equals TIMESTAMP at
+    /// midnight, so the two compare the same; TIME, TIME WITH TIME ZONE and TIMESTAMP WITH
+    /// TIME ZONE conversions depend on the current timestamp and time zone, so only equal
+    /// types are stable; ARRAY is stable only when both sides are arrays of stable types.
+    /// </remarks>
+    /// <param name="type1">the first data type</param>
+    /// <param name="type2">the second data type</param>
+    /// <returns>true if comparisons between them do not depend on the session</returns>
+    public static bool AreStableComparable(TypeInfo type1, TypeInfo type2)
+    {
+        int t1 = type1.GetValueType();
+        int t2 = type2.GetValueType();
+        switch (t1)
+        {
+            case Value.Unknown:
+            case Value.Null:
+            case Value.Blob:
+            case Value.Clob:
+            case Value.Row:
+                return false;
+            case Value.Date:
+            case Value.Timestamp:
+                // DATE is equal to TIMESTAMP at midnight
+                return t2 == Value.Date || t2 == Value.Timestamp;
+            case Value.Time:
+            case Value.TimeTz:
+            case Value.TimestampTz:
+                // Conversions depend on current timestamp and time zone
+                return t1 == t2;
+            case Value.Array:
+                if (t2 == Value.Array)
+                {
+                    return AreStableComparable(
+                        (TypeInfo)type1.GetExtTypeInfo()!, (TypeInfo)type2.GetExtTypeInfo()!);
+                }
+
+                return false;
+            default:
+                switch (t2)
+                {
+                    case Value.Unknown:
+                    case Value.Null:
+                    case Value.Blob:
+                    case Value.Clob:
+                    case Value.Row:
+                        return false;
+                    default:
+                        return true;
+                }
+        }
+    }
+
     private static DataType CreateGeometry()
     {
         DataType dataType = new();

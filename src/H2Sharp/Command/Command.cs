@@ -216,17 +216,36 @@ public abstract class Command : CommandInterface
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The reference wraps the update in savepoints, a statement scope, and a rollback of a
-    /// failed attempt; none of those are ported, so what remains is the part that is: a
-    /// non-transactional statement commits what is open before it runs and its own work after,
-    /// and <c>stop(commitIfAutoCommit: true)</c> runs in every case.
+    /// The reference wraps the update in a savepoint and rolls a failed statement back to
+    /// it: a statement is atomic, and a row it wrote before it failed is not there after.
+    /// The after-row checks (a foreign key fails after the row is written) only work with
+    /// this: without it, the row the check refused would stay written. What is still not
+    /// here is the statement scope and the retry of a concurrent update around the same
+    /// savepoint.
     /// </remarks>
     public virtual ResultWithGeneratedKeys ExecuteUpdate(object generatedKeysRequest)
     {
         CommitIfNonTransactional();
+        MvStore.Tx.Transaction transaction = Session.GetTransaction();
+        long savepoint = transaction.SetSavepoint();
         try
         {
             return RunWithThreadLocalSession(() => UpdateRows(generatedKeysRequest));
+        }
+        catch
+        {
+            try
+            {
+                transaction.RollbackToSavepoint(savepoint);
+            }
+            catch
+            {
+                // The reference records the rollback failure as suppressed; a plain .NET
+                // exception carries none, and the statement's own failure is what the caller
+                // sees.
+            }
+
+            throw;
         }
         finally
         {

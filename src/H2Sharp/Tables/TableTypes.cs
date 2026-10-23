@@ -1267,6 +1267,119 @@ public abstract class Table
     }
 
     /// <summary>
+    /// Whether the foreign key constraints of this table are checked.
+    /// </summary>
+    /// <remarks>
+    /// The reference's field, with the reference's default: on. What the reference's setter
+    /// does with it — checking the existing rows when it is turned back on — is below, in
+    /// <see cref="SetCheckForeignKeyConstraints"/>. The database-wide switch of the reference
+    /// (<c>SET REFERENTIAL_INTEGRITY</c>) is not ported, so this is the only switch.
+    /// </remarks>
+    private bool checkForeignKeyConstraints = true;
+
+    /// <summary>
+    /// Whether any constraint or trigger of this table can fire.
+    /// </summary>
+    /// <remarks>
+    /// The reference also asks the triggers, and there are none here, so the answer is the
+    /// constraints. The statements ask this before they ask <see cref="FireBeforeRow"/>: when
+    /// nothing can fire, the row goes in without a call, as it does on the JVM.
+    /// </remarks>
+    /// <returns>true when a constraint could fire</returns>
+    public bool FireRow() => constraints is not null && constraints.Count > 0;
+
+    /// <summary>
+    /// Fires the constraints that run before the row is written.
+    /// </summary>
+    /// <remarks>
+    /// The reference fires the before-action triggers first and answers whether one of them
+    /// handled the row instead; there are no triggers here, so the answer is always false and
+    /// the row is always written by the caller. The constraints fire either way: the caller
+    /// asks <see cref="FireRow"/> first, and a table with none never gets here.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="oldRow">the row as it was, or null for an insert</param>
+    /// <param name="newRow">the row as it becomes, or null for a delete</param>
+    /// <returns>false, always: no trigger handled the row instead</returns>
+    public bool FireBeforeRow(Engine.SessionLocal session, Row? oldRow, Row? newRow)
+    {
+        FireConstraints(session, oldRow, newRow, before: true);
+        return false;
+    }
+
+    /// <summary>
+    /// Fires the constraints that run after the row was written.
+    /// </summary>
+    /// <remarks>
+    /// Referential constraints are after-constraints, so this is where a row that points at
+    /// nothing fails: the row is already written, and the failure rolls it back through the
+    /// savepoint the write took, as it does on the JVM.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="oldRow">the row as it was, or null for an insert</param>
+    /// <param name="newRow">the row as it becomes, or null for a delete</param>
+    /// <param name="rollback">whether the write is being rolled back</param>
+    public void FireAfterRow(Engine.SessionLocal session, Row? oldRow, Row? newRow, bool rollback)
+    {
+        if (!rollback)
+        {
+            FireConstraints(session, oldRow, newRow, before: false);
+        }
+    }
+
+    /// <summary>
+    /// Fires the constraints that belong to the given side of the write.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="oldRow">the row as it was, or null for an insert</param>
+    /// <param name="newRow">the row as it becomes, or null for a delete</param>
+    /// <param name="before">whether the before-constraints fire</param>
+    private void FireConstraints(Engine.SessionLocal session, Row? oldRow, Row? newRow, bool before)
+    {
+        if (constraints is null)
+        {
+            return;
+        }
+
+        foreach (Constraint constraint in constraints)
+        {
+            if (constraint.IsBefore() == before)
+            {
+                constraint.CheckRow(session, this, oldRow!, newRow!);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Turns the foreign key checks of this table on or off, checking the existing rows first
+    /// when asked.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="enabled">whether the checks run</param>
+    /// <param name="checkExisting">whether the existing rows are checked when turning them on</param>
+    public void SetCheckForeignKeyConstraints(Engine.SessionLocal session, bool enabled, bool checkExisting)
+    {
+        if (enabled && checkExisting)
+        {
+            foreach (Constraint constraint in GetConstraints())
+            {
+                if (constraint.GetConstraintType() == Constraint.Type.REFERENTIAL)
+                {
+                    constraint.CheckExistingData(session);
+                }
+            }
+        }
+
+        checkForeignKeyConstraints = enabled;
+    }
+
+    /// <summary>
+    /// Whether the foreign key constraints of this table are checked.
+    /// </summary>
+    /// <returns>true when they are</returns>
+    public bool GetCheckForeignKeyConstraints() => checkForeignKeyConstraints;
+
+    /// <summary>
     /// Gets the table type.
     /// </summary>
     public abstract int GetTableType();

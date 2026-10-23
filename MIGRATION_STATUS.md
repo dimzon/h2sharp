@@ -5933,3 +5933,61 @@ ported`»).
 
 Проверено: `H2Sharp.Tests` **1164**, конформанс-набор **366/947** (было 363), `Data.Tests` 407
 (красных нет), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+
+**`FOREIGN KEY` в `CREATE TABLE`: ключ создаётся и держит строки.**
+Пункт issue #13 («ссылки в DDL» — самый крупный блокер EF Core после джойнов: миграции
+создают таблицы с внешними ключами, а вставка и удаление должны отвечать кодами эталона).
+
+Эталон: `org.h2.constraint.ConstraintReferential`, ветка `REFERENTIAL` в
+`org.h2.command.ddl.AlterTableAddConstraint`, разбор `parseTableConstraintIf` /
+`parseReferences` / `parseAction` / `readColumnConstraints`.
+
+Порт:
+* разбор: table-level `FOREIGN KEY (...) REFERENCES [схема.]таблица [(cols)]` с `INDEX`-отказом
+  по имени, `ON UPDATE/DELETE` в любом порядке (`CASCADE`, `RESTRICT`, `NO ACTION`,
+  `SET NULL`, `SET DEFAULT`), `NOT DEFERRABLE`/`DEFERRABLE` читаются и игнорируются, как в
+  эталоне; `NOCHECK`/`CHECK` (по умолчанию проверять); column-level `REFERENCES` с
+  необязательным `CONSTRAINT имя`; `COMMENT` после имени ограничения; `ALTER TABLE ADD`
+  принимает те же формы;
+* `Constraints/ConstraintReferential.cs` — эталонный класс: проверка новой строки
+  (23506), проверка уходящей/меняющейся строки родителя (23503), каскад удаления и
+  обновления, `SET NULL`/`SET DEFAULT` (без умолчания — 23507), пропуск строк с NULL,
+  особый случай само-ссылки, пропуск без изменений, `checkExistingData`, SQL для копии
+  (включая суффикс `NOCHECK`), короткое описание для сообщений;
+* ветка `REFERENTIAL` в `AlterTableAddConstraint`: разрешение таблицы (нет — 42102),
+  маппинг колонок (нет — 42122), счёт колонок (21002), запрет на `GENERATED ALWAYS` с
+  `SET`/каскадом (90155), `areStableComparable` (90153, портирован в `DataType`),
+  требование готового ключа у родителя (нет — 90057, как на JVM по умолчанию), индекс
+  потомка (свой или чужой подходящий), регистрация ограничения на обеих таблицах;
+* `Table.FireRow/FireBeforeRow/FireAfterRow` + флаг `checkForeignKeyConstraints` — вызовы
+  вшиты в `Insert`, `Delete`, `Update` и три ветви `MergeUsing` в тех же местах, что у
+  эталона;
+* каталог: `TABLE_CONSTRAINTS` показывает ключ, `KEY_COLUMN_USAGE` — его колонки,
+  `REFERENTIAL_CONSTRAINTS` заполнен (имя уникального ключа, `NONE`, правила в SQL-форме);
+  `GetAllConstraints` убирает дубли по идентичности — ключ числится на двух таблицах, а в
+  реестре схемы он один.
+
+Отступления, записанные в коде: каскад пишется операциями таблиц под `skipOwnTable`, а не
+повторной подготовкой SQL (параметрический plumbing вложенных команд не проверен);
+`SET REFERENTIAL_INTEGRITY`, `canReference`, временные таблицы и автосоздание ключа у
+родителя не портированы; `Rebuild` пуст (кешированных стейтментов нет); `INDEX`-предложение
+ключа отказывает по имени; сравнение в `existsRow` идёт через сессию, а не
+`compareValues` таблицы.
+
+Заодно: упавший `INSERT` оставлял строку в транзакции, потому что отката стейтмента не
+было (`Command.ExecuteUpdate` прямо писал, что сейвпоинты не портированы). Эталон
+откатывает стейтмент к сейвпоинту, и after-проверки ключа без этого оставляют отвергнутую
+строку написанной — теперь сейвпоинт и откат там, где у эталона. Отдельным дефектом
+записан и виден: обновление первичного ключа (`SetClauseList.prepareUpdate` отказывает) —
+тест `UpdatesOfTheReferencedKey...` помечен `BlockedByPort`, поэтому `ON UPDATE CASCADE`
+и рестрикт обновления ключа сверяются им, а не зелёным набором.
+
+Оракул (`tests/H2Sharp.Tests/ForeignKeyOracleTests.cs`): вставка/удаление/обновление
+потомка, удаление родителя, именованный ключ, column-level, само-ссылка, композитный
+ключ, все пять действий, каталог, все отказы создания — совпадает с JVM. Тесты через
+ADO.NET (`tests/H2Sharp.Data.Tests/H2ForeignKeyTests.cs`): коды 23506/23503/42102/42122/90057,
+каскад, каталог.
+
+Проверено: `H2Sharp.Tests` **1169** (+1 `BlockedByPort` красный по замыслу),
+конформанс-набор **372/947** (было 366), `Data.Tests` 413 (красных нет),
+`MvStore.Tests` 86, `Engine.Tests` 4/9.

@@ -73,6 +73,11 @@ public abstract class Statement
 /// <param name="Generated">the generated expression, or null</param>
 /// <param name="OnUpdate">the expression of the value on update, or null</param>
 /// <param name="DefaultOnNull">whether the default is used for a null value</param>
+/// <param name="RefTableSchema">the schema of the table REFERENCES names, or null</param>
+/// <param name="RefTable">the table REFERENCES names, or null when it names none</param>
+/// <param name="RefColumns">the columns REFERENCES names, or null for the primary key</param>
+/// <param name="RefUpdateAction">what an update of the referenced row does</param>
+/// <param name="RefDeleteAction">what a delete of the referenced row does</param>
 public sealed record ColumnDefinition(
     string Name,
     string Type,
@@ -85,18 +90,39 @@ public sealed record ColumnDefinition(
     Expression? Default = null,
     Expression? Generated = null,
     Expression? OnUpdate = null,
-    bool DefaultOnNull = false);
+    bool DefaultOnNull = false,
+    string? RefTableSchema = null,
+    string? RefTable = null,
+    List<string>? RefColumns = null,
+    Constraints.ConstraintActionType RefUpdateAction = Constraints.ConstraintActionType.NO_ACTION,
+    Constraints.ConstraintActionType RefDeleteAction = Constraints.ConstraintActionType.NO_ACTION);
 
 /// <summary>One table-level constraint of a CREATE TABLE.</summary>
 /// <param name="Name">the name written after CONSTRAINT, or null</param>
 /// <param name="IfNotExists">whether IF NOT EXISTS was written</param>
 /// <param name="Columns">the covered columns, by name</param>
 /// <param name="Hash">whether HASH was written</param>
+/// <param name="Type">the kind of constraint, one of the ALTER TABLE ADD CONSTRAINT types</param>
+/// <param name="Comment">the comment written after the name, or null</param>
+/// <param name="RefTableSchema">the schema of the referenced table, or null for the current one</param>
+/// <param name="RefTable">the referenced table, or null for the statement's own table</param>
+/// <param name="RefColumns">the referenced columns, by name, or null for the primary key</param>
+/// <param name="UpdateAction">what an update of the referenced row does</param>
+/// <param name="DeleteAction">what a delete of the referenced row does</param>
+/// <param name="CheckExisting">whether the existing rows are checked</param>
 public sealed record TableConstraintDefinition(
     string? Name,
     bool IfNotExists,
     List<string> Columns,
-    bool Hash);
+    bool Hash,
+    int Type = CommandInterface.AlterTableAddConstraintPrimaryKey,
+    string? Comment = null,
+    string? RefTableSchema = null,
+    string? RefTable = null,
+    List<string>? RefColumns = null,
+    Constraints.ConstraintActionType UpdateAction = Constraints.ConstraintActionType.NO_ACTION,
+    Constraints.ConstraintActionType DeleteAction = Constraints.ConstraintActionType.NO_ACTION,
+    bool CheckExisting = true);
 
 /// <summary>ALTER TABLE ... ADD/DROP CONSTRAINT.</summary>
 public sealed class AlterTableStatement : Statement
@@ -4794,6 +4820,18 @@ public sealed partial class Parser
                     false, new TableConstraintDefinition(column.ConstraintName, false,
                         [tableColumn.GetName()], column.PrimaryKeyHash)));
             }
+
+            if (column.RefTable is not null)
+            {
+                // One column-level REFERENCES is one foreign key over one column, as in the
+                // reference's readColumnConstraints.
+                create.AddConstraintCommand(CreateAddConstraintCommand(session, statement.Name,
+                    false, new TableConstraintDefinition(column.ConstraintName, false,
+                        [tableColumn.GetName()], Hash: false,
+                        CommandInterface.AlterTableAddConstraintReferential, Comment: null,
+                        column.RefTableSchema, column.RefTable, column.RefColumns,
+                        column.RefUpdateAction, column.RefDeleteAction, CheckExisting: true)));
+            }
         }
 
         foreach (TableConstraintDefinition constraint in statement.Constraints)
@@ -5083,7 +5121,7 @@ public sealed partial class Parser
         string tableName, bool ifTableExists, TableConstraintDefinition constraint)
     {
         Ddl.AlterTableAddConstraint key = new(
-            session, CurrentSchema(session), CommandInterface.AlterTableAddConstraintPrimaryKey,
+            session, CurrentSchema(session), constraint.Type,
             constraint.IfNotExists);
         key.SetTableName(tableName);
         key.SetIfTableExists(ifTableExists);
@@ -5092,14 +5130,49 @@ public sealed partial class Parser
             key.SetConstraintName(constraint.Name);
         }
 
-        key.SetPrimaryKeyHash(constraint.Hash);
-        List<Tables.IndexColumn> keyColumns = [];
-        foreach (string columnName in constraint.Columns)
+        if (constraint.Comment is not null)
         {
-            keyColumns.Add(new Tables.IndexColumn(columnName));
+            key.SetComment(constraint.Comment);
         }
 
-        key.SetIndexColumns([.. keyColumns]);
+        if (constraint.Type == CommandInterface.AlterTableAddConstraintPrimaryKey)
+        {
+            key.SetPrimaryKeyHash(constraint.Hash);
+            List<Tables.IndexColumn> keyColumns = [];
+            foreach (string columnName in constraint.Columns)
+            {
+                keyColumns.Add(new Tables.IndexColumn(columnName));
+            }
+
+            key.SetIndexColumns([.. keyColumns]);
+            return key;
+        }
+
+        List<Tables.IndexColumn> refColumns = [];
+        foreach (string columnName in constraint.Columns)
+        {
+            refColumns.Add(new Tables.IndexColumn(columnName));
+        }
+
+        key.SetIndexColumns([.. refColumns]);
+        Schemas.Schema refSchema = constraint.RefTableSchema is null
+            ? CurrentSchema(session)
+            : session.GetDatabase().GetSchema(constraint.RefTableSchema);
+        key.SetRefTableName(refSchema, constraint.RefTable ?? tableName);
+        if (constraint.RefColumns is not null)
+        {
+            List<Tables.IndexColumn> refIndexColumns = [];
+            foreach (string columnName in constraint.RefColumns)
+            {
+                refIndexColumns.Add(new Tables.IndexColumn(columnName));
+            }
+
+            key.SetRefIndexColumns([.. refIndexColumns]);
+        }
+
+        key.SetUpdateAction(constraint.UpdateAction);
+        key.SetDeleteAction(constraint.DeleteAction);
+        key.SetCheckExisting(constraint.CheckExisting);
         return key;
     }
 
@@ -5564,16 +5637,16 @@ public sealed partial class Parser
             // column; the set of words that can start one is the same one parseTableConstraintIf
             // switches on. A column named like one of them is written quoted, which is another
             // token type, so the words are unambiguous here.
-            if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary)
+            if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary or ParserUtil.Foreign)
             {
-                statement.Constraints.Add(ReadTableConstraint());
+                statement.Constraints.Add(ReadTableConstraint(statement.Name));
                 continue;
             }
 
-            if (CurrentType is ParserUtil.Unique or ParserUtil.Foreign or ParserUtil.Check)
+            if (CurrentType is ParserUtil.Unique or ParserUtil.Check)
             {
                 throw new TODOException(
-                    "Parser.readCreateTable: table constraints other than the primary key are not ported");
+                    "Parser.readCreateTable: table constraints other than the primary and foreign keys are not ported");
             }
 
             string name = ReadIdentifier();
@@ -5650,6 +5723,11 @@ public sealed partial class Parser
                 onUpdateExpression = ReadExpression();
             }
 
+            string? refTableSchema = null;
+            string? refTable = null;
+            List<string>? refColumns = null;
+            Constraints.ConstraintActionType refUpdateAction = Constraints.ConstraintActionType.NO_ACTION;
+            Constraints.ConstraintActionType refDeleteAction = Constraints.ConstraintActionType.NO_ACTION;
             while (CurrentType is ParserUtil.Not or ParserUtil.Null or ParserUtil.Primary
                 or ParserUtil.Key or ParserUtil.Unique or ParserUtil.Constraint)
             {
@@ -5672,10 +5750,25 @@ public sealed partial class Parser
                     case ParserUtil.Constraint:
                         Read();
                         constraintName = ReadIdentifier();
-                        Expect(ParserUtil.Primary, "PRIMARY");
-                        Expect(ParserUtil.Key, "KEY");
-                        primaryKey = true;
-                        primaryKeyHash = IsWord("HASH");
+                        if (CurrentType == ParserUtil.Primary)
+                        {
+                            Read();
+                            Expect(ParserUtil.Key, "KEY");
+                            primaryKey = true;
+                            primaryKeyHash = IsWord("HASH");
+                            break;
+                        }
+
+                        // A named REFERENCES, as the reference's readColumnConstraints reads it:
+                        // the name was the constraint's, and what follows names the parent.
+                        if (!IsWord("REFERENCES"))
+                        {
+                            throw DbException.GetSyntaxError(sql, Current.Start, "PRIMARY");
+                        }
+
+                        ReadReferences(statement.Name, out refTableSchema, out string namedRefTable,
+                            out refColumns, out refUpdateAction, out refDeleteAction);
+                        refTable = namedRefTable;
                         break;
                     default:
                         Read();
@@ -5683,10 +5776,18 @@ public sealed partial class Parser
                 }
             }
 
+            if (refTable is null && IsWord("REFERENCES"))
+            {
+                ReadReferences(statement.Name, out refTableSchema, out string plainRefTable,
+                    out refColumns, out refUpdateAction, out refDeleteAction);
+                refTable = plainRefTable;
+            }
+
             statement.Columns.Add(new ColumnDefinition(
                 name, type, notNull, primaryKey, constraintName, primaryKeyHash,
                 identityOptions, identityGeneratedAlways, defaultExpression, generatedExpression,
-                onUpdateExpression, defaultOnNull));
+                onUpdateExpression, defaultOnNull, refTableSchema, refTable, refColumns,
+                refUpdateAction, refDeleteAction));
         }
         while (ReadIf(Token.Comma));
 
@@ -5698,17 +5799,20 @@ public sealed partial class Parser
     /// Reads a table-level constraint of a CREATE TABLE.
     /// </summary>
     /// <remarks>
-    /// Only PRIMARY KEY runs: the reference's parseTableConstraintIf also reads UNIQUE, FOREIGN
-    /// KEY and CHECK, and those four go to the same AlterTableAddConstraint whose other
-    /// branches are not ported, so the parser refuses them where the reference would accept the
-    /// statements. The column list is read as names; the table resolves them when the command
-    /// runs, as it does on the JVM.
+    /// PRIMARY KEY and FOREIGN KEY run: the reference's parseTableConstraintIf also reads UNIQUE
+    /// and CHECK, and the three kinds go to the same AlterTableAddConstraint whose UNIQUE and
+    /// CHECK branches are not ported, so the parser refuses those two where the reference would
+    /// accept the statements. The column lists are read as names; the tables resolve them when
+    /// the command runs, as they do on the JVM. The table name is the statement's own: a
+    /// REFERENCES without a table names the table being created, as it does on the JVM.
     /// </remarks>
+    /// <param name="tableName">the name of the table being created or changed</param>
     /// <returns>the constraint</returns>
-    private TableConstraintDefinition ReadTableConstraint()
+    private TableConstraintDefinition ReadTableConstraint(string tableName)
     {
         string? name = null;
         bool ifNotExists = false;
+        string? comment = null;
         if (CurrentType == ParserUtil.Constraint)
         {
             Read();
@@ -5721,16 +5825,58 @@ public sealed partial class Parser
             }
 
             name = ReadIdentifier();
+            if (IsWord("COMMENT"))
+            {
+                comment = ReadStringLiteralValue()
+                    ?? throw DbException.GetSyntaxError(sql, Current.Start, "string");
+            }
+        }
+
+        if (CurrentType == ParserUtil.Foreign)
+        {
+            Read();
+            ExpectWord("KEY");
+            Expect(Token.OpenParen, "(");
+            List<string> columns = [];
+            do
+            {
+                columns.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
+            if (IsWord("INDEX", consume: false))
+            {
+                throw new TODOException(
+                    "Parser.readTableConstraint: the INDEX clause of a foreign key is not ported");
+            }
+
+            ExpectWord("REFERENCES");
+            ReadReferences(tableName, out string? refSchemaName, out string refTable, out List<string>? refColumns,
+                out Constraints.ConstraintActionType updateAction, out Constraints.ConstraintActionType deleteAction);
+            bool checkExisting = true;
+            if (IsWord("NOCHECK"))
+            {
+                checkExisting = false;
+            }
+            else
+            {
+                _ = IsWord("CHECK");
+            }
+
+            return new TableConstraintDefinition(name, ifNotExists, columns, Hash: false,
+                CommandInterface.AlterTableAddConstraintReferential, comment,
+                refSchemaName, refTable, refColumns, updateAction, deleteAction, checkExisting);
         }
 
         Expect(ParserUtil.Primary, "PRIMARY");
         Expect(ParserUtil.Key, "KEY");
         bool hash = IsWord("HASH");
         Expect(Token.OpenParen, "(");
-        List<string> columns = [];
+        List<string> keyColumns = [];
         do
         {
-            columns.Add(ReadIdentifier());
+            keyColumns.Add(ReadIdentifier());
         }
         while (ReadIf(Token.Comma));
 
@@ -5741,7 +5887,145 @@ public sealed partial class Parser
                 "Parser.readTableConstraint: the INDEX clause of a primary key is not ported");
         }
 
-        return new TableConstraintDefinition(name, ifNotExists, columns, hash);
+        return new TableConstraintDefinition(name, ifNotExists, keyColumns, hash,
+            CommandInterface.AlterTableAddConstraintPrimaryKey, comment);
+    }
+
+    /// <summary>
+    /// Reads what REFERENCES names and what happens to the rows that point at the row: the
+    /// table, its columns, and the ON UPDATE and ON DELETE actions.
+    /// </summary>
+    /// <remarks>
+    /// The reference's parseReferences. A table in parentheses is the statement's own table;
+    /// NOT DEFERRABLE and DEFERRABLE are read and ignored, as they are on the JVM.
+    /// </remarks>
+    /// <param name="tableName">the name of the statement's own table</param>
+    /// <param name="refSchemaName">the schema of the referenced table, or null</param>
+    /// <param name="refTable">the referenced table</param>
+    /// <param name="refColumns">the referenced columns, or null for the primary key</param>
+    /// <param name="updateAction">what an update of the referenced row does</param>
+    /// <param name="deleteAction">what a delete of the referenced row does</param>
+    private void ReadReferences(
+        string tableName,
+        out string? refSchemaName,
+        out string refTable,
+        out List<string>? refColumns,
+        out Constraints.ConstraintActionType updateAction,
+        out Constraints.ConstraintActionType deleteAction)
+    {
+        if (ReadIf(Token.OpenParen))
+        {
+            refSchemaName = null;
+            refTable = tableName;
+            refColumns = [];
+            do
+            {
+                refColumns.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
+        }
+        else
+        {
+            refTable = ReadIdentifierWithSchemaName(out refSchemaName);
+            refColumns = null;
+            if (ReadIf(Token.OpenParen))
+            {
+                refColumns = [];
+                do
+                {
+                    refColumns.Add(ReadIdentifier());
+                }
+                while (ReadIf(Token.Comma));
+
+                Expect(Token.CloseParen, ")");
+            }
+        }
+
+        if (IsWord("INDEX", consume: false))
+        {
+            throw new TODOException(
+                "Parser.readReferences: the INDEX clause of a foreign key is not ported");
+        }
+
+        updateAction = Constraints.ConstraintActionType.NO_ACTION;
+        deleteAction = Constraints.ConstraintActionType.NO_ACTION;
+        if (AtOn("UPDATE"))
+        {
+            Read();
+            Read();
+            updateAction = ReadReferentialAction();
+            if (AtOn("DELETE"))
+            {
+                Read();
+                Read();
+                deleteAction = ReadReferentialAction();
+            }
+        }
+        else if (AtOn("DELETE"))
+        {
+            Read();
+            Read();
+            deleteAction = ReadReferentialAction();
+            if (AtOn("UPDATE"))
+            {
+                Read();
+                Read();
+                updateAction = ReadReferentialAction();
+            }
+        }
+
+        if (IsWord("NOT", consume: false) && NextIs("DEFERRABLE"))
+        {
+            Read();
+            Read();
+        }
+        else
+        {
+            _ = IsWord("DEFERRABLE");
+        }
+    }
+
+    /// <summary>
+    /// Whether ON and the given word stand next.
+    /// </summary>
+    /// <param name="word">the word after ON</param>
+    /// <returns>true when they do</returns>
+    private bool AtOn(string word) => IsWord("ON", consume: false) && NextIs(word);
+
+    /// <summary>
+    /// Reads what a delete or an update of the referenced row does to the rows that point at
+    /// it, as the reference's parseAction does.
+    /// </summary>
+    /// <returns>the action</returns>
+    private Constraints.ConstraintActionType ReadReferentialAction()
+    {
+        if (IsWord("CASCADE"))
+        {
+            return Constraints.ConstraintActionType.CASCADE;
+        }
+
+        if (IsWord("RESTRICT"))
+        {
+            return Constraints.ConstraintActionType.RESTRICT;
+        }
+
+        if (IsWord("NO", consume: false) && NextIs("ACTION"))
+        {
+            Read();
+            Read();
+            return Constraints.ConstraintActionType.NO_ACTION;
+        }
+
+        ExpectWord("SET");
+        if (IsWord("NULL"))
+        {
+            return Constraints.ConstraintActionType.SET_NULL;
+        }
+
+        ExpectWord("DEFAULT");
+        return Constraints.ConstraintActionType.SET_DEFAULT;
     }
 
     /// <summary>
@@ -5824,9 +6108,9 @@ public sealed partial class Parser
 
         if (IsWord("ADD"))
         {
-            if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary)
+            if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary or ParserUtil.Foreign)
             {
-                statement.AddConstraint = ReadTableConstraint();
+                statement.AddConstraint = ReadTableConstraint(statement.Name);
                 return statement;
             }
 

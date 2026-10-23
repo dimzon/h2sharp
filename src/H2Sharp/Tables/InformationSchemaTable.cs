@@ -17,8 +17,8 @@
  * * The legacy catalogue, InformationSchemaTableLegacy: the reference reaches it through a
  *   session flag that this port does not have.
  * * The rows of the views whose objects the port does not have: there are no users, roles,
- *   rights, aliases, domains, constants, triggers or synonyms here, and no foreign keys or
- *   check constraints, so those views are empty. The views themselves are here, with the
+ *   rights, aliases, domains, constants, triggers or synonyms here, and no check
+ *   constraints, so those views are empty. The views themselves are here, with the
  *   columns of the reference, so that a query against one of them is answered and not
  *   refused.
  */
@@ -999,6 +999,16 @@ public sealed class InformationSchemaTable : Table
                 }
 
                 break;
+            case ReferentialConstraints:
+                foreach (Constraint constraint in GetAllConstraints(session))
+                {
+                    if (constraint is ConstraintReferential referential)
+                    {
+                        AddReferentialConstraints(session, rows, catalog, referential);
+                    }
+                }
+
+                break;
             case KeyColumnUsage:
                 foreach (Constraint constraint in GetAllConstraints(session))
                 {
@@ -1119,7 +1129,6 @@ public sealed class InformationSchemaTable : Table
             case Fields:
             case EnumValues:
             case CheckConstraints:
-            case ReferentialConstraints:
             case Triggers:
             case Synonyms:
                 // The objects these views list do not exist in this port yet, so the views
@@ -1152,6 +1161,13 @@ public sealed class InformationSchemaTable : Table
     /// <summary>
     /// All the constraints of the database, the constraints of the tables of the schemas.
     /// </summary>
+    /// <remarks>
+    /// The reference walks the registry of each schema, where every constraint is one object.
+    /// That walk is not ported, so this walks the tables instead — and a referential
+    /// constraint is on two tables' lists, the one it belongs to and the one it points at.
+    /// The answers are the same objects, so the duplicates are dropped by identity: the set
+    /// is what the reference lists, in the order the tables list it.
+    /// </remarks>
     /// <param name="session">the session</param>
     /// <returns>the constraints</returns>
     private static List<Constraint> GetAllConstraints(SessionLocal session)
@@ -1159,7 +1175,13 @@ public sealed class InformationSchemaTable : Table
         List<Constraint> constraints = [];
         foreach (Table table in GetAllTables(session))
         {
-            constraints.AddRange(table.GetConstraints());
+            foreach (Constraint constraint in table.GetConstraints())
+            {
+                if (!constraints.Contains(constraint))
+                {
+                    constraints.Add(constraint);
+                }
+            }
         }
 
         return constraints;
@@ -1460,6 +1482,37 @@ public sealed class InformationSchemaTable : Table
     }
 
     /// <summary>
+    /// The row of the REFERENTIAL_CONSTRAINTS view for one foreign key.
+    /// </summary>
+    /// <remarks>
+    /// The reference's rows, verbatim: the constraint and the unique constraint it points
+    /// at, MATCH_OPTION NONE, and the two rules in their SQL spelling.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="rows">the rows</param>
+    /// <param name="catalog">the catalog name</param>
+    /// <param name="constraint">the constraint</param>
+    private static void AddReferentialConstraints(
+        SessionLocal session,
+        List<Value[]> rows,
+        string catalog,
+        ConstraintReferential constraint)
+    {
+        ConstraintUnique unique = constraint.GetReferencedConstraint()!;
+        Add(
+            rows,
+            catalog,
+            constraint.GetSchema()?.GetName(),
+            constraint.GetName(),
+            catalog,
+            unique.GetSchema()?.GetName(),
+            unique.GetName(),
+            "NONE",
+            ConstraintActionTypeRules.GetSqlName(constraint.GetUpdateAction()),
+            ConstraintActionTypeRules.GetSqlName(constraint.GetDeleteAction()));
+    }
+
+    /// <summary>
     /// The rows of the KEY_COLUMN_USAGE view for one constraint.
     /// </summary>
     /// <param name="session">the session</param>
@@ -1472,13 +1525,19 @@ public sealed class InformationSchemaTable : Table
         string catalog,
         Constraint constraint)
     {
-        if (constraint is not ConstraintUnique unique)
+        IndexColumn[]? indexColumns = constraint switch
+        {
+            ConstraintUnique unique => unique.GetColumns(),
+            ConstraintReferential referential => referential.GetColumns(),
+            _ => null,
+        };
+
+        if (indexColumns is null)
         {
             return;
         }
 
         Table table = constraint.GetTable();
-        IndexColumn[] indexColumns = unique.GetColumns();
         for (int i = 0; i < indexColumns.Length; i++)
         {
             Add(

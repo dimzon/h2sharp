@@ -183,7 +183,7 @@ public class ConstraintUnique : Constraint
 
     /// <inheritdoc/>
     /// <remarks>Unique index check is enough.</remarks>
-    public override void CheckRow(SessionLocal session, Table t, Row oldRow, Row newRow)
+    public override void CheckRow(SessionLocal session, Table t, Row? oldRow, Row? newRow)
     {
         _ = session;
         _ = t;

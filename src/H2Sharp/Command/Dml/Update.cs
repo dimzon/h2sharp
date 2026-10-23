@@ -99,10 +99,18 @@ public sealed class Update : FilteredDataChangeStatement
                 deltaChangeCollector?.AddRow([.. newRow.GetValueList()]);
             }
 
-            table.UpdateRow(session, row, newRow);
-            if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.FINAL)
+            // The reference fires the before-row in SetClauseList.prepareUpdate and the
+            // after-row in a batch after the write; with one row at a time the pair fires
+            // around the write, with the same checks.
+            if (!table.FireRow() || !table.FireBeforeRow(session, row, newRow))
             {
-                deltaChangeCollector?.AddRow(newRow.GetValueList());
+                table.UpdateRow(session, row, newRow);
+                if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.FINAL)
+                {
+                    deltaChangeCollector?.AddRow(newRow.GetValueList());
+                }
+
+                table.FireAfterRow(session, row, newRow, rollback: false);
             }
 
             count++;

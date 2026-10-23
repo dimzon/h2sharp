@@ -22,6 +22,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Text;
 using H2Sharp.Constraints;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
@@ -131,10 +132,10 @@ public class AlterTableAddConstraint : AlterTable
     /// Try to execute the statement.
     /// </summary>
     /// <remarks>
-    /// Only the primary key runs: every other constraint needs the check machinery that has
-    /// not been ported, and the switch answers them the way the reference answers an unknown
-    /// type — internally. The primary key creates its index and then the ConstraintUnique that
-    /// owns it, and the pair is what the schema registers: the index enforces uniqueness, the
+    /// The primary key and the foreign key run; UNIQUE and CHECK need the constraint machinery
+    /// that has not been ported, so the switch answers them the way the reference answers an
+    /// unknown type — internally. The primary key creates its index and then the ConstraintUnique
+    /// that owns it, and the pair is what the schema registers: the index enforces uniqueness, the
     /// constraint carries the name that the duplicate-key message prints and DROP releases.
     /// </remarks>
     /// <param name="table">the table</param>
@@ -216,8 +217,140 @@ public class AlterTableAddConstraint : AlterTable
                     break;
                 }
 
+            case CommandInterface.AlterTableAddConstraintReferential:
+                {
+                    // The rights check of the reference waits for the user layer: refusing here
+                    // would refuse every foreign key on a database that has no users yet. The
+                    // canReference question has the same fate: every table here is a plain table,
+                    // and a view that cannot be referenced does not exist yet.
+                    Table? refTable = refSchema?.FindTableOrView(GetSession(), refTableName!);
+                    if (refTable is null)
+                    {
+                        throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, refTableName);
+                    }
+
+                    if (table.IsTemporary() != refTable.IsTemporary())
+                    {
+                        throw DbException.GetUnsupportedException(
+                            "referential constraint uses temporary table " + GetTableName());
+                    }
+
+                    bool isOwner = false;
+                    IndexColumn[] keyColumns = IndexColumn.MapColumns(indexColumns, table);
+                    IndexColumn[] refKeyColumns;
+                    if (refIndexColumns is null)
+                    {
+                        refKeyColumns = refTable.GetPrimaryKey().GetColumns();
+                    }
+                    else
+                    {
+                        refKeyColumns = IndexColumn.MapColumns(refIndexColumns, refTable);
+                    }
+
+                    int columnCount = keyColumns.Length;
+                    if (refKeyColumns.Length != columnCount)
+                    {
+                        throw DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
+                    }
+
+                    foreach (IndexColumn indexColumn in keyColumns)
+                    {
+                        Column column = indexColumn.GetColumn();
+                        if (column.IsGeneratedAlways())
+                        {
+                            switch (deleteAction)
+                            {
+                                case ConstraintActionType.SET_DEFAULT:
+                                case ConstraintActionType.SET_NULL:
+                                    throw DbException.Get(
+                                        Api.ErrorCode.GeneratedColumnCannotBeUpdatableByConstraint2,
+                                        column.GetSqlWithTable(
+                                            new StringBuilder(), Util.HasSql.TraceSqlFlags).ToString(),
+                                        "ON DELETE " + ConstraintActionTypeRules.GetSqlName(deleteAction));
+                                default:
+                                    break;
+                            }
+
+                            switch (updateAction)
+                            {
+                                case ConstraintActionType.CASCADE:
+                                case ConstraintActionType.SET_DEFAULT:
+                                case ConstraintActionType.SET_NULL:
+                                    throw DbException.Get(
+                                        Api.ErrorCode.GeneratedColumnCannotBeUpdatableByConstraint2,
+                                        column.GetSqlWithTable(
+                                            new StringBuilder(), Util.HasSql.TraceSqlFlags).ToString(),
+                                        "ON UPDATE " + ConstraintActionTypeRules.GetSqlName(updateAction));
+                                default:
+                                    break;
+                            }
+                        }
+                    }
+
+                    for (int i = 0; i < columnCount; i++)
+                    {
+                        Column column1 = keyColumns[i].GetColumn();
+                        Column column2 = refKeyColumns[i].GetColumn();
+                        if (!Values.DataType.AreStableComparable(column1.GetTypeInfo(), column2.GetTypeInfo()))
+                        {
+                            throw DbException.Get(Api.ErrorCode.UncomparableReferencedColumn2,
+                                column1.GetCreateSql(), column2.GetCreateSql());
+                        }
+                    }
+
+                    ConstraintUnique? unique = GetUniqueConstraint(refTable, refKeyColumns);
+                    if (unique is null)
+                    {
+                        // The reference creates the missing unique constraint when the mode asks
+                        // for it; the mode flag is not ported, so the answer is the default JVM
+                        // one: the referenced columns must already be a key.
+                        throw DbException.Get(Api.ErrorCode.ConstraintNotFound1,
+                            IndexColumn.WriteColumns(
+                                new StringBuilder("PRIMARY KEY | UNIQUE ("), refKeyColumns,
+                                Util.HasSql.TraceSqlFlags).Append(')').ToString());
+                    }
+
+                    if (index is not null && CanUseIndex(index, table, keyColumns, null))
+                    {
+                        isOwner = true;
+                        index.GetIndexType()!.SetBelongsToConstraint(true);
+                    }
+                    else
+                    {
+                        H2Sharp.Indexes.Index? existing = GetIndex(table, keyColumns, null);
+                        if (existing is null)
+                        {
+                            index = CreateConstraintIndex(table, keyColumns);
+                            isOwner = true;
+                        }
+                        else
+                        {
+                            index = existing;
+                        }
+                    }
+
+                    int refId = db.AllocateObjectId();
+                    string refName = GenerateConstraintName(table);
+                    ConstraintReferential refConstraint = new(GetSchema(), refId, refName, table);
+                    refConstraint.SetColumns(keyColumns);
+                    refConstraint.SetIndex(index, isOwner);
+                    refConstraint.SetRefTable(refTable);
+                    refConstraint.SetRefColumns(refKeyColumns);
+                    refConstraint.SetRefConstraint(unique);
+                    if (checkExisting)
+                    {
+                        refConstraint.CheckExistingData(GetSession());
+                    }
+
+                    refTable.AddConstraint(refConstraint);
+                    refConstraint.SetDeleteAction(deleteAction);
+                    refConstraint.SetUpdateAction(updateAction);
+                    constraint = refConstraint;
+                    break;
+                }
+
             default:
-                throw new TODOException("AlterTableAddConstraint.update: only the primary key constraint is ported");
+                throw new TODOException("AlterTableAddConstraint.update: unique and check constraints are not ported");
         }
 
         // parent relationship is already set with addConstraint
@@ -418,5 +551,136 @@ public class AlterTableAddConstraint : AlterTable
     public void SetPrimaryKeyHash(bool b)
     {
         primaryKeyHash = b;
+    }
+
+    /// <summary>
+    /// The unique constraint of the table whose index the given columns can use, or null.
+    /// </summary>
+    /// <param name="table">the table</param>
+    /// <param name="cols">the columns</param>
+    /// <returns>the constraint, or null</returns>
+    private static ConstraintUnique? GetUniqueConstraint(Table table, IndexColumn[] cols)
+    {
+        foreach (Constraint constraint in table.GetConstraints())
+        {
+            if (ReferenceEquals(constraint.GetTable(), table))
+            {
+                if (ConstraintTypeRules.IsUnique(constraint.GetConstraintType()))
+                {
+                    if (CanUseIndex(constraint.GetIndex()!, table, cols, Engine.NullsDistinct.Distinct))
+                    {
+                        return (ConstraintUnique)constraint;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The index of the table the given columns can use, or null.
+    /// </summary>
+    /// <param name="table">the table</param>
+    /// <param name="cols">the columns</param>
+    /// <param name="nullsDistinct">how NULLs compare, or null for a non-unique index</param>
+    /// <returns>the index, or null</returns>
+    private static H2Sharp.Indexes.Index? GetIndex(Table table, IndexColumn[] cols, Engine.NullsDistinct? nullsDistinct)
+    {
+        H2Sharp.Indexes.Index? result = null;
+        foreach (H2Sharp.Indexes.Index idx in table.GetIndexes())
+        {
+            if (CanUseIndex(idx, table, cols, nullsDistinct))
+            {
+                if (result is null || idx.GetColumns().Length < result.GetColumns().Length)
+                {
+                    result = idx;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Whether the index serves the given columns.
+    /// </summary>
+    /// <param name="index">the index</param>
+    /// <param name="table">the table</param>
+    /// <param name="cols">the columns</param>
+    /// <param name="nullsDistinct">how NULLs compare, or null for a non-unique index</param>
+    /// <returns>true when it does</returns>
+    private static bool CanUseIndex(
+        H2Sharp.Indexes.Index index, Table table, IndexColumn[] cols, Engine.NullsDistinct? nullsDistinct)
+    {
+        if (!ReferenceEquals(index.GetTable(), table))
+        {
+            return false;
+        }
+
+        int allowedColumns;
+        if (nullsDistinct is not null)
+        {
+            allowedColumns = index.GetUniqueColumnCount();
+            if (allowedColumns != cols.Length)
+            {
+                return false;
+            }
+
+            if (index.GetIndexType()?.GetEffectiveNullsDistinct()?.CompareTo(nullsDistinct.Value) < 0)
+            {
+                return false;
+            }
+        }
+        else
+        {
+            if (index.GetCreateSql() is null || (allowedColumns = index.GetColumns().Length) != cols.Length)
+            {
+                return false;
+            }
+        }
+
+        foreach (IndexColumn col in cols)
+        {
+            // all columns of the list must be part of the index
+            int i = index.GetColumnIndex(col.GetColumn());
+            if (i < 0 || i >= allowedColumns)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Creates the index the foreign key walks.
+    /// </summary>
+    /// <remarks>
+    /// Named CreateConstraintIndex rather than the reference's createIndex: a class of the
+    /// statement's own namespace is already called CreateIndex, and a method of the same name
+    /// would not resolve. The body is the reference's.
+    /// </remarks>
+    /// <param name="table">the table</param>
+    /// <param name="cols">the columns</param>
+    /// <returns>the index</returns>
+    private H2Sharp.Indexes.Index CreateConstraintIndex(Table table, IndexColumn[] cols)
+    {
+        int indexId = GetSession().GetDatabase().AllocateObjectId();
+        Indexes.IndexType indexType = Indexes.IndexType.CreateNonUnique(table.IsPersistIndexes());
+        indexType.SetBelongsToConstraint(true);
+        string prefix = constraintName is null ? "CONSTRAINT" : constraintName;
+        string indexName = table.GetSchema()!.GetUniqueIndexName(GetSession(), table, prefix + "_INDEX_");
+        try
+        {
+            H2Sharp.Indexes.Index index = table.AddIndex(
+                GetSession(), indexName, indexId, cols, uniqueColumnCount: 0, indexType, create: true, indexComment: null);
+            createdIndexes.Add(index);
+            return index;
+        }
+        finally
+        {
+            GetSchema().FreeUniqueName(indexName);
+        }
     }
 }

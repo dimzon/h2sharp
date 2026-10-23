@@ -151,9 +151,20 @@ public sealed class Insert : CommandWithValues
                 deltaChangeCollector?.AddRow([.. newRow.GetValueList()]);
             }
 
-            target.AddRow(session, newRow);
-            Tables.DataChangeDeltaTable.CollectForInsert(
-                session, target, deltaChangeCollector, deltaChangeCollectionMode, newRow);
+            // The reference fires the before-row triggers without asking fireRow first; the
+            // after-row fires only for the row that was written.
+            if (!target.FireBeforeRow(session, null, newRow))
+            {
+                target.AddRow(session, newRow);
+                Tables.DataChangeDeltaTable.CollectForInsert(
+                    session, target, deltaChangeCollector, deltaChangeCollectionMode, newRow);
+                target.FireAfterRow(session, null, newRow, rollback: false);
+            }
+            else
+            {
+                Tables.DataChangeDeltaTable.CollectForInsert(
+                    session, target, deltaChangeCollector, deltaChangeCollectionMode, newRow);
+            }
         }
 
         return rowNumber;

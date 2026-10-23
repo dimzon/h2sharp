@@ -92,11 +92,16 @@ public abstract class Constraint : SchemaObject, IComparable<Constraint>
     /// <summary>
     /// Check if this row fulfils the constraint. This method throws an exception if not.
     /// </summary>
+    /// <remarks>
+    /// The rows are null where there is no row: the old one on an insert, the new one on a
+    /// delete. Java expresses that with a nullable reference and C# with a nullable one; the
+    /// signature is the reference's, with the question marks the language requires.
+    /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="t">the table</param>
     /// <param name="oldRow">the old row</param>
     /// <param name="newRow">the new row</param>
-    public abstract void CheckRow(SessionLocal session, Table t, Row oldRow, Row newRow);
+    public abstract void CheckRow(SessionLocal session, Table t, Row? oldRow, Row? newRow);
 
     /// <summary>
     /// Check if this constraint needs the specified index.
@@ -190,7 +195,7 @@ public abstract class Constraint : SchemaObject, IComparable<Constraint>
     /// a referential constraint.
     /// </summary>
     /// <returns>the table</returns>
-    public Table GetRefTable()
+    public virtual Table GetRefTable()
     {
         return table;
     }

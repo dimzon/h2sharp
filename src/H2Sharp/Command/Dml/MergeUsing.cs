@@ -457,7 +457,11 @@ public sealed class MergeUsing : DataChangeStatement
             }
 
             // The reference fires the row triggers around the delete; the port has none.
-            table.RemoveRow(session, row.GetKey());
+            if (!table.FireRow() || !table.FireBeforeRow(session, row, null))
+            {
+                table.RemoveRow(session, row.GetKey());
+                table.FireAfterRow(session, row, null, rollback: false);
+            }
         }
 
         /// <inheritdoc/>
@@ -509,7 +513,12 @@ public sealed class MergeUsing : DataChangeStatement
                 deltaChangeCollector?.AddRow([.. newRow.GetValueList()]);
             }
 
-            table.UpdateRow(session, oldRow, newRow);
+            if (!table.FireRow() || !table.FireBeforeRow(session, oldRow, newRow))
+            {
+                table.UpdateRow(session, oldRow, newRow);
+                table.FireAfterRow(session, oldRow, newRow, rollback: false);
+            }
+
             if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.FINAL)
             {
                 deltaChangeCollector?.AddRow(newRow.GetValueList());
@@ -599,7 +608,12 @@ public sealed class MergeUsing : DataChangeStatement
                 deltaChangeCollector?.AddRow([.. newRow.GetValueList()]);
             }
 
-            _ = table.AddRow(session, newRow);
+            if (!table.FireBeforeRow(session, null, newRow))
+            {
+                _ = table.AddRow(session, newRow);
+                table.FireAfterRow(session, null, newRow, rollback: false);
+            }
+
             Tables.DataChangeDeltaTable.CollectForInsert(
                 session, table, deltaChangeCollector, deltaChangeCollectionMode, newRow);
         }
