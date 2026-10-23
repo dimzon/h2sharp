@@ -2414,16 +2414,23 @@ public sealed partial class Parser
             List<Query.QueryOrderBy> order = [];
             do
             {
+                // H2 parseEndOfQuery reads the whole expression before deciding whether
+                // an integer literal is a select-list position.
+                bool canBeNumber = CurrentType == Token.Literal;
                 Query.QueryOrderBy item = new();
-                if (Current.GetValue(provider) is Values.ValueInteger position)
+                Expression expression = ReadQueryOr(select);
+                if (canBeNumber && expression is Expressions.ValueExpression
+                    && expression.GetTypeInfo().GetValueType() == Value.Integer)
                 {
-                    Read();
-                    item.columnIndexExpr = Expressions.ValueExpression.Get(position);
+                    item.columnIndexExpr = expression;
+                }
+                else if (expression is Expressions.Parameter)
+                {
+                    throw new TODOException("Parser.parseEndOfQuery: positional ORDER BY parameter needs command recompilation");
                 }
                 else
                 {
-                    string orderColumn = ReadQueryColumnName(out string? orderTable);
-                    item.expression = new Expressions.ExpressionColumn(orderColumn, orderTable, 0);
+                    item.expression = expression;
                 }
 
                 item.sortType = ReadQuerySortType();

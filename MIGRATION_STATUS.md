@@ -6351,3 +6351,45 @@ DAY TO SECOND как TimeSpan, DateTime/TimeSpan-параметры и ошиб�
 `MvStore.Tests` **86/86**; после добавления четвёртого оракульного теста отдельно
 `DateTimeArithmeticOracleTests` **4/4**. `Engine.Tests` **4/9** — прежние пять
 TestIndex на закрытом подключении. Конформанс **500/947** (было 456, +44).
+
+**Выражения в ORDER BY — `0.1.31-alpha.1`, issue #21.**
+
+В `Parser.ParseQuerySelect` перенесена ветка ORDER BY из
+`org.h2.command.Parser.parseEndOfQuery` H2 2.5: сначала фиксируется, был ли
+первый токен литералом, затем читается полное выражение (`readExpression` →
+`ReadQueryOr(select)`). Только прочитанный ValueExpression типа INTEGER,
+начавшийся с литерала, становится `columnIndexExpr`; остальные выражения
+остаются `expression`. Поэтому `ORDER BY 100 - ID` и `1 + 0` больше не
+обрываются после первого числа, а `(1)` и `-1` сохраняют эталонную семантику
+констант, не номеров колонок. Направление и NULLS FIRST/LAST читаются после
+выражения. Агрегаты разбираются с текущим Select, как в эталоне.
+
+`Query.InitOrder`, `InitExpression`, `CheckOrderOther` и этапы Select.Init
+сопоставлены с той же версией Java: они уже поддерживали скрытые выражения
+сортировки, совпадения с проекцией и проверку DISTINCT. Для исправления
+парсера новый алгоритм сортировки не понадобился. Скрытая колонка не входит
+в FieldCount или GetSchemaTable результата.
+
+`OrderByExpressionOracleTests`: два зелёных теста построчно против JDBC,
+включая количество видимых колонок: MOD/% из issue, выражение вне проекции,
+CASE, LOWER, сравнения, ROW, функции даты с quoted-алиасами, DESC/NULLS,
+LIMIT/OFFSET, номера колонок и ошибки 90068, константы, эталонные ошибки
+ссылок на алиасы внутри выражений, DISTINCT и сортировка по COUNT(*).
+Подготовленный запрос `ORDER BY MOD(N, ?) ... LIMIT ?` исполняется повторно
+с разными параметрами. `H2OrderByExpressionTests`: три ADO.NET/Dapper-теста —
+точный пример #21, параметр в сортировочном выражении, серверная сортировка
+дней недели и группировка с ORDER BY COUNT(*), проверка отсутствия скрытых
+колонок в метаданных.
+
+**Оставшийся дефект #28:** параметр именно как позиция (`ORDER BY ?`) в Java
+задаёт `recompileAlways` и требует `CommandContainer.recompileIfRequired`
+с `Parser.setSuppliedParameters`. Этот механизм пока не перенесён. Ветка
+отказывает TODOException с его именем; сохранён JVM-парный тест
+`PositionalOrderParameterNeedsCommandRecompilation` с `Category=BlockedByPort`.
+Его отдельный прогон красный по этой причине, JDBC возвращает ID 2,3,1
+при параметре 2. Параметры внутри выражений работают.
+
+Проверено: `dotnet test H2Sharp.sln --filter "Category!=BlockedByPort"`:
+`H2Sharp.Tests` **1188/1188**, `Data.Tests` **432/432**, `MvStore.Tests` **86/86**.
+`Engine.Tests` **4/9** — прежние пять TestIndex на закрытом подключении.
+Конформанс **500/947**. Отдельный BlockedByPort-тест подтверждает дефект #28.
