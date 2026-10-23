@@ -3656,6 +3656,12 @@ public sealed partial class Parser
 
         if (ReadIf(Token.OpenParen))
         {
+            // H2 readTermWithoutIdentifier: an empty parenthesized value is an empty ROW.
+            if (ReadIf(Token.CloseParen))
+            {
+                return Expressions.ValueExpression.Get(ValueRow.Empty);
+            }
+
             Expressions.Expression nested = ReadQueryOr(aggregateSelect);
             if (ReadIf(Token.Comma))
             {
