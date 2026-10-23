@@ -58,8 +58,10 @@ public sealed class Update : FilteredDataChangeStatement
     /// <remarks>
     /// Collected first, written after: the scan walks the live index, and writing while it
     /// walks would move what it has not read yet. The reference stages the rows the same way
-    /// before it writes them. Locks, triggers, delta collectors and FETCH limits wait for
-    /// their layers.
+    /// before it writes them. The new rows are built while the scan is on the row: the
+    /// assigned expressions read the row through the filter, and a filter the scan has left
+    /// answers with the row it stands on no longer. Locks, triggers, delta collectors and
+    /// FETCH limits wait for their layers.
     /// </remarks>
     public override long Run(ResultTarget? deltaChangeCollector, Tables.DataChangeDeltaTable.ResultOption? deltaChangeCollectionMode)
     {
@@ -71,22 +73,18 @@ public sealed class Update : FilteredDataChangeStatement
         filter.SetIndex(table.GetScanIndex(session)!, reverse: false);
         filter.StartQuery(session);
         filter.Reset();
-        List<Result.Row> matched = [];
+        List<(Result.Row OldRow, Result.Row NewRow)> staged = [];
         Expressions.Expression? condition = GetCondition();
+        long count = 0;
         while (filter.Next())
         {
             Result.Row? row = filter.Get();
             session.SetCurrentRow(row);
-            if (row is not null && (condition is null || condition.GetBooleanValue(session)))
+            if (row is null || (condition is not null && !condition.GetBooleanValue(session)))
             {
-                matched.Add(row);
+                continue;
             }
-        }
 
-        long count = 0;
-        foreach (Result.Row row in matched)
-        {
-            session.SetCurrentRow(row);
             Result.Row newRow = assignments.PrepareUpdate(session, row);
             if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.OLD)
             {
@@ -99,21 +97,28 @@ public sealed class Update : FilteredDataChangeStatement
                 deltaChangeCollector?.AddRow([.. newRow.GetValueList()]);
             }
 
-            // The reference fires the before-row in SetClauseList.prepareUpdate and the
-            // after-row in a batch after the write; with one row at a time the pair fires
-            // around the write, with the same checks.
+            // The reference fires the before-row in SetClauseList.prepareUpdate and stages the
+            // pair; the write is a batch after. The FINAL row is collected here either way, as
+            // it is there.
             if (!table.FireRow() || !table.FireBeforeRow(session, row, newRow))
             {
-                table.UpdateRow(session, row, newRow);
-                if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.FINAL)
-                {
-                    deltaChangeCollector?.AddRow(newRow.GetValueList());
-                }
+                staged.Add((row, newRow));
+            }
 
-                table.FireAfterRow(session, row, newRow, rollback: false);
+            if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.FINAL)
+            {
+                deltaChangeCollector?.AddRow(newRow.GetValueList());
             }
 
             count++;
+        }
+
+        // One batch for all pairs, as in the reference's doUpdate: the old rows go first and
+        // the new ones after, so two rows swapping their keys do not collide halfway.
+        table.UpdateRows(session, staged);
+        foreach ((Result.Row oldRow, Result.Row newRow) in staged)
+        {
+            table.FireAfterRow(session, oldRow, newRow, rollback: false);
         }
 
         session.SetCurrentRow(null);

@@ -1891,6 +1891,48 @@ public abstract class Table
     public abstract Index? GetIndexFor(H2Sharp.Engine.SessionLocal session, SearchRow row);
 
     /// <summary>
+    /// Replaces the rows with the same keys.
+    /// </summary>
+    /// <remarks>
+    /// The reference's updateRows: the old rows go first and the new ones after, so that two
+    /// rows swapping their keys do not collide halfway. A failure rolls back to the savepoint
+    /// the call took; the statement around it rolls back further, to its own.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="rows">the old and new rows, in pairs</param>
+    public virtual void UpdateRows(H2Sharp.Engine.SessionLocal session, List<(Row OldRow, Row NewRow)> rows)
+    {
+        H2Sharp.MvStore.Tx.Transaction transaction = session.GetTransaction();
+        long savepoint = transaction.SetSavepoint();
+        try
+        {
+            foreach ((Row oldRow, Row _) in rows)
+            {
+                RemoveRow(session, oldRow.GetKey());
+            }
+
+            foreach ((Row _, Row newRow) in rows)
+            {
+                _ = AddRow(session, newRow);
+            }
+        }
+        catch (H2SharpException)
+        {
+            try
+            {
+                transaction.RollbackToSavepoint(savepoint);
+            }
+            catch
+            {
+                // The reference records the rollback failure as suppressed; a plain .NET
+                // exception carries none, and the write's own failure is what the caller sees.
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Adds a row to this table.
     /// </summary>
     /// <param name="session">the session</param>

@@ -190,14 +190,8 @@ public sealed class ForeignKeyOracleTests
     }
 
     /// <summary>
-    /// Updates of the referenced key, the same on both sides once the port updates keys.
+    /// Updates of the referenced key, the same on both sides.
     /// </summary>
-    /// <remarks>
-    /// Blocked by the port: updating a primary key is not ported
-    /// (SetClauseList.prepareUpdate refuses it), and a foreign key can only point at a key.
-    /// The reference restricts and cascades the update; the port refuses the statement.
-    /// </remarks>
-    [Trait("Category", "BlockedByPort")]
     [JavaOracleFact]
     public void UpdatesOfTheReferencedKeyAreTheSameAsTheReference()
     {

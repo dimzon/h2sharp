@@ -513,15 +513,23 @@ public sealed class MergeUsing : DataChangeStatement
                 deltaChangeCollector?.AddRow([.. newRow.GetValueList()]);
             }
 
+            // One pair through the batch, as in the reference's Update.doUpdate: the pair the
+            // fire refused is not written, and a new key moves the row.
+            List<(Row OldRow, Row NewRow)> staged = [];
             if (!table.FireRow() || !table.FireBeforeRow(session, oldRow, newRow))
             {
-                table.UpdateRow(session, oldRow, newRow);
-                table.FireAfterRow(session, oldRow, newRow, rollback: false);
+                staged.Add((oldRow, newRow));
             }
 
             if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.FINAL)
             {
                 deltaChangeCollector?.AddRow(newRow.GetValueList());
+            }
+
+            table.UpdateRows(session, staged);
+            foreach ((Row writtenOld, Row writtenNew) in staged)
+            {
+                table.FireAfterRow(session, writtenOld, writtenNew, rollback: false);
             }
         }
 

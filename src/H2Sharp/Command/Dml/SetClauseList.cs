@@ -140,7 +140,11 @@ public sealed class SetClauseList
     /// </summary>
     /// <remarks>
     /// The reference's prepareUpdate with the unreachable taken out: ON UPDATE expressions,
-    /// generated columns, delta collectors and triggers wait for their layers.
+    /// generated columns, delta collectors and triggers wait for their layers. The key of the
+    /// new row is the new value of the main index column, as in the reference: updating the
+    /// primary key moves the row, and a row that kept its old key would be a row the new key
+    /// cannot name. The write itself goes through UpdateRows, which removes the old rows
+    /// before it adds the new ones, so two rows swapping keys do not collide halfway.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="oldRow">the row as it is</param>
@@ -185,11 +189,6 @@ public sealed class SetClauseList
         long key = mainIndexColumn == SearchRow.RowidIndex
             ? oldRow.GetKey()
             : newRow.GetValue(mainIndexColumn)!.GetLong();
-        if (key != oldRow.GetKey())
-        {
-            throw new TODOException("SetClauseList.prepareUpdate: updating the primary key is not ported");
-        }
-
         newRow.SetKey(key);
         return newRow;
     }
