@@ -28,6 +28,10 @@ using System.Threading.Tasks;
 using H2Sharp.Engine;
 using H2Sharp.Util;
 using H2DbException = H2Sharp.Message.DbException;
+// The engine's isolation level and the ADO.NET one share the name; the transaction surface
+// of this file speaks ADO.NET, the session surface speaks the engine's.
+using AdoIsolationLevel = System.Data.IsolationLevel;
+using EngineIsolationLevel = H2Sharp.Engine.IsolationLevel;
 
 namespace H2Sharp.Data;
 
@@ -334,7 +338,14 @@ public sealed class H2Connection : DbConnection, IH2Test
     /// Begins a database transaction.
     /// </summary>
     /// <param name="isolationLevel">the isolation level</param>
-    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+    /// <remarks>
+    /// The isolation level the caller asked for rides into the engine here: the standard
+    /// ADO.NET surface carries it on BeginTransaction, and the session keeps it for every
+    /// transaction of this connection, the way the reference's
+    /// JdbcConnection.setTransactionIsolation keeps it on the session. Unspecified means
+    /// "the provider decides", which is the level the session already has.
+    /// </remarks>
+    protected override DbTransaction BeginDbTransaction(AdoIsolationLevel isolationLevel)
     {
         SessionLocal? current = session;
         if (current is null)
@@ -347,6 +358,11 @@ public sealed class H2Connection : DbConnection, IH2Test
             throw new InvalidOperationException("The connection already has a transaction");
         }
 
+        if (isolationLevel != AdoIsolationLevel.Unspecified)
+        {
+            current.SetIsolationLevel(FromAdoIsolationLevel(isolationLevel));
+        }
+
         // The session transaction, not a store transaction of its own: the statements share it,
         // and auto-commit is switched off so the per-statement gate in CommandContainer does not
         // commit inside an explicit transaction.
@@ -354,6 +370,31 @@ public sealed class H2Connection : DbConnection, IH2Test
         H2Transaction transaction = new(this, isolationLevel);
         currentTransaction = transaction;
         return transaction;
+    }
+
+    /// <summary>
+    /// Maps the ADO.NET isolation level to the engine's.
+    /// </summary>
+    /// <param name="isolationLevel">the ADO.NET isolation level</param>
+    /// <returns>the engine's isolation level</returns>
+    /// <remarks>
+    /// The five levels the engine has map one to one. Chaos is dirty reads plus
+    /// intervening changes; the engine has no such level, and this refuses it the way a
+    /// provider refuses a level it cannot honor. Unspecified never reaches here.
+    /// </remarks>
+    private static EngineIsolationLevel FromAdoIsolationLevel(AdoIsolationLevel isolationLevel)
+    {
+        return isolationLevel switch
+        {
+            AdoIsolationLevel.ReadUncommitted => EngineIsolationLevel.ReadUncommitted,
+            AdoIsolationLevel.ReadCommitted => EngineIsolationLevel.ReadCommitted,
+            AdoIsolationLevel.RepeatableRead => EngineIsolationLevel.RepeatableRead,
+            AdoIsolationLevel.Snapshot => EngineIsolationLevel.Snapshot,
+            AdoIsolationLevel.Serializable => EngineIsolationLevel.Serializable,
+            _ => throw new ArgumentException(
+                "The isolation level " + isolationLevel + " is not supported",
+                nameof(isolationLevel)),
+        };
     }
 
     /// <summary>

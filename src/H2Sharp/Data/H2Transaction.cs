@@ -17,6 +17,8 @@ using System;
 using System.Data;
 using System.Data.Common;
 using H2Sharp.Engine;
+// The engine's isolation level and the ADO.NET one share the name; this file speaks ADO.NET.
+using AdoIsolationLevel = System.Data.IsolationLevel;
 
 namespace H2Sharp.Data;
 
@@ -36,7 +38,7 @@ public sealed class H2Transaction : DbTransaction
     /// </summary>
     /// <param name="connection">the connection</param>
     /// <param name="isolationLevel">the isolation level</param>
-    internal H2Transaction(H2Connection connection, IsolationLevel isolationLevel)
+    internal H2Transaction(H2Connection connection, AdoIsolationLevel isolationLevel)
     {
         this.connection = connection;
         IsolationLevel = isolationLevel;
@@ -51,7 +53,7 @@ public sealed class H2Transaction : DbTransaction
     internal H2Connection? OwningConnection => connection;
 
     /// <inheritdoc/>
-    public override IsolationLevel IsolationLevel { get; }
+    public override AdoIsolationLevel IsolationLevel { get; }
 
     public override bool SupportsSavepoints => true;
 

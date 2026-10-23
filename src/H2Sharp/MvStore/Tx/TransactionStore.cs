@@ -1,4 +1,5 @@
 using System;
+using H2Sharp.Engine;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -449,6 +450,19 @@ public class TransactionStore : IDisposable
     /// Begins a transaction.
     /// </summary>
     public Transaction Begin() => Begin(None, TimeoutMillis, 0, IsolationLevel.ReadCommitted);
+
+    /// <summary>
+    /// Begins a transaction at the given isolation level.
+    /// </summary>
+    /// <param name="isolationLevel">the isolation level</param>
+    /// <returns>the transaction</returns>
+    /// <remarks>
+    /// The shape of the reference's no-argument begin, with the level as the parameter:
+    /// the caller that knows the level (the session, from its own field) does not have to
+    /// spell the listener, the timeout and the owner it takes by default.
+    /// </remarks>
+    public Transaction Begin(IsolationLevel isolationLevel)
+        => Begin(None, TimeoutMillis, 0, isolationLevel);
 
     /// <summary>
     /// Begins a transaction with a listener, timeout, owner, and isolation level.

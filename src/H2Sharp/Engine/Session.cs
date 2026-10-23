@@ -163,13 +163,13 @@ public abstract class Session : CastDataProvider, IDisposable
     /// Gets the isolation level.
     /// </summary>
     /// <returns>the isolation level</returns>
-    public abstract int GetIsolationLevel();
+    public abstract IsolationLevel GetIsolationLevel();
 
     /// <summary>
     /// Sets the isolation level.
     /// </summary>
     /// <param name="isolationLevel">the isolation level</param>
-    public abstract void SetIsolationLevel(int isolationLevel);
+    public abstract void SetIsolationLevel(IsolationLevel isolationLevel);
 
     /// <summary>
     /// Gets the static settings.

@@ -117,6 +117,8 @@ public sealed class SessionLocal : Session
 
     private bool autoCommitAtTransactionEnd;
 
+    private IsolationLevel isolationLevel = IsolationLevel.ReadCommitted;
+
     /// <summary>
     /// Gets the transaction this session is working on, or null when it has none.
     /// </summary>
@@ -132,8 +134,13 @@ public sealed class SessionLocal : Session
     /// Gets the transaction this session is working on, beginning one if it has none.
     /// </summary>
     /// <returns>the transaction</returns>
+    /// <remarks>
+    /// The reference begins the store transaction with the session's lock timeout, its id
+    /// as the owner and itself as the rollback listener; the port carries what it has —
+    /// the isolation level — and keeps the store's defaults for the rest.
+    /// </remarks>
     public MvStore.Tx.Transaction GetTransaction()
-        => Transaction ??= GetDatabase().GetStore().Begin();
+        => Transaction ??= GetDatabase().GetStore().Begin(isolationLevel);
 
     private Dictionary<string, Savepoint>? savepoints;
 
@@ -824,15 +831,17 @@ public sealed class SessionLocal : Session
     /// Gets the isolation level of the transaction.
     /// </summary>
     /// <returns>the isolation level</returns>
-    public override int GetIsolationLevel()
-        => throw new TODOException("SessionLocal.getIsolationLevel");
+    public override IsolationLevel GetIsolationLevel() => isolationLevel;
 
     /// <summary>
     /// Sets the isolation level of the transaction.
     /// </summary>
     /// <param name="isolationLevel">the isolation level</param>
-    public override void SetIsolationLevel(int isolationLevel)
-        => throw new TODOException("SessionLocal.setIsolationLevel");
+    public override void SetIsolationLevel(IsolationLevel isolationLevel)
+    {
+        Commit(false);
+        this.isolationLevel = isolationLevel;
+    }
 
     /// <summary>
     /// Gets the settings that do not change while the database is open.

@@ -40,7 +40,11 @@ namespace H2Sharp.Util;
 /// <summary>
 /// An immutable arbitrary precision decimal, ported from the JDK's <c>java.math.BigDecimal</c>.
 /// </summary>
-public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
+/// <remarks>
+/// Not sealed, as java.math.BigDecimal is not final: the reference's own test suite
+/// extends it with a class of its own, and the ported tests do the same.
+/// </remarks>
+public class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
 {
     /// <summary>
     /// The unscaled value, which together with <see cref="scale"/> is the whole number.
@@ -81,6 +85,22 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     {
         unscaledValue = unscaled;
         this.scale = scale;
+    }
+
+    /// <summary>
+    /// A decimal from its string form.
+    /// </summary>
+    /// <remarks>
+    /// The JDK constructor java.math.BigDecimal(String), which the reference's own tests
+    /// reach through subclasses; the port built values through <see cref="Parse"/> until
+    /// a test needed the constructor.
+    /// </remarks>
+    /// <param name="val">the string form of the value</param>
+    public BigDecimal(string val)
+    {
+        BigDecimal parsed = Parse(val);
+        unscaledValue = parsed.unscaledValue;
+        scale = parsed.scale;
     }
 
     /// <summary>
@@ -871,7 +891,11 @@ public sealed class BigDecimal : IComparable<BigDecimal>, IEquatable<BigDecimal>
     /// </summary>
     /// <param name="other">the value to compare against</param>
     /// <returns>-1, 0 or 1</returns>
-    public int CompareTo(BigDecimal? other)
+    /// <remarks>
+    /// Virtual, as the JDK's compareTo is overridable: the reference's own test suite
+    /// extends BigDecimal with a class of its own that inverts the comparison.
+    /// </remarks>
+    public virtual int CompareTo(BigDecimal? other)
     {
         if (other is null)
         {
