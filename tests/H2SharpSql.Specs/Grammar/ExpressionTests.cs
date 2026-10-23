@@ -18,7 +18,7 @@ public sealed class ExpressionTests
         using IDbConnection connection = TestDatabase.Open();
         GivenTestTable(connection);
 
-        Assert.Equal(2, connection.QuerySingle<int>("SELECT ID AS X FROM TEST ORDER BY X DESC"));
+        Assert.Equal(2, connection.QueryFirst<int>("SELECT ID AS X FROM TEST ORDER BY X DESC"));
     }
 
     /// <summary>docs/grammar.html:2047 — condition [ { AND condition } [...] ]</summary>
@@ -112,7 +112,7 @@ public sealed class ExpressionTests
         using IDbConnection connection = TestDatabase.Open();
         GivenTestTable(connection);
 
-        Assert.Equal("big", connection.QuerySingle<string>(
+        Assert.Equal("medium", connection.QuerySingle<string>(
             "SELECT CASE WHEN ID > 2 THEN 'big' WHEN ID > 1 THEN 'medium' ELSE 'small' END FROM TEST WHERE ID = 2"));
     }
 

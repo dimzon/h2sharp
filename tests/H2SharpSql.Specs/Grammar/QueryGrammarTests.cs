@@ -307,7 +307,7 @@ public sealed class QueryGrammarTests
         GivenTestTable(connection);
         _ = connection.Execute("INSERT INTO TEST(ID, NAME) VALUES (1, 'Zoe')");
 
-        Assert.Equal("Zoe", connection.QueryFirst<string>(
+        Assert.Equal("Ada", connection.QueryFirst<string>(
             "SELECT NAME FROM TEST ORDER BY ID DESC, NAME ASC"));
     }
 

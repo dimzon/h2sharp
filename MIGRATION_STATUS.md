@@ -510,6 +510,66 @@ Java-имена и разрешать их: получился бы файл, к
   пространственным индексом (`MVRTreeMap`, `SpatialDataType`).
 * `python tools/regen.py --check` — сгенерированные таблицы соответствуют эталону.
 
+## Родные тесты H2: tests/H2Sharp.Native.Tests (начато 2026-10-23)
+
+Отдельный проект для родных тестов эталона (`reference/h2/h2/src/test/org/h2/test/`).
+Структура зеркалит пакеты: `Db/`, `Jdbc/`, `Scripts/` — namespaces `H2Sharp.Native.Tests.{Db,Jdbc,Scripts}`.
+
+**По умолчанию тесты не запускаются** (решение по ходу работы): каждый помечен
+`[H2Fact]`, который ставит `Skip`, если не выставлено `H2SHARP_NATIVE_TESTS=1`.
+Механизм тот же, что у `JavaOracleFactAttribute` в `H2Sharp.Tests/Oracle`. Запуск
+оптом: `H2SHARP_NATIVE_TESTS=1 dotnet test tests/H2Sharp.Native.Tests`.
+
+Сделано:
+
+* Инфраструктура: `TestAll.cs` (поля конфигурации из TestAll.java; роль раннера у
+  xUnit), `TestBase.cs` (все assert-хелперы: assertEquals-семейство, assertResult,
+  assertThrows с кодами ошибок, assertResultSetMeta/Ordered, assertKnownException,
+  assertEqualReaders/Streams, CheckErrorCode, VoidCallable-лямбда-форма assertThrows),
+  `TestDb.cs` (GetConnection/getURL с jdbc:h2:-URL, DeleteDb, BuildChild — TODOException,
+  Child). `AssertionError.cs` — маппинг java.lang.AssertionError.
+* Корпус скриптов: все 319 `.sql` из `scripts/` скопированы verbatim как
+  EmbeddedResource (`Scripts/**/*.sql`), раннер `Scripts/TestScript.cs` перенесён.
+* Партия `db/`: TestAutoRecompile, TestAnalyzeTableTx, TestIssue_3040, TestQueryCache,
+  TestSQLInjection, TestIndexHints, AbstractBaseForCommonTableExpressions +
+  TestGeneralCommonTableQueries + TestPersistentCommonTableExpressions.
+* Партия `db/` вторая (2026-10-24): TestCheckpoint, TestSpaceReuse, TestEncryptedDb,
+  TestMaterializedView, TestExclusive, TestClearCacheAfterDdl (алиас — на Java-класс
+  эталона), TestTwoPhaseCommit (crash() — TODO-сэм power-off), TestAlterSchemaRename,
+  TestCompatibilitySQLServer, TestLargeBlob (свой Stream вместо анонимного InputStream,
+  ссылка на внешний тест — явным параметром).
+* Партия `jdbc/`: TestDriver (только testSettingsAsProperties), TestZloty (только
+  testModifyBytes), TestManyJdbcObjects (networked-части — TODOException),
+  TestConcurrentConnectionUsage, TestCachedQueryResults (Parallel.For вместо
+  ExecutorService).
+* Отложено: TestListener — весь держится на DatabaseEventListener (URL-опция
+  `database_event_listener`), которого в порту нет; перенести вместе с API.
+* `InternalsVisibleTo` для `H2Sharp.Native.Tests` добавлен в H2Sharp.csproj (тот же
+  ключ) — для будущих internal-сэм из тестов.
+
+Отступления (все записаны в заголовках файлов):
+
+* JDBC → ADO.NET: Statement→DbCommand, ResultSet→DbDataReader (1-based → 0-based в
+  хелперах TestBase), PreparedStatement.setInt → значения DbParameter, SQLException →
+  DbException (`H2SharpException.H2ErrorCode` = getErrorCode()), java.sql.Types →
+  System.Type в assertResultSetMeta, setAutoCommit → явная транзакция (BeginTransaction/
+  Commit), `prep.execute()` → `reader.RecordsAffected < 0`.
+* `assertThrows(code, obj).method()` (динамический прокси) → `AssertThrows(code,
+  () => ...)` — sealed-класс запротировать нельзя.
+* TestScript: gotOrdered-проверка (reflection COMMAND/PREPARED → Query.hasOrder) не
+  работает — H2Command строит контейнеры на каждое выполнение и не хранит их; проверка
+  выключена, как в эталонном file-based прогоне. Числитель строк — ручной
+  (LineNumberReader порта нет). Тесты `@autocommit` — через транзакции; reconnect-often
+  ветка — TODOException (нет DatabaseMetaData/mode/schema на провайдере).
+* TestAll: GetPort отвечает 9192 (порт TCP-сервера в порту нет).
+
+Не перенесено (следующие шаги): TestTransactionIsolation (упирается в
+SessionLocal.get/setIsolationLevel — TODOException в движке), TestLobObject (вместе с
+TestLob), TestZloty.testZloty (подкласс java.math.BigDecimal — порт свой sealed
+BigDecimal; вопрос .NET-поверхности), testZloty-половины TestDriver (DriverManager),
+все `unit/`, `store/`, `mvcc/`, `synth/`, `server/`, `auth/`, `jdbcx/`, `ap/` (344 файла
+всего, перенесено 25). Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
+
 ## Страховка от тихой деградации (сделано)
 
 Главная дыра была не в коде, а в том, что **никто не проверял** самописные механизмы:
@@ -6723,3 +6783,27 @@ MvStore.Tests **86/86**. Engine.Tests **4/9** — прежние пять TestIn
 без using); движок и изменённые тестовые проекты проверяются отдельно.
 Release-модульный набор linq2db после снятия BlockedByPort с ROW_NUMBER:
 **76/76** на net8.0 и net10.0.
+
++Разбор SQL-конформанса: 525 → 547/947.**
++
++Сверка с закреплённым JDBC подтвердила: EXTRACT(SECOND) интервалов возвращает
++целые секунды (5.5 → 5), DECADE 2024 → 202, RAWTOHEX('AB') → 00410042 по
++UTF-16 code points, кейс-выражение выбирает первую истинную ветку
++(ID=2 → medium), JSON-агрегаты отдаются как byte[]. Соответствующие
++неверные ожидания в H2SharpSql.Specs исправлены, JSON-агрегаты переведены
++на явное чтение UTF-8.
++
++Исправлены подтверждённые дефекты порта: postfix `DEFAULT ... DEFAULT ON NULL`
++в DDL; применение `ON UPDATE`-выражений в UPDATE (эталонный второй проход
++SetClauseList.prepareUpdate); `GetEffectiveOnUpdateExpression` для identity/
++generated колонок. Пробный JVM-оракул (ConformanceProbeTests) подтверждает
++совпадение всех проверенных случаев, кроме DAY_OF_WEEK локального окружения.
++
++Быстрый прогон: движок **1217/1217**, ADO.NET **457/457**. Остаток 400
++красных разбит на группы: отсутствующие команды/DDL (SCRIPT, SET, CREATE
++USER/ROLE/VIEW/DOMAIN/ALIAS/TRIGGER/LINKED TABLE/MATERIALIZED VIEW и др.),
++оконные и аналитические агрегаты (RANK/DENSE_RANK/PERCENT_RANK/CUME_DIST/
++MODE/ENVELOPE/GCD_AGG/LCM_AGG с WITHIN GROUP), функции-конструкторы JSON,
++функции шифрования/системных метаданных, явный TABLE, wildcard EXCEPT,
++row-value UPDATE и FETCH WITH TIES. Следующий срез — окно/COMMANDS-группы
++с наименьшим объёмом кода и максимальным числом тестов.

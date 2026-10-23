@@ -596,6 +596,19 @@ public class Column : Typed
         return onUpdateExpression;
     }
 
+    /// <summary>
+    /// Gets the effective on-update expression: identity and generated columns never have one.
+    /// </summary>
+    public Expression? GetEffectiveOnUpdateExpression()
+    {
+        if (sequence is not null || isGeneratedAlways)
+        {
+            return null;
+        }
+
+        return onUpdateExpression;
+    }
+
     /// <summary>Whether the default is used when an explicit NULL is given.</summary>
     public bool IsDefaultOnNull()
     {

@@ -40,6 +40,8 @@ public sealed class SetClauseList
 
     private readonly UpdateAction?[] actions;
 
+    private bool onUpdate;
+
     /// <summary>
     /// Creates the list for a table.
     /// </summary>
@@ -110,9 +112,20 @@ public sealed class SetClauseList
     /// <param name="filter2">the filter of the source, or null when there is none</param>
     public void MapColumns(SessionLocal session, TableFilter filter, TableFilter? filter2 = null)
     {
+        onUpdate = false;
+        Column[] columns = table.GetColumns();
         for (int i = 0; i < actions.Length; i++)
         {
-            actions[i]?.MapAndOptimize(session, filter, filter2);
+            UpdateAction? action = actions[i];
+            if (action is not null)
+            {
+                action.MapAndOptimize(session, filter, filter2);
+            }
+            else if (columns[i].GetEffectiveOnUpdateExpression() is not null)
+            {
+                actions[i] = UpdateAction.OnUpdate;
+                onUpdate = true;
+            }
         }
     }
 
@@ -185,6 +198,24 @@ public sealed class SetClauseList
         }
 
         table.ConvertUpdateRow(session, newRow, false);
+        if (onUpdate)
+        {
+            if (!oldRow.HasSameValues(newRow))
+            {
+                for (int i = 0; i < columns.Length; i++)
+                {
+                    if (ReferenceEquals(actions[i], UpdateAction.OnUpdate))
+                    {
+                        newRow.SetValue(i, columns[i].GetEffectiveOnUpdateExpression()!.GetValue(session));
+                    }
+                    else if (columns[i].IsGenerated())
+                    {
+                        newRow.SetValue(i, null!);
+                    }
+                }
+                table.ConvertUpdateRow(session, newRow, false);
+            }
+        }
         int mainIndexColumn = table.GetMainIndexColumn();
         long key = mainIndexColumn == SearchRow.RowidIndex
             ? oldRow.GetKey()

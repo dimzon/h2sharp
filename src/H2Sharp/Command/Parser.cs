@@ -6152,6 +6152,12 @@ public sealed partial class Parser
                 else
                 {
                     defaultExpression = ReadExpression();
+                    // The reference also accepts DEFAULT expression DEFAULT ON NULL as
+                    // a postfix column constraint.
+                    if (defaultExpression is not null && IsWord("DEFAULT") && IsWord("ON") && IsWord("NULL"))
+                    {
+                        defaultOnNull = true;
+                    }
                 }
             }
             else if (IsWord("GENERATED"))

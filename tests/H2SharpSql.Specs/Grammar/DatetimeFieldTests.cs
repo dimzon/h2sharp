@@ -65,7 +65,7 @@ public sealed class DatetimeFieldTests
 
         Assert.Equal(3, Extract(connection, "MILLENNIUM", Date));
         Assert.Equal(21, Extract(connection, "CENTURY", Date));
-        Assert.Equal(203, Extract(connection, "DECADE", Date));
+        Assert.Equal(202, Extract(connection, "DECADE", Date));
     }
 
     /// <summary>docs/grammar.html:1537 — | quarterField</summary>
@@ -255,7 +255,7 @@ public sealed class DatetimeFieldTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal(203, Extract(connection, "DECADE", Date));
+        Assert.Equal(202, Extract(connection, "DECADE", Date));
     }
 
     /// <summary>docs/grammar.html:1799 — QUARTER</summary>

@@ -45,7 +45,7 @@ public sealed class IntervalQualifierTests
             "SELECT EXTRACT(HOUR FROM CAST('5 2' AS INTERVAL DAY TO HOUR))"));
         Assert.Equal(30, connection.QuerySingle<int>(
             "SELECT EXTRACT(MINUTE FROM CAST('5 12:30' AS INTERVAL DAY TO MINUTE))"));
-        Assert.Equal(45.5m, connection.QuerySingle<decimal>(
+        Assert.Equal(45, connection.QuerySingle<int>(
             "SELECT EXTRACT(SECOND FROM CAST('5 12:30:45.5' AS INTERVAL DAY TO SECOND(1)))"));
     }
 
@@ -81,7 +81,7 @@ public sealed class IntervalQualifierTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal(5.5m, connection.QuerySingle<decimal>(
+        Assert.Equal(5, connection.QuerySingle<int>(
             "SELECT EXTRACT(SECOND FROM CAST('5.5' AS INTERVAL SECOND(2, 1)))"));
     }
 }

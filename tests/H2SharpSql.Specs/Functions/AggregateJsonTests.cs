@@ -35,6 +35,9 @@ public sealed class AggregateJsonTests
         _ = connection.Execute("INSERT INTO TEST(ID) VALUES (1), (NULL)");
     }
 
+    private static string Json(IDbConnection connection, string sql)
+        => System.Text.Encoding.UTF8.GetString(connection.QuerySingle<byte[]>(sql));
+
     /// <summary>docs/functions-aggregate.html:1295 — JSON_OBJECTAGG(</summary>
     [Fact]
     public void JsonObjectAgg_BuildsAnObject() // AGG-1295
@@ -43,7 +46,7 @@ public sealed class AggregateJsonTests
         GivenPairs(connection);
 
         Assert.Equal("{\"1\":\"a\",\"2\":\"b\"}",
-            connection.QuerySingle<string>("SELECT JSON_OBJECTAGG(KEY ID VALUE NAME) FROM TEST"));
+            Json(connection, "SELECT JSON_OBJECTAGG(KEY ID VALUE NAME) FROM TEST"));
     }
 
     /// <summary>docs/functions-aggregate.html:1296 — {[KEY] string VALUE value} | {string : value}</summary>
@@ -54,7 +57,7 @@ public sealed class AggregateJsonTests
         GivenPairs(connection);
 
         Assert.Equal("{\"1\":\"a\",\"2\":\"b\"}",
-            connection.QuerySingle<string>("SELECT JSON_OBJECTAGG(ID : NAME) FROM TEST"));
+            Json(connection, "SELECT JSON_OBJECTAGG(ID : NAME) FROM TEST"));
     }
 
     /// <summary>docs/functions-aggregate.html:1297 — [ { NULL | ABSENT } ON NULL ]</summary>
@@ -65,7 +68,7 @@ public sealed class AggregateJsonTests
         GivenPairsWithNull(connection);
 
         Assert.Equal("{\"1\":\"a\",\"2\":\"b\"}",
-            connection.QuerySingle<string>("SELECT JSON_OBJECTAGG(KEY ID VALUE NAME ABSENT ON NULL) FROM TEST"));
+            Json(connection, "SELECT JSON_OBJECTAGG(KEY ID VALUE NAME ABSENT ON NULL) FROM TEST"));
     }
 
     /// <summary>docs/functions-aggregate.html:1298 — [ { WITH | WITHOUT } UNIQUE KEYS ]</summary>
@@ -76,7 +79,7 @@ public sealed class AggregateJsonTests
         GivenPairs(connection);
 
         Assert.Equal("{\"1\":\"a\",\"2\":\"b\"}",
-            connection.QuerySingle<string>("SELECT JSON_OBJECTAGG(KEY ID VALUE NAME WITH UNIQUE KEYS) FROM TEST"));
+            Json(connection, "SELECT JSON_OBJECTAGG(KEY ID VALUE NAME WITH UNIQUE KEYS) FROM TEST"));
     }
 
     /// <summary>docs/functions-aggregate.html:1299 — )</summary>
@@ -87,7 +90,7 @@ public sealed class AggregateJsonTests
         GivenPairs(connection);
 
         Assert.Equal("{\"1\":\"a\",\"2\":\"b\"}",
-            connection.QuerySingle<string>("SELECT JSON_OBJECTAGG(KEY ID VALUE NAME) FROM TEST"));
+            Json(connection, "SELECT JSON_OBJECTAGG(KEY ID VALUE NAME) FROM TEST"));
     }
 
     /// <summary>docs/functions-aggregate.html:1300 — [FILTER (WHERE expression)] [OVER windowNameOrSpecification]</summary>
@@ -98,7 +101,7 @@ public sealed class AggregateJsonTests
         GivenPairs(connection);
 
         Assert.Equal("{\"1\":\"a\"}",
-            connection.QuerySingle<string>("SELECT JSON_OBJECTAGG(KEY ID VALUE NAME) FILTER (WHERE ID = 1) FROM TEST"));
+            Json(connection, "SELECT JSON_OBJECTAGG(KEY ID VALUE NAME) FILTER (WHERE ID = 1) FROM TEST"));
     }
 
     /// <summary>docs/functions-aggregate.html:1323 — JSON_ARRAYAGG( [ DISTINCT|ALL ] expression</summary>
@@ -108,7 +111,7 @@ public sealed class AggregateJsonTests
         using IDbConnection connection = TestDatabase.Open();
         GivenNumbers(connection);
 
-        Assert.Equal("[1,2,3]", connection.QuerySingle<string>("SELECT JSON_ARRAYAGG(ID) FROM TEST"));
+        Assert.Equal("[1,2,3]", Json(connection, "SELECT JSON_ARRAYAGG(ID) FROM TEST"));
     }
 
     /// <summary>docs/functions-aggregate.html:1324 — [ ORDER BY sortSpecificationList ]</summary>
@@ -119,7 +122,7 @@ public sealed class AggregateJsonTests
         GivenNumbers(connection);
 
         Assert.Equal("[3,2,1]",
-            connection.QuerySingle<string>("SELECT JSON_ARRAYAGG(ID ORDER BY ID DESC) FROM TEST"));
+            Json(connection, "SELECT JSON_ARRAYAGG(ID ORDER BY ID DESC) FROM TEST"));
     }
 
     /// <summary>docs/functions-aggregate.html:1325 — [ { NULL | ABSENT } ON NULL ] )</summary>
@@ -130,7 +133,7 @@ public sealed class AggregateJsonTests
         GivenNumbersWithNull(connection);
 
         Assert.Equal("[1]",
-            connection.QuerySingle<string>("SELECT JSON_ARRAYAGG(ID ABSENT ON NULL) FROM TEST"));
+            Json(connection, "SELECT JSON_ARRAYAGG(ID ABSENT ON NULL) FROM TEST"));
     }
 
     /// <summary>docs/functions-aggregate.html:1326 — [FILTER (WHERE expression)] [OVER windowNameOrSpecification]</summary>
@@ -141,6 +144,6 @@ public sealed class AggregateJsonTests
         GivenNumbers(connection);
 
         Assert.Equal("[2,3]",
-            connection.QuerySingle<string>("SELECT JSON_ARRAYAGG(ID) FILTER (WHERE ID > 1) FROM TEST"));
+            Json(connection, "SELECT JSON_ARRAYAGG(ID) FILTER (WHERE ID > 1) FROM TEST"));
     }
 }

@@ -113,7 +113,8 @@ public sealed class IntervalTests
         using IDbConnection connection = TestDatabase.Open();
 
         Assert.Equal(5, connection.QuerySingle<int>("SELECT EXTRACT(SECOND FROM INTERVAL '5' SECOND)"));
-        Assert.Equal(5.5m, connection.QuerySingle<decimal>("SELECT EXTRACT(SECOND FROM INTERVAL '5.5' SECOND)"));
+        // H2 EXTRACT returns the whole seconds field; the fraction is not added.
+        Assert.Equal(5, connection.QuerySingle<int>("SELECT EXTRACT(SECOND FROM INTERVAL '5.5' SECOND)"));
     }
 
     /// <summary>docs/grammar.html:1371 — SECOND [ ( precisionInt [, fractionalPrecisionInt ] ) ]</summary>
@@ -122,7 +123,7 @@ public sealed class IntervalTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal(5.5m, connection.QuerySingle<decimal>(
+        Assert.Equal(5, connection.QuerySingle<int>(
             "SELECT EXTRACT(SECOND FROM INTERVAL '5.5' SECOND(2, 1))"));
     }
 
@@ -172,7 +173,7 @@ public sealed class IntervalTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal(4.5m, connection.QuerySingle<decimal>(
+        Assert.Equal(4, connection.QuerySingle<int>(
             "SELECT EXTRACT(SECOND FROM INTERVAL '1 02:03:04.5' DAY TO SECOND(2))"));
     }
 
@@ -202,7 +203,7 @@ public sealed class IntervalTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal(3.5m, connection.QuerySingle<decimal>(
+        Assert.Equal(3, connection.QuerySingle<int>(
             "SELECT EXTRACT(SECOND FROM INTERVAL '1:02:03.5' HOUR TO SECOND(2))"));
     }
 
@@ -222,7 +223,7 @@ public sealed class IntervalTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal(3.5m, connection.QuerySingle<decimal>(
+        Assert.Equal(3, connection.QuerySingle<int>(
             "SELECT EXTRACT(SECOND FROM INTERVAL '2:03.5' MINUTE TO SECOND(2))"));
     }
 }

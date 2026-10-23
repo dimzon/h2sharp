@@ -102,7 +102,8 @@ public sealed class StringFunctionTests
         using IDbConnection connection = TestDatabase.Open();
 
         Assert.Equal("4142", connection.QuerySingle<string>("SELECT RAWTOHEX(X'4142')"));
-        Assert.Equal("4142", connection.QuerySingle<string>("SELECT RAWTOHEX('AB')"));
+        // H2 converts character input by UTF-16 code points.
+        Assert.Equal("00410042", connection.QuerySingle<string>("SELECT RAWTOHEX('AB')"));
     }
 
     /// <summary>docs/functions.html:2107 — INSERT(originalString, startInt, lengthInt, addString)</summary>
