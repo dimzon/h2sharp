@@ -45,6 +45,25 @@ public sealed class H2TimeParameterTests
         Assert.Equal(new TimeSpan(12, 34, 56), (TimeSpan)reader.GetValue(0));
     }
 
+    [Fact]
+    public void TimeOnlyWithoutADeclaredTypeIsAlwaysATimeOfDay()
+    {
+        using H2Connection connection = Open("timeonly_parameter");
+        using DbCommand command = connection.CreateCommand();
+        command.CommandText = "CREATE TABLE T(VAL TIME(9))";
+        command.ExecuteNonQuery();
+        command.CommandText = "INSERT INTO T VALUES (@time)";
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = "time";
+        TimeOnly time = new TimeOnly(10, 0).Add(TimeSpan.FromTicks(1));
+        parameter.Value = time;
+        command.Parameters.Add(parameter);
+        Assert.Equal(1, command.ExecuteNonQuery());
+        command.Parameters.Clear();
+        command.CommandText = "SELECT VAL FROM T";
+        Assert.Equal(time.ToTimeSpan(), command.ExecuteScalar());
+    }
+
     /// <summary>
     /// The same value without the declaration is a length of time, and the engine says so:
     /// the answer is an INTERVAL DAY TO SECOND, not a time of day.

@@ -6658,3 +6658,33 @@ FILTER и grouping. `H2FreshIssuesTests`: пять ADO.NET/Dapper-тестов, 
 Проверено: полный набор — `H2Sharp.Tests` **1211/1211**, `Data.Tests`
 **454/454**, `MvStore.Tests` **86/86**. `Engine.Tests` **4/9** — прежние пять
 TestIndex на закрытом подключении. Конформанс **507/947** (было 501, +6).
+
+**Сверка TIME-параметров и исправление linq2db — issue #41.**
+
+Порт уже отображал TimeOnly в ValueTime, а TimeSpan — в ValueTime только
+при объявленном DbType.Time; без него TimeSpan остаётся ValueInterval.
+Сверены JDBC setTime и ValueToObjectConverter/JSR310Utils: LocalTime и
+java.sql.Time — время суток, Duration — интервал. Менять длительность на
+TIME не нужно и нельзя молча: Duration→TIME эталон также отвергает (22018).
+
+В соседнем h2sharp-linq2db найден и исправлен дефект провайдера:
+H2SharpProvider.SetParameter пропускал стандартный SetParameterType,
+поэтому DataType.Time не передавался в H2Parameter.DbType. Восстановлен
+вызов DataProviderBase.SetParameterType; исходный
+A_time_comes_back_as_it_went_in прошёл, BlockedByPort снят. Версия провайдера
+6.5.3-alpha.1; поведение движка не менялось, его версия остаётся 0.1.37-alpha.1.
+Код исправления и снятие трейта вошли в параллельный коммит провайдера
+4457ef4; свои изменения документации/версии оформляются отдельно.
+
+TimeParameterOracleTests: два JVM-теста TIME(9), TimeOnly без декларации,
+TimeSpan с DbType.Time, midnight/10:00/fractions/конец суток, обратное чтение
+TimeSpan, NULL и отказ Duration→TIME. Существующее .NET-отображение TimeSpan
+в DAY TO SECOND и JDBC Duration в SECOND сравниваются с одинаковым явным
+SQL типом INTERVAL DAY TO SECOND. H2TimeParameterTests дополнен TimeOnly
+round-trip без DbType. Модульные тесты linq2db **75/75**, ModelTests **173/173**
+с Category!=BlockedByPort на net10.0. В провайдерском дереве были сторонние
+изменения схемы и тестов функций; в исправление #41 включены только свои файлы.
+Release модульного набора linq2db: **75/75** на каждом net8.0/net10.0;
+оставшиеся два BlockedByPort на каждом TFM не связаны с TIME.
+Полный движковый прогон: H2Sharp.Tests **1213/1213**, Data.Tests **455/455**,
+MvStore.Tests **86/86**; Engine.Tests **4/9** с прежними пятью TestIndex.
