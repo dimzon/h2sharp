@@ -4621,9 +4621,19 @@ public sealed partial class Parser
                 }
 
             case "POSITION":
-                // The reference reads the first argument with readConcat(), which is not ported.
-                throw new TODOException(
-                    "Parser.readCompatibilityFunction: POSITION needs readConcat");
+                // The reference reads the first argument with readConcat, because IN would be
+                // read too early by readExpression; ReadQueryConcat is that reader here.
+                {
+                    Expressions.Expression arg1 = ReadQueryConcat(aggregateSelect);
+                    if (!ReadIf(Token.Comma))
+                    {
+                        Expect(ParserUtil.In, "IN");
+                    }
+
+                    return new Expressions.Functions.StringFunction(
+                        arg1, ReadSingleArgument(aggregateSelect), null,
+                        Expressions.Functions.StringFunction.Locate);
+                }
 
             case "LCASE":
                 return new Expressions.Functions.StringFunction1(
