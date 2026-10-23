@@ -303,4 +303,18 @@ public sealed class TableValueConstructor : Query
         table = new TableValueConstructorTable(
             GetSession().GetDatabase().GetMainSchema(), GetSession(), columns, expressions, rows);
     }
+
+    /// <inheritdoc/>
+    public override System.Text.StringBuilder GetPlanSql(System.Text.StringBuilder builder, int sqlFlags)
+    {
+        // H2 getPlanSQL -> getSQL -> appendEndOfQueryToSQL.
+        builder.Append("VALUES ");
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (i > 0) builder.Append(", ");
+            Expression.WriteExpressions(builder.Append('('), [.. rows[i]], sqlFlags).Append(')');
+        }
+        AppendEndOfQueryToSql(builder, sqlFlags, GetExpressions());
+        return builder;
+    }
 }

@@ -684,6 +684,39 @@ public abstract class Query : Prepared
     /// </remarks>
     protected Result.SortOrder? sort;
 
+    // Ported Query.appendEndOfQueryToSQL. withTies is on Select in this existing port;
+    // pass it from Select rather than introducing a second conflicting flag.
+    protected void AppendEndOfQueryToSql(StringBuilder builder, int sqlFlags, Expression[] expressions, bool withTies = false)
+    {
+        if (sort is not null) sort.GetSql(builder.Append("\nORDER BY "), expressions, GetColumnCount(), sqlFlags);
+        else if (orderList is not null)
+        {
+            builder.Append("\nORDER BY ");
+            for (int i = 0; i < orderList.Count; i++)
+            {
+                if (i > 0) builder.Append(", ");
+                orderList[i].GetSql(builder, sqlFlags);
+            }
+        }
+        if (offsetExpr is not null)
+        {
+            string count = offsetExpr.GetSql(sqlFlags, Expression.WithoutParentheses);
+            builder.Append("\nOFFSET ").Append(count).Append(count == "1" ? " ROW" : " ROWS");
+        }
+        if (fetchExpr is not null)
+        {
+            builder.Append("\nFETCH ").Append(offsetExpr is not null ? "NEXT" : "FIRST");
+            string count = fetchExpr.GetSql(sqlFlags, Expression.WithoutParentheses);
+            bool withCount = fetchPercent || count != "1";
+            if (withCount)
+            {
+                builder.Append(' ').Append(count);
+                if (fetchPercent) builder.Append(" PERCENT");
+            }
+            builder.Append(withCount ? " ROWS" : " ROW").Append(withTies ? " WITH TIES" : " ONLY");
+        }
+    }
+
     /// <summary>
     /// Gets the sort order of this query.
     /// </summary>

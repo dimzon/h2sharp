@@ -471,6 +471,11 @@ public sealed class H2DataReader : DbDataReader
     /// <inheritdoc/>
     public override T GetFieldValue<T>(int ordinal)
     {
+        if (typeof(T).IsArray && Cell(ordinal) is ValueArray array)
+        {
+            return (T)(object)H2ValueMapper.ToArrayObject(array, typeof(T));
+        }
+
         if (typeof(T) == typeof(Stream))
         {
             return (T)(object)GetStream(ordinal);

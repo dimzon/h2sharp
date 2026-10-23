@@ -263,11 +263,40 @@ public sealed class SetClauseList
             Value newValue = Update(session);
             if (arrayIndexes is not null)
             {
-                throw new TODOException(
-                    "SetClauseList.updateArray: array element assignment is not ported");
+                newValue = UpdateArray(session, oldValue, newValue, 0);
             }
 
             return newValue;
+        }
+
+        private Value UpdateArray(SessionLocal session, Value? oldValue, Value newValue, int indexNumber)
+        {
+            int index = arrayIndexes![indexNumber++].GetValue(session).GetInt();
+            int cardinality = Engine.Constants.MaxArrayCardinality;
+            // Keep reference's index < 0 check (index 0 fails at the later array access).
+            if (index < 0 || index > cardinality)
+                throw Message.DbException.Get(Api.ErrorCode.ArrayElementError2,
+                    index.ToString(System.Globalization.CultureInfo.InvariantCulture), "1.." + cardinality);
+            Value[] values;
+            if (oldValue is null)
+            {
+                values = new Value[index];
+                for (int i = 0; i < index - 1; i++) values[i] = ValueNull.Instance;
+            }
+            else if (oldValue is ValueNull) throw Message.DbException.Get(Api.ErrorCode.NullValueInArrayTarget);
+            else if (oldValue is not ValueArray oldArray)
+                throw Message.DbException.Get(Api.ErrorCode.ArrayElementError2,
+                    oldValue.GetTypeInfo().GetSql(new StringBuilder(), Util.HasSql.TraceSqlFlags).ToString(), "ARRAY");
+            else
+            {
+                Value[] old = oldArray.GetList();
+                values = new Value[Math.Max(index, old.Length)];
+                Array.Copy(old, values, old.Length);
+                for (int i = old.Length; i < index - 1; i++) values[i] = ValueNull.Instance;
+            }
+            values[index - 1] = indexNumber == arrayIndexes.Length ? newValue
+                : UpdateArray(session, values[index - 1], newValue, indexNumber);
+            return ValueArray.Get(values, session);
         }
 
         protected abstract Value Update(SessionLocal session);

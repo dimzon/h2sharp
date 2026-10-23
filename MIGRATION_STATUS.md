@@ -6027,3 +6027,158 @@ ADO.NET (`tests/H2Sharp.Data.Tests/H2ForeignKeyTests.cs`): коды 23506/23503/
 
 Проверено: `H2Sharp.Tests` **1172** (красных нет), конформанс-набор **374/947** (было 372),
 `Data.Tests` 413 (красных нет), `MvStore.Tests` 86, `Engine.Tests` 4/9.
+
+**Массивы целиком — `0.1.26-alpha.1`.**
+Закрывает секцию A issue #14 («тип `ARRAY` и всё, что с ним связано») и issue #23
+(`UNNEST`, включая `WITH ORDINALITY`). Сверка — с H2 2.5 по исходникам (`Parser.java`,
+`ExpressionList`, `ArrayConstructorByQuery`, `ArrayElementReference`, `ArrayFunction`,
+`ConcatenationOperation`, `ConditionInArray`, `ArrayTableFunction`, `FunctionTable`,
+`Select.getPlanSQL`, `Aggregate`/`DataAnalysisOperation` для `ARRAY_AGG`), по документации
+(`docs/functions.html`, `docs/grammar.html`) и на jar (`ArraySqlOracleTests` построчно
+против JDBC).
+
+Порт:
+* `ParseArrayType` — `ARRAY` с необязательной cardinality (`[10]`, включая `[0]`),
+  предел `MaxArrayCardinality`, ошибка эталона 90150. Вложенные `INTEGER ARRAY ARRAY`
+  читаются циклом `ReadIfDataType`, как у эталона.
+* DDL идёт через токенный читатель (`ReadTypeName`/`ParseDataType` вызывают
+  `ReadIfDataType` на сохранённом тексте) — компоненты и cardinality не теряются;
+  заодно починены многословные имена типов и точность из секции B issue #14 тем же путём.
+* Литерал `ARRAY[...]`, пустой массив, конструктор из запроса (`ARRAY(SELECT ...)`),
+  конструктор строкой `ROW(...)` и `(a, b)`-списки — `ExpressionList` перенесён
+  (`getValue`, `optimize` со свёрткой констант, `initializeType`,
+  `getTypeIfStaticallyKnown`, обходы, SQL, `cloneWithOrder`); `ArrayConstructorByQuery`
+  материализует подзапрос построчно. `JSON '[...]'`-литерал читается рядом, как у
+  эталона в `readTerm`.
+* Доступ к элементу `a[i]` — `ArrayElementReference` (1-based, ошибка 22034 вне диапазона,
+  `NULL`-индекс даёт `NULL`); `ARRAY_GET` — та же операция; JSON-массивы — через
+  декомпозицию, как у эталона.
+* Функции `TRIM_ARRAY`, `ARRAY_CONTAINS`, `ARRAY_SLICE` — `ArrayFunction` по эталону,
+  включая поведение PostgreSQL-режима для `ARRAY_SLICE` и `NULL`-семантику; `ARRAY_APPEND`
+  и `ARRAY_CAT` — `ConcatenationOperation` (конкатенация `||` тоже перенесена и читается
+  ниже суммы, как `readConcat` у эталона: `ARRAY[1,2] || 3`, строки, varbinary).
+* Сравнения `= ANY / <> ALL / IS [NOT] DISTINCT FROM ANY|ALL` — `ConditionInArray`
+  с `ParameterList` поверх живого параметра, индексными условиями `IN_ARRAY`/`IN_LIST`
+  и стоимостью +10, как у эталона.
+* `UNNEST` / `TABLE` / `TABLE_DISTINCT` — `ArrayTableFunction` + `FunctionTable`
+  (виртуальная таблица; колонки `C1..Cn`, `NORD INTEGER` с 1, короткие массивы
+  дополняются `NULL`); коррелированный `UNNEST` не читает и сам эталон (issue #23) —
+  не портируется.
+* `UPDATE t SET a[i] = ...` — индексы читаются в `ReadUpdateSetClause`/`ReadUpdate`
+  и применяются в `SetClauseList` рекурсивно по эталону (`SetAction.updateArray`);
+  `NULL`-цель — 22035, не-массив — 22034.
+* `ARRAY_AGG` с `ORDER BY` внутри, `FILTER` и `OVER` (включая `PARTITION BY`, фреймы
+  `ROWS`/`RANGE`/`GROUPS` и именованные окна `WINDOW w AS (...)`) — перенесены
+  `DataAnalysisOperation` (стадии, `lastGroupRowId`, `getWindowData`,
+  упорядоченная агрегация, `getOrderedResult`), `AbstractAggregate` (быстрые разбиения,
+  `processGroup`), `Window` (разбор, `isOrdered`, `getCurrentKey`),
+  `WindowFrame` с итераторами `Plain/Bi/Tri` и `Reverse`, `PartitionData`,
+  `SelectGroups` (разделы окон, `Remove` поверх снапшота ключей — C#-энумератор
+  удалять при обходе не умеет), `Select` (`queryWindow`/`queryGroupWindow`), разбор
+  `OVER`/`PARTITION BY`/`ORDER BY`/фрейма/`WINDOW`, `Aggregate` (`orderBySort`,
+  `updateCollecting` с `ValueRow`, `FILTER` в `rememberExpressions`/`getNumExpressions`).
+* `Select.getPlanSQL`/`SelectUnion`/`TableValueConstructor`/`FunctionTable` —
+  SQL плана по эталону (нужен `ArrayConstructorByQuery` для имён колонок результата);
+  `TableFilter.getPlanSql` перенесён; `Table.getId` для виртуальных таблиц — 0, как
+  `super(schema, 0, name)` у эталона.
+* `ELEMENT_TYPES` каталога — рекурсивный обход `ARRAY`/`ROW` типов колонок таблиц;
+  домены/рутины/константы/временные таблицы отсутствуют в порте и пропущены явно.
+* Сравнение `=` для массивов с `NULL` внутри — строгое равенство эталона
+  (`ARRAY[1, NULL] = ARRAY[1, NULL]` — `NULL`, а не `TRUE`): `Comparison.Compare` для
+  `Equal`/`NotEqual` теперь типизирует `NULL`-стороны через
+  `TypedValueExpression.GetTypedIfNull(..., BOOLEAN)`, как `getTypedIfNull`/`UNKNOWN`
+  у эталона. Поведение скаляров не меняется: `NULL`-стороны там уже так типизировались.
+* Замер `Array.Copy` против `Span<Value>.CopyTo` на `Value[]` (0–32768 элементов,
+  Release, медиана из 7, чередование порядка): устойчивого выигрыша `Span` нет
+  (0.93–1.20 в обе стороны между прогонами; на пустых `Array.Copy` быстрее в ~2.4
+  раза, на крупных разница ±3%). Остаётся `Array.Copy` — прямой порт
+  `System.arraycopy`; бенч лежал во временном проекте вне репозитория и удалён.
+
+Отступления записаны в коде: `FunctionTable.GetIndexes` — пусто (виртуальная таблица
+эталона тоже без индексов); `IndexCondition.GetExpressionList` — `IReadOnlyList`
+(живой `ParameterList` нельзя отдавать изменяемым списком); `ReadTableFunction`
+принимает только `TABLE(...)` (провайдер шлёт `TABLE(V INT = ...)`; `TABLE_DISTINCT`
+не парсится — эталон читает её тем же путём, добор оставлен следующим срезом);
+`ARRAY(SELECT ... UNION ALL ...)` идёт через общий `ParseQueryExpression`;
+`SELECT * FROM TABLE(ID INT = (1, 2))` со списком вместо массива — синтаксис,
+как у эталона (только `=`-выражения); именованные окна `WINDOW w AS` — на
+подготовленном `Select` (текстовый `SelectStatement` окон не держит).
+
+Оракул `ArraySqlOracleTests` (6 тестов, все зелёные): DDL/литералы/присваивание/
+метаданные, параметры CLR-массивов/списков/перечислений против JDBC `Object[]`,
+операции и границы индексов, `UNNEST`/`TABLE`/конструктор из запроса, квантифицированные
+сравнения и присваивание элементов, оконный `ARRAY_AGG` — построчно против JVM.
+Два пина, утверждавшие TODO, превращены в позитивные тесты: `SELECT ROW(1)` и
+`ARRAY_AGG ... ORDER BY`. Проверено: `H2Sharp.Tests` **1178/1178**,
+конформанс-набор **451/947** (было 374, +77: массивы, `UNNEST`, `ANY`/`ALL`,
+конкатенация, `ELEMENT_TYPES`), `Data.Tests` 423/423, `MvStore.Tests` 86/86;
+`Engine.Tests` 4/9 — те же 5 `TestIndex` на закрытом подключении, что и до среза.
+Красные `JsonArrayAgg_*` (4) — до среза: `ToObject` для JSON в ADO.NET не перенесён,
+это не массивы и отдельный срез.
+
+**Массивы в ADO.NET и Dapper — `0.1.25-alpha.1`.**
+Часть A issue #14: параметры-массивы, списки и перечисляемые, чтение ARRAY-колонки.
+
+Эталон: `Parser.parseArrayType`, ветка `ARRAY` в `readTerm`,
+`ExpressionList`, `Insert.doPrepare`, `ValueToObjectConverter.arrayToValue`.
+Существующие `ValueArray`, `TypeInfo` и конверсии массива используются напрямую.
+
+* `Parser.ParseArrayType` перенесён: компонентный тип, максимальная cardinality,
+  включая нулевую, предел `Constants.MaxArrayCardinality`, ошибка эталона 90150.
+  DDL-читатель `ReadTypeName` теперь читает тип через существующий `ReadIfDataType`,
+  а `ParseDataType` вызывает тот же читатель на сохранённом тексте. Собственная
+  грамматика типов убрана; компоненты и ограничения массива не теряются между DDL
+  и созданием колонки. Многословные имена типов и точность теперь идут этим же путём.
+* Литералы `ARRAY[...]`, `ARRAY[]` — ветка эталона; непустой массив строит
+  `ExpressionList`, пустой — `ValueArray.Empty`. `ExpressionList` перенесён с
+  вычислением, оптимизацией, типом, обходами, SQL и `cloneWithOrder`.
+  Существующие сигнатуры `TypeInfo.GetHigherType` / `ExtTypeInfoRow` принимают
+  `TypeInfo[]` вместо Java `Typed[]`, поэтому типы выражений собираются явно.
+* `Insert.DoPrepare` оптимизирует выражения и привязывает параметры к колонкам
+  в порядке эталона; это инициализирует тип `ExpressionList` до исполнения.
+* `H2ValueMapper.ToValue`: одномерные CLR-массивы, `IEnumerable` и списки превращаются
+  в `ValueArray` по правилу JDBC: конверсия элементов, общий тип, приведение элементов
+  самим `ValueArray`. `H2Command` передаёт сессию для этих конверсий.
+  Перечисляемое потребляется один раз на исполнение, включая ленивые последовательности.
+  Строка и `byte[]` сохраняют скалярные отображения; массив бинарных значений — `byte[][]`.
+* `ToObject`: ARRAY читается типизированным CLR-массивом; NULL-колонка — `DBNull`,
+  пустой массив — пустой; NULL-элемент числового массива сохраняется через `Nullable<T>`.
+  `GetFieldType` сообщает тип массива независимо от содержимого строки.
+  `GetFieldValue<T[]>` поддерживает явный тип, включая nullable и вложенные массивы,
+  с проверяемыми числовыми конверсиями; NULL в non-nullable элементе — `InvalidCastException`.
+  Возвращаемые массивы отделены от внутреннего значения.
+
+.NET-адаптация согласована с пользователем: типизированные массивы вместо JDBC `Object[]`
+и `JdbcArray`, NULL-элементы через `Nullable<T>`. У пустых и all-NULL параметров тип
+элемента дополнительно выводится из CLR-типа массива / `IEnumerable<T>`; если его нет,
+сохраняется эталонный тип NULL. Прямоугольные CLR-массивы отказывают с просьбой использовать
+jagged-массивы; вложенные SQL ARRAY поддерживаются рекурсивно. Существующее промежуточное
+дерево DDL всё ещё хранит строку типа: повторное чтение этой строки — шов существующего
+порта, а не отдельная грамматика.
+
+Dapper 2.1.66: `DynamicParameters.Add(name, collection, DbType.Object)` передаёт ARRAY
+одним параметром; обычные `IN @ids` разворачиваются Dapper и тоже проходят, включая пустой
+список. `QuerySingle<int[]>` и свойства `int[]` / `string[]` читаются напрямую.
+Для nullable-свойств, где строки могут возвращать и `int[]`, и `int?[]`, используется
+`SqlMapper.AddTypeMap(typeof(int?[]), DbType.Object, useGetFieldValue: true)` —
+типизированный getter сохраняет единый тип во всех строках. Та же настройка позволяет
+передавать nullable-массив из anonymous object. Примеры записаны в README.
+
+Оракул `ArraySqlOracleTests` исполняет SQL через ADO.NET и JDBC: типы и cardinality,
+литералы (включая выражения от строки), вложенные массивы, NULL, пустые массивы,
+`CAST` скаляра в массив, `ARRAY_AGG`, `ARRAY_LENGTH` / `CARDINALITY`, обновления,
+ошибки присваивания 22001 / 22018, предел cardinality и массив с cardinality 0.
+Параметры CLR-массивов, списков и перечисляемых сравниваются с JDBC `Object[]`
+построчно, включая строки, вложенные массивы и бинарные элементы.
+`H2ArrayTests`: **10** тестов ADO.NET / Dapper, включая одноразовое перечисление,
+типизированные getter-ы, nullable-материализацию, изоляцию возвращаемой копии и
+состояние таблицы после отказа.
+
+Issue #14 закрыт частично: `ArrayElementReference`, `ArrayFunction`,
+`ArrayConstructorByQuery`, `ArrayTableFunction` (`UNNEST` / `TABLE`) ещё не перенесены;
+issue остаётся открытым. Issue #17 закрыт с комментарием и ссылкой на исправление
+`00beb57` (вычисление UPDATE-выражения на текущей строке).
+
+Проверено: `H2Sharp.Tests` **1174/1174**, `Data.Tests` **423/423**, `MvStore.Tests` **86/86**;
+`Engine.Tests` **4/9** (те же пять отказов на закрытом подключении).
+Конформанс **381/947** (было 374). Сборка net8.0 / net10.0 без ошибок и предупреждений.

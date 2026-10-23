@@ -20,6 +20,7 @@
  * order, and until then the deviation is this paragraph, not a silent agreement.
  */
 using System.Collections.Generic;
+using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Result;
@@ -58,6 +59,15 @@ public sealed class SelectUnion : Query
 
     /// <inheritdoc/>
     public override Expression[] GetExpressions() => left.GetExpressions();
+
+    /// <inheritdoc/>
+    public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
+    {
+        left.GetPlanSql(builder.Append('('), sqlFlags).Append(')').Append(distinct ? "\nUNION\n(" : "\nUNION ALL\n(");
+        right.GetPlanSql(builder, sqlFlags).Append(')');
+        AppendEndOfQueryToSql(builder, sqlFlags, GetExpressions());
+        return builder;
+    }
 
     /// <inheritdoc/>
     public override HashSet<Tables.Table> GetTables()

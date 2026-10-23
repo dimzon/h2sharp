@@ -127,6 +127,19 @@ public sealed class Comparison : Condition
 
     private int compareType;
 
+    internal static int GetNotCompareType(int type) => type switch
+    {
+        Equal => NotEqual,
+        NotEqual => Equal,
+        EqualNullSafe => NotEqualNullSafe,
+        NotEqualNullSafe => EqualNullSafe,
+        BiggerEqual => Smaller,
+        Bigger => SmallerEqual,
+        SmallerEqual => Bigger,
+        Smaller => BiggerEqual,
+        _ => throw DbException.GetInternalError("type=" + type),
+    };
+
     private Expression left;
 
     private Expression right;
@@ -189,7 +202,7 @@ public sealed class Comparison : Condition
 
         if (left.IsConstant() && right.IsConstant())
         {
-            return ValueExpression.Get(GetValue(session));
+            return TypedValueExpression.GetTypedIfNull(GetValue(session), TypeInfo.TypeBoolean);
         }
 
         return this;

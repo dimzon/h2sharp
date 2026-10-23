@@ -238,6 +238,17 @@ public sealed class Insert : CommandWithValues
             {
                 throw Message.DbException.Get(H2Sharp.Api.ErrorCode.ColumnCountDoesNotMatch);
             }
+
+            for (int i = 0; i < row.Length; i++)
+            {
+                Expression expression = row[i].Optimize(GetSession());
+                if (expression is Parameter parameter)
+                {
+                    parameter.SetColumn(targetColumns[i]);
+                }
+
+                row[i] = expression;
+            }
         }
     }
 }

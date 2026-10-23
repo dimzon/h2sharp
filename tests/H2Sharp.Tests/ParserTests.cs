@@ -170,7 +170,8 @@ public sealed class ParserTests
 
         UpdateStatement update = Assert.IsType<UpdateStatement>(statement);
         Assert.Equal(CommandInterface.Update, update.GetCommandType());
-        (string column, Expression value) = Assert.Single(update.Assignments);
+        (string column, Expression[]? indexes, Expression value) = Assert.Single(update.Assignments);
+        Assert.Null(indexes);
         Assert.Equal("AGE", column);
         Assert.IsType<ValueExpression>(value);
         Assert.IsType<Comparison>(update.Where);

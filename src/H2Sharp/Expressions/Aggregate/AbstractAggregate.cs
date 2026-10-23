@@ -14,6 +14,7 @@ using H2Sharp.Command.Query;
 using H2Sharp.Engine;
 using H2Sharp.Tables;
 using H2Sharp.Values;
+using H2Sharp.Expressions.Analysis;
 
 namespace H2Sharp.Expressions.Aggregate;
 
@@ -116,15 +117,112 @@ public abstract class AbstractAggregate : Analysis.DataAnalysisOperation
     /// <inheritdoc/>
     protected override void GetOrderedResultLoop(
         SessionLocal session, Dictionary<int, Value> result, List<Value?[]> ordered, int rowIdColumn)
-        => throw new TODOException("AbstractAggregate.getOrderedResultLoop: OVER clause is not ported");
+    {
+        WindowFrame? frame = over!.GetWindowFrame();
+        bool grouped = frame is null || frame.GetUnits() != WindowFrameUnits.Rows && frame.GetExclusion().IsGroupOrNoOthers();
+        if (frame is null) { AggregateFastPartition(session, result, ordered, rowIdColumn, grouped); return; }
+        bool variable = frame.IsVariableBounds() && CheckVariableBounds(frame, ordered);
+        if (variable) grouped = false;
+        else if (frame.GetExclusion() == WindowFrameExclusion.ExcludeNoOthers)
+        {
+            bool unboundedFollowing = frame.GetFollowing()?.GetBoundType() == WindowFrameBoundType.UnboundedFollowing;
+            if (frame.GetStarting().GetBoundType() == WindowFrameBoundType.UnboundedPreceding)
+            {
+                if (unboundedFollowing) AggregateWholePartition(session, result, ordered, rowIdColumn);
+                else AggregateFastPartition(session, result, ordered, rowIdColumn, grouped);
+                return;
+            }
+            if (unboundedFollowing) { AggregateFastPartitionInReverse(session, result, ordered, rowIdColumn, grouped); return; }
+        }
+        for (int i = 0; i < ordered.Count;)
+        {
+            object data = CreateAggregateData();
+            foreach (Value?[] row in WindowFrame.Iterator(over, session, ordered, GetOverOrderBySort(), i, false)) UpdateFromExpressions(session, data, row);
+            i = ProcessGroup(result, GetAggregatedValue(session, data), ordered, rowIdColumn, i, ordered.Count, grouped);
+        }
+    }
+    private static bool CheckVariableBounds(WindowFrame frame, List<Value?[]> ordered)
+    {
+        WindowFrameBound bound = frame.GetStarting();
+        if (bound.IsVariable())
+        {
+            int offset = bound.GetExpressionIndex();
+            for (int i = 1; i < ordered.Count; i++) if (!ordered[0][offset]!.Equals(ordered[i][offset])) return true;
+        }
+        bound = frame.GetFollowing()!;
+        if (bound is not null && bound.IsVariable())
+        {
+            int offset = bound.GetExpressionIndex();
+            for (int i = 1; i < ordered.Count; i++) if (!ordered[0][offset]!.Equals(ordered[i][offset])) return true;
+        }
+        return false;
+    }
+    private void AggregateFastPartition(SessionLocal session, Dictionary<int, Value> result, List<Value?[]> ordered, int rowIdColumn, bool grouped)
+    {
+        object data = CreateAggregateData();
+        int lastIncluded = -1;
+        Value? value = null;
+        for (int i = 0; i < ordered.Count;)
+        {
+            int newLast = WindowFrame.GetEndIndex(over!, session, ordered, GetOverOrderBySort(), i);
+            if (newLast > lastIncluded)
+            {
+                for (int j = lastIncluded + 1; j <= newLast; j++) UpdateFromExpressions(session, data, ordered[j]);
+                lastIncluded = newLast;
+                value = GetAggregatedValue(session, data);
+            }
+            value ??= GetAggregatedValue(session, data);
+            i = ProcessGroup(result, value, ordered, rowIdColumn, i, ordered.Count, grouped);
+        }
+    }
+    private void AggregateFastPartitionInReverse(SessionLocal session, Dictionary<int, Value> result, List<Value?[]> ordered, int rowIdColumn, bool grouped)
+    {
+        object data = CreateAggregateData();
+        int firstIncluded = ordered.Count;
+        Value? value = null;
+        for (int i = firstIncluded - 1; i >= 0;)
+        {
+            int newLast = over!.GetWindowFrame()!.GetStartIndex(session, ordered, GetOverOrderBySort(), i);
+            if (newLast < firstIncluded)
+            {
+                for (int j = firstIncluded - 1; j >= newLast; j--) UpdateFromExpressions(session, data, ordered[j]);
+                firstIncluded = newLast;
+                value = GetAggregatedValue(session, data);
+            }
+            value ??= GetAggregatedValue(session, data);
+            Value?[] last = ordered[i], current = last;
+            do { result[current[rowIdColumn]!.GetInt()] = value; }
+            while (--i >= 0 && grouped && overOrderBySort!.Compare(last, current = ordered[i]) == 0);
+        }
+    }
+    private int ProcessGroup(Dictionary<int, Value> result, Value value, List<Value?[]> ordered, int rowIdColumn, int i, int size, bool grouped)
+    {
+        Value?[] first = ordered[i], current = first;
+        do { result[current[rowIdColumn]!.GetInt()] = value; }
+        while (++i < size && grouped && overOrderBySort!.Compare(first, current = ordered[i]) == 0);
+        return i;
+    }
+    private void AggregateWholePartition(SessionLocal session, Dictionary<int, Value> result, List<Value?[]> ordered, int rowIdColumn)
+    {
+        object data = CreateAggregateData();
+        foreach (Value?[] row in ordered) UpdateFromExpressions(session, data, row);
+        Value value = GetAggregatedValue(session, data);
+        foreach (Value?[] row in ordered) result[row[rowIdColumn]!.GetInt()] = value;
+    }
 
     /// <inheritdoc/>
     protected override void UpdateAggregate(SessionLocal session, SelectGroups groupData, int groupRowId)
     {
         if (filterCondition is null || filterCondition.GetBooleanValue(session))
         {
-            UpdateAggregate(session, GetGroupData(groupData, false)!);
+            if (over is not null)
+            {
+                if (over.IsOrdered()) UpdateOrderedAggregate(session, groupData, groupRowId, over.GetOrderBy());
+                else UpdateAggregate(session, GetWindowData(session, groupData, false));
+            }
+            else UpdateAggregate(session, GetGroupData(groupData, false)!);
         }
+        else if (over is not null && over.IsOrdered()) UpdateOrderedAggregate(session, groupData, groupRowId, over.GetOrderBy());
     }
 
     /// <summary>

@@ -463,7 +463,7 @@ public sealed class H2Command : DbCommand
             // The declared type of the parameter goes with the value: a TimeSpan declared as a
             // time of day is a TIME, and the same value without that declaration is an
             // INTERVAL DAY TO SECOND.
-            parameter.SetValue(H2ValueMapper.ToValue(value, ordered[index].DbType), false);
+            parameter.SetValue(H2ValueMapper.ToValue(value, ordered[index].DbType, current), false);
         }
 
         return containers;

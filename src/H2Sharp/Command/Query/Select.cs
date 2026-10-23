@@ -82,6 +82,27 @@ public sealed class Select : Query
     /// the quick aggregate shortcut reads it, grouped execution still refuses below.
     /// </summary>
     private bool isGroupQuery;
+    private bool isWindowQuery;
+    private bool isGroupWindowStage2;
+    private Dictionary<string, Expressions.Analysis.Window>? windowClause;
+    private Select? parentSelect = null;
+
+    /// <summary>Marks a query that uses window operations.</summary>
+    public void SetWindowQuery() => isWindowQuery = true;
+    /// <summary>Whether window operations are present.</summary>
+    public bool IsWindowQuery() => isWindowQuery;
+    /// <summary>Whether the second grouped-window stage is active.</summary>
+    public bool IsGroupWindowStage2() => isGroupWindowStage2;
+    /// <summary>Gets a named window.</summary>
+    public Expressions.Analysis.Window? GetWindow(string name) => windowClause?.GetValueOrDefault(name);
+    /// <summary>Adds a named window (true when newly registered).</summary>
+    public bool AddWindow(string name, Expressions.Analysis.Window window)
+    {
+        windowClause ??= new Dictionary<string, Expressions.Analysis.Window>(StringComparer.Ordinal);
+        return windowClause.TryAdd(name, window);
+    }
+    /// <summary>Returns the parent select.</summary>
+    public Select? GetParentSelect() => parentSelect;
 
     /// <summary>
     /// Where the grouping key columns land in the result, or null when nothing groups.
@@ -528,7 +549,83 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
-        => throw new TODOException("Select.getPlanSQL: the plan is not built");
+    {
+        // Ported getPlanSQL over this port's existing fields. Explicit TABLE, DISTINCT ON,
+        // QUALIFY, and WITH-list fields are not present in this Select representation yet.
+        Expression[] exprList = GetExpressions();
+        builder.Append("SELECT");
+        if (IsAnyDistinct()) builder.Append(" DISTINCT");
+        for (int i = 0; i < visibleColumnCount; i++)
+        {
+            if (i > 0) builder.Append(',');
+            StringUtils.Indent(builder.Append('\n'), exprList[i].GetSql(sqlFlags, Expression.WithoutParentheses), 4, false);
+        }
+        TableFilter? filter = topTableFilter;
+        if (filter is null)
+        {
+            if (topFilters.Count != 1 || topFilters[0].GetTable() is not DualTable)
+            {
+                builder.Append("\nFROM ");
+                bool isJoin = false;
+                foreach (TableFilter top in topFilters) isJoin = GetPlanFromFilter(builder, sqlFlags, top, isJoin);
+            }
+        }
+        else if (filter.GetTable() is not DualTable) GetPlanFromFilter(builder.Append("\nFROM "), sqlFlags, filter, false);
+        if (condition is not null) condition.GetNonAliasExpression().GetUnenclosedSql(builder.Append("\nWHERE "), sqlFlags);
+        if (groupIndex is not null)
+        {
+            builder.Append("\nGROUP BY ");
+            for (int i = 0; i < groupIndex.Length; i++)
+            {
+                if (i > 0) builder.Append(", ");
+                exprList[groupIndex[i]].GetNonAliasExpression().GetUnenclosedSql(builder, sqlFlags);
+            }
+        }
+        else if (groupBy is not null)
+        {
+            builder.Append("\nGROUP BY ");
+            Expression.WriteExpressions(builder, [.. groupBy], sqlFlags);
+        }
+        else if (isGroupQuery && having is null && havingIndex < 0)
+        {
+            bool aggregate = false;
+            for (int i = 0; i < visibleColumnCount; i++) aggregate |= ContainsAggregate(exprList[i]);
+            if (!aggregate) builder.Append("\nGROUP BY ()");
+        }
+        Expression? havingExpression = having ?? (havingIndex >= 0 ? exprList[havingIndex] : null);
+        if (havingExpression is not null) havingExpression.GetNonAliasExpression().GetUnenclosedSql(builder.Append("\nHAVING "), sqlFlags);
+        AppendEndOfQueryToSql(builder, sqlFlags, exprList, withTies);
+        if (forUpdate is not null) builder.Append('\n').Append(forUpdate);
+        if ((sqlFlags & HasSql.AddPlanInformation) != 0)
+        {
+            if (isQuickAggregateQuery) builder.Append("\n/* direct lookup */");
+            if (isDistinct) builder.Append("\n/* distinct */");
+            if (indexSortedColumns == Indexes.IndexSort.FullySorted) builder.Append("\n/* index sorted */");
+            else if (indexSortedColumns > 0) builder.Append("\n/* index sorted: ").Append(indexSortedColumns).Append(" of ")
+                .Append(sort!.GetOrderList()!.Count).Append(" columns */");
+        }
+        return builder;
+    }
+
+    private static bool GetPlanFromFilter(StringBuilder builder, int sqlFlags, TableFilter filter, bool isJoin)
+    {
+        do
+        {
+            if (isJoin) builder.Append('\n');
+            filter.GetPlanSql(builder, isJoin, sqlFlags);
+            isJoin = true;
+            filter = filter.GetJoin()!;
+        } while (filter is not null);
+        return isJoin;
+    }
+
+    private static bool ContainsAggregate(Expression expression)
+    {
+        if (expression is Expressions.Analysis.DataAnalysisOperation operation && operation.IsAggregate()) return true;
+        for (int i = 0; i < expression.GetSubexpressionCount(); i++)
+            if (ContainsAggregate(expression.GetSubexpression(i)!)) return true;
+        return false;
+    }
 
     /// <summary>
     /// Marks duplicate select expressions for the group walk: the first occurrence becomes
@@ -743,6 +840,12 @@ public sealed class Select : Query
             QueryQuick(array, result, columnCount, offset, fetch);
             offset = 0;
         }
+        else if (isWindowQuery)
+        {
+            if (isGroupQuery) QueryGroupWindow(columnCount, result);
+            else QueryWindow(columnCount, result);
+            quickOffset = QuickOffset.No;
+        }
         else if (isGroupQuery)
         {
             // Groups form after the walk, so the offset cannot be skipped up front: the
@@ -837,11 +940,45 @@ public sealed class Select : Query
     /// <param name="groupData">the group data</param>
     private void SetGroupData(SelectGroups groupData) => this.groupData = groupData;
 
+    private void QueryWindow(int columnCount, ResultTarget result)
+    {
+        InitGroupData(columnCount);
+        try
+        {
+            GatherGroup(columnCount, DataAnalysisOperation.StageWindow);
+            ProcessGroupResult(result, columnCount, false);
+        }
+        finally { groupData!.Reset(); }
+    }
+
+    private void QueryGroupWindow(int columnCount, ResultTarget result)
+    {
+        InitGroupData(columnCount);
+        try
+        {
+            GatherGroup(columnCount, DataAnalysisOperation.StageGroup);
+            try
+            {
+                isGroupWindowStage2 = true;
+                while (groupData!.Next() is not null)
+                {
+                    if (havingIndex < 0 || expressions[havingIndex].GetBooleanValue(session))
+                        UpdateAgg(columnCount, DataAnalysisOperation.StageWindow);
+                    else groupData.Remove();
+                }
+                groupData.Done();
+                ProcessGroupResult(result, columnCount, false);
+            }
+            finally { isGroupWindowStage2 = false; }
+        }
+        finally { groupData!.Reset(); }
+    }
+
     /// <summary>
     /// Walks the table once, filing every surviving row into its group.
     /// </summary>
     /// <param name="columnCount">the number of columns</param>
-    private void GatherGroup(int columnCount)
+    private void GatherGroup(int columnCount, int stage = DataAnalysisOperation.StageGroup)
     {
         long rowNumber = 0;
         SetCurrentRowNumber(0);
@@ -852,7 +989,7 @@ public sealed class Select : Query
             {
                 rowNumber++;
                 groupData!.NextSource();
-                UpdateAgg(columnCount, DataAnalysisOperation.StageGroup);
+                UpdateAgg(columnCount, stage);
             }
         }
 
@@ -882,12 +1019,12 @@ public sealed class Select : Query
     /// </summary>
     /// <param name="result">where the rows go</param>
     /// <param name="columnCount">how many columns each row has</param>
-    private void ProcessGroupResult(ResultTarget result, int columnCount)
+    private void ProcessGroupResult(ResultTarget result, int columnCount, bool withHaving = true)
     {
         while (groupData!.Next() is ValueRow currentGroupsKey)
         {
             Value?[] row = ConstructGroupResultRow(currentGroupsKey.GetList(), columnCount);
-            if (IsHavingNullOrFalse(row))
+            if (withHaving && IsHavingNullOrFalse(row))
             {
                 continue;
             }
@@ -1308,7 +1445,7 @@ public sealed class Select : Query
             return data;
         }
 
-        throw new TODOException("Select.getGroupDataIfCurrent: grouped execution is not ported");
+        return null;
     }
 
     /// <summary>Set the distinct flag.</summary>

@@ -52,7 +52,11 @@ public abstract class SelectGroups
         /// <summary>
         /// Cursor for <see cref="Next"/> method.
         /// </summary>
-        private IEnumerator<KeyValuePair<ValueRow, object?[]>>? cursor;
+        // .NET enumerators cannot remove while iterating. Snapshot keys and advance by
+        // key as Java's removable entry iterator does; values remain in the same map.
+        private List<ValueRow>? cursorKeys;
+        private int cursorIndex;
+        private ValueRow? cursorKey;
 
         internal Grouped(SessionLocal session, List<Expression> expressions, int[]? groupIndex)
             : base(session, expressions)
@@ -73,12 +77,14 @@ public abstract class SelectGroups
             base.Reset();
             groupByData = new SortedDictionary<ValueRow, object?[]>(groupComparer);
             currentGroupsKey = null;
-            cursor = null;
+            cursorKeys = null;
+            cursorIndex = 0;
         }
 
         /// <inheritdoc/>
         public override void NextSource()
         {
+            currentGroupByExprData = null;
             ValueRow key;
             if (groupIndex is null)
             {
@@ -130,21 +136,29 @@ public abstract class SelectGroups
                 groupByData[ValueRow.Empty] = CreateRow();
             }
 
-            cursor = groupByData!.GetEnumerator();
+            cursorKeys = [.. groupByData!.Keys];
+            cursorIndex = 0;
         }
 
         /// <inheritdoc/>
         public override ValueRow? Next()
         {
-            if (cursor!.MoveNext())
+            if (cursorIndex < cursorKeys!.Count)
             {
-                KeyValuePair<ValueRow, object?[]> entry = cursor.Current;
-                currentGroupByExprData = entry.Value;
+                cursorKey = cursorKeys[cursorIndex++];
+                currentGroupByExprData = groupByData![cursorKey];
                 currentGroupRowId++;
-                return entry.Key;
+                return cursorKey;
             }
 
             return null;
+        }
+
+        public override void Remove()
+        {
+            groupByData!.Remove(cursorKey!);
+            currentGroupByExprData = null;
+            currentGroupRowId--;
         }
 
         /// <inheritdoc/>
@@ -233,6 +247,28 @@ public abstract class SelectGroups
     /// pointed to by groupByData.
     /// </summary>
     private readonly Dictionary<Expression, int> exprToIndexInGroupByData = new(ReferenceEqualityComparer.Instance);
+
+    private readonly Dictionary<Expressions.Analysis.DataAnalysisOperation, Expressions.Analysis.PartitionData> windowData = [];
+    private readonly Dictionary<Expressions.Analysis.DataAnalysisOperation, SortedDictionary<Value, Expressions.Analysis.PartitionData>> windowPartitionData = [];
+
+    /// <summary>Gets the window data for an expression and partition.</summary>
+    public Expressions.Analysis.PartitionData? GetWindowExprData(Expressions.Analysis.DataAnalysisOperation expr, Value? partitionKey)
+    {
+        if (partitionKey is null) return windowData.GetValueOrDefault(expr);
+        return windowPartitionData.TryGetValue(expr, out var map) && map.TryGetValue(partitionKey, out var data) ? data : null;
+    }
+
+    /// <summary>Sets window data for an expression and partition.</summary>
+    public void SetWindowExprData(Expressions.Analysis.DataAnalysisOperation expr, Value? partitionKey, Expressions.Analysis.PartitionData data)
+    {
+        if (partitionKey is null) windowData.Add(expr, data);
+        else
+        {
+            if (!windowPartitionData.TryGetValue(expr, out var map))
+                windowPartitionData[expr] = map = new SortedDictionary<Value, Expressions.Analysis.PartitionData>(session.GetValueComparer());
+            map[partitionKey] = data;
+        }
+    }
 
     /// <summary>
     /// The id of the current group.
@@ -339,6 +375,8 @@ public abstract class SelectGroups
     {
         currentGroupByExprData = null;
         exprToIndexInGroupByData.Clear();
+        windowData.Clear();
+        windowPartitionData.Clear();
         currentGroupRowId = 0;
     }
 

@@ -85,7 +85,7 @@ public class IndexCondition
 
     private readonly Expression? expression;
 
-    private readonly List<Expression>? expressionList;
+    private readonly IReadOnlyList<Expression>? expressionList;
 
     private readonly Command.Query.Query? expressionQuery;
 
@@ -103,7 +103,7 @@ public class IndexCondition
         ExpressionColumn? column,
         Column[]? columns,
         Expression? expression,
-        List<Expression>? list,
+        IReadOnlyList<Expression>? list,
         Command.Query.Query? query)
     {
         this.compareType = compareType;
@@ -150,7 +150,7 @@ public class IndexCondition
     /// <param name="column">the column</param>
     /// <param name="list">the expression list</param>
     /// <returns>the index condition</returns>
-    public static IndexCondition GetInList(ExpressionColumn column, List<Expression> list)
+    public static IndexCondition GetInList(ExpressionColumn column, IReadOnlyList<Expression> list)
     {
         ArgumentNullException.ThrowIfNull(column);
         ArgumentNullException.ThrowIfNull(list);
@@ -238,10 +238,15 @@ public class IndexCondition
                 _ = valueSet.Add(v);
             }
         }
-        else
+        else if (compareType == Comparison.InArray)
         {
-            _ = valueSet.Add(expression!.GetValue(session));
+            Value value = expression!.GetValue(session);
+            if (value is ValueArray array)
+            {
+                foreach (Value element in array.GetList()) valueSet.Add(element);
+            }
         }
+        else throw Message.DbException.GetInternalError("compareType = " + compareType);
 
         return [.. valueSet];
     }
@@ -408,7 +413,7 @@ public class IndexCondition
     /// Gets the expression list.
     /// </summary>
     /// <returns>the list, or null</returns>
-    public List<Expression>? GetExpressionList() => expressionList;
+    public IReadOnlyList<Expression>? GetExpressionList() => expressionList;
 
     /// <summary>
     /// Gets the expression query.

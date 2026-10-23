@@ -289,7 +289,7 @@ public sealed class UpdateStatement : Statement
     public string? Alias { get; set; }
 
     /// <summary>What to set each column to.</summary>
-    public List<(string Column, Expression Value)> Assignments { get; } = [];
+    public List<(string Column, Expression[]? ArrayIndexes, Expression Value)> Assignments { get; } = [];
 
     /// <summary>The condition, or null.</summary>
     public Expression? Where { get; set; }
@@ -1108,6 +1108,22 @@ public sealed partial class Parser
             return ReadCorrelation(tableFilter);
         }
 
+        if ((IsWord("UNNEST", consume: false) || IsWord("TABLE", consume: false)
+            || IsWord("TABLE_DISTINCT", consume: false)) && position + 1 < tokens.Count
+            && tokens[position + 1].TokenType == Token.OpenParen)
+        {
+            string name = Current.AsIdentifier!;
+            Read();
+            Read();
+            Expressions.Functions.Table.ArrayTableFunction function = name.Equals("UNNEST", StringComparison.OrdinalIgnoreCase)
+                ? ReadUnnestFunction()
+                : ReadTableFunction(name.Equals("TABLE", StringComparison.OrdinalIgnoreCase)
+                    ? Expressions.Functions.Table.ArrayTableFunction.Table : Expressions.Functions.Table.ArrayTableFunction.TableDistinct);
+            Tables.FunctionTable table = new(session.GetCurrentSchema(), session, function);
+            Tables.TableFilter filter = new(session, table, name, true, select, 0, null);
+            return ReadCorrelation(filter);
+        }
+
         Tables.Table fromTable;
         bool hasAlias = true;
         string tableName;
@@ -1170,6 +1186,56 @@ public sealed partial class Parser
         string? filterAlias = hasAlias ? ReadFromAlias() : null;
         return new(
             session, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
+    }
+
+    private Expressions.Functions.Table.ArrayTableFunction ReadUnnestFunction()
+    {
+        Expressions.Functions.Table.ArrayTableFunction function = new(Expressions.Functions.Table.ArrayTableFunction.Unnest);
+        List<Tables.Column> columns = [];
+        if (!ReadIf(Token.CloseParen))
+        {
+            int i = 0;
+            do
+            {
+                Expression expression = ReadQueryOr();
+                TypeInfo columnType = TypeInfo.TypeNull;
+                TypeInfo? expressionType = expression.GetTypeIfStaticallyKnown(session!);
+                if (expressionType is not null)
+                {
+                    if (expressionType.GetValueType() == Value.Json) columnType = TypeInfo.TypeJson;
+                    else if (expressionType.GetValueType() == Value.Array) columnType = (TypeInfo)expressionType.GetExtTypeInfo()!;
+                }
+                function.AddParameter(expression);
+                columns.Add(new Tables.Column("C" + (++i).ToString(System.Globalization.CultureInfo.InvariantCulture), columnType));
+            }
+            while (ReadIfMore());
+        }
+        if (IsWord("WITH", consume: false) && NextIs("ORDINALITY"))
+        {
+            Read(); Read();
+            columns.Add(new Tables.Column("NORD", TypeInfo.TypeInteger));
+        }
+        function.SetColumns(columns);
+        function.DoneWithParameters();
+        return function;
+    }
+
+    private Expressions.Functions.Table.ArrayTableFunction ReadTableFunction(int functionType)
+    {
+        Expressions.Functions.Table.ArrayTableFunction function = new(functionType);
+        List<Tables.Column> columns = [];
+        do
+        {
+            string name = ReadIdentifier();
+            TypeInfo type = ReadIfDataType() ?? throw DbException.GetSyntaxError(sql, Current.Start, "data type");
+            columns.Add(new Tables.Column(name, type));
+            Expect(Token.Equal, "=");
+            function.AddParameter(ReadQueryOr());
+        }
+        while (ReadIfMore());
+        function.SetColumns(columns);
+        function.DoneWithParameters();
+        return function;
     }
 
     /// <summary>
@@ -1879,15 +1945,15 @@ public sealed partial class Parser
                     "Parser.readUpdateSetClause: row-value assignment needs ExpressionList");
             }
 
-            if (CurrentType is Token.OpenBracket)
-            {
-                throw new TODOException(
-                    "Parser.readUpdateSetClause: array element assignment needs the array index reader");
-            }
-
             Tables.Column column = ParseColumn(filter.GetTable()!);
+            List<Expression>? indexes = null;
+            while (ReadIf(Token.OpenBracket))
+            {
+                (indexes ??= []).Add(ReadExpression());
+                Expect(Token.CloseBracket, "]");
+            }
             Expect(Token.Equal, "=");
-            list.AddSingle(column, null, ReadExpressionOrDefault());
+            list.AddSingle(column, indexes?.ToArray(), ReadExpressionOrDefault());
         }
         while (ReadIf(Token.Comma));
 
@@ -2327,6 +2393,18 @@ public sealed partial class Parser
             Read();
             select.SetGroupQuery();
             select.SetHaving(ReadQueryOr(select));
+        }
+
+        if (IsWord("WINDOW"))
+        {
+            do
+            {
+                int index = Current.Start;
+                string name = ReadIdentifier();
+                ExpectWord("AS");
+                if (!select.AddWindow(name, ReadWindowSpecification()))
+                    throw DbException.GetSyntaxError(sql, index, "unique identifier");
+            } while (ReadIf(Token.Comma));
         }
 
         if (CurrentType == ParserUtil.Order)
@@ -2827,14 +2905,11 @@ public sealed partial class Parser
             }
 
             Expressions.Expression arg = ReadQueryOr();
-            if (IsWord("ORDER", consume: false))
-            {
-                throw new TODOException("Parser.parseQuerySelect: ARRAY_AGG ORDER BY is not ported");
-            }
-
+            List<Query.QueryOrderBy>? order = ReadIfOrderBy();
             Expect(Token.CloseParen, ")");
             aggregate = new Expressions.Aggregate.Aggregate(
                 aggregateType, [arg], select, distinct);
+            if (order is not null) aggregate.SetOrderByList(order);
         }
         else if (aggregateType == Expressions.Aggregate.AggregateType.Mode)
         {
@@ -2946,13 +3021,92 @@ public sealed partial class Parser
                 aggregateType, [arg], select, distinct);
         }
 
-        if (IsWord("FILTER", consume: false) || IsWord("OVER", consume: false))
+        if (IsWord("FILTER"))
         {
-            throw new TODOException("Parser.parseQuerySelect: FILTER and OVER are not ported");
+            Expect(Token.OpenParen, "(");
+            ExpectWord("WHERE");
+            aggregate.SetFilterCondition(ReadQueryOr());
+            Expect(Token.CloseParen, ")");
         }
-
-        select.SetGroupQuery();
+        if (IsWord("OVER"))
+        {
+            aggregate.SetOverCondition(CurrentType == Token.OpenParen ? ReadWindowSpecification()
+                : new Expressions.Analysis.Window(ReadIdentifier(), null, null, null));
+            select.SetWindowQuery();
+        }
+        else select.SetGroupQuery();
         return aggregate;
+    }
+
+    private List<Query.QueryOrderBy>? ReadIfOrderBy()
+    {
+        if (!IsWord("ORDER")) return null;
+        ExpectWord("BY");
+        List<Query.QueryOrderBy> order = [];
+        do { order.Add(new Query.QueryOrderBy { expression = ReadQueryOr(), sortType = ReadQuerySortType() }); }
+        while (ReadIf(Token.Comma));
+        return order;
+    }
+
+    private Expressions.Analysis.Window ReadWindowSpecification()
+    {
+        Expect(Token.OpenParen, "(");
+        string? parent = null;
+        if (CurrentType == ParserUtil.Identifier && (Current.IsQuoted ||
+            !IsWord("PARTITION", false) && !IsWord("ROWS", false) && !IsWord("RANGE", false) && !IsWord("GROUPS", false)))
+            parent = ReadIdentifier();
+        List<Expression>? partition = null;
+        if (IsWord("PARTITION"))
+        {
+            ExpectWord("BY"); partition = [];
+            do { partition.Add(ReadQueryOr()); } while (ReadIf(Token.Comma));
+        }
+        List<Query.QueryOrderBy>? order = ReadIfOrderBy();
+        Expressions.Analysis.WindowFrame? frame = ReadWindowFrame();
+        Expect(Token.CloseParen, ")");
+        return new Expressions.Analysis.Window(parent, partition, order, frame);
+    }
+
+    private Expressions.Analysis.WindowFrame? ReadWindowFrame()
+    {
+        Expressions.Analysis.WindowFrameUnits units;
+        if (IsWord("ROWS")) units = Expressions.Analysis.WindowFrameUnits.Rows;
+        else if (IsWord("RANGE")) units = Expressions.Analysis.WindowFrameUnits.Range;
+        else if (IsWord("GROUPS")) units = Expressions.Analysis.WindowFrameUnits.Groups;
+        else return null;
+        Expressions.Analysis.WindowFrameBound starting, following = null!;
+        if (IsWord("BETWEEN"))
+        {
+            starting = ReadWindowFrameRange(false); ExpectWord("AND"); following = ReadWindowFrameRange(false);
+        }
+        else starting = ReadWindowFrameRange(true);
+        int sqlIndex = Current.Start;
+        Expressions.Analysis.WindowFrameExclusion exclusion = Expressions.Analysis.WindowFrameExclusion.ExcludeNoOthers;
+        if (IsWord("EXCLUDE"))
+        {
+            if (IsWord("CURRENT")) { ExpectWord("ROW"); exclusion = Expressions.Analysis.WindowFrameExclusion.ExcludeCurrentRow; }
+            else if (IsWord("GROUP")) exclusion = Expressions.Analysis.WindowFrameExclusion.ExcludeGroup;
+            else if (IsWord("TIES")) exclusion = Expressions.Analysis.WindowFrameExclusion.ExcludeTies;
+            else { ExpectWord("NO"); ExpectWord("OTHERS"); }
+        }
+        Expressions.Analysis.WindowFrame frame = new(units, starting, following, exclusion);
+        if (!frame.IsValid()) throw DbException.GetSyntaxError(sql, sqlIndex);
+        return frame;
+    }
+
+    private Expressions.Analysis.WindowFrameBound ReadWindowFrameRange(bool startingOnly)
+    {
+        if (IsWord("UNBOUNDED"))
+        {
+            if (IsWord("PRECEDING")) return new(Expressions.Analysis.WindowFrameBoundType.UnboundedPreceding, null);
+            if (startingOnly) ExpectWord("PRECEDING");
+            ExpectWord("FOLLOWING"); return new(Expressions.Analysis.WindowFrameBoundType.UnboundedFollowing, null);
+        }
+        if (IsWord("CURRENT")) { ExpectWord("ROW"); return new(Expressions.Analysis.WindowFrameBoundType.CurrentRow, null); }
+        Expression value = ReadQueryOr();
+        if (IsWord("PRECEDING")) return new(Expressions.Analysis.WindowFrameBoundType.Preceding, value);
+        if (startingOnly) ExpectWord("PRECEDING");
+        ExpectWord("FOLLOWING"); return new(Expressions.Analysis.WindowFrameBoundType.Following, value);
     }
 
     /// <summary>
@@ -3209,6 +3363,28 @@ public sealed partial class Parser
     /// Reads a sum of products, as the reference's readSum does.
     /// </summary>
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    // H2 readConcat: concatenation binds less tightly than arithmetic.
+    private Expressions.Expression ReadQueryConcat(Query.Select? aggregateSelect = null)
+    {
+        Expression op1 = ReadQuerySum(aggregateSelect);
+        while (ReadIf(Token.Concatenation))
+        {
+            Expression op2 = ReadQuerySum(aggregateSelect);
+            if (ReadIf(Token.Concatenation))
+            {
+                Expressions.ConcatenationOperation concat = new();
+                concat.AddParameter(op1);
+                concat.AddParameter(op2);
+                do { concat.AddParameter(ReadQuerySum(aggregateSelect)); }
+                while (ReadIf(Token.Concatenation));
+                concat.DoneWithParameters();
+                op1 = concat;
+            }
+            else op1 = new Expressions.ConcatenationOperation(op1, op2);
+        }
+        return op1;
+    }
+
     private Expressions.Expression ReadQuerySum(Query.Select? aggregateSelect = null)
     {
         Expressions.Expression r = ReadQueryFactor(aggregateSelect);
@@ -3281,15 +3457,14 @@ public sealed partial class Parser
             return new Expressions.Conditions.ConditionNot(ReadQueryComparison(aggregateSelect));
         }
 
-        Expressions.Expression left = ReadQuerySum(aggregateSelect);
+        Expressions.Expression left = ReadQueryConcat(aggregateSelect);
         while (true)
         {
             if (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
                 or Token.SmallerEqual or Token.BiggerEqual)
             {
                 int compareType = ReadQueryComparisonType();
-                left = new Expressions.Conditions.Comparison(
-                    compareType, left, ReadQuerySum(aggregateSelect), whenOperand: false);
+                left = ReadComparison(left, compareType, aggregateSelect);
                 continue;
             }
 
@@ -3297,8 +3472,17 @@ public sealed partial class Parser
             {
                 Read();
                 bool not = ReadIf(ParserUtil.Not);
-                Expect(ParserUtil.Null, "NULL");
-                left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
+                if (IsWord("DISTINCT"))
+                {
+                    ExpectWord("FROM");
+                    left = ReadComparison(left, not ? Expressions.Conditions.Comparison.EqualNullSafe
+                        : Expressions.Conditions.Comparison.NotEqualNullSafe, aggregateSelect);
+                }
+                else
+                {
+                    Expect(ParserUtil.Null, "NULL");
+                    left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
+                }
                 continue;
             }
 
@@ -3313,10 +3497,10 @@ public sealed partial class Parser
                     _ = IsWord("ASYMMETRIC");
                 }
 
-                Expressions.Expression a = ReadQuerySum(aggregateSelect);
+                Expressions.Expression a = ReadQueryConcat(aggregateSelect);
                 ExpectWord("AND");
                 left = new Expressions.Conditions.BetweenPredicate(
-                    left, not, whenOperand: false, symmetric, a, ReadQuerySum(aggregateSelect));
+                    left, not, whenOperand: false, symmetric, a, ReadQueryConcat(aggregateSelect));
                 continue;
             }
 
@@ -3339,7 +3523,7 @@ public sealed partial class Parser
                 List<Expressions.Expression> values = [];
                 do
                 {
-                    values.Add(ReadQuerySum(aggregateSelect));
+                    values.Add(ReadQueryConcat(aggregateSelect));
                 }
                 while (ReadIf(Token.Comma));
 
@@ -3403,6 +3587,23 @@ public sealed partial class Parser
         };
     }
 
+    // H2 readComparison: quantified comparison accepts either a subquery or an array.
+    private Expression ReadComparison(Expression left, int compareType, Query.Select? select)
+    {
+        bool all = IsWord("ALL", consume: false);
+        if (all || IsWord("ANY", consume: false) || IsWord("SOME", consume: false))
+        {
+            Read();
+            Expect(Token.OpenParen, "(");
+            Expression result = IsDerivedQuery()
+                ? new Expressions.Conditions.ConditionInQuery(left, false, false, ParseQueryExpression(prepare: false), all, compareType)
+                : new Expressions.Conditions.ConditionInArray(left, false, ReadQueryOr(select), all, compareType);
+            Expect(Token.CloseParen, ")");
+            return result;
+        }
+        return new Expressions.Conditions.Comparison(compareType, left, ReadQueryConcat(select), false);
+    }
+
     /// <summary>
     /// Reads one operand: a parenthesized expression, a NOT, a literal, a parameter, or a
     /// column in name form.
@@ -3410,6 +3611,44 @@ public sealed partial class Parser
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     private Expressions.Expression ReadQueryTerm(Query.Select? aggregateSelect = null)
     {
+        Expression expression = ReadTermWithoutPostfix(aggregateSelect);
+        while (ReadIf(Token.OpenBracket))
+        {
+            expression = new Expressions.ArrayElementReference(expression, ReadQueryOr(aggregateSelect));
+            Expect(Token.CloseBracket, "]");
+        }
+        return expression;
+    }
+
+    // Java readTerm's postfix array indexes are applied after every term shape.
+    private Expressions.Expression ReadTermWithoutPostfix(Query.Select? aggregateSelect)
+    {
+        if (ReadIf(ParserUtil.Array))
+        {
+            if (!ReadIf(Token.OpenBracket))
+            {
+                Expect(Token.OpenParen, "(");
+                Query.Query query = ParseQueryExpression(prepare: false);
+                Expect(Token.CloseParen, ")");
+                return new Expressions.ArrayConstructorByQuery(query);
+            }
+
+            if (ReadIf(Token.CloseBracket))
+            {
+                return Expressions.ValueExpression.Get(ValueArray.Empty);
+            }
+
+            List<Expression> elements = [];
+            do
+            {
+                elements.Add(ReadQueryOr(aggregateSelect));
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseBracket, "]");
+            return new Expressions.ExpressionList([.. elements], isArray: true);
+        }
+
         if (aggregateSelect is not null && IsAggregateCall(out Expressions.Aggregate.AggregateType havingAggregate))
         {
             return ReadQueryAggregate(aggregateSelect, havingAggregate);
@@ -3418,8 +3657,36 @@ public sealed partial class Parser
         if (ReadIf(Token.OpenParen))
         {
             Expressions.Expression nested = ReadQueryOr(aggregateSelect);
+            if (ReadIf(Token.Comma))
+            {
+                List<Expression> list = [nested];
+                do { list.Add(ReadQueryOr(aggregateSelect)); } while (ReadIf(Token.Comma));
+                Expect(Token.CloseParen, ")");
+                return new Expressions.ExpressionList([.. list], false);
+            }
             Expect(Token.CloseParen, ")");
             return nested;
+        }
+
+        if (ReadIf(ParserUtil.Row))
+        {
+            Expect(Token.OpenParen, "(");
+            List<Expression> list = [];
+            if (!ReadIf(Token.CloseParen))
+            {
+                do { list.Add(ReadQueryOr(aggregateSelect)); } while (ReadIfMore());
+            }
+            return list.Count == 0 ? Expressions.ValueExpression.Get(ValueRow.Empty)
+                : new Expressions.ExpressionList([.. list], false);
+        }
+
+        if (IsWord("JSON", consume: false) && position + 1 < tokens.Count
+            && tokens[position + 1].GetValue(provider) is Value jsonLiteral
+            && jsonLiteral.GetValueType() is Value.Varchar or Value.Varbinary)
+        {
+            Read(); Read();
+            return Expressions.ValueExpression.Get(jsonLiteral.GetValueType() == Value.Varchar
+                ? ValueJson.FromJson(jsonLiteral.GetString()!) : ValueJson.FromJson(jsonLiteral.GetBytesNoCopy()!));
         }
 
         if (IsWord("CASE", consume: false))
@@ -4047,11 +4314,15 @@ public sealed partial class Parser
             case "XMLTEXT":
                 throw new TODOException("Parser.readBuiltinFunctionIf: XMLFunction is not ported");
 
-            // ArrayFunction (not ported).
             case "TRIM_ARRAY":
+                return new Expressions.Functions.ArrayFunction(ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect), null,
+                    Expressions.Functions.ArrayFunction.TrimArray);
             case "ARRAY_CONTAINS":
+                return new Expressions.Functions.ArrayFunction(ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect), null,
+                    Expressions.Functions.ArrayFunction.ArrayContains);
             case "ARRAY_SLICE":
-                throw new TODOException("Parser.readBuiltinFunctionIf: ArrayFunction is not ported");
+                return new Expressions.Functions.ArrayFunction(ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadLastArgument(aggregateSelect), Expressions.Functions.ArrayFunction.ArraySlice);
 
             case "COMPRESS":
                 return new Expressions.Functions.CompressFunction(
@@ -4218,16 +4489,12 @@ public sealed partial class Parser
     {
         switch (name)
         {
-            // ConcatenationOperation (not ported).
             case "ARRAY_APPEND":
             case "ARRAY_CAT":
-                throw new TODOException(
-                    "Parser.readCompatibilityFunction: ConcatenationOperation is not ported");
+                return new Expressions.ConcatenationOperation(ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect));
 
-            // ArrayElementReference (not ported).
             case "ARRAY_GET":
-                throw new TODOException(
-                    "Parser.readCompatibilityFunction: ArrayElementReference is not ported");
+                return new Expressions.ArrayElementReference(ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect));
 
             case "ARRAY_LENGTH":
                 return new Expressions.Functions.CardinalityExpression(
@@ -5184,45 +5451,18 @@ public sealed partial class Parser
     /// <returns>the type info</returns>
     private TypeInfo ParseDataType(string typeName)
     {
-        string name = typeName;
-        long precision = -1;
-        int scale = -1;
-        int paren = typeName.IndexOf('(');
-        if (paren >= 0)
+        // The existing statement DTO retains text. Reuse H2's token-based reader rather than
+        // a second type grammar; this also retains array component types and cardinalities.
+        Parser parser = new(typeName, provider,
+            Tokenizer.TokenizeForTest(typeName, false, new BitList(), provider), session);
+        TypeInfo type = parser.ReadIfDataType()
+            ?? throw DbException.GetSyntaxError(typeName, parser.Current.Start, "data type");
+        if (parser.CurrentType != Token.EndOfInput)
         {
-            name = typeName[..paren];
-            string[] args = typeName[(paren + 1)..^1].Split(',');
-            if (args.Length > 2)
-            {
-                throw DbException.GetSyntaxError(sql, 0, typeName);
-            }
-
-            if (!long.TryParse(args[0].Trim(), out precision))
-            {
-                throw DbException.GetSyntaxError(sql, 0, typeName);
-            }
-
-            if (args.Length > 1 && !int.TryParse(args[1].Trim(), out scale))
-            {
-                throw DbException.GetSyntaxError(sql, 0, typeName);
-            }
+            throw DbException.GetSyntaxError(typeName, parser.Current.Start);
         }
 
-        DataType? dataType = DataType.GetTypeByName(name.Trim().ToUpperInvariant());
-        if (dataType is null)
-        {
-            throw DbException.GetSyntaxError(sql, 0, typeName);
-        }
-
-        // DECIMAL and DEC are the same type as NUMERIC and say so: the extended parameters
-        // of the type are what tell the two apart, and the reference keeps that difference
-        // in them.
-        string upperName = name.Trim().ToUpperInvariant();
-        ExtTypeInfo? extTypeInfo = upperName is "DECIMAL" or "DEC"
-            ? ExtTypeInfoNumeric.Decimal
-            : null;
-
-        return TypeInfo.GetTypeInfo(dataType.Type, precision, scale, extTypeInfo);
+        return type;
     }
 
     /// <summary>
@@ -5351,7 +5591,7 @@ public sealed partial class Parser
             session, table, statement.Alias ?? table.GetTableName(),
             rightsChecked: true, select: null, 0, null));
         Dml.SetClauseList assignments = new(table);
-        foreach ((string name, Expression value) in statement.Assignments)
+        foreach ((string name, Expression[]? indexes, Expression value) in statement.Assignments)
         {
             Tables.Column? match = null;
             foreach (Tables.Column candidate in table.GetColumns())
@@ -5368,7 +5608,7 @@ public sealed partial class Parser
                 throw DbException.GetSyntaxError(sql, 0, name);
             }
 
-            assignments.AddSingle(match, null, value);
+            assignments.AddSingle(match, indexes, value);
         }
 
         update.SetSetClauseList(assignments);
@@ -6391,8 +6631,14 @@ public sealed partial class Parser
         do
         {
             string column = ReadIdentifier();
+            List<Expression>? indexes = null;
+            while (ReadIf(Token.OpenBracket))
+            {
+                (indexes ??= []).Add(ReadExpression());
+                Expect(Token.CloseBracket, "]");
+            }
             Expect(Token.Equal, "=");
-            statement.Assignments.Add((column, ReadExpression()));
+            statement.Assignments.Add((column, indexes?.ToArray(), ReadExpressionOrDefault()));
         }
         while (ReadIf(Token.Comma));
 
@@ -6508,57 +6754,8 @@ public sealed partial class Parser
     /// </summary>
     private string ReadTypeName()
     {
-        string name = ReadIdentifier();
-        string suffix = string.Empty;
-        while (CurrentType == Token.OpenParen)
-        {
-            Read();
-            StringBuilder arguments = new();
-            while (true)
-            {
-                Value? value = Current.GetValue(provider);
-                _ = arguments.Append(value is null ? ReadIdentifier() : value.GetString());
-
-                // A literal was read rather than an identifier, and ReadIdentifier has already
-                // consumed its token; this is the other half of that pair.
-                if (value is not null)
-                {
-                    Read();
-                }
-
-                if (!ReadIf(Token.Comma))
-                {
-                    break;
-                }
-
-                // "10, 2" and not "10,2": this string is what a DDL statement prints back, and
-                // the reference writes the separator with a space.
-                _ = arguments.Append(", ");
-            }
-
-            Expect(Token.CloseParen, ")");
-            suffix += "(" + arguments + ")";
-        }
-
-        if (name.Equals("DOUBLE", StringComparison.OrdinalIgnoreCase) && IsWord("PRECISION", consume: false))
-        {
-            Read();
-            name = "DOUBLE PRECISION";
-        }
-        else if (name.Equals("TIMESTAMP", StringComparison.OrdinalIgnoreCase) && IsWord("WITH", consume: false))
-        {
-            Read();
-            if (IsWord("TIME", consume: false))
-            {
-                Read();
-                if (IsWord("ZONE", consume: false))
-                {
-                    Read();
-                    name = "TIMESTAMP WITH TIME ZONE";
-                }
-            }
-        }
-
-        return suffix.Length == 0 ? name : name + suffix;
+        int start = Current.Start;
+        _ = ReadIfDataType() ?? throw DbException.GetSyntaxError(sql, start, "data type");
+        return sql[start..Current.Start].Trim();
     }
 }

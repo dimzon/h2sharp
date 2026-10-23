@@ -51,6 +51,14 @@ public sealed class ExpressionColumn : Expression
     /// </summary>
     private ColumnResolver? columnResolver;
 
+    /// <summary>Creates a metadata column expression (Java ExpressionColumn(Database, Column)).</summary>
+    public ExpressionColumn(Database database, Column column)
+    {
+        _ = database;
+        this.column = column;
+        columnAlias = column.GetName();
+    }
+
     /// <summary>
     /// Creates a new expression column.
     /// </summary>
@@ -112,6 +120,13 @@ public sealed class ExpressionColumn : Expression
         // the session, which does not resolve yet.
         if (columnResolver is not null && column is not null)
         {
+            Command.Query.Select? select = columnResolver.GetSelect();
+            Command.Query.SelectGroups? groupData = select?.GetGroupDataIfCurrent(false);
+            if (groupData is not null)
+            {
+                if (groupData.GetCurrentGroupExprData(this) is Value value) return value;
+                if (select!.IsGroupWindowStage2()) throw DbException.Get(Api.ErrorCode.MustGroupByColumn1, GetTraceSql());
+            }
             return columnResolver.GetValue(column)!;
         }
 
@@ -136,7 +151,7 @@ public sealed class ExpressionColumn : Expression
     {
         if (column is null)
         {
-            throw new TODOException("ExpressionColumn.GetTypeInfo: the column was not mapped");
+            return TypeInfo.TypeUnknown;
         }
 
         return column.GetTypeInfo();
@@ -238,6 +253,10 @@ public sealed class ExpressionColumn : Expression
     /// <inheritdoc/>
     public override Expression Optimize(SessionLocal session)
     {
+        if (columnResolver is null)
+        {
+            throw DbException.Get(Api.ErrorCode.ColumnNotFound1, tableAlias is null ? columnAlias : tableAlias + '.' + columnAlias);
+        }
         return this;
     }
 
@@ -260,6 +279,15 @@ public sealed class ExpressionColumn : Expression
     /// <inheritdoc/>
     public override void UpdateAggregate(SessionLocal session, int stage)
     {
+        Command.Query.Select? select = columnResolver?.GetSelect();
+        if (select is null) throw DbException.Get(Api.ErrorCode.MustGroupByColumn1, GetTraceSql());
+        if (stage == Analysis.DataAnalysisOperation.StageReset) return;
+        Command.Query.SelectGroups? groupData = select.GetGroupDataIfCurrent(false);
+        if (groupData is null) return;
+        if (groupData.GetCurrentGroupExprData(this) is not Value value)
+            groupData.SetCurrentGroupExprData(this, columnResolver!.GetValue(column!)!);
+        else if (!select.IsGroupWindowStage2() && !session.AreEqual(columnResolver!.GetValue(column!)!, value))
+            throw DbException.Get(Api.ErrorCode.MustGroupByColumn1, GetTraceSql());
     }
 
     /// <inheritdoc/>

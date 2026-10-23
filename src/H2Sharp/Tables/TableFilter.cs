@@ -28,6 +28,7 @@
  * arrives member by member, each read from the reference before it is written.
  */
 using System;
+using System.Text;
 using System.Collections.Generic;
 using H2Sharp.Engine;
 using H2Sharp.Message;
@@ -709,6 +710,88 @@ public class TableFilter : ColumnResolver
     }
     /// <returns>the index, or null when the plan has not chosen one</returns>
     public H2Sharp.Indexes.Index? GetIndex() => index;
+
+    /// <summary>Renders this filter and its join, as H2 TableFilter.getPlanSQL.</summary>
+    public StringBuilder GetPlanSql(StringBuilder builder, bool isJoin, int sqlFlags)
+    {
+        if (isJoin) builder.Append(joinOuter ? "LEFT OUTER JOIN " : "INNER JOIN ");
+        if (nestedJoin is not null)
+        {
+            StringBuilder nested = new();
+            for (TableFilter? filter = nestedJoin; filter is not null; filter = filter.GetJoin())
+                filter.GetPlanSql(nested, filter != nestedJoin, sqlFlags).Append('\n');
+            string text = nested.ToString();
+            bool enclose = !text.StartsWith('(');
+            if (enclose) builder.Append("(\n");
+            Util.StringUtils.Indent(builder, text, 4, false);
+            if (enclose) builder.Append(')');
+            if (isJoin)
+            {
+                builder.Append(" ON ");
+                if (joinCondition is null) builder.Append("1=1");
+                else joinCondition.GetUnenclosedSql(builder, sqlFlags);
+            }
+            return builder;
+        }
+        table.GetSql(builder, sqlFlags);
+        if (alias is not null)
+        {
+            Util.ParserUtil.QuoteIdentifier(builder.Append(' '), alias, sqlFlags);
+            if (derivedColumnMap is not null)
+            {
+                builder.Append('(');
+                bool first = true;
+                foreach (string name in derivedColumnMap.Values)
+                {
+                    if (!first) builder.Append(", ");
+                    first = false;
+                    Util.ParserUtil.QuoteIdentifier(builder, name, sqlFlags);
+                }
+                builder.Append(')');
+            }
+        }
+        if (indexHints is not null)
+        {
+            builder.Append(" USE INDEX (");
+            bool first = true;
+            foreach (string name in indexHints.GetAllowedIndexes())
+            {
+                if (!first) builder.Append(", ");
+                first = false;
+                Util.ParserUtil.QuoteIdentifier(builder, name, sqlFlags);
+            }
+            builder.Append(')');
+        }
+        if (index is not null && (sqlFlags & Util.HasSql.AddPlanInformation) != 0)
+        {
+            StringBuilder plan = new StringBuilder("/* ").Append(index.GetPlanSql());
+            if (indexConditions.Count > 0)
+            {
+                plan.Append(": ");
+                for (int i = 0; i < indexConditions.Count; i++)
+                {
+                    if (i > 0) plan.Append("\n    AND ");
+                    plan.Append(indexConditions[i].GetSql(Util.HasSql.TraceSqlFlags | Util.HasSql.AddPlanInformation));
+                }
+            }
+            if (plan.ToString().IndexOf('\n', 3) >= 0) plan.Append('\n');
+            Util.StringUtils.Indent(builder.Append('\n'), plan.Append(" */").ToString(), 4, false);
+        }
+        if (isJoin)
+        {
+            builder.Append("\n    ON ");
+            if (joinCondition is null) builder.Append("1=1");
+            else joinCondition.GetUnenclosedSql(builder, sqlFlags);
+        }
+        if ((sqlFlags & Util.HasSql.AddPlanInformation) != 0)
+        {
+            if (filterCondition is not null)
+                Util.StringUtils.Indent(builder.Append('\n'), "/* WHERE " + filterCondition.GetSql(
+                    Util.HasSql.TraceSqlFlags | Util.HasSql.AddPlanInformation, Expression.WithoutParentheses) + "\n*/", 4, false);
+            if (scanCount > 0) builder.Append("\n    /* scanCount: ").Append(scanCount).Append(" */");
+        }
+        return builder;
+    }
 
     /// <summary>
     /// The filter used to walk through the index.

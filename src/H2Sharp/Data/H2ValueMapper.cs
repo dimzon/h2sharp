@@ -21,6 +21,8 @@
  * and a TODOException would fail the demand while answering the same question.
  */
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
 using System.Numerics;
@@ -50,8 +52,9 @@ internal static class H2ValueMapper
     /// </remarks>
     /// <param name="value">the caller value, possibly null</param>
     /// <param name="dbType">the type the caller declared, or null when it declared none</param>
+    /// <param name="provider">the session used to promote and convert array elements</param>
     /// <returns>the engine value</returns>
-    internal static Value ToValue(object? value, DbType? dbType)
+    internal static Value ToValue(object? value, DbType? dbType, Engine.CastDataProvider? provider = null)
     {
         if (value is null or DBNull)
         {
@@ -62,7 +65,7 @@ internal static class H2ValueMapper
         {
             return ToValue(
                 Convert.ChangeType(value, Enum.GetUnderlyingType(value.GetType()), CultureInfo.InvariantCulture),
-                dbType);
+                dbType, provider);
         }
 
         return value switch
@@ -96,8 +99,97 @@ internal static class H2ValueMapper
                 (int)dto.Offset.TotalSeconds),
             Guid g => ValueUuid.Get(g),
             System.IO.Stream stream => ReadStream(stream),
+            IEnumerable enumerable => ToArrayValue(enumerable, dbType, provider),
             _ => throw new InvalidOperationException(
                 "H2ValueMapper.ToValue: no engine value for " + value.GetType().Name),
+        };
+    }
+
+    // JDBC ValueToObjectConverter.arrayToValue converts each element then lets ValueArray
+    // infer the common SQL type. The ADO.NET adapter also accepts CLR value arrays, lists,
+    // and lazy IEnumerable values. strings and byte[] retain their scalar mappings above.
+    private static ValueArray ToArrayValue(IEnumerable source, DbType? dbType, Engine.CastDataProvider? provider)
+    {
+        if (source is Array array && array.Rank != 1)
+        {
+            throw new NotSupportedException("Use jagged arrays for nested SQL ARRAY values");
+        }
+
+        List<Value> values = [];
+        foreach (object? item in source)
+        {
+            values.Add(ToValue(item, dbType, provider));
+            if (values.Count > Engine.Constants.MaxArrayCardinality)
+            {
+                throw Message.DbException.GetValueTooLongException("ARRAY", "ARRAY", values.Count);
+            }
+        }
+
+        Value[] elements = [.. values];
+        TypeInfo component = TypeInfo.GetHigherType(elements);
+        if (component.GetValueType() == Value.Null)
+        {
+            // CLR generic element types preserve the type of empty / all-NULL sequences.
+            // JDBC Object[] cannot preserve a primitive element type this way.
+            Type? elementType = source.GetType().GetElementType();
+            if (elementType is null)
+            {
+                foreach (Type candidate in source.GetType().GetInterfaces())
+                {
+                    if (candidate.IsGenericType && candidate.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                    {
+                        elementType = candidate.GetGenericArguments()[0];
+                        break;
+                    }
+                }
+            }
+
+            component = GetElementTypeInfo(elementType, dbType) ?? component;
+        }
+
+        return ValueArray.Get(component, elements, provider);
+    }
+
+    private static TypeInfo? GetElementTypeInfo(Type? type, DbType? dbType)
+    {
+        if (type is null || type == typeof(object))
+        {
+            return null;
+        }
+
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        if (type.IsEnum)
+        {
+            type = Enum.GetUnderlyingType(type);
+        }
+
+        if (type == typeof(byte[])) return TypeInfo.TypeVarbinary;
+        if (type.IsArray)
+        {
+            TypeInfo? component = GetElementTypeInfo(type.GetElementType(), dbType);
+            return component is null ? null : TypeInfo.GetTypeInfo(Value.Array, -1, -1, component);
+        }
+
+        if (type == typeof(Guid)) return TypeInfo.TypeUuid;
+        if (type == typeof(DateOnly)) return TypeInfo.TypeDate;
+        if (type == typeof(TimeOnly)) return TypeInfo.TypeTime;
+        if (type == typeof(TimeSpan)) return dbType == DbType.Time ? TypeInfo.TypeTime : TypeInfo.TypeIntervalDayToSecond;
+        if (type == typeof(DateTimeOffset)) return TypeInfo.TypeTimestampTz;
+        if (type == typeof(BigInteger)) return TypeInfo.TypeNumericScale0;
+        return Type.GetTypeCode(type) switch
+        {
+            TypeCode.Boolean => TypeInfo.TypeBoolean,
+            TypeCode.SByte => TypeInfo.TypeTinyint,
+            TypeCode.Byte or TypeCode.Int16 => TypeInfo.TypeSmallint,
+            TypeCode.Int32 => TypeInfo.TypeInteger,
+            TypeCode.Int64 => TypeInfo.TypeBigint,
+            TypeCode.Single => TypeInfo.TypeReal,
+            TypeCode.Double => TypeInfo.TypeDouble,
+            TypeCode.Decimal => TypeInfo.TypeNumericFloatingPoint,
+            TypeCode.Char => TypeInfo.TypeChar,
+            TypeCode.String => TypeInfo.TypeVarchar,
+            TypeCode.DateTime => TypeInfo.TypeTimestamp,
+            _ => null,
         };
     }
 
@@ -147,11 +239,95 @@ internal static class H2ValueMapper
                     ((ValueTimestampTimeZone)value).GetTimeNanos()),
                 TimeSpan.FromSeconds(((ValueTimestampTimeZone)value).GetTimeZoneOffsetSeconds())),
             Value.Uuid => ((ValueUuid)value).GetUuid(),
+            Value.Array => ToArrayObject((ValueArray)value),
             _ when IsIntervalType(value.GetValueType()) => ToTimeSpan((ValueInterval)value),
             _ => throw new TODOException(
                 "H2ValueMapper.ToObject: no caller value for engine type "
                 + Value.GetTypeName(value.GetValueType())),
         };
+    }
+
+    // Approved CLR adaptation: SQL ARRAY reads as a typed CLR array. A NULL element in a
+    // value-type array uses Nullable<T>, never zero / false. NULL columns remain DBNull.
+    internal static Array ToArrayObject(ValueArray value, Type? requestedType = null)
+    {
+        Type arrayType = requestedType ?? GetArrayObjectType(value);
+        if (!arrayType.IsArray || arrayType.GetArrayRank() != 1)
+        {
+            throw new InvalidCastException("SQL ARRAY requires a one-dimensional CLR array type");
+        }
+
+        Type elementType = arrayType.GetElementType()!;
+        Value[] elements = value.GetList();
+        Array result = Array.CreateInstance(elementType, elements.Length);
+        for (int i = 0; i < elements.Length; i++)
+        {
+            object? element;
+            if (elements[i] is ValueNull)
+            {
+                if (elementType.IsValueType && Nullable.GetUnderlyingType(elementType) is null)
+                {
+                    throw new InvalidCastException("Cannot read a NULL array element as " + elementType.Name);
+                }
+
+                element = elementType == typeof(object) ? DBNull.Value : null;
+            }
+            else if (elements[i] is ValueArray nested && elementType.IsArray)
+            {
+                element = ToArrayObject(nested, elementType);
+            }
+            else
+            {
+                element = ToObject(elements[i]);
+                Type target = Nullable.GetUnderlyingType(elementType) ?? elementType;
+                if (element is not null && !target.IsInstanceOfType(element))
+                {
+                    // Widening / checked narrowing for explicitly requested numeric arrays,
+                    // matching the reader's scalar numeric conversion convention.
+                    element = Convert.ChangeType(element, target, CultureInfo.InvariantCulture);
+                }
+            }
+
+            result.SetValue(element, i);
+        }
+
+        return result;
+    }
+
+    private static Type GetArrayObjectType(ValueArray value)
+    {
+        Type component = GetFieldType(value.GetComponentType());
+        Value[] elements = value.GetList();
+        if (value.GetComponentType().GetValueType() == Value.Array)
+        {
+            foreach (Value element in elements)
+            {
+                if (element is ValueArray nested)
+                {
+                    Type nestedType = GetArrayObjectType(nested);
+                    if (nestedType != component)
+                    {
+                        // Nested rows may have different nullable element layouts. object[]
+                        // holds each typed child without flattening or dropping NULLs.
+                        component = typeof(object);
+                        break;
+                    }
+                }
+            }
+        }
+        else if (component.IsValueType)
+        {
+            foreach (Value element in elements)
+            {
+                if (element is ValueNull)
+                {
+                    component = typeof(Nullable<>).MakeGenericType(component);
+                    break;
+                }
+            }
+        }
+
+        return component.MakeArrayType();
     }
 
     /// <summary>
@@ -178,6 +354,7 @@ internal static class H2ValueMapper
             Value.Time => typeof(TimeSpan),
             Value.TimeTz or Value.TimestampTz => typeof(DateTimeOffset),
             Value.Uuid => typeof(Guid),
+            Value.Array => GetFieldType((TypeInfo)type.GetExtTypeInfo()!).MakeArrayType(),
             _ when IsIntervalType(type.GetValueType()) => typeof(TimeSpan),
             _ => typeof(object),
         };

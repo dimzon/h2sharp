@@ -40,6 +40,7 @@ public class Aggregate : AbstractAggregate
     private readonly AggregateType aggregateType;
 
     private List<QueryOrderBy>? orderByList;
+    private Result.SortOrder? orderBySort;
 
     private object? extraArguments;
 
@@ -706,7 +707,8 @@ public class Aggregate : AbstractAggregate
         // orderBySort is not ported — no ordered aggregate is read yet — so the
         // reference's sort always takes its fallback: session comparison, taken once
         // rather than re-read through the select on every pair.
-        Array.Sort(array, select.GetSession().GetValueComparison());
+        Array.Sort(array, orderBySort is null ? select.GetSession().GetValueComparison()
+            : orderBySort.GetRowValueComparator());
     }
 
     private Value GetArrayAgg(SessionLocal session, AggregateData data)
@@ -860,6 +862,7 @@ public class Aggregate : AbstractAggregate
     /// <inheritdoc/>
     protected override void UpdateFromExpressions(SessionLocal session, object aggregateData, Value?[] array)
     {
+        if (filterCondition is not null && !array[GetNumExpressions() - 1]!.IsTrue()) return;
         AggregateData data = (AggregateData)aggregateData;
         Value? v = args.Length == 0 ? null : array[0];
         UpdateData(session, data, v, array);
@@ -929,6 +932,10 @@ public class Aggregate : AbstractAggregate
             case AggregateType.JsonArrayagg:
                 // updateCollecting wraps for ORDER BY lists, but JSON_ARRAYAGG's list is not
                 // read yet, so the value goes as is.
+                v = UpdateCollecting(session, v!, remembered);
+                break;
+            case AggregateType.ArrayAgg:
+                v = UpdateCollecting(session, v!, remembered);
                 break;
             case AggregateType.JsonObjectagg:
                 {
@@ -957,6 +964,16 @@ public class Aggregate : AbstractAggregate
     private Value? GetSecondValue(SessionLocal session, Value?[]? remembered)
         => remembered is not null ? remembered[1] : args[1].GetValue(session);
 
+    private Value UpdateCollecting(SessionLocal session, Value value, Value?[]? remembered)
+    {
+        if (orderByList is null) return value;
+        Value[] row = new Value[1 + orderByList.Count];
+        row[0] = value;
+        for (int i = 0; i < orderByList.Count; i++)
+            row[i + 1] = remembered is null ? orderByList[i].expression!.GetValue(session) : remembered[i + 1]!;
+        return ValueRow.Get(row);
+    }
+
     /// <inheritdoc/>
     protected override int GetNumExpressions()
     {
@@ -966,6 +983,7 @@ public class Aggregate : AbstractAggregate
             n += orderByList.Count;
         }
 
+        if (filterCondition is not null) n++;
         return n;
     }
 
@@ -985,6 +1003,7 @@ public class Aggregate : AbstractAggregate
                 array[offset++] = o.expression!.GetValue(session);
             }
         }
+        if (filterCondition is not null) array[offset] = ValueBoolean.Get(filterCondition.GetBooleanValue(session));
     }
 
     /// <inheritdoc/>
@@ -1012,16 +1031,21 @@ public class Aggregate : AbstractAggregate
 
         if (orderByList is not null)
         {
-            foreach (QueryOrderBy o in orderByList)
+            int offset = aggregateType is AggregateType.ArrayAgg or AggregateType.Listagg or AggregateType.JsonArrayagg ? 1 : 0;
+            for (int i = 0; i < orderByList.Count; i++)
             {
+                QueryOrderBy o = orderByList[i];
                 o.expression = o.expression!.Optimize(session);
+                if (offset != 0 && o.expression.IsConstant()) orderByList.RemoveAt(i--);
             }
+            if (orderByList.Count == 0) orderByList = null;
+            else orderBySort = CreateOrder(session, orderByList, offset);
         }
 
         switch (aggregateType)
         {
             case AggregateType.Count:
-                if (args[0].IsConstant())
+                if (args[0].IsConstant() && over is null)
                 {
                     if (args[0].IsNullConstant())
                     {

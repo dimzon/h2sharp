@@ -51,6 +51,45 @@ dotnet build H2Sharp.sln
 dotnet test
 ```
 
+## Arrays with ADO.NET and Dapper
+
+H2 array columns use `INTEGER ARRAY`, `VARCHAR(20) ARRAY`, or a bounded type such as
+`INTEGER ARRAY[10]`. Array parameters accept CLR arrays, lists, and `IEnumerable` values;
+enumerables are consumed once per execution. `string` and `byte[]` remain text and binary
+parameters. Use jagged arrays for nested SQL arrays.
+
+```csharp
+using var connection = new H2Sharp.Data.H2Connection("jdbc:h2:mem:arrays");
+connection.Open();
+connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY, NUMBERS INTEGER ARRAY)");
+
+var parameters = new Dapper.DynamicParameters();
+parameters.Add("id", 1);
+parameters.Add("numbers", new List<int> { 10, 20 }, DbType.Object);
+connection.Execute("INSERT INTO T VALUES (@id, @numbers)", parameters);
+int[] numbers = connection.QuerySingle<int[]>("SELECT NUMBERS FROM T WHERE ID = 1");
+```
+
+The example uses `Dapper`, `System.Data`, and `System.Collections.Generic`. Explicit
+`DbType.Object` sends one native array parameter. Dapper's ordinary `IN @ids` list expansion
+also works.
+
+`DbDataReader.GetValue()` returns typed arrays: `int[]`, `string[]`, `Guid[]`, etc.
+Numeric arrays containing NULL elements return nullable arrays such as `int?[]`;
+a NULL column returns `DBNull.Value`, and an empty array remains empty. `GetFieldType()`
+reports the non-nullable element's array type independently of row contents.
+Use `GetFieldValue<int?[]>()` for a consistent explicit type across rows. Reading a NULL
+element into `int[]` throws `InvalidCastException`.
+
+For Dapper properties declared as nullable arrays, configure its typed-reader path once:
+
+```csharp
+Dapper.SqlMapper.AddTypeMap(typeof(int?[]), DbType.Object, useGetFieldValue: true);
+```
+
+This also allows nullable arrays to be sent as one parameter from an anonymous parameter
+object. Without this mapping, Dapper's default materializer directly casts `GetValue()`.
+
 ## Licensing
 
 H2 is dual-licensed under the Mozilla Public License 2.0 and the Eclipse Public License 1.0.

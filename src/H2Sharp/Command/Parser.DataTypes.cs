@@ -8,10 +8,9 @@
  *
  * The data type reader of the reference: readIfDataType and the readers it calls.
  *
- * The reference reads a type from the tokens, and this is that reader. The port also has a
- * string reader, ParseDataType, which the DDL statements use: it takes the type as it was
- * written and hands back a TypeInfo. That one cannot spell "NATIONAL CHARACTER(3)" and it
- * cannot read a scaled length, so a cast of a type with more than one word needs this one.
+ * The reference reads a type from the tokens, and this is that reader. DDL's existing
+ * statement DTO retains the source spelling, so ParseDataType invokes this same reader on
+ * that text. Type parsing and ARRAY suffixes share the reference grammar with CAST.
  *
  * What is left out, and why:
  *
@@ -22,8 +21,6 @@
  *   with a guess.
  * * Domains. The reference falls back to a lookup in the schema when the name is not a type.
  *   The port has no domains, so a name that is not a type is an unknown type.
- * * The array component type. The reference keeps the component type in the type info; the
- *   port's type info has no place for it, so an array type is refused by name.
  */
 using System;
 using System.Collections.Generic;
@@ -494,8 +491,21 @@ public sealed partial class Parser
     /// <returns>the type</returns>
     private TypeInfo ParseArrayType(TypeInfo componentType)
     {
-        _ = componentType;
-        throw new TODOException("Parser.readIfDataType: array types are not ported");
+        int precision = -1;
+        if (ReadIf(Token.OpenBracket))
+        {
+            precision = ReadNonNegativeInt();
+            if (precision > Engine.Constants.MaxArrayCardinality)
+            {
+                throw DbException.Get(ErrorCode.InvalidValuePrecision,
+                    precision.ToString(CultureInfo.InvariantCulture), "0",
+                    Engine.Constants.MaxArrayCardinality.ToString(CultureInfo.InvariantCulture));
+            }
+
+            Expect(Token.CloseBracket, "]");
+        }
+
+        return TypeInfo.GetTypeInfo(Value.Array, precision, -1, componentType);
     }
 
     /// <summary>

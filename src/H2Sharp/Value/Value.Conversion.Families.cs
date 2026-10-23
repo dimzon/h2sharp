@@ -81,6 +81,11 @@ public abstract partial class Value
     public Value ConvertToType(TypeInfo targetType)
         => ConvertToValue(targetType, null, ConvertTo, null);
 
+    /// <summary>Convert without precision checks using the session's conversion context.</summary>
+    /// <remarks>Java convertTo(TypeInfo, CastDataProvider); renamed for the ConvertTo constant.</remarks>
+    public Value ConvertToType(TypeInfo targetType, CastDataProvider? provider)
+        => ConvertToValue(targetType, provider, ConvertTo, null);
+
     /// <summary>
     /// Cast a value to the specified type for assignment. The scale is set if applicable, and if
     /// precision is too large an exception is thrown.

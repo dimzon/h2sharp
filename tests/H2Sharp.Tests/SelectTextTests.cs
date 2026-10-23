@@ -1863,21 +1863,10 @@ public sealed class SelectTextTests
         CompareText("select_text_arrayaggempty", "SELECT ARRAY_AGG(NAME) FROM T WHERE ID > 100", ["=-"]);
     }
 
-    [Fact]
-    public void ArrayAggOrderByWaitsForOrdering()
+    [JavaOracleFact]
+    public void ArrayAggOrderByOrdersElements()
     {
-        // ARRAY_AGG itself runs; only the ORDER BY inside the parentheses waits.
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT ARRAY_AGG(NAME ORDER BY NAME) FROM T"));
-            Assert.Contains("ORDER BY", e.Message);
-        }
-        finally
-        {
-            store.Dispose();
-        }
+        CompareText("select_text_arrayaggorderby", "SELECT ARRAY_AGG(NAME ORDER BY NAME) FROM T", ["=[null, b, b, c]"]);
     }
 
     [JavaOracleFact]

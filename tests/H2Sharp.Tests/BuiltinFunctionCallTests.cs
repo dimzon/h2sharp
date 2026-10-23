@@ -734,13 +734,10 @@ public sealed class BuiltinFunctionCallTests
         Assert.Contains("window functions", e.Message);
     }
 
-    [Fact]
-    public void RemainingKeywordFunctionsWaitForReadTerm()
+    [JavaOracleFact]
+    public void RowConstructorMatchesReference()
     {
-        SessionLocal session = NewDualSession();
-        TODOException e = Assert.Throws<TODOException>(
-            () => session.PrepareCommand("SELECT ROW(1)"));
-        Assert.Contains("ROW", e.Message);
+        CompareDual("func_row", "SELECT ROW(1), ROW(1, 'a'), ROW()");
     }
 
     [Fact]

@@ -55,6 +55,16 @@ public abstract class DataAnalysisOperation : Expression
     /// Sort order for OVER
     /// </summary>
     protected Result.SortOrder? overOrderBySort;
+    private int numFrameExpressions;
+    private int lastGroupRowId;
+
+    /// <summary>Creates a sort order for remembered expressions.</summary>
+    protected static Result.SortOrder CreateOrder(SessionLocal session, List<QueryOrderBy> orderBy, int offset)
+    {
+        int[] indexes = new int[orderBy.Count], sortTypes = new int[orderBy.Count];
+        for (int i = 0; i < orderBy.Count; i++) { indexes[i] = i + offset; sortTypes[i] = orderBy[i].sortType; }
+        return new Result.SortOrder(session, indexes, sortTypes, null);
+    }
 
     /// <summary>
     /// Base constructor: every analysis operation belongs to the select that read it.
@@ -136,10 +146,46 @@ public abstract class DataAnalysisOperation : Expression
     {
         if (over is not null)
         {
-            throw new TODOException("DataAnalysisOperation.optimize: OVER clause is not ported");
+            over.Optimize(session);
+            List<QueryOrderBy>? orderBy = over.GetOrderBy();
+            if (orderBy is not null) overOrderBySort = CreateOrder(session, orderBy, GetNumExpressions());
+            else if (!IsAggregate()) overOrderBySort = new Result.SortOrder(session, new int[GetNumExpressions()]);
+            WindowFrame? frame = over.GetWindowFrame();
+            if (frame is not null)
+            {
+                int orderSize = orderBy?.Count ?? 0;
+                int index = GetNumExpressions() + orderSize, n = 0;
+                WindowFrameBound bound = frame.GetStarting();
+                if (bound.IsParameterized())
+                {
+                    CheckOrderBy(frame.GetUnits(), orderSize);
+                    if (bound.IsVariable()) { bound.SetExpressionIndex(index); n++; }
+                }
+                bound = frame.GetFollowing()!;
+                if (bound is not null && bound.IsParameterized())
+                {
+                    CheckOrderBy(frame.GetUnits(), orderSize);
+                    if (bound.IsVariable()) { bound.SetExpressionIndex(index + n); n++; }
+                }
+                numFrameExpressions = n;
+            }
         }
 
         return this;
+    }
+
+    private void CheckOrderBy(WindowFrameUnits units, int size)
+    {
+        if (units == WindowFrameUnits.Range && size != 1)
+        {
+            string sql = GetTraceSql();
+            throw Message.DbException.GetSyntaxError(sql, sql.Length - 1, "exactly one sort key is required for RANGE units");
+        }
+        if (units == WindowFrameUnits.Groups && size < 1)
+        {
+            string sql = GetTraceSql();
+            throw Message.DbException.GetSyntaxError(sql, sql.Length - 1, "a sort key is required for GROUPS units");
+        }
     }
 
     /// <inheritdoc/>
@@ -157,12 +203,14 @@ public abstract class DataAnalysisOperation : Expression
         if (stage == StageReset)
         {
             UpdateGroupAggregates(session, StageReset);
+            lastGroupRowId = 0;
             return;
         }
 
         bool window = stage == StageWindow;
         if (window != (over is not null))
         {
+            if (!window && select.IsWindowQuery()) UpdateGroupAggregates(session, stage);
             return;
         }
 
@@ -173,7 +221,11 @@ public abstract class DataAnalysisOperation : Expression
             return;
         }
 
-        UpdateAggregate(session, groupData, groupData.GetCurrentGroupRowId());
+        int rowId = groupData.GetCurrentGroupRowId();
+        if (lastGroupRowId == rowId) return;
+        lastGroupRowId = rowId;
+        if (over is not null && !select.IsGroupQuery()) over.UpdateAggregate(session, stage);
+        UpdateAggregate(session, groupData, rowId);
     }
 
     /// <summary>
@@ -191,6 +243,21 @@ public abstract class DataAnalysisOperation : Expression
     /// <param name="stage">select stage</param>
     protected virtual void UpdateGroupAggregates(SessionLocal session, int stage)
     {
+        over?.UpdateAggregate(session, stage);
+    }
+
+    /// <summary>Gets or creates partition data.</summary>
+    protected object GetWindowData(SessionLocal session, SelectGroups groupData, bool forOrderBy)
+    {
+        Value? key = over!.GetCurrentKey(session);
+        PartitionData? partition = groupData.GetWindowExprData(this, key);
+        if (partition is null)
+        {
+            object data = forOrderBy ? new List<Value?[]>() : CreateAggregateData();
+            groupData.SetWindowExprData(this, key, new PartitionData(data));
+            return data;
+        }
+        return partition.GetData()!;
     }
 
     /// <summary>
@@ -242,7 +309,26 @@ public abstract class DataAnalysisOperation : Expression
             throw Message.DbException.Get(Api.ErrorCode.InvalidUseOfAggregateFunction1, GetTraceSql());
         }
 
-        return GetAggregatedValue(session, GetGroupData(groupData, true));
+        return over is null ? GetAggregatedValue(session, GetGroupData(groupData, true)) : GetWindowResult(session, groupData);
+    }
+
+    private Value GetWindowResult(SessionLocal session, SelectGroups groupData)
+    {
+        bool ordered = over!.IsOrdered();
+        Value? key = over.GetCurrentKey(session);
+        PartitionData? partition = groupData.GetWindowExprData(this, key);
+        object? data;
+        if (partition is null)
+        {
+            data = ordered ? new List<Value?[]>() : CreateAggregateData();
+            partition = new PartitionData(data);
+            groupData.SetWindowExprData(this, key, partition);
+        }
+        else data = partition.GetData();
+        if (ordered || !IsAggregate()) return GetOrderedResult(session, groupData, partition, data!) ?? GetAggregatedValue(session, null);
+        Value? result = partition.GetResult();
+        if (result is null) { result = GetAggregatedValue(session, data); partition.SetResult(result); }
+        return result;
     }
 
     /// <summary>
@@ -280,8 +366,23 @@ public abstract class DataAnalysisOperation : Expression
     /// <param name="groupRowId">row id of group</param>
     /// <param name="orderBy">list of order by expressions</param>
     protected void UpdateOrderedAggregate(
-        SessionLocal session, SelectGroups groupData, int groupRowId, List<QueryOrderBy> orderBy)
-        => throw new TODOException("DataAnalysisOperation.updateOrderedAggregate: OVER clause is not ported");
+        SessionLocal session, SelectGroups groupData, int groupRowId, List<QueryOrderBy>? orderBy)
+    {
+        int ne = GetNumExpressions(), size = orderBy?.Count ?? 0;
+        Value?[] array = new Value?[ne + size + numFrameExpressions + 1];
+        RememberExpressions(session, array);
+        for (int i = 0; i < size; i++) array[ne++] = orderBy![i].expression!.GetValue(session);
+        if (numFrameExpressions > 0)
+        {
+            WindowFrame frame = over!.GetWindowFrame()!;
+            WindowFrameBound bound = frame.GetStarting();
+            if (bound.IsVariable()) array[ne++] = bound.GetValue()!.GetValue(session);
+            bound = frame.GetFollowing()!;
+            if (bound is not null && bound.IsVariable()) array[ne++] = bound.GetValue()!.GetValue(session);
+        }
+        array[ne] = ValueInteger.Get(groupRowId);
+        ((List<Value?[]>)GetWindowData(session, groupData, true)).Add(array);
+    }
 
     /// <summary>
     /// Returns result of this window function or window aggregate.
@@ -291,9 +392,24 @@ public abstract class DataAnalysisOperation : Expression
     /// <param name="partition">the partition data</param>
     /// <param name="data">the aggregate data</param>
     /// <returns>result of this function</returns>
-    protected Value GetOrderedResult(
+    protected Value? GetOrderedResult(
         SessionLocal session, SelectGroups groupData, object partition, object data)
-        => throw new TODOException("DataAnalysisOperation.getOrderedResult: OVER clause is not ported");
+    {
+        PartitionData partitionData = (PartitionData)partition;
+        Dictionary<int, Value>? result = partitionData.GetOrderedResult();
+        if (result is null)
+        {
+            result = [];
+            List<Value?[]> rows = (List<Value?[]>)data;
+            int rowIdColumn = GetNumExpressions();
+            List<QueryOrderBy>? orderBy = over!.GetOrderBy();
+            if (orderBy is not null) { rowIdColumn += orderBy.Count; overOrderBySort!.Sort(rows); }
+            rowIdColumn += numFrameExpressions;
+            GetOrderedResultLoop(session, result, rows, rowIdColumn);
+            partitionData.SetOrderedResult(result);
+        }
+        return result.GetValueOrDefault(groupData.GetCurrentGroupRowId());
+    }
 
     /// <summary>
     /// Returns result of this window function or window aggregate. This method

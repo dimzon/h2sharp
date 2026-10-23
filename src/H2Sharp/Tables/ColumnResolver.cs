@@ -25,6 +25,8 @@ namespace H2Sharp.Tables;
 /// </summary>
 public interface ColumnResolver
 {
+    /// <summary>Returns the select that owns this resolver, if any.</summary>
+    Command.Query.Select? GetSelect() => GetTableFilter()?.GetSelect();
     /// <summary>
     /// Get the table alias.
     /// </summary>

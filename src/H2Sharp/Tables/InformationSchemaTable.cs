@@ -992,6 +992,16 @@ public sealed class InformationSchemaTable : Table
                 }
 
                 break;
+            case ElementTypes:
+                foreach (Table table in GetAllTables(session))
+                {
+                    Column[] columns = table.GetColumns();
+                    for (int i = 0; i < columns.Length; i++)
+                        ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation,
+                            table.GetSchema()?.GetName(), table.GetTableName(), "TABLE",
+                            (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), columns[i].GetTypeInfo());
+                }
+                break;
             case TableConstraints:
                 foreach (Constraint constraint in GetAllConstraints(session))
                 {
@@ -1125,7 +1135,6 @@ public sealed class InformationSchemaTable : Table
             case Constants:
             case Domains:
             case DomainConstraints:
-            case ElementTypes:
             case Fields:
             case EnumValues:
             case CheckConstraints:
@@ -1156,6 +1165,46 @@ public sealed class InformationSchemaTable : Table
         }
 
         return tables;
+    }
+
+    // H2 elementTypesFieldsRow: recursively follow ARRAY / ROW types. Other schema
+    // objects (domains, routines, constants, local temporary tables) are not present yet.
+    private static void ElementTypesFieldsRow(SessionLocal session, List<Value[]> rows, string catalog,
+        string mainSchemaName, string collation, string? objectSchema, string objectName, string objectType,
+        string identifier, TypeInfo typeInfo)
+    {
+        if (typeInfo.GetValueType() == Value.Array)
+        {
+            TypeInfo component = (TypeInfo)typeInfo.GetExtTypeInfo()!;
+            string dtdIdentifier = identifier + '_';
+            AddElementTypes(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
+                objectType, identifier, dtdIdentifier, component);
+            ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
+                objectType, dtdIdentifier, component);
+        }
+        else if (typeInfo.GetValueType() == Value.Row)
+        {
+            int ordinal = 0;
+            foreach (var field in ((ExtTypeInfoRow)typeInfo.GetExtTypeInfo()!).GetFields())
+                ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
+                    objectType, identifier + '_' + (++ordinal).ToString(System.Globalization.CultureInfo.InvariantCulture), field.Value);
+        }
+    }
+
+    private static void AddElementTypes(SessionLocal session, List<Value[]> rows, string catalog, string mainSchemaName,
+        string collation, string? objectSchema, string objectName, string objectType, string identifier,
+        string dtdIdentifier, TypeInfo typeInfo)
+    {
+        DataTypeInformation dt = DataTypeInformation.ValueOf(typeInfo);
+        string? characterCatalog = dt.HasCharsetAndCollation ? catalog : null;
+        string? characterSchema = dt.HasCharsetAndCollation ? mainSchemaName : null;
+        Add(rows, catalog, objectSchema, objectName, objectType, identifier, dt.DataType,
+            dt.CharacterPrecision, dt.CharacterPrecision, characterCatalog, characterSchema,
+            dt.HasCharsetAndCollation ? CharacterSetName : null, characterCatalog, characterSchema,
+            dt.HasCharsetAndCollation ? collation : null, dt.NumericPrecision, dt.NumericPrecisionRadix,
+            dt.NumericScale, dt.DateTimePrecision, dt.IntervalType, dt.IntervalPrecision, dt.MaximumCardinality,
+            dtdIdentifier, dt.DeclaredDataType, dt.DeclaredNumericPrecision, dt.DeclaredNumericScale,
+            dt.GeometryType, dt.GeometrySrid);
     }
 
     /// <summary>
