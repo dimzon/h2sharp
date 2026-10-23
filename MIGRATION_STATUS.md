@@ -581,7 +581,15 @@ Java-имена и разрешать их: получился бы файл, к
   версии; регистрация — через `DbProviderFactories` (инвариант `H2Sharp`), это .NET-
   маппинг DriverManager. BigDecimal: публичный конструктор строки (как в JDK) и
   виртуальный CompareTo (эталонный тест расширяет класс).
-* Обсуждение по родным тестам (забег 2026-10-24, в конце забега обсудить):
+* **Объём порта (решение 2026-10-24): порт — исключительно встраиваемая БД.** Сетевых
+возможностей (TCP-сервер, AUTO_SERVER, кластер, консоль) нет и не будет. Следствие для
+родных тестов: тесты сервера и сети не переносятся — пакет `server/` (TestAutoServer,
+TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
+`config.networked` в перенесённых тестах остаются мёртвым кодом, как в эталоне.
+`jdbcx/` (XA, ConnectionPool, DataSource — JEE-поверхность) — тоже вне объёма
+встраиваемой БД, но в списке обсуждения ниже, чтобы решение было явным.
+
+Обсуждение по родным тестам (забег 2026-10-24, в конце забега обсудить):
 
 * **TestZloty.testZloty — пропущен целиком.** Тест скармливает движку подклассы
   java.math.BigDecimal (с инвертированным compareTo и чужим toString) и ждёт
@@ -594,6 +602,10 @@ Java-имена и разрешать их: получился бы файл, к
   Для теста были сделаны: BigDecimal без sealed, публичный конструктор строки (как в
   JDK) и виртуальный CompareTo — сами по себе верны эталону (java.math.BigDecimal не
   final), но если тест вычёркиваем, их можно и вернуть (обсудить).
+* **jdbcx/ (TestConnectionPool, TestDataSource, TestXA, TestXASimple) — не переносятся
+  при решении «только embedded»?** javax.sql.DataSource и XA-транзакции — JEE-поверхность
+  для серверов пулов; для встраиваемой БД потребителей у них нет. Предлагаю вычеркнуть
+  вместе с server/ — обсудить.
 * **TestDriver.testDriverObject и testURLs — пропущены.** Суть — механика
   DriverManager: register/deregister, getDriver по URL, acceptsURL(null) → SQLException.
   Маппинг-предложение: Driver.Load/Unload регистрируют H2ProviderFactory в

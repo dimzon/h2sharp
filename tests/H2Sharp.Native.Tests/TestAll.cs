@@ -153,8 +153,10 @@ public class TestAll
     /// <returns>the port</returns>
     /// <remarks>
     /// The reference answers with the port of the TCP server it started for the networked
-    /// configuration; the port has no server yet, so this answers with the default port
-    /// the reference answers when no server is running.
+    /// configuration. The port is an embedded database and will not have a server, so
+    /// this answers with the default port the reference answers when no server is
+    /// running; the networked configuration itself is out of scope (see
+    /// MIGRATION_STATUS.md).
     /// </remarks>
     public int GetPort()
     {
