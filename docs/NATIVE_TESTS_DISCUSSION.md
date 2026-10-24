@@ -147,6 +147,10 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   Частично переносимы testDouble/testArray/testUUID/testCastTrim/testTypeInfo/testHigherType,
   но при порте всей Value-подсистемы, не отдельными кусками. Порядок: сделать после
   TestValue-аналога движковой части.
+* **TestCases: пять фрагментов — пропущены.** testAutoCommitInDatabaseURL (флаг
+  autocommit без ADO-поверхности), testExecuteTrace (литеральный {1: 'Hello'}-параметр),
+  testMutableObjects (identity java.sql.Date/Time/Timestamp), testDoubleRecovery
+  (power-off сэм) — как в TestPowerOff. Остальные ~50 методов перенесены.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
