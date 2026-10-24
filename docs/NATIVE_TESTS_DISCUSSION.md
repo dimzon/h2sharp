@@ -151,6 +151,16 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   autocommit без ADO-поверхности), testExecuteTrace (литеральный {1: 'Hello'}-параметр),
   testMutableObjects (identity java.sql.Date/Time/Timestamp), testDoubleRecovery
   (power-off сэм) — как в TestPowerOff. Остальные ~50 методов перенесены.
+* **TestSort — не перенесён** — построен на InPlaceStableMergeSort и
+  InPlaceStableQuicksort, которых в порту нет. Перенести вместе с ними.
+* **TestValueMemory — не перенесён** — весь стоит на DataHandler-интерфейсе и
+  MemoryFootprint (замер реального размера объекта); в порту ни того, ни другого нет.
+* **TestKeywords — не перенесён** — огромный словарь токенов и проверка ключевых слов
+  через парсер; требует доступ к TokenType/парсерной поверхности — вместе с ней.
+* **TestJsonUtils — не перенесён** — построен на моделях JSONTarget/JSONBytesSource/
+  JSONStringSource с Java-потоками; в порту есть одноимённые классы, но форма
+  теста (Callable-конструкторы, ByteArrayInputStream) не совпадает. Оценить поверхность
+  при следующем заходе в Json-пакет.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
