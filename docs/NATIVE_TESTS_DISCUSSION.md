@@ -59,13 +59,22 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   переоткрытия и цикл insert/update/select/delete с трассировкой.
 * **TestCompatibilityOracle: updatable-половина testVarchar — пропущена.**
   updateString/updateNString/updateObject + updateRow на CONCUR_UPDATABLE курсоре — у
-  читателя ADO.NET нет записи через курсор; .NET-вызыватель обновляет командой. Вопрос:
-  перенести как отдельный тест «обновление через команду» или ждать updatable-поверхности.
+  читателя ADO.NET нет записи через курсор; .NET-вызыватель обновляет командой.
+  **Решение: перенести как отдельный тест «обновление через команду»** (то же
+  содержимое, но обновление командой — что ADO-вызыватель и делает).
+  
+  
 * **TestFunctionOverload: meta.getProcedures-проверки — пропущены.** Провайдер пока
-  не имеет поверхности DatabaseMetaData; сами алиасы и вызовы перенесены. Вопрос:
-  перенести getProcedures на INFORMATION_SCHEMA.FUNCTION_ALIASES (там нет
-  SPECIFIC_NAME как колонки — эталон собирает её из имени и номера) или ждать
-  metadata-поверхности.
+  не имеет поверхности DatabaseMetaData; сами алиасы и вызовы перенесены.
+  **Объяснение на пальцах:** в эталоне тест спрашивает у JDBC-метаданных список
+  процедур (`DatabaseMetaData.getProcedures`) и проверяет, что у перегруженного
+  алиаса `OVERLOAD1OR2` две процедуры с разными уточнёнными именами
+  (`SPECIFIC_NAME` = `OVERLOAD1OR2_1` и `_2`). У провайдера такой поверхности нет;
+  вопрос — писать ли её на `INFORMATION_SCHEMA.FUNCTION_ALIASES` (там нет колонки
+  `SPECIFIC_NAME`, её надо собирать из имени+номера) или пропустить эту проверку.
+  **Решение: ждать metadata-поверхности, проверку не переносить сейчас.** (будет
+  сделано вместе с TestStatement-генерацией/метаданными)
+  
 * **TestConnection: client-info и autocommit-runner'ы — пропущены.**
   setClientInfo/getClientInfo — JDBC-метаданные соединения (у ADO.NET их нет);
   commit/rollback-on-autocommit runner'ы крутятся вокруг JDBC-семантики autocommit и
@@ -76,44 +85,50 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   TimeZoneInfo.Local процесса) — H2Connection, Engine.OpenSession и
   DelegatedCastDataProvider проводят его до сеанса; `;TIME ZONE=` в URL — как было.
 * **TestIntPerfectHash — не перенесён** — построен на org.h2.util.IntPerfectHash (и
-  util.BitArray), которых в порту нет. Перенести вместе с IntPerfectHash.
-* **TestTraceSystem — не перенесён** — построен на org.h2.engine.TraceSystem (адаптивные
-  уровни, запись в файлы trace.db); в порту есть только Trace/TraceWriter без системы.
-  Перенести вместе с TraceSystem.
+  util.BitArray), которых в порту нет.
+  **Объяснение на пальцах:** IntPerfectHash строит *совершенное хэширование* — для
+  данного множества int-ключей подбирает функцию, которая каждому ключу даёт свой
+  номер без коллизий: и занимает мало памяти (несколько бит на ключ), и работает за
+  O(1). В H2 это утилита, которая в основном нужна внутренним таблицам-справочникам;
+  в порту сейчас ни один класс её не зовёт. **Решение: не переносить, пока не
+  понадобится** — тест лежит рядом с инструментом.
+  
+* **TestTraceSystem — не перенесён** — построен на org.h2.engine.TraceSystem: уровни
+  трассировки, файлы trace.db, адаптивное включение. В порту есть только Trace/TraceWriter
+  без системы.
+  **Да, об этом и говорим: в .NET аналог TraceSystem — `System.Diagnostics.TraceSource`
+  + `TraceListener` (или свой `ILog`). Решение: не переносить Java-механику файлов
+  trace.db, а встроить провайдер в `System.Diagnostics` — но это решение по дизайну
+  провайдера, поэтому тест остаётся здесь, пока оно не принято.**
+  
 * **TestLocale — не перенесён** — меняет Locale.setDefault и ждёт турецко-чувствительного
   «i»→«I» и императорского японского календаря. Порт использует инвариантные
   преобразования (ToUpperInvariant/JavaCharacter.ToUpperCase), и сэма локали-как-в-JVM
   нет (в отличие от таймзоны). Перенести вместе с решением «какую культуру держать
   дефолтной» — вопрос в обсуждение.
+  
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
   решением.
+  
 * **TestAnsCompression — не перенесён** — построен на org.h2.util.AnsCompression +
   BitStream.Huffman/Out + BinaryArithmeticStream.Huffman/Out; в порту нет ни одного из
   них (compression-пакет — только CompressTool). Перенести вместе с ANS-компрессором.
+  
 * **TestMemoryEstimator — отложен** — строит TestDataType поверх MvStore-иерархии
   DataType<T> (BasicDataType<Integer>); переносим, но требует заведение тестового типа
   данных — сделать при очередном заходе в MvStore-пакет.
-* **TestCsv — вне объёма (решение 2026-10-24).** Построен целиком на инструменте
-  org.h2.tools.Csv; решено, что Csv-инструмент в порт не входит и не будет — CSV не
-  покрываем. Тест вычеркнут из работы, не «ожидает».
-* **TestFullText — вероятно не перенесён** — стоит на org.h2.fulltext (FullText.init,
-  Lucene-половина); разбирать при переносе fulltext-инструмента.
-* **TestBatchUpdates — не перенесён.** Предмет теста — семантика JDBC-batch: массивы
-  int[]/long[] счётчиков из executeBatch, BatchUpdateException с отказами по элементам,
-  clearBatch, SUCCESS_NO_INFO. В ADO.NET batch нет вовсе (перенесённые тесты пишут цикл
-  выполнений), ни массивов, ни отчёта по элементам из этой семантики не остаётся.
-  Вопрос: вычеркнуть (ADO-вызыватель пишет цикл и проверяет каждый результат сам) или
-  перенести как цикл с теми же данными (coffee-таблица) — но это будет другой тест.
+  
 * **TestLobApi — не перенесён.** Целиком стоит на JDBC-модели LOB-объектов:
   conn.createBlob/createClob/createNClob, rs.getBlob/getClob (хэндлы, живущие после
   закрытия результата и коммита), Blob.setBytes/setBinaryStream/position, Clob.setString/
   getSubString, toString-рендеринги ('x', X'00', <closed>), FEATURE_NOT_SUPPORTED_1-отказы
   на position/truncate. В ADO.NET этой модели нет: параметр несёт byte[]/строку/Stream/
-  TextReader, читатель материализует значение. Вопрос: вычеркнуть, или перенести
-  содержательную половину (round-trip byte[]/Stream/TextReader на длинах 0/1/100/100000)
-  как отдельный тест значений LOB.
+  TextReader, читатель материализует значение. **Решение: перенести содержательную
+  половину** — round-trip byte[]/Stream/TextReader на длинах 0/1/100/100000 как
+  отдельный тест значений LOB (это будет новый тест, не порт).
+  
 * **TestStatement: JDBC-only поверхности — пропущены** (переносимая половина —
   executeUpdate-счётчики, execute-через RecordsAffected, сэйвпойнты по имени,
   REGEXP-подготовленный оператор поверх перестройки индекса, batch как цикл,
@@ -132,12 +147,16 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   setQueryTimeout / MAX_QUERY_TIMEOUT. В порту `H2Command.Cancel()` — пустая заглушка,
   CommandTimeout не связан с движком. Это портовая работа (SessionLocal.cancel, проверка
   в цикле выполнения, проводка CommandTimeout), тест перенесётся вслед за ней.
-  Замечание: пустой Cancel() — заглушка, которая «отвечает», надо либо реализовать,
-  либо бросать TODOException.
+  Замечание: пустой Cancel() — заглушка, которая «отвечает».
+  **Решение: реализовать и тестировать** — отмена и query timeout становятся работой
+  (SessionLocal.cancel, проверка в цикле выполнения, проводка CommandTimeout), тест
+  перенесётся вслед за ней.
+  
 * **TestSQLXML — не перенесён.** Целиком про java.sql.SQLXML (createSQLXML,
   rs.getSQLXML, DOM/SAX/StAX Source/Result). В базовом ADO.NET поверхности нет
-  (SQLXML живёт в System.Data.SqlTypes у SqlClient). Вопрос: вычеркнуть или перенести
-  против GetTextReader/GetStream (что ADO-вызыватель и делает с CLOB).
+  (SQLXML живёт в System.Data.SqlTypes у SqlClient). **Решение: перенести против
+  GetTextReader/GetStream** — то, что ADO-вызыватель и делает с CLOB.
+  
 * **TestOptimizations: testOptimizeInJoinSelect — пропущен** — алиас возвращает
   java.sql.ResultSet (org.h2.tools.SimpleResultSet); типа для C#-двойника нет, алиас
   остаётся Java-строкой как в эталоне, тест останавливается на резолве алиаса, пока
@@ -147,6 +166,7 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   использование, сброс параметров), min/max/count поверх Dictionary+SortedSet,
   IN-предикат на всех комбинациях ASC/DESC-индексов, NULLS FIRST/LAST,
   OPTIMIZE_REUSE_RESULTS-тайминги.
+  
 * **TestTransaction: фрагмент testNestedResultSets — смягчён.** Эталон переиспользует
   один Statement: второй executeQuery закрывает первый набор, и старый набор отвечает
   OBJECT_CLOSED. Команда ADO.NET отказывает второму открытому читателю вовсе
@@ -173,14 +193,16 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   Обе половины гоняют TYPE_SCROLL_INSENSITIVE курсоры (beforeFirst и повторное чтение
   открытого набора). Читатель ADO.NET forward-only; .NET-вызыватель буферизует сам.
   Переносима часть без скролла (удержание temp-таблицы открытым читателем), скролл —
-  нет. Вопрос: оставить пропущенным или перенести удержание-без-скролла как отдельный
-  тест.
+  нет. **Решение: перенести удержание-без-скролла как отдельный тест** (temp-таблица
+  живёт, пока читатель открыт; скролл не переносится).
 * **TestDriver.testDriverObject и testURLs — пропущены.** Суть — механика
   DriverManager: register/deregister, getDriver по URL, acceptsURL(null) → SQLException.
   Маппинг-предложение: Driver.Load/Unload регистрируют H2ProviderFactory в
   DbProviderFactories (инвариант H2Sharp). Не совпадает: getDriver по URL у реестра
   нет (инвариант вместо URL), «не зарегистрирован» отвечает своим исключением, а не
   SQLException; acceptsURL(null) с URL_FORMAT_ERROR_2 остаётся, но проверяется мимо
-  реестра. Класс Driver перенесён и остаётся. Вопрос: принимаем ли маппинг
-  DriverManager → DbProviderFactories как осознанное отступление (тогда тесты
-  переписываются под него) или Driver остаётся без регистрации-теста.
+  реестра. Класс Driver перенесён и остаётся. **Решение: маппинг DriverManager →
+  DbProviderFactories принимаем как осознанное отступление**; тесты testDriverObject /
+  testURLs переписываются под него (регистрация через DbProviderFactories, отказ —
+  исключением реестра).
+  
