@@ -696,7 +696,8 @@ TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequen
 TestConnection, TestStatement, TestTransaction, TestOptimizations, TestRights; из
 `unit/`: TestMathUtils, TestCollation, TestDbException, TestPattern, TestIntArray,
 TestBinaryOperation, TestOverflow, TestMultiThreadedKernel, TestConnectionInfo, TestStreams,
-TestConcurrentJdbc). Порядок: `db/` и `jdbc/` до конца, `unit/` параллельно.
+TestConcurrentJdbc, TestStringCache, TestCases, TestAlter). Порядок: `db/` и `jdbc/`
+до конца, `unit/` параллельно.
 
 ## Страховка от тихой деградации (сделано)
 
