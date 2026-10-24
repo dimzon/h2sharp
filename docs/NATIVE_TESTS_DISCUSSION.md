@@ -107,6 +107,13 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   нет (в отличие от таймзоны). Перенести вместе с решением «какую культуру держать
   дефолтной» — вопрос в обсуждение.
   
+* **TestCharsetCollator — не перенесён.** Тест сравнивает через кодовую страницу
+  cp500 (IBM EBCDIC) и через UTF-8; в .NET cp500 недоступна без регистрации
+  `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)` (проверено probe'ом:
+  `Encoding.GetEncoding("cp500")` бросает ArgumentException). Это решение по дизайну:
+  регистрировать ли кодовые страницы (установка пакета System.Text.Encoding.CodePages)
+  или не поддерживать EBCDIC-колляции. Остальные проверки (UTF-8, сила сравнения)
+  переносимы.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
