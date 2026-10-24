@@ -132,6 +132,11 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
 * **TestBitStream — не перенесён** — построен на org.h2.util.BitStream (Out/In,
   Huffman, Golomb), которого в порту нет (рядом с AnsCompression). Перенести вместе с
   BitStream.
+* **TestCompress: производительность-база, wrap-потоки и ByteBuffer — пропущены.**
+  testDatabase (замер сжатия через файл БД) — вне объёма; цикл wrapOutputStream/
+  wrapInputStream и testByteBuffer опираются на поверхности, которых в порту нет
+  (потоковая обёртка и ByteBuffer). Остальное перенесено: переменные int,
+  многопоточное сжатие, expand/compress для всех паттернов и алгоритмов, variable-end.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
