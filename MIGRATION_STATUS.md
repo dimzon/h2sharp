@@ -677,6 +677,14 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   rs.getSQLXML, DOM/SAX/StAX Source/Result). В базовом ADO.NET поверхности нет
   (SQLXML живёт в System.Data.SqlTypes у SqlClient). Вопрос: вычеркнуть или перенести
   против GetTextReader/GetStream (что ADO-вызыватель и делает с CLOB).
+* **TestTransaction: фрагмент testNestedResultSets — смягчён.** Эталон переиспользует
+  один Statement: второй executeQuery закрывает первый набор, и старый набор отвечает
+  OBJECT_CLOSED. Команда ADO.NET отказывает второму открытому читателю вовсе
+  (InvalidOperationException), поэтому фрагмент идёт двумя командами и проверка
+  закрытого читателя выпала. Остальные ~1200 строк перенесены: уровни изоляции через
+  BeginTransaction(level) с коммитом-перезаходом, сэйвпойнты по имени, FOR UPDATE
+  (включая SKIP LOCKED/NOWAIT/WAIT), конкурентные batch-гонки UPDATE/MERGE USING/DELETE
+  как циклы, INFORMATION_SCHEMA.SESSIONS.ISOLATION_LEVEL.
 * **TestSequence: testConcurrentCreate — пропущен** — гоняет CREATE/DROP TRIGGER,
   чей класс реализует org.h2.api.Trigger; в порту триггеров нет. Перенести вместе с
   Trigger API.
@@ -735,7 +743,8 @@ TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
 TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks,
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
 TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequence,
-TestConnection, TestStatement). Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
+TestConnection, TestStatement, TestTransaction). Порядок: `db/` и `jdbc/` до конца,
+потом `unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
