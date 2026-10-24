@@ -752,8 +752,8 @@ TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
 TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks,
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
 TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequence,
-TestConnection, TestStatement, TestTransaction, TestOptimizations). Порядок: `db/` и
-`jdbc/` до конца, потом `unit/`.
+TestConnection, TestStatement, TestTransaction, TestOptimizations, TestRights). Порядок:
+`db/` и `jdbc/` до конца, потом `unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
