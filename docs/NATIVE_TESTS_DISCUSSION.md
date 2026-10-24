@@ -137,6 +137,13 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   wrapInputStream и testByteBuffer опираются на поверхности, которых в порту нет
   (потоковая обёртка и ByteBuffer). Остальное перенесено: переменные int,
   многопоточное сжатие, expand/compress для всех паттернов и алгоритмов, variable-end.
+* **TestValue — не перенесён.** Крупный тест значений, упирается в отсутствующие в
+  порту поверхности: ValueToObjectConverter2.classToType (testDataType), LegacyDateTimeUtils
+  (testTimestamp), H2Type.getVendorTypeNumber (testH2Type), DataHandler-LOB (testLobComparison),
+  и арифметику Modulus (testModulusDouble/Decimal/Operator) — её вообще нет в порту.
+  Частично переносимы testDouble/testArray/testUUID/testCastTrim/testTypeInfo/testHigherType,
+  но при порте всей Value-подсистемы, не отдельными кусками. Порядок: сделать после
+  TestValue-аналога движковой части.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
