@@ -114,6 +114,12 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   регистрировать ли кодовые страницы (установка пакета System.Text.Encoding.CodePages)
   или не поддерживать EBCDIC-колляции. Остальные проверки (UTF-8, сила сравнения)
   переносимы.
+* **TestObjectDeserialization — не перенесён.** Предмет — Java-двоичная сериализация
+  (hex-дампы Java ObjectInputStream: SampleObject, GoodSampleObject, BadSampleObject) и
+  механизм контекстного класслоадера (`h2.useThreadContextClassLoader`); в .NET ни
+  двоичного формата Java, ни класслоадерной механики нет. Вопрос: закрыть, либо
+  перенести содержательную часть (проверка allowedClasses через собственный .NET-
+  механизм) как отдельный тест.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
