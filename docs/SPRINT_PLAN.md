@@ -48,3 +48,33 @@
 - `ESTIMATED_ENVELOPE`/пропущенные kinds: NULL + пометка «дописать при
   появлении фичи» — подтвердить формулировку.
 - Файл таблицы: оставить `docs/APPROVED_DEVIATIONS.md`?
+
+## Фаза 3. Файловая БД (в работе)
+
+Кода нет в `Database`/`Engine` до этой фазы: `Engine.openSession` бросал TODO на
+файловом URL, конструктор `Database` — тоже.
+
+- [x] 3.1. Тесты совместимости написаны ПЕРВЫМИ (`FileDatabaseOracleTests`):
+  порт→Java, Java→порт, переоткрытие, `DATABASE_PATH`.
+- [x] 3.2. `Engine.openSession`: ветка `IFEXISTS`/`FORBID_CREATION`, `.mv.db`,
+  старый `.data.db` → FILE_VERSION_ERROR, read-only при не-writable файле;
+  `ConnectionInfo` получил `RemoveProperty(bool)` и `SetProperty`.
+- [x] 3.3. `Store` портирован (ctor, accessors, `convertMVStoreException`,
+  close/flush); `Database.GetDatabasePath()` через `FileUtils.ToRealPath`,
+  `GetPageSize()` из `PAGE_SIZE`; `RemoveSession`/`Close` по `closeDelay`.
+- [x] 3.4. Совместимость формата: `MetaType` пишет/читает **Java-имена** типов
+  (`org.h2.*`), `RowDataType` стал `StatefulDataType` с `Factory`,
+  `VersionedValueType.Factory`, `LobStorageMap.BlobReference/BlobMeta.Type`,
+  реестр типов хранит `object` и регистрирует тип значения (reference).
+  Итог: Java открывает файл порта, порт открывает файл Java.
+- [ ] 3.5. Словарь схемы: таблица `SYS` (`createSysTableData`), `addMeta`,
+  `updateMeta`, `removeMeta`, `executeMeta`, восстановление `objectIds`.
+  Сейчас `FileSurvivesCloseAndReopen` красный: «Table T not found» — данные
+  в мапах есть, определения таблиц не сохранены. Тесты помечены
+  `BlockedByPort` до этого шага.
+- [ ] 3.6. DDL-хуки: `AddSchemaObject`/`AddDatabaseObject`/`RemoveSchemaObject`
+  пишут/удаляют meta-строку (сейчас стоит комментарий «deferred»).
+- [ ] 3.7. Lock-файл (`FileLock`, `DATABASE_ALREADY_OPEN_1`). Отложено:
+  внутрипроцессная блокировка `SingleFileStore.OpenFiles` уже есть, файл
+  `.lock.db` и межпроцессная — следующий шаг.
+- [ ] 3.8. `DB_CLOSE_ON_EXIT` (AppDomain.ProcessExit) — не сделано.

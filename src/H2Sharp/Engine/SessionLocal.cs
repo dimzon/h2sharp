@@ -151,7 +151,7 @@ public sealed class SessionLocal : Session
     /// the isolation level — and keeps the store's defaults for the rest.
     /// </remarks>
     public MvStore.Tx.Transaction GetTransaction()
-        => Transaction ??= GetDatabase().GetStore().Begin(isolationLevel);
+        => Transaction ??= GetDatabase().GetStore().GetTransactionStore().Begin(isolationLevel);
 
     private Dictionary<string, Savepoint>? savepoints;
 

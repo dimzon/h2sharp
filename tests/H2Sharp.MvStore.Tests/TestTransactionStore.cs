@@ -830,7 +830,7 @@ public sealed class TestTransactionStore : StoreTestBase
         using MVStore s = new MVStore.Builder().Open();
         s.SetAutoCommitDelay(0);
         var ts = new TransactionStore(s,
-            new MetaType<object>(null!, ex => s.BackgroundExceptionHandler?.Invoke(Thread.CurrentThread, ex)),
+            new MetaType<H2Sharp.Engine.Database>(null!, ex => s.BackgroundExceptionHandler?.Invoke(Thread.CurrentThread, ex)),
             new ObjectDataType(), 10000);
         ts.Init();
         Transaction t = ts.Begin();

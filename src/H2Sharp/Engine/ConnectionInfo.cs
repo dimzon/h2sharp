@@ -225,6 +225,32 @@ public sealed class ConnectionInfo
     }
 
     /// <summary>
+    /// Removes a boolean property if it is set and returns the value.
+    /// </summary>
+    /// <param name="key">the key</param>
+    /// <param name="defaultValue">the value when the property is not set</param>
+    /// <returns>the property value</returns>
+    public bool RemoveProperty(string key, bool defaultValue)
+        => Utils.ParseBoolean(RemoveProperty(key, null), defaultValue, false);
+
+    /// <summary>
+    /// Sets a property, as the reference's setProperty does.
+    /// </summary>
+    /// <param name="key">the key</param>
+    /// <param name="value">the value</param>
+    public void SetProperty(string key, string? value)
+    {
+        if (value is null)
+        {
+            _ = properties.Remove(key);
+        }
+        else
+        {
+            properties[key] = value;
+        }
+    }
+
+    /// <summary>
     /// Gets the database name.
     /// </summary>
     /// <returns>the database name</returns>

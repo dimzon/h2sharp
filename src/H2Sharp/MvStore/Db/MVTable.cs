@@ -141,7 +141,7 @@ public sealed class MVTable : Table
         this.columns = columns;
         // The database's own store, as in the reference: a table on another store would be
         // invisible to every transaction but its own.
-        store = database.GetStore();
+        store = database.GetStore().GetTransactionStore();
         this.persistIndexes = persistIndexes;
         this.persistData = persistData;
         // The scan index is always a scan, and scan indexes are always persistent, as the

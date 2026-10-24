@@ -7048,3 +7048,31 @@ insert-фолбэк с convertInsertRow; `KEY` добавлен в clause words,
 statement-триггеры (как в Insert), concurrent-merge проверка (duplicate-key
 ошибки порта не несут индекс), row-контекст setRow (нет addSQL), REPLACE-ветка
 портирована но не заведена в парсер (нет REPLACE-тестов).
+
+**Файловая БД: открытие, закрытие и совместимость формата.** `Engine.openSession`
+больше не отказывает на файловом URL: портированы ветка `IFEXISTS`/
+`FORBID_CREATION`, проверка `.mv.db` и старого `.data.db` (FILE_VERSION_ERROR),
+read-only при не-writable файле. `Store` портирован целиком по конструкции эталона
+(ctor с `MVStore.Builder`, `pageSplitSize`, read-only, background handler,
+`autoCommitDisabled`, `versionsToKeep 0`, `TransactionStore` с
+`MetaType<Database>` и `ValueDataType`), `Database.GetDatabasePath()` идёт через
+`FileUtils.ToRealPath`, `GetPageSize()` читает `PAGE_SIZE`, закрытие базы
+закрывает стор, `RemoveSession` соблюдает `DB_CLOSE_DELAY` (0 — закрыть, <0 —
+держать, >0 — TODO: нужен таймер).
+
+Совместимость формата: `MetaType` снова пишет и читает **Java-имена** типов и
+разрешает их по таблице (порт писал .NET-имена — файл был «своим форматом»);
+`RowDataType` стал `StatefulDataType<Database>` с фабрикой (sortTypes, indexes,
+columnCount, storeKeys), добавлены `LobStorageMap.BlobReference/BlobMeta.Type`,
+`VersionedValueType.Factory` возвращает адаптер, реестр типов (`_`) хранит
+`object` (аналог `DataType<?>`), а `TxMapBuilder` регистрирует и ключ, и тип
+значения и читает `val` из конфигурации карты, как эталон. Проверено оракулом:
+Java открывает базу, записанную портом (`DATABASE_PATH()` совпадает), порт
+открывает базу, записанную Java.
+
+Осталось: словарь схемы — системная таблица `SYS` (createSysTableData/addMeta/
+updateMeta/removeMeta/executeMeta, восстановление objectIds) и DDL-хуки
+AddSchemaObject/RemoveSchemaObject. Пока её нет, `FileSurvivesCloseAndReopen`
+красный («Table T not found»: строки в мапах есть, определение таблицы — нет),
+тесты помечены BlockedByPort. Lock-файл (`DATABASE_ALREADY_OPEN_1`) и
+`DB_CLOSE_ON_EXIT` отложены; внутрипроцессная блокировка файла уже есть.

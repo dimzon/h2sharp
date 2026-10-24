@@ -62,10 +62,8 @@ public sealed partial class Database : CastDataProvider
     /// <remarks>
     /// The reference's Database owns its MVStore, and every table opens its maps on it: a
     /// table that brought its own store would be invisible to every transaction but its own.
-    /// File-backed databases are refused until the file path mapping lands; opening them on
-    /// an anonymous in-memory store would answer correctly and lose everything on close.
     /// </remarks>
-    private readonly MvStore.Tx.TransactionStore store;
+    private readonly MvStore.Db.Store store;
 
     /// <summary>
     /// The compare mode this database's sessions compare with, as in the reference.
@@ -403,6 +401,8 @@ public sealed partial class Database : CastDataProvider
 
         // Reference: this.lockMode = ci.getProperty("LOCK_MODE", Constants.DEFAULT_LOCK_MODE);
         lockMode = connectionInfo.GetProperty("LOCK_MODE", Constants.DefaultLockMode);
+        // Reference: pageSize = ci.getProperty("PAGE_SIZE", Constants.DEFAULT_PAGE_SIZE);
+        pageSize = connectionInfo.GetProperty("PAGE_SIZE", Constants.DefaultPageSize);
 
         string accessModeData = Util.StringUtils.ToLowerEnglish(
             connectionInfo.GetProperty("ACCESS_MODE_DATA") ?? "rw");
@@ -428,21 +428,32 @@ public sealed partial class Database : CastDataProvider
             informationSchema.Add(new Tables.InformationSchemaTable(informationSchema, AllocateObjectId(), type));
         }
 
-        if (!memory)
-        {
-            throw new TODOException("Database: persistent databases are not opened yet");
-        }
-
-        MvStore.MVStore mvStore = MvStore.MVStore.Open(null!);
-        store = new MvStore.Tx.TransactionStore(mvStore);
-        store.Init();
+        store = new MvStore.Db.Store(this, null);
+        store.GetTransactionStore().Init();
     }
 
     /// <summary>
     /// Gets the store this database's tables live in.
     /// </summary>
-    /// <returns>the transaction store</returns>
-    public MvStore.Tx.TransactionStore GetStore() => store;
+    /// <returns>the store</returns>
+    public MvStore.Db.Store GetStore() => store;
+
+    /// <summary>
+    /// Gets the MVStore, as the reference's getMvStore does.
+    /// </summary>
+    /// <returns>the MVStore</returns>
+    public MvStore.MVStore GetMvStore() => store.GetMvStore();
+
+    /// <summary>
+    /// The page size of the store, from the PAGE_SIZE setting.
+    /// </summary>
+    private readonly int pageSize;
+
+    /// <summary>
+    /// Gets the page size of the store.
+    /// </summary>
+    /// <returns>the page size in bytes</returns>
+    public int GetPageSize() => pageSize;
 
     /// <summary>
     /// Gets the compare mode this database's sessions compare with.
@@ -597,7 +608,8 @@ public sealed partial class Database : CastDataProvider
     {
         if (IsPersistent())
         {
-            throw new TODOException("Database.getDatabasePath: persistent databases are not opened yet");
+            // Reference: FileUtils.toRealPath(databaseName)
+            return Store.FileSystem.FileUtils.ToRealPath(name);
         }
 
         return null;
@@ -796,10 +808,10 @@ public sealed partial class Database : CastDataProvider
     /// Removes a session, and closes the database when it was the last one.
     /// </summary>
     /// <remarks>
-    /// The reference closes an in-memory database here rather than waiting for a shutdown, and
-    /// that is what makes "mem:" a name for a lifetime rather than for a file's lifetime. The
-    /// persistent case keeps the database open, which is why a file database can be closed and
-    /// reopened with its contents intact.
+    /// Reference removeSession: a close delay of 0 closes the database at once, a negative
+    /// one keeps it open, and a positive one schedules a delayed close. The delayed close
+    /// needs its own timer, which this port does not have yet, so a positive value refuses
+    /// rather than closing at the wrong moment.
     /// </remarks>
     /// <param name="session">the session to remove</param>
     /// <returns>whether the database was closed</returns>
@@ -808,11 +820,20 @@ public sealed partial class Database : CastDataProvider
         lock (syncRoot)
         {
             _ = sessions.Remove(session);
-            if (sessions.Count == 0 && memory)
+            if (sessions.Count == 0)
             {
-                closing = true;
-                Close();
-                return true;
+                if (GetCloseDelay() == 0)
+                {
+                    Close();
+                    return true;
+                }
+
+                if (GetCloseDelay() < 0)
+                {
+                    return false;
+                }
+
+                throw new TODOException("Database.removeSession: delayed closing is not ported");
             }
         }
 
@@ -837,14 +858,21 @@ public sealed partial class Database : CastDataProvider
     /// </summary>
     public void Close()
     {
+        bool alreadyClosed;
         lock (syncRoot)
         {
-            if (closing)
+            alreadyClosed = closing;
+            if (!alreadyClosed)
             {
-                return;
+                closing = true;
             }
+        }
 
-            closing = true;
+        if (!alreadyClosed)
+        {
+            // Reference: store.close(allowedCompactionTime). Nothing in the port asks for
+            // compaction on close, so the store is closed immediately.
+            store.Close(0);
         }
     }
 

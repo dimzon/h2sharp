@@ -23,6 +23,7 @@
  */
 using System;
 using System.Collections.Generic;
+using H2Sharp.Store.FileSystem;
 using H2Sharp.Util;
 using H2Sharp.Api;
 using H2Sharp.Message;
@@ -72,9 +73,42 @@ public static class Engine
             throw new TODOException("Engine.openSession: remote connections");
         }
 
+        // Reference openSession(ConnectionInfo): the flags are taken off the connection
+        // information, because each one is used once, at open time.
+        bool ifExists = connectionInfo.RemoveProperty("IFEXISTS", false);
+        bool forbidCreation = connectionInfo.RemoveProperty("FORBID_CREATION", false);
+        string? cipher = connectionInfo.RemoveProperty("CIPHER", null);
+        if (cipher is not null)
+        {
+            throw new TODOException("Engine.openSession: file encryption (CIPHER) is not ported");
+        }
+
+        string? init = connectionInfo.RemoveProperty("INIT", null);
+        if (init is not null)
+        {
+            throw new TODOException("Engine.openSession: INIT is not ported");
+        }
+
         if (connectionInfo.IsPersistent())
         {
-            throw new TODOException("Engine.openSession: persistent databases need the file store");
+            string fileName = name + Constants.SuffixMvFile;
+            if (!FileUtils.Exists(fileName))
+            {
+                ThrowNotFound(ifExists, forbidCreation, name);
+                fileName = name + Constants.SuffixOldDatabaseFile;
+                if (FileUtils.Exists(fileName))
+                {
+                    throw DbException.GetFileVersionError(fileName);
+                }
+            }
+            else if (!FileUtils.CanWrite(fileName))
+            {
+                connectionInfo.SetProperty("ACCESS_MODE_DATA", "r");
+            }
+        }
+        else
+        {
+            ThrowNotFound(ifExists, forbidCreation, name);
         }
 
         bool openNew = connectionInfo.GetBooleanProperty("OPEN_NEW", false);
@@ -101,16 +135,7 @@ public static class Engine
             database = holder.Database;
             if (database is null || openNew)
             {
-                if (!connectionInfo.GetBooleanProperty("IFEXISTS", false))
-                {
-                    database = new Database(connectionInfo);
-                }
-                else
-                {
-                    ThrowNotFound(name);
-                    throw new TODOException("Engine.openSession: IFEXISTS without a registry lookup");
-                }
-
+                database = new Database(connectionInfo);
                 holder.Database = database;
             }
         }
@@ -161,12 +186,23 @@ public static class Engine
     }
 
     /// <summary>
-    /// Throws the "not found" error unless creation was forbidden.
+    /// Throws the "not found" error unless creation is allowed, as the reference's
+    /// throwNotFound does.
     /// </summary>
+    /// <param name="ifExists">whether IFEXISTS was written</param>
+    /// <param name="forbidCreation">whether FORBID_CREATION was written</param>
     /// <param name="name">the database name</param>
-    private static void ThrowNotFound(string name)
+    private static void ThrowNotFound(bool ifExists, bool forbidCreation, string name)
     {
-        throw DbException.Get(ErrorCode.DatabaseNotFound1, name);
+        if (ifExists)
+        {
+            throw DbException.Get(ErrorCode.DatabaseNotFoundWithIfExists1, name);
+        }
+
+        if (forbidCreation)
+        {
+            throw DbException.Get(ErrorCode.RemoteDatabaseNotFound1, name);
+        }
     }
 
     /// <summary>

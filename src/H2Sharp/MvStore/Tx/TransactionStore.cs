@@ -106,15 +106,15 @@ public class TransactionStore : IDisposable
     /// A transaction store over the given store.
     /// </summary>
     public TransactionStore(MVStore store)
-        : this(store, new ObjectDataType())
+        : this(store, new ObjectMapDataType<object?>(new ObjectDataType()))
     {
     }
 
     /// <summary>
     /// A transaction store with a default data type.
     /// </summary>
-    public TransactionStore(MVStore store, DataType<object?> dataType)
-        : this(store, new MetaType<object>(null!, null), dataType, 0)
+    public TransactionStore(MVStore store, DataType<object> dataType)
+        : this(store, new MetaType<Database>(null!, null), dataType, 0)
     {
     }
 
@@ -125,7 +125,7 @@ public class TransactionStore : IDisposable
     /// The data type only satisfies the shape: versioned maps always hold objects, so it is
     /// accepted and not consulted.
     /// </remarks>
-    public TransactionStore(MVStore store, MetaType<object> metaDataType, DataType<object?> dataType, int timeoutMillis)
+    public TransactionStore(MVStore store, MetaType<Database> metaDataType, object? dataType, int timeoutMillis)
     {
         Store = store;
         _ = dataType;
@@ -138,19 +138,23 @@ public class TransactionStore : IDisposable
         transactions = new Transaction?[MaxOpenTransactions + 1];
     }
 
-    private MVMap<string, DataType<object>> TypeRegistry { get; }
+    private MVMap<string, object> TypeRegistry { get; }
 
     internal static string GetDataTypeRegistrationKey(object dataType)
-        => RuntimeHelpers.GetHashCode(dataType).ToString("x", CultureInfo.InvariantCulture);
+    {
+        // The adapter is not a store type: key the registry by the type it forwards to.
+        object underlying = dataType is IObjectMapDataType adapter ? adapter.UnderlyingDataType : dataType;
+        return RuntimeHelpers.GetHashCode(underlying).ToString("x", CultureInfo.InvariantCulture);
+    }
 
     private MVMap<long, Record<object, object>>.Builder<long, Record<object, object>> CreateUndoLogBuilder() => new MVMap<long, Record<object, object>>.Builder<long, Record<object, object>>()
                 .SingleWriter()
                 .KeyType(LongDataType.Instance)
                 .ValueType(new Record<object, object>.Type(this));
 
-    private static MVMap<string, DataType<object>> OpenTypeRegistry(MVStore store, MetaType<object> metaDataType)
+    private static MVMap<string, object> OpenTypeRegistry(MVStore store, MetaType<Database> metaDataType)
     {
-        var typeRegistryBuilder = new MVMap<string, DataType<object>>.Builder<string, DataType<object>>()
+        var typeRegistryBuilder = new MVMap<string, object>.Builder<string, object>()
                 .KeyType(StringDataType.Instance);
         _ = typeRegistryBuilder.ValueType(metaDataType);
         return store.OpenMap(TypeRegistryName, typeRegistryBuilder);
@@ -973,16 +977,16 @@ public class TransactionStore : IDisposable
     private sealed class TxMapBuilder
         : MVMap<object, VersionedValue<object>>.BasicBuilder<TMVMap, object, VersionedValue<object>>
     {
-        private readonly MVMap<string, DataType<object>> typeRegistry;
+        private readonly MVMap<string, object> typeRegistry;
 
         private readonly DataType<object>? valueDataType;
 
-        internal TxMapBuilder(MVMap<string, DataType<object>> typeRegistry)
+        internal TxMapBuilder(MVMap<string, object> typeRegistry)
             : this(typeRegistry, null, null)
         {
         }
 
-        internal TxMapBuilder(MVMap<string, DataType<object>> typeRegistry,
+        internal TxMapBuilder(MVMap<string, object> typeRegistry,
             DataType<object>? keyType, DataType<object>? valueType)
         {
             this.typeRegistry = typeRegistry;
@@ -993,10 +997,14 @@ public class TransactionStore : IDisposable
             }
         }
 
-        private void RegisterDataType(DataType<object> dataType)
+        private void RegisterDataType(object dataType)
         {
-            string key = GetDataTypeRegistrationKey(dataType);
-            _ = typeRegistry.PutIfAbsent(key, dataType);
+            // Reference TxMapBuilder.registerDataType: the registry is keyed by the type's
+            // hash and holds the type itself. The adapter the object maps need is unwrapped
+            // first, so the key is the real type's and the file names the reference's type.
+            object underlying = dataType is IObjectMapDataType adapter ? adapter.UnderlyingDataType : dataType;
+            string key = GetDataTypeRegistrationKey(underlying);
+            _ = typeRegistry.PutIfAbsent(key, MetaType<Database>.ToObjectDataType(underlying));
             // TODO: ensure type consistency (reference)
         }
 
@@ -1007,7 +1015,7 @@ public class TransactionStore : IDisposable
             {
                 if (config.Remove("key", out object? keyTypeKey) && keyTypeKey is string keyTypeName)
                 {
-                    keyType = typeRegistry.Get(keyTypeName);
+                    keyType = typeRegistry.Get(keyTypeName) as DataType<object>;
                     if (keyType is null)
                     {
                         throw DataUtils.NewMvStoreException(DataUtils.ErrorUnknownDataType,
@@ -1022,9 +1030,28 @@ public class TransactionStore : IDisposable
                 RegisterDataType(keyType);
             }
 
-            // The stored value hash names a versioned wrapper the registry can not express;
-            // versioned maps always hold objects, so it is dropped after removal.
-            _ = config.Remove("val");
+            DataType<VersionedValue<object>>? valueType = GetValueType();
+            if (valueType is null)
+            {
+                if (config.Remove("val", out object? valueTypeKey) && valueTypeKey is string valueTypeName)
+                {
+                    object? registered = typeRegistry.Get(valueTypeName);
+                    if (registered is null)
+                    {
+                        throw DataUtils.NewMvStoreException(DataUtils.ErrorUnknownDataType,
+                                "Data type with hash {0} can not be found", valueTypeName);
+                    }
+
+                    valueType = (DataType<VersionedValue<object>>)(registered is IObjectMapDataType adapter
+                        ? adapter.UnderlyingDataType
+                        : registered);
+                    SetValueType(valueType);
+                }
+            }
+            else
+            {
+                RegisterDataType(valueType);
+            }
 
             if (GetKeyType() is null)
             {
@@ -1032,10 +1059,14 @@ public class TransactionStore : IDisposable
                 RegisterDataType(GetKeyType()!);
             }
 
-            // The value type is always versioned objects (see the class remark); the caller's
-            // value type, when given, is wrapped in the versioned shell it is stored with.
-            SetValueType(new VersionedValueType<object, object>(
-                valueDataType ?? new ObjectDataType<object>()));
+            if (GetValueType() is null)
+            {
+                // Reference: setValueType(defaultDataType), where the transaction store's
+                // default data type is the versioned value type over the store's value type.
+                SetValueType(new VersionedValueType<object, Database>(
+                    valueDataType ?? new ObjectDataType<object>()));
+                RegisterDataType(GetValueType()!);
+            }
 
             config["store"] = store;
             config["key"] = GetKeyType()!;

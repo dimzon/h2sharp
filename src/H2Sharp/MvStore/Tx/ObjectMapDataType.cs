@@ -15,6 +15,18 @@ using H2Sharp.MvStore.Type;
 namespace H2Sharp.MvStore.Tx;
 
 /// <summary>
+/// The adapter's real type, for the meta map: the file names the reference's type, never the
+/// adapter.
+/// </summary>
+internal interface IObjectMapDataType
+{
+    /// <summary>
+    /// The data type the adapter forwards to.
+    /// </summary>
+    object UnderlyingDataType { get; }
+}
+
+/// <summary>
 /// Presents a typed data type as the object data type the transaction maps are declared with.
 /// </summary>
 /// <remarks>
@@ -28,7 +40,7 @@ namespace H2Sharp.MvStore.Tx;
 /// as well so a future persistent store is not silently wrong.
 /// </remarks>
 /// <typeparam name="T">the key or value type</typeparam>
-internal sealed class ObjectMapDataType<T> : DataType<object>
+internal sealed class ObjectMapDataType<T> : DataType<object>, IObjectMapDataType
 {
     private readonly DataType<T> type;
 
@@ -36,6 +48,9 @@ internal sealed class ObjectMapDataType<T> : DataType<object>
     {
         this.type = type;
     }
+
+    /// <inheritdoc/>
+    public object UnderlyingDataType => type;
 
     /// <inheritdoc/>
     public int Compare(object? a, object? b) => type.Compare((T)a!, (T)b!);

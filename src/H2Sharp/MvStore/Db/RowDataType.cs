@@ -36,7 +36,7 @@ namespace H2Sharp.MvStore.Db;
 /// <summary>
 /// The data type for rows.
 /// </summary>
-public sealed class RowDataType : BasicDataType<SearchRow>
+public sealed class RowDataType : BasicDataType<SearchRow>, StatefulDataType<Database>
 {
     private readonly ValueDataType valueDataType;
 
@@ -340,7 +340,94 @@ public sealed class RowDataType : BasicDataType<SearchRow>
         res = (res * 31) + columnCount;
         res = (res * 31) + HashOf(indexes);
         res = (res * 31) + HashOf(sortTypes);
+        res = (res * 31) + valueDataType.GetHashCode();
         return res;
+    }
+
+    /// <summary>
+    /// Saves the state of this type, as the reference's save does.
+    /// </summary>
+    /// <param name="buff">where to write</param>
+    /// <param name="metaType">the meta type</param>
+    public void Save(WriteBuffer buff, MetaType<Database> metaType)
+    {
+        _ = metaType;
+        _ = buff.PutVarInt(columnCount);
+        WriteIntArray(buff, sortTypes);
+        WriteIntArray(buff, indexes);
+        _ = buff.Put(storeKeys ? (byte)1 : (byte)0);
+    }
+
+    private static void WriteIntArray(WriteBuffer buff, int[]? array)
+    {
+        if (array is null)
+        {
+            _ = buff.PutVarInt(0);
+        }
+        else
+        {
+            _ = buff.PutVarInt(array.Length + 1);
+            foreach (int i in array)
+            {
+                _ = buff.PutVarInt(i);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the factory that reads this type back, as the reference's getFactory does.
+    /// </summary>
+    /// <returns>the factory</returns>
+    public StatefulDataType<Database>.Factory GetFactory() => FactoryInstance;
+
+    private static readonly Factory FactoryInstance = new();
+
+    /// <summary>
+    /// Reads a row type back through a meta type.
+    /// </summary>
+    public sealed class Factory : StatefulDataType<Database>.Factory
+    {
+        /// <summary>
+        /// A factory.
+        /// </summary>
+        public Factory()
+        {
+        }
+
+        /// <inheritdoc/>
+        public DataType<object> Create(
+            Span<byte> buff, ref int position, MetaType<Database> metaType, Database database)
+        {
+            int columnCount = DataUtils.ReadVarInt(buff, ref position);
+            int[]? sortTypes = ReadIntArray(buff, ref position);
+            int[]? indexes = ReadIntArray(buff, ref position);
+            bool storeKeys = buff[position++] != 0;
+            CompareMode compareMode = database is null
+                ? CompareMode.GetInstance(null, 0)
+                : database.GetCompareMode();
+            // Reference passes the database as both the provider and the data handler; the port
+            // has no DataHandler on the database yet, so the handler is null.
+            RowFactory rowFactory = RowFactory.GetDefaultRowFactory().CreateRowFactory(
+                database, compareMode, null, sortTypes, indexes, null, columnCount, storeKeys);
+            return new Tx.ObjectMapDataType<SearchRow>(rowFactory.GetRowDataType());
+        }
+
+        private static int[]? ReadIntArray(Span<byte> buff, ref int position)
+        {
+            int len = DataUtils.ReadVarInt(buff, ref position) - 1;
+            if (len < 0)
+            {
+                return null;
+            }
+
+            int[] result = new int[len];
+            for (int i = 0; i < len; i++)
+            {
+                result[i] = DataUtils.ReadVarInt(buff, ref position);
+            }
+
+            return result;
+        }
     }
 
     private static int HashOf(int[]? array)

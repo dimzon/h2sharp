@@ -199,8 +199,11 @@ public class VersionedValueType<T, D> : BasicDataType<VersionedValue<T>>, Statef
 
         public DataType<object> Create(Span<byte> buff, ref int position, MetaType<D> metaType, D database)
         {
-            DataType<object> inner = metaType.Read(buff, ref position);
-            return (DataType<object>)(object)new VersionedValueType<T, D>((DataType<T>)(object)inner);
+            DataType<object> inner = (DataType<object>)metaType.Read(buff, ref position);
+            VersionedValueType<T, D> valueType = new((DataType<T>)(object)inner);
+            // Reference returns the new type itself; the registry map of this port holds
+            // objects, so the adapter keeps it storable there.
+            return new ObjectMapDataType<VersionedValue<T>>(valueType);
         }
     }
 }

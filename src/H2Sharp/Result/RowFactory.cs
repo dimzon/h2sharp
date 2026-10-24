@@ -32,7 +32,7 @@ namespace H2Sharp.Result;
 /// </remarks>
 public abstract class RowFactory
 {
-    private static readonly RowFactory Default = new DefaultRowFactory();
+    private static readonly DefaultRowFactory Default = new();
 
     /// <summary>
     /// Gets the default row factory.
@@ -41,7 +41,7 @@ public abstract class RowFactory
     /// Reference: org.h2.result.RowFactory.java:29-31
     /// </remarks>
     /// <returns>the factory</returns>
-    public static RowFactory GetDefaultRowFactory()
+    public static DefaultRowFactory GetDefaultRowFactory()
     {
         return Default;
     }

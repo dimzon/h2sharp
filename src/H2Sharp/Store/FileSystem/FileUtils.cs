@@ -139,6 +139,14 @@ public static class FileUtils
     public static bool CanWrite(string fileName) => FilePath.Get(fileName).CanWrite();
 
     /// <summary>
+    /// The canonical form of a path: absolute, with the separators and drive letter the
+    /// platform writes.
+    /// </summary>
+    /// <param name="fileName">the path</param>
+    /// <returns>the canonical path</returns>
+    public static string ToRealPath(string fileName) => FilePath.Get(fileName).ToRealPath().ToString();
+
+    /// <summary>
     /// The directory a file is in.
     /// </summary>
     /// <param name="fileName">the file</param>
