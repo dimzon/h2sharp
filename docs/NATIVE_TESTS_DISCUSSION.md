@@ -161,6 +161,10 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   JSONStringSource с Java-потоками; в порту есть одноимённые классы, но форма
   теста (Callable-конструкторы, ByteArrayInputStream) не совпадает. Оценить поверхность
   при следующем заходе в Json-пакет.
+* **TestFile: три комбинации из четырёх — пропущены.** Порт регистрирует только
+  memFS-схему; memLZF/nioMemFS/nioMemLZF-варианты ждут этих файловых систем. Перенесённая
+  комбинация (memFS против настоящего файла) покрывает seek/write/read/setLength-гонку
+  из 10000 итераций.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
