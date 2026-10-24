@@ -1,5 +1,36 @@
 # MIGRATION STATUS — рабочая памятка
 
+### Постфиксное приведение `::` — issue #44
+
+Перенесены `Parser.readTerm` (ветка `COLON_COLON` в постфиксном цикле) и
+`readColonColonAfterTerm` из закреплённого H2 2.5. Приведение использует тот же
+читатель типа и `CastSpecification`, что и `CAST`; цепочки приведений и индексы
+массивов читаются в эталонном порядке. SELECT-список теперь всегда идёт через
+читатель выражения, как `parseSelectExpressions`: прежняя отдельная ветка
+агрегатов обходила постфиксный цикл и не читала `SUM(...)::VARCHAR`.
+
+Перенесён `org.h2.mode.Regclass`: числовые аргументы, сужение BIGINT до INTEGER,
+NULL, поиск таблицы/индекса по всем схемам, оптимизация, SQL и стоимость.
+PostgreSQL-ветка читает необязательный `PG_CATALOG.`; `readIfCompat` не принимает
+кавыченные имена. Использованы существующие адаптации порта: режим из
+`CastDataProvider`, `ReadColumnWithType` возвращает TypeInfo вместо Column,
+`Database.GetSchemas` — существующее имя перечисления `getAllSchemas`, пакет
+`mode` называется `Modes` из-за конфликта с типом Mode, `getType` — `GetTypeInfo`
+из-за CLR `Object.GetType`.
+
+`UuidOracleTests.PostgreSqlCastsAnswerTheSameAsTheReference`: снят BlockedByPort,
+добавлены цепочка UUID→VARCHAR, бинарный аргумент, NULL и неверный UUID.
+`PostfixCastOracleTests`: построчная JVM-сверка значений, полных типов результата
+(44 формы типов), приоритета, параметров, подзапросов, CASE, агрегатов, массивов,
+ROW, ошибок и режимов Regular/Strict/PostgreSQL. REGCLASS проверен на таблице,
+индексе и объекте другой схемы, включая непостоянный аргумент; различающиеся
+идентификаторы объектов нормализуются обратно в имя найденного объекта.
+
+Расширенная сверка выявила прежние дефекты зависимостей: VARCHAR→NUMERIC,
+проверка переполнения TINYINT, запрет TINYINT в PostgreSQL и регистрозависимость
+поиска объектов Schema. Они закреплены тремя отдельными BlockedByPort-тестами,
+включая обычный `CAST` для конверсий и ограничения режима.
+
 Памятка для себя. Не документация продукта; читать при возобновлении работы.
 
 ### Фасад Dialect (H2Sharp.Data) — сделано
@@ -664,8 +695,8 @@ TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
 TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequence,
 TestConnection, TestStatement, TestTransaction, TestOptimizations, TestRights; из
 `unit/`: TestMathUtils, TestCollation, TestDbException, TestPattern, TestIntArray,
-TestBinaryOperation, TestOverflow, TestMultiThreadedKernel). Порядок: `db/` и `jdbc/`
-до конца, `unit/` параллельно.
+TestBinaryOperation, TestOverflow, TestMultiThreadedKernel, TestConnectionInfo, TestStreams).
+Порядок: `db/` и `jdbc/` до конца, `unit/` параллельно.
 
 ## Страховка от тихой деградации (сделано)
 
