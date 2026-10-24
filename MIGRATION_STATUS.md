@@ -695,8 +695,8 @@ TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
 TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequence,
 TestConnection, TestStatement, TestTransaction, TestOptimizations, TestRights; из
 `unit/`: TestMathUtils, TestCollation, TestDbException, TestPattern, TestIntArray,
-TestBinaryOperation, TestOverflow, TestMultiThreadedKernel, TestConnectionInfo, TestStreams).
-Порядок: `db/` и `jdbc/` до конца, `unit/` параллельно.
+TestBinaryOperation, TestOverflow, TestMultiThreadedKernel, TestConnectionInfo, TestStreams,
+TestConcurrentJdbc). Порядок: `db/` и `jdbc/` до конца, `unit/` параллельно.
 
 ## Страховка от тихой деградации (сделано)
 
