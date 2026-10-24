@@ -184,6 +184,10 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   вместе с решением о NTS-зависимости (или писать конверсии вручную). GeoJsonUtils и
   EWKTUtils уже в порту — содержательную половину (EWKB↔EWKT, dimension-системы,
   envelope) можно переносить с их помощью, если решено не брать NTS.
+* **TestSecurity — не перенесён.** Весь стоит на org.h2.security.SHA256 (PBKDF2,
+  HMAC, хэш пароля, AES/BlowFish/XTEA блоковые шифры); в порту security-пакета нет
+  вообще. Перенести вместе с security-пакетом (или решить, что хэши пароля идут через
+  System.Security.Cryptography — тогда тест переписывается под них).
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
