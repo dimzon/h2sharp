@@ -766,8 +766,8 @@ TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
 TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequence,
 TestConnection, TestStatement, TestTransaction, TestOptimizations, TestRights; из
-`unit/`: TestMathUtils, TestCollation, TestDbException, TestPattern, TestIntArray).
-Порядок: `db/` и `jdbc/` до конца, `unit/` параллельно.
+`unit/`: TestMathUtils, TestCollation, TestDbException, TestPattern, TestIntArray,
+TestBinaryOperation). Порядок: `db/` и `jdbc/` до конца, `unit/` параллельно.
 
 ## Страховка от тихой деградации (сделано)
 
