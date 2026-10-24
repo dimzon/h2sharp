@@ -137,6 +137,9 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   wrapInputStream и testByteBuffer опираются на поверхности, которых в порту нет
   (потоковая обёртка и ByteBuffer). Остальное перенесено: переменные int,
   многопоточное сжатие, expand/compress для всех паттернов и алгоритмов, variable-end.
+* **TestDate/TestDateTimeUtils/TestInterval — не перенесены** — почти целиком стоят на
+  LegacyDateTimeUtils (fromDate/fromTime/toDate/toTime/toTimestamp), которого в порту
+  нет; плюс тесты краёв календаря и всех таймзон. Переносить вместе с LegacyDateTimeUtils.
 * **TestValue — не перенесён.** Крупный тест значений, упирается в отсутствующие в
   порту поверхности: ValueToObjectConverter2.classToType (testDataType), LegacyDateTimeUtils
   (testTimestamp), H2Type.getVendorTypeNumber (testH2Type), DataHandler-LOB (testLobComparison),
