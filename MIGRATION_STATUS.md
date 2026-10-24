@@ -667,7 +667,8 @@ TestViewAlterTable, TestIgnoreCatalogs, TestDeadlock, TestMultiConn,
 TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
 TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks,
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
-TestFunctionOverload). Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
+TestFunctionOverload, TestSynonymForTable). Порядок: `db/` и `jdbc/` до конца, потом
+`unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
