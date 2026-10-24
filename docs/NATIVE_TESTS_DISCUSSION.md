@@ -201,6 +201,10 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   механика. Перенести вместе с обоими.
 * **TestFtp — вне объёма (решение 2026-10-24).** FTP-сервер из пакета tools — сетевая
   поверхность, порт встроенный. Вместе с server/.
+* **TestTools — не перенесён.** Большая часть — TCP-сервер, консоль, SSL, трассировка
+  сервера (network tool), плюс SimpleResultSet (нет в порту). Переносимы только
+  testJdbcDriverUtils (JdbcUtils.getConnection) и testDeleteFiles (DeleteDbFiles) —
+  и те частично. Перенести вместе с tools-пакетом.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
