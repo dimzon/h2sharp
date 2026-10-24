@@ -188,6 +188,10 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   HMAC, хэш пароля, AES/BlowFish/XTEA блоковые шифры); в порту security-пакета нет
   вообще. Перенести вместе с security-пакетом (или решить, что хэши пароля идут через
   System.Security.Cryptography — тогда тест переписывается под них).
+* **TestFileLock и TestFileLockProcess — не перенесены.** Построены на
+  org.h2.store.FileLock (FS/SOCKET-блокировки, Heartbeat, listen-процесс) — класса в
+  порту нет. Перенести вместе с FileLock (TestFileLockProcess — вместе с решением о
+  подпроцессах).
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
