@@ -56,7 +56,10 @@ public abstract class TestDb : TestBase
     /// <param name="name">the database name</param>
     /// <param name="admin">true if the current user is an admin</param>
     /// <returns>the database URL</returns>
-    protected string GetURL(string name, bool admin)
+    /// <remarks>
+    /// Virtual, as in the reference: tests override it to append their own options.
+    /// </remarks>
+    protected virtual string GetURL(string name, bool admin)
     {
         string url;
         if (name.StartsWith("jdbc:", StringComparison.Ordinal))
