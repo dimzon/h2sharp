@@ -630,6 +630,21 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   перенести getProcedures на INFORMATION_SCHEMA.FUNCTION_ALIASES (там нет
   SPECIFIC_NAME как колонки — эталон собирает её из имени и номера) или ждать
   metadata-поверхности.
+* **TestNativeSQL — не перенесён.** Тест целиком про Connection.nativeSQL — JDBC-
+  обработку escape-ов `{d '...'}`, `{fn ...}`, `{oj ...}`. В ADO.NET такой поверхности
+  нет (параметры типизованы, escape-ов не существует), метода на H2Connection тоже нет.
+  Вопрос: вычеркнуть (ADO.NET-вызыватель так не пишет), или перенести translateSQL
+  как отдельный хелпер, если он когда-нибудь понадобится провайдеру.
+* **TestCancel — не перенесён.** Стоит на поверхности отмены: Statement.cancel /
+  setQueryTimeout / MAX_QUERY_TIMEOUT. В порту `H2Command.Cancel()` — пустая заглушка,
+  CommandTimeout не связан с движком. Это портовая работа (SessionLocal.cancel, проверка
+  в цикле выполнения, проводка CommandTimeout), тест перенесётся вслед за ней.
+  Замечание: пустой Cancel() — заглушка, которая «отвечает», надо либо реализовать,
+  либо бросать TODOException.
+* **TestSQLXML — не перенесён.** Целиком про java.sql.SQLXML (createSQLXML,
+  rs.getSQLXML, DOM/SAX/StAX Source/Result). В базовом ADO.NET поверхности нет
+  (SQLXML живёт в System.Data.SqlTypes у SqlClient). Вопрос: вычеркнуть или перенести
+  против GetTextReader/GetStream (что ADO-вызыватель и делает с CLOB).
 * **TestSequence: testConcurrentCreate — пропущен** — гоняет CREATE/DROP TRIGGER,
   чей класс реализует org.h2.api.Trigger; в порту триггеров нет. Перенести вместе с
   Trigger API.
