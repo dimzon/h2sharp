@@ -639,9 +639,9 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   (TimeZoneProviderProvider, каждый сеанс под своей зоной; .NET не может менять
   TimeZoneInfo.Local процесса) — H2Connection, Engine.OpenSession и
   DelegatedCastDataProvider проводят его до сеанса; `;TIME ZONE=` в URL — как было.
-* **TestCsv — не перенесён.** Построен целиком на инструменте org.h2.tools.Csv
-  (getInstance, read/write, все опции разделителей и комментариев, pseudo-BOM,
-  space-separated поле) — инструмента в порту нет. Перенести вместе с Csv.
+* **TestCsv — вне объёма (решение 2026-10-24).** Построен целиком на инструменте
+  org.h2.tools.Csv; решено, что Csv-инструмент в порт не входит и не будет — CSV не
+  покрываем. Тест вычеркнут из работы, не «ожидает».
 * **TestFullText — вероятно не перенесён** — стоит на org.h2.fulltext (FullText.init,
   Lucene-половина); разбирать при переносе fulltext-инструмента.
 * **TestBatchUpdates — не перенесён.** Предмет теста — семантика JDBC-batch: массивы
