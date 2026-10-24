@@ -6935,3 +6935,28 @@ Release-модульный набор linq2db после снятия BlockedByP
 +функции шифрования/системных метаданных, явный TABLE, wildcard EXCEPT,
 +row-value UPDATE и FETCH WITH TIES. Следующий срез — окно/COMMANDS-группы
 +с наименьшим объёмом кода и максимальным числом тестов.
++
++**SQL-конформанс: 552 → 580/947.** Закрыты slices с общим корнем, каждый
++сверен с H2 2.5.259 (jar) и портирован дословно:
++* явный `TABLE` (parseExplicitTable, `TABLE name` + ORDER BY/OFFSET/FETCH через
++  общий ParseEndOfQuery), `VALUES` как запрос верхнего уровня (Query.isQuery
++  теперь true для всех запросов, а не только Select), `FETCH ... WITH TIES`
++  (SetWithTies + ветка finishResult + WITH_TIES_WITHOUT_ORDER_BY), `_ROWID_`
++  как псевдоколонка (ExpressionColumn.rowId + маппинг через getRowIdColumn),
++  `SELECT * EXCEPT (...)` (ветка parseWildcard), `USE INDEX` (readIfUseIndex +
++  parseIndexHints с проверкой INDEX_NOT_FOUND_1, планировщик уже учитывал
++  хинты). TableReferenceTests и QueryGrammarTests — полностью зелёные;
++  TABLE/VALUES WITH TIES с ORDER BY по двум ключам и `* EXCEPT` с неверными
++  ожиданиями в Specs исправлены по эталону;
++* `IS`-предикаты: SimplePredicate + BooleanTest (TRUE/FALSE/UNKNOWN),
++  TypePredicate (OF), IsJsonPredicate (JSON [VALUE|ARRAY|OBJECT|SCALAR]
++  [WITH|WITHOUT UNIQUE KEYS], JsonItemType уже был в порту). ConditionTests —
++  полностью зелёные. Попутно: `UNIQUE (SELECT ...)` (UniquePredicate +
++  NullsDistinct, дубликаты через distinct-LocalResult) и `INTERSECTS(a, b)`
++  как Comparison.SPATIAL_INTERSECTS с оценкой через IntersectsBoundingBox;
++  два неверных ожидания Specs исправлены по эталону (`NOT LIKE 'A%'` даёт 0,
++  INTERSECTS массивов — 22018, тест переписан на геометрии).
++  Устаревший TODO-тест FetchWithTiesWaitsForTies заменён позитивной
++  oracle-сверкой FetchWithTiesKeepsTiedRows.
++
++Проверено: H2Sharp.Tests **1259/1259**, MvStore **86/86**, Data **467/467**.

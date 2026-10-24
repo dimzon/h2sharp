@@ -64,6 +64,21 @@ public abstract class Query : Prepared
     /// </summary>
     private bool fetchPercent;
 
+    /// <summary>Whether tied rows ride along past the fetch limit.</summary>
+    private bool withTies;
+
+    /// <summary>
+    /// Sets whether tied rows ride along past the fetch limit.
+    /// </summary>
+    /// <param name="withTies">whether ties ride along</param>
+    public virtual void SetWithTies(bool withTies) => this.withTies = withTies;
+
+    /// <summary>
+    /// Whether tied rows ride along past the fetch limit.
+    /// </summary>
+    /// <returns>true when ties ride along</returns>
+    public virtual bool IsWithTies() => withTies;
+
     /// <summary>Whether duplicate rows are removed.</summary>
     protected bool distinct;
 
@@ -92,6 +107,9 @@ public abstract class Query : Prepared
 
     /// <summary>Whether this query removes duplicates.</summary>
     public virtual bool IsAnyDistinct() => distinct;
+
+    /// <inheritdoc/>
+    public override bool IsQuery() => true;
 
     public virtual bool IsConstantQuery() => orderList is null && sort is null
         && (offsetExpr is null || offsetExpr.IsConstant()) && (fetchExpr is null || fetchExpr.IsConstant());
@@ -878,9 +896,12 @@ public abstract class Query : Prepared
         {
             result.SetLimit(fetch);
             result.SetFetchPercent(fetchPercent);
+            if (IsWithTies())
+            {
+                result.SetWithTies(sort!);
+            }
         }
 
-        // FETCH WITH TIES is still refused by the parser; its finishResult branch waits for it.
         result.Done();
         if (inPredicateSortTypes is not null)
         {

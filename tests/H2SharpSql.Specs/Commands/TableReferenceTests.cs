@@ -76,7 +76,9 @@ public sealed class TableReferenceTests
             .Query<int>("TABLE RESULT ORDER BY SCORE, ID FETCH FIRST 1 ROW WITH TIES")
             .AsList();
 
-        Assert.Equal(new[] { 1, 2 }, ids);
+        // The order names two columns, so the sort position includes both: the second row
+        // shares the score but not the id, and is not tied. The reference answers the same.
+        Assert.Equal(new[] { 1 }, ids);
     }
 
     /// <summary>docs/commands.html:1043 — VALUES rowValueExpression [,...]</summary>
@@ -133,7 +135,9 @@ public sealed class TableReferenceTests
             .Query<int>("VALUES (1, 10), (2, 10), (3, 20) ORDER BY C2, C1 FETCH FIRST 1 ROW WITH TIES")
             .AsList();
 
-        Assert.Equal(new[] { 1, 2 }, ids);
+        // Same as the TABLE case: the order names two columns, so the second row is not
+        // tied to the first. The reference answers the same.
+        Assert.Equal(new[] { 1 }, ids);
     }
 
     private static void GivenTestTable(IDbConnection connection)

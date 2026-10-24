@@ -88,6 +88,20 @@ public sealed class ExpressionColumn : Expression
     }
 
     /// <summary>
+    /// Creates a reference to the <c>_ROWID_</c> pseudo-column of a table.
+    /// </summary>
+    /// <param name="tableAlias">the table alias, or null</param>
+    /// <returns>the column reference</returns>
+    public static ExpressionColumn RowId(string? tableAlias)
+    {
+        ExpressionColumn expression = new(Column.RowId, tableAlias, 0);
+        expression.rowId = true;
+        return expression;
+    }
+
+    private bool rowId;
+
+    /// <summary>
     /// Gets the column this expression reads.
     /// </summary>
     /// <remarks>
@@ -231,6 +245,16 @@ public sealed class ExpressionColumn : Expression
         if (found is not null)
         {
             MapColumn(resolver, found, level);
+            return;
+        }
+
+        if (rowId)
+        {
+            Column? rowIdColumn = resolver.GetRowIdColumn();
+            if (rowIdColumn is not null)
+            {
+                MapColumn(resolver, rowIdColumn, level);
+            }
         }
     }
 
@@ -271,6 +295,11 @@ public sealed class ExpressionColumn : Expression
         if (tableAlias != null)
         {
             ParserUtil.QuoteIdentifier(builder, tableAlias, sqlFlags).Append('.');
+        }
+
+        if (rowId)
+        {
+            return builder.Append(columnAlias);
         }
 
         return ParserUtil.QuoteIdentifier(builder, columnAlias ?? string.Empty, sqlFlags);

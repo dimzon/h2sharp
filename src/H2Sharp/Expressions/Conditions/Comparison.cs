@@ -275,6 +275,16 @@ public sealed class Comparison : Condition
             case NotEqualNullSafe:
                 return ValueBoolean.Get(!session.AreEqual(l, r));
 
+            case SpatialIntersects:
+                if (l is ValueNull || r is ValueNull)
+                {
+                    return ValueNull.Instance;
+                }
+
+                ValueGeometry leftGeometry = (ValueGeometry)l.CastToValue(TypeInfo.TypeGeometry, session);
+                ValueGeometry rightGeometry = (ValueGeometry)r.CastToValue(TypeInfo.TypeGeometry, session);
+                return ValueBoolean.Get(leftGeometry.IntersectsBoundingBox(rightGeometry));
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(compareType));
         }

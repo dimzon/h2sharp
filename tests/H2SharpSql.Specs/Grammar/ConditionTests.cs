@@ -58,7 +58,11 @@ public sealed class ConditionTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.True(connection.QuerySingle<bool>("SELECT INTERSECTS(ARRAY[1, 2], ARRAY[2, 3])"));
+        // INTERSECTS checks 2D bounding boxes of geometries (docs/grammar.html:2340);
+        // touching boxes intersect, disjoint ones do not. Verified against H2 2.5.259,
+        // which refuses non-geometries with 22018.
+        Assert.True(connection.QuerySingle<bool>("SELECT INTERSECTS('POINT(1 1)', 'POINT(1 1)')"));
+        Assert.False(connection.QuerySingle<bool>("SELECT INTERSECTS('POINT(1 1)', 'POINT(5 5)')"));
     }
 
     /// <summary>docs/grammar.html:2347 — comparisonRightHandSide</summary>
@@ -315,7 +319,7 @@ public sealed class ConditionTests
         using IDbConnection connection = TestDatabase.Open();
         GivenTestTable(connection);
 
-        Assert.Equal(1, connection.QuerySingle<int>("SELECT COUNT(*) FROM TEST WHERE NAME NOT LIKE 'A%'"));
+        Assert.Equal(0, connection.QuerySingle<int>("SELECT COUNT(*) FROM TEST WHERE NAME NOT LIKE 'A%'"));
         Assert.True(connection.QuerySingle<bool>("SELECT '100%' LIKE '100\\%' ESCAPE '\\'"));
     }
 

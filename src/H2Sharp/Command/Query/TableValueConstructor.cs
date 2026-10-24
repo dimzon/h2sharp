@@ -108,6 +108,11 @@ public sealed class TableValueConstructor : Query
         }
 
         checkInit = true;
+
+        if (orderList is not null && expressions.Length > 0)
+        {
+            _ = InitOrder(null, true, null, [.. expressions]);
+        }
     }
 
     /// <inheritdoc/>
@@ -116,6 +121,16 @@ public sealed class TableValueConstructor : Query
         if (table is null)
         {
             CreateTable();
+        }
+
+        if (orderList is not null && sort is null)
+        {
+            PrepareOrder(orderList, expressions.Length);
+        }
+
+        if (IsWithTies() && sort is null)
+        {
+            throw DbException.Get(Api.ErrorCode.WithTiesWithoutOrderBy);
         }
 
         foreach (List<Expression> row in rows)
@@ -224,6 +239,12 @@ public sealed class TableValueConstructor : Query
         {
             result.SetDistinct();
         }
+
+        if (sort is not null)
+        {
+            result.SetSortOrder(sort);
+        }
+
         foreach (List<Expression> row in rows)
         {
             Value?[] values = new Value?[visibleColumnCount];

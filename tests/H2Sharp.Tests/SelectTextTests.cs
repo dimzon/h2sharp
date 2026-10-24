@@ -728,19 +728,13 @@ public sealed class SelectTextTests
     }
 
     [Fact]
-    public void FetchWithTiesWaitsForTies()
+    public void FetchWithTiesKeepsTiedRows()
     {
-        SessionLocal session = NewSession(out TransactionStore store, out _);
-        try
-        {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT ID FROM T ORDER BY ID FETCH FIRST 2 ROWS WITH TIES"));
-            Assert.Contains("WITH TIES", e.Message);
-        }
-        finally
-        {
-            store.Dispose();
-        }
+        // WITH TIES is ported: the second 5 rides along past the fetch of two rows,
+        // and the text is the same whatever order the tied rows come in.
+        CompareDup("with_ties",
+            "SELECT VAL FROM T3 WHERE VAL IS NOT NULL ORDER BY VAL DESC FETCH FIRST 2 ROWS WITH TIES",
+            ["=7", "=5", "=5"]);
     }
 
     [Fact]

@@ -307,7 +307,9 @@ public sealed class QueryGrammarTests
         GivenTestTable(connection);
         _ = connection.Execute("INSERT INTO TEST(ID, NAME) VALUES (1, 'Zoe')");
 
-        Assert.Equal("Ada", connection.QueryFirst<string>(
+        // The reference sorts ID DESC first: ID 2 ('Alan') comes before both ID 1 rows, so
+        // the first row is Alan, not Ada. The expectation below is verified against it.
+        Assert.Equal("Alan", connection.QueryFirst<string>(
             "SELECT NAME FROM TEST ORDER BY ID DESC, NAME ASC"));
     }
 

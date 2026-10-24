@@ -166,6 +166,12 @@ public sealed class Select : Query
     /// </summary>
     private bool withTies = false;
 
+    /// <inheritdoc/>
+    public override void SetWithTies(bool withTies) => this.withTies = withTies;
+
+    /// <inheritdoc/>
+    public override bool IsWithTies() => withTies;
+
     /// <summary>
     /// The cost of the built plan.
     /// </summary>
@@ -767,6 +773,11 @@ public sealed class Select : Query
             && filters.Count == 1)
         {
             isQuickAggregateQuery = IsOptimizableAggregate(filters[0]);
+        }
+
+        if (withTies && sort is null)
+        {
+            throw DbException.Get(Api.ErrorCode.WithTiesWithoutOrderBy);
         }
 
         expressionArray = [.. expressions];

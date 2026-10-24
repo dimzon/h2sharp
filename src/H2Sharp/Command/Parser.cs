@@ -529,8 +529,8 @@ public sealed partial class Parser
         recompileAlways = false;
 
         Prepared prepared;
-        if (position < tokens.Count && (IsSelectFirst(tokens[position])
-            || CurrentType == Token.OpenParen || IsWord("VALUES", consume: false)))
+        if (position < tokens.Count && (IsDirectQuery(position)
+            || CurrentType == Token.OpenParen))
         {
             prepared = ParseQueryExpression(prepare: false);
         }
@@ -863,7 +863,33 @@ public sealed partial class Parser
             return query;
         }
         if (IsWord("VALUES", consume: false)) return ReadValues();
+        if (IsWord("TABLE", consume: false)) return ReadExplicitTable();
         return ParseQuerySelect();
+    }
+
+    /// <summary>
+    /// Reads the explicit table statement: <c>TABLE name</c>, a select of every column of
+    /// the named table, as the reference's parseExplicitTable does. The ORDER BY, OFFSET
+    /// and FETCH clauses that follow are read by <see cref="ParseEndOfQuery"/>.
+    /// </summary>
+    /// <returns>the select</returns>
+    private Query.Query ReadExplicitTable()
+    {
+        SessionLocal current = session
+            ?? throw new TODOException("Parser.parseQuerySelect: this parser has no session");
+        IsWord("TABLE");
+        Query.Select select = new(current);
+        select.SetSql(sql, null);
+        Tables.TableFilter filter = ReadTableReference(current, select);
+        select.AddTableFilter(filter, isTop: true);
+        List<Expressions.Expression> columns = [];
+        foreach (Tables.Column column in filter.GetTable().GetColumns())
+        {
+            columns.Add(new Expressions.ExpressionColumn(column, filter, 0));
+        }
+
+        select.SetExpressions([.. columns]);
+        return select;
     }
 
     /// <summary>
@@ -1306,9 +1332,81 @@ public sealed partial class Parser
             }
         }
 
-        string? filterAlias = hasAlias ? ReadFromAlias() : null;
+        string? filterAlias;
+        Tables.IndexHints? indexHints = null;
+        if (hasAlias && ReadIfUseIndex())
+        {
+            // USE INDEX before any alias, as the reference reads it.
+            filterAlias = null;
+            indexHints = ParseIndexHints(fromTable);
+        }
+        else
+        {
+            filterAlias = hasAlias ? ReadFromAlias() : null;
+            if (filterAlias is not null && ReadIfUseIndex())
+            {
+                indexHints = ParseIndexHints(fromTable);
+            }
+        }
         return new(
-            session, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, null);
+            session, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, indexHints);
+    }
+
+    /// <summary>
+    /// Whether USE INDEX follows, read as one piece: a USE without INDEX belongs to
+    /// something else, as the reference's readIfUseIndex resets over.
+    /// </summary>
+    /// <returns>true when USE INDEX was read</returns>
+    private bool ReadIfUseIndex()
+    {
+        int index = position;
+        if (!IsWord("USE"))
+        {
+            return false;
+        }
+        if (!IsWord("INDEX"))
+        {
+            position = index;
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Reads the index names of a USE INDEX hint, as the reference's parseIndexHints does.
+    /// Unknown names are refused with the reference's error, and the stored names are the
+    /// canonical ones from the table rather than the written spellings.
+    /// </summary>
+    /// <param name="table">the table the hint is for</param>
+    /// <returns>the hint</returns>
+    private Tables.IndexHints ParseIndexHints(Tables.Table table)
+    {
+        Expect(Token.OpenParen, "(");
+        List<string> indexNames = [];
+        if (!ReadIf(Token.CloseParen))
+        {
+            do
+            {
+                string indexName = ReadIdentifier();
+                string? canonical = null;
+                foreach (Indexes.Index index in table.GetIndexes())
+                {
+                    if (index.GetName() is string name
+                        && name.Equals(indexName, StringComparison.Ordinal))
+                    {
+                        canonical = name;
+                        break;
+                    }
+                }
+                if (canonical is null)
+                {
+                    throw DbException.Get(Api.ErrorCode.IndexNotFound1, indexName);
+                }
+                indexNames.Add(canonical);
+            }
+            while (ReadIfMore());
+        }
+        return Tables.IndexHints.CreateUseIndexHints(indexNames);
     }
 
     private Expressions.Functions.Table.ArrayTableFunction ReadUnnestFunction()
@@ -2365,6 +2463,7 @@ public sealed partial class Parser
         // the empty string for the star of every table, and the alias for the star of one
         // table ("SELECT t.* FROM T AS t").
         string? star = null;
+        List<string>? exceptColumns = null;
         if (ReadIf(Token.Asterisk))
         {
             star = string.Empty;
@@ -2377,6 +2476,19 @@ public sealed partial class Parser
             star = ReadIdentifier();
             Read();
             Read();
+        }
+
+        if (star is not null && IsWord("EXCEPT"))
+        {
+            Expect(Token.OpenParen, "(");
+            exceptColumns = [];
+            do
+            {
+                exceptColumns.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
         }
 
         List<Expressions.Expression> selectItems = [];
@@ -2500,6 +2612,24 @@ public sealed partial class Parser
 
                 foreach (Tables.Column column in f.GetTable().GetColumns())
                 {
+                    if (exceptColumns is not null)
+                    {
+                        bool excluded = false;
+                        foreach (string c in exceptColumns)
+                        {
+                            if (c.Equals(column.GetName(), StringComparison.OrdinalIgnoreCase))
+                            {
+                                excluded = true;
+                                break;
+                            }
+                        }
+
+                        if (excluded)
+                        {
+                            continue;
+                        }
+                    }
+
                     selectList.Add(new Expressions.ExpressionColumn(column, f, 0));
                 }
             }
@@ -2645,10 +2775,12 @@ public sealed partial class Parser
             if (IsWord("WITH"))
             {
                 ExpectWord("TIES");
-                throw new TODOException("Parser.parseQuerySelect: FETCH WITH TIES is not ported");
+                query.SetWithTies(true);
             }
-
-            ExpectWord("ONLY");
+            else
+            {
+                ExpectWord("ONLY");
+            }
         }
 
         // The mode comes from the cast provider rather than the session: the tokenizer
@@ -2767,6 +2899,12 @@ public sealed partial class Parser
         if (ReadIf(Token.Dot))
         {
             tableAlias = first;
+            if (!Current.IsQuoted
+                && Current.AsIdentifier?.Equals(Tables.Column.RowId, StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return Tables.Column.RowId;
+            }
+
             return ReadIdentifier();
         }
 
@@ -3618,6 +3756,31 @@ public sealed partial class Parser
             return new Expressions.Conditions.ExistsPredicate(query);
         }
 
+        // H2 readCondition: UNIQUE is a predicate over a subquery, parsed before readConcat.
+        if (CurrentType == ParserUtil.Unique)
+        {
+            Read();
+            Engine.NullsDistinct nullsDistinct = ReadNullsDistinct(Engine.NullsDistinct.Distinct);
+            Expect(Token.OpenParen, "(");
+            Query.Query subquery = ParseQueryExpression(prepare: false);
+            Expect(Token.CloseParen, ")");
+            return new Expressions.Conditions.UniquePredicate(subquery, nullsDistinct);
+        }
+
+        // H2 readCondition: INTERSECTS(operand, operand) is a spatial comparison, not a call.
+        if (IsWord("INTERSECTS", consume: false)
+            && position + 1 < tokens.Count && tokens[position + 1].TokenType == Token.OpenParen)
+        {
+            Read();
+            Expect(Token.OpenParen, "(");
+            Expression first = ReadQueryConcat(aggregateSelect);
+            Expect(Token.Comma, ",");
+            Expression second = ReadQueryConcat(aggregateSelect);
+            Expect(Token.CloseParen, ")");
+            return new Expressions.Conditions.Comparison(
+                Expressions.Conditions.Comparison.SpatialIntersects, first, second, false);
+        }
+
         Expressions.Expression left = ReadQueryConcat(aggregateSelect);
         while (true)
         {
@@ -3631,18 +3794,50 @@ public sealed partial class Parser
 
             if (CurrentType == ParserUtil.Is)
             {
+                // Reference readConditionIs: NULL, DISTINCT, TRUE, FALSE, UNKNOWN, OF, JSON.
                 Read();
                 bool not = ReadIf(ParserUtil.Not);
-                if (IsWord("DISTINCT"))
+                if (CurrentType == ParserUtil.Null)
                 {
+                    Read();
+                    left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
+                }
+                else if (CurrentType == ParserUtil.Distinct)
+                {
+                    Read();
                     ExpectWord("FROM");
                     left = ReadComparison(left, not ? Expressions.Conditions.Comparison.EqualNullSafe
                         : Expressions.Conditions.Comparison.NotEqualNullSafe, aggregateSelect);
                 }
+                else if (CurrentType is ParserUtil.True or ParserUtil.False)
+                {
+                    bool value = CurrentType == ParserUtil.True;
+                    Read();
+                    left = new Expressions.Conditions.BooleanTest(left, not, whenOperand: false, value);
+                }
+                else if (CurrentType == ParserUtil.Unknown)
+                {
+                    Read();
+                    left = new Expressions.Conditions.BooleanTest(left, not, whenOperand: false, null);
+                }
+                else if (IsWord("OF"))
+                {
+                    Expect(Token.OpenParen, "(");
+                    List<TypeInfo> typeList = [];
+                    do
+                    {
+                        typeList.Add(ReadDataType());
+                    }
+                    while (ReadIfMore());
+                    left = new Expressions.Conditions.TypePredicate(left, not, whenOperand: false, [.. typeList]);
+                }
+                else if (IsWord("JSON"))
+                {
+                    left = ReadIsJsonPredicate(left, not);
+                }
                 else
                 {
-                    Expect(ParserUtil.Null, "NULL");
-                    left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
+                    throw DbException.GetSyntaxError(sql, Current.Start, "NULL");
                 }
                 continue;
             }
@@ -3763,6 +3958,57 @@ public sealed partial class Parser
             return result;
         }
         return new Expressions.Conditions.Comparison(compareType, left, ReadQueryConcat(select), false);
+    }
+
+    /// <summary>
+    /// Reads the kind and uniqueness of an IS JSON predicate, as the reference's
+    /// readJsonPredicate does.
+    /// </summary>
+    /// <param name="left">the expression to test</param>
+    /// <param name="not">whether this is IS NOT JSON</param>
+    /// <returns>the predicate</returns>
+    private Expressions.Conditions.IsJsonPredicate ReadIsJsonPredicate(Expression left, bool not)
+    {
+        Util.Json.JsonItemType itemType;
+        if (ReadIf(ParserUtil.Value))
+        {
+            itemType = Util.Json.JsonItemType.Value;
+        }
+        else if (ReadIf(ParserUtil.Array))
+        {
+            itemType = Util.Json.JsonItemType.Array;
+        }
+        else if (IsWord("OBJECT"))
+        {
+            itemType = Util.Json.JsonItemType.Object;
+        }
+        else if (IsWord("SCALAR"))
+        {
+            itemType = Util.Json.JsonItemType.Scalar;
+        }
+        else
+        {
+            itemType = Util.Json.JsonItemType.Value;
+        }
+
+        // ReadIfWords peeks every word at the same position, so a two-word run is read
+        // as the reference reads it: the first word here, the second one next.
+        bool unique = false;
+        if (IsWord("WITH", consume: false) && NextIs("UNIQUE"))
+        {
+            Read();
+            Read();
+            IsWord("KEYS");
+            unique = true;
+        }
+        else if (IsWord("WITHOUT", consume: false) && NextIs("UNIQUE"))
+        {
+            Read();
+            Read();
+            IsWord("KEYS");
+        }
+
+        return new Expressions.Conditions.IsJsonPredicate(left, not, whenOperand: false, unique, itemType);
     }
 
     /// <summary>
@@ -4066,6 +4312,11 @@ public sealed partial class Parser
             }
 
             string columnName = ReadQueryColumnName(out string? tableAlias);
+            if (columnName.Equals(Tables.Column.RowId, StringComparison.OrdinalIgnoreCase))
+            {
+                return Expressions.ExpressionColumn.RowId(tableAlias);
+            }
+
             return new Expressions.ExpressionColumn(columnName, tableAlias, 0);
         }
 

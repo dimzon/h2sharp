@@ -248,6 +248,7 @@ internal static class H2ValueMapper
                 TimeSpan.FromSeconds(((ValueTimestampTimeZone)value).GetTimeZoneOffsetSeconds())),
             Value.Uuid => ((ValueUuid)value).GetUuid(),
             Value.Array => ToArrayObject((ValueArray)value),
+            Value.Row => ToRowObject((ValueRow)value),
             _ when IsIntervalType(value.GetValueType()) => ToTimeSpan((ValueInterval)value),
             _ => throw new TODOException(
                 "H2ValueMapper.ToObject: no caller value for engine type "
@@ -297,6 +298,19 @@ internal static class H2ValueMapper
             }
 
             result.SetValue(element, i);
+        }
+
+        return result;
+    }
+
+    // Approved CLR adaptation: SQL ROW reads as an object array, one mapped value per field.
+    internal static object?[] ToRowObject(ValueRow value)
+    {
+        Value[] values = value.GetList();
+        object?[] result = new object?[values.Length];
+        for (int i = 0; i < values.Length; i++)
+        {
+            result[i] = values[i] is ValueNull ? DBNull.Value : ToObject(values[i]);
         }
 
         return result;
