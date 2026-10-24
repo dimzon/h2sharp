@@ -7,10 +7,9 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
  * Partially ported, in the order the connection path needs: what a database *is* while there is
- * nothing in it yet — its name, whether it is memory, the object id counter, and the rule that
- * an in-memory database disappears when its last session closes. Everything that needs the
- * storage layer (the store, the meta table, the writer thread, the object registry lookup) is
- * stubbed and refuses.
+ * nothing in it yet — its name, whether it is memory, the object ids, the system table, and
+ * the rule that an in-memory database disappears when its last session closes. Everything that
+ * needs a writer thread or the user layer is stubbed and refuses.
  *
  * The close rule is the part worth having first, because it is observable without a single
  * table: two connections to the same "jdbc:h2:mem:x" see one database, and after the second of
@@ -18,14 +17,15 @@
  * still answer every query correctly and would leak a database per name for the life of the
  * process — which is exactly the kind of thing a test that only creates tables never notices.
  *
- * Object ids are allocated here and nowhere else, and the counter starts where the reference's
- * does. A database whose first user takes id 0 and whose first table takes a later one is what
- * the reference produces; a port that starts the counter at 1 would agree on every query and
+ * Object ids are allocated here and nowhere else, from the reference's bit set: id 0 is SYS
+ * (and PUBLIC), restored rows set their bits, and the first user object takes id 1. A port
+ * that handed out id 0 would agree on every query and
  * disagree with every file written from it.
  */
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using H2Sharp.Command;
 using H2Sharp.Message;
 using H2Sharp.Util;
 
@@ -37,10 +37,15 @@ namespace H2Sharp.Engine;
 public sealed partial class Database : CastDataProvider
 {
     /// <summary>
-    /// The first object id handed out. The reference allocates the meta table and its index
-    /// before anything a user can name, so user objects start above them.
+    /// The name of the internal user the reference runs startup and metadata as.
     /// </summary>
-    private const int FirstObjectId = 3;
+    private const string SystemUserName = "DBA";
+
+    /// <summary>
+    /// The object ids in use, as the reference's <c>objectIds</c>: bit 0 belongs to the
+    /// metadata table, id 0 itself, and the next free bit is the next id handed out.
+    /// </summary>
+    private readonly BitSet objectIds = new();
 
     private readonly ConnectionInfo connectionInfo;
 
@@ -48,11 +53,28 @@ public sealed partial class Database : CastDataProvider
 
     private readonly bool memory;
 
+    /// <summary>
+    /// The user sessions. Internal sessions (system, LOB) are not here, as in the reference:
+    /// only these keep the database open.
+    /// </summary>
     private readonly List<SessionLocal> sessions = [];
 
     private readonly object syncRoot = new();
 
-    private int objectId;
+    /// <summary>
+    /// The session startup and metadata run as.
+    /// </summary>
+    private SessionLocal? systemSession;
+
+    /// <summary>
+    /// The system table: id, header, type, SQL.
+    /// </summary>
+    private Tables.Table? meta;
+
+    /// <summary>
+    /// The index on <c>SYS.ID</c>.
+    /// </summary>
+    private Indexes.Index? metaIdIndex;
 
     private long modificationMetaId;
 
@@ -230,8 +252,9 @@ public sealed partial class Database : CastDataProvider
     /// Whether the database is opening.
     /// </summary>
     /// <remarks>
-    /// Construction leaves it cleared: there is no open lifecycle here yet to set it while
-    /// running, so every database reads as already open.
+    /// Set while the constructor builds SYS and replays its rows, as the reference does: the
+    /// parser treats that window as quirks mode and the metadata writers must not compare
+    /// against rows that are being read.
     /// </remarks>
     private bool starting = false;
     /// <summary>
@@ -247,8 +270,8 @@ public sealed partial class Database : CastDataProvider
     /// Locks the meta data of the database.
     /// </summary>
     /// <remarks>
-    /// There is no meta table here yet to lock, so this answers locked, as the reference does
-    /// when there is nothing to guard. When the meta table arrives, this delegates to it.
+    /// The reference locks the SYS table exclusively. Its lock manager is not ported, so this
+    /// answers locked without taking anything, and <see cref="UnlockMeta"/> does nothing.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <returns>true</returns>
@@ -269,7 +292,7 @@ public sealed partial class Database : CastDataProvider
     /// <param name="session">the session</param>
     /// <param name="obj">the object to add</param>
     public void AddSchemaObject(SessionLocal session, Schemas.SchemaObject obj)
-        => AddSchemaObject(session, obj.GetId(), () => obj.GetSchema().Add(obj));
+        => AddSchemaObject(session, obj.GetId(), () => obj.GetSchema().Add(obj), () => AddMeta(session, obj));
 
     /// <summary>
     /// Adds a table to the database.
@@ -277,9 +300,10 @@ public sealed partial class Database : CastDataProvider
     /// <param name="session">the session</param>
     /// <param name="table">the table to add</param>
     public void AddSchemaObject(SessionLocal session, Tables.Table table)
-        => AddSchemaObject(session, table.GetId(), () => table.GetSchema()!.Add(table));
+        => AddSchemaObject(session, table.GetId(), () => table.GetSchema()!.Add(table),
+            () => AddMeta(session, table));
 
-    private void AddSchemaObject(SessionLocal session, int id, Action add)
+    private void AddSchemaObject(SessionLocal session, int id, Action add, Action addMeta)
     {
         if (id > 0 && !starting)
         {
@@ -290,8 +314,7 @@ public sealed partial class Database : CastDataProvider
         lock (syncRoot)
         {
             add();
-
-            // addMeta is deferred with the meta table.
+            addMeta();
         }
 
         ClearQueryCache(id);
@@ -311,7 +334,7 @@ public sealed partial class Database : CastDataProvider
     /// <param name="obj">the object to remove</param>
     public void RemoveSchemaObject(SessionLocal session, Schemas.SchemaObject obj)
         => RemoveSchemaObject(session, obj.GetId(), () => obj.GetSchema().Remove(obj),
-            obj.RemoveChildrenAndResources);
+            obj.RemoveChildrenAndResources, () => RemoveMeta(session, obj.GetId()));
 
     /// <summary>
     /// Removes a table from the database.
@@ -320,13 +343,14 @@ public sealed partial class Database : CastDataProvider
     /// <param name="table">the table to remove</param>
     public void RemoveSchemaObject(SessionLocal session, Tables.Table table)
         => RemoveSchemaObject(session, table.GetId(), () => table.GetSchema()!.Remove(table),
-            table.RemoveChildrenAndResources);
+            table.RemoveChildrenAndResources, () => RemoveMeta(session, table.GetId()));
 
     private void RemoveSchemaObject(
         SessionLocal session,
         int id,
         Action remove,
-        Action<SessionLocal> removeChildrenAndResources)
+        Action<SessionLocal> removeChildrenAndResources,
+        Action removeMeta)
     {
         CheckWritingAllowed();
         LockMeta(session);
@@ -338,7 +362,7 @@ public sealed partial class Database : CastDataProvider
                 removeChildrenAndResources(session);
             }
 
-            // removeMeta is deferred with the meta table.
+            removeMeta();
         }
 
         ClearQueryCache(id);
@@ -397,7 +421,6 @@ public sealed partial class Database : CastDataProvider
         this.connectionInfo = connectionInfo;
         name = connectionInfo.GetName();
         memory = !connectionInfo.IsPersistent();
-        objectId = FirstObjectId;
 
         // Reference: this.lockMode = ci.getProperty("LOCK_MODE", Constants.DEFAULT_LOCK_MODE);
         lockMode = connectionInfo.GetProperty("LOCK_MODE", Constants.DefaultLockMode);
@@ -414,22 +437,343 @@ public sealed partial class Database : CastDataProvider
         // The main schema exists from the moment the database does, before anybody connects. A
         // session opening against a database with no schema would have nothing to create its
         // first object in, and the reference names PUBLIC here rather than making the first
-        // statement do it.
-        Schemas.Schema main = new(this, AllocateObjectId(), Constants.SchemaMain, system: false);
+        // statement do it. Its id is the constant zero, shared with the metadata table, so
+        // neither is ever written to SYS.
+        Schemas.Schema main = new(this, Constants.MainSchemaId, Constants.SchemaMain, system: false);
         AddSchema(main);
         SetMainSchema(main);
 
         // The metadata views live in their own schema, as in the reference: the views are
-        // tables of a system schema, and the schema is what a query names them through.
-        informationSchema = new(this, AllocateObjectId(), InformationSchemaName, system: true);
+        // tables of a system schema, and the schema is what a query names them through. Its id
+        // is the constant minus one, and the views count further down from there, so none of
+        // them is allocated and none is stored.
+        informationSchema = new(this, Constants.InformationSchemaId, InformationSchemaName, system: true);
         AddSchema(informationSchema);
         for (int type = 0; type < Tables.InformationSchemaTable.MetaTableTypeCount; type++)
         {
-            informationSchema.Add(new Tables.InformationSchemaTable(informationSchema, AllocateObjectId(), type));
+            informationSchema.Add(new Tables.InformationSchemaTable(
+                informationSchema, Constants.InformationSchemaId - type, type));
         }
 
         store = new MvStore.Db.Store(this, null);
         store.GetTransactionStore().Init();
+
+        // Startup runs as an internal session, as in the reference. Constructed without
+        // registering, because only user sessions keep the database open; closing the last
+        // user session has to close a file database even though this one still exists.
+        systemSession = new SessionLocal(this, SystemUserName, NextSessionId());
+        starting = true;
+        try
+        {
+            meta = CreateSysTable();
+            objectIds.Set(0);
+            metaIdIndex = meta.AddIndex(systemSession, "SYS_ID", 0,
+                Tables.IndexColumn.Wrap([meta.GetColumns()[0]]), 1,
+                Indexes.IndexType.CreatePrimaryKey(false, false), create: true, indexComment: null);
+            systemSession.Commit(true);
+            ExecuteMeta();
+            systemSession.Commit(true);
+            store.GetTransactionStore().EndLeftoverTransactions();
+        }
+        finally
+        {
+            starting = false;
+        }
+    }
+
+    /// <summary>
+    /// Builds the system table, the reference's <c>createSysTableData</c> plus the
+    /// <c>createTable</c> call that turns the description into a table in PUBLIC.
+    /// </summary>
+    /// <remarks>
+    /// The table has id 0, so it is never itself stored in SYS; PUBLIC shares that id, and bit 0
+    /// of <c>objectIds</c> stands for both.
+    /// </remarks>
+    /// <returns>the table</returns>
+    private Tables.Table CreateSysTable()
+    {
+        Tables.Column[] columns =
+        [
+            new Tables.Column("ID", Values.TypeInfo.TypeInteger),
+            new Tables.Column("HEAD", Values.TypeInfo.TypeInteger),
+            new Tables.Column("TYPE", Values.TypeInfo.TypeInteger),
+            new Tables.Column("SQL", Values.TypeInfo.TypeVarchar),
+        ];
+        columns[0].SetNullable(false);
+        MvStore.Db.MVTable table = new(this, GetMainSchema(), 0, "SYS", columns, persistIndexes: IsPersistent(),
+            persistData: IsPersistent());
+        for (int i = 0; i < columns.Length; i++)
+        {
+            columns[i].SetTable(table, i);
+        }
+        return table;
+    }
+
+    /// <summary>
+    /// Reads the system table and creates what it names, the reference's <c>executeMeta</c>.
+    /// </summary>
+    /// <remarks>
+    /// The rows are grouped by object type and replayed in the reference's order: settings,
+    /// users, schemas and function aliases first; domains next, retried until no domain in the
+    /// batch still depends on one that failed; then sequences, constants, tables and indexes;
+    /// then constraints, unique and primary keys before the rest; then everything else.
+    /// </remarks>
+    private void ExecuteMeta()
+    {
+        Indexes.Cursor cursor = metaIdIndex!.GetCursor(systemSession!, null, null, false)
+            ?? throw DbException.GetInternalError("SYS_ID.find returned no cursor");
+        List<MetaRecord> firstRecords = [], domainRecords = [], middleRecords = [],
+            constraintRecords = [], lastRecords = [];
+        while (cursor.Next())
+        {
+            MetaRecord rec = new(cursor.Get()!);
+            objectIds.Set(rec.GetId());
+            switch (rec.GetObjectType())
+            {
+                case DbObject.Setting:
+                case DbObject.User:
+                case DbObject.Schema:
+                case DbObject.FunctionAlias:
+                    firstRecords.Add(rec);
+                    break;
+                case DbObject.Domain:
+                    domainRecords.Add(rec);
+                    break;
+                case DbObject.Sequence:
+                case DbObject.Constant:
+                case DbObject.TableOrView:
+                case DbObject.Index:
+                    middleRecords.Add(rec);
+                    break;
+                case DbObject.Constraint:
+                    constraintRecords.Add(rec);
+                    break;
+                default:
+                    lastRecords.Add(rec);
+                    break;
+            }
+        }
+
+        SessionLocal session = systemSession!;
+        session.Lock();
+        try
+        {
+            ExecuteMeta(firstRecords);
+
+            // Domains may depend on other domains.
+            int count = domainRecords.Count;
+            if (count > 0)
+            {
+                for (int j = 0; ; count = j)
+                {
+                    H2SharpException? exception = null;
+                    for (int i = 0; i < count; i++)
+                    {
+                        MetaRecord rec = domainRecords[i];
+                        try
+                        {
+                            rec.PrepareAndExecute(this, session, listener: null, throwIt: true);
+                        }
+                        catch (H2SharpException ex)
+                        {
+                            exception ??= ex;
+                            domainRecords[j++] = rec;
+                        }
+                    }
+
+                    if (exception is null)
+                    {
+                        break;
+                    }
+
+                    if (count == j)
+                    {
+                        throw exception;
+                    }
+                }
+            }
+
+            ExecuteMeta(middleRecords);
+
+            // Prepare, but don't create all constraints at once: unique and primary keys
+            // first, then the rest.
+            count = constraintRecords.Count;
+            if (count > 0)
+            {
+                List<Prepared> constraints = new(count);
+                for (int i = 0; i < count; i++)
+                {
+                    Prepared? prepared = constraintRecords[i].Prepare(this, session, listener: null, throwIt: false);
+                    if (prepared is not null)
+                    {
+                        constraints.Add(prepared);
+                    }
+                }
+
+                constraints.Sort(MetaRecord.ConstraintsComparator);
+                foreach (Prepared constraint in constraints)
+                {
+                    MetaRecord.Execute(this, constraint, listener: null, constraint.GetSql(), throwIt: false);
+                }
+            }
+
+            ExecuteMeta(lastRecords);
+        }
+        finally
+        {
+            session.Unlock();
+        }
+    }
+
+    private void ExecuteMeta(List<MetaRecord> records)
+    {
+        if (records.Count > 0)
+        {
+            records.Sort();
+            foreach (MetaRecord rec in records)
+            {
+                rec.PrepareAndExecute(this, systemSession!, listener: null, throwIt: false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes a database object to the system table, the reference's <c>addMeta</c>.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="obj">the object to store</param>
+    private void AddMeta(SessionLocal session, DbObject obj)
+    {
+        int id = obj.GetId();
+        if (id > 0 && !obj.IsTemporary() && !IsReadOnly())
+        {
+            Result.Row row = meta!.GetTemplateRow();
+            MetaRecord.PopulateRowFromDbObject(obj, row);
+            Indexes.Cursor cursor = metaIdIndex!.GetCursor(session, row, row, false)
+                ?? throw DbException.GetInternalError("SYS_ID.find returned no cursor");
+            if (!cursor.Next())
+            {
+                _ = meta.AddRow(session, row);
+            }
+            else
+            {
+                Result.Row oldRow = cursor.Get()!;
+                MetaRecord rec = new(oldRow);
+                if (!string.Equals(rec.GetSql(), obj.GetCreateSqlForMeta(), StringComparison.Ordinal))
+                {
+                    meta.UpdateRow(session, oldRow, row);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes a table to the system table.
+    /// </summary>
+    /// <remarks>
+    /// The reference has one <c>addMeta(DbObject)</c> because a table is a database object
+    /// there. In the port a table is not, so it gets its own overload with the same row shape
+    /// and the same "id greater than zero and not temporary" rule.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="table">the table to store</param>
+    private void AddMeta(SessionLocal session, Tables.Table table)
+    {
+        int id = table.GetId();
+        if (id > 0 && !table.IsTemporary() && !IsReadOnly())
+        {
+            Result.Row row = meta!.GetTemplateRow();
+            MetaRecord.PopulateRowFromTable(table, row);
+            Indexes.Cursor cursor = metaIdIndex!.GetCursor(session, row, row, false)
+                ?? throw DbException.GetInternalError("SYS_ID.find returned no cursor");
+            if (!cursor.Next())
+            {
+                _ = meta.AddRow(session, row);
+            }
+            else
+            {
+                Result.Row oldRow = cursor.Get()!;
+                MetaRecord rec = new(oldRow);
+                if (!string.Equals(rec.GetSql(), table.GetCreateSql(), StringComparison.Ordinal))
+                {
+                    meta.UpdateRow(session, oldRow, row);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Updates an object in the system table, the reference's <c>updateMeta</c>.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="obj">the database object</param>
+    public void UpdateMeta(SessionLocal session, DbObject obj)
+    {
+        int id = obj.GetId();
+        if (id > 0)
+        {
+            if (!starting && !obj.IsTemporary())
+            {
+                Result.Row newRow = meta!.GetTemplateRow();
+                MetaRecord.PopulateRowFromDbObject(obj, newRow);
+                Result.Row? oldRow = FindMetaRow(session, id);
+                if (oldRow is not null)
+                {
+                    meta.UpdateRow(session, oldRow, newRow);
+                }
+            }
+
+            // For temporary objects.
+            lock (objectIds)
+            {
+                objectIds.Set(id);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Removes the given object from the system table, the reference's <c>removeMeta</c>.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="id">the id of the object to remove</param>
+    public void RemoveMeta(SessionLocal session, int id)
+    {
+        if (id > 0 && !starting)
+        {
+            Result.Row r = meta!.GetTemplateRow();
+            r.SetValue(0, Values.ValueInteger.Get(id));
+            bool wasLocked = LockMeta(session);
+            try
+            {
+                Result.Row? found = FindMetaRow(session, id);
+                if (found is not null)
+                {
+                    meta.RemoveRow(session, found.GetKey());
+                }
+            }
+            finally
+            {
+                if (!wasLocked)
+                {
+                    // Must not keep the lock if it was not locked, otherwise updating
+                    // sequences may cause a deadlock.
+                    UnlockMeta(session);
+                }
+            }
+
+            // Release of the object id is postponed until the end of the transaction, so it
+            // cannot be reused while a rollback could still bring the object back.
+            session.ScheduleDatabaseObjectIdForRelease(id);
+        }
+    }
+
+    private Result.Row? FindMetaRow(SessionLocal session, int id)
+    {
+        Result.Row r = meta!.GetTemplateRow();
+        r.SetValue(0, Values.ValueInteger.Get(id));
+        Indexes.Cursor cursor = metaIdIndex!.GetCursor(session, r, r, false)
+            ?? throw DbException.GetInternalError("SYS_ID.find returned no cursor");
+        return cursor.Next() ? cursor.Get() : null;
     }
 
     /// <summary>
@@ -707,8 +1051,21 @@ public sealed partial class Database : CastDataProvider
     /// <summary>
     /// Allocates a new object id.
     /// </summary>
+    /// <remarks>
+    /// The reference's body: the first clear bit of <c>objectIds</c>. Bit 0 is set before
+    /// startup metadata runs, so the first object a user can name is 1, and ids restored from
+    /// an existing SYS table are never handed out again.
+    /// </remarks>
     /// <returns>the id</returns>
-    public int AllocateObjectId() => Interlocked.Increment(ref objectId) - 1;
+    public int AllocateObjectId()
+    {
+        lock (objectIds)
+        {
+            int id = objectIds.NextClearBit(0);
+            objectIds.Set(id);
+            return id;
+        }
+    }
 
     /// <summary>
     /// Hands out the next session id, as the reference's nextSessionId does.
@@ -790,6 +1147,30 @@ public sealed partial class Database : CastDataProvider
     /// </summary>
     public void Opened()
     {
+    }
+
+    /// <summary>
+    /// Unlocks the meta data of the database.
+    /// </summary>
+    /// <remarks>
+    /// Paired with <see cref="LockMeta"/>. Neither locks anything yet: the meta table is new and
+    /// the reference guards it with its own monitor, which the port has not ported.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    public void UnlockMeta(SessionLocal session)
+    {
+    }
+
+    /// <summary>
+    /// Mark some database ids as unused.
+    /// </summary>
+    /// <param name="idsToRelease">the ids to release</param>
+    internal void ReleaseDatabaseObjectIds(BitSet idsToRelease)
+    {
+        lock (objectIds)
+        {
+            objectIds.AndNot(idsToRelease);
+        }
     }
 
     /// <summary>

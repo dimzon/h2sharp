@@ -148,7 +148,7 @@ public sealed class CreateTable : CommandWithColumns
         MvStore.Db.MVTable table = new(
             db,
             schema,
-            db.AllocateObjectId(),
+            GetObjectId(),
             tableName,
             [.. columns],
             db.IsPersistent() && persistIndexes,

@@ -67,13 +67,14 @@
   `VersionedValueType.Factory`, `LobStorageMap.BlobReference/BlobMeta.Type`,
   реестр типов хранит `object` и регистрирует тип значения (reference).
   Итог: Java открывает файл порта, порт открывает файл Java.
-- [ ] 3.5. Словарь схемы: таблица `SYS` (`createSysTableData`), `addMeta`,
+- [x] 3.5. Словарь схемы: таблица `SYS` (`createSysTableData`), `addMeta`,
   `updateMeta`, `removeMeta`, `executeMeta`, восстановление `objectIds`.
-  Сейчас `FileSurvivesCloseAndReopen` красный: «Table T not found» — данные
-  в мапах есть, определения таблиц не сохранены. Тесты помечены
-  `BlockedByPort` до этого шага.
-- [ ] 3.6. DDL-хуки: `AddSchemaObject`/`AddDatabaseObject`/`RemoveSchemaObject`
-  пишут/удаляют meta-строку (сейчас стоит комментарий «deferred»).
+  Плюс разбор строк эталона: `CREATE CACHED/MEMORY TABLE`, `CREATE PRIMARY KEY`
+  (quirks mode, как при старте), `INDEX <schema>.<name>` в ADD CONSTRAINT.
+  Все файловые тесты сняты с `BlockedByPort` и зелёные.
+- [x] 3.6. DDL-хуки: `AddSchemaObject`/`AddDatabaseObject`/`RemoveSchemaObject`
+  пишут/удаляют meta-строку; `GetObjectId` в DDL — один раз на команду, как в
+  эталоне; `Prepared.IsCacheable()` снова `false` по умолчанию.
 - [ ] 3.7. Lock-файл (`FileLock`, `DATABASE_ALREADY_OPEN_1`). Отложено:
   внутрипроцессная блокировка `SingleFileStore.OpenFiles` уже есть, файл
   `.lock.db` и межпроцессная — следующий шаг.

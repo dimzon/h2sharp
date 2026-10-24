@@ -168,7 +168,9 @@ public sealed class SystemFunctionTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.True(connection.QuerySingle<bool>("SELECT DB_OBJECT_ID('SCHEMA', 'PUBLIC') > 0"));
+        // The reference gives PUBLIC the constant id 0 (MAIN_SCHEMA_ID), so the answer is
+        // zero, not a generated id above it.
+        Assert.Equal(0, connection.QuerySingle<int>("SELECT DB_OBJECT_ID('SCHEMA', 'PUBLIC')"));
     }
 
     /// <summary>docs/functions.html:3566 — | {'CONSTANT'|'CONSTRAINT'|'DOMAIN'|'INDEX'|'ROUTINE'|'SEQUENCE'</summary>

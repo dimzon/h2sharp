@@ -21,9 +21,12 @@ public sealed class DatabaseMetaIdTests
     {
         Database db = new(new ConnectionInfo("jdbc:h2:mem:meta_id"));
 
-        Assert.Equal(0, db.GetNextModificationMetaId());
-        Assert.Equal(1, db.GetModificationMetaId());
+        // Opening the database creates the SYS_ID index, and the reference stamps every
+        // index it adds with setModified(), so the counter is already 1 by the time a caller
+        // can ask.
         Assert.Equal(1, db.GetNextModificationMetaId());
         Assert.Equal(2, db.GetModificationMetaId());
+        Assert.Equal(2, db.GetNextModificationMetaId());
+        Assert.Equal(3, db.GetModificationMetaId());
     }
 }

@@ -110,6 +110,8 @@ public sealed record ColumnDefinition(
 /// <param name="UpdateAction">what an update of the referenced row does</param>
 /// <param name="DeleteAction">what a delete of the referenced row does</param>
 /// <param name="CheckExisting">whether the existing rows are checked</param>
+/// <param name="IndexSchema">the schema of the index named by INDEX, or null</param>
+/// <param name="IndexName">the index named by INDEX, or null</param>
 public sealed record TableConstraintDefinition(
     string? Name,
     bool IfNotExists,
@@ -122,7 +124,9 @@ public sealed record TableConstraintDefinition(
     List<string>? RefColumns = null,
     Constraints.ConstraintActionType UpdateAction = Constraints.ConstraintActionType.NO_ACTION,
     Constraints.ConstraintActionType DeleteAction = Constraints.ConstraintActionType.NO_ACTION,
-    bool CheckExisting = true);
+    bool CheckExisting = true,
+    string? IndexSchema = null,
+    string? IndexName = null);
 
 /// <summary>ALTER TABLE ... ADD/DROP CONSTRAINT.</summary>
 public sealed class AlterTableStatement : Statement
@@ -135,6 +139,9 @@ public sealed class AlterTableStatement : Statement
 
     /// <summary>The table name.</summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>The schema of the table, or null when the name says nothing.</summary>
+    public string? Schema { get; set; }
 
     /// <summary>Whether the table name was written with IF EXISTS.</summary>
     public bool IfTableExists { get; set; }
@@ -198,6 +205,9 @@ public sealed class CreateTableStatement : Statement
 
     /// <summary>Whether IF NOT EXISTS was written.</summary>
     public bool IfNotExists { get; set; }
+
+    /// <summary>Whether the indexes are persisted: false for CREATE MEMORY TABLE.</summary>
+    public bool PersistIndexes { get; set; } = true;
 }
 
 /// <summary>DROP TABLE.</summary>
@@ -222,8 +232,14 @@ public sealed class CreateIndexStatement : Statement
     /// <summary>The index name, or null when the name is to be generated.</summary>
     public string? Name { get; set; }
 
+    /// <summary>The schema of the index name, or null when the name says nothing.</summary>
+    public string? Schema { get; set; }
+
     /// <summary>The table the index is on.</summary>
     public string TableName { get; set; } = string.Empty;
+
+    /// <summary>The schema of the table, or null when the name says nothing.</summary>
+    public string? TableSchema { get; set; }
 
     /// <summary>The columns, in order, with their sort types.</summary>
     public List<IndexColumn> Columns { get; } = [];
@@ -239,6 +255,9 @@ public sealed class CreateIndexStatement : Statement
 
     /// <summary>Whether IF EXISTS was written before the table name.</summary>
     public bool IfTableExists { get; set; }
+
+    /// <summary>Whether this statement creates the primary key index, as CREATE PRIMARY KEY does.</summary>
+    public bool PrimaryKey { get; set; }
 }
 
 /// <summary>DROP INDEX.</summary>
@@ -5946,6 +5965,7 @@ public sealed partial class Parser
         create.SetSql(statement.Sql, null);
         create.SetTableName(statement.Name);
         create.SetIfNotExists(statement.IfNotExists);
+        create.SetPersistIndexes(statement.PersistIndexes);
         int id = 0;
         foreach (ColumnDefinition column in statement.Columns)
         {
@@ -5990,7 +6010,7 @@ public sealed partial class Parser
                 // then two primary keys and error 90017, not one composite key. The column
                 // goes in by name, as in the reference; the constraint resolves it against
                 // the table when it runs.
-                create.AddConstraintCommand(CreateAddConstraintCommand(session, statement.Name,
+                create.AddConstraintCommand(CreateAddConstraintCommand(session, schema, statement.Name,
                     false, new TableConstraintDefinition(column.ConstraintName, false,
                         [tableColumn.GetName()], column.PrimaryKeyHash)));
             }
@@ -5999,7 +6019,7 @@ public sealed partial class Parser
             {
                 // One column-level REFERENCES is one foreign key over one column, as in the
                 // reference's readColumnConstraints.
-                create.AddConstraintCommand(CreateAddConstraintCommand(session, statement.Name,
+                create.AddConstraintCommand(CreateAddConstraintCommand(session, schema, statement.Name,
                     false, new TableConstraintDefinition(column.ConstraintName, false,
                         [tableColumn.GetName()], Hash: false,
                         CommandInterface.AlterTableAddConstraintReferential, Comment: null,
@@ -6011,7 +6031,7 @@ public sealed partial class Parser
         foreach (TableConstraintDefinition constraint in statement.Constraints)
         {
             create.AddConstraintCommand(
-                CreateAddConstraintCommand(session, statement.Name, false, constraint));
+                CreateAddConstraintCommand(session, schema, statement.Name, false, constraint));
         }
 
         return create;
@@ -6025,9 +6045,11 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareAlterTable(SessionLocal session, AlterTableStatement statement)
     {
+        Schemas.Schema schema = statement.Schema is null
+            ? CurrentSchema(session)
+            : session.GetDatabase().GetSchema(statement.Schema);
         if (statement.AlterColumn is not null)
         {
-            Schemas.Schema schema = CurrentSchema(session);
             Tables.Table? table = schema.FindTableOrView(session, statement.Name);
             if (table is null)
             {
@@ -6074,7 +6096,6 @@ public sealed partial class Parser
 
         if (statement.DropPrimaryKey)
         {
-            Schemas.Schema schema = CurrentSchema(session);
             Tables.Table? table = schema.FindTableOrView(session, statement.Name);
             if (table is null)
             {
@@ -6097,13 +6118,13 @@ public sealed partial class Parser
         if (statement.AddConstraint is not null)
         {
             Ddl.AlterTableAddConstraint add = CreateAddConstraintCommand(
-                session, statement.Name, statement.IfTableExists, statement.AddConstraint);
+                session, schema, statement.Name, statement.IfTableExists, statement.AddConstraint);
             add.SetSql(statement.Sql, null);
             return add;
         }
 
         Ddl.AlterTableDropConstraint drop = new(
-            session, CurrentSchema(session), statement.DropConstraintIfExists);
+            session, schema, statement.DropConstraintIfExists);
         drop.SetSql(statement.Sql, null);
         drop.SetTableName(statement.Name);
         drop.SetIfTableExists(statement.IfTableExists);
@@ -6292,11 +6313,10 @@ public sealed partial class Parser
     /// <param name="constraint">the parsed constraint</param>
     /// <returns>the command</returns>
     private Ddl.AlterTableAddConstraint CreateAddConstraintCommand(SessionLocal session,
-        string tableName, bool ifTableExists, TableConstraintDefinition constraint)
+        Schemas.Schema schema, string tableName, bool ifTableExists, TableConstraintDefinition constraint)
     {
         Ddl.AlterTableAddConstraint key = new(
-            session, CurrentSchema(session), constraint.Type,
-            constraint.IfNotExists);
+            session, schema, constraint.Type, constraint.IfNotExists);
         key.SetTableName(tableName);
         key.SetIfTableExists(ifTableExists);
         if (constraint.Name is not null)
@@ -6307,6 +6327,15 @@ public sealed partial class Parser
         if (constraint.Comment is not null)
         {
             key.SetComment(constraint.Comment);
+        }
+
+        if (constraint.IndexName is not null)
+        {
+            Schemas.Schema indexSchema = constraint.IndexSchema is null
+                ? CurrentSchema(session)
+                : session.GetDatabase().GetSchema(constraint.IndexSchema);
+            key.SetIndex(indexSchema.FindIndex(session, constraint.IndexName)
+                ?? throw DbException.Get(Api.ErrorCode.IndexNotFound1, constraint.IndexName));
         }
 
         if (constraint.Type == CommandInterface.AlterTableAddConstraintPrimaryKey)
@@ -6446,7 +6475,15 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareCreateIndex(SessionLocal session, CreateIndexStatement statement)
     {
-        Ddl.CreateIndex create = new(session, CurrentSchema(session));
+        Schemas.Schema schema = statement.Schema is null
+            ? CurrentSchema(session)
+            : session.GetDatabase().GetSchema(statement.Schema);
+        if (statement.TableSchema is not null)
+        {
+            schema = session.GetDatabase().GetSchema(statement.TableSchema);
+        }
+
+        Ddl.CreateIndex create = new(session, schema);
         create.SetSql(statement.Sql, null);
         create.SetIfTableExists(statement.IfTableExists);
         create.SetIfNotExists(statement.IfNotExists);
@@ -6454,6 +6491,12 @@ public sealed partial class Parser
         if (statement.Name is not null)
         {
             create.SetIndexName(statement.Name);
+        }
+
+        if (statement.PrimaryKey)
+        {
+            create.SetPrimaryKey(true);
+            create.SetUnique(null, statement.Columns.Count);
         }
 
         create.SetIndexColumns([.. statement.Columns]);
@@ -6716,14 +6759,38 @@ public sealed partial class Parser
         if (IsWord("CREATE", consume: false))
         {
             Read();
+
+            // The reference reads MEMORY or CACHED before it knows whether a table or an index
+            // follows; they only occur before TABLE. A MEMORY table is stored without its index
+            // content, which the reference spells as persistIndexes=false.
+            bool memory = false;
+            if (IsWord("MEMORY"))
+            {
+                memory = true;
+            }
+            else
+            {
+                _ = IsWord("CACHED");
+            }
+
             if (IsWord("TABLE"))
             {
-                return ReadCreateTable();
+                return ReadCreateTable(!memory);
             }
 
             if (IsWord("UNIQUE", consume: false) || IsWord("INDEX", consume: false))
             {
-                return ReadCreateIndex();
+                return ReadCreateIndex(primaryKey: false);
+            }
+
+            // CREATE PRIMARY KEY is the quirks-mode spelling the system table uses for the
+            // index a primary key constraint owns. Database startup runs in quirks mode, so a
+            // SYS row written by the reference replays; a client connection does not.
+            if (session is not null && session.IsQuirksMode() && IsWord("PRIMARY", consume: false))
+            {
+                Read();
+                ExpectWord("KEY");
+                return ReadCreateIndex(primaryKey: true);
             }
 
             if (IsWord("HASH", consume: false) || IsWord("SPATIAL", consume: false))
@@ -6780,9 +6847,9 @@ public sealed partial class Parser
         throw DbException.GetSyntaxError(sql, Current.Start, "statement");
     }
 
-    private CreateTableStatement ReadCreateTable()
+    private CreateTableStatement ReadCreateTable(bool persistIndexes)
     {
-        CreateTableStatement statement = new();
+        CreateTableStatement statement = new() { PersistIndexes = persistIndexes };
         if (CurrentType == ParserUtil.If)
         {
             Read();
@@ -6982,6 +7049,8 @@ public sealed partial class Parser
         string? name = null;
         bool ifNotExists = false;
         string? comment = null;
+        string? indexSchema = null;
+        string? indexName = null;
         if (CurrentType == ParserUtil.Constraint)
         {
             Read();
@@ -6993,7 +7062,7 @@ public sealed partial class Parser
                 ifNotExists = true;
             }
 
-            name = ReadIdentifier();
+            name = ReadIdentifierWithSchemaName(out _);
             if (IsWord("COMMENT"))
             {
                 comment = ReadStringLiteralValue()
@@ -7016,8 +7085,8 @@ public sealed partial class Parser
             Expect(Token.CloseParen, ")");
             if (IsWord("INDEX", consume: false))
             {
-                throw new TODOException(
-                    "Parser.readTableConstraint: the INDEX clause of a foreign key is not ported");
+                Read();
+                indexName = ReadIdentifierWithSchemaName(out indexSchema);
             }
 
             ExpectWord("REFERENCES");
@@ -7035,7 +7104,8 @@ public sealed partial class Parser
 
             return new TableConstraintDefinition(name, ifNotExists, columns, Hash: false,
                 CommandInterface.AlterTableAddConstraintReferential, comment,
-                refSchemaName, refTable, refColumns, updateAction, deleteAction, checkExisting);
+                refSchemaName, refTable, refColumns, updateAction, deleteAction, checkExisting,
+                indexSchema, indexName);
         }
 
         Expect(ParserUtil.Primary, "PRIMARY");
@@ -7052,12 +7122,13 @@ public sealed partial class Parser
         Expect(Token.CloseParen, ")");
         if (IsWord("INDEX", consume: false))
         {
-            throw new TODOException(
-                "Parser.readTableConstraint: the INDEX clause of a primary key is not ported");
+            Read();
+            indexName = ReadIdentifierWithSchemaName(out indexSchema);
         }
 
         return new TableConstraintDefinition(name, ifNotExists, keyColumns, hash,
-            CommandInterface.AlterTableAddConstraintPrimaryKey, comment);
+            CommandInterface.AlterTableAddConstraintPrimaryKey, comment,
+            IndexSchema: indexSchema, IndexName: indexName);
     }
 
     /// <summary>
@@ -7218,7 +7289,8 @@ public sealed partial class Parser
             statement.IfTableExists = true;
         }
 
-        statement.Name = ReadIdentifier();
+        statement.Name = ReadIdentifierWithSchemaName(out string? schemaName);
+        statement.Schema = schemaName;
         if (IsWord("ALTER"))
         {
             Read();
@@ -7378,16 +7450,20 @@ public sealed partial class Parser
     /// statements whose commands are not ported.
     /// </remarks>
     /// <returns>the statement</returns>
-    private CreateIndexStatement ReadCreateIndex()
+    private CreateIndexStatement ReadCreateIndex(bool primaryKey)
     {
-        CreateIndexStatement statement = new();
-        if (IsWord("UNIQUE"))
+        CreateIndexStatement statement = new() { PrimaryKey = primaryKey };
+        if (!primaryKey)
         {
-            statement.Unique = true;
-            statement.NullsDistinct = ReadNullsDistinct(NullsDistinct.Distinct);
+            if (IsWord("UNIQUE"))
+            {
+                statement.Unique = true;
+                statement.NullsDistinct = ReadNullsDistinct(NullsDistinct.Distinct);
+            }
+
+            ExpectWord("INDEX");
         }
 
-        ExpectWord("INDEX");
         if (!IsWord("ON", consume: false))
         {
             if (CurrentType == ParserUtil.If)
@@ -7398,11 +7474,13 @@ public sealed partial class Parser
                 statement.IfNotExists = true;
             }
 
-            statement.Name = ReadIdentifier();
+            statement.Name = ReadIdentifierWithSchemaName(out string? indexSchemaName);
+            statement.Schema = indexSchemaName;
         }
 
         ExpectWord("ON");
-        statement.TableName = ReadIdentifier();
+        statement.TableName = ReadIdentifierWithSchemaName(out string? tableSchemaName);
+        statement.TableSchema = tableSchemaName;
         if (IsWord("COMMENT", consume: false))
         {
             throw new TODOException("Parser.parseCreate: CREATE INDEX COMMENT is not ported");

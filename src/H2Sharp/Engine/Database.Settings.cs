@@ -134,8 +134,7 @@ public sealed partial class Database
         lock (syncRoot)
         {
             settings[name] = obj;
-
-            // addMeta is deferred with the meta table.
+            AddMeta(session, obj);
         }
 
         ClearQueryCache(id);
@@ -165,7 +164,7 @@ public sealed partial class Database
                 settings[newName] = obj;
             }
 
-            // updateMeta is deferred with the meta table.
+            UpdateMeta(session, obj);
         }
     }
 

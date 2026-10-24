@@ -210,7 +210,7 @@ public class AlterTableAddConstraint : AlterTable
                     }
 
                     index.GetIndexType()!.SetBelongsToConstraint(true);
-                    int id = db.AllocateObjectId();
+                    int id = GetObjectId();
                     string name = GenerateConstraintName(table);
                     constraint = new ConstraintUnique(GetSchema(), id, name, table, primaryKey: true,
                         keyColumns, index, indexOwner: true, nullsDistinct: null);

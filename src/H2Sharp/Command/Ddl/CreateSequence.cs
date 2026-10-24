@@ -70,7 +70,7 @@ public sealed class CreateSequence : SchemaCommand
             throw DbException.Get(Api.ErrorCode.SequenceAlreadyExists1, sequenceName);
         }
 
-        int id = db.AllocateObjectId();
+        int id = GetObjectId();
         Sequence sequence = new(GetSession(), schema, id, sequenceName, options, belongsToTable);
         db.AddSchemaObject(GetSession(), sequence);
         return 0;

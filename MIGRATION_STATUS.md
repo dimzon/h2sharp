@@ -7071,9 +7071,27 @@ columnCount, storeKeys), добавлены `LobStorageMap.BlobReference/BlobMet
 Java открывает базу, записанную портом (`DATABASE_PATH()` совпадает), порт
 открывает базу, записанную Java.
 
-Осталось: словарь схемы — системная таблица `SYS` (createSysTableData/addMeta/
-updateMeta/removeMeta/executeMeta, восстановление objectIds) и DDL-хуки
-AddSchemaObject/RemoveSchemaObject. Пока её нет, `FileSurvivesCloseAndReopen`
-красный («Table T not found»: строки в мапах есть, определение таблицы — нет),
-тесты помечены BlockedByPort. Lock-файл (`DATABASE_ALREADY_OPEN_1`) и
-`DB_CLOSE_ON_EXIT` отложены; внутрипроцессная блокировка файла уже есть.
+Словарь схемы портирован: `MetaRecord` (id, HEAD, TYPE, SQL), таблица `SYS`
+(columns ID/HEAD/TYPE/SQL, id 0, не входит в карту схемы — как в эталоне, поэтому
+`SELECT * FROM SYS` отвечает «не найдена», а INFORMATION_SCHEMA её не показывает),
+индекс `SYS_ID`, `addMeta/updateMeta/removeMeta/executeMeta`, восстановление
+`objectIds` (битсет; id 0 занят SYS и PUBLIC, первые пользовательские объекты — с 1) и
+DDL-хуки `AddSchemaObject`/`RemoveSchemaObject`/`AddDatabaseObject`. Все четыре
+файловых теста зелёные: порт читает файл эталона (SETTING-/TABLE-/INDEX-/CONSTRAINT-
+строки), эталон читает файл порта, база переоткрывается.
+
+Отступления и незакрытое по SYS (утверждено, D-011):
+* `CREATE CACHED/MEMORY TABLE`, `CREATE PRIMARY KEY` (только в quirks mode — эталон
+  тоже принимает его лишь при старте) и `INDEX <schema>.<name>` в ADD CONSTRAINT
+  добавлены в парсер ради строк эталона;
+* `CREATE USER` (тип USER) порт отвергает: пользователей в скоупе нет, и при старте
+  эта строка пропускается, как пропускается эталоном ошибка без listener; trace в
+  порте нет, поэтому пропуск молчаливый;
+* `GetObjectId` в DDL теперь вызывается один раз на команду (как эталон), а вторичные
+  индексы по-прежнему аллоцируют id напрямую;
+* `Prepared.IsCacheable()` теперь `false` по умолчанию, как в эталоне (порт отвечал
+  `true`, из-за чего повторный DDL получал тот же объект и падал на втором
+  `GetObjectId`).
+
+Lock-файл (`DATABASE_ALREADY_OPEN_1`) и `DB_CLOSE_ON_EXIT` отложены;
+внутрипроцессная блокировка файла уже есть.

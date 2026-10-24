@@ -64,7 +64,7 @@ public sealed class CreateSchema : DefineCommand
             throw DbException.Get(Api.ErrorCode.SchemaAlreadyExists1, schemaName);
         }
 
-        int id = db.AllocateObjectId();
+        int id = GetObjectId();
         Schema schema = new(db, id, schemaName, system: false);
         db.AddSchema(schema);
         return 0;

@@ -46,7 +46,63 @@ public sealed class SessionLocal : Session
     /// <returns>the id</returns>
     public int GetId() => id;
 
+    /// <summary>
+    /// Object ids to release when the transaction ends.
+    /// </summary>
+    private BitSet? idsToRelease;
+
+    /// <summary>
+    /// Schedules a database object id for release at the end of the transaction.
+    /// </summary>
+    /// <remarks>
+    /// The id cannot be freed at once: a rollback could still bring the object back, and a
+    /// re-used id would then collide with the data map the rolled-back object still names.
+    /// </remarks>
+    /// <param name="id">the id</param>
+    internal void ScheduleDatabaseObjectIdForRelease(int id)
+    {
+        idsToRelease ??= new BitSet();
+        idsToRelease.Set(id);
+    }
+
+    /// <summary>
+    /// Releases the object ids whose removal the ended transaction made final.
+    /// </summary>
+    private void ReleaseScheduledObjectIds()
+    {
+        if (idsToRelease is not null)
+        {
+            database.ReleaseDatabaseObjectIds(idsToRelease);
+            idsToRelease = null;
+        }
+    }
+
     private bool closed;
+
+    /// <summary>
+    /// Whether commands are executed in quirks mode to support scripts from older versions
+    /// of H2.
+    /// </summary>
+    private bool quirksMode;
+
+    /// <summary>
+    /// Enables or disables the quirks mode.
+    /// </summary>
+    /// <param name="quirksMode">whether quirks mode should be enabled</param>
+    public void SetQuirksMode(bool quirksMode) => this.quirksMode = quirksMode;
+
+    /// <summary>
+    /// Returns whether quirks mode is enabled explicitly or implicitly.
+    /// </summary>
+    /// <remarks>
+    /// Implicitly while the database is starting, as in the reference: the system table uses
+    /// spellings such as CREATE PRIMARY KEY that a client connection may not.
+    /// </remarks>
+    /// <returns>true if the database is starting or quirks mode was enabled</returns>
+    public bool IsQuirksMode()
+    {
+        return quirksMode || GetDatabase().IsStarting();
+    }
 
     /// <summary>
     /// Allocates an object id that is unique within this session.
@@ -375,16 +431,33 @@ public sealed class SessionLocal : Session
     /// <param name="database">the database</param>
     /// <param name="userName">the user name</param>
     public SessionLocal(Database database, string userName)
+        : this(database, userName, database.NextSessionId())
+    {
+        database.AddSession(this);
+    }
+
+    /// <summary>
+    /// Opens an internal session that does not count as a user session.
+    /// </summary>
+    /// <remarks>
+    /// The reference's package-private <c>SessionLocal(Database, User, int)</c>, which its
+    /// <c>createSession(User)</c> uses for the system and LOB sessions. Those are deliberately
+    /// absent from <c>userSessions</c>: closing the last user session has to close the
+    /// database, and an internal session still alive must not keep it open.
+    /// </remarks>
+    /// <param name="database">the database</param>
+    /// <param name="userName">the user name</param>
+    /// <param name="id">the session id</param>
+    internal SessionLocal(Database database, string userName, int id)
     {
         this.database = database;
         this.userName = userName;
-        id = database.NextSessionId();
+        this.id = id;
         CompareMode = database.GetCompareMode();
         // Reference: this.lockTimeout = database.getLockTimeout();
         lockTimeout = database.GetLockTimeout();
         Schemas.Schema? main = database.GetMainSchema();
         currentSchemaName = main is not null ? main.GetName() : H2Sharp.Engine.Constants.SchemaMain;
-        database.AddSession(this);
     }
 
     /// <summary>

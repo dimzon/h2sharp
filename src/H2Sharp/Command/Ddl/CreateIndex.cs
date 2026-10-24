@@ -121,7 +121,7 @@ public class CreateIndex : SchemaCommand
             persistent = false;
         }
 
-        int id = db.AllocateObjectId();
+        int id = GetObjectId();
         if (indexName is null)
         {
             indexName = primaryKey

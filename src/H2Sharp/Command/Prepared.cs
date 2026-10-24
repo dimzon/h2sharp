@@ -315,7 +315,7 @@ public abstract class Prepared
     /// Check if this command is cacheable.
     /// </summary>
     /// <returns>true if it is</returns>
-    public virtual bool IsCacheable() => true;
+    public virtual bool IsCacheable() => false;
 
     /// <summary>
     /// Checks if this command can be repeated on locking failure.

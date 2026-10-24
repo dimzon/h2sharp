@@ -34,10 +34,7 @@ public sealed class FileDatabaseOracleTests
     /// </summary>
     private const string SelectRows = "SELECT ID, NAME FROM T ORDER BY ID";
 
-    // Blocked: file open/close works and the reference can read the file's header, but the
-    // database schema is kept in the SYS table, which this port does not create yet.
     [JavaOracleFact]
-    [Trait("Category", "BlockedByPort")]
     public void FileWrittenHereIsReadByTheReference()
     {
         string path = NewPath();
@@ -69,9 +66,7 @@ public sealed class FileDatabaseOracleTests
         }
     }
 
-    // Blocked: same SYS-table gap as above, in the other direction.
     [JavaOracleFact]
-    [Trait("Category", "BlockedByPort")]
     public void FileWrittenByTheReferenceIsReadHere()
     {
         string path = NewPath();
@@ -97,9 +92,7 @@ public sealed class FileDatabaseOracleTests
         }
     }
 
-    // Blocked: same SYS-table gap; the data maps do round-trip, the table definition does not.
     [Fact]
-    [Trait("Category", "BlockedByPort")]
     public void FileSurvivesCloseAndReopen()
     {
         string path = NewPath();

@@ -425,6 +425,35 @@ public sealed class BitSet
         return MemoryMarshal.AsBytes(words.AsSpan())[..used].ToArray();
     }
 
+    /// <summary>
+    /// Clears every bit that is set in the other set, as <c>java.util.BitSet.andNot</c>.
+    /// </summary>
+    /// <remarks>
+    /// Used when the object ids a committed transaction freed become available again. A word
+    /// that becomes zero at the top is dropped, so <see cref="Capacity"/> shrinks with it, as
+    /// the reference's <c>recalculateWordsInUse</c> does.
+    /// </remarks>
+    /// <param name="other">the bits to clear</param>
+    internal void AndNot(BitSet other)
+    {
+        int common = Math.Min(words.Length, other.words.Length);
+        for (int i = 0; i < common; i++)
+        {
+            words[i] &= ~other.words[i];
+        }
+
+        int length = words.Length;
+        while (length > 1 && words[length - 1] == 0L)
+        {
+            length--;
+        }
+
+        if (length != words.Length)
+        {
+            Array.Resize(ref words, length);
+        }
+    }
+
     private void EnsureCapacity(int bits)
     {
         int needed = (bits >> 6) + 1;
