@@ -125,6 +125,10 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   newInstance классов Java, маппинг примитив→обёртка). Порт явно документирует (шапка
   Utils), что эквивалентных точек входа нет. Остальное перенесено: readFully
   (Stream/TextReader), SortTopN (включая 10000 случайных прогонов), ParseBoolean.
+* **TestStringUtils: testURL и RSS-сборка testXML — пропущены.** testURL сверяет
+  порт с java.net.URLEncoder/URLDecoder (их в .NET нет); RSS-сборка testXML питается
+  DateTimeFormatFunction.parseDateTime/formatDateTime (в порту нет). Первобытные XML-
+  примитивы (xmlComment/xmlNode/xmlText/xmlCData/xmlAttr/xmlStartDoc) проверяются.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
