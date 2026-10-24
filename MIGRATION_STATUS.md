@@ -611,6 +611,16 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   (`split:` URL и .part-файлы), вторым — BACKUP TO и инструмент Restore; всё это не
   перенесено. Остальное перенесено (блокировка файла, DB_CLOSE_DELAY, конкурентные
   вставки, переоткрытие с слушателем, старый файл 1.1 → FILE_VERSION_ERROR_1).
+* **TestOutOfMemory — не перенесён.** Все три половины стоят на JVM-механике
+  управляемого OOM: eatMemory/freeMemory (закладка кучи до отказа и восстановление),
+  FilePathMem-регистрация поверх memFS, и ребёнок с `-Xmx128m`. В .NET управляемый OOM
+  нельзя ни вызвать детерминированно внутри движка, ни восстановиться после него:
+  OutOfMemoryException — не состояние, из которого процесс гарантированно выходит.
+  Вопрос: пропустить целиком, или перенести testMVStoreUsingInMemoryFileSystem против
+  MVStore-порта без инъекции OOM (проверка открытия/закрытия/переоткрытия).
+* **TestMemoryUsage: testOpenCloseConnections — пропущен** — та же eatMemory-инъекция
+  OOM. Остальное перенесено: замеры памяти (create index, CLOB при WRITE_DELAY=0),
+  переоткрытия и цикл insert/update/select/delete с трассировкой.
 * **TestCompatibilityOracle: updatable-половина testVarchar — пропущена.**
   updateString/updateNString/updateObject + updateRow на CONCUR_UPDATABLE курсоре — у
   читателя ADO.NET нет записи через курсор; .NET-вызыватель обновляет командой. Вопрос:
@@ -667,8 +677,8 @@ TestViewAlterTable, TestIgnoreCatalogs, TestDeadlock, TestMultiConn,
 TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
 TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks,
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
-TestFunctionOverload, TestSynonymForTable). Порядок: `db/` и `jdbc/` до конца, потом
-`unit/`.
+TestFunctionOverload, TestSynonymForTable, TestMemoryUsage). Порядок: `db/` и `jdbc/`
+до конца, потом `unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
