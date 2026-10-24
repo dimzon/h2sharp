@@ -20,21 +20,36 @@ namespace H2Sharp.Engine;
 /// </summary>
 internal sealed class DelegatedCastDataProvider : CastDataProvider
 {
-    private readonly Func<DateTimeOffset> clock;
+    private readonly Func<DateTimeOffset>? clock;
+
+    private readonly Func<Util.TimeZoneProvider>? timeZoneProvider;
 
     /// <summary>
     /// Creates a provider that reads the time from the given clock.
     /// </summary>
     /// <param name="clock">the clock</param>
     internal DelegatedCastDataProvider(Func<DateTimeOffset> clock)
+        : this(clock, null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a provider that reads the time from the given clock and the default zone
+    /// from the given provider, either of which may be absent.
+    /// </summary>
+    /// <param name="clock">the clock, or null for the machine's</param>
+    /// <param name="timeZoneProvider">the zone provider, or null for the machine's</param>
+    internal DelegatedCastDataProvider(Func<DateTimeOffset>? clock,
+        Func<Util.TimeZoneProvider>? timeZoneProvider)
     {
         this.clock = clock;
+        this.timeZoneProvider = timeZoneProvider;
     }
 
     /// <inheritdoc/>
     public Values.ValueTimestampTimeZone CurrentTimestamp()
     {
-        DateTimeOffset now = clock();
+        DateTimeOffset now = clock is not null ? clock() : DateTimeOffset.Now;
         return Values.ValueTimestampTimeZone.FromDateValueAndNanos(
             Util.DateTimeUtils.DateValue(now.Year, now.Month, now.Day),
             now.TimeOfDay.Ticks * 100L,
@@ -42,7 +57,9 @@ internal sealed class DelegatedCastDataProvider : CastDataProvider
     }
 
     /// <inheritdoc/>
-    public Util.TimeZoneProvider CurrentTimeZone() => DefaultCastDataProvider.Instance.CurrentTimeZone();
+    public Util.TimeZoneProvider CurrentTimeZone() => timeZoneProvider is not null
+        ? timeZoneProvider()
+        : DefaultCastDataProvider.Instance.CurrentTimeZone();
 
     /// <inheritdoc/>
     public bool ZeroBasedEnums() => DefaultCastDataProvider.Instance.ZeroBasedEnums();

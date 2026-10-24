@@ -10,12 +10,12 @@
 // reference's main() entry is the runner; xUnit runs Test() directly.
 //
 // Modified (deferred, see MIGRATION_STATUS.md): the client-info halves
-// (setClientInfo/getClientInfo) are JDBC-only connection metadata, the
+// (setClientInfo/getClientInfo) are JDBC-only connection metadata, and the
 // commit/rollback-on-autocommit runners turn on the JDBC autocommit semantics and the
-// FORCE_AUTOCOMMIT_OFF_ON_COMMIT system property, and testTimeZone flips the JVM's
-// default time zone, which .NET does not have. All are skipped.
+// FORCE_AUTOCOMMIT_OFF_ON_COMMIT system property. Both are skipped.
 using System.Data;
 using H2Sharp.Api;
+using H2Sharp.Util;
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Jdbc;
@@ -31,12 +31,58 @@ public sealed class TestConnection : TestDb
     [H2Fact]
     public override void Test()
     {
-        // The client-info halves, the commit/rollback-on-autocommit runners and the
-        // time-zone dance: deferred, see the header and MIGRATION_STATUS.md.
+        // The client-info halves and the commit/rollback-on-autocommit runners:
+        // deferred, see the header and MIGRATION_STATUS.md.
         TestTransactionIsolationSetAndGet();
         TestSetGetSchema();
         TestLockTimeout();
         TestIgnoreUnknownSettings();
+        TestTimeZone();
+    }
+
+    /// <summary>
+    /// The reference's testTimeZone: two sessions opened while the JVM default zone
+    /// differs, and one with the zone in the URL. The JVM default is the time zone seam
+    /// of the connection here: each session is opened under its own zone provider, the
+    /// way the reference's TimeZone.setDefault carries each opening.
+    /// </summary>
+    private void TestTimeZone()
+    {
+        DeleteDb("timeZone");
+        string tz1 = "Europe/London", tz2 = "Europe/Paris", tz3 = "Asia/Tokyo";
+        try
+        {
+            _ = GetConnection("timeZone");
+            DbConnection c1 = GetConnection("timeZone");
+            ((IH2Test)c1).TimeZoneProviderProvider = () => TimeZoneProvider.OfId(tz1);
+            DbConnection c2 = GetConnection("timeZone");
+            ((IH2Test)c2).TimeZoneProviderProvider = () => TimeZoneProvider.OfId(tz2);
+            using (DbConnection c3 = GetConnection("timeZone;TIME ZONE=" + tz3))
+            {
+                CheckTimeZone(tz1, c1);
+                CheckTimeZone(tz2, c2);
+                CheckTimeZone(tz3, c3);
+            }
+
+            c1.Close();
+            c2.Close();
+        }
+        finally
+        {
+            DeleteDb("timeZone");
+        }
+    }
+
+    private void CheckTimeZone(string expected, DbConnection conn)
+    {
+        DbCommand stat = conn.CreateCommand();
+        stat.CommandText =
+            "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = 'TIME ZONE'";
+        using (DbDataReader rs = stat.ExecuteReader())
+        {
+            AssertTrue(rs.Read());
+            AssertEquals(expected, rs.GetString(0));
+        }
     }
 
     private void TestTransactionIsolationSetAndGet()

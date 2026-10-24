@@ -59,6 +59,8 @@ public sealed class H2Connection : DbConnection, IH2Test
 
     private Func<Guid>? uuidProvider;
 
+    private Func<Util.TimeZoneProvider>? timeZoneProviderProvider;
+
     /// <inheritdoc/>
     Func<DateTimeOffset>? IH2Test.SystemClockProvider
     {
@@ -78,6 +80,13 @@ public sealed class H2Connection : DbConnection, IH2Test
     {
         get => uuidProvider;
         set => uuidProvider = value;
+    }
+
+    /// <inheritdoc/>
+    Func<Util.TimeZoneProvider>? IH2Test.TimeZoneProviderProvider
+    {
+        get => timeZoneProviderProvider;
+        set => timeZoneProviderProvider = value;
     }
 
     /// <summary>
@@ -252,7 +261,8 @@ public sealed class H2Connection : DbConnection, IH2Test
 
         ConnectionInfo connectionInfo = new(connectionString);
         session = H2Sharp.Engine.Engine.OpenSession(
-            connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider);
+            connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider,
+            timeZoneProviderProvider);
         openedDatabaseName = connectionInfo.GetName();
         OnStateChange(new StateChangeEventArgs(ConnectionState.Closed, ConnectionState.Open));
     }

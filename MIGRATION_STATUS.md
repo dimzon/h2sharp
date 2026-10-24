@@ -630,14 +630,15 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   перенести getProcedures на INFORMATION_SCHEMA.FUNCTION_ALIASES (там нет
   SPECIFIC_NAME как колонки — эталон собирает её из имени и номера) или ждать
   metadata-поверхности.
-* **TestConnection: client-info, autocommit-runner'ы и TimeZone — пропущены.**
+* **TestConnection: client-info и autocommit-runner'ы — пропущены.**
   setClientInfo/getClientInfo — JDBC-метаданные соединения (у ADO.NET их нет);
   commit/rollback-on-autocommit runner'ы крутятся вокруг JDBC-семантики autocommit и
-  системного свойства FORCE_AUTOCOMMIT_OFF_ON_COMMIT; testTimeZone меняет дефолтную
-  таймзону JVM (TimeZone.setDefault + DateTimeUtils.resetCalendar) — в .NET дефолтной
-  таймзоны процесса менять нельзя. URL-половина (`;TIME ZONE=Asia/Tokyo`) переносима
-  вместе с тестами таймзон. Остальное перенесено: изоляция через ADO-поверхность,
-  SET SCHEMA/SCHEMA(), lock timeout, отказ неизвестных настроек.
+  системного свойства FORCE_AUTOCOMMIT_OFF_ON_COMMIT. Остальное перенесено: изоляция
+  через ADO-поверхность, SET SCHEMA/SCHEMA(), lock timeout, отказ неизвестных настроек,
+  и testTimeZone — дефолтная таймзона JVM теперь четвёртый сэм IH2Test
+  (TimeZoneProviderProvider, каждый сеанс под своей зоной; .NET не может менять
+  TimeZoneInfo.Local процесса) — H2Connection, Engine.OpenSession и
+  DelegatedCastDataProvider проводят его до сеанса; `;TIME ZONE=` в URL — как было.
 * **TestNativeSQL — не перенесён.** Тест целиком про Connection.nativeSQL — JDBC-
   обработку escape-ов `{d '...'}`, `{fn ...}`, `{oj ...}`. В ADO.NET такой поверхности
   нет (параметры типизованы, escape-ов не существует), метода на H2Connection тоже нет.

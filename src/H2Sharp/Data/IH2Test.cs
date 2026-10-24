@@ -61,4 +61,16 @@ public interface IH2Test
     /// the one the statement gets, whatever version the statement asked for.
     /// </remarks>
     Func<Guid>? UuidProvider { get; set; }
+
+    /// <summary>
+    /// The time zone the database treats as the default one.
+    /// </summary>
+    /// <remarks>
+    /// The delegate is asked once per session, when the session builds its cast data
+    /// provider. A session whose URL sets TIME ZONE never asks: its zone is its own. The
+    /// reference reads the JVM's default zone (TimeZone.setDefault); .NET cannot change
+    /// the local zone of a running process, so a test that wants two sessions under two
+    /// default zones answers the two zones here.
+    /// </remarks>
+    Func<Util.TimeZoneProvider>? TimeZoneProviderProvider { get; set; }
 }

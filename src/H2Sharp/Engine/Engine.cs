@@ -63,7 +63,8 @@ public static class Engine
         ConnectionInfo connectionInfo,
         Func<DateTimeOffset>? systemClockProvider = null,
         Func<JavaRandom>? randomGeneratorProvider = null,
-        Func<Guid>? uuidProvider = null)
+        Func<Guid>? uuidProvider = null,
+        Func<Util.TimeZoneProvider>? timeZoneProviderProvider = null)
     {
         string name = connectionInfo.GetName();
         if (connectionInfo.IsRemote())
@@ -124,9 +125,9 @@ public static class Engine
         database.Opened();
         return new SessionLocal(database, connectionInfo.GetUserName())
         {
-            CastDataProvider = systemClockProvider is null
+            CastDataProvider = systemClockProvider is null && timeZoneProviderProvider is null
                 ? DefaultCastDataProvider.Instance
-                : new DelegatedCastDataProvider(systemClockProvider),
+                : new DelegatedCastDataProvider(systemClockProvider, timeZoneProviderProvider),
             RandomGeneratorProvider = randomGeneratorProvider,
             UuidProvider = uuidProvider,
         };
