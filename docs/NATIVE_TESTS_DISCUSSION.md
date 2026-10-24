@@ -165,6 +165,8 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   memFS-схему; memLZF/nioMemFS/nioMemLZF-варианты ждут этих файловых систем. Перенесённая
   комбинация (memFS против настоящего файла) покрывает seek/write/read/setLength-гонку
   из 10000 итераций.
+* **TestBnf — не перенесён** — построен на org.h2.bnf (Bnf, DbContents,
+  readContents/quoteIdentifier); пакета в порту нет. Перенести вместе с bnf.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
