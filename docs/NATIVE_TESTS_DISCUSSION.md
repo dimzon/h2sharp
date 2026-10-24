@@ -120,6 +120,11 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   двоичного формата Java, ни класслоадерной механики нет. Вопрос: закрыть, либо
   перенести содержательную часть (проверка allowedClasses через собственный .NET-
   механизм) как отдельный тест.
+* **TestUtils: testGetNonPrimitiveClass и testReflectionUtils — пропущены.** Это
+  рефлексивная Java-интероп-проверка (callStaticMethod("java.lang.System.nanoTime"),
+  newInstance классов Java, маппинг примитив→обёртка). Порт явно документирует (шапка
+  Utils), что эквивалентных точек входа нет. Остальное перенесено: readFully
+  (Stream/TextReader), SortTopN (включая 10000 случайных прогонов), ParseBoolean.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
