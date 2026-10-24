@@ -199,6 +199,20 @@ public sealed class ConnectionInfo
     }
 
     /// <summary>
+    /// Gets a property as an integer.
+    /// </summary>
+    /// <param name="key">the key</param>
+    /// <param name="defaultValue">the value when the property is not set</param>
+    /// <returns>the property value</returns>
+    internal int GetProperty(string key, int defaultValue)
+    {
+        string? value = GetProperty(key);
+        return value is null
+            ? defaultValue
+            : int.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
     /// Removes a property.
     /// </summary>
     /// <param name="key">the key</param>

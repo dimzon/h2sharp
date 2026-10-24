@@ -40,6 +40,14 @@ public sealed class CurrentGeneralValueSpecification : Expression
     /// <summary>The "SYSTEM_USER" general value specification.</summary>
     public const int SystemUser = SessionUser + 1;
 
+    /// <summary>
+    /// The name of the public role, which is what CURRENT_ROLE answers on a fresh
+    /// database. Fixed as a constant: verified against H2 2.5.259 (fresh empty
+    /// in-memory database answers 'PUBLIC'), and the port has no roles that could
+    /// change it. Approved deviation, see docs/APPROVED_DEVIATIONS.md D-004.
+    /// </summary>
+    public const string PublicRoleName = "PUBLIC";
+
     private static readonly string[] Names =
     [
         "CURRENT_CATALOG", "CURRENT_PATH", "CURRENT_ROLE", "CURRENT_SCHEMA",
@@ -93,9 +101,7 @@ public sealed class CurrentGeneralValueSpecification : Expression
             }
 
             case CurrentRole:
-                // The port has no roles and no users to own them; there is no role name to
-                // read, so the answer is unknown rather than a name that was never granted.
-                return ValueNull.Instance;
+                return ValueVarchar.Get(PublicRoleName, session);
             case CurrentSchema:
                 s = session.GetCurrentSchemaName();
                 break;
@@ -108,7 +114,7 @@ public sealed class CurrentGeneralValueSpecification : Expression
                 throw DbException.GetInternalError("specification=" + specification);
         }
 
-        return s is not null ? ValueVarchar.Get(s) : ValueNull.Instance;
+        return s is not null ? ValueVarchar.Get(s, session) : ValueNull.Instance;
     }
 
     /// <inheritdoc/>

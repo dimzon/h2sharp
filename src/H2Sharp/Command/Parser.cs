@@ -361,6 +361,16 @@ public sealed partial class Parser
     private bool recompileAlways;
 
     /// <summary>
+    /// The select being read, as the reference's <c>currentSelect</c>.
+    /// </summary>
+    private Query.Select? currentSelect;
+
+    /// <summary>
+    /// The prepared statement being read, as the reference's <c>currentPrepared</c>.
+    /// </summary>
+    private Prepared? currentPrepared;
+
+    /// <summary>
     /// The common table expressions this statement names, by name.
     /// </summary>
     private readonly Dictionary<string, Tables.CTE> ctes = [];
@@ -520,6 +530,9 @@ public sealed partial class Parser
     private Prepared ParseOneStatement()
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parsePrepared: this parser has no session");
+        // Reference parse(): currentSelect and currentPrepared belong to one statement.
+        currentSelect = null;
+        currentPrepared = null;
         while (position < tokens.Count && tokens[position].TokenType == Token.Semicolon)
         {
             position++;
@@ -2597,6 +2610,22 @@ public sealed partial class Parser
         ExpectWord("SELECT");
         Query.Select select = new(current);
         select.SetSql(sql, null);
+        // Reference parseSelect: currentSelect is the select while its clauses are read.
+        Query.Select? oldSelect = currentSelect;
+        currentSelect = select;
+        try
+        {
+            return ParseQuerySelectBody(select);
+        }
+        finally
+        {
+            currentSelect = oldSelect;
+        }
+    }
+
+    private Query.Query ParseQuerySelectBody(Query.Select select)
+    {
+        SessionLocal current = session ?? throw new TODOException("Parser.parseQuerySelect: this parser has no session");
         if (IsWord("DISTINCT"))
         {
             select.SetDistinct();
@@ -4144,21 +4173,15 @@ public sealed partial class Parser
             itemType = Util.Json.JsonItemType.Value;
         }
 
-        // ReadIfWords peeks every word at the same position, so a two-word run is read
-        // as the reference reads it: the first word here, the second one next.
         bool unique = false;
-        if (IsWord("WITH", consume: false) && NextIs("UNIQUE"))
+        if (ReadIfWords("WITH", "UNIQUE"))
         {
-            Read();
-            Read();
-            IsWord("KEYS");
+            _ = IsWord("KEYS");
             unique = true;
         }
-        else if (IsWord("WITHOUT", consume: false) && NextIs("UNIQUE"))
+        else if (ReadIfWords("WITHOUT", "UNIQUE"))
         {
-            Read();
-            Read();
-            IsWord("KEYS");
+            _ = IsWord("KEYS");
         }
 
         return new Expressions.Conditions.IsJsonPredicate(left, not, whenOperand: false, unique, itemType);
@@ -4401,20 +4424,31 @@ public sealed partial class Parser
 
         if (CurrentType == ParserUtil.Rownum)
         {
-            // The reference reads ROWNUM with optional parentheses off the running
-            // statement; the port only threads the current select through.
+            // Reference readTermWithoutIdentifier: ROWNUM uses the current select, or the
+            // prepared statement when there is none (getCurrentPreparedOrSelect).
             Read();
             if (ReadIf(Token.OpenParen))
             {
                 Expect(Token.CloseParen, ")");
             }
 
-            if (aggregateSelect is null)
+            Prepared? context = aggregateSelect ?? currentSelect ?? currentPrepared;
+            if (context is null)
             {
+                if (session is not null)
+                {
+                    // The reference would have currentPrepared here (it sets it inside
+                    // parseInsert/parseUpdate and the rest). This port's parse-only layer
+                    // builds those statement records without a command, so there is
+                    // nothing to read the row number from yet.
+                    throw new TODOException(
+                        "Parser.readTerm: ROWNUM needs currentPrepared, which the DML parse-only layer does not set");
+                }
+
                 throw DbException.GetSyntaxError(sql, Current.Start, "SELECT");
             }
 
-            return new Expressions.Rownum(aggregateSelect);
+            return new Expressions.Rownum(context);
         }
 
         if (Current.AsIdentifier is not null)
@@ -5781,19 +5815,13 @@ public sealed partial class Parser
 
     private bool ReadIgnoreNulls(bool ignoreNulls)
     {
-        // ReadIfWords peeks every word at the same position, so a two-word run is read
-        // as the reference reads it: the first word here, the second one next.
-        if (IsWord("IGNORE", consume: false) && NextIs("NULLS"))
+        if (ReadIfWords("IGNORE", "NULLS"))
         {
-            Read();
-            Read();
             return true;
         }
 
-        if (IsWord("RESPECT", consume: false) && NextIs("NULLS"))
+        if (ReadIfWords("RESPECT", "NULLS"))
         {
-            Read();
-            Read();
             return false;
         }
 

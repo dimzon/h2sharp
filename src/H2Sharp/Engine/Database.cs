@@ -401,6 +401,9 @@ public sealed partial class Database : CastDataProvider
         memory = !connectionInfo.IsPersistent();
         objectId = FirstObjectId;
 
+        // Reference: this.lockMode = ci.getProperty("LOCK_MODE", Constants.DEFAULT_LOCK_MODE);
+        lockMode = connectionInfo.GetProperty("LOCK_MODE", Constants.DefaultLockMode);
+
         string accessModeData = Util.StringUtils.ToLowerEnglish(
             connectionInfo.GetProperty("ACCESS_MODE_DATA") ?? "rw");
         if (accessModeData == "r")
@@ -578,6 +581,26 @@ public sealed partial class Database : CastDataProvider
     public bool IsPersistent()
     {
         return !memory;
+    }
+
+    /// <summary>
+    /// The path of the database files, or null for an in-memory database.
+    /// </summary>
+    /// <remarks>
+    /// The reference resolves the name to a real path here (FileUtils.toRealPath). The
+    /// port does not open persistent databases yet (see the constructor), so the
+    /// persistent branch has nothing to resolve and refuses rather than answering with
+    /// an unresolved name.
+    /// </remarks>
+    /// <returns>the path, or null for an in-memory database</returns>
+    public string? GetDatabasePath()
+    {
+        if (IsPersistent())
+        {
+            throw new TODOException("Database.getDatabasePath: persistent databases are not opened yet");
+        }
+
+        return null;
     }
 
     /// <summary>

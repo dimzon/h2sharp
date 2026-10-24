@@ -380,6 +380,8 @@ public sealed class SessionLocal : Session
         this.userName = userName;
         id = database.NextSessionId();
         CompareMode = database.GetCompareMode();
+        // Reference: this.lockTimeout = database.getLockTimeout();
+        lockTimeout = database.GetLockTimeout();
         Schemas.Schema? main = database.GetMainSchema();
         currentSchemaName = main is not null ? main.GetName() : H2Sharp.Engine.Constants.SchemaMain;
         database.AddSession(this);

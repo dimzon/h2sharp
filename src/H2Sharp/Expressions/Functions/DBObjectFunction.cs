@@ -129,7 +129,7 @@ public sealed class DBObjectFunction : FunctionN
             case DbObjectSql:
             {
                 string? sql = GetCreateSqlForMeta(found);
-                return sql is not null ? ValueVarchar.Get(sql) : ValueNull.Instance;
+                return sql is not null ? ValueVarchar.Get(sql, session) : ValueNull.Instance;
             }
 
             case DbObjectSize:

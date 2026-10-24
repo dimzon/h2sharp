@@ -8,10 +8,12 @@
  *
  * What is left out, and why:
  *
+ * * MEMORY_FREE and MEMORY_USED. The reference reads Runtime.freeMemory()/totalMemory();
+ *   the platform does not expose the JVM heap, so the branches refuse with a
+ *   TODOException instead of answering with a different number.
  * * The admin check on MEMORY_FREE and MEMORY_USED. The port has no users, so there is
- *   nobody to ask; whoever can run a statement may read the counters.
+ *   nobody to ask.
  */
-using System;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Message;
@@ -97,11 +99,13 @@ public sealed class SysInfoFunction : Expression
                 result = ValueBoolean.Get(session.GetAutoCommit());
                 break;
             case DatabasePath:
-                // The port opens in-memory databases only, and those have no path.
-                result = ValueNull.Instance;
+            {
+                string? path = session.GetDatabase().GetDatabasePath();
+                result = path is not null ? ValueVarchar.Get(path, session) : ValueNull.Instance;
                 break;
+            }
             case H2version:
-                result = ValueVarchar.Get(H2Sharp.Engine.Constants.Version);
+                result = ValueVarchar.Get(H2Sharp.Engine.Constants.Version, session);
                 break;
             case LockMode:
                 result = ValueInteger.Get(session.GetDatabase().GetLockMode());
@@ -110,15 +114,13 @@ public sealed class SysInfoFunction : Expression
                 result = ValueInteger.Get(session.GetLockTimeout());
                 break;
             case MemoryFree:
-            {
-                GCMemoryInfo info = GC.GetGCMemoryInfo();
-                result = ValueBigint.Get(info.TotalAvailableMemoryBytes - info.HeapSizeBytes);
-                break;
-            }
-
             case MemoryUsed:
-                result = ValueBigint.Get(GC.GetGCMemoryInfo().HeapSizeBytes);
-                break;
+                // The reference reads Runtime.freeMemory()/totalMemory(). The platform does
+                // not expose the semantics of the JVM heap (GC.GetGCMemoryInfo answers a
+                // different question), so this is refused rather than answered with a
+                // plausible-looking number. See docs/APPROVED_DEVIATIONS.md P-003.
+                throw new TODOException(
+                    "SysInfoFunction.getValue: Runtime.freeMemory/totalMemory have no .NET equivalent");
             case Readonly:
                 result = ValueBoolean.Get(session.GetDatabase().IsReadOnly());
                 break;
@@ -126,9 +128,18 @@ public sealed class SysInfoFunction : Expression
                 result = ValueInteger.Get(session.GetId());
                 break;
             case TransactionId:
-                // The port tracks no transactions, so there is never an uncommitted one.
-                result = ValueNull.Instance;
+            {
+                MvStore.Tx.Transaction? tx = session.Transaction;
+                if (tx is null || !tx.HasChanges())
+                {
+                    result = ValueNull.Instance;
+                    break;
+                }
+
+                result = ValueVarchar.Get(
+                    tx.GetSequenceNum().ToString(System.Globalization.CultureInfo.InvariantCulture), session);
                 break;
+            }
             default:
                 throw DbException.GetInternalError("function=" + function);
         }

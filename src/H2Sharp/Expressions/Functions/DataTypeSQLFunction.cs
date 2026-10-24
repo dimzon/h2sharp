@@ -86,7 +86,7 @@ public sealed class DataTypeSQLFunction : FunctionN
                 return ValueNull.Instance;
         }
 
-        return ValueVarchar.Get(type.GetSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString());
+        return ValueVarchar.Get(type.GetSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString(), session);
     }
 
     /// <inheritdoc/>

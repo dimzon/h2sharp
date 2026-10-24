@@ -6966,9 +6966,14 @@ Release-модульный набор linq2db после снятия BlockedByP
 каждая сверена с H2 2.5.259:
 * `SysInfoFunction` (10 тестов): AUTOCOMMIT/DATABASE_PATH/H2VERSION/LOCK_MODE/
   LOCK_TIMEOUT/MEMORY_FREE+USED/READONLY/SESSION_ID/TRANSACTION_ID. Session id
-  заведён в базе (NextSessionId), MEMORY — через GC, checkAdmin пропущен как
-  везде (пользователей нет), DATABASE_PATH — NULL (только mem-БД), TRANSACTION_ID —
-  NULL (нет незавершённых транзакций).
+  заведён в базе (NextSessionId), checkAdmin пропущен как везде (пользователей
+  нет). DATABASE_PATH делегирует `Database.GetDatabasePath()` (null для mem,
+  TODO для persistent); TRANSACTION_ID читает `session.Transaction` +
+  `HasChanges()` → seq; MEMORY_* отказывают TODOException (нет семантики кучи
+  JVM), тесты в BlockedByPort. Дефолты взяты из эталона: LOCK_MODE = 3
+  (`Constants.DEFAULT_LOCK_MODE`, через `ConnectionInfo.getProperty(int)`), а
+  lockTimeout сессии — `database.getLockTimeout()` (2000). Сверено с jar:
+  H2VERSION 2.5.259-SNAPSHOT, LOCK_MODE 3, LOCK_TIMEOUT 2000.
 * `DBObjectFunction` (9 + 1 в дефект-листе): ID/SQL/SIZE/TOTAL/APPROXIMATE(_TOTAL);
   добавлен `GetDiskSpaceUsed` по цепочке эталона (Index → MVIndex через root
   page; MVTable суммирует без делегатов; база возвращает 0). SCHEMA_SQL — в
@@ -6988,6 +6993,27 @@ Release-модульный набор linq2db после снятия BlockedByP
 * Попутно: машинно-зависимый IndexedDateTimeComparisonOracleTests зафиксирован
   через SET TIME ZONE 'UTC' (оракул форсирует -Duser.timezone=UTC);
   InsertWithVariablesSaysSo приведён к новому сообщению Variable-порта.
+
+**Спринт «честные заглушки»: универсальное правило и таблица отклонений.**
+В AGENTS.md добавлен раздел «Универсальное правило»: не знаешь как — копируй
+с эталона; платформа не позволяет — TODOException с именем недостающего.
+Утверждённые отклонения и кандидаты вынесены в `docs/APPROVED_DEVIATIONS.md`
+(A: D-001…D-010, B: P-007/P-008, C: дословные копии); план — в
+`docs/SPRINT_PLAN.md`.
+
+Исправлено по правилу (всё — копии структуры эталона): `GetDatabasePath` +
+делегирование из DATABASE_PATH; TRANSACTION_ID через `Transaction`; MEMORY_*
+→ TODO; CANCEL_SESSION вызывает `SessionLocal.Cancel()` вместо TRUE;
+LOCK_MODE/LOCK_TIMEOUT дефолты; NextIs-костыли убраны в пользу
+`ReadIfWords`; `ValueVarchar.Get` с `CastDataProvider` в новых местах;
+`ROWNUM` читает `aggregateSelect ?? currentSelect ?? currentPrepared`
+(поля заведены, сброс на границе оператора как в `parse()`); остаток —
+DML parse-only слой не создаёт `Prepared` до чтения выражений (P-007).
+`CURRENT_ROLE` — константа `'PUBLIC'` (D-007).
+
+Прогоны: H2Sharp.Tests 1259/1259, Data 467/467, MvStore 86/86, Specs
+673 зелёных / 262 прежних красных (935 всего: MEMORY_FREE/USED переехали в
+BlockedByPort, новых падений 0).
 
 **SQL-конформанс: 580 → 641/947.** Срез SET (+ TransactionCommandTests как
 побочный эффект AUTOCOMMIT): портированы `SET` (Parser.parseSet + команда Set,

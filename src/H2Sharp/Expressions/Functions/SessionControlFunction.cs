@@ -8,11 +8,10 @@
  *
  * What is left out, and why:
  *
- * * Cancelling the target's running command. Commands run synchronously in this port,
- *   so when the function runs there is no concurrent command of that session to
- *   interrupt; CANCEL_SESSION answers that there is nothing to stop.
- * * The admin check. The port has no users, so there is nobody to ask; whoever can run
- *   a statement is the engine's only user.
+ * * Cancelling the target's running command. Commands run synchronously in this port and
+ *   no current command is tracked, so CANCEL_SESSION calls the session's cancel, which
+ *   refuses with a TODOException instead of answering TRUE without stopping anything.
+ * * The admin check. The port has no users, so there is nobody to ask.
  */
 using System.Text;
 using H2Sharp.Engine;
@@ -67,9 +66,18 @@ public sealed class SessionControlFunction : Function1
                 switch (function)
                 {
                     case AbortSession:
+                        // The reference also cancels the command the target is running; a
+                        // synchronous port has none to cancel, and closing the session is
+                        // the rest of what ABORT_SESSION does.
                         s.Close();
                         return ValueBoolean.True;
                     case CancelSession:
+                        // The reference cancels the command the session is running. This
+                        // port runs commands synchronously and does not track a current
+                        // command, so SessionLocal.cancel refuses with a TODOException;
+                        // calling it keeps the refusal honest instead of answering TRUE
+                        // without stopping anything.
+                        s.Cancel();
                         return ValueBoolean.True;
                     default:
                         throw DbException.GetInternalError("function=" + function);

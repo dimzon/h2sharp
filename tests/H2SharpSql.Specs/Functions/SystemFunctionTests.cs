@@ -380,8 +380,11 @@ public sealed class SystemFunctionTests
 
     /// <summary>docs/functions.html:3861 — MEMORY_FREE()</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void MemoryFree_ReturnsTheFreeMemory() // FUN-3861
     {
+        // Blocked by the port: the reference reads Runtime.freeMemory(), which has no
+        // .NET equivalent (see docs/APPROVED_DEVIATIONS.md P-003).
         using IDbConnection connection = TestDatabase.Open();
 
         Assert.True(connection.QuerySingle<bool>("SELECT MEMORY_FREE() > 0"));
@@ -389,8 +392,10 @@ public sealed class SystemFunctionTests
 
     /// <summary>docs/functions.html:3879 — MEMORY_USED()</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void MemoryUsed_ReturnsTheUsedMemory() // FUN-3879
     {
+        // Blocked by the port: same Runtime.totalMemory() gap as MEMORY_FREE above.
         using IDbConnection connection = TestDatabase.Open();
 
         Assert.True(connection.QuerySingle<bool>("SELECT MEMORY_USED() > 0"));
