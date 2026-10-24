@@ -167,6 +167,8 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   из 10000 итераций.
 * **TestBnf — не перенесён** — построен на org.h2.bnf (Bnf, DbContents,
   readContents/quoteIdentifier); пакета в порту нет. Перенести вместе с bnf.
+* **TestNetUtils — вне объёма (решение 2026-10-24).** Сетевые утилиты (server socket,
+  частые соединения, TCP-опции) — порт встроенный, сеть не входит. Вместе с server/.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
