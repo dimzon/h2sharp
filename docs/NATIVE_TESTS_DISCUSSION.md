@@ -178,6 +178,12 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   через ORDER BY; в .NET нет ограничения managed heap таким способом. Вопрос: закрыть
   или перенести содержательную часть (миллион строк через ORDER BY и повторный обход)
   без лимита памяти.
+* **TestGeometryUtils — не перенесён.** Построен на Java Topology Suite (JTS):
+  WKBWriter/WKTReader/WKTWriter, Geometry, Envelope, JTSUtils. В .NET аналог —
+  NetTopologySuite, но зависимости нет и конверсии поверхностей не 1:1. Переносить
+  вместе с решением о NTS-зависимости (или писать конверсии вручную). GeoJsonUtils и
+  EWKTUtils уже в порту — содержательную половину (EWKB↔EWKT, dimension-системы,
+  envelope) можно переносить с их помощью, если решено не брать NTS.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
