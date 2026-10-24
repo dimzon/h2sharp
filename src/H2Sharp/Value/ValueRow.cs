@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -198,21 +199,7 @@ public sealed class ValueRow : ValueCollectionBase
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        _ = builder.Append("ROW (");
-        int length = values.Length;
-        for (int i = 0; i < length; i++)
-        {
-            if (i > 0)
-            {
-                _ = builder.Append(", ");
-            }
-
-            values[i].GetSql(builder, sqlFlags);
-        }
-
-        return builder.Append(')');
-    }
+        => Dialect.AppendRow(builder, this, sqlFlags);
 
     /// <summary>
     /// Creates a copy of this row but the new instance will contain the values according to

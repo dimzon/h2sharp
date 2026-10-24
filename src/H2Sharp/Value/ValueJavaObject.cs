@@ -8,6 +8,7 @@
 using System;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -77,15 +78,5 @@ public sealed class ValueJavaObject : ValueBytesBase
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        // Without the flag the value is written as a cast, because a bare run of bytes would
-        // read as a string; with the flag the raw rendering is what the reader asked for.
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            return base.GetSql(
-                _ = builder.Append("CAST("), HasSql.DefaultSqlFlags).Append(" AS JAVA_OBJECT)");
-        }
-
-        return base.GetSql(builder, HasSql.DefaultSqlFlags);
-    }
+        => Dialect.AppendJavaObject(builder, this, sqlFlags);
 }

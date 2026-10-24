@@ -3,14 +3,17 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  * Ported from none (new file, no Java counterpart).
  *
- * The H2 dialect as a facade: SQL literals a caller outside the engine can write. The providers
+ * The H2 dialect as a facade: one centralized place where an H2 literal is written. The providers
  * that sit on this one — EF Core, linq2db — hold plain .NET values, and a literal inlined into a
  * statement has to be the literal the engine itself would print and read back, or a statement
  * that round-trips on the engine round-trips nowhere else. So the two halves of this class are:
  *
- * The public methods take the .NET value and append its literal. The conversion to the engine
- * value applies the rules H2ValueMapper already owns — the same table, not a second one — and
- * the writing is the engine's own rendering, by way of the internal methods below.
+ * The public methods take the .NET value and append its literal directly: the digits, quotes and
+ * prefixes come from the same helpers the engine renders with — DateTimeUtils, StringUtils,
+ * IntervalUtils, JavaNumberFormat — and no engine value is built on the way, so a literal costs
+ * what its text costs. The conversion rules are the ones H2ValueMapper converts parameters by;
+ * a JSON document is the one exception, because the literal of an unnormalized document is a
+ * different document, and the normalization is the engine's own work.
  *
  * The internal methods are the bodies of the reference's <c>Value.getSQL</c> methods, moved here
  * from the value classes so that the literal syntax has one home; the value classes' GetSql
@@ -23,15 +26,16 @@
  * - ValueLob.LobOctetLength, ValueLob.LobCharLength and ValueLob.FormatLobDataComment are
  *   widened from protected to internal, because the moved LOB bodies read them and a static
  *   method of another class cannot; the public OctetLength() was no substitute, because it
- *   reads the LOB, which the trace form deliberately avoids;
- * - H2ValueMapper.FromDecimal and H2ValueMapper.FromTimeSpan are widened from private to
- *   internal, because the public methods convert .NET values by the same rules and a second
- *   copy of those rules is how the copies stop agreeing.
+ *   reads the LOB, which the trace form deliberately avoids.
  */
 using System;
+using System.Buffers.Binary;
 using System.Globalization;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Util;
 using H2Sharp.Util.Geometry;
@@ -47,9 +51,10 @@ namespace H2Sharp.Data;
 /// <remarks>
 /// Every method appends the literal and returns the same builder, so calls chain:
 /// <c>Dialect.AppendTimestamp(sql, value)</c> writes <c>TIMESTAMP '2024-01-02 10:00:00'</c>.
-/// A <c>null</c> value writes <c>NULL</c>. The literal is the one the engine prints for the
-/// value and parses back into it, which is the whole contract: what this class writes, a
-/// statement can carry and the engine can read.
+/// A <c>null</c> value writes <c>NULL</c>. Nothing is allocated for the literal beyond the text
+/// itself: the value is formatted as it is read, and no engine value is built on the way. The
+/// literal is the one the engine prints for the value and parses back into it, which is the whole
+/// contract: what this class writes, a statement can carry and the engine can read.
 /// </remarks>
 public static class Dialect
 {
@@ -62,6 +67,7 @@ public static class Dialect
     /// </summary>
     /// <param name="builder">string builder to append to</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendNull(StringBuilder builder)
         => builder.Append("NULL");
 
@@ -71,10 +77,16 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendBoolean(StringBuilder builder, bool? value)
-        => value.HasValue
-            ? AppendBoolean(builder, ValueBoolean.Get(value.GetValueOrDefault()), HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        return builder.Append(value.GetValueOrDefault() ? "TRUE" : "FALSE");
+    }
 
     /// <summary>
     /// Appends the literal of a TINYINT, a signed byte.
@@ -82,10 +94,18 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendTinyint(StringBuilder builder, sbyte? value)
-        => value.HasValue
-            ? AppendTinyint(builder, ValueTinyint.Get(value.GetValueOrDefault()), HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        sbyte v = value.GetValueOrDefault();
+        _ = StringUtils.AppendInvariant(builder.Append("CAST("), v);
+        return builder.Append(" AS TINYINT)");
+    }
 
     /// <summary>
     /// Appends the literal of a SMALLINT.
@@ -93,10 +113,18 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendSmallint(StringBuilder builder, short? value)
-        => value.HasValue
-            ? AppendSmallint(builder, ValueSmallint.Get(value.GetValueOrDefault()), HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        short v = value.GetValueOrDefault();
+        _ = StringUtils.AppendInvariant(builder.Append("CAST("), v);
+        return builder.Append(" AS SMALLINT)");
+    }
 
     /// <summary>
     /// Appends the literal of an INTEGER.
@@ -104,56 +132,170 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendInteger(StringBuilder builder, int? value)
-        => value.HasValue
-            ? AppendInteger(builder, ValueInteger.Get(value.GetValueOrDefault()), HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        return StringUtils.AppendInvariant(builder, value.GetValueOrDefault());
+    }
 
     /// <summary>
     /// Appends the literal of a BIGINT.
     /// </summary>
+    /// <remarks>
+    /// A bigint that fits in an int prints with a CAST that says how wide it is, so that reading
+    /// the literal back does not silently widen the type.
+    /// </remarks>
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendBigint(StringBuilder builder, long? value)
-        => value.HasValue
-            ? AppendBigint(builder, ValueBigint.Get(value.GetValueOrDefault()), HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        long v = value.GetValueOrDefault();
+        if (v == (int)v)
+        {
+            _ = builder.Append("CAST(");
+            _ = StringUtils.AppendInvariant(builder, v);
+            return builder.Append(" AS BIGINT)");
+        }
+
+        return StringUtils.AppendInvariant(builder, v);
+    }
 
     /// <summary>
     /// Appends the literal of a NUMERIC: a plain number, never with an exponent.
     /// </summary>
+    /// <remarks>
+    /// A whole number that fits in a long prints with a CAST that says how wide it is, because a
+    /// bare number would come back as whatever type the parser chose. Anything with a fractional
+    /// part, or too wide for a long, prints as it is: the CAST would say nothing the number does
+    /// not already say.
+    /// </remarks>
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendNumeric(StringBuilder builder, decimal? value)
-        => value.HasValue
-            ? AppendNumeric(
-                builder, ValueNumeric.Get(H2ValueMapper.FromDecimal(value.GetValueOrDefault())),
-                HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        decimal m = value.GetValueOrDefault();
+        if (m.Scale == 0 && long.MinValue <= m && m <= long.MaxValue)
+        {
+            long v = (long)m;
+            // The width the CAST names is the count of the digits, which is what the engine's
+            // BigDecimal calls precision. The magnitude is taken as unsigned, so the negative
+            // minimum is not negated into itself.
+            ulong magnitude = v < 0 ? ~(ulong)v + 1UL : (ulong)v;
+            int precision = 1;
+            while (magnitude >= 10UL)
+            {
+                magnitude /= 10UL;
+                precision++;
+            }
+
+            _ = builder.Append("CAST(");
+            _ = StringUtils.AppendInvariant(builder, v);
+            return builder.Append(" AS NUMERIC(").Append(precision).Append("))");
+        }
+
+        Span<char> digits = stackalloc char[31];
+        if (!m.TryFormat(digits, out int written, default, CultureInfo.InvariantCulture))
+        {
+            return builder.Append(m.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return builder.Append(digits[..written]);
+    }
 
     /// <summary>
     /// Appends the literal of a REAL.
     /// </summary>
+    /// <remarks>
+    /// A float literal is a REAL or a DOUBLE depending on what follows it, so the literal says
+    /// which one it is with a CAST. Infinity and NaN are not numbers and cannot be written as
+    /// literals, so they are quoted as text and the conversion back does the work.
+    /// </remarks>
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendReal(StringBuilder builder, float? value)
-        => value.HasValue
-            ? AppendReal(builder, ValueReal.Get(value.GetValueOrDefault()), HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        float v = value.GetValueOrDefault();
+        if (float.IsPositiveInfinity(v))
+        {
+            return builder.Append("CAST('Infinity' AS REAL)");
+        }
+
+        if (float.IsNegativeInfinity(v))
+        {
+            return builder.Append("CAST('-Infinity' AS REAL)");
+        }
+
+        if (float.IsNaN(v))
+        {
+            return builder.Append("CAST('NaN' AS REAL)");
+        }
+
+        return builder.Append("CAST(").Append(JavaNumberFormat.FloatToString(v)).Append(" AS REAL)");
+    }
 
     /// <summary>
     /// Appends the literal of a DOUBLE PRECISION.
     /// </summary>
+    /// <remarks>
+    /// Infinity and NaN are quoted as text, the way the engine writes them; the number itself is
+    /// spelled the Java way, so that 0.0 prints as 0.0 and 1e7 as 1.0E7.
+    /// </remarks>
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendDouble(StringBuilder builder, double? value)
-        => value.HasValue
-            ? AppendDouble(builder, ValueDouble.Get(value.GetValueOrDefault()), HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        double v = value.GetValueOrDefault();
+        if (double.IsPositiveInfinity(v))
+        {
+            return builder.Append("CAST('Infinity' AS DOUBLE PRECISION)");
+        }
+
+        if (double.IsNegativeInfinity(v))
+        {
+            return builder.Append("CAST('-Infinity' AS DOUBLE PRECISION)");
+        }
+
+        if (double.IsNaN(v))
+        {
+            return builder.Append("CAST('NaN' AS DOUBLE PRECISION)");
+        }
+
+        return builder.Append("CAST(").Append(JavaNumberFormat.DoubleToString(v))
+            .Append(" AS DOUBLE PRECISION)");
+    }
 
     /// <summary>
     /// Appends the literal of a character string: the text quoted, every quote inside doubled.
@@ -161,21 +303,27 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the text, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendString(StringBuilder builder, string? value)
-        => value is null
-            ? AppendNull(builder)
-            : AppendVarchar(builder, ValueVarchar.Get(value), HasSql.DefaultSqlFlags);
+        => StringUtils.QuoteStringSql(builder, value);
 
     /// <summary>
-    /// Appends the literal of a CHAR.
+    /// Appends the literal of a CHAR, its length of one said out loud: <c>CAST('x' AS CHAR(1))</c>.
     /// </summary>
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the character, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendChar(StringBuilder builder, char? value)
-        => value.HasValue
-            ? AppendChar(builder, ValueChar.Get(value.GetValueOrDefault().ToString()), HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        return StringUtils.QuoteStringSql(_ = builder.Append("CAST("), value.GetValueOrDefault().ToString())
+            .Append(" AS CHAR(1))");
+    }
 
     /// <summary>
     /// Appends the literal of a VARBINARY: the bytes as hex, <c>X'CAFE'</c>.
@@ -183,10 +331,18 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the bytes, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendBytes(StringBuilder builder, byte[]? value)
-        => value is null
-            ? AppendNull(builder)
-            : AppendBytes(builder, ValueVarbinary.Get(value), HasSql.DefaultSqlFlags);
+    {
+        if (value is null)
+        {
+            return AppendNull(builder);
+        }
+
+        builder.Append("X'");
+        _ = StringUtils.ConvertBytesToHex(builder, value);
+        return builder.Append('\'');
+    }
 
     /// <summary>
     /// Appends the literal of a UUID: <c>UUID '...'</c>.
@@ -194,10 +350,27 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendUuid(StringBuilder builder, Guid? value)
-        => value.HasValue
-            ? AppendUuid(builder, ValueUuid.Get(value.GetValueOrDefault()), HasSql.DefaultSqlFlags)
-            : AppendNull(builder);
+    {
+        if (!value.HasValue)
+        {
+            return AppendNull(builder);
+        }
+
+        // The two halves in the order the engine stores a UUID: sixteen bytes, big-endian, high
+        // first, which is how ValueUuid.Get(Guid) reads one.
+        Span<byte> bytes = stackalloc byte[16];
+        if (!value.GetValueOrDefault().TryWriteBytes(bytes, bigEndian: true, out _))
+        {
+            throw new ArgumentException("The UUID cannot be written", nameof(value));
+        }
+
+        return AppendUuid(
+            _ = builder.Append("UUID '"),
+            BinaryPrimitives.ReadInt64BigEndian(bytes),
+            BinaryPrimitives.ReadInt64BigEndian(bytes[8..])).Append('\'');
+    }
 
     /// <summary>
     /// Appends the literal of a JSON document: <c>JSON '...'</c>.
@@ -205,10 +378,14 @@ public static class Dialect
     /// <remarks>
     /// A JSON document is what a <see cref="JsonDocument"/> means here, the way
     /// <c>H2ValueMapper</c> reads one; a plain <see cref="string"/> is a string, not a document.
+    /// This is the one literal that builds an engine value on the way: the document has to be
+    /// normalized before it is a literal, because the literal of an unnormalized document is a
+    /// different document, and the normalization is the engine's own work.
     /// </remarks>
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the document, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendJson(StringBuilder builder, JsonDocument? value)
         => value is null
             ? AppendNull(builder)
@@ -220,6 +397,7 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the element</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendJson(StringBuilder builder, JsonElement value)
         => AppendJson(builder, ValueJson.FromJson(value.GetRawText()), HasSql.DefaultSqlFlags);
 
@@ -229,6 +407,7 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendDate(StringBuilder builder, DateOnly? value)
     {
         if (!value.HasValue)
@@ -237,10 +416,9 @@ public static class Dialect
         }
 
         DateOnly d = value.GetValueOrDefault();
-        return AppendDate(
-            builder,
-            ValueDate.FromDateValue(DateTimeUtils.DateValue(d.Year, d.Month, d.Day)),
-            HasSql.DefaultSqlFlags);
+        _ = builder.Append("DATE '");
+        _ = DateTimeUtils.AppendDate(builder, DateTimeUtils.DateValue(d.Year, d.Month, d.Day));
+        return builder.Append('\'');
     }
 
     /// <summary>
@@ -249,6 +427,7 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the time of day, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendTime(StringBuilder builder, TimeOnly? value)
     {
         if (!value.HasValue)
@@ -256,9 +435,9 @@ public static class Dialect
             return AppendNull(builder);
         }
 
-        return AppendTime(
-            builder, ValueTime.FromNanos(value.GetValueOrDefault().ToTimeSpan().Ticks * 100L),
-            HasSql.DefaultSqlFlags);
+        _ = builder.Append("TIME '");
+        _ = DateTimeUtils.AppendTime(builder, value.GetValueOrDefault().ToTimeSpan().Ticks * 100L);
+        return builder.Append('\'');
     }
 
     /// <summary>
@@ -268,11 +447,12 @@ public static class Dialect
     /// <remarks>
     /// A <see cref="TimeSpan"/> is a length, and the engine has two types for one: the caller
     /// names which, here or by <see cref="AppendInterval"/>. A length of a day or more, or a
-    /// negative one, is not a time of day and is refused by the value's own range check.
+    /// negative one, is not a time of day and is refused rather than written.
     /// </remarks>
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the time of day, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendTime(StringBuilder builder, TimeSpan? value)
     {
         if (!value.HasValue)
@@ -280,8 +460,15 @@ public static class Dialect
             return AppendNull(builder);
         }
 
-        return AppendTime(
-            builder, ValueTime.FromNanos(value.GetValueOrDefault().Ticks * 100L), HasSql.DefaultSqlFlags);
+        long nanos = value.GetValueOrDefault().Ticks * 100L;
+        if (nanos < 0 || nanos >= DateTimeUtils.NanosPerDay)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), nanos, "TIME is a time of day");
+        }
+
+        _ = builder.Append("TIME '");
+        _ = DateTimeUtils.AppendTime(builder, nanos);
+        return builder.Append('\'');
     }
 
     /// <summary>
@@ -290,6 +477,7 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the length, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendInterval(StringBuilder builder, TimeSpan? value)
     {
         if (!value.HasValue)
@@ -297,8 +485,16 @@ public static class Dialect
             return AppendNull(builder);
         }
 
-        return AppendInterval(
-            builder, H2ValueMapper.FromTimeSpan(value.GetValueOrDefault()), HasSql.DefaultSqlFlags);
+        TimeSpan span = value.GetValueOrDefault();
+        BigInteger total = new BigInteger(span.Ticks) * 100;
+        bool negative = total.Sign < 0;
+        BigInteger absolute = BigInteger.Abs(total);
+        return IntervalUtils.AppendInterval(
+            builder,
+            IntervalQualifier.DayToSecond,
+            negative,
+            (long)(absolute / IntervalUtils.NanosPerDayBi),
+            (long)(absolute % IntervalUtils.NanosPerDayBi));
     }
 
     /// <summary>
@@ -312,6 +508,7 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendTimestamp(StringBuilder builder, DateTime? value)
     {
         if (!value.HasValue)
@@ -320,11 +517,10 @@ public static class Dialect
         }
 
         DateTime dt = value.GetValueOrDefault();
-        return AppendTimestamp(
-            builder,
-            ValueTimestamp.FromDateValueAndNanos(
-                DateTimeUtils.DateValue(dt.Year, dt.Month, dt.Day), dt.TimeOfDay.Ticks * 100L),
-            HasSql.DefaultSqlFlags);
+        _ = builder.Append("TIMESTAMP '");
+        _ = DateTimeUtils.AppendDate(builder, DateTimeUtils.DateValue(dt.Year, dt.Month, dt.Day)).Append(' ');
+        _ = DateTimeUtils.AppendTime(builder, dt.TimeOfDay.Ticks * 100L);
+        return builder.Append('\'');
     }
 
     /// <summary>
@@ -333,6 +529,7 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendTimestampWithTimeZone(StringBuilder builder, DateTimeOffset? value)
     {
         if (!value.HasValue)
@@ -341,13 +538,11 @@ public static class Dialect
         }
 
         DateTimeOffset dto = value.GetValueOrDefault();
-        return AppendTimestampWithTimeZone(
-            builder,
-            ValueTimestampTimeZone.FromDateValueAndNanos(
-                DateTimeUtils.DateValue(dto.Year, dto.Month, dto.Day),
-                dto.TimeOfDay.Ticks * 100L,
-                (int)dto.Offset.TotalSeconds),
-            HasSql.DefaultSqlFlags);
+        _ = builder.Append("TIMESTAMP WITH TIME ZONE '");
+        _ = DateTimeUtils.AppendDate(builder, DateTimeUtils.DateValue(dto.Year, dto.Month, dto.Day)).Append(' ');
+        _ = DateTimeUtils.AppendTime(builder, dto.TimeOfDay.Ticks * 100L);
+        _ = DateTimeUtils.AppendTimeZone(builder, (int)dto.Offset.TotalSeconds);
+        return builder.Append('\'');
     }
 
     // ------------------------------------------------------------------
@@ -362,6 +557,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendNull(StringBuilder builder, ValueNull value, int sqlFlags)
         => builder.Append("NULL");
 
@@ -372,6 +568,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendBoolean(StringBuilder builder, ValueBoolean value, int sqlFlags)
         => builder.Append(value.GetString());
 
@@ -382,6 +579,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendTinyint(StringBuilder builder, ValueTinyint value, int sqlFlags)
     {
         if ((sqlFlags & HasSql.NoCasts) == 0)
@@ -399,6 +597,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendSmallint(StringBuilder builder, ValueSmallint value, int sqlFlags)
     {
         if ((sqlFlags & HasSql.NoCasts) == 0)
@@ -416,6 +615,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendInteger(StringBuilder builder, ValueInteger value, int sqlFlags)
         => builder.Append(value.GetInt().ToString(CultureInfo.InvariantCulture));
 
@@ -426,6 +626,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendBigint(StringBuilder builder, ValueBigint value, int sqlFlags)
     {
         long v = value.GetLong();
@@ -455,6 +656,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendNumeric(StringBuilder builder, ValueNumeric value, int sqlFlags)
     {
         // The reference builds the plain string first and asks it whether it has a point in it.
@@ -488,6 +690,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendReal(StringBuilder builder, ValueReal value, int sqlFlags)
     {
         if ((sqlFlags & HasSql.NoCasts) == 0)
@@ -511,6 +714,7 @@ public static class Dialect
     /// <param name="builder">the builder to append to</param>
     /// <param name="value">the number</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static StringBuilder AppendNumber(StringBuilder builder, float value)
     {
         if (float.IsPositiveInfinity(value))
@@ -538,6 +742,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendDouble(StringBuilder builder, ValueDouble value, int sqlFlags)
     {
         if ((sqlFlags & HasSql.NoCasts) == 0)
@@ -554,6 +759,7 @@ public static class Dialect
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the number</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static StringBuilder AppendValue(StringBuilder builder, double value)
     {
         if (double.IsPositiveInfinity(value))
@@ -585,6 +791,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendDecfloat(StringBuilder builder, ValueDecfloat value, int sqlFlags)
     {
         if ((sqlFlags & HasSql.NoCasts) == 0)
@@ -595,6 +802,7 @@ public static class Dialect
         return AppendDecfloatValue(builder, value);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static StringBuilder AppendDecfloatValue(StringBuilder builder, ValueDecfloat value)
     {
         BigDecimal? v = value.GetDecimalValue();
@@ -623,6 +831,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendChar(StringBuilder builder, ValueChar value, int sqlFlags)
     {
         string s = value.GetString();
@@ -645,6 +854,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendVarchar(StringBuilder builder, ValueVarchar value, int sqlFlags)
         => StringUtils.QuoteStringSql(builder, value.GetString());
 
@@ -655,6 +865,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendVarcharIgnoreCase(
         StringBuilder builder, ValueVarcharIgnoreCase value, int sqlFlags)
     {
@@ -678,6 +889,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendBytes(StringBuilder builder, ValueBytesBase value, int sqlFlags)
     {
         builder.Append("X'");
@@ -698,6 +910,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendBinary(StringBuilder builder, ValueBinary value, int sqlFlags)
     {
         if ((sqlFlags & HasSql.NoCasts) == 0)
@@ -719,6 +932,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendUuid(StringBuilder builder, ValueUuid value, int sqlFlags)
         => AppendUuid(_ = builder.Append("UUID '"), value.GetHigh(), value.GetLow()).Append('\'');
 
@@ -729,6 +943,7 @@ public static class Dialect
     /// <param name="high">the most significant bits</param>
     /// <param name="low">the least significant bits</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendUuid(StringBuilder builder, long high, long low)
     {
         _ = Hex.AppendHex(builder, high >> 32, 4).Append('-');
@@ -745,6 +960,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendDate(StringBuilder builder, ValueDate value, int sqlFlags)
         => DateTimeUtils.AppendDate(_ = builder.Append("DATE '"), value.GetDateValue()).Append('\'');
 
@@ -755,6 +971,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendTime(StringBuilder builder, ValueTime value, int sqlFlags)
         => DateTimeUtils.AppendTime(_ = builder.Append("TIME '"), value.GetNanos()).Append('\'');
 
@@ -765,6 +982,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendTimeWithTimeZone(
         StringBuilder builder, ValueTimeTimeZone value, int sqlFlags)
         => AppendTimeWithTimeZone(
@@ -779,6 +997,7 @@ public static class Dialect
     /// <param name="nanos">the nanoseconds since midnight</param>
     /// <param name="timeZoneOffsetSeconds">the offset from Greenwich in seconds</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendTimeWithTimeZone(
         StringBuilder builder, long nanos, int timeZoneOffsetSeconds)
         => DateTimeUtils.AppendTimeZone(DateTimeUtils.AppendTime(builder, nanos), timeZoneOffsetSeconds);
@@ -790,6 +1009,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendTimestamp(StringBuilder builder, ValueTimestamp value, int sqlFlags)
         => AppendTimestamp(
             _ = builder.Append("TIMESTAMP '"),
@@ -805,6 +1025,7 @@ public static class Dialect
     /// <param name="timeNanos">the nanoseconds since midnight</param>
     /// <param name="iso">whether the separator is the ISO T instead of a space</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendTimestamp(
         StringBuilder builder, long dateValue, long timeNanos, bool iso)
     {
@@ -820,6 +1041,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendTimestampWithTimeZone(
         StringBuilder builder, ValueTimestampTimeZone value, int sqlFlags)
         => AppendTimestampWithTimeZone(
@@ -838,6 +1060,7 @@ public static class Dialect
     /// <param name="timeZoneOffsetSeconds">the offset from Greenwich in seconds</param>
     /// <param name="iso">whether the separator is the ISO T instead of a space</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendTimestampWithTimeZone(
         StringBuilder builder, long dateValue, long timeNanos, int timeZoneOffsetSeconds, bool iso)
     {
@@ -854,6 +1077,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendInterval(StringBuilder builder, ValueInterval value, int sqlFlags)
         => IntervalUtils.AppendInterval(
             builder, value.GetQualifier(), value.IsNegative(), value.GetLeading(), value.GetRemaining());
@@ -865,6 +1089,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendJson(StringBuilder builder, ValueJson value, int sqlFlags)
     {
         // The ASCII rendering, and not the stored bytes: a document that stored non-ASCII as itself
@@ -885,6 +1110,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendEnum(StringBuilder builder, ValueEnum value, int sqlFlags)
     {
         if ((sqlFlags & HasSql.NoCasts) == 0)
@@ -908,7 +1134,7 @@ public static class Dialect
         _ = builder.Append("GEOMETRY ");
         if ((sqlFlags & HasSql.AddPlanInformation) != 0)
         {
-            _ = EWKBUtils.ParseEWKB(
+            EWKBUtils.ParseEWKB(
                 value.GetBytesNoCopy()!,
                 new EWKTUtils.EWKTTarget(_ = builder.Append('\''), value.GetDimensionSystem()));
             _ = builder.Append('\'');
@@ -1047,6 +1273,7 @@ public static class Dialect
     /// <param name="value">the value</param>
     /// <param name="sqlFlags">formatting flags</param>
     /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static StringBuilder AppendJavaObject(StringBuilder builder, ValueJavaObject value, int sqlFlags)
     {
         if ((sqlFlags & HasSql.NoCasts) == 0)

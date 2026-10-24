@@ -7,6 +7,7 @@
  */
 using System;
 using System.Text;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -141,21 +142,7 @@ public sealed class ValueArray : ValueCollectionBase
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        _ = builder.Append("ARRAY [");
-        int length = values.Length;
-        for (int i = 0; i < length; i++)
-        {
-            if (i > 0)
-            {
-                _ = builder.Append(", ");
-            }
-
-            values[i].GetSql(builder, sqlFlags);
-        }
-
-        return builder.Append(']');
-    }
+        => Dialect.AppendArray(builder, this, sqlFlags);
 
     /// <summary>
     /// The hash of the collection, which the base already computes and which this only has to

@@ -12,6 +12,7 @@ using System;
 using System.IO;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Store;
@@ -166,28 +167,7 @@ public sealed class ValueClob : ValueLob
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.ReplaceLobsForTrace) != 0
-            && (LobData is not LobDataInMemory || LobCharLength > SysProperties.MaxTraceDataLength))
-        {
-            // The text is not put into a trace: how long it is and where it is will do.
-            _ = builder.Append("SPACE(").Append(LobCharLength);
-            FormatLobDataComment(builder);
-        }
-        else if ((sqlFlags & (HasSql.ReplaceLobsForTrace | HasSql.NoCasts)) == 0)
-        {
-            _ = StringUtils.QuoteStringSql(_ = builder.Append("CAST("), GetString())
-                .Append(" AS CHARACTER LARGE OBJECT(")
-                .Append(LobCharLength)
-                .Append("))");
-        }
-        else
-        {
-            _ = StringUtils.QuoteStringSql(builder, GetString());
-        }
-
-        return builder;
-    }
+        => Dialect.AppendClob(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override long CharLength() => LobCharLength;

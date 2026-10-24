@@ -14,6 +14,7 @@ using System;
 using System.IO;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Store;
@@ -165,29 +166,7 @@ public sealed class ValueBlob : ValueLob
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.ReplaceLobsForTrace) != 0
-            && (LobData is not LobDataInMemory || LobOctetLength > SysProperties.MaxTraceDataLength))
-        {
-            // The data itself is not put into a trace: what goes in is how long it is and where it
-            // is, which is enough to follow the statement and small enough to read.
-            _ = builder.Append("CAST(REPEAT(CHAR(0), ").Append(LobOctetLength).Append(") AS BINARY VARYING");
-            FormatLobDataComment(builder);
-        }
-        else if ((sqlFlags & (HasSql.ReplaceLobsForTrace | HasSql.NoCasts)) == 0)
-        {
-            _ = Hex.AppendBytesHex(_ = builder.Append("CAST(X'"), GetBytesNoCopy())
-                .Append("' AS BINARY LARGE OBJECT(")
-                .Append(LobOctetLength)
-                .Append("))");
-        }
-        else
-        {
-            _ = Hex.AppendBytesHex(_ = builder.Append("X'"), GetBytesNoCopy()).Append('\'');
-        }
-
-        return builder;
-    }
+        => Dialect.AppendBlob(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override long CharLength()

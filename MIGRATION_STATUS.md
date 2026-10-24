@@ -2,6 +2,45 @@
 
 Памятка для себя. Не документация продукта; читать при возобновлении работы.
 
+### Фасад Dialect (H2Sharp.Data) — сделано
+
+Публичный статический `Dialect` — единое место форматирования SQL-литералов, заточенное на
+EF/linq2db-провайдеры. Два слоя в одном классе:
+
+* **Публичный слой** — методы над обычными значениями .NET (`AppendTimestamp(StringBuilder,
+  DateTime?)`, `AppendUuid(…, Guid?)`, …). Форматируют **напрямую** теми же хелперами, что и
+  движок (`DateTimeUtils.AppendDate/AppendTime/AppendTimeZone`, `StringUtils.QuoteStringSql`,
+  `IntervalUtils.AppendInterval`, `JavaNumberFormat`), без построения engine-Value и без
+  аллокаций, кроме текста; короткие методы — `[MethodImpl(AggressiveInlining)]`. Правила
+  конверсии — те же, что у `H2ValueMapper` (`DateTime.Kind` игнорируется; `TimeSpan` — два
+  метода: `AppendTime` — время суток, `AppendInterval` — INTERVAL DAY TO SECOND). NULL пишут
+  nullable-перегрузки. Исключение — JSON: документ нормализуется движком (`ValueJson.FromJson`),
+  литерал ненормализованного документа — другой документ.
+* **Движковый слой** — тела эталонных `Value.getSQL` перенесены сюда из классов значений
+  (30 методов, `internal`), `Value*.GetSql` теперь делегируют в них — у синтаксиса литерала
+  один дом. Расширения видимости: `ValueLob.LobOctetLength/LobCharLength/FormatLobDataComment`
+  protected→internal (тела LOB читают их; `OctetLength()` читает LOB, чего трейс избегает).
+
+Формы по умолчанию — эталонные `DefaultSqlFlags`: где эталон оборачивает литерал в CAST
+(`CAST(5 AS BIGINT)`, `CAST(1.5 AS REAL)`), фасад пишет так же — литерал читается обратно в
+тот же тип. Hex — строчный, как в эталоне (`X'cafe'`).
+
+**Заодно портирован пробел парсера**, который вскрыл round-trip-тест: эталонный
+`readTermWithIdentifier` читает типизированные литералы `UUID '…'`, `JSON '…'` (строка и байты)
+и `GEOMETRY X'…'` (байты) — порт не читал ни один из них; добавлены в `ReadTypedLiteral`.
+
+Тесты: `tests/H2Sharp.Data.Tests/DialectTests.cs` (точные формы литералов + чтение их обратно
+через `H2Connection`) и `tests/H2Sharp.Tests/DialectEngineTests.cs` (эквивалентность
+`Dialect.AppendX(sb, value, flags) == value.GetSql(sb, flags)` на батарее значений × {Default,
+NoCasts}). Прогоны: H2Sharp.Tests 1252 ✓, MvStore 86 ✓, Data.Tests 467 ✓, Specs 550 ✓ /
+397 падают на незапортированном (CREATE DOMAIN/ROLE/ALIAS, SET AUTOCOMMIT, системные функции,
+`Prepared.update`) — до этой работы падали так же.
+
+**Внимание:** коммит 0cbae84 («Port TestPattern…») захватил промежуточную версию
+`Dialect.cs` (публичный слой тогда строил Value и не компилировался сам по себе — CS1503 в
+`AppendString`). Рабочее дерево содержит финальную версию поверх; при коммите этих правок
+противоречие уйдёт.
+
 ### Двенадцатый аудит (#12): дубли и лишние аллокации — в работе
 
 Разобраны **A1** (Regex-кэш в `CompareLike`), **A2** (span-срез в `shortcutToContains`),

@@ -1779,14 +1779,55 @@ public sealed partial class Parser
 
             case "GEOMETRY":
                 {
-                    string? text = ReadStringLiteralValue();
-                    if (text is null)
+                    // The reference reads both spellings: the EWKT text and the raw EWKB bytes.
+                    Values.Value? literal = Current.GetValue(provider);
+                    Values.Value? geometry = literal?.GetValueType() switch
+                    {
+                        Values.Value.Varchar => Values.ValueGeometry.Get(literal.GetString()!),
+                        Values.Value.Varbinary => Values.ValueGeometry.GetFromEWKB(literal.GetBytesNoCopy()!),
+                        _ => null,
+                    };
+                    if (geometry is null)
                     {
                         position = index;
                         return null;
                     }
 
-                    return Expressions.ValueExpression.Get(Values.ValueGeometry.Get(text));
+                    Read();
+                    return Expressions.ValueExpression.Get(geometry);
+                }
+
+            case "JSON":
+                {
+                    // The reference reads the document as text or as the bytes of one: the same
+                    // normalization takes either.
+                    Values.Value? literal = Current.GetValue(provider);
+                    Values.Value? json = literal?.GetValueType() switch
+                    {
+                        Values.Value.Varchar => Values.ValueJson.FromJson(literal.GetString()!),
+                        Values.Value.Varbinary => Values.ValueJson.FromJson(literal.GetBytesNoCopy()!),
+                        _ => null,
+                    };
+                    if (json is null)
+                    {
+                        position = index;
+                        return null;
+                    }
+
+                    Read();
+                    return Expressions.ValueExpression.Get(json);
+                }
+
+            case "UUID":
+                {
+                    string? uuid = ReadStringLiteralValue();
+                    if (uuid is null)
+                    {
+                        position = index;
+                        return null;
+                    }
+
+                    return Expressions.ValueExpression.Get(Values.ValueUuid.Get(uuid));
                 }
 
             default:

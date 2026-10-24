@@ -425,7 +425,7 @@ internal static class H2ValueMapper
     /// </summary>
     /// <param name="value">the decimal</param>
     /// <returns>the BigDecimal with the same value</returns>
-    internal static BigDecimal FromDecimal(decimal value)
+    private static BigDecimal FromDecimal(decimal value)
     {
         // GetBits has a span overload: the four ints land on the stack instead of an array.
         Span<int> bits = stackalloc int[4];
@@ -522,7 +522,7 @@ internal static class H2ValueMapper
         return word;
     }
 
-    internal static ValueInterval FromTimeSpan(TimeSpan span)
+    private static ValueInterval FromTimeSpan(TimeSpan span)
     {
         BigInteger total = new BigInteger(span.Ticks) * 100;
         bool negative = total.Sign < 0;
