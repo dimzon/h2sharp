@@ -639,6 +639,12 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   (TimeZoneProviderProvider, каждый сеанс под своей зоной; .NET не может менять
   TimeZoneInfo.Local процесса) — H2Connection, Engine.OpenSession и
   DelegatedCastDataProvider проводят его до сеанса; `;TIME ZONE=` в URL — как было.
+* **TestBatchUpdates — не перенесён.** Предмет теста — семантика JDBC-batch: массивы
+  int[]/long[] счётчиков из executeBatch, BatchUpdateException с отказами по элементам,
+  clearBatch, SUCCESS_NO_INFO. В ADO.NET batch нет вовсе (перенесённые тесты пишут цикл
+  выполнений), ни массивов, ни отчёта по элементам из этой семантики не остаётся.
+  Вопрос: вычеркнуть (ADO-вызыватель пишет цикл и проверяет каждый результат сам) или
+  перенести как цикл с теми же данными (coffee-таблица) — но это будет другой тест.
 * **TestLobApi — не перенесён.** Целиком стоит на JDBC-модели LOB-объектов:
   conn.createBlob/createClob/createNClob, rs.getBlob/getClob (хэндлы, живущие после
   закрытия результата и коммита), Blob.setBytes/setBinaryStream/position, Clob.setString/
