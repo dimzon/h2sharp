@@ -8,6 +8,7 @@
  */
 using System.Numerics;
 using System.Text;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Util;
 
@@ -64,7 +65,7 @@ public sealed class ValueBoolean : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => builder.Append(GetString());
+        => Dialect.AppendBoolean(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override string? GetString() => value ? "TRUE" : "FALSE";

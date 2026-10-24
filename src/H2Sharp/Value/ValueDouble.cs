@@ -10,6 +10,7 @@ using System;
 using System.Globalization;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -139,38 +140,7 @@ public sealed class ValueDouble : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            return AppendValue(_ = builder.Append("CAST(")).Append(" AS DOUBLE PRECISION)");
-        }
-
-        return AppendValue(builder);
-    }
-
-    /// <summary>
-    /// Appends the value, quoting the three values that are not numbers in SQL.
-    /// </summary>
-    /// <param name="builder">string builder to append to</param>
-    /// <returns>the specified builder</returns>
-    private StringBuilder AppendValue(StringBuilder builder)
-    {
-        if (double.IsPositiveInfinity(value))
-        {
-            return builder.Append("'Infinity'");
-        }
-        else if (double.IsNegativeInfinity(value))
-        {
-            return builder.Append("'-Infinity'");
-        }
-        else if (double.IsNaN(value))
-        {
-            return builder.Append("'NaN'");
-        }
-
-        // The Java spelling, so that 0.0 prints as 0.0 and 1e7 as 1.0E7.
-        return builder.Append(JavaNumberFormat.DoubleToString(value));
-    }
+        => Dialect.AppendDouble(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo() => TypeInfo.TypeDouble;

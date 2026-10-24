@@ -10,6 +10,7 @@ using System;
 using System.Numerics;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -168,7 +169,7 @@ public sealed class ValueInteger : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => builder.Append(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        => Dialect.AppendInteger(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo() => TypeInfo.TypeInteger;

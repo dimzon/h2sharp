@@ -9,6 +9,7 @@
 using System;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -128,7 +129,7 @@ public sealed class ValueTime : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => DateTimeUtils.AppendTime(_ = builder.Append("TIME '"), nanos).Append('\'');
+        => Dialect.AppendTime(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override int CompareTypeSafe(Value o, CompareMode mode, CastDataProvider? provider)

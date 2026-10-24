@@ -9,6 +9,7 @@
 using System.Numerics;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -71,25 +72,7 @@ public sealed class ValueNumeric : ValueBigDecimalBase
     /// not already say.
     /// </remarks>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        // The reference builds the plain string first and asks it whether it has a point in it.
-        // That question has an answer without building it: the plain form of a Number has a point
-        // exactly when its scale is positive, since a scale of zero writes the digits and a
-        // negative one writes the digits and the zeros the scale stands for. So the common path,
-        // which is a whole number that fits a long, costs nothing but the builder.
-        if ((sqlFlags & HasSql.NoCasts) == 0
-            && Number.Scale <= 0
-            && Number.CompareTo(MaxLongDecimal) <= 0
-            && Number.CompareTo(MinLongDecimal) >= 0)
-        {
-            return builder.Append("CAST(").Append(Number)
-                .Append(" AS NUMERIC(")
-                .Append(Number.Precision().ToString(System.Globalization.CultureInfo.InvariantCulture))
-                .Append("))");
-        }
-
-        return builder.Append(Number.ToPlainString());
-    }
+        => Dialect.AppendNumeric(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override int GetValueType() => Value.Numeric;

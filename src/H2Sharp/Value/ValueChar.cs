@@ -8,6 +8,7 @@
  */
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Util;
 
@@ -44,18 +45,7 @@ public sealed class ValueChar : ValueStringBase
     /// caller that already knows the type.
     /// </remarks>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            int length = value.Length;
-            return StringUtils.QuoteStringSql(builder.Append("CAST("), value)
-                .Append(" AS CHAR(")
-                .Append(length > 0 ? length : 1)
-                .Append("))");
-        }
-
-        return StringUtils.QuoteStringSql(builder, value);
-    }
+        => Dialect.AppendChar(builder, this, sqlFlags);
 
     /// <summary>
     /// Get or create a CHAR value for the given string.

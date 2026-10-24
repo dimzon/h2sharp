@@ -9,6 +9,7 @@
 using System;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -114,46 +115,7 @@ public sealed class ValueReal : Value
     /// which one this is with a CAST unless the caller says it already knows.
     /// </remarks>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            return AppendNumber(builder.Append("CAST(")).Append(" AS REAL)");
-        }
-
-        return AppendNumber(builder);
-    }
-
-    /// <summary>
-    /// Writes the number, and the three values that are not numbers as the quoted words the
-    /// reference uses.
-    /// </summary>
-    /// <remarks>
-    /// Infinity and NaN are not numbers and cannot be written as literals, so the reference quotes
-    /// them as text and lets the conversion back do the work. A .NET formatter would print
-    /// "Infinity" and "NaN" the same way but without the quotes, which would be a syntax error in a
-    /// statement that has to run again.
-    /// </remarks>
-    /// <param name="builder">the builder to append to</param>
-    /// <returns>the same builder</returns>
-    private StringBuilder AppendNumber(StringBuilder builder)
-    {
-        if (float.IsPositiveInfinity(value))
-        {
-            return builder.Append("'Infinity'");
-        }
-
-        if (float.IsNegativeInfinity(value))
-        {
-            return builder.Append("'-Infinity'");
-        }
-
-        if (float.IsNaN(value))
-        {
-            return builder.Append("'NaN'");
-        }
-
-        return builder.Append(JavaNumberFormat.FloatToString(value));
-    }
+        => Dialect.AppendReal(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo() => TypeInfo.TypeReal;

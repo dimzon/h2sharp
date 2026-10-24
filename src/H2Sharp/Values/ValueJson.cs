@@ -9,6 +9,7 @@ using System;
 using System.IO;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Message;
 using H2Sharp.Util;
 using H2Sharp.Util.Json;
@@ -83,14 +84,7 @@ public sealed class ValueJson : ValueBytesBase
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        // The ASCII rendering, and not the stored bytes: a document that stored non-ASCII as itself
-        // has to be printed as escapes, or the SQL literal it sits in would depend on the encoding
-        // of whoever runs it.
-        string s = JsonBytesSource.Parse(value, new JsonStringTarget(true));
-        _ = builder.Append("JSON '").Append(s).Append('\'');
-        return builder;
-    }
+        => Dialect.AppendJson(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     /// <remarks>

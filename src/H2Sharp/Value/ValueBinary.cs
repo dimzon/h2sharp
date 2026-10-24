@@ -7,6 +7,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System.Text;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Util;
 
@@ -60,18 +61,7 @@ public sealed class ValueBinary : ValueBytesBase
     /// is what a store that already knows the type asks for.
     /// </remarks>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            int length = value.Length;
-            return base.GetSql(builder.Append("CAST("), sqlFlags)
-                .Append(" AS BINARY(")
-                .Append(length > 0 ? length : 1)
-                .Append("))");
-        }
-
-        return base.GetSql(builder, sqlFlags);
-    }
+        => Dialect.AppendBinary(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     /// <remarks>

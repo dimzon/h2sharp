@@ -6,6 +6,7 @@
 using System;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -189,25 +190,17 @@ public sealed class ValueUuid : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => AddString(builder.Append("UUID '")).Append('\'');
+        => Dialect.AppendUuid(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override int GetMemory() => 32;
 
     /// <inheritdoc/>
-    public override string GetString() => AddString(new StringBuilder(DisplaySize)).ToString();
+    public override string GetString()
+        => Dialect.AppendUuid(new StringBuilder(DisplaySize), high, low).ToString();
 
     /// <inheritdoc/>
     public override byte[] GetBytes() => Bits.UuidToBytes(high, low);
-
-    private StringBuilder AddString(StringBuilder builder)
-    {
-        _ = Hex.AppendHex(builder, high >> 32, 4).Append('-');
-        _ = Hex.AppendHex(builder, high >> 16, 2).Append('-');
-        _ = Hex.AppendHex(builder, high, 2).Append('-');
-        _ = Hex.AppendHex(builder, low >> 48, 2).Append('-');
-        return Hex.AppendHex(builder, low, 6);
-    }
 
     /// <inheritdoc/>
     /// <remarks>

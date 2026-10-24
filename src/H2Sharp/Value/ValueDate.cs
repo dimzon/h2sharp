@@ -10,6 +10,7 @@ using System;
 using System.Globalization;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -91,7 +92,7 @@ public sealed class ValueDate : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => DateTimeUtils.AppendDate(_ = builder.Append("DATE '"), dateValue).Append('\'');
+        => Dialect.AppendDate(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override int CompareTypeSafe(Value o, CompareMode mode, CastDataProvider? provider)

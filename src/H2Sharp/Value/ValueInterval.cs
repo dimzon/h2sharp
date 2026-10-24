@@ -11,6 +11,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -104,7 +105,7 @@ public sealed class ValueInterval : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => IntervalUtils.AppendInterval(builder, GetQualifier(), negative, leading, remaining);
+        => Dialect.AppendInterval(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo() => TypeInfo.GetTypeInfo(valueType);

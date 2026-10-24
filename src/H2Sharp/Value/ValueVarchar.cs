@@ -8,6 +8,7 @@
  */
 using System;
 using System.Text;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Util;
 
@@ -31,7 +32,7 @@ public sealed class ValueVarchar : ValueStringBase
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => StringUtils.QuoteStringSql(builder, value);
+        => Dialect.AppendVarchar(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override int GetValueType() => Value.Varchar;

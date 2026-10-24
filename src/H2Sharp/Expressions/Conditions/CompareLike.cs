@@ -72,17 +72,23 @@ public sealed class CompareLike : Condition
 
     private readonly LikeType likeType;
 
-    private Expression left;
+    private Expression? left;
 
     private readonly bool not;
 
     private readonly bool whenOperand;
 
-    private Expression right;
+    private Expression? right;
 
     private Expression? escape;
 
     private bool isInit;
+
+    private Expression LeftNonNull() => left
+        ?? throw new InvalidOperationException("The comparison was built without a left expression");
+
+    private Expression RightNonNull() => right
+        ?? throw new InvalidOperationException("The comparison was built without a pattern expression");
 
     private char[]? patternChars;
 
@@ -152,15 +158,21 @@ public sealed class CompareLike : Condition
     /// </remarks>
     /// <param name="compareMode">the compare mode</param>
     /// <param name="defaultEscape">the default escape</param>
-    /// <param name="left">the expression before LIKE</param>
+    /// <param name="left">the expression before LIKE, or null when the comparison is
+    /// driven through <see cref="Test(string, string, char)"/></param>
     /// <param name="not">whether this is NOT LIKE</param>
     /// <param name="whenOperand">whether this is a when operand</param>
-    /// <param name="right">the pattern</param>
+    /// <param name="right">the pattern expression, or null as above</param>
     /// <param name="escape">the escape expression, or null</param>
     /// <param name="likeType">the type of comparison</param>
+    /// <remarks>
+    /// The expressions are nullable, as in the reference: its own unit test builds the
+    /// comparison without expressions and drives it through
+    /// <c>test(pattern, value, escape)</c> directly.
+    /// </remarks>
     public CompareLike(
-        CompareMode compareMode, string defaultEscape, Expression left, bool not, bool whenOperand,
-        Expression right, Expression? escape, LikeType likeType)
+        CompareMode compareMode, string defaultEscape, Expression? left, bool not, bool whenOperand,
+        Expression? right, Expression? escape, LikeType likeType)
     {
         this.compareMode = compareMode;
         this.defaultEscape = defaultEscape;
@@ -180,7 +192,7 @@ public sealed class CompareLike : Condition
 
     /// <inheritdoc/>
     public override StringBuilder GetUnenclosedSql(StringBuilder builder, int sqlFlags)
-        => GetWhenSql(left.GetSql(builder, sqlFlags, AutoParentheses), sqlFlags);
+        => GetWhenSql(LeftNonNull().GetSql(builder, sqlFlags, AutoParentheses), sqlFlags);
 
     /// <inheritdoc/>
     public override StringBuilder GetWhenSql(StringBuilder builder, int sqlFlags)
@@ -195,7 +207,7 @@ public sealed class CompareLike : Condition
             case LikeType.Like:
             case LikeType.ILike:
                 _ = builder.Append(likeType == LikeType.Like ? " LIKE " : " ILIKE ");
-                right.GetSql(builder, sqlFlags, AutoParentheses);
+                RightNonNull().GetSql(builder, sqlFlags, AutoParentheses);
                 if (escape is not null)
                 {
                     escape.GetSql(builder.Append(" ESCAPE "), sqlFlags, AutoParentheses);
@@ -204,7 +216,7 @@ public sealed class CompareLike : Condition
                 break;
             case LikeType.Regexp:
                 _ = builder.Append(" REGEXP ");
-                right.GetSql(builder, sqlFlags, AutoParentheses);
+                RightNonNull().GetSql(builder, sqlFlags, AutoParentheses);
                 break;
             default:
                 throw Message.DbException.GetUnsupportedException(likeType.ToString());
@@ -216,8 +228,8 @@ public sealed class CompareLike : Condition
     /// <inheritdoc/>
     public override Expression Optimize(SessionLocal session)
     {
-        left = left.Optimize(session);
-        right = right.Optimize(session);
+        left = LeftNonNull().Optimize(session);
+        right = RightNonNull().Optimize(session);
         if (likeType == LikeType.ILike || left.GetTypeInfo().GetValueType() == Value.VarcharIgnorecase)
         {
             ignoreCase = true;
@@ -343,7 +355,7 @@ public sealed class CompareLike : Condition
 
         // parameters are always evaluatable, but we need to check if the value is set (at prepare
         // time) otherwise we would need to prepare at execute time, which may be slower.
-        if (!right.IsEverything(ExpressionVisitor.IndependentVisitor))
+        if (!RightNonNull().IsEverything(ExpressionVisitor.IndependentVisitor))
         {
             return;
         }
@@ -353,7 +365,7 @@ public sealed class CompareLike : Condition
             return;
         }
 
-        string p = right.GetValue(session).GetString()!;
+        string p = RightNonNull().GetValue(session).GetString()!;
         if (!isInit)
         {
             Value? e = escape is null ? null : escape.GetValue(session);
@@ -418,7 +430,7 @@ public sealed class CompareLike : Condition
 
     /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
-        => GetValue(session, left.GetValue(session));
+        => GetValue(session, LeftNonNull().GetValue(session));
 
     /// <inheritdoc/>
     public override bool GetWhenValue(SessionLocal session, Value left)
@@ -440,7 +452,7 @@ public sealed class CompareLike : Condition
 
         if (!isInit)
         {
-            Value r = right.GetValue(session);
+            Value r = RightNonNull().GetValue(session);
             if (r is ValueNull)
             {
                 return ValueNull.Instance;
@@ -824,34 +836,34 @@ public sealed class CompareLike : Condition
     /// <inheritdoc/>
     public override void MapColumns(ColumnResolver resolver, int level, int state)
     {
-        left.MapColumns(resolver, level, state);
-        right.MapColumns(resolver, level, state);
+        LeftNonNull().MapColumns(resolver, level, state);
+        RightNonNull().MapColumns(resolver, level, state);
         escape?.MapColumns(resolver, level, state);
     }
 
     /// <inheritdoc/>
     public override void SetEvaluatable(TableFilter tableFilter, bool b)
     {
-        left.SetEvaluatable(tableFilter, b);
-        right.SetEvaluatable(tableFilter, b);
+        LeftNonNull().SetEvaluatable(tableFilter, b);
+        RightNonNull().SetEvaluatable(tableFilter, b);
         escape?.SetEvaluatable(tableFilter, b);
     }
 
     /// <inheritdoc/>
     public override void UpdateAggregate(SessionLocal session, int stage)
     {
-        left.UpdateAggregate(session, stage);
-        right.UpdateAggregate(session, stage);
+        LeftNonNull().UpdateAggregate(session, stage);
+        RightNonNull().UpdateAggregate(session, stage);
         escape?.UpdateAggregate(session, stage);
     }
 
     /// <inheritdoc/>
     public override bool IsEverything(ExpressionVisitor visitor)
-        => left.IsEverything(visitor) && right.IsEverything(visitor)
+        => LeftNonNull().IsEverything(visitor) && RightNonNull().IsEverything(visitor)
             && (escape is null || escape.IsEverything(visitor));
 
     /// <inheritdoc/>
-    public override int GetCost() => left.GetCost() + right.GetCost() + 3;
+    public override int GetCost() => LeftNonNull().GetCost() + RightNonNull().GetCost() + 3;
 
     /// <inheritdoc/>
     public override int GetSubexpressionCount() => escape is null ? 2 : 3;
@@ -862,9 +874,9 @@ public sealed class CompareLike : Condition
         switch (index)
         {
             case 0:
-                return left;
+                return LeftNonNull();
             case 1:
-                return right;
+                return RightNonNull();
             case 2:
                 if (escape is not null)
                 {

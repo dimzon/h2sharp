@@ -6,6 +6,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System.Text;
+using H2Sharp.Data;
 using H2Sharp.Util;
 
 namespace H2Sharp.Values;
@@ -34,15 +35,5 @@ public sealed class ValueEnum : ValueEnumBase
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        // Without the flag the value is written as a cast of its label to its own type, which
-        // is how a reader can tell an enum from a string that happens to look like one.
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            _ = StringUtils.QuoteStringSql(_ = builder.Append("CAST("), label).Append(" AS ");
-            return enumerators.GetEnumType().GetSql(builder, sqlFlags).Append(')');
-        }
-
-        return StringUtils.QuoteStringSql(builder, label);
-    }
+        => Dialect.AppendEnum(builder, this, sqlFlags);
 }

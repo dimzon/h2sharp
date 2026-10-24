@@ -10,6 +10,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -95,29 +96,7 @@ public sealed class ValueDecfloat : ValueBigDecimalBase
     /// numbers are printed as quoted words, which is how they are written.
     /// </remarks>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            return GetSql(builder.Append("CAST(")).Append(" AS DECFLOAT)");
-        }
-
-        return GetSql(builder);
-    }
-
-    private StringBuilder GetSql(StringBuilder builder)
-    {
-        if (value is not null)
-        {
-            return builder.Append(value);
-        }
-
-        if (this == PositiveInfinity)
-        {
-            return builder.Append("'Infinity'");
-        }
-
-        return this == NegativeInfinity ? builder.Append("'-Infinity'") : builder.Append("'NaN'");
-    }
+        => Dialect.AppendDecfloat(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     /// <remarks>

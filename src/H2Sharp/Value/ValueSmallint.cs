@@ -10,6 +10,7 @@ using System;
 using System.Numerics;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -90,14 +91,7 @@ public sealed class ValueSmallint : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            return builder.Append("CAST(").Append(value).Append(" AS SMALLINT)");
-        }
-
-        return builder.Append(value);
-    }
+        => Dialect.AppendSmallint(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo() => TypeInfo.TypeSmallint;

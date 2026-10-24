@@ -6,6 +6,7 @@
 using System;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Message;
 using H2Sharp.Util;
 using H2Sharp.Util.Geometry;
@@ -186,20 +187,7 @@ public sealed class ValueGeometry : ValueBytesBase
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        _ = builder.Append("GEOMETRY ");
-        if ((sqlFlags & HasSql.AddPlanInformation) != 0)
-        {
-            EWKBUtils.ParseEWKB(value, new EWKTUtils.EWKTTarget(_ = builder.Append('\''), GetDimensionSystem()));
-            _ = builder.Append('\'');
-        }
-        else
-        {
-            _ = base.GetSql(builder, HasSql.DefaultSqlFlags);
-        }
-
-        return builder;
-    }
+        => Dialect.AppendGeometry(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override string GetString() => EWKTUtils.EWKB2EWKT(value, GetDimensionSystem());

@@ -9,6 +9,7 @@
 using System;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -71,11 +72,7 @@ public abstract class ValueBytesBase : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        builder.Append("X'");
-        StringUtils.ConvertBytesToHex(builder, value);
-        return builder.Append('\'');
-    }
+        => Dialect.AppendBytes(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     /// <remarks>

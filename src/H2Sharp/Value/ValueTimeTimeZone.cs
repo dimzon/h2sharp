@@ -9,6 +9,7 @@
 using System;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -135,14 +136,12 @@ public sealed class ValueTimeTimeZone : Value
 
     /// <inheritdoc/>
     public override string? GetString()
-        => ToStringBuilder(new StringBuilder(MaximumPrecision)).ToString();
+        => Dialect.AppendTimeWithTimeZone(
+            new StringBuilder(MaximumPrecision), nanos, timeZoneOffsetSeconds).ToString();
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => ToStringBuilder(_ = builder.Append("TIME WITH TIME ZONE '")).Append('\'');
-
-    private StringBuilder ToStringBuilder(StringBuilder builder)
-        => DateTimeUtils.AppendTimeZone(DateTimeUtils.AppendTime(builder, nanos), timeZoneOffsetSeconds);
+        => Dialect.AppendTimeWithTimeZone(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override int CompareTypeSafe(Value o, CompareMode mode, CastDataProvider? provider)

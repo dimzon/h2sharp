@@ -9,6 +9,7 @@ using System;
 using System.Numerics;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -109,14 +110,7 @@ public sealed class ValueTinyint : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            return builder.Append("CAST(").Append(value).Append(" AS TINYINT)");
-        }
-
-        return builder.Append(value);
-    }
+        => Dialect.AppendTinyint(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo() => TypeInfo.TypeTinyint;

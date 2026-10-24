@@ -11,6 +11,7 @@
 using System;
 using System.IO;
 using System.Text;
+using H2Sharp.Data;
 using H2Sharp.Message;
 
 namespace H2Sharp.Values;
@@ -42,7 +43,7 @@ public sealed class ValueNull : Value
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => builder.Append("NULL");
+        => Dialect.AppendNull(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override TypeInfo GetTypeInfo() => TypeInfo.TypeNull;

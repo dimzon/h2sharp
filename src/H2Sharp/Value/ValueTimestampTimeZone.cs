@@ -9,6 +9,7 @@
 using System;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -143,24 +144,22 @@ public sealed class ValueTimestampTimeZone : Value
 
     /// <inheritdoc/>
     public override string? GetString()
-        => ToStringBuilder(new StringBuilder(MaximumPrecision), false).ToString();
+        => Dialect.AppendTimestampWithTimeZone(
+            new StringBuilder(MaximumPrecision), dateValue, timeNanos, timeZoneOffsetSeconds, iso: false)
+            .ToString();
 
     /// <summary>
     /// The value as text in the ISO shape, which puts a T between the date and the time.
     /// </summary>
     /// <returns>the value as text in ISO form</returns>
-    public string GetIsoString() => ToStringBuilder(new StringBuilder(MaximumPrecision), true).ToString();
+    public string GetIsoString()
+        => Dialect.AppendTimestampWithTimeZone(
+            new StringBuilder(MaximumPrecision), dateValue, timeNanos, timeZoneOffsetSeconds, iso: true)
+            .ToString();
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => ToStringBuilder(_ = builder.Append("TIMESTAMP WITH TIME ZONE '"), false).Append('\'');
-
-    private StringBuilder ToStringBuilder(StringBuilder builder, bool iso)
-    {
-        DateTimeUtils.AppendDate(builder, dateValue).Append(iso ? 'T' : ' ');
-        DateTimeUtils.AppendTime(builder, timeNanos);
-        return DateTimeUtils.AppendTimeZone(builder, timeZoneOffsetSeconds);
-    }
+        => Dialect.AppendTimestampWithTimeZone(builder, this, sqlFlags);
 
     /// <inheritdoc/>
     public override int CompareTypeSafe(Value o, CompareMode mode, CastDataProvider? provider)

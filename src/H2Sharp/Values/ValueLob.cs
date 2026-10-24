@@ -46,12 +46,20 @@ public abstract class ValueLob : Value
     /// <summary>
     /// How many bytes.
     /// </summary>
-    protected long LobOctetLength;
+    /// <remarks>
+    /// Internal, not protected: <see cref="H2Sharp.Data.Dialect"/> writes the SQL of a LOB and
+    /// reads the length the trace form names, and the public <c>OctetLength()</c> was no
+    /// substitute because it reads the LOB, which the trace form deliberately avoids.
+    /// </remarks>
+    internal long LobOctetLength;
 
     /// <summary>
     /// How many characters, or not more than that when it is not more than zero.
     /// </summary>
-    protected long LobCharLength;
+    /// <remarks>
+    /// Internal, not protected, for the same reason as <see cref="LobOctetLength"/>.
+    /// </remarks>
+    internal long LobCharLength;
 
     private TypeInfo? type;
 
@@ -361,8 +369,11 @@ public abstract class ValueLob : Value
     /// <summary>
     /// A comment saying where the data is, for the SQL of a value whose data is not in the text.
     /// </summary>
+    /// <remarks>
+    /// Internal, not protected: <see cref="H2Sharp.Data.Dialect"/> writes the SQL of a LOB.
+    /// </remarks>
     /// <param name="builder">where to write</param>
-    protected void FormatLobDataComment(StringBuilder builder)
+    internal void FormatLobDataComment(StringBuilder builder)
     {
         if (LobData is LobDataInMemory inMemory)
         {

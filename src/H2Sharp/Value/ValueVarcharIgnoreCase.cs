@@ -9,6 +9,7 @@
 using System;
 using System.Globalization;
 using System.Text;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Util;
 
@@ -90,18 +91,7 @@ public sealed class ValueVarcharIgnoreCase : ValueStringBase
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-    {
-        if ((sqlFlags & HasSql.NoCasts) == 0)
-        {
-            return _ = StringUtils
-                .QuoteStringSql(_ = builder.Append("CAST("), value)
-                .Append(" AS VARCHAR_IGNORECASE(")
-                .Append(value.Length.ToString(CultureInfo.InvariantCulture))
-                .Append("))");
-        }
-
-        return StringUtils.QuoteStringSql(builder, value);
-    }
+        => Dialect.AppendVarcharIgnoreCase(builder, this, sqlFlags);
 
     /// <summary>
     /// Get or create a VARCHAR_IGNORECASE value for the given string.

@@ -639,6 +639,11 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   (TimeZoneProviderProvider, каждый сеанс под своей зоной; .NET не может менять
   TimeZoneInfo.Local процесса) — H2Connection, Engine.OpenSession и
   DelegatedCastDataProvider проводят его до сеанса; `;TIME ZONE=` в URL — как было.
+* **TestIntPerfectHash — не перенесён** — построен на org.h2.util.IntPerfectHash (и
+  util.BitArray), которых в порту нет. Перенести вместе с IntPerfectHash.
+* **TestMemoryEstimator — отложен** — строит TestDataType поверх MvStore-иерархии
+  DataType<T> (BasicDataType<Integer>); переносим, но требует заведение тестового типа
+  данных — сделать при очередном заходе в MvStore-пакет.
 * **TestCsv — вне объёма (решение 2026-10-24).** Построен целиком на инструменте
   org.h2.tools.Csv; решено, что Csv-инструмент в порт не входит и не будет — CSV не
   покрываем. Тест вычеркнут из работы, не «ожидает».
@@ -758,8 +763,8 @@ TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
 TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequence,
 TestConnection, TestStatement, TestTransaction, TestOptimizations, TestRights; из
-`unit/`: TestMathUtils, TestCollation, TestDbException). Порядок: `db/` и `jdbc/` до
-конца, `unit/` параллельно.
+`unit/`: TestMathUtils, TestCollation, TestDbException, TestPattern). Порядок: `db/` и
+`jdbc/` до конца, `unit/` параллельно.
 
 ## Страховка от тихой деградации (сделано)
 
