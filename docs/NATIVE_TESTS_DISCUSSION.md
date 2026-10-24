@@ -169,6 +169,15 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   readContents/quoteIdentifier); пакета в порту нет. Перенести вместе с bnf.
 * **TestNetUtils — вне объёма (решение 2026-10-24).** Сетевые утилиты (server socket,
   частые соединения, TCP-опции) — порт встроенный, сеть не входит. Вместе с server/.
+* **TestScriptReader — не перенесён** — построен на org.h2.util.ScriptReader (разрезание
+  SQL-скрипта на операторы с учётом строк, комментариев, $$-квот); класса в порту нет.
+  Перенести вместе с ScriptReader.
+* **TestClassLoaderLeak — не перенесён** — проверяет сборку мусора по WeakReference на
+  URLClassLoader; .NET-аналог сборки классов отсутствует. Вопрос: закрыть.
+* **TestMVTempResult — вне объёма?** Запускает подпроцесс с -Xmx64M и гонит миллион строк
+  через ORDER BY; в .NET нет ограничения managed heap таким способом. Вопрос: закрыть
+  или перенести содержательную часть (миллион строк через ORDER BY и повторный обход)
+  без лимита памяти.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
