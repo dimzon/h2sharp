@@ -83,10 +83,13 @@ public sealed class ConnectionInfo
             throw GetFormatException();
         }
 
+        // The reference sets the URL before it reads the settings, and the reader truncates
+        // it at the first semicolon: the name that follows must not contain the settings,
+        // and the settings must be read from the string that does.
+        url = u;
         ReadSettingsFromUrl();
         _ = properties.Remove("TIME ZONE");
         userName = RemoveProperty("USER", string.Empty) ?? string.Empty;
-        url = u;
         name = url.Substring(Constants.StartUrl.Length);
         ParseName();
     }

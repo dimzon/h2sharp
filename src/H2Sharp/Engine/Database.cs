@@ -434,6 +434,43 @@ public sealed partial class Database : CastDataProvider
             readOnly = true;
         }
 
+        // The reference resolves FILE_LOCK here and defaults to FS, or to FILE when
+        // AUTO_SERVER is on. Only FS (and NO, which for the MVStore behaves the same: the
+        // data-file lock is still taken) is ported. The rest must be refused, because
+        // silently doing FS for a URL that asked for the .lock.db protocol is a different
+        // database than the one the caller asked for.
+        bool autoServerMode = connectionInfo.GetBooleanProperty("AUTO_SERVER", false);
+        string? lockMethodName = connectionInfo.GetProperty("FILE_LOCK");
+        H2Sharp.Store.FileLockMethod fileLockMethod = lockMethodName is not null
+            ? H2Sharp.Store.FileLock.GetFileLockMethod(lockMethodName)
+            : autoServerMode ? H2Sharp.Store.FileLockMethod.File : H2Sharp.Store.FileLockMethod.Fs;
+
+        if (autoServerMode)
+        {
+            throw DbException.GetUnsupportedException(
+                "AUTO_SERVER=TRUE: the port is embedded-only (D-003)");
+        }
+
+        if (fileLockMethod is H2Sharp.Store.FileLockMethod.File or H2Sharp.Store.FileLockMethod.Socket)
+        {
+            throw new TODOException(
+                "FileLock: FILE_LOCK=" + lockMethodName
+                + " needs the .lock.db protocol, which is not ported");
+        }
+
+        // A read-only database must not be opened while a .lock.db says another process holds
+        // it. FS locks the data file itself, but a lock file left by a FILE/SOCKET holder is
+        // still a reason to refuse rather than to guess.
+        if (readOnly && !memory)
+        {
+            string lockFileName = name + Constants.SuffixLockFile;
+            if (Store.FileSystem.FileUtils.Exists(lockFileName))
+            {
+                throw DbException.Get(Api.ErrorCode.DatabaseAlreadyOpen1,
+                    "Lock file exists: " + lockFileName);
+            }
+        }
+
         // The main schema exists from the moment the database does, before anybody connects. A
         // session opening against a database with no schema would have nothing to create its
         // first object in, and the reference names PUBLIC here rather than making the first

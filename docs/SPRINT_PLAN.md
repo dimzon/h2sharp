@@ -81,6 +81,11 @@
   с эталонным jar. Тесты: `TestFileSystemLock` (чужой range lock) и
   `FileLockedByThePortIsRefusedByTheReference` (jar получает 90020, пока порт
   держит файл).
-- [ ] 3.7b. Отдельный `.lock.db` (`FileLock`, методы `FILE`/`SOCKET`, heartbeat)
-  — нужен только для `FILE_LOCK=FILE|SOCKET`/`AUTO_SERVER`; отложено.
+- [x] 3.7b. Значения URL, которые порт не умеет, больше не игнорируются:
+  `FILE_LOCK=FILE|SOCKET` → `TODOException`, неизвестный метод → 90060,
+  `AUTO_SERVER=TRUE` → 50100 (`AUTO_SERVER_PORT` без него — как в эталоне,
+  просто настройка). `FILE_LOCK=NO` принимается: проверено jar — MVStore и при
+  `NO` держит OS-лок на файле данных (90020), т.е. ведёт себя как FS.
+- [ ] 3.7c. Отдельный `.lock.db` (`FileLock`, методы `FILE`/`SOCKET`, heartbeat)
+  — отложено.
 - [ ] 3.8. `DB_CLOSE_ON_EXIT` (AppDomain.ProcessExit) — не сделано.

@@ -113,6 +113,88 @@ public sealed class FileDatabaseOracleTests
     }
 
     /// <summary>
+    /// A lock method the port does not implement is refused, not silently replaced with FS.
+    /// </summary>
+    [Fact]
+    public void UnportedFileLockMethodsAreRefused()
+    {
+        string path = NewPath();
+        try
+        {
+            using (H2Connection connection = new("jdbc:h2:file:" + path + ";FILE_LOCK=SOCKET"))
+            {
+                _ = Assert.Throws<TODOException>(() => connection.Open());
+            }
+
+            using (H2Connection connection = new("jdbc:h2:file:" + path + ";AUTO_SERVER=TRUE"))
+            {
+                H2SharpException e = Assert.Throws<H2SharpException>(() => connection.Open());
+                Assert.Equal(Api.ErrorCode.FeatureNotSupported1, e.H2ErrorCode);
+            }
+
+            using (H2Connection connection = new("jdbc:h2:file:" + path + ";FILE_LOCK=LDAP"))
+            {
+                H2SharpException e = Assert.Throws<H2SharpException>(() => connection.Open());
+                Assert.Equal(Api.ErrorCode.UnsupportedLockMethod1, e.H2ErrorCode);
+            }
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+
+    /// <summary>
+    /// FILE_LOCK=NO is accepted: for the MVStore the data-file lock is taken either way.
+    /// </summary>
+    [Fact]
+    public void FileLockNoStillLocksTheDataFile()
+    {
+        string path = NewPath();
+        try
+        {
+            using (H2Connection connection = new("jdbc:h2:file:" + path + ";FILE_LOCK=NO"))
+            {
+                connection.Open();
+                Execute(connection, CreateAndFill);
+            }
+
+            using H2Connection reopened = new("jdbc:h2:file:" + path + ";FILE_LOCK=NO");
+            reopened.Open();
+            Assert.Equal(["=1:Ada", "=2:Alan"], ReadRows(reopened));
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+
+    /// <summary>
+    /// A read-only open refuses to start while a .lock.db from another holder is there.
+    /// </summary>
+    [Fact]
+    public void ReadOnlyRefusesAnExistingLockFile()
+    {
+        string path = NewPath();
+        try
+        {
+            using (H2Connection connection = OpenPort(path))
+            {
+                Execute(connection, "CREATE TABLE T(ID INT)");
+            }
+
+            File.WriteAllText(path + ".lock.db", "id=someone-else");
+            using H2Connection readOnly = new("jdbc:h2:file:" + path + ";ACCESS_MODE_DATA=r");
+            H2SharpException e = Assert.Throws<H2SharpException>(() => readOnly.Open());
+            Assert.Equal(Api.ErrorCode.DatabaseAlreadyOpen1, e.H2ErrorCode);
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+
+    /// <summary>
     /// A file database held by the port refuses the reference with the reference's own error.
     /// </summary>
     /// <remarks>

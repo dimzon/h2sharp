@@ -7094,7 +7094,7 @@ DDL-хуки `AddSchemaObject`/`RemoveSchemaObject`/`AddDatabaseObject`. Все 
   `true`, из-за чего повторный DDL получал тот же объект и падал на втором
   `GetObjectId`).
 
-Межпроцессный FS-лок портирован: `SingleFileStore` берёт `FileStream.Lock` на всём
+Настройки URL наконец читаются: `ConnectionInfo` вызывал `ReadSettingsFromUrl` до\nприсваивания `url`, поэтому части после `;` не разбирались вообще (и `FILE_LOCK`, и\n`ACCESS_MODE_DATA`, и `IFEXISTS`, и `DB_CLOSE_DELAY`). Порядок приведён к эталону\n(`url = u` → чтение настроек с обрезкой по `;` → имя). Значения, которых порт не\nумеет, отвергаются, а не подменяются: `FILE_LOCK=FILE|SOCKET` → `TODOException`,\nнеизвестный метод → 90060, `AUTO_SERVER=TRUE` → 50100 (D-003). `FILE_LOCK=NO`\nпринят: проверено jar, что MVStore и при `NO` держит лок данных (90020).\n\nМежпроцессный FS-лок портирован: `SingleFileStore` берёт `FileStream.Lock` на всём
 файле данных (как `fileChannel.tryLock` эталона), так что порт и эталон отказывают
 друг другу с `DATABASE_ALREADY_OPEN_1` (проверено оракулом: занятый портом файл
 эталон открывать не даёт, код 90020; `FileLockedByThePortIsRefusedByTheReference`). Read-only у нас тоже эксклюзивен (P-009).
