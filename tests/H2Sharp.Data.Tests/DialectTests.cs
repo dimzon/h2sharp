@@ -17,7 +17,7 @@ namespace H2Sharp.Data.Tests;
 public sealed class DialectTests
 {
     [Theory]
-    [InlineData(null, "NULL")]
+    [InlineData(null, "CAST(NULL AS BOOLEAN)")]
     [InlineData(true, "TRUE")]
     [InlineData(false, "FALSE")]
     public void BooleanLiteral(bool? value, string expected)
@@ -26,7 +26,7 @@ public sealed class DialectTests
     [Fact]
     public void IntegerLiterals()
     {
-        Assert.Equal("NULL", Dialect.AppendTinyint(new StringBuilder(), null).ToString());
+        Assert.Equal("CAST(NULL AS TINYINT)", Dialect.AppendTinyint(new StringBuilder(), null).ToString());
         Assert.Equal("CAST(-1 AS TINYINT)", Dialect.AppendTinyint(new StringBuilder(), -1).ToString());
         Assert.Equal("CAST(5 AS SMALLINT)", Dialect.AppendSmallint(new StringBuilder(), (short)5).ToString());
         Assert.Equal("5", Dialect.AppendInteger(new StringBuilder(), 5).ToString());
@@ -46,7 +46,7 @@ public sealed class DialectTests
         Assert.Equal(
             "12345678901234567890123456789",
             Dialect.AppendNumeric(new StringBuilder(), 12345678901234567890123456789m).ToString());
-        Assert.Equal("NULL", Dialect.AppendNumeric(new StringBuilder(), null).ToString());
+        Assert.Equal("CAST(NULL AS NUMERIC)", Dialect.AppendNumeric(new StringBuilder(), null).ToString());
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class DialectTests
     public void StringAndCharLiterals()
     {
         Assert.Equal("'O''Brien'", Dialect.AppendString(new StringBuilder(), "O'Brien").ToString());
-        Assert.Equal("NULL", Dialect.AppendString(new StringBuilder(), null).ToString());
+        Assert.Equal("CAST(NULL AS VARCHAR)", Dialect.AppendString(new StringBuilder(), null).ToString());
         Assert.Equal("CAST('x' AS CHAR(1))", Dialect.AppendChar(new StringBuilder(), 'x').ToString());
     }
 
@@ -78,11 +78,11 @@ public sealed class DialectTests
     public void BytesAndUuidLiterals()
     {
         Assert.Equal("X'cafe'", Dialect.AppendBytes(new StringBuilder(), [0xCA, 0xFE]).ToString());
-        Assert.Equal("NULL", Dialect.AppendBytes(new StringBuilder(), null).ToString());
+        Assert.Equal("CAST(NULL AS VARBINARY)", Dialect.AppendBytes(new StringBuilder(), null).ToString());
         Assert.Equal(
             "UUID '00112233-4455-6677-8899-aabbccddeeff'",
             Dialect.AppendUuid(new StringBuilder(), new Guid("00112233-4455-6677-8899-aabbccddeeff")).ToString());
-        Assert.Equal("NULL", Dialect.AppendUuid(new StringBuilder(), null).ToString());
+        Assert.Equal("CAST(NULL AS UUID)", Dialect.AppendUuid(new StringBuilder(), null).ToString());
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public sealed class DialectTests
         Assert.Equal(
             "INTERVAL '-1 02:03:04' DAY TO SECOND",
             Dialect.AppendInterval(new StringBuilder(), new TimeSpan(1, 2, 3, 4).Negate()).ToString());
-        Assert.Equal("NULL", Dialect.AppendTimestamp(new StringBuilder(), null).ToString());
+        Assert.Equal("CAST(NULL AS TIMESTAMP)", Dialect.AppendTimestamp(new StringBuilder(), null).ToString());
         // The document is normalized before it is a literal, which is what the engine's
         // ValueJson.FromJson does: the spaces of the source do not survive it.
         Assert.Equal(
@@ -157,6 +157,9 @@ public sealed class DialectTests
         _ = Dialect.AppendNull(sql);
         _ = sql.Append(", ");
         _ = Dialect.AppendTimestampWithTimeZone(sql, timestampTz);
+        _ = sql.Append(", ");
+        // The typed NULL: the cast keeps the type, and the value stays NULL.
+        _ = Dialect.AppendTimestamp(sql, null);
 
         using H2Connection connection = new("jdbc:h2:mem:dialect_literals");
         connection.Open();
@@ -177,5 +180,6 @@ public sealed class DialectTests
         Assert.Equal(1.5, reader.GetDouble(10));
         Assert.Equal(DBNull.Value, reader.GetValue(11));
         Assert.Equal(timestampTz, (DateTimeOffset)reader.GetValue(12)!);
+        Assert.Equal(DBNull.Value, reader.GetValue(13));
     }
 }

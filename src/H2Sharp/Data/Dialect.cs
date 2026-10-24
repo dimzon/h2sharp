@@ -51,10 +51,14 @@ namespace H2Sharp.Data;
 /// <remarks>
 /// Every method appends the literal and returns the same builder, so calls chain:
 /// <c>Dialect.AppendTimestamp(sql, value)</c> writes <c>TIMESTAMP '2024-01-02 10:00:00'</c>.
-/// A <c>null</c> value writes <c>NULL</c>. Nothing is allocated for the literal beyond the text
-/// itself: the value is formatted as it is read, and no engine value is built on the way. The
-/// literal is the one the engine prints for the value and parses back into it, which is the whole
-/// contract: what this class writes, a statement can carry and the engine can read.
+/// A <c>null</c> value writes a typed cast — <c>CAST(NULL AS TIMESTAMP)</c> out of the
+/// timestamp method — because the type is known at the call site and a bare NULL is UNKNOWN,
+/// which is the one thing a statement inlined into cannot carry; <see cref="AppendNull"/>
+/// writes the bare NULL, the form the engine's own getSQL writes for ValueNull. Nothing is
+/// allocated for the literal beyond the text itself: the value is formatted as it is read, and
+/// no engine value is built on the way. The literal is the one the engine prints for the value
+/// and parses back into it, which is the whole contract: what this class writes, a statement
+/// can carry and the engine can read.
 /// </remarks>
 public static class Dialect
 {
@@ -65,11 +69,26 @@ public static class Dialect
     /// <summary>
     /// Appends the NULL literal.
     /// </summary>
+    /// <remarks>
+    /// The bare, untyped NULL — the form the engine's own getSQL writes for ValueNull. The
+    /// nullable overloads of this class write a typed cast instead, because there the type is
+    /// known; call this one when the caller wants NULL to stay UNKNOWN.
+    /// </remarks>
     /// <param name="builder">string builder to append to</param>
     /// <returns>the same builder</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendNull(StringBuilder builder)
         => builder.Append("NULL");
+
+    /// <summary>
+    /// Appends the typed NULL: <c>CAST(NULL AS type)</c>, the form a known type deserves.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="type">the type name, as the parser reads it</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static StringBuilder AppendNullCast(StringBuilder builder, string type)
+        => builder.Append("CAST(NULL AS ").Append(type).Append(')');
 
     /// <summary>
     /// Appends the literal of a boolean: <c>TRUE</c> or <c>FALSE</c>.
@@ -82,7 +101,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "BOOLEAN");
         }
 
         return builder.Append(value.GetValueOrDefault() ? "TRUE" : "FALSE");
@@ -99,7 +118,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "TINYINT");
         }
 
         sbyte v = value.GetValueOrDefault();
@@ -118,7 +137,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "SMALLINT");
         }
 
         short v = value.GetValueOrDefault();
@@ -137,7 +156,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "INTEGER");
         }
 
         return StringUtils.AppendInvariant(builder, value.GetValueOrDefault());
@@ -158,7 +177,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "BIGINT");
         }
 
         long v = value.GetValueOrDefault();
@@ -189,7 +208,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "NUMERIC");
         }
 
         decimal m = value.GetValueOrDefault();
@@ -237,7 +256,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "REAL");
         }
 
         float v = value.GetValueOrDefault();
@@ -274,7 +293,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "DOUBLE PRECISION");
         }
 
         double v = value.GetValueOrDefault();
@@ -305,7 +324,9 @@ public static class Dialect
     /// <returns>the same builder</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendString(StringBuilder builder, string? value)
-        => StringUtils.QuoteStringSql(builder, value);
+        => value is null
+            ? AppendNullCast(builder, "VARCHAR")
+            : StringUtils.QuoteStringSql(builder, value);
 
     /// <summary>
     /// Appends the literal of a CHAR, its length of one said out loud: <c>CAST('x' AS CHAR(1))</c>.
@@ -318,7 +339,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "CHAR(1)");
         }
 
         return StringUtils.QuoteStringSql(_ = builder.Append("CAST("), value.GetValueOrDefault().ToString())
@@ -336,7 +357,7 @@ public static class Dialect
     {
         if (value is null)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "VARBINARY");
         }
 
         builder.Append("X'");
@@ -355,7 +376,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "UUID");
         }
 
         // The two halves in the order the engine stores a UUID: sixteen bytes, big-endian, high
@@ -388,7 +409,7 @@ public static class Dialect
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StringBuilder AppendJson(StringBuilder builder, JsonDocument? value)
         => value is null
-            ? AppendNull(builder)
+            ? AppendNullCast(builder, "JSON")
             : AppendJson(builder, ValueJson.FromJson(value.RootElement.GetRawText()), HasSql.DefaultSqlFlags);
 
     /// <summary>
@@ -412,7 +433,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "DATE");
         }
 
         DateOnly d = value.GetValueOrDefault();
@@ -432,7 +453,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "TIME");
         }
 
         _ = builder.Append("TIME '");
@@ -457,7 +478,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "TIME");
         }
 
         long nanos = value.GetValueOrDefault().Ticks * 100L;
@@ -482,7 +503,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "INTERVAL DAY TO SECOND");
         }
 
         TimeSpan span = value.GetValueOrDefault();
@@ -513,7 +534,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "TIMESTAMP");
         }
 
         DateTime dt = value.GetValueOrDefault();
@@ -534,7 +555,7 @@ public static class Dialect
     {
         if (!value.HasValue)
         {
-            return AppendNull(builder);
+            return AppendNullCast(builder, "TIMESTAMP WITH TIME ZONE");
         }
 
         DateTimeOffset dto = value.GetValueOrDefault();
