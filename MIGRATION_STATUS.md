@@ -680,6 +680,9 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   DelegatedCastDataProvider проводят его до сеанса; `;TIME ZONE=` в URL — как было.
 * **TestIntPerfectHash — не перенесён** — построен на org.h2.util.IntPerfectHash (и
   util.BitArray), которых в порту нет. Перенести вместе с IntPerfectHash.
+* **TestTraceSystem — не перенесён** — построен на org.h2.engine.TraceSystem (адаптивные
+  уровни, запись в файлы trace.db); в порту есть только Trace/TraceWriter без системы.
+  Перенести вместе с TraceSystem.
 * **TestAnsCompression — не перенесён** — построен на org.h2.util.AnsCompression +
   BitStream.Huffman/Out + BinaryArithmeticStream.Huffman/Out; в порту нет ни одного из
   них (compression-пакет — только CompressTool). Перенести вместе с ANS-компрессором.
