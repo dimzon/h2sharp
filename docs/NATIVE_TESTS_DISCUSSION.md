@@ -192,6 +192,15 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   org.h2.store.FileLock (FS/SOCKET-блокировки, Heartbeat, listen-процесс) — класса в
   порту нет. Перенести вместе с FileLock (TestFileLockProcess — вместе с решением о
   подпроцессах).
+* **TestUpgrade — не перенесён.** Загружает старую версию H2 (1.2.120) из jar и гоняет
+  upgrade-утилиту между версиями; в .NET ни механизма подгрузки другой версии сборки,
+  ни старой H2 нет. Вопрос: закрыть.
+* **TestExit — не перенесён.** Поднимает подпроцесс с
+  database_event_listener + db_close_on_exit и проверяет файл-маркер закрытия после
+  смерти процесса. Это и DatabaseEventListener-сэм (см. TestListener), и подпроцессная
+  механика. Перенести вместе с обоими.
+* **TestFtp — вне объёма (решение 2026-10-24).** FTP-сервер из пакета tools — сетевая
+  поверхность, порт встроенный. Вместе с server/.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
