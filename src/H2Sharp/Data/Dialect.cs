@@ -30,6 +30,7 @@
  */
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -437,6 +438,16 @@ public static class Dialect
         }
 
         DateOnly d = value.GetValueOrDefault();
+        if (d == DateOnly.MinValue)
+        {
+            return builder.Append("CAST('-Infinity' AS DATE)");
+        }
+
+        if (d == DateOnly.MaxValue)
+        {
+            return builder.Append("CAST('Infinity' AS DATE)");
+        }
+
         _ = builder.Append("DATE '");
         _ = DateTimeUtils.AppendDate(builder, DateTimeUtils.DateValue(d.Year, d.Month, d.Day));
         return builder.Append('\'');
@@ -538,6 +549,16 @@ public static class Dialect
         }
 
         DateTime dt = value.GetValueOrDefault();
+        if (dt == DateTime.MinValue)
+        {
+            return builder.Append("CAST('-Infinity' AS TIMESTAMP)");
+        }
+
+        if (dt == DateTime.MaxValue)
+        {
+            return builder.Append("CAST('Infinity' AS TIMESTAMP)");
+        }
+
         _ = builder.Append("TIMESTAMP '");
         _ = DateTimeUtils.AppendDate(builder, DateTimeUtils.DateValue(dt.Year, dt.Month, dt.Day)).Append(' ');
         _ = DateTimeUtils.AppendTime(builder, dt.TimeOfDay.Ticks * 100L);
@@ -559,6 +580,16 @@ public static class Dialect
         }
 
         DateTimeOffset dto = value.GetValueOrDefault();
+        if (dto == DateTimeOffset.MinValue)
+        {
+            return builder.Append("CAST('-Infinity' AS TIMESTAMP WITH TIME ZONE)");
+        }
+
+        if (dto == DateTimeOffset.MaxValue)
+        {
+            return builder.Append("CAST('Infinity' AS TIMESTAMP WITH TIME ZONE)");
+        }
+
         _ = builder.Append("TIMESTAMP WITH TIME ZONE '");
         _ = DateTimeUtils.AppendDate(builder, DateTimeUtils.DateValue(dto.Year, dto.Month, dto.Day)).Append(' ');
         _ = DateTimeUtils.AppendTime(builder, dto.TimeOfDay.Ticks * 100L);
@@ -567,9 +598,218 @@ public static class Dialect
     }
 
     // ------------------------------------------------------------------
+    // Public layer additions (issues #45-#53): plain .NET values not yet
+    // covered by the facade above.
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Appends an E-string literal: <c>E'...'</c>, every single quote inside doubled.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="value">the text, or null for NULL</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static StringBuilder AppendEString(StringBuilder builder, string? value)
+        => value is null
+            ? AppendNullCast(builder, "VARCHAR")
+            : StringUtils.QuoteStringSql(builder.Append('E'), value);
+
+    /// <summary>
+    /// Appends a TIME WITH TIME ZONE literal from a time of day and its UTC offset.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="value">the time of day, or null for NULL</param>
+    /// <param name="offset">the UTC offset of the time</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static StringBuilder AppendTimeWithTimeZone(StringBuilder builder, TimeOnly? value, TimeSpan offset)
+    {
+        if (!value.HasValue)
+        {
+            return AppendNullCast(builder, "TIME WITH TIME ZONE");
+        }
+
+        TimeOnly t = value.GetValueOrDefault();
+        _ = builder.Append("TIME WITH TIME ZONE '");
+        _ = DateTimeUtils.AppendTime(builder, t.ToTimeSpan().Ticks * 100L);
+        _ = DateTimeUtils.AppendTimeZone(builder, (int)offset.TotalSeconds);
+        return builder.Append('\'');
+    }
+
+    /// <summary>
+    /// Appends a GEOMETRY literal from WKT text, with the SRID when present.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="wkt">the well-known text, or null for NULL</param>
+    /// <param name="srid">the spatial reference id, or null when there is none</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static StringBuilder AppendGeometry(StringBuilder builder, string? wkt, int? srid = null)
+    {
+        if (wkt is null)
+        {
+            return AppendNullCast(builder, "GEOMETRY");
+        }
+
+        _ = builder.Append("GEOMETRY '");
+        if (srid.HasValue)
+        {
+            _ = builder.Append("SRID=").Append(srid.GetValueOrDefault()).Append(';');
+        }
+
+        return builder.Append(wkt).Append('\'');
+    }
+
+    /// <summary>
+    /// Appends a GEOMETRY literal from well-known binary.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="wkb">the bytes, or null for NULL</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static StringBuilder AppendGeometry(StringBuilder builder, byte[]? wkb)
+    {
+        if (wkb is null)
+        {
+            return AppendNullCast(builder, "GEOMETRY");
+        }
+
+        _ = builder.Append("GEOMETRY X'");
+        _ = StringUtils.ConvertBytesToHex(builder, wkb);
+        return builder.Append('\'');
+    }
+
+    /// <summary>
+    /// Appends an ENUM literal as a cast of its label to the enum type.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="value">the label, or null for NULL</param>
+    /// <param name="enumTypeName">the name of the enum type</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static StringBuilder AppendEnum(StringBuilder builder, string? value, string enumTypeName)
+    {
+        if (value is null)
+        {
+            return AppendNullCast(builder, enumTypeName);
+        }
+
+        _ = StringUtils.QuoteStringSql(_ = builder.Append("CAST("), value);
+        return builder.Append(" AS ").Append(enumTypeName).Append(')');
+    }
+
+    /// <summary>
+    /// Appends an ARRAY literal, formatting each element through the supplied appender.
+    /// </summary>
+    /// <typeparam name="T">the element type</typeparam>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="values">the elements, or null for NULL</param>
+    /// <param name="appendElement">formats one element into the builder</param>
+    /// <returns>the same builder</returns>
+    public static StringBuilder AppendArray<T>(StringBuilder builder, IEnumerable<T>? values, Action<StringBuilder, T> appendElement)
+    {
+        if (values is null)
+        {
+            return builder.Append("NULL");
+        }
+
+        _ = builder.Append("ARRAY [");
+        bool first = true;
+        foreach (T element in values)
+        {
+            if (!first)
+            {
+                _ = builder.Append(", ");
+            }
+
+            first = false;
+            appendElement(builder, element);
+        }
+
+        return builder.Append(']');
+    }
+
+    /// <summary>
+    /// Appends a ROW literal from already-formatted fields.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="fields">the formatted fields</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static StringBuilder AppendRow(StringBuilder builder, IReadOnlyList<string>? fields)
+    {
+        if (fields is null)
+        {
+            return builder.Append("NULL");
+        }
+
+        _ = builder.Append("ROW (");
+        for (int i = 0; i < fields.Count; i++)
+        {
+            if (i > 0)
+            {
+                _ = builder.Append(", ");
+            }
+
+            _ = builder.Append(fields[i]);
+        }
+
+        return builder.Append(')');
+    }
+
+    /// <summary>
+    /// Appends a BLOB literal as hex.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="value">the bytes, or null for NULL</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static StringBuilder AppendBlob(StringBuilder builder, byte[]? value)
+    {
+        if (value is null)
+        {
+            return AppendNullCast(builder, "BINARY LARGE OBJECT");
+        }
+
+        _ = builder.Append("X'");
+        _ = StringUtils.ConvertBytesToHex(builder, value);
+        return builder.Append('\'');
+    }
+
+    /// <summary>
+    /// Appends a CLOB literal as a quoted string.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="value">the text, or null for NULL</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static StringBuilder AppendClob(StringBuilder builder, string? value)
+        => value is null
+            ? AppendNullCast(builder, "CHARACTER LARGE OBJECT")
+            : StringUtils.QuoteStringSql(builder, value);
+
+    /// <summary>
+    /// Appends a NUMERIC literal from a BigInteger.
+    /// </summary>
+    /// <param name="builder">string builder to append to</param>
+    /// <param name="value">the value, or null for NULL</param>
+    /// <returns>the same builder</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static StringBuilder AppendBigInteger(StringBuilder builder, System.Numerics.BigInteger? value)
+    {
+        if (!value.HasValue)
+        {
+            return AppendNullCast(builder, "NUMERIC");
+        }
+
+        return builder.Append(value.GetValueOrDefault().ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    // ------------------------------------------------------------------
     // The engine layer: the bodies of the reference's getSQL methods,
     // moved here; the value classes' GetSql overrides delegate to them.
     // ------------------------------------------------------------------
+
 
     /// <summary>
     /// Appends the SQL representation of a NULL.

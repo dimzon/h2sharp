@@ -2384,27 +2384,9 @@ public sealed partial class Parser
         {
             do
             {
-                Expressions.Expression item;
-                if (IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType))
-                {
-                    item = ReadQueryAggregate(select, aggregateType);
-                }
-                else
-                {
-                    item = ReadQueryOr(select);
-                }
-
-                // The reference reads a select item as an expression, and an expression may
-                // be a comparison: "SELECT COUNT(*) > 0 FROM T" is a select item that
-                // answers a boolean. The aggregate is read inside the term reader there, so
-                // the comparison that follows it is read as part of the same expression.
-                while (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller
-                    or Token.Bigger or Token.SmallerEqual or Token.BiggerEqual)
-                {
-                    int compareType = ReadQueryComparisonType();
-                    item = new Expressions.Conditions.Comparison(
-                        compareType, item, ReadQueryTerm(select), whenOperand: false);
-                }
+                // H2 parseSelectExpressions reads every item through readExpression;
+                // aggregates are terms too, so their postfixes and operators use that reader.
+                Expressions.Expression item = ReadQueryOr(select);
 
                 string? alias = null;
                 if (IsWord("AS"))
@@ -3791,15 +3773,27 @@ public sealed partial class Parser
     private Expressions.Expression ReadQueryTerm(Query.Select? aggregateSelect = null)
     {
         Expression expression = ReadTermWithoutPostfix(aggregateSelect);
-        while (ReadIf(Token.OpenBracket))
+        for (;;)
         {
-            expression = new Expressions.ArrayElementReference(expression, ReadQueryOr(aggregateSelect));
-            Expect(Token.CloseBracket, "]");
+            if (ReadIf(Token.OpenBracket))
+            {
+                expression = new Expressions.ArrayElementReference(expression, ReadQueryOr(aggregateSelect));
+                Expect(Token.CloseBracket, "]");
+                continue;
+            }
+
+            if (ReadIf(Token.ColonColon))
+            {
+                expression = ReadColonColonAfterTerm(expression);
+                continue;
+            }
+
+            break;
         }
         return expression;
     }
 
-    // Java readTerm's postfix array indexes are applied after every term shape.
+    // Java readTerm's postfix operations are applied after every term shape.
     private Expressions.Expression ReadTermWithoutPostfix(Query.Select? aggregateSelect)
     {
         if (ReadIf(ParserUtil.Array))
@@ -4076,6 +4070,29 @@ public sealed partial class Parser
         }
 
         throw new TODOException("Parser.parseQuerySelect: this expression is not ported");
+    }
+
+    /// <summary>
+    /// Reads the type after a postfix :: cast, including PostgreSQL's REGCLASS expression.
+    /// </summary>
+    private Expressions.Expression ReadColonColonAfterTerm(Expressions.Expression r)
+    {
+        // The parser's mode comes from the cast provider, as in its other mode branches.
+        if (provider.GetMode().Enum == Mode.ModeEnum.PostgreSql)
+        {
+            if (ReadIfCompat("PG_CATALOG"))
+            {
+                Expect(Token.Dot, ".");
+            }
+
+            if (ReadIfCompat("REGCLASS"))
+            {
+                return new Modes.Regclass(r);
+            }
+        }
+
+        // ReadColumnWithType is the same type reader used by CAST in this parser port.
+        return new Expressions.Functions.CastSpecification(r, ReadColumnWithType());
     }
 
     /// <summary>
@@ -6018,6 +6035,12 @@ public sealed partial class Parser
         }
 
         return false;
+    }
+
+    // ParserBase.readIfCompat(String): compatibility words never match quoted identifiers.
+    private bool ReadIfCompat(string tokenName)
+    {
+        return !Current.IsQuoted && IsWord(tokenName);
     }
 
     private void Expect(int tokenType, string what)

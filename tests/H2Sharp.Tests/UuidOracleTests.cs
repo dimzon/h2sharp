@@ -47,12 +47,15 @@ public sealed class UuidOracleTests
     ];
 
     /// <summary>
-    /// The statement the reference reads and the port does not: the PostgreSQL spelling of a
-    /// cast, which the reference accepts for every type and the port has not ported.
+    /// UUID conversions using the PostgreSQL spelling of a cast.
     /// </summary>
-    private static readonly string[] BlockedStatements =
+    private static readonly string[] PostgreSqlCastStatements =
     [
         "SELECT 'd3b07384-d9a4-4f5b-8f1a-2a1e7a1e7a11'::UUID",
+        "SELECT 'D3B07384D9A44F5B8F1A2A1E7A1E7A11'::UUID::VARCHAR",
+        "SELECT X'd3b07384d9a44f5b8f1a2a1e7a1e7a11'::UUID",
+        "SELECT NULL::UUID",
+        "SELECT 'd3b07384-d9a4-4f5b-8f1a-2a1e7a1e7a1'::UUID",
     ];
 
     /// <summary>
@@ -65,15 +68,12 @@ public sealed class UuidOracleTests
     }
 
     /// <summary>
-    /// The PostgreSQL cast spelling, which the reference reads and the port refuses with a
-    /// syntax error. Blocked by the port until the <c>::</c> cast is ported; the red run by
-    /// this category is the list of such defects, not a broken test.
+    /// The PostgreSQL cast spelling accepts and refuses the same UUID values as the reference.
     /// </summary>
     [JavaOracleFact]
-    [Trait("Category", "BlockedByPort")]
-    public void PostgreSqlCastSyntaxIsNotPortedYet()
+    public void PostgreSqlCastsAnswerTheSameAsTheReference()
     {
-        AssertStatementsMatch(BlockedStatements);
+        AssertStatementsMatch(PostgreSqlCastStatements);
     }
 
     private static void AssertStatementsMatch(IReadOnlyList<string> statements)
