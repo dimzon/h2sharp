@@ -35,6 +35,10 @@ public sealed class IndexedDateTimeComparisonOracleTests
     {
         string[] statements =
         [
+            // The zone of the comparison is the session's, which starts as the machine zone
+            // on both sides; pin it so the oracle does not depend on where it runs (the
+            // reference JVM runs with -Duser.timezone=UTC).
+            "SET TIME ZONE 'UTC'",
             "CREATE TABLE T(TS TIMESTAMP)",
             "CREATE INDEX I ON T(TS)",
             "INSERT INTO T VALUES (TIMESTAMP '2020-01-02 03:04:05')",

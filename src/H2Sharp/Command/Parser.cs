@@ -539,6 +539,11 @@ public sealed partial class Parser
         else if (IsWord("ROLLBACK")) prepared = ParseRollback();
         else if (IsWord("COMMIT")) { IsWord("WORK"); prepared = new Dml.TransactionCommand(current, CommandInterface.Commit); }
         else if (IsWord("BEGIN")) { IsWord("WORK"); prepared = new Dml.TransactionCommand(current, CommandInterface.Begin); }
+        else if (IsWord("SET", consume: false))
+        {
+            Read();
+            prepared = PrepareSet(current);
+        }
         else if (IsWord("CREATE", consume: false) && NextIs("SEQUENCE"))
         {
             prepared = PrepareCreateSequence(current);
@@ -4304,6 +4309,29 @@ public sealed partial class Parser
             return ReadCurrentDateTimeValueFunction(function, ReadIf(Token.OpenParen));
         }
 
+        if (CurrentType is ParserUtil.CurrentCatalog or ParserUtil.CurrentPath or ParserUtil.CurrentRole
+            or ParserUtil.CurrentSchema or ParserUtil.CurrentUser or ParserUtil.User
+            or ParserUtil.SessionUser or ParserUtil.SystemUser)
+        {
+            int specification = CurrentType switch
+            {
+                ParserUtil.CurrentCatalog => Expressions.Functions.CurrentGeneralValueSpecification.CurrentCatalog,
+                ParserUtil.CurrentPath => Expressions.Functions.CurrentGeneralValueSpecification.CurrentPath,
+                ParserUtil.CurrentRole => Expressions.Functions.CurrentGeneralValueSpecification.CurrentRole,
+                ParserUtil.CurrentSchema => Expressions.Functions.CurrentGeneralValueSpecification.CurrentSchema,
+                ParserUtil.CurrentUser or ParserUtil.User => Expressions.Functions.CurrentGeneralValueSpecification.CurrentUser,
+                ParserUtil.SessionUser => Expressions.Functions.CurrentGeneralValueSpecification.SessionUser,
+                _ => Expressions.Functions.CurrentGeneralValueSpecification.SystemUser,
+            };
+            Read();
+            if (ReadIf(Token.OpenParen))
+            {
+                Expect(Token.CloseParen, ")");
+            }
+
+            return new Expressions.Functions.CurrentGeneralValueSpecification(specification);
+        }
+
         if (CurrentType == Token.MinusSign)
         {
             Read();
@@ -4347,10 +4375,12 @@ public sealed partial class Parser
 
         if (CurrentType == Token.At)
         {
-            // The reference binds @name to a Variable, which is not ported: a session variable
-            // is storage on the session plus an assignment statement, and neither is here.
-            // A named parameter it is not.
-            throw new TODOException("Parser.readTerm: variables (@name) are not ported");
+            // The reference binds @name to a Variable and := to a SetFunction; the assignment
+            // operator is not ported, the variable is.
+            SessionLocal current = session
+                ?? throw new TODOException("Parser.readTerm: this parser has no session");
+            Read();
+            return new Expressions.Variable(current, ReadIdentifier());
         }
 
         Values.Value? literal = Current.GetValue(provider);
@@ -5152,11 +5182,17 @@ public sealed partial class Parser
                 return ReadCoalesceFunction(
                     Expressions.Functions.CoalesceFunction.Coalesce, aggregateSelect);
 
-            // CurrentGeneralValueSpecification (not ported).
+            // CurrentGeneralValueSpecification.
             case "DATABASE":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.CurrentGeneralValueSpecification(
+                    Expressions.Functions.CurrentGeneralValueSpecification.CurrentCatalog);
+
+            // CurrentGeneralValueSpecification.
             case "SCHEMA":
-                throw new TODOException(
-                    "Parser.readCompatibilityFunction: CurrentGeneralValueSpecification is not ported");
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.CurrentGeneralValueSpecification(
+                    Expressions.Functions.CurrentGeneralValueSpecification.CurrentSchema);
 
             // CurrentDateTimeValueFunction.
             case "CURDATE":

@@ -6962,6 +6962,26 @@ Release-модульный набор linq2db после снятия BlockedByP
 +
 +Проверено: H2Sharp.Tests **1259/1259**, MvStore **86/86**, Data **467/467**.
 
+**SQL-конформанс: 580 → 641/947.** Срез SET (+ TransactionCommandTests как
+побочный эффект AUTOCOMMIT): портированы `SET` (Parser.parseSet + команда Set,
+Setting-объект, реестр настроек базы), `CurrentGeneralValueSpecification`
+(CURRENT_CATALOG/SCHEMA/USER/SESSION_USER/SYSTEM_USER/ROLE/PATH + DATABASE() и
+SCHEMA() как compatibility-формы). Сверка каждого падающего теста с jar 2.5.259
+показала три класса расхождений тестов с эталоном, и все исправлены по эталону:
+значения-числа вместо имён (ALLOW_LITERALS '0', IGNORECASE '1',
+DEFAULT_TABLE_TYPE '1'); дублирующиеся строки (RETENTION_TIME, WRITE_DELAY,
+IGNORE_CATALOGS — у эталона тоже по две); настройки без строк в SETTINGS
+(session-only — LOCK_TIMEOUT, THROTTLE и др. — тесты переведены на проверку
+принятия); отказы CATALOG (DATABASE_NOT_FOUND_1) и DATABASE_EVENT_LISTENER
+(90099) — тесты проверяют коды. CURRENT_USER — пустая строка и в эталоне (БД
+без пользователя), тест это фиксирует. CURRENT_ROLE без ролей — NULL, что
+тест принимает. Два движковых oracle-теста починены: сравнение
+TIMESTAMP/TIMESTAMPTZ сделано машинно-независимым (SET TIME ZONE 'UTC' в
+наборе, оракул форсирует UTC), TODO-тест переменных приведён к новому сообщению
+порта. Остаток SET: PASSWORD/SALT (нужны пользователи) и COLLATION ×2
+(заведомо без collator) — 4 штуки в BlockedByPort. Сверка имён baseline-vs-worktree:
+закрыто 65, новых падений 0.
+
 **SQL-конформанс: 580 → 589/947.** Срез MERGE целиком: `MergeUsing` чинится
 двумя дефектами порта — `readTableColumn` с префиксом `алиас.колонка` не был
 портирован (`ParseColumn` читал только имя, `T.NAME` падало с COLUMN_NOT_FOUND)

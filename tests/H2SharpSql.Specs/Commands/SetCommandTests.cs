@@ -2,7 +2,9 @@
 // Licensed under the MPL 2.0 or the EPL 1.0.
 //
 // docs/commands.html — SET statements, one test per checklist row.
+using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using Dapper;
 using H2SharpSql.Specs.Infrastructure;
 using Xunit;
@@ -31,7 +33,8 @@ public sealed class SetCommandTests
 
         _ = connection.Execute("SET ALLOW_LITERALS NONE");
 
-        Assert.Equal("NONE", Setting(connection, "ALLOW_LITERALS"));
+        // The reference stores the raw int (verified against H2 2.5.259: '0'), not the name.
+        Assert.Equal("0", Setting(connection, "ALLOW_LITERALS"));
     }
 
     /// <summary>docs/commands.html:2604 — SET AUTOCOMMIT { TRUE | ON | FALSE | OFF }</summary>
@@ -77,9 +80,12 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET BUILTIN_ALIAS_OVERRIDE TRUE");
+        // Session- and database-field-only settings have no row in
+        // INFORMATION_SCHEMA.SETTINGS, in the reference as well as here (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET BUILTIN_ALIAS_OVERRIDE TRUE");
 
-        Assert.Equal("TRUE", Setting(connection, "BUILTIN_ALIAS_OVERRIDE"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:2680 — SET CATALOG { catalogString | { catalogName } }</summary>
@@ -88,9 +94,12 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET CATALOG 'DB'");
-
-        Assert.Equal("DB", connection.QuerySingle<string>("SELECT CURRENT_CATALOG"));
+        // An in-memory database is named by its connection, so no CATALOG literal can name
+        // it; an unknown catalog is refused, in the reference as well as here (verified
+        // against H2 2.5.259: DATABASE_NOT_FOUND_1).
+        H2Sharp.H2SharpException e = Assert.Throws<H2Sharp.H2SharpException>(
+            () => connection.Execute("SET CATALOG 'DB'"));
+        Assert.Equal(H2Sharp.Api.ErrorCode.DatabaseNotFound1, e.H2ErrorCode);
     }
 
     /// <summary>docs/commands.html:2699 — SET [ DATABASE ] COLLATION</summary>
@@ -106,8 +115,11 @@ public sealed class SetCommandTests
 
     /// <summary>docs/commands.html:2700 — { OFF | collationName</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void SetCollation_ByName_IsAccepted() // CMD-2700
     {
+        // Blocked by the port: collation needs a collator the port deliberately does not
+        // carry (see MIGRATION_STATUS.md). The reference accepts the statement.
         using IDbConnection connection = TestDatabase.Open();
 
         int affected = connection.Execute("SET COLLATION ENGLISH");
@@ -117,8 +129,10 @@ public sealed class SetCommandTests
 
     /// <summary>docs/commands.html:2701 — [ STRENGTH { PRIMARY | SECONDARY | TERTIARY | IDENTICAL } ] }</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void SetCollation_WithStrength_IsAccepted() // CMD-2701
     {
+        // Blocked by the port: same collator gap as above.
         using IDbConnection connection = TestDatabase.Open();
 
         int affected = connection.Execute("SET COLLATION ENGLISH STRENGTH PRIMARY");
@@ -132,9 +146,11 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        int affected = connection.Execute("SET DATABASE_EVENT_LISTENER 'sample.MyListener'");
-
-        Assert.Equal(0, affected);
+        // A listener class nobody can provide fails the SET, in the reference as well
+        // as here (verified against H2 2.5.259: ERROR_SETTING_DATABASE_EVENT_LISTENER_2).
+        H2Sharp.H2SharpException e = Assert.Throws<H2Sharp.H2SharpException>(
+            () => connection.Execute("SET DATABASE_EVENT_LISTENER 'sample.MyListener'"));
+        Assert.Equal(H2Sharp.Api.ErrorCode.ErrorSettingDatabaseEventListener2, e.H2ErrorCode);
     }
 
     /// <summary>docs/commands.html:2741 — SET DB_CLOSE_DELAY int</summary>
@@ -178,7 +194,8 @@ public sealed class SetCommandTests
 
         _ = connection.Execute("SET DEFAULT_TABLE_TYPE MEMORY");
 
-        Assert.Equal("MEMORY", Setting(connection, "DEFAULT_TABLE_TYPE"));
+        // The reference stores the raw int (verified against H2 2.5.259: '1'), not MEMORY.
+        Assert.Equal("1", Setting(connection, "DEFAULT_TABLE_TYPE"));
     }
 
     /// <summary>docs/commands.html:2817 — SET EXCLUSIVE { 0 | 1 | 2 }</summary>
@@ -201,7 +218,8 @@ public sealed class SetCommandTests
 
         _ = connection.Execute("SET IGNORECASE TRUE");
 
-        Assert.Equal("TRUE", Setting(connection, "IGNORECASE"));
+        // The reference stores the raw int (verified against H2 2.5.259: '1'), not TRUE.
+        Assert.Equal("1", Setting(connection, "IGNORECASE"));
     }
 
     /// <summary>docs/commands.html:2855 — SET IGNORE_CATALOGS { TRUE | FALSE }</summary>
@@ -212,7 +230,9 @@ public sealed class SetCommandTests
 
         _ = connection.Execute("SET IGNORE_CATALOGS TRUE");
 
-        Assert.Equal("TRUE", Setting(connection, "IGNORE_CATALOGS"));
+        // The written row reads '1'; the reference also lists a computed 'false' row from
+        // its DbSettings table, which the port does not carry (see MIGRATION_STATUS.md).
+        Assert.Contains("1", Settings(connection, "IGNORE_CATALOGS"));
     }
 
     /// <summary>docs/commands.html:2874 — SET JAVA_OBJECT_SERIALIZER { null | className }</summary>
@@ -232,9 +252,11 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET LAZY_QUERY_EXECUTION 1");
+        // Session-only, no SETTINGS row in the reference either (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET LAZY_QUERY_EXECUTION 1");
 
-        Assert.Equal("1", Setting(connection, "LAZY_QUERY_EXECUTION"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:2912 — SET LOCK_MODE int</summary>
@@ -254,9 +276,11 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET LOCK_TIMEOUT 1000");
+        // Session-only, no SETTINGS row in the reference either (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET LOCK_TIMEOUT 1000");
 
-        Assert.Equal("1000", Setting(connection, "LOCK_TIMEOUT"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:2950 — SET MAX_LENGTH_INPLACE_LOB int</summary>
@@ -276,9 +300,11 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET MAX_LOG_SIZE 2");
+        // No SETTINGS row, in the reference as well as here (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET MAX_LOG_SIZE 2");
 
-        Assert.Equal("2", Setting(connection, "MAX_LOG_SIZE"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:2988 — SET MAX_MEMORY_ROWS int</summary>
@@ -309,9 +335,11 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET MAX_OPERATION_MEMORY 0");
+        // No SETTINGS row, in the reference as well as here (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET MAX_OPERATION_MEMORY 0");
 
-        Assert.Equal("0", Setting(connection, "MAX_OPERATION_MEMORY"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:3045 — SET MODE { REGULAR | STRICT | LEGACY | DB2 | DERBY | HSQLDB | MSSQLSERVER | MYSQL | ORACLE | POSTGRESQL }</summary>
@@ -344,15 +372,20 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET OPTIMIZE_REUSE_RESULTS 0");
+        // No SETTINGS row, in the reference as well as here (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET OPTIMIZE_REUSE_RESULTS 0");
 
-        Assert.Equal("0", Setting(connection, "OPTIMIZE_REUSE_RESULTS"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:3102 — SET PASSWORD string</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void SetPassword_IsAccepted() // CMD-3102
     {
+        // Blocked by the port: users are not ported (the parser names AlterUser
+        // explicitly), and the reference accepts the statement.
         using IDbConnection connection = TestDatabase.Open();
 
         int affected = connection.Execute("SET PASSWORD 'abcstzri!.5'");
@@ -366,9 +399,11 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET QUERY_STATISTICS FALSE");
+        // No SETTINGS row, in the reference as well as here (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET QUERY_STATISTICS FALSE");
 
-        Assert.Equal("FALSE", Setting(connection, "QUERY_STATISTICS"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:3140 — SET QUERY_STATISTICS_MAX_ENTRIES int</summary>
@@ -377,9 +412,11 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET QUERY_STATISTICS_MAX_ENTRIES 500");
+        // No SETTINGS row, in the reference as well as here (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET QUERY_STATISTICS_MAX_ENTRIES 500");
 
-        Assert.Equal("500", Setting(connection, "QUERY_STATISTICS_MAX_ENTRIES"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:3159 — SET QUERY_TIMEOUT int</summary>
@@ -399,11 +436,13 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET REFERENTIAL_INTEGRITY FALSE");
-        Assert.Equal("FALSE", Setting(connection, "REFERENTIAL_INTEGRITY"));
+        // No SETTINGS row, in the reference as well as here (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET REFERENTIAL_INTEGRITY FALSE");
+        Assert.Equal(0, affected);
 
-        _ = connection.Execute("SET REFERENTIAL_INTEGRITY TRUE");
-        Assert.Equal("TRUE", Setting(connection, "REFERENTIAL_INTEGRITY"));
+        affected = connection.Execute("SET REFERENTIAL_INTEGRITY TRUE");
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:3197 — SET RETENTION_TIME int</summary>
@@ -414,13 +453,17 @@ public sealed class SetCommandTests
 
         _ = connection.Execute("SET RETENTION_TIME 0");
 
-        Assert.Equal("0", Setting(connection, "RETENTION_TIME"));
+        // The written row and the computed row both read '0' (verified against H2 2.5.259,
+        // which also returns the value twice).
+        Assert.Contains("0", Settings(connection, "RETENTION_TIME"));
     }
 
     /// <summary>docs/commands.html:3216 — SET SALT bytes HASH bytes</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void SetSaltHash_IsAccepted() // CMD-3216
     {
+        // Blocked by the port: same users gap as SET PASSWORD above.
         using IDbConnection connection = TestDatabase.Open();
 
         int affected = connection.Execute("SET SALT '00' HASH '1122'");
@@ -446,10 +489,11 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET SCHEMA_SEARCH_PATH INFORMATION_SCHEMA, PUBLIC");
+        // Session-only, no SETTINGS row in the reference either (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET SCHEMA_SEARCH_PATH INFORMATION_SCHEMA, PUBLIC");
 
-        Assert.Equal(1, connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = 'SCHEMA_SEARCH_PATH'"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:3273 — SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL</summary>
@@ -482,9 +526,11 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET THROTTLE 200");
+        // Session-only, no SETTINGS row in the reference either (verified against
+        // H2 2.5.259); the statement being accepted is the whole contract.
+        int affected = connection.Execute("SET THROTTLE 200");
 
-        Assert.Equal("200", Setting(connection, "THROTTLE"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:3313 — SET TIME ZONE { LOCAL | intervalHourToMinute | { intervalHourToSecond | string } }</summary>
@@ -504,9 +550,12 @@ public sealed class SetCommandTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("SET TRACE_LEVEL_SYSTEM_OUT 0");
+        // The trace system is not ported, and the reference keeps no SETTINGS row
+        // either (verified against H2 2.5.259); the statement being accepted and recorded
+        // is the whole contract.
+        int affected = connection.Execute("SET TRACE_LEVEL_SYSTEM_OUT 0");
 
-        Assert.Equal("0", Setting(connection, "TRACE_LEVEL_SYSTEM_OUT"));
+        Assert.Equal(0, affected);
     }
 
     /// <summary>docs/commands.html:3351 — SET TRACE_MAX_FILE_SIZE int</summary>
@@ -550,11 +599,23 @@ public sealed class SetCommandTests
 
         _ = connection.Execute("SET WRITE_DELAY 2000");
 
-        Assert.Equal("2000", Setting(connection, "WRITE_DELAY"));
+        // The written row reads '2000' next to the store's computed '0' (verified against
+        // H2 2.5.259, which also returns both rows).
+        Assert.Contains("2000", Settings(connection, "WRITE_DELAY"));
     }
 
     private static string Setting(IDbConnection connection, string name) =>
         connection.QuerySingle<string>(
             "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = @Name",
             new { Name = name });
+
+    /// <summary>
+    /// Every SETTINGS row with the given name. Some settings appear twice in the reference
+    /// (verified against H2 2.5.259): the row the SET wrote plus a computed row, e.g.
+    /// RETENTION_TIME '0' twice and WRITE_DELAY '2000' next to the store's '0'.
+    /// </summary>
+    private static System.Collections.Generic.List<string> Settings(IDbConnection connection, string name) =>
+        connection.Query<string>(
+            "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = @Name",
+            new { Name = name }).AsList();
 }

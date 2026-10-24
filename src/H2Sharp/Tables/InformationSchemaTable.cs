@@ -1064,16 +1064,7 @@ public sealed class InformationSchemaTable : Table
 
                 break;
             case Settings:
-                // The reference lists the settings of the database and of the session; this
-                // port has neither, and what it does have is the version it is.
-                Add(
-                    rows,
-                    "info.VERSION_MAJOR",
-                    H2Sharp.Engine.Constants.VersionMajor.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                Add(
-                    rows,
-                    "info.VERSION_MINOR",
-                    H2Sharp.Engine.Constants.VersionMinor.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                AddSettingsRows(session, rows);
                 break;
             case Views:
                 foreach (Table table in GetAllTables(session))
@@ -1800,6 +1791,53 @@ public sealed class InformationSchemaTable : Table
     /// </summary>
     /// <param name="rows">the rows</param>
     /// <param name="values">the values of the row</param>
+    /// <summary>
+    /// The SETTINGS view, as the reference's settings does: the Setting objects of the
+    /// database, the engine's own version rows, the session's settings, and the database's
+    /// computed ones.
+    /// </summary>
+    /// <remarks>
+    /// Port rename: settings → AddSettingsRows, because the view-id constant Settings of this
+    /// class shares the name and C# cannot tell a method from a constant by case.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="rows">the rows</param>
+    private void AddSettingsRows(SessionLocal session, List<Value[]> rows)
+    {
+        Database database = session.GetDatabase();
+        foreach (Setting setting in database.GetAllSettings())
+        {
+            string? value = setting.GetStringValue();
+            value ??= setting.GetIntValue().ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Add(rows, setting.GetName(), value);
+        }
+
+        Add(rows, "info.BUILD_ID",
+            Engine.Constants.BuildId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Add(rows, "info.VERSION_MAJOR",
+            Engine.Constants.VersionMajor.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Add(rows, "info.VERSION_MINOR",
+            Engine.Constants.VersionMinor.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Add(rows, "info.VERSION", Engine.Constants.FullVersion);
+
+        // The reference adds the property.* rows for an admin here; the port has no users and
+        // no admin to ask, so there is nobody they are for.
+
+        Add(rows, "QUERY_TIMEOUT",
+            session.GetQueryTimeout().ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Add(rows, "TIME ZONE", session.CurrentTimeZone().GetId());
+        Add(rows, "TRUNCATE_LARGE_LENGTH", session.IsTruncateLargeLength() ? "TRUE" : "FALSE");
+        Add(rows, "VARIABLE_BINARY", session.IsVariableBinary() ? "TRUE" : "FALSE");
+        Add(rows, "OLD_INFORMATION_SCHEMA", session.IsOldInformationSchema() ? "TRUE" : "FALSE");
+        System.Collections.BitArray? nonKeywords = session.GetNonKeywords();
+        if (nonKeywords is not null)
+        {
+            Add(rows, "NON_KEYWORDS", Command.Parser.FormatNonKeywords(nonKeywords));
+        }
+
+        database.PopulateInfo((name, value) => Add(rows, name, value));
+    }
+
     private static void Add(List<Value[]> rows, params object?[] values)
     {
         Value[] converted = new Value[values.Length];

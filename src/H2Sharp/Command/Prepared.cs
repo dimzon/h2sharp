@@ -57,7 +57,9 @@ public abstract class Prepared
 
     private bool prepareAlways;
 
-    private int persistedObjectId = -1;
+    // The reference leaves this at Java's int zero; zero means "no id yet", negative means
+    // "an id was read and the original waits behind the bit flip for a re-run".
+    private int persistedObjectId;
 
     private long currentRowNumber;
 
@@ -219,6 +221,28 @@ public abstract class Prepared
     /// </summary>
     /// <param name="id">the object id</param>
     public void SetPersistedObjectId(int id) => persistedObjectId = id;
+
+    /// <summary>
+    /// Get the current object id, or get a new id from the database. The object
+    /// id is used when creating new database object (CREATE statement). This
+    /// method may be called only once.
+    /// </summary>
+    /// <returns>the object id</returns>
+    protected int GetObjectId()
+    {
+        int id = persistedObjectId;
+        if (id == 0)
+        {
+            id = GetSession().GetDatabase().AllocateObjectId();
+        }
+        else if (id < 0)
+        {
+            throw DbException.GetInternalError("Prepared.GetObjectId() was called before");
+        }
+
+        persistedObjectId = ~persistedObjectId; // while negative, it can be restored later
+        return id;
+    }
 
     /// <summary>
     /// Get the plan SQL of this command.

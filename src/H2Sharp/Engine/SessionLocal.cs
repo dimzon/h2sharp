@@ -869,7 +869,19 @@ public sealed class SessionLocal : Session
     /// </summary>
     /// <returns>true if it is</returns>
     public override bool IsOldInformationSchema()
-        => throw new TODOException("SessionLocal.isOldInformationSchema");
+        => oldInformationSchema;
+
+    /// <summary>The information-schema spelling this session asks for.</summary>
+    private bool oldInformationSchema;
+
+    /// <summary>
+    /// Set whether this session uses the old information schema.
+    /// </summary>
+    /// <param name="oldInformationSchema">true if it does</param>
+    public void SetOldInformationSchema(bool oldInformationSchema)
+    {
+        this.oldInformationSchema = oldInformationSchema;
+    }
 
     /// <summary>
     /// Gets the current timestamp, which is fixed for the length of one statement or
@@ -884,7 +896,7 @@ public sealed class SessionLocal : Session
     /// </summary>
     /// <returns>the time zone</returns>
     public override Util.TimeZoneProvider CurrentTimeZone()
-        => CastDataProvider.CurrentTimeZone();
+        => timeZone;
 
     /// <summary>
     /// Whether ENUM values are 0-based.
@@ -892,4 +904,210 @@ public sealed class SessionLocal : Session
     /// <returns>true if they are</returns>
     public override bool ZeroBasedEnums()
         => CastDataProvider.ZeroBasedEnums();
+
+    /// <summary>The value of a user-defined variable, or NULL.</summary>
+    private Dictionary<string, Values.Value>? variables;
+
+    /// <summary>The statement timeout, in milliseconds.</summary>
+    private int queryTimeout;
+
+    /// <summary>The lock timeout, in milliseconds.</summary>
+    private int lockTimeout;
+
+    /// <summary>The delay between commands, in milliseconds.</summary>
+    private int throttleMs;
+
+    private bool lazyQueryExecution;
+
+    private bool variableBinary;
+
+    private bool truncateLargeLength;
+
+    private System.Collections.BitArray? nonKeywords;
+
+    private string[]? schemaSearchPath;
+
+    private Util.TimeZoneProvider timeZone = Util.TimeZoneProvider.GetDefault();
+
+    private void InitVariables()
+    {
+        variables ??= new Dictionary<string, Values.Value>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Get the value of the specified user-defined variable, or NULL.
+    /// </summary>
+    /// <param name="name">the variable name</param>
+    /// <returns>the value, or NULL</returns>
+    public Values.Value GetVariable(string name)
+    {
+        InitVariables();
+        return variables!.GetValueOrDefault(name) ?? Values.ValueNull.Instance;
+    }
+
+    /// <summary>
+    /// Set the value of the given variable for this session.
+    /// </summary>
+    /// <param name="name">the name of the variable (may not be null)</param>
+    /// <param name="value">the new value (may not be null)</param>
+    public void SetVariable(string name, Values.Value value)
+    {
+        InitVariables();
+        if (value == Values.ValueNull.Instance)
+        {
+            _ = variables!.Remove(name);
+        }
+        else
+        {
+            // The reference re-links LOB values here so the session owns its own copy; LOB
+            // storage is not ported, and the value travels as it came.
+            variables![name] = value;
+        }
+    }
+
+    /// <summary>
+    /// Set the statement timeout in milliseconds.
+    /// </summary>
+    /// <param name="queryTimeout">the timeout in milliseconds</param>
+    public void SetQueryTimeout(int queryTimeout)
+    {
+        // The reference clamps the value to the database's MAX_QUERY_TIMEOUT setting; DbSettings
+        // is not ported, so the value stands as written.
+        this.queryTimeout = queryTimeout;
+    }
+
+    /// <summary>
+    /// Get the statement timeout in milliseconds.
+    /// </summary>
+    /// <returns>the timeout in milliseconds</returns>
+    public int GetQueryTimeout() => queryTimeout;
+
+    /// <summary>
+    /// Set the lock timeout.
+    /// </summary>
+    /// <param name="lockTimeout">the lock timeout in milliseconds</param>
+    public void SetLockTimeout(int lockTimeout)
+    {
+        this.lockTimeout = lockTimeout;
+
+        // The reference also moves the running transaction's deadline when one is open; the
+        // transaction's own timeout API is not ported, so the value waits for the next one.
+    }
+
+    /// <summary>
+    /// Get the lock timeout.
+    /// </summary>
+    /// <returns>the lock timeout in milliseconds</returns>
+    public int GetLockTimeout()
+    {
+        return lockTimeout;
+    }
+
+    /// <summary>
+    /// Set the delay between statements in milliseconds.
+    /// </summary>
+    /// <param name="throttle">the delay in milliseconds</param>
+    public void SetThrottle(int throttle)
+    {
+        throttleMs = throttle;
+    }
+
+    /// <summary>
+    /// Get the delay between statements in milliseconds.
+    /// </summary>
+    /// <returns>the delay in milliseconds</returns>
+    public int GetThrottle() => throttleMs;
+
+    /// <summary>
+    /// Whether queries are executed lazily.
+    /// </summary>
+    public void SetLazyQueryExecution(bool lazyQueryExecution)
+    {
+        this.lazyQueryExecution = lazyQueryExecution;
+    }
+
+    /// <summary>
+    /// Whether queries are executed lazily.
+    /// </summary>
+    /// <returns>true if they are</returns>
+    public bool IsLazyQueryExecution() => lazyQueryExecution;
+
+    /// <summary>
+    /// Whether BINARY values keep their declared length.
+    /// </summary>
+    public void SetVariableBinary(bool variableBinary)
+    {
+        this.variableBinary = variableBinary;
+    }
+
+    /// <summary>
+    /// Whether BINARY values keep their declared length.
+    /// </summary>
+    /// <returns>true if they do</returns>
+    public bool IsVariableBinary() => variableBinary;
+
+    /// <summary>
+    /// Whether over-long values are truncated instead of rejected.
+    /// </summary>
+    public void SetTruncateLargeLength(bool truncateLargeLength)
+    {
+        this.truncateLargeLength = truncateLargeLength;
+    }
+
+    /// <summary>
+    /// Whether over-long values are truncated instead of rejected.
+    /// </summary>
+    /// <returns>true if they are</returns>
+    public bool IsTruncateLargeLength() => truncateLargeLength;
+
+    /// <summary>
+    /// Set the keywords that also count as identifiers.
+    /// </summary>
+    /// <param name="nonKeywords">the token kinds, or null for none</param>
+    public void SetNonKeywords(System.Collections.BitArray? nonKeywords)
+    {
+        this.nonKeywords = nonKeywords;
+    }
+
+    /// <summary>
+    /// Get the keywords that also count as identifiers.
+    /// </summary>
+    /// <returns>the token kinds, or null</returns>
+    public System.Collections.BitArray? GetNonKeywords()
+    {
+        return nonKeywords;
+    }
+
+    /// <summary>
+    /// Set the schema search path.
+    /// </summary>
+    /// <param name="schemas">the schema names</param>
+    public void SetSchemaSearchPath(string[]? schemas)
+    {
+        schemaSearchPath = schemas;
+    }
+
+    /// <summary>
+    /// Get the schema search path.
+    /// </summary>
+    /// <returns>the schema names, or null</returns>
+    public string[]? GetSchemaSearchPath()
+    {
+        return schemaSearchPath;
+    }
+
+    /// <summary>
+    /// Set the current time zone.
+    /// </summary>
+    /// <param name="timeZone">the time zone</param>
+    public void SetTimeZone(Util.TimeZoneProvider timeZone)
+    {
+        if (!timeZone.Equals(this.timeZone))
+        {
+            this.timeZone = timeZone;
+
+            // The reference re-stamps the command's current timestamp into the new zone here;
+            // the per-command timestamp cache is not ported, so the next command asks anew.
+        }
+    }
 }

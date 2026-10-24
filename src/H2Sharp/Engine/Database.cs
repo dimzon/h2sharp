@@ -516,12 +516,6 @@ public sealed partial class Database : CastDataProvider
     public bool ZeroBasedEnums() => DefaultCastDataProvider.Instance.ZeroBasedEnums();
 
     /// <summary>
-    /// Returns the database mode.
-    /// </summary>
-    /// <returns>the mode</returns>
-    public Mode GetMode() => DefaultCastDataProvider.Instance.GetMode();
-
-    /// <summary>
     /// Gets the connection information this database was opened with.
     /// </summary>
     /// <returns>the connection information</returns>

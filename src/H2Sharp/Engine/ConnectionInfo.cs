@@ -47,6 +47,15 @@ public sealed class ConnectionInfo
     /// </remarks>
     private static readonly HashSet<string> KnownSettings = BuildKnownSettings();
 
+    /// <summary>
+    /// Whether a SET statement should silently accept and skip this setting name, as the
+    /// reference's ConnectionInfo.isIgnoredByParser does.
+    /// </summary>
+    /// <param name="name">the setting name, in upper case</param>
+    /// <returns>true if the parser ignores it</returns>
+    public static bool IsIgnoredByParser(string name)
+        => KnownSettings.Contains(name);
+
     private readonly Dictionary<string, string> properties = [];
 
     private string url = string.Empty;

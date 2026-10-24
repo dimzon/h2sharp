@@ -303,15 +303,16 @@ public sealed class Mode
     }
 
     /// <summary>
-    /// The name a mode is written with, which is not the same as the name of its constant: the
-    /// reference's enum says <c>Derby</c> and <c>MSSQLServer</c>, and a URL says <c>Derby</c> and
-    /// <c>MSSQLServer</c> too, so the names come from the enum rather than from a table here.
+    /// The name a mode is written with, which is the name of its enum constant, letter for
+    /// letter: the reference's enum says <c>REGULAR</c>, <c>Derby</c> and <c>MSSQLServer</c>,
+    /// and the SETTINGS row for MODE says <c>REGULAR</c>, so the names come from the enum's
+    /// own spellings rather than from a table here.
     /// </summary>
     private static string NameOf(ModeEnum modeEnum) => modeEnum switch
     {
-        ModeEnum.Regular => "Regular",
-        ModeEnum.Strict => "Strict",
-        ModeEnum.Legacy => "Legacy",
+        ModeEnum.Regular => "REGULAR",
+        ModeEnum.Strict => "STRICT",
+        ModeEnum.Legacy => "LEGACY",
         ModeEnum.Db2 => "DB2",
         ModeEnum.Derby => "Derby",
         ModeEnum.MariaDb => "MariaDB",

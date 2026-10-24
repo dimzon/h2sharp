@@ -1021,6 +1021,16 @@ public abstract class Table
     public const int SYSTEM_TABLE = 5;
 
     /// <summary>
+    /// The managed (cached) storage of a table, as SET DEFAULT_TABLE_TYPE writes it.
+    /// </summary>
+    public const int TYPE_CACHED = 0;
+
+    /// <summary>
+    /// The in-memory storage of a table, as SET DEFAULT_TABLE_TYPE writes it.
+    /// </summary>
+    public const int TYPE_MEMORY = 1;
+
+    /// <summary>
     /// Whether this table is temporary.
     /// </summary>
     /// <remarks>
@@ -2020,6 +2030,13 @@ public abstract class Table
     /// Gets the SQL statement that creates this table.
     /// </summary>
     public abstract string? GetCreateSql();
+
+    /// <summary>
+    /// The SQL to name this table in a trace or an error, as the reference's HasSQL default.
+    /// </summary>
+    /// <returns>the SQL</returns>
+    public string GetTraceSql()
+        => GetSql(Util.HasSql.TraceSqlFlags);
 
     /// <summary>
     /// Gets the SQL for this table with the given flags.

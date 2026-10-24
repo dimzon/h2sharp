@@ -488,7 +488,10 @@ public sealed class SystemFunctionTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.NotEmpty(connection.QuerySingle<string>("SELECT CURRENT_USER"));
+        // A fresh in-memory database is opened without credentials, so the current user is
+        // the empty default, as in the reference (verified against H2 2.5.259: '').
+        // What matters is that every spelling names the same user.
+        Assert.Equal("", connection.QuerySingle<string>("SELECT CURRENT_USER"));
         Assert.True(connection.QuerySingle<bool>(
             "SELECT SESSION_USER = CURRENT_USER AND SYSTEM_USER = CURRENT_USER AND USER = CURRENT_USER"));
     }

@@ -77,6 +77,12 @@ public class CompareMode
     /// </summary>
     public const int Tertiary = 3;
 
+    /// <summary>
+    /// This constant means the collation treats every difference as significant. The
+    /// reference spells it Collator.IDENTICAL, the Java collator's own strength zero.
+    /// </summary>
+    public const int Identical = 0;
+
     private readonly string? name;
     private readonly int strength;
 

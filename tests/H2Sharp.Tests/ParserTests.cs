@@ -65,11 +65,11 @@ public sealed class ParserTests
     [Fact]
     public void InsertWithVariablesSaysSo()
     {
-        // @Id is a session Variable in the reference, and that class is not ported: reading it
-        // as a named parameter was the parallel tree's invention, and it is gone with it.
+        // @Id is a session Variable in the reference, and a sessionless parser has no
+        // session to bind it to; it refuses by naming what is missing.
         TODOException e = Assert.Throws<TODOException>(
             () => Parse("INSERT INTO PERSON(ID, NAME, AGE) VALUES (@Id, @Name, @Age)"));
-        Assert.Contains("variables", e.Message);
+        Assert.Contains("no session", e.Message);
     }
 
     [Fact]
