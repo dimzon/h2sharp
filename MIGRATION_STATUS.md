@@ -615,6 +615,11 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   updateString/updateNString/updateObject + updateRow на CONCUR_UPDATABLE курсоре — у
   читателя ADO.NET нет записи через курсор; .NET-вызыватель обновляет командой. Вопрос:
   перенести как отдельный тест «обновление через команду» или ждать updatable-поверхности.
+* **TestFunctionOverload: meta.getProcedures-проверки — пропущены.** Провайдер пока
+  не имеет поверхности DatabaseMetaData; сами алиасы и вызовы перенесены. Вопрос:
+  перенести getProcedures на INFORMATION_SCHEMA.FUNCTION_ALIASES (там нет
+  SPECIFIC_NAME как колонки — эталон собирает её из имени и номера) или ждать
+  metadata-поверхности.
 * **TestMultiDimension — не перенесён.** Тест целиком стоит на инструменте
   `org.h2.tools.MultiDimension` (getInstance/normalize/interleave/deinterleave/
   generatePreparedQuery/getResult), которого в порту нет; перенос инструмента — отдельная
@@ -660,7 +665,9 @@ BigDecimal; вопрос .NET-поверхности), testZloty-половин�
 TestRecursiveQueries, TestViewDropView, TestReadOnly, TestSetCollation,
 TestViewAlterTable, TestIgnoreCatalogs, TestDeadlock, TestMultiConn,
 TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
-TestCompatibilityOracle). Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
+TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks,
+TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
+TestFunctionOverload). Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
