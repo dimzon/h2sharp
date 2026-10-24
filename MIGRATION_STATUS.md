@@ -6961,3 +6961,17 @@ Release-модульный набор linq2db после снятия BlockedByP
 +  oracle-сверкой FetchWithTiesKeepsTiedRows.
 +
 +Проверено: H2Sharp.Tests **1259/1259**, MvStore **86/86**, Data **467/467**.
+
+**SQL-конформанс: 580 → 589/947.** Срез MERGE целиком: `MergeUsing` чинится
+двумя дефектами порта — `readTableColumn` с префиксом `алиас.колонка` не был
+портирован (`ParseColumn` читал только имя, `T.NAME` падало с COLUMN_NOT_FOUND)
+и обратный обход `WHEN` в `DoPrepare` выкидывал условные ветви перед
+безусловной (эталон идёт вперёд и выкидывает только мёртвые после
+безусловной). Плюс портирован MySQL-`MERGE INTO` (`Dml.Merge` + `parseMergeInto`:
+колонки, `KEY(...)`, `VALUES` и запрос; update-через-сгенерированный-`UPDATE` +
+insert-фолбэк с convertInsertRow; `KEY` добавлен в clause words, чтобы алиас
+его не съедал). Сверка baseline-vs-worktree по именам: закрыто 9, новых
+падений 0 (7 MergeCommandTests + 2 MergeClauseTests). Оставлено с пометками:
+statement-триггеры (как в Insert), concurrent-merge проверка (duplicate-key
+ошибки порта не несут индекс), row-контекст setRow (нет addSQL), REPLACE-ветка
+портирована но не заведена в парсер (нет REPLACE-тестов).

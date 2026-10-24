@@ -566,7 +566,7 @@ public sealed partial class Parser
         }
         else if (IsWord("MERGE", consume: false))
         {
-            prepared = PrepareMergeUsing(current);
+            prepared = PrepareMerge(current);
         }
         else if (IsWord("COMMENT", consume: false))
         {
@@ -2083,17 +2083,94 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Builds the command of a MERGE INTO ... USING ... ON ... WHEN ... statement, as the
-    /// reference's parseMerge and parseMergeUsing do.
+    /// Builds the command of a MERGE statement, as the reference's parseMerge does: with
+    /// USING it is a MergeUsing, without it the MySQL-style Merge.
     /// </summary>
     /// <param name="session">the session</param>
-    /// <returns>the command</returns>
-    private Prepared PrepareMergeUsing(SessionLocal session)
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareMerge(SessionLocal session)
     {
         ExpectWord("MERGE");
         ExpectWord("INTO");
         Tables.TableFilter targetTableFilter = ReadSimpleTableFilter(session);
-        ExpectWord("USING");
+        if (ReadIf(ParserUtil.Using))
+        {
+            return PrepareMergeUsing(session, targetTableFilter);
+        }
+
+        return PrepareMergeInto(session, targetTableFilter);
+    }
+
+    /// <summary>
+    /// Builds the command of a MySQL-style MERGE INTO ... statement, as the reference's
+    /// parseMergeInto does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="targetTableFilter">the target table filter</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareMergeInto(SessionLocal session, Tables.TableFilter targetTableFilter)
+    {
+        Tables.Table table = targetTableFilter.GetTable()!;
+        Dml.Merge command = new(session, isReplace: false);
+        command.SetTable(table);
+        if (ReadIf(Token.OpenParen))
+        {
+            if (IsDirectQuery(position))
+            {
+                command.SetQuery(ParseQueryExpression(prepare: false));
+                Expect(Token.CloseParen, ")");
+                command.SetSql(sql, null);
+                return command;
+            }
+
+            command.SetColumns(ReadColumnList(table));
+        }
+
+        if (IsWord("KEY", consume: false) && position + 1 < tokens.Count
+            && tokens[position + 1].TokenType == Token.OpenParen)
+        {
+            Read();
+            Expect(Token.OpenParen, "(");
+            command.SetKeys(ReadColumnList(table));
+        }
+
+        if (IsWord("VALUES"))
+        {
+            do
+            {
+                Expect(Token.OpenParen, "(");
+                List<Expressions.Expression> values = [];
+                if (!ReadIf(Token.CloseParen))
+                {
+                    do
+                    {
+                        values.Add(ReadExpressionOrDefault());
+                    }
+                    while (ReadIfMore());
+                }
+
+                command.AddRow([.. values]);
+            }
+            while (ReadIf(Token.Comma));
+        }
+        else
+        {
+            command.SetQuery(ParseQueryExpression(prepare: false));
+        }
+
+        command.SetSql(sql, null);
+        return command;
+    }
+
+    /// <summary>
+    /// Builds the command of a MERGE INTO ... USING ... ON ... WHEN ... statement, as the
+    /// reference's parseMergeUsing does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="targetTableFilter">the target table filter</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareMergeUsing(SessionLocal session, Tables.TableFilter targetTableFilter)
+    {
         Dml.MergeUsing command = new(session, targetTableFilter);
         command.SetSourceTableFilter(ReadTableReference(session, select: null));
         ExpectWord("ON");
@@ -2214,7 +2291,7 @@ public sealed partial class Parser
                     "Parser.readUpdateSetClause: row-value assignment needs ExpressionList");
             }
 
-            Tables.Column column = ParseColumn(filter.GetTable()!);
+            Tables.Column column = ReadTableColumn(filter);
             List<Expression>? indexes = null;
             while (ReadIf(Token.OpenBracket))
             {
@@ -2243,6 +2320,67 @@ public sealed partial class Parser
         }
 
         return table.GetColumn(ReadIdentifier());
+    }
+
+    /// <summary>
+    /// Reads a column of the given table, with an optional table (and schema) prefix,
+    /// as the reference's readTableColumn does. The prefix must name this filter's table.
+    /// </summary>
+    /// <param name="filter">the filter the column belongs to</param>
+    /// <returns>the column</returns>
+    private Tables.Column ReadTableColumn(Tables.TableFilter filter)
+    {
+        string columnName = ReadIdentifier();
+        if (ReadIf(Token.Dot))
+        {
+            columnName = ReadTableColumn(filter, columnName);
+        }
+
+        return filter.GetTable()!.GetColumn(columnName);
+    }
+
+    /// <summary>
+    /// Reads the rest of a qualified column name after its first part.
+    /// </summary>
+    /// <param name="filter">the filter the column belongs to</param>
+    /// <param name="tableAlias">the table part read so far</param>
+    /// <returns>the column name</returns>
+    private string ReadTableColumn(Tables.TableFilter filter, string tableAlias)
+    {
+        string columnName = ReadIdentifier();
+        if (ReadIf(Token.Dot))
+        {
+            string schema = tableAlias;
+            tableAlias = columnName;
+            columnName = ReadIdentifier();
+            if (ReadIf(Token.Dot))
+            {
+                if (!schema.Equals(
+                    session?.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
+                {
+                    throw DbException.Get(Api.ErrorCode.DatabaseNotFound1, schema);
+                }
+
+                schema = tableAlias;
+                tableAlias = columnName;
+                columnName = ReadIdentifier();
+            }
+
+            string? schemaName = filter.GetTable()!.GetSchema()?.GetName();
+            if (!schema.Equals(schemaName, StringComparison.Ordinal))
+            {
+                throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schema);
+            }
+        }
+
+        // Identifiers arrive folded to upper case, as in the reference, so the alias
+        // comparison is exact rather than case-insensitive.
+        if (!tableAlias.Equals(filter.GetTableAlias(), StringComparison.Ordinal))
+        {
+            throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableAlias);
+        }
+
+        return columnName;
     }
 
     /// <summary>
@@ -2886,7 +3024,8 @@ public sealed partial class Parser
             || word.Equals("CROSS", StringComparison.OrdinalIgnoreCase)
             || word.Equals("NATURAL", StringComparison.OrdinalIgnoreCase)
             || word.Equals("ON", StringComparison.OrdinalIgnoreCase)
-            || word.Equals("USING", StringComparison.OrdinalIgnoreCase);
+            || word.Equals("USING", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("KEY", StringComparison.OrdinalIgnoreCase);
     /// <summary>
     /// Reads a column name with an optional table prefix.
     /// </summary>

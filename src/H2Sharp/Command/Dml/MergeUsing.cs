@@ -269,18 +269,18 @@ public sealed class MergeUsing : DataChangeStatement
         sourceTableFilter.Prepare();
 
         bool hasFinalNotMatched = false, hasFinalMatched = false;
-        for (int i = when.Count - 1; i >= 0; i--)
+        for (int i = 0; i < when.Count; i++)
         {
             When w = when[i];
             if (!w.Prepare(GetSession()))
             {
-                when.RemoveAt(i);
+                when.RemoveAt(i--);
             }
             else if (w is WhenNotMatched)
             {
                 if (hasFinalNotMatched)
                 {
-                    when.RemoveAt(i);
+                    when.RemoveAt(i--);
                 }
                 else if (w.AndCondition is null)
                 {
@@ -291,7 +291,7 @@ public sealed class MergeUsing : DataChangeStatement
             {
                 if (hasFinalMatched)
                 {
-                    when.RemoveAt(i);
+                    when.RemoveAt(i--);
                 }
                 else if (w.AndCondition is null)
                 {
