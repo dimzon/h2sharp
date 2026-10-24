@@ -630,6 +630,13 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   перенести getProcedures на INFORMATION_SCHEMA.FUNCTION_ALIASES (там нет
   SPECIFIC_NAME как колонки — эталон собирает её из имени и номера) или ждать
   metadata-поверхности.
+* **TestPowerOff — не перенесён.** Стоит целиком на power-off сэме движка:
+  Database.setInitialPowerOffCount, счётчики сессии (setPowerOffCount), memFS-поверх —
+  в порту нет ни одного из них. Перенести вместе с сэмом (это портовая работа, не
+  тестовая).
+* **TestView: testSubQueryViewIndexCache — пропущен.** Интроспекция view-кэша индексов
+  сессии (getSession().getViewIndexCache/clearViewIndexCache) — внутреннее состояние
+  движка, у ADO-поверхности его нет. Остальной файл перенесён.
 * **TestMultiDimension — не перенесён.** Тест целиком стоит на инструменте
   `org.h2.tools.MultiDimension` (getInstance/normalize/interleave/deinterleave/
   generatePreparedQuery/getResult), которого в порту нет; перенос инструмента — отдельная
@@ -677,8 +684,8 @@ TestViewAlterTable, TestIgnoreCatalogs, TestDeadlock, TestMultiConn,
 TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
 TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks,
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
-TestFunctionOverload, TestSynonymForTable, TestMemoryUsage). Порядок: `db/` и `jdbc/`
-до конца, потом `unit/`.
+TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView). Порядок: `db/`
+и `jdbc/` до конца, потом `unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
