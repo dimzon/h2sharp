@@ -683,6 +683,11 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
 * **TestTraceSystem — не перенесён** — построен на org.h2.engine.TraceSystem (адаптивные
   уровни, запись в файлы trace.db); в порту есть только Trace/TraceWriter без системы.
   Перенести вместе с TraceSystem.
+* **TestLocale — не перенесён** — меняет Locale.setDefault и ждёт турецко-чувствительного
+  «i»→«I» и императорского японского календаря. Порт использует инвариантные
+  преобразования (ToUpperInvariant/JavaCharacter.ToUpperCase), и сэма локали-как-в-JVM
+  нет (в отличие от таймзоны). Перенести вместе с решением «какую культуру держать
+  дефолтной» — вопрос в обсуждение.
 * **TestAnsCompression — не перенесён** — построен на org.h2.util.AnsCompression +
   BitStream.Huffman/Out + BinaryArithmeticStream.Huffman/Out; в порту нет ни одного из
   них (compression-пакет — только CompressTool). Перенести вместе с ANS-компрессором.
