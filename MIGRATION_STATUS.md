@@ -677,6 +677,15 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   rs.getSQLXML, DOM/SAX/StAX Source/Result). В базовом ADO.NET поверхности нет
   (SQLXML живёт в System.Data.SqlTypes у SqlClient). Вопрос: вычеркнуть или перенести
   против GetTextReader/GetStream (что ADO-вызыватель и делает с CLOB).
+* **TestOptimizations: testOptimizeInJoinSelect — пропущен** — алиас возвращает
+  java.sql.ResultSet (org.h2.tools.SimpleResultSet); типа для C#-двойника нет, алиас
+  остаётся Java-строкой как в эталоне, тест останавливается на резолве алиаса, пока
+  алиасная машина не ответит. Остальные ~1200 строк перенесены: EXPLAIN-планы
+  (index sorted, PRIMARY_KEY, covering index, OR→IN, константная конверсия '5'→5),
+  rowid-оптимизации, query-cache (REUSE_RESULTS, timestamp, конкурентное
+  использование, сброс параметров), min/max/count поверх Dictionary+SortedSet,
+  IN-предикат на всех комбинациях ASC/DESC-индексов, NULLS FIRST/LAST,
+  OPTIMIZE_REUSE_RESULTS-тайминги.
 * **TestTransaction: фрагмент testNestedResultSets — смягчён.** Эталон переиспользует
   один Statement: второй executeQuery закрывает первый набор, и старый набор отвечает
   OBJECT_CLOSED. Команда ADO.NET отказывает второму открытому читателю вовсе
@@ -743,8 +752,8 @@ TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
 TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks,
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
 TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequence,
-TestConnection, TestStatement, TestTransaction). Порядок: `db/` и `jdbc/` до конца,
-потом `unit/`.
+TestConnection, TestStatement, TestTransaction, TestOptimizations). Порядок: `db/` и
+`jdbc/` до конца, потом `unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
