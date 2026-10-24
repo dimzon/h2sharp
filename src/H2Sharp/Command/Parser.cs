@@ -3569,9 +3569,18 @@ public sealed partial class Parser
     /// <returns>whether the run matched</returns>
     private bool ReadIfWords(params string[] words)
     {
+        // The peek walks forward: each word is checked at its own position, and a quoted
+        // name never matches, as in the reference's testToken.
         for (int i = 0; i < words.Length; i++)
         {
-            if (!IsWord(words[i], consume: false))
+            if (position + i >= tokens.Count)
+            {
+                return false;
+            }
+
+            Token token = tokens[position + i];
+            string? name = token.AsIdentifier;
+            if (token.IsQuoted || name is null || !name.Equals(words[i], StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }
@@ -4390,6 +4399,24 @@ public sealed partial class Parser
             return Expressions.ValueExpression.Get(literal);
         }
 
+        if (CurrentType == ParserUtil.Rownum)
+        {
+            // The reference reads ROWNUM with optional parentheses off the running
+            // statement; the port only threads the current select through.
+            Read();
+            if (ReadIf(Token.OpenParen))
+            {
+                Expect(Token.CloseParen, ")");
+            }
+
+            if (aggregateSelect is null)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start, "SELECT");
+            }
+
+            return new Expressions.Rownum(aggregateSelect);
+        }
+
         if (Current.AsIdentifier is not null)
         {
             int index = position;
@@ -4469,6 +4496,15 @@ public sealed partial class Parser
                         return new Expressions.Functions.StringFunction2(
                             ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
                             Expressions.Functions.StringFunction2.Right);
+
+                    case ParserUtil.Set:
+                        // The reference's readSetFunction: SET(@var, value) assigns and answers
+                        // the value. The user-defined function alias override around it needs
+                        // CREATE ALIAS, which is not ported.
+                        Read();
+                        Expect(Token.OpenParen, "(");
+                        return new Expressions.Functions.SetFunction(
+                            ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect));
 
                     default:
                         // Every other function spelled as a keyword — the CURRENT_* value
@@ -5046,47 +5082,37 @@ public sealed partial class Parser
                 return new Expressions.Functions.RandFunction(
                     null, Expressions.Functions.RandFunction.RandomUuid);
 
-            // SessionControlFunction (not ported).
+            // SessionControlFunction.
             case "ABORT_SESSION":
+                return new Expressions.Functions.SessionControlFunction(
+                    ReadSingleArgument(aggregateSelect),
+                    Expressions.Functions.SessionControlFunction.AbortSession);
             case "CANCEL_SESSION":
-                throw new TODOException(
-                    "Parser.readBuiltinFunctionIf: SessionControlFunction is not ported");
+                return new Expressions.Functions.SessionControlFunction(
+                    ReadSingleArgument(aggregateSelect),
+                    Expressions.Functions.SessionControlFunction.CancelSession);
 
-            // SysInfoFunction (not ported).
-            case "AUTOCOMMIT":
-            case "DATABASE_PATH":
-            case "H2VERSION":
-            case "LOCK_MODE":
-            case "LOCK_TIMEOUT":
-            case "MEMORY_FREE":
-            case "MEMORY_USED":
-            case "READONLY":
-            case "SESSION_ID":
-            case "TRANSACTION_ID":
-                throw new TODOException("Parser.readBuiltinFunctionIf: SysInfoFunction is not ported");
-
-            // TableInfoFunction (not ported).
+            // TableInfoFunction (the disk-space half; the envelope half needs spatial
+            // indexes, which are not ported, and answers null without one).
             case "DISK_SPACE_USED":
+                return new Expressions.Functions.TableInfoFunction(
+                    ReadSingleArgument(aggregateSelect), null,
+                    Expressions.Functions.TableInfoFunction.DiskSpaceUsed);
             case "ESTIMATED_ENVELOPE":
-                throw new TODOException("Parser.readBuiltinFunctionIf: TableInfoFunction is not ported");
+                return new Expressions.Functions.TableInfoFunction(
+                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
+                    Expressions.Functions.TableInfoFunction.EstimatedEnvelope);
 
             // FileFunction (not ported).
             case "FILE_READ":
             case "FILE_WRITE":
                 throw new TODOException("Parser.readBuiltinFunctionIf: FileFunction is not ported");
 
-            // DataTypeSQLFunction (not ported).
+            // DataTypeSQLFunction.
             case "DATA_TYPE_SQL":
-                throw new TODOException("Parser.readBuiltinFunctionIf: DataTypeSQLFunction is not ported");
-
-            // DBObjectFunction (not ported).
-            case "DB_OBJECT_ID":
-            case "DB_OBJECT_SQL":
-            case "DB_OBJECT_SIZE":
-            case "DB_OBJECT_TOTAL_SIZE":
-            case "DB_OBJECT_APPROXIMATE_SIZE":
-            case "DB_OBJECT_APPROXIMATE_TOTAL_SIZE":
-                throw new TODOException("Parser.readBuiltinFunctionIf: DBObjectFunction is not ported");
+                return new Expressions.Functions.DataTypeSQLFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadNextArgument(aggregateSelect), ReadLastArgument(aggregateSelect));
 
             // CSVWriteFunction (not ported).
             case "CSVWRITE":
@@ -5096,10 +5122,11 @@ public sealed partial class Parser
             case "SIGNAL":
                 throw new TODOException("Parser.readBuiltinFunctionIf: SignalFunction is not ported");
 
-            // TruncateValueFunction (not ported).
+            // TruncateValueFunction.
             case "TRUNCATE_VALUE":
-                throw new TODOException(
-                    "Parser.readBuiltinFunctionIf: TruncateValueFunction is not ported");
+                return new Expressions.Functions.TruncateValueFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadLastArgument(aggregateSelect));
 
             case "ZERO":
                 Expect(Token.CloseParen, ")");
@@ -5107,6 +5134,78 @@ public sealed partial class Parser
             case "PI":
                 Expect(Token.CloseParen, ")");
                 return Expressions.ValueExpression.Get(ValueDouble.Get(Math.PI));
+
+            // SysInfoFunction (zero-argument database and session information).
+            case "AUTOCOMMIT":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.Autocommit);
+            case "DATABASE_PATH":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.DatabasePath);
+            case "H2VERSION":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.H2version);
+            case "LOCK_MODE":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.LockMode);
+            case "LOCK_TIMEOUT":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.LockTimeout);
+            case "MEMORY_FREE":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.MemoryFree);
+            case "MEMORY_USED":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.MemoryUsed);
+            case "READONLY":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.Readonly);
+            case "SESSION_ID":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.SessionId);
+            case "TRANSACTION_ID":
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.SysInfoFunction(
+                    Expressions.Functions.SysInfoFunction.TransactionId);
+
+            // DBObjectFunction (two- or three-argument database object lookup).
+            case "DB_OBJECT_ID":
+            case "DB_OBJECT_SQL":
+            case "DB_OBJECT_SIZE":
+            case "DB_OBJECT_TOTAL_SIZE":
+            case "DB_OBJECT_APPROXIMATE_SIZE":
+            case "DB_OBJECT_APPROXIMATE_TOTAL_SIZE":
+            {
+                int function = upperName switch
+                {
+                    "DB_OBJECT_ID" => Expressions.Functions.DBObjectFunction.DbObjectId,
+                    "DB_OBJECT_SQL" => Expressions.Functions.DBObjectFunction.DbObjectSql,
+                    "DB_OBJECT_SIZE" => Expressions.Functions.DBObjectFunction.DbObjectSize,
+                    "DB_OBJECT_TOTAL_SIZE" => Expressions.Functions.DBObjectFunction.DbObjectTotalSize,
+                    "DB_OBJECT_APPROXIMATE_SIZE" => Expressions.Functions.DBObjectFunction.DbObjectApproximateSize,
+                    _ => Expressions.Functions.DBObjectFunction.DbObjectApproximateTotalSize,
+                };
+                Expression objectType = ReadQueryOr(aggregateSelect);
+                Expect(Token.Comma, ",");
+                Expression arg1 = ReadQueryOr(aggregateSelect);
+                Expression? arg2 = null;
+                if (ReadIf(Token.Comma))
+                {
+                    arg2 = ReadQueryOr(aggregateSelect);
+                }
+
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.DBObjectFunction(objectType, arg1, arg2, function);
+            }
 
             // GCDFunction (not ported).
             case "GCD":
@@ -5161,18 +5260,56 @@ public sealed partial class Parser
                 return new Expressions.Functions.CardinalityExpression(
                     ReadSingleArgument(aggregateSelect), false);
 
-            // SimpleCase (not ported through this spelling).
+            // SimpleCase.
             case "DECODE":
-                throw new TODOException("Parser.readCompatibilityFunction: DECODE is not ported");
+            {
+                Expression caseOperand = ReadQueryOr(aggregateSelect);
+                bool canOptimize = caseOperand.IsConstant()
+                    && !caseOperand.GetValue(session!).ContainsNull();
+                Expression a = ReadNextArgument(aggregateSelect);
+                Expression b = ReadNextArgument(aggregateSelect);
+                Expressions.SimpleCase.SimpleWhen when = DecodeToWhen(caseOperand, canOptimize, a, b);
+                Expressions.SimpleCase.SimpleWhen current = when;
+                Expression? elseResult = null;
+                while (ReadIf(Token.Comma))
+                {
+                    a = ReadQueryOr(aggregateSelect);
+                    if (ReadIf(Token.Comma))
+                    {
+                        b = ReadQueryOr(aggregateSelect);
+                        Expressions.SimpleCase.SimpleWhen next = DecodeToWhen(caseOperand, canOptimize, a, b);
+                        current.SetWhen(next);
+                        current = next;
+                    }
+                    else
+                    {
+                        elseResult = a;
+                        break;
+                    }
+                }
 
-            // SearchedCase (not ported through this spelling).
+                Expect(Token.CloseParen, ")");
+                return new Expressions.SimpleCase(caseOperand, when, elseResult);
+            }
+
+            // SearchedCase.
             case "CASEWHEN":
+                return ReadCompatibilityCase(ReadQueryOr(aggregateSelect), aggregateSelect);
             case "NVL2":
-                throw new TODOException("Parser.readCompatibilityFunction: " + name + " is not ported");
+                return ReadCompatibilityCase(
+                    new Expressions.Conditions.ConditionIsNull(ReadQueryOr(aggregateSelect), not: true, whenOperand: false),
+                    aggregateSelect);
 
-            // CastSpecification (not ported through this spelling).
+            // CastSpecification. The swapped CONVERT parameters belong to the modes
+            // with swapConvertFunctionParameters, which this port does not run.
             case "CONVERT":
-                throw new TODOException("Parser.readCompatibilityFunction: CONVERT is not ported");
+            {
+                Expression arg = ReadQueryOr(aggregateSelect);
+                Expect(Token.Comma, ",");
+                TypeInfo type = ReadColumnWithType();
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Functions.CastSpecification(arg, type);
+            }
 
             case "IFNULL":
                 return new Expressions.Functions.CoalesceFunction(
@@ -5595,6 +5732,40 @@ public sealed partial class Parser
         return f;
     }
 
+    /// <summary>
+    /// Builds one WHEN of a DECODE call, as the reference's decodeToWhen does: a constant
+    /// comparison operand stays a plain equality, anything else becomes null-safe.
+    /// </summary>
+    /// <param name="caseOperand">the DECODE operand</param>
+    /// <param name="canOptimize">whether the operand is a non-null constant</param>
+    /// <param name="whenOperand">the WHEN value</param>
+    /// <param name="result">the THEN value</param>
+    /// <returns>the WHEN</returns>
+    private static Expressions.SimpleCase.SimpleWhen DecodeToWhen(
+        Expression caseOperand, bool canOptimize, Expression whenOperand, Expression result)
+    {
+        // GetValue runs only on constants here (the disjunction short-circuits otherwise),
+        // which do not read the session, as in the reference.
+        if (!canOptimize && (!whenOperand.IsConstant()
+            || whenOperand.GetValue(null!).ContainsNull()))
+        {
+            whenOperand = new Expressions.Conditions.Comparison(
+                Expressions.Conditions.Comparison.EqualNullSafe, caseOperand, whenOperand, whenOperand: true);
+        }
+
+        return new Expressions.SimpleCase.SimpleWhen(whenOperand, result);
+    }
+
+    /// <summary>
+    /// Builds a CASE WHEN out of one condition and two results, as the reference's
+    /// readCompatibilityCase does.
+    /// </summary>
+    /// <param name="when">the condition</param>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <returns>the CASE expression</returns>
+    private Expressions.Expression ReadCompatibilityCase(Expression when, Query.Select? aggregateSelect)
+        => new Expressions.SearchedCase([when, ReadNextArgument(aggregateSelect), ReadLastArgument(aggregateSelect)]);
+
     private Expressions.Expression ReadConcatFunction(int function, Query.Select? aggregateSelect)
     {
         Expressions.Functions.ConcatFunction f = new(function);
@@ -5610,13 +5781,19 @@ public sealed partial class Parser
 
     private bool ReadIgnoreNulls(bool ignoreNulls)
     {
-        if (ReadIfWords("IGNORE", "NULLS"))
+        // ReadIfWords peeks every word at the same position, so a two-word run is read
+        // as the reference reads it: the first word here, the second one next.
+        if (IsWord("IGNORE", consume: false) && NextIs("NULLS"))
         {
+            Read();
+            Read();
             return true;
         }
 
-        if (ReadIfWords("RESPECT", "NULLS"))
+        if (IsWord("RESPECT", consume: false) && NextIs("NULLS"))
         {
+            Read();
+            Read();
             return false;
         }
 

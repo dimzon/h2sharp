@@ -676,6 +676,15 @@ public sealed partial class Database : CastDataProvider
     public int AllocateObjectId() => Interlocked.Increment(ref objectId) - 1;
 
     /// <summary>
+    /// Hands out the next session id, as the reference's nextSessionId does.
+    /// </summary>
+    /// <returns>the id</returns>
+    public int NextSessionId() => Interlocked.Increment(ref nextSessionId);
+
+    /// <summary>Counter for session ids.</summary>
+    private int nextSessionId;
+
+    /// <summary>
     /// Gets the current modification meta id.
     /// </summary>
     /// <remarks>
@@ -726,6 +735,18 @@ public sealed partial class Database : CastDataProvider
         lock (syncRoot)
         {
             sessions.Add(session);
+        }
+    }
+
+    /// <summary>
+    /// Gets the open sessions.
+    /// </summary>
+    /// <returns>a snapshot of the sessions</returns>
+    public SessionLocal[] GetSessions()
+    {
+        lock (syncRoot)
+        {
+            return [.. sessions];
         }
     }
 

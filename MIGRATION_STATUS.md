@@ -6962,6 +6962,33 @@ Release-модульный набор linq2db после снятия BlockedByP
 +
 +Проверено: H2Sharp.Tests **1259/1259**, MvStore **86/86**, Data **467/467**.
 
+**SQL-конформанс: 641 → 675/937 (+34, новых падений 0).** Срез системных функций,
+каждая сверена с H2 2.5.259:
+* `SysInfoFunction` (10 тестов): AUTOCOMMIT/DATABASE_PATH/H2VERSION/LOCK_MODE/
+  LOCK_TIMEOUT/MEMORY_FREE+USED/READONLY/SESSION_ID/TRANSACTION_ID. Session id
+  заведён в базе (NextSessionId), MEMORY — через GC, checkAdmin пропущен как
+  везде (пользователей нет), DATABASE_PATH — NULL (только mem-БД), TRANSACTION_ID —
+  NULL (нет незавершённых транзакций).
+* `DBObjectFunction` (9 + 1 в дефект-листе): ID/SQL/SIZE/TOTAL/APPROXIMATE(_TOTAL);
+  добавлен `GetDiskSpaceUsed` по цепочке эталона (Index → MVIndex через root
+  page; MVTable суммирует без делегатов; база возвращает 0). SCHEMA_SQL — в
+  дефектах: GetCreateSql схемы требует владельца-пользователя.
+* Совместимость: DECODE (SimpleCase+decodeToWhen), CASEWHEN/NVL2 (SearchedCase),
+  CONVERT (CastSpecification; swap-ветка режимов пропущена — только REGULAR),
+  SET(@var, value) как выражение (SetFunction), ROWNUM (новый Expression-класс),
+  TRUNCATE_VALUE (включая значимые цифры через SetScale; тест правил ожидания
+  по эталону: 123.46/123.46). GREATEST/LEAST IGNORE NULLS — тесты писали форму
+  внутри скобок, эталон её отвергает; исправлено на документированную
+  постфиксную форму (порт её уже читал).
+* Починен общий корень `ReadIfWords` (пик без сдвига ломал все двухсловные
+  сочетания) — заодно починились JSON-флаги и OVERRIDING.
+* В дефект-лист: DbObjectSql_ForSchema и DataTypeSql_ForDomain (нужны
+  пользователи/домены), EstimatedEnvelope (нужен SPATIAL INDEX),
+  CsvWrite/FileRead/FileWrite (нужны CALL и LOB-хранилище).
+* Попутно: машинно-зависимый IndexedDateTimeComparisonOracleTests зафиксирован
+  через SET TIME ZONE 'UTC' (оракул форсирует -Duser.timezone=UTC);
+  InsertWithVariablesSaysSo приведён к новому сообщению Variable-порта.
+
 **SQL-конформанс: 580 → 641/947.** Срез SET (+ TransactionCommandTests как
 побочный эффект AUTOCOMMIT): портированы `SET` (Parser.parseSet + команда Set,
 Setting-объект, реестр настроек базы), `CurrentGeneralValueSpecification`

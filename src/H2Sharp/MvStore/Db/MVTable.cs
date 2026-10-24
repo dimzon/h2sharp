@@ -277,6 +277,26 @@ public sealed class MVTable : Table
         return indexCache ??= [.. indexes];
     }
 
+    /// <inheritdoc/>
+    public override long GetDiskSpaceUsed(bool total, bool approximate)
+    {
+        if (total)
+        {
+            long size = 0L;
+            foreach (Index index in GetIndexes())
+            {
+                if (index is not MVDelegateIndex)
+                {
+                    size += index.GetDiskSpaceUsed(approximate);
+                }
+            }
+
+            return size;
+        }
+
+        return primaryIndex.GetDiskSpaceUsed(approximate);
+    }
+
     private Index[]? indexCache;
 
     /// <inheritdoc/>

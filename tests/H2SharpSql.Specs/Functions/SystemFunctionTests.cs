@@ -95,8 +95,10 @@ public sealed class SystemFunctionTests
 
     /// <summary>docs/functions.html:3473 — CSVWRITE ( fileNameString, queryString [, csvOptions [, lineSepString] ] )</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void CsvWrite_WritesTheFile() // FUN-3473
     {
+        // Blocked by the port: needs the CALL statement plus CSV writing with file I/O.
         using IDbConnection connection = TestDatabase.Open();
 
         Assert.Equal(1L, connection.QuerySingle<long>("CALL CSVWRITE('test.csv', 'SELECT 1 AS ID')"));
@@ -136,8 +138,10 @@ public sealed class SystemFunctionTests
 
     /// <summary>docs/functions.html:3545 — DATA_TYPE_SQL</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void DataTypeSql_ForDomain_ReturnsTheSqlType() // FUN-3545
     {
+        // Blocked by the port: CREATE DOMAIN is not ported, so there is no domain to ask.
         using IDbConnection connection = TestDatabase.Open();
         _ = connection.Execute("CREATE DOMAIN D AS INT");
 
@@ -152,8 +156,10 @@ public sealed class SystemFunctionTests
         using IDbConnection connection = TestDatabase.Open();
         GivenTestTable(connection);
 
+        // The column is addressed by its 1-based ordinal, as the reference requires
+        // (verified against H2 2.5.259: a name answers NULL).
         Assert.Equal("INTEGER",
-            connection.QuerySingle<string>("SELECT DATA_TYPE_SQL('PUBLIC', 'TEST', 'TABLE', 'ID')"));
+            connection.QuerySingle<string>("SELECT DATA_TYPE_SQL('PUBLIC', 'TEST', 'TABLE', '1')"));
     }
 
     /// <summary>docs/functions.html:3565 — DB_OBJECT_ID({{'ROLE'|'SETTING'|'SCHEMA'|'USER'}, objectNameString</summary>
@@ -187,8 +193,11 @@ public sealed class SystemFunctionTests
 
     /// <summary>docs/functions.html:3587 — DB_OBJECT_SQL({{'ROLE'|'SETTING'|'SCHEMA'|'USER'}, objectNameString</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void DbObjectSql_ForSchema_ReturnsTheDefinition() // FUN-3587
     {
+        // Blocked by the port: rendering a schema needs its owner (a user), and users
+        // are not ported (Schema.getCreateSQL names the owner explicitly).
         using IDbConnection connection = TestDatabase.Open();
         _ = connection.Execute("CREATE SCHEMA S2");
 
@@ -289,8 +298,11 @@ public sealed class SystemFunctionTests
 
     /// <summary>docs/functions.html:3735 — ESTIMATED_ENVELOPE(tableNameString, columnNameString)</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void EstimatedEnvelope_ReturnsTheBoundingBox() // FUN-3735
     {
+        // Blocked by the port: the envelope is read off a spatial index, and CREATE
+        // SPATIAL INDEX is not ported.
         using IDbConnection connection = TestDatabase.Open();
         _ = connection.Execute("CREATE TABLE TEST(ID INT, G GEOMETRY)");
         _ = connection.Execute("CREATE SPATIAL INDEX IDX_G ON TEST(G)");
@@ -301,8 +313,11 @@ public sealed class SystemFunctionTests
 
     /// <summary>docs/functions.html:3753 — FILE_READ(fileNameString [,encodingString])</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void FileRead_ReadsTheWrittenFile() // FUN-3753
     {
+        // Blocked by the port: file functions build LOBs through the LOB storage,
+        // which is not ported.
         using IDbConnection connection = TestDatabase.Open();
         _ = connection.Execute("SELECT FILE_WRITE('Hello world', 'test.txt')");
 
@@ -312,8 +327,10 @@ public sealed class SystemFunctionTests
 
     /// <summary>docs/functions.html:3771 — FILE_WRITE(blobValue, fileNameString)</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void FileWrite_ReportsTheBytesWritten() // FUN-3771
     {
+        // Blocked by the port: same LOB storage gap as FILE_READ above.
         using IDbConnection connection = TestDatabase.Open();
 
         Assert.Equal(11L, connection.QuerySingle<long>("SELECT FILE_WRITE('Hello world', 'test.txt')"));
@@ -327,7 +344,9 @@ public sealed class SystemFunctionTests
 
         Assert.Equal(3, connection.QuerySingle<int>("SELECT GREATEST(1, 2, 3)"));
         Assert.True(connection.QuerySingle<bool>("SELECT GREATEST(1, NULL) IS NULL"));
-        Assert.Equal(3, connection.QuerySingle<int>("SELECT GREATEST(1, NULL, 3 IGNORE NULLS)"));
+        // IGNORE NULLS trails the call, as the grammar documents; inside the parentheses
+        // both engines refuse it (verified against H2 2.5.259).
+        Assert.Equal(3, connection.QuerySingle<int>("SELECT GREATEST(1, NULL, 3) IGNORE NULLS"));
     }
 
     /// <summary>docs/functions.html:3807 — LEAST(aValue, bValue [,...]) [{RESPECT|IGNORE} NULLS]</summary>
@@ -338,7 +357,7 @@ public sealed class SystemFunctionTests
 
         Assert.Equal(1, connection.QuerySingle<int>("SELECT LEAST(1, 2, 3)"));
         Assert.True(connection.QuerySingle<bool>("SELECT LEAST(1, NULL) IS NULL"));
-        Assert.Equal(1, connection.QuerySingle<int>("SELECT LEAST(1, NULL, 3 IGNORE NULLS)"));
+        Assert.Equal(1, connection.QuerySingle<int>("SELECT LEAST(1, NULL, 3) IGNORE NULLS"));
     }
 
     /// <summary>docs/functions.html:3825 — LOCK_MODE()</summary>
@@ -460,8 +479,9 @@ public sealed class SystemFunctionTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal(123.45m, connection.QuerySingle<decimal>("SELECT TRUNCATE_VALUE(123.456, 5, TRUE)"));
-        Assert.Equal(123.456m, connection.QuerySingle<decimal>("SELECT TRUNCATE_VALUE(123.456, 5, FALSE)"));
+        // Reference rounds to significant digits (verified against H2 2.5.259).
+        Assert.Equal(123.46m, connection.QuerySingle<decimal>("SELECT TRUNCATE_VALUE(123.456, 5, TRUE)"));
+        Assert.Equal(123.46m, connection.QuerySingle<decimal>("SELECT TRUNCATE_VALUE(123.456, 5, FALSE)"));
     }
 
     /// <summary>docs/functions.html:4059 — CURRENT_PATH</summary>

@@ -1137,6 +1137,14 @@ public abstract class Table
     public virtual Column? GetRowIdColumn() => null;
 
     /// <summary>
+    /// The estimated number of bytes this table occupies.
+    /// </summary>
+    /// <param name="total">whether to include the indexes</param>
+    /// <param name="approximate">true to return a quick approximation</param>
+    /// <returns>the estimated number of bytes</returns>
+    public virtual long GetDiskSpaceUsed(bool total, bool approximate) => 0L;
+
+    /// <summary>
     /// Whether this table is a view.
     /// </summary>
     /// <remarks>

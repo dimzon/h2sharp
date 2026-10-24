@@ -270,6 +270,15 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Goes straight to the inner map's root page: the typed GetMVMap cannot be built
+    /// without casting the object-typed transactional map, so the byte count reads the
+    /// page the same way that method would.
+    /// </remarks>
+    public override long GetDiskSpaceUsed(bool approximate)
+        => dataMap.InnerMap.GetRootPage().GetDiskSpaceUsed(approximate);
+
+    /// <inheritdoc/>
     public override void AddRowsToBuffer(List<Row> rows, string bufferName)
         => throw new TODOException("MVPrimaryIndex.addRowsToBuffer");
 

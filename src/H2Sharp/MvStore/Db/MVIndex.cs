@@ -63,4 +63,8 @@ public abstract class MVIndex<TKey, TValue> : Index
     /// </summary>
     /// <returns>the map</returns>
     public abstract MVMap<TKey, VersionedValue<TValue>> GetMVMap();
+
+    /// <inheritdoc/>
+    public override long GetDiskSpaceUsed(bool approximate)
+        => GetMVMap().GetRootPage().GetDiskSpaceUsed(approximate);
 }

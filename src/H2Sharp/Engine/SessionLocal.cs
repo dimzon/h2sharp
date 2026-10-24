@@ -35,6 +35,17 @@ public sealed class SessionLocal : Session
 
     private readonly string userName;
 
+    /// <summary>
+    /// The id of this session, handed out by the database.
+    /// </summary>
+    private readonly int id;
+
+    /// <summary>
+    /// Gets the id of this session.
+    /// </summary>
+    /// <returns>the id</returns>
+    public int GetId() => id;
+
     private bool closed;
 
     /// <summary>
@@ -367,6 +378,7 @@ public sealed class SessionLocal : Session
     {
         this.database = database;
         this.userName = userName;
+        id = database.NextSessionId();
         CompareMode = database.GetCompareMode();
         Schemas.Schema? main = database.GetMainSchema();
         currentSchemaName = main is not null ? main.GetName() : H2Sharp.Engine.Constants.SchemaMain;

@@ -260,13 +260,20 @@ public abstract class Index : SchemaObject
     }
 
     /// <summary>
-    /// Get the message to show in an EXPLAIN statement.
+    /// Get the plan for this index.
     /// </summary>
     /// <returns>the plan</returns>
     public virtual string GetPlanSql()
     {
         return GetSql(HasSql.TraceSqlFlags | HasSql.AddPlanInformation);
     }
+
+    /// <summary>
+    /// The estimated number of bytes this index occupies.
+    /// </summary>
+    /// <param name="approximate">true to return a quick approximation</param>
+    /// <returns>the estimated number of bytes</returns>
+    public virtual long GetDiskSpaceUsed(bool approximate) => 0L;
 
     /// <summary>
     /// Gets the columns of this index.

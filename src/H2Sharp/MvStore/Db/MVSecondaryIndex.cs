@@ -445,6 +445,14 @@ public sealed class MVSecondaryIndex : MVIndex<SearchRow, Value>
     public override MVMap<SearchRow, VersionedValue<Value>> GetMVMap()
         => throw new TODOException("MVSecondaryIndex.getMVMap: the transactional map is object-typed");
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Reads the inner map's root page directly, for the same reason as in
+    /// <see cref="MVPrimaryIndex.GetDiskSpaceUsed(bool)"/>.
+    /// </remarks>
+    public override long GetDiskSpaceUsed(bool approximate)
+        => dataMap.InnerMap.GetRootPage().GetDiskSpaceUsed(approximate);
+
     private sealed class MVStoreCursor : Cursor
     {
         private readonly SessionLocal session;
