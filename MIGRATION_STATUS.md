@@ -639,6 +639,14 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   (TimeZoneProviderProvider, каждый сеанс под своей зоной; .NET не может менять
   TimeZoneInfo.Local процесса) — H2Connection, Engine.OpenSession и
   DelegatedCastDataProvider проводят его до сеанса; `;TIME ZONE=` в URL — как было.
+* **TestLobApi — не перенесён.** Целиком стоит на JDBC-модели LOB-объектов:
+  conn.createBlob/createClob/createNClob, rs.getBlob/getClob (хэндлы, живущие после
+  закрытия результата и коммита), Blob.setBytes/setBinaryStream/position, Clob.setString/
+  getSubString, toString-рендеринги ('x', X'00', <closed>), FEATURE_NOT_SUPPORTED_1-отказы
+  на position/truncate. В ADO.NET этой модели нет: параметр несёт byte[]/строку/Stream/
+  TextReader, читатель материализует значение. Вопрос: вычеркнуть, или перенести
+  содержательную половину (round-trip byte[]/Stream/TextReader на длинах 0/1/100/100000)
+  как отдельный тест значений LOB.
 * **TestStatement: JDBC-only поверхности — пропущены** (переносимая половина —
   executeUpdate-счётчики, execute-через RecordsAffected, сэйвпойнты по имени,
   REGEXP-подготовленный оператор поверх перестройки индекса, batch как цикл,
