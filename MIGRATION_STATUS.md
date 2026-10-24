@@ -630,6 +630,9 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   перенести getProcedures на INFORMATION_SCHEMA.FUNCTION_ALIASES (там нет
   SPECIFIC_NAME как колонки — эталон собирает её из имени и номера) или ждать
   metadata-поверхности.
+* **TestSequence: testConcurrentCreate — пропущен** — гоняет CREATE/DROP TRIGGER,
+  чей класс реализует org.h2.api.Trigger; в порту триггеров нет. Перенести вместе с
+  Trigger API.
 * **TestPowerOff — не перенесён.** Стоит целиком на power-off сэме движка:
   Database.setInitialPowerOffCount, счётчики сессии (setPowerOffCount), memFS-поверх —
   в порту нет ни одного из них. Перенести вместе с сэмом (это портовая работа, не
@@ -684,8 +687,8 @@ TestViewAlterTable, TestIgnoreCatalogs, TestDeadlock, TestMultiConn,
 TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
 TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks,
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
-TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView). Порядок: `db/`
-и `jdbc/` до конца, потом `unit/`.
+TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequence).
+Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
