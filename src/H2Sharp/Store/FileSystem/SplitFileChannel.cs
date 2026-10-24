@@ -307,6 +307,30 @@ internal sealed class SplitFileChannel : FileChannel
         }
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The reference's FileSplit takes the lock on the first part and nothing else.
+    /// </remarks>
+    public override bool TryLock()
+    {
+        lock (sync)
+        {
+            return parts.Length == 0 || parts[0].TryLock();
+        }
+    }
+
+    /// <inheritdoc/>
+    public override void ReleaseLock()
+    {
+        lock (sync)
+        {
+            if (parts.Length > 0)
+            {
+                parts[0].ReleaseLock();
+            }
+        }
+    }
+
     /// <summary>
     /// The part a position falls in, opened if it is not open yet.
     /// </summary>

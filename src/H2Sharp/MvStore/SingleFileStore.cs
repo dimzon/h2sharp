@@ -99,6 +99,12 @@ public sealed class SingleFileStore : RandomAccessStore
         }
 
         Init(fileName, readOnly);
+
+        // The reference opens the channel and then takes fileChannel.tryLock(0, MAX, readOnly),
+        // an operating-system range lock over the whole file. The same lock is taken here, so a
+        // store written by the reference and one written by the port refuse each other with the
+        // same DATABASE_ALREADY_OPEN. The reference asks for a shared lock when read-only; .NET
+        // has only the exclusive one, so a read-only store is exclusive too (P-009).
         FileChannel channel;
         try
         {
@@ -122,6 +128,15 @@ public sealed class SingleFileStore : RandomAccessStore
 
         try
         {
+            if (!channel.TryLock())
+            {
+                OpenFiles.TryRemove(key, out _);
+                channel.Dispose();
+                throw DataUtils.NewMvStoreException(
+                        DataUtils.ErrorFileLocked,
+                        "The file is locked: {0}", fileName);
+            }
+
             fileChannel = channel;
             registryKey = key;
             saveChunkLock.Lock();
@@ -165,6 +180,7 @@ public sealed class SingleFileStore : RandomAccessStore
         {
             FileChannel? channel = fileChannel;
             fileChannel = null;
+            channel?.ReleaseLock();
             channel?.Dispose();
         }
         catch (Exception e) when (e is not MvStoreException)

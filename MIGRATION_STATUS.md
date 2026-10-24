@@ -2299,7 +2299,7 @@ hex-цифр (102 элемента, до `'f'`) без проверки длин
 |---|---|---|
 | `FileBase`/`FileBaseDefault` (обёртка над `FileChannel`) | `FileStream` + `RandomAccess` | deliberate non-port: обёртка существовала из-за неудобства `java.nio` |
 | `FileChannel` как тип | свой `FileChannel` | `FileStream` не наследуется и не интерфейс, а файл в памяти тоже должен быть файлом |
-| `truncate` / `force` / `lock` / `map` | `SetLength` / `Flush(true)` / — / `MemoryMappedFile` | замок не нужен (магазин берёт его в отдельном `.lock.db`), маппинг — только для диска, дальше |
+| `truncate` / `force` / `lock` / `map` | `SetLength` / `Flush(true)` / `FileStream.Lock` / `MemoryMappedFile` | лок канала берётся на самом файле данных (`SingleFileStore`), как в эталоне для `FILE_LOCK=FS`; маппинг — только для диска |
 
 Не перенесены и **не должны**: `niomapped`, `niomem`, `async`, `retry` — они существуют из-за
 `java.nio`-каналов и модели прерываний, которых в .NET нет.
@@ -2434,8 +2434,9 @@ hex-цифр (102 элемента, до `'f'`) без проверки длин
   то есть ровно до блока. Заголовок — 48 байт.
 * Блок проверок из эталона (что длина и позиция совпадают с тем, что объект о них думает) стоит
   за Java-assert, то есть за `-ea`; здесь он за `DEBUG` — по той же причине.
-* Замок: эталон берёт `FileLock` на открытом файле. Здесь замок — это то, что файловая система
-  может ответить: открыть файл так, чтобы больше никто не разделял. Не получилось — «занято».
+* Замок: эталон берёт `FileLock` на открытом файле (`FileChannel.tryLock`). Здесь то же самое:
+  `FileStore.TryLock` берёт `FileStream.Lock` на уже открытом канале (адvisory, на весь файл);
+  второй писатель получает «занято».
 * `DataHandler` определён **без двух членов** — `GetLobStorage` и `ReadLob`: они отвечают типами,
   которых ещё нет (`LobStorageInterface`, `ValueLob`), и спрашивают их только хранилище LOB, то
   есть то, что придёт следующим. В шапке интерфейса это написано.
@@ -3241,7 +3242,7 @@ SRID другой. То же самое с типом: «POINT» в целево
 | Приоритетные очереди (`findOldChunks`, `findChunksToMove`) | Min-heap с негированными приоритетами: голова — наименее желаемый, как `poll()` в эталоне |
 | `CacheLongKeyLIRS<Page<?,?>>` | `CacheLongKeyLIRS<object>` + `IPage` (без типов виден только identity/size/bytes); `Page<K,V> : IPage` явными реализациями |
 | `getMap(mapId)` без типов для compaction | `IAnyMap.MapRewritePage` + `MVStore.GetAnyMap` (аддитивно; единственный реализатор `IAnyMap` — `MVMap`) |
-| `FileLock` на канале | Нет в нашей абстракции канала осознанно; same-process исключение — статический реестр открытых имён (ровно это проверяет `TestConcurrentOpen`); cross-process не enforced, записано |
+| `FileLock` на канале | `FileChannel.TryLock/ReleaseLock` — `FileStream.Lock` (Windows/Linux) на весь файл; плюс статический реестр открытых имён для same-process ответа. Совместимо с `java.nio` в обе стороны: эталон на занятом портом файле отвечает 90020 (проверено jar). Read-only тоже эксклюзивен: shared range lock в .NET нет (P-009). На macOS `FileStream.Lock` не реализован — `TODOException` |
 | Шифрование (`FileEncrypt`) | Не портируется; `Open` с ключом отказывает `UnsupportedFormat`; тесты `TestEncryptedFile`/`TestNewerWriteVersion` приватны, удалить в конце |
 | `backup(ZipOutputStream)` | Нет в `IFileStore`, никто не зовёт — пропущен |
 | `BackgroundWriterThread` | `Thread` + `Monitor.Wait/PulseAll` вместо `wait/notify`; `IsBackgroundThread` — сравнение `Thread`, как в эталоне |
@@ -7093,5 +7094,9 @@ DDL-хуки `AddSchemaObject`/`RemoveSchemaObject`/`AddDatabaseObject`. Все 
   `true`, из-за чего повторный DDL получал тот же объект и падал на втором
   `GetObjectId`).
 
-Lock-файл (`DATABASE_ALREADY_OPEN_1`) и `DB_CLOSE_ON_EXIT` отложены;
-внутрипроцессная блокировка файла уже есть.
+Межпроцессный FS-лок портирован: `SingleFileStore` берёт `FileStream.Lock` на всём
+файле данных (как `fileChannel.tryLock` эталона), так что порт и эталон отказывают
+друг другу с `DATABASE_ALREADY_OPEN_1` (проверено оракулом: занятый портом файл
+эталон открывать не даёт, код 90020; `FileLockedByThePortIsRefusedByTheReference`). Read-only у нас тоже эксклюзивен (P-009).
+Отложены: отдельный `.lock.db` для `FILE_LOCK=FILE|SOCKET` (класс `FileLock`,
+heartbeat) и `DB_CLOSE_ON_EXIT`.

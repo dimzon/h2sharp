@@ -112,6 +112,19 @@ internal. Задокументировано в шапке файла и в MIGR
 `INFORMATION_SCHEMA.SETTINGS` показывает только именованные настройки.
 Открыто: реализовывать таблицу или фиксировать отсутствие.
 
+### P-009. Read-only база берётся эксклюзивно
+
+Эталон для `FILE_LOCK=FS` берёт `fileChannel.tryLock(0, MAX, readOnly)`: shared для
+read-only и exclusive для read-write, поэтому несколько процессов могут открыть
+одну базу только на чтение. В .NET `FileStream.Lock` умеет только exclusive, а
+`FileShare.None` — единственный режим, который runtime проверяет на Unix. Поэтому
+порт берёт exclusive-лок и для read-only: второй read-only процесс (и порт, и
+эталон) получает `DATABASE_ALREADY_OPEN_1`. Данные не портятся, но параллельное
+чтение из нескольких процессов невозможно. Пересмотр — вместе с shared-локом
+(P/Invoke `LockFileEx`/`fcntl` или новый BCL API). На macOS `FileStream.Lock`
+не реализован, и `FileChannel.TryLock` бросает `TODOException` с именем
+недостающего (файловая БД там пока не открывается) — это дефект порта.
+
 ## C. Дословные копии, вопросов не требуют
 
 * `ESTIMATED_ENVELOPE` и пропущенные kinds (`DOMAIN`, `CONSTANT`, `ROUTINE`,

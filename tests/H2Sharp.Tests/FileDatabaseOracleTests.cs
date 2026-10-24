@@ -113,6 +113,43 @@ public sealed class FileDatabaseOracleTests
     }
 
     /// <summary>
+    /// A file database held by the port refuses the reference with the reference's own error.
+    /// </summary>
+    /// <remarks>
+    /// Both sides lock the data file with the platform's range lock
+    /// (<c>FileChannel.tryLock</c> on the JVM, <see cref="FileStream.Lock"/> here), so the
+    /// reference must answer <c>DATABASE_ALREADY_OPEN_1</c> (90020) rather than an I/O error.
+    /// </remarks>
+    [JavaOracleFact]
+    public void FileLockedByThePortIsRefusedByTheReference()
+    {
+        string path = NewPath();
+        try
+        {
+            using H2Connection connection = OpenPort(path);
+            Execute(connection, "CREATE TABLE T(ID INT)");
+
+            List<string> java = OracleRunner.Run(
+                [path],
+                """
+                try {
+                  java.sql.DriverManager.getConnection("jdbc:h2:file:" + inputs[0]).close();
+                  System.out.println("=opened");
+                } catch (java.sql.SQLException e) {
+                  System.out.println("=" + e.getErrorCode());
+                }
+                """,
+                extraJavaArgs: ["-Duser.language=en"]);
+
+            Assert.Equal(["=90020"], java);
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+
+    /// <summary>
     /// The database path the engine reports for a file database, checked against the
     /// reference running on the same file.
     /// </summary>
@@ -127,7 +164,11 @@ public sealed class FileDatabaseOracleTests
                 Execute(connection, "CREATE TABLE T(ID INT)");
             }
 
-            string? here = QueryScalar(OpenPort(path), "SELECT DATABASE_PATH()");
+            string? here;
+            using (H2Connection reopened = OpenPort(path))
+            {
+                here = QueryScalar(reopened, "SELECT DATABASE_PATH()");
+            }
             List<string> java = OracleRunner.Run(
                 [path],
                 """

@@ -103,6 +103,27 @@ public abstract class FileChannel : IDisposable
     public abstract void WriteAt(long fileOffset, ReadOnlySpan<byte> buffer);
 
     /// <summary>
+    /// Try to take an operating-system lock on the whole channel without waiting.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>FileChannel.tryLock()</c>: an advisory lock over the whole file,
+    /// taken by every process that opens the database (the MVStore data file, and the page
+    /// store around it), so that a second writer fails instead of corrupting it. .NET has the
+    /// same primitive in <see cref="FileStream.Lock"/>, and it interoperates with
+    /// <c>java.nio</c> range locks. The base answers no, because a channel that is not a file
+    /// on disk has nothing to lock; the in-memory and split channels answer for themselves.
+    /// </remarks>
+    /// <returns>true if the lock was taken</returns>
+    public virtual bool TryLock() => false;
+
+    /// <summary>
+    /// Release the lock taken by <see cref="TryLock"/>.
+    /// </summary>
+    public virtual void ReleaseLock()
+    {
+    }
+
+    /// <summary>
     /// Push what was written towards the disk.
     /// </summary>
     /// <param name="flushToDisk">

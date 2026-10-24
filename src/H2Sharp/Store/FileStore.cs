@@ -473,9 +473,10 @@ public class FileStore
     /// Take the file, if nobody else has it.
     /// </summary>
     /// <remarks>
-    /// The reference takes an operating system lock on the open file. Here the lock is the same
-    /// thing the file system can answer: opening it with nobody else allowed to share. When the file
-    /// cannot be locked the answer is no, and the store goes on to say the database is in use.
+    /// The reference takes an operating-system lock on the open channel, and so does this: one
+    /// advisory lock over the whole file, which every process that opens the database asks for.
+    /// The lock lives on the channel the store already holds, not on a second handle, because
+    /// the platform refuses two handles with incompatible sharing before the second one exists.
     /// </remarks>
     /// <returns>true if the lock was taken</returns>
     public bool TryLock()
@@ -485,23 +486,13 @@ public class FileStore
             return true;
         }
 
-        try
-        {
-            if (file is null)
-            {
-                return false;
-            }
-
-            FileChannel exclusive = FileUtils.Open(Name, "rws");
-            locked = true;
-            lockChannel = exclusive;
-            return true;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException
-            or H2SharpException or ObjectDisposedException)
+        if (file is null || !file.TryLock())
         {
             return false;
         }
+
+        locked = true;
+        return true;
     }
 
     /// <summary>
@@ -509,12 +500,13 @@ public class FileStore
     /// </summary>
     public void ReleaseLock()
     {
-        lockChannel?.Dispose();
-        lockChannel = null;
+        if (file is not null && locked)
+        {
+            file.ReleaseLock();
+        }
+
         locked = false;
     }
-
-    private FileChannel? lockChannel;
 
     private bool locked;
 

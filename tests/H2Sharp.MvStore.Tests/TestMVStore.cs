@@ -633,6 +633,46 @@ public sealed class TestMVStore : StoreTestBase
         }
     }
 
+    /// <summary>
+    /// The file-system lock: a range lock held by another handle refuses the store.
+    /// </summary>
+    /// <remarks>
+    /// The reference locks the data file with <c>FileChannel.tryLock</c>, which is the platform's
+    /// range lock; the port takes the same one, so a raw handle holding the same range stands in
+    /// for the other process. .NET does not implement that lock on macOS, and the port refuses
+    /// there explicitly, so the test has nothing to observe on that system.
+    /// </remarks>
+    [Fact]
+    public void TestFileSystemLock()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        string fileName = TempFile("TestFileSystemLock.h3");
+        DeleteFile(fileName);
+        using (MVStore s = OpenStore(fileName))
+        {
+            s.Commit();
+        }
+
+        using (FileStream holder = new(
+            fileName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+        {
+            holder.Lock(0, long.MaxValue);
+            Assert.Equal(DataUtils.ErrorFileLocked, Assert.Throws<MvStoreException>(
+                () => new MVStore.Builder().FileName(fileName).Open().Close()).GetErrorCode());
+            Assert.Equal(DataUtils.ErrorFileLocked, Assert.Throws<MvStoreException>(
+                () => new MVStore.Builder().FileName(fileName).ReadOnly().Open().Close()).GetErrorCode());
+        }
+
+        using (MVStore reader = new MVStore.Builder().FileName(fileName).ReadOnly().Open())
+        {
+            Assert.True(reader.GetFileStore()!.IsReadOnly());
+        }
+    }
+
     [Fact]
     public void TestFileHeader()
     {

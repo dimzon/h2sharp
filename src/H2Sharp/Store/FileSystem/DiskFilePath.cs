@@ -335,13 +335,31 @@ public sealed class DiskFilePath : FilePath
     {
         try
         {
-            if (File.Exists(SystemName))
+            // The reference asks Files.isWritable, which reads the permission bits and does not
+            // open the file. Opening it for writing here would confuse "another process holds it"
+            // with "it is not writable": the caller uses this answer to decide whether to open
+            // read-only, and a lock must not turn a read-write database into a read-only one.
+            if (!File.Exists(SystemName) || Directory.Exists(SystemName))
             {
-                using FileStream stream = new(SystemName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
-                return true;
+                return false;
             }
 
-            return !Directory.Exists(SystemName) && !File.Exists(SystemName);
+            if ((File.GetAttributes(SystemName) & FileAttributes.ReadOnly) != 0)
+            {
+                return false;
+            }
+
+            if (!OperatingSystem.IsWindows())
+            {
+                const UnixFileMode write = UnixFileMode.UserWrite | UnixFileMode.GroupWrite
+                    | UnixFileMode.OtherWrite;
+                if ((File.GetUnixFileMode(SystemName) & write) == 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -389,13 +407,15 @@ public sealed class DiskFilePath : FilePath
     /// <inheritdoc/>
     public override FileChannel Open(string mode)
     {
+        // Full sharing, as java.nio opens a channel: the exclusion is the range lock taken
+        // afterwards, not the handle. That is what lets a file locked by the reference report
+        // DATABASE_ALREADY_OPEN instead of an I/O error it cannot tell apart.
         FileAccess access = FileUtils.IsReadOnly(mode) ? FileAccess.Read : FileAccess.ReadWrite;
-        FileShare share = FileShare.ReadWrite;
         FileStream stream = new(
             SystemName,
             access == FileAccess.Read ? FileMode.Open : FileMode.OpenOrCreate,
             access,
-            share);
+            FileShare.ReadWrite);
         return new DiskFileChannel(stream);
     }
 
@@ -445,6 +465,45 @@ internal sealed class DiskFileChannel : FileChannel
 
     /// <inheritdoc/>
     public override void Flush(bool flushToDisk) => stream.Flush(flushToDisk);
+
+    /// <inheritdoc/>
+    public override bool TryLock()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            throw new TODOException("FileChannel.tryLock: FileStream.Lock is not supported on macOS");
+        }
+
+        try
+        {
+            // The whole file, like java.nio's argument-less tryLock(): a second opener that asks
+            // for the same range is refused by the operating system.
+            stream.Lock(0, long.MaxValue);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc/>
+    public override void ReleaseLock()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        try
+        {
+            stream.Unlock(0, long.MaxValue);
+        }
+        catch (IOException)
+        {
+            // The reference ignores a release failure too: closing the channel releases it.
+        }
+    }
 
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)

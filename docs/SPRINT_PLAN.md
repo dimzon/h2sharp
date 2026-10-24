@@ -75,7 +75,12 @@
 - [x] 3.6. DDL-хуки: `AddSchemaObject`/`AddDatabaseObject`/`RemoveSchemaObject`
   пишут/удаляют meta-строку; `GetObjectId` в DDL — один раз на команду, как в
   эталоне; `Prepared.IsCacheable()` снова `false` по умолчанию.
-- [ ] 3.7. Lock-файл (`FileLock`, `DATABASE_ALREADY_OPEN_1`). Отложено:
-  внутрипроцессная блокировка `SingleFileStore.OpenFiles` уже есть, файл
-  `.lock.db` и межпроцессная — следующий шаг.
+- [x] 3.7a. FS-лок (дефолт): `FileChannel.TryLock/ReleaseLock` через
+  `FileStream.Lock` на всём файле данных, в `SingleFileStore` и легаси
+  `FileStore`; ошибка маппится в `DATABASE_ALREADY_OPEN_1` (90020), совместимо
+  с эталонным jar. Тесты: `TestFileSystemLock` (чужой range lock) и
+  `FileLockedByThePortIsRefusedByTheReference` (jar получает 90020, пока порт
+  держит файл).
+- [ ] 3.7b. Отдельный `.lock.db` (`FileLock`, методы `FILE`/`SOCKET`, heartbeat)
+  — нужен только для `FILE_LOCK=FILE|SOCKET`/`AUTO_SERVER`; отложено.
 - [ ] 3.8. `DB_CLOSE_ON_EXIT` (AppDomain.ProcessExit) — не сделано.

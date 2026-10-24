@@ -255,7 +255,26 @@ public sealed class MemoryFilePath : FilePath
     {
         private byte[] buffer = new byte[64];
 
+        /// <summary>
+        /// Whether a handle holds the file, as the reference's FileMemData lock counter does.
+        /// The store asks for an exclusive lock, so one bit is enough.
+        /// </summary>
+        private bool locked;
+
         public int Length { get; private set; }
+
+        internal bool TryLock()
+        {
+            if (locked)
+            {
+                return false;
+            }
+
+            locked = true;
+            return true;
+        }
+
+        internal void Unlock() => locked = false;
 
         public void SetLength(long value)
         {
@@ -381,5 +400,11 @@ public sealed class MemoryFilePath : FilePath
         public override void Flush(bool flushToDisk)
         {
         }
+
+        /// <inheritdoc/>
+        public override bool TryLock() => file.TryLock();
+
+        /// <inheritdoc/>
+        public override void ReleaseLock() => file.Unlock();
     }
 }
