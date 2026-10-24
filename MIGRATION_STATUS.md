@@ -639,6 +639,15 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   (TimeZoneProviderProvider, каждый сеанс под своей зоной; .NET не может менять
   TimeZoneInfo.Local процесса) — H2Connection, Engine.OpenSession и
   DelegatedCastDataProvider проводят его до сеанса; `;TIME ZONE=` в URL — как было.
+* **TestStatement: JDBC-only поверхности — пропущены** (переносимая половина —
+  executeUpdate-счётчики, execute-через RecordsAffected, сэйвпойнты по имени,
+  REGEXP-подготовленный оператор поверх перестройки индекса, batch как цикл,
+  multi-command через NextResult, рост trace-файла): unwrap/type-map,
+  holdability/poolable/fetch-size/max-field-size, getMoreResults/getUpdateCount,
+  warnings, closeOnCompletion, generated keys у merge (у провайдера нет поверхности
+  generated keys — отдельный вопрос), и enquoteIdentifier/isSimpleIdentifier (хелперы
+  кавычек JDBC Statement). executeQuery-отказы (METHOD_ONLY_ALLOWED_FOR_QUERY) в порту
+  не выражаются: провайдер отвечает пустым update-count читателем вместо отказа.
 * **TestNativeSQL — не перенесён.** Тест целиком про Connection.nativeSQL — JDBC-
   обработку escape-ов `{d '...'}`, `{fn ...}`, `{oj ...}`. В ADO.NET такой поверхности
   нет (параметры типизованы, escape-ов не существует), метода на H2Connection тоже нет.
@@ -712,7 +721,7 @@ TestDuplicateKeyUpdate, TestTempTables, TestOpenClose, TestBigResult,
 TestCompatibilityOracle, TestBigDb, TestLIRSMemoryConsumption, TestSessionsLocks,
 TestMultiThreadedKernel, TestSpeed, TestSubqueryPerformanceOnLazyExecutionMode,
 TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequence,
-TestConnection). Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
+TestConnection, TestStatement). Порядок: `db/` и `jdbc/` до конца, потом `unit/`.
 
 ## Страховка от тихой деградации (сделано)
 
