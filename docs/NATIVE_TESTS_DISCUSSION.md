@@ -129,6 +129,9 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   порт с java.net.URLEncoder/URLDecoder (их в .NET нет); RSS-сборка testXML питается
   DateTimeFormatFunction.parseDateTime/formatDateTime (в порту нет). Первобытные XML-
   примитивы (xmlComment/xmlNode/xmlText/xmlCData/xmlAttr/xmlStartDoc) проверяются.
+* **TestBitStream — не перенесён** — построен на org.h2.util.BitStream (Out/In,
+  Huffman, Golomb), которого в порту нет (рядом с AnsCompression). Перенести вместе с
+  BitStream.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
