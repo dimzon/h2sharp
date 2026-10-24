@@ -2046,7 +2046,7 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
         C c = CreateChunk(newChunkId);
         c.Time = time;
         c.Version = version;
-        c.Occupancy = new LongBitSet();
+        c.Occupancy = new BitSet();
         return c;
     }
 

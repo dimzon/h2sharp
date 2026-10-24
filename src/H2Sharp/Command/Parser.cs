@@ -426,7 +426,7 @@ public sealed partial class Parser
         SessionLocal current = session ?? throw new TODOException("Parser.parse: this parser has no session");
         if (tokens is null)
         {
-            BitList parameters = new();
+            BitSet parameters = new();
             tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
             CheckParameterIndex(parameters);
         }
@@ -452,7 +452,7 @@ public sealed partial class Parser
         ArgumentNullException.ThrowIfNull(sql);
         SessionLocal current = session ?? throw new TODOException("Parser.prepareCommand: this parser has no session");
 
-        BitList parameters = new();
+        BitSet parameters = new();
         List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
         CheckParameterIndex(parameters);
         Parser parser = new(sql, provider, tokens, current);
@@ -501,7 +501,7 @@ public sealed partial class Parser
     public Expression ParseExpression(string sql)
     {
         ArgumentNullException.ThrowIfNull(sql);
-        BitList parameters = new();
+        BitSet parameters = new();
         List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
         CheckParameterIndex(parameters);
         Parser parser = new(sql, provider, tokens, session);
@@ -6361,7 +6361,7 @@ public sealed partial class Parser
         // The existing statement DTO retains text. Reuse H2's token-based reader rather than
         // a second type grammar; this also retains array component types and cardinalities.
         Parser parser = new(typeName, provider,
-            Tokenizer.TokenizeForTest(typeName, false, new BitList(), provider), session);
+            Tokenizer.TokenizeForTest(typeName, false, new BitSet(), provider), session);
         TypeInfo type = parser.ReadIfDataType()
             ?? throw DbException.GetSyntaxError(typeName, parser.Current.Start, "data type");
         if (parser.CurrentType != Token.EndOfInput)
@@ -6607,7 +6607,7 @@ public sealed partial class Parser
     /// <param name="provider">where casts and the mode come from</param>
     /// <param name="parameters">written back with the parameters the statement names</param>
     /// <returns>the statement</returns>
-    public static Statement Parse(string sql, CastDataProvider provider, BitList parameters)
+    public static Statement Parse(string sql, CastDataProvider provider, BitSet parameters)
     {
         Parser parser = new(sql, provider, Tokenizer.TokenizeForTest(sql, false, parameters, provider));
         CheckParameterIndex(parameters);
@@ -6626,9 +6626,9 @@ public sealed partial class Parser
     /// of a buffer.
     /// </remarks>
     /// <param name="parameters">the parameters the statement names</param>
-    private static void CheckParameterIndex(BitList parameters)
+    private static void CheckParameterIndex(BitSet parameters)
     {
-        int length = parameters.Count;
+        int length = parameters.Length;
         if (length > Engine.Constants.MaxParameterIndex)
         {
             throw DbException.GetInvalidValueException("parameter index", length);

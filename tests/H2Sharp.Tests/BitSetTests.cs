@@ -11,14 +11,14 @@
  */
 using System;
 using System.Collections.Generic;
-using H2Sharp.MvStore;
+using H2Sharp.Util;
 using H2Sharp.Tests.Oracle;
 using Xunit;
 
 namespace H2Sharp.Tests;
 
 [Collection(OracleCollection.Name)]
-public sealed class LongBitSetTests
+public sealed class BitSetTests
 {
     private const string JavaEdges = """
         java.util.BitSet s = new java.util.BitSet();
@@ -42,7 +42,7 @@ public sealed class LongBitSetTests
     public void EdgesMatchTheReference()
     {
         List<string> actual = [];
-        LongBitSet s = new();
+        BitSet s = new();
         try { s.SetRange(-1, 5); actual.Add("=setNeg:ok"); }
         catch (IndexOutOfRangeException) { actual.Add("=setNeg:throws"); }
         try { s.SetRange(5, 3); actual.Add("=setRev:ok"); }
@@ -65,7 +65,7 @@ public sealed class LongBitSetTests
     [Fact]
     public void RangesCrossWordBoundaries()
     {
-        LongBitSet s = new();
+        BitSet s = new();
         s.SetRange(60, 70);
         Assert.False(s.Get(59));
         for (int i = 60; i < 70; i++)
@@ -90,8 +90,46 @@ public sealed class LongBitSetTests
         s.ClearRange(0, 64);
         Assert.Equal(63, s.PreviousClearBit(127));
         Assert.Equal(63, s.PreviousClearBit(63));
-        LongBitSet full = new();
+        BitSet full = new();
         full.SetRange(0, 64);
         Assert.Equal(-1, full.PreviousClearBit(63));
     }
-}
+
+    /// <summary>
+    /// <c>set(int)</c>, <c>set(int, boolean)</c> and <c>clear(int)</c>, the three calls the
+    /// parser and the transaction snapshots make.
+    /// </summary>
+    /// <remarks>
+    /// No oracle line: these are the Java methods the port's own classes call, and what
+    /// matters is that growth follows the highest set bit and that clearing the top bit
+    /// shrinks the answer, exactly as <c>length()</c> does on the JVM.
+    /// </remarks>
+    [Fact]
+    public void SingleBitSetAndClearFollowLength()
+    {
+        BitSet s = new();
+        Assert.Equal(0, s.Length);
+
+        s.Set(5);
+        Assert.True(s.Get(5));
+        Assert.Equal(6, s.Length);
+
+        s.Set(5);
+        Assert.Equal(1, s.Cardinality());
+
+        s.Set(5, false);
+        Assert.False(s.Get(5));
+        Assert.Equal(0, s.Length);
+
+        s.Set(70);
+        Assert.Equal(71, s.Length);
+        Assert.Equal(128, s.Capacity);
+
+        s.Clear(70);
+        Assert.Equal(0, s.Length);
+        Assert.Equal(0, s.Cardinality());
+        Assert.Equal(128, s.Capacity);
+
+        s.Clear(1000);
+        Assert.Equal(0, s.Length);
+    }}

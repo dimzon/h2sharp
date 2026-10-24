@@ -77,7 +77,7 @@ public sealed class ParameterTokenTests
 
     private static List<Token> Tokenize(string sql)
     {
-        BitList seen = new();
+        BitSet seen = new();
         return Tokenizer.TokenizeForTest(sql, false, seen, new TestCastDataProvider());
     }
 

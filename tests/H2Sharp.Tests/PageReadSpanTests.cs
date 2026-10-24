@@ -21,6 +21,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using H2Sharp.MvStore;
+using H2Sharp.Util;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -117,7 +118,7 @@ public sealed class PageReadSpanTests
     }
 
     [Fact]
-    public void LongBitSetValueOfSpanMatchesArray()
+    public void BitSetValueOfSpanMatchesArray()
     {
         byte[][] corpus =
         [
@@ -132,8 +133,8 @@ public sealed class PageReadSpanTests
         ];
         foreach (byte[] bytes in corpus)
         {
-            LongBitSet fromArray = LongBitSet.ValueOf(bytes);
-            LongBitSet fromSpan = LongBitSet.ValueOf(bytes.AsSpan());
+            BitSet fromArray = BitSet.ValueOf(bytes);
+            BitSet fromSpan = BitSet.ValueOf(bytes.AsSpan());
             Assert.Equal(fromArray.Cardinality(), fromSpan.Cardinality());
             Assert.Equal(fromArray.ToByteArray(), fromSpan.ToByteArray());
         }

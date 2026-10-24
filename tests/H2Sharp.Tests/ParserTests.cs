@@ -215,7 +215,7 @@ public sealed class ParserTests
     }
 
     private static Statement Parse(string sql)
-        => Command.Parser.Parse(sql, new TestCastDataProvider(), new BitList());
+        => Command.Parser.Parse(sql, new TestCastDataProvider(), new BitSet());
 
     private static string Render(Expression expression)
         => expression.GetUnenclosedSql(new StringBuilder(), 0).ToString();

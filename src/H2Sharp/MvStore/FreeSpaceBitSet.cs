@@ -40,7 +40,7 @@ public sealed class FreeSpaceBitSet
     /// <summary>
     /// The bit set.
     /// </summary>
-    private readonly LongBitSet set = new();
+    private readonly BitSet set = new();
 
     /// <summary>
     /// Left-shifting register, which holds outcomes of recent allocations. Only allocations done in

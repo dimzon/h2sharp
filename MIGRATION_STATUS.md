@@ -971,7 +971,7 @@ TestConcurrentJdbc, TestStringCache, TestCases, TestAlter). Порядок: `db/
 | `synchronized` / `ReentrantLock` | `lock` / `SemaphoreSlim` | — |
 | `Integer.decode` в свойствах | свой `TryParseInt` | Нет в .NET |
 | `Java system properties` (`-Dh2.x`) | **переменные окружения** `h2.x` | Нет аналога в .NET; записано в PORTING.md |
-| `java.util.BitSet` (растущее множество бит) | `Util/BitList.cs` | В BCL есть только `BitArray`, а он не растёт; `BitList` копирует растущий список бит из отдельного проекта `BitList` |
+| `java.util.BitSet` (растущее множество бит) | `Util/BitSet.cs` | В BCL есть только `BitArray`, а он не растёт; `BitSet` повторяет `java.util.BitSet` (set/get/length/nextClearBit/valueOf/toByteArray) |
 
 ## Следующие шаги (по порядку)
 
@@ -5641,15 +5641,16 @@ Issue #15 — от провайдера EF Core: `SaveChanges` с тремя с�
 `DbException.getInvalidValueException("parameter index", l)` — код 90008.
 
 Порт:
-* `Util/BitList.cs` — растущий список бит (взят из отдельного проекта `BitList`, чтобы порт
-  не зависел от внешнего репозитория). В BCL есть только `BitArray`, а он не растёт;
-* `Command/Tokenizer.cs` — `AssignParameterIndex` расширяет список до индекса и помечает бит
-  (эталонное `parameters.set(index - 1)`);
+* `Util/BitSet.cs` — растущее множество бит, повторяющее `java.util.BitSet` (в BCL есть
+  только `BitArray`, а он не растёт). Один класс на все нужды: свободные блоки чанков,
+  параметры оператора и снимки транзакций;
+* `Command/Tokenizer.cs` — `AssignParameterIndex` помечает бит (эталонное
+  `parameters.set(index - 1)`);
 * `Command/Parser.cs` — `CheckParameterIndex` после разбора токенов: при длине больше
   `Constants.MaxParameterIndex` — `DbException.GetInvalidValueException("parameter index", l)`.
 
 Побочный эффект: публичный `Parser.Parse(sql, provider, parameters)` теперь принимает
-`BitList` вместо `BitArray` (эталонного `BitSet` в BCL нет).
+`Util.BitSet` вместо `BitArray` (эталонного `java.util.BitSet` в BCL нет).
 
 Оракул (`tests/H2Sharp.Tests/ParameterLimitTests.cs`, 2 теста): 15 параметров (с чтением
 значений) и 100 001 параметр (предел) — совпадают с JVM: тот же ответ и тот же код ошибки.

@@ -124,7 +124,7 @@ public abstract class Chunk
     /// <summary>
     /// Collection of "deleted" flags for all pages in the chunk.
     /// </summary>
-    internal LongBitSet? Occupancy { get; set; }
+    internal BitSet? Occupancy { get; set; }
 
     /// <summary>
     /// The sum of the max length of all pages.
@@ -235,11 +235,11 @@ public abstract class Chunk
             byte[]? bytes = DataUtils.ParseHexBytes(map, AttrOccupancy);
             if (bytes is null)
             {
-                Occupancy = new LongBitSet();
+                Occupancy = new BitSet();
             }
             else
             {
-                LongBitSet occupancy = LongBitSet.ValueOf(bytes);
+                BitSet occupancy = BitSet.ValueOf(bytes);
                 if (PageCount - PageCountLive != occupancy.Cardinality())
                 {
                     throw DataUtils.NewMvStoreException(

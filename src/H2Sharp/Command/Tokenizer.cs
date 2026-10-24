@@ -82,7 +82,7 @@ public sealed class Tokenizer
     internal static List<Token> TokenizeForTest(
         string sql,
         bool stopOnCloseParen,
-        BitList parameters,
+        BitSet parameters,
         CastDataProvider provider)
     {
         Tokenizer tokenizer = new(provider, identifiersToUpper: true, identifiersToLower: false, nonKeywords: null);
@@ -97,7 +97,7 @@ public sealed class Tokenizer
     /// how an expression inside a larger statement is read</param>
     /// <param name="parameters">the parameters the statement names, and the count is written back</param>
     /// <returns>the tokens, the last of which is the end of input</returns>
-    internal List<Token> Tokenize(string sql, bool stopOnCloseParen, BitList parameters)
+    internal List<Token> Tokenize(string sql, bool stopOnCloseParen, BitSet parameters)
     {
         List<Token> tokens = [];
         int end = sql.Length - 1;
@@ -2142,7 +2142,7 @@ public sealed class Tokenizer
     /// remembers which one it has seen so far in <c>lastParameter</c>, where a positive value is
     /// the last number it assigned and a negative one means the parameters were written by hand.
     /// </remarks>
-    private static int AssignParameterIndex(List<Token> tokens, int lastParameter, BitList parameters)
+    private static int AssignParameterIndex(List<Token> tokens, int lastParameter, BitSet parameters)
     {
         Token.ParameterToken parameter = (Token.ParameterToken)tokens[^1];
         int index = parameter.Index;
@@ -2164,14 +2164,9 @@ public sealed class Tokenizer
             lastParameter = -1;
         }
 
-        // The reference marks the index in a BitSet, which grows as it is marked; this list
-        // grows the same way, and its count is the length the reference's BitSet reports.
-        while (parameters.Count < index)
-        {
-            parameters.Add(false);
-        }
-
-        parameters[index - 1] = true;
+        // java.util.BitSet#set grows the set to the index, and its length() is what
+        // Parser.checkParameterIndex compares against the limit.
+        parameters.Set(index - 1);
         return lastParameter;
     }
 

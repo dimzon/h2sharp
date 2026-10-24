@@ -1,8 +1,9 @@
 using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using H2Sharp.MvStore.Tx;
 
-namespace H2Sharp.MvStore;
+namespace H2Sharp.Util;
 
 /// <summary>
 /// A growable bit set, standing in for <c>java.util.BitSet</c>.
@@ -20,14 +21,14 @@ namespace H2Sharp.MvStore;
 /// is right for an empty set and wrong for every other one.
 /// </para>
 /// </remarks>
-internal sealed class LongBitSet
+public sealed class BitSet
 {
     private long[] words;
 
     /// <summary>
     /// An empty set.
     /// </summary>
-    internal LongBitSet() => words = [0];
+    internal BitSet() => words = [0];
 
     /// <summary>
     /// One past the highest set bit, or zero when nothing is set.
@@ -88,7 +89,61 @@ internal sealed class LongBitSet
     /// </remarks>
     /// <param name="index">the position</param>
     /// <returns>true when set</returns>
-    internal bool Get(int index) => Tx.BitSetHelper.Get(words, index);
+    internal bool Get(int index) => BitSetHelper.Get(words, index);
+
+    /// <summary>
+    /// Set the bit at this position, growing the set if it has to.
+    /// </summary>
+    /// <remarks>
+    /// <c>java.util.BitSet.set(int)</c>: the growth is the point, because a caller marking
+    /// parameter N of a statement names the size by the highest bit it touches.
+    /// </remarks>
+    /// <param name="index">the position</param>
+    internal void Set(int index) => Set(index, true);
+
+    /// <summary>
+    /// Set or clear the bit at this position, growing the set if it has to.
+    /// </summary>
+    /// <param name="index">the position</param>
+    /// <param name="value">the new value</param>
+    internal void Set(int index, bool value)
+    {
+        if (value)
+        {
+            SetRange(index, index + 1);
+        }
+        else
+        {
+            Clear(index);
+        }
+    }
+
+    /// <summary>
+    /// Clear the bit at this position.
+    /// </summary>
+    /// <remarks>
+    /// Clearing near the top shrinks the reported <see cref="Length"/> the way the reference
+    /// does: the highest word that becomes zero is dropped.
+    /// </remarks>
+    /// <param name="index">the position</param>
+    internal void Clear(int index)
+    {
+        if (index < 0)
+        {
+            throw new IndexOutOfRangeException("index=" + index);
+        }
+
+        int wordIndex = index >> 6;
+        if (wordIndex >= words.Length)
+        {
+            return;
+        }
+
+        // The storage keeps its size, as java.util.BitSet does: size() reports the words the
+        // set has grown to, and only a fresh set reports zero after clearing. Length scans,
+        // so it still answers zero.
+        words[wordIndex] &= ~(1L << index);
+    }
 
     /// <summary>
     /// Set every bit in a range, growing the set if it has to.
@@ -200,7 +255,7 @@ internal sealed class LongBitSet
             from = 0;
         }
 
-        return Tx.BitSetHelper.NextSetBit(words, from);
+        return BitSetHelper.NextSetBit(words, from);
     }
 
     /// <summary>
@@ -218,7 +273,7 @@ internal sealed class LongBitSet
             from = 0;
         }
 
-        return Tx.BitSetHelper.NextClearBit(words, from);
+        return BitSetHelper.NextClearBit(words, from);
     }
 
     /// <summary>
@@ -323,7 +378,7 @@ internal sealed class LongBitSet
     /// </remarks>
     /// <param name="bytes">the bytes, lowest bit first</param>
     /// <returns>the set</returns>
-    internal static LongBitSet ValueOf(byte[] bytes) => ValueOf(bytes.AsSpan());
+    internal static BitSet ValueOf(byte[] bytes) => ValueOf(bytes.AsSpan());
 
     /// <summary>
     /// A set holding the bits of these bytes, read as little endian longs, without copying
@@ -331,9 +386,9 @@ internal sealed class LongBitSet
     /// </summary>
     /// <param name="bytes">the bytes, lowest bit first</param>
     /// <returns>the set</returns>
-    internal static LongBitSet ValueOf(ReadOnlySpan<byte> bytes)
+    internal static BitSet ValueOf(ReadOnlySpan<byte> bytes)
     {
-        LongBitSet set = new();
+        BitSet set = new();
         if (bytes.Length != 0)
         {
             set.EnsureCapacity(bytes.Length * 8 - 1);
