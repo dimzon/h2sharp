@@ -696,8 +696,8 @@ TestFunctionOverload, TestSynonymForTable, TestMemoryUsage, TestView, TestSequen
 TestConnection, TestStatement, TestTransaction, TestOptimizations, TestRights; из
 `unit/`: TestMathUtils, TestCollation, TestDbException, TestPattern, TestIntArray,
 TestBinaryOperation, TestOverflow, TestMultiThreadedKernel, TestConnectionInfo, TestStreams,
-TestConcurrentJdbc, TestStringCache, TestCases, TestAlter). Порядок: `db/` и `jdbc/`
-до конца, `unit/` параллельно.
+TestConcurrentJdbc, TestStringCache, TestCases, TestAlter, TestCache, TestFile,
+TestDateTimeTemplate). Порядок: `db/` и `jdbc/` до конца, `unit/` параллельно.
 
 ## Страховка от тихой деградации (сделано)
 
@@ -7149,3 +7149,15 @@ byte[]-тип JSON, SQL NULL против JSON null, Unicode, независим
 1297/1297); Data 467/467, MvStore 87/87; conformance 696/947 (251 прежнее
 падение), без BlockedByPort 696/935 (239 падений). После A4 остановка соблюдена,
 Batch B и его вопросы ожидают обсуждения.
+
+### XML-макет BCL: утверждён стандартный XMLCOMMENT
+
+До внедрения SQL-обвязки сделан отдельный макет `tools/XmlBclPrototype` с
+System.Xml и Microsoft C14N. Пользователь утвердил стандартное исправление
+XMLCOMMENT средствами BCL: `--` → `- -`, пробел после конечного дефиса,
+без собственного санитайзера (D-012 в `docs/APPROVED_DEVIATIONS.md`).
+Тип Comment и его ожидаемое содержимое проверяются отдельно от C14N;
+значимые входные пробелы сохраняются. Исходные строгие сравнения макета
+не подменяются: разрешённые преобразования проверяются самостоятельными
+контролями, включая эталонную рамку и отрицательные примеры.
+CRLF, Indent и наследуемый namespace остаются открытыми пунктами обсуждения.
