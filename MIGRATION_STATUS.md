@@ -587,11 +587,11 @@ Java-имена и разрешать их: получился бы файл, к
   `TestTxRegression`, и файловые инструменты (`MVStoreTool` + `TestMVStoreTool`) с
   пространственным индексом (`MVRTreeMap`, `SpatialDataType`).
 * `python tools/regen.py --check` — сгенерированные таблицы соответствуют эталону.
-* Прогон 2026-10-24 (после изоляций/Driver/DatabaseEventListener): H2Sharp.Tests 1217
-  passed, H2Sharp.Data.Tests 457 passed, H2Sharp.MvStore.Tests 86 passed — ничего не
-  сломано. H2Sharp.Engine.Tests: 5 failed / 4 passed — **красные до забега** (проверено
-  прогоном на HEAD без изменений забега): TestIndex не вызывает `conn.Open()` и не мог
-  пройти; это чужая незавершённая работа, не регрессия.
+* Прогон 2026-10-25 (после TestInterval/TestDateIso8601): H2Sharp.Tests 1297 passed +
+  3 failed, H2Sharp.Data.Tests 467 passed, H2Sharp.MvStore.Tests 87 passed. Три падения —
+  PostfixCastOracleTests («...Yet»/«...NotPortedYet») из чужого WIP (коммит 1eea6e4):
+  свежие движковые изменения другого агента сделали их устаревшими — это его территория,
+  не регрессия от родных тестов. Пять красных Engine.Tests — прежние до-забегные TestIndex.
 * H2Sharp.Native.Tests возвращает в сборку solution: `dotnet sln add` записал проекту
   только ActiveCfg без Build.0 — в `H2Sharp.sln` добавлены шесть `Build.0`; плюс
   поправлены ошибки компиляции, которые это скрывало (битая строка в TestBase.CheckException,
