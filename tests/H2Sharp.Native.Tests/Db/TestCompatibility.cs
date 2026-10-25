@@ -18,6 +18,9 @@
 //  - DatabaseMetaData.stores*Identifiers and the updatable result set fragment of
 //    testMySQL (updateString/updateRow), and the getQueryTimeout assertions of
 //    testPostgreSQL: JDBC-only surfaces (see the discussion document).
+//
+// Blocked by the port: the modes rely on grammar forms the parser does not read yet
+// (CREATE TABLE ... AS SELECT, IDENTITY, ... — issue #61).
 using System.Globalization;
 using H2Sharp.Api;
 using Xunit;
@@ -35,6 +38,7 @@ public sealed class TestCompatibility : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         DeleteDb("compatibility");

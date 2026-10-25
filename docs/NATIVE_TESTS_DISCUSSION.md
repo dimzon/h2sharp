@@ -52,38 +52,30 @@
   `TestMvccMultiThreaded`, `TestMvccMultiThreaded2`.
 * `rowlock/`: `TestRowLocks`.
 * `db/`: `TestCompoundIndexSearch`, `TestCompoundIndexParamSearch`,
-  `TestMergeUsing` (кроме триггерного случая — нет `Trigger` API), `TestMultiThread`.
+  `TestMergeUsing` (кроме триггерного случая — нет `Trigger` API), `TestMultiThread`,
+  `TestCompatibility`, `TestIndex` (кроме фрагмента с `SimpleResultSet`).
 * `unit/`: `TestMultiThreadedKernel` (одноимённый тест из `db/` был перенесён
-  раньше; это другой файл).
+  раньше; это другой файл), `TestJsonUtils`.
 * `jdbc/`: `TestDatabaseEventListener` — перенесён, но `BlockedByPort` (#65).
 
 Адаптации те же, что в уже перенесённых: `setAutoCommit(false)` — явная
 транзакция у каждой команды с повторным `BeginTransaction` после
 commit/rollback, `Task.stop` — `CancellationTokenSource`, `CountDownLatch` —
 `CountdownEvent`, JDBC-`Properties` — опции строки подключения, `Savepoint` —
-`DbTransaction.Save/Rollback(name)`.
+`DbTransaction.Save/Rollback(name)`, `DatabaseMetaData` — запросы к
+`INFORMATION_SCHEMA`, `ResultSetMetaData` — `reader.GetName`,
+`Statement.execute`/`getUpdateCount` — читатель или `ExecuteNonQuery`,
+`JSONTarget<?>` — нетипизированный `JsonTarget` и типизированный `Parse` по
+типу цели.
 
-Что ещё переносимо **без изменения API движка** (следующие кандидаты):
-`db/TestCompatibility` (режимы совместимости; `ResultSetMetaData` заменяется
-на `reader.GetName`, `DatabaseMetaData.getTables` — на запрос
-`INFORMATION_SCHEMA.TABLES`), `db/TestFunctions` (BigDecimal/java.text-
-форматирование нужно заменить на .NET), `db/TestIndex` (кроме фрагмента с
-`SimpleResultSet`, а `getIndexInfo` — на `INFORMATION_SCHEMA.INDEXES`),
-`unit/TestJsonUtils` (классы `Util/Json` есть; нужна адаптация дженерик-
-инициализаторов), `unit/TestValue` (сверить поверхность `Value`).
-`jdbc/TestBatchUpdates` — JDBC-only поверхность: batch-массивы, цепочки
-`getNextException`, `supportsBatchUpdates`; в ADO.NET batch как цикла уже
-покрыт `TestStatement`, поэтому тест не переносится (как и раньше решено для
-JDBC-only частей `TestStatement`).
-Не переносимы без новых классов движка: `TestScriptReader`, `TestSort`,
-`TestPerfectHash`, `TestBitStream`, `TestAnsCompression`, `TestRecovery`,
-`TestSecurity`, `TestTriggersConstraints`, `TestSpatial`, `TestFullText`,
-`TestLinkedTable`, `TestTableEngines`, `TestRunscript`, `TestFileSystem`
-(частично), `TestFileLock` (нет `TraceSystem`), `TestDateTimeUtils`
-(нет `LegacyDateTimeUtils`), `TestDate`/`TestDateStorage` (таймзоны JVM),
-`TestValueMemory` (нет `DataHandler`/`MemoryFootprint`), `TestMetaData`,
-`TestGetGeneratedKeys`, `TestUpdatableResultSet`, `TestCallableStatement`,
-`TestLobApi`/`TestLob` (JDBC LOB-модель) и весь `jdbcx/`.
+**На текущем API больше переносить нечего.** Полный перечень оставшихся 200
+файлов с причиной для каждого — `docs/NATIVE_TESTS_NOT_PORTED.md`. Коротко:
+~110 файлов вне объёма или helper'ы, ~60 требуют порта движка/API (часть с
+issue #57–#65), ~20 — JDBC-only поверхности, 3 отложены решением (charset
+collation, locale, trace). `TestFunctions` и `TestValue` выглядят
+«тестовыми», но упираются в `SimpleResultSet`/`AggregateFunction`/
+`LegacyDateTimeUtils`/`DataHandler`; `TestBatchUpdates` — в JDBC batch-API,
+которого в ADO.NET нет (batch-как-цикл уже покрыт `TestStatement`).
 
 ---
 

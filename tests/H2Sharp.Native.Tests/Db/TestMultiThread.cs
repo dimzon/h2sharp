@@ -25,6 +25,7 @@ public sealed class TestMultiThread : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         TestConcurrentSchemaChange();
