@@ -205,6 +205,12 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   сервера (network tool), плюс SimpleResultSet (нет в порту). Переносимы только
   testJdbcDriverUtils (JdbcUtils.getConnection) и testDeleteFiles (DeleteDbFiles) —
   и те частично. Перенести вместе с tools-пакетом.
+* **TestMemoryUnmapper — не перенесён.** Подпроцесс + sun.misc.Unsafe (cleaner hack,
+  security manager) — JVM-механика прямого unmapping ByteBuffer; в .NET её нет.
+  Вопрос: закрыть.
+* **TestServlet — не перенесён.** javax.servlet.DbStarter — servlet-контейнер; в .NET
+  это ASP.NET Core middleware/хост, другая поверхность. Вопрос: закрыть или делать
+  вместе с ASP.NET-интеграцией провайдера.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
