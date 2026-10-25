@@ -17,7 +17,7 @@ public sealed class XmlFunctionTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal("a=\"1\"", connection.QuerySingle<string>("SELECT XMLATTR('a', '1')"));
+        XmlFunctionAssert.Attribute(connection.QuerySingle<string>("SELECT XMLATTR('a', '1')"), "a", "1");
     }
 
     /// <summary>docs/functions.html:2581 — XMLNODE(elementString [, attributesString [, contentString [, indentBoolean]]])</summary>
@@ -26,8 +26,8 @@ public sealed class XmlFunctionTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal("<a/>", connection.QuerySingle<string>("SELECT XMLNODE('a')"));
-        Assert.Equal("<a>x</a>", connection.QuerySingle<string>("SELECT XMLNODE('a', NULL, 'x')"));
+        XmlFunctionAssert.Element(connection.QuerySingle<string>("SELECT XMLNODE('a')"), "a", "");
+        XmlFunctionAssert.Element(connection.QuerySingle<string>("SELECT XMLNODE('a', NULL, 'x')"), "a", "x");
     }
 
     /// <summary>docs/functions.html:2599 — XMLCOMMENT(commentString)</summary>
@@ -54,8 +54,7 @@ public sealed class XmlFunctionTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal("<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-            connection.QuerySingle<string>("SELECT XMLSTARTDOC()"));
+        XmlFunctionAssert.Declaration(connection.QuerySingle<string>("SELECT XMLSTARTDOC()"));
     }
 
     /// <summary>docs/functions.html:2653 — XMLTEXT(valueString [, escapeNewlineBoolean])</summary>
@@ -65,6 +64,6 @@ public sealed class XmlFunctionTests
         using IDbConnection connection = TestDatabase.Open();
 
         Assert.Equal("x", connection.QuerySingle<string>("SELECT XMLTEXT('x')"));
-        Assert.Equal("x&#10;y", connection.QuerySingle<string>("SELECT XMLTEXT('x' || CHAR(10) || 'y', TRUE)"));
+        XmlFunctionAssert.EscapedText(connection.QuerySingle<string>("SELECT XMLTEXT('x' || CHAR(10) || 'y', TRUE)"), "x\ny");
     }
 }

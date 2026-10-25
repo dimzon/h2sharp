@@ -82,6 +82,18 @@ public sealed class DataTypeSQLFunction : FunctionN
                 break;
             }
 
+            case "DOMAIN":
+            {
+                Schemas.Domain? domain = schema.FindDomain(objectName);
+                if (domain is null || typeIdentifier != "TYPE")
+                {
+                    return ValueNull.Instance;
+                }
+
+                type = domain.GetDataType();
+                break;
+            }
+
             default:
                 return ValueNull.Instance;
         }

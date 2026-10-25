@@ -97,3 +97,17 @@ Batch A (A0, A1, A3, A4) завершён: 696/947 conformance, исходные
 тесты зелёные. R1–R3 и локальная J применены после отдельного утверждения.
 После A4 выполнение остановлено; отчёт и контроль baseline:
 [REGRESSION_BATCH_A_INVESTIGATION.md](REGRESSION_BATCH_A_INVESTIGATION.md).
+
+B2 XML выполнен: 702/947 conformance, исходные XML-тесты 6/6, новые XML SQL
+37/37; утверждённые решения и XML-diff — в
+[XML_BCL_SQL_IMPLEMENTATION.md](XML_BCL_SQL_IMPLEMENTATION.md).
+B5 REGEXP выполнен: 705/947 conformance; исходные regex-тесты 3/3, новые
+41/41. Pattern и replacement передаются BCL как есть, без трансляторов;
+отличия задокументированы в [REGEXP_BCL_IMPLEMENTATION.md](REGEXP_BCL_IMPLEMENTATION.md).
+Весь B6 HASH/ORA_HASH отложен по указанию пользователя. Следующий текущий
+conformance-пункт — B7 ENCRYPT/DECRYPT, затем B8 форматирование даты/времени.
+
+Отдельно спланирован и отложен [SPRINT_DOTNET_EXTENSIONS.md](SPRINT_DOTNET_EXTENSIONS.md):
+DI, .NET UDF/aliases, triggers, trace и необязательные hash-провайдеры.
+ORA_HASH будет обычной UDF из этого спринта. Сейчас приоритет — остальные
+conformance-задачи, без удаления отложенных тестов.

@@ -1125,8 +1125,27 @@ public sealed class InformationSchemaTable : Table
             case Routines:
             case Constants:
             case Domains:
+                foreach (Schemas.Schema schema in database.GetSchemas())
+                {
+                    foreach (Schemas.Domain domain in schema.GetAllDomains())
+                    {
+                        AddDomain(rows, catalog, mainSchemaName, collation, domain);
+                    }
+                }
+
+                break;
             case DomainConstraints:
-            case Fields:
+                foreach (Schemas.Schema schema in database.GetSchemas())
+                {
+                    foreach (Constraints.Constraint constraint in schema.GetAllConstraints())
+                    {
+                        if (constraint.GetConstraintType() == Constraints.Constraint.Type.DOMAIN)
+                        {
+                            AddDomainConstraint(rows, catalog, (Constraints.ConstraintDomain)constraint);
+                        }
+                    }
+                }
+
                 break;
             case EnumValues:
                 foreach (Table table in GetAllTables(session))
@@ -1297,6 +1316,125 @@ public sealed class InformationSchemaTable : Table
                         ValueBigint.Get(sequence.GetCacheSize()),
                         // REMARKS
                         sequence.GetComment());
+    }
+
+    /// <summary>
+    /// Adds one row of the DOMAINS view.
+    /// </summary>
+    private static void AddDomain(List<Value[]> rows, string catalog, string mainSchemaName,
+        string collation, Schemas.Domain domain)
+    {
+        Schemas.Domain? parentDomain = domain.GetDomain();
+        TypeInfo typeInfo = domain.GetDataType();
+        DataTypeInformation dt = DataTypeInformation.ValueOf(typeInfo);
+        string? characterSetCatalog, characterSetSchema, characterSetName, collationName;
+        if (dt.HasCharsetAndCollation)
+        {
+            characterSetCatalog = catalog;
+            characterSetSchema = mainSchemaName;
+            characterSetName = "Unicode";
+            collationName = collation;
+        }
+        else
+        {
+            characterSetCatalog = characterSetSchema = characterSetName = collationName = null;
+        }
+
+        Add(
+            rows,
+            // DOMAIN_CATALOG
+            catalog,
+            // DOMAIN_SCHEMA
+            domain.GetSchema()?.GetName(),
+            // DOMAIN_NAME
+            domain.GetName(),
+            // DATA_TYPE
+            dt.DataType,
+            // CHARACTER_MAXIMUM_LENGTH
+            dt.CharacterPrecision,
+            // CHARACTER_OCTET_LENGTH
+            dt.CharacterPrecision,
+            // CHARACTER_SET_CATALOG
+            characterSetCatalog,
+            // CHARACTER_SET_SCHEMA
+            characterSetSchema,
+            // CHARACTER_SET_NAME
+            characterSetName,
+            // COLLATION_CATALOG
+            characterSetCatalog,
+            // COLLATION_SCHEMA
+            characterSetSchema,
+            // COLLATION_NAME
+            collationName,
+            // NUMERIC_PRECISION
+            dt.NumericPrecision,
+            // NUMERIC_PRECISION_RADIX
+            dt.NumericPrecisionRadix,
+            // NUMERIC_SCALE
+            dt.NumericScale,
+            // DATETIME_PRECISION
+            dt.DateTimePrecision,
+            // INTERVAL_TYPE
+            dt.IntervalType,
+            // INTERVAL_PRECISION
+            dt.IntervalPrecision,
+            // DOMAIN_DEFAULT
+            domain.GetDefaultSql(),
+            // MAXIMUM_CARDINALITY
+            dt.MaximumCardinality,
+            // DTD_IDENTIFIER
+            "TYPE",
+            // DECLARED_DATA_TYPE
+            dt.DeclaredDataType,
+            // DECLARED_NUMERIC_PRECISION
+            dt.DeclaredNumericPrecision,
+            // DECLARED_NUMERIC_SCALE
+            dt.DeclaredNumericScale,
+            // extensions
+            // GEOMETRY_TYPE
+            dt.GeometryType,
+            // GEOMETRY_SRID
+            dt.GeometrySrid,
+            // DOMAIN_ON_UPDATE
+            domain.GetOnUpdateSql(),
+            // PARENT_DOMAIN_CATALOG
+            parentDomain is not null ? catalog : null,
+            // PARENT_DOMAIN_SCHEMA
+            parentDomain?.GetSchema()?.GetName(),
+            // PARENT_DOMAIN_NAME
+            parentDomain?.GetName(),
+            // REMARKS
+            domain.GetComment());
+    }
+
+    /// <summary>
+    /// Adds one row of the DOMAIN_CONSTRAINTS view.
+    /// </summary>
+    private static void AddDomainConstraint(List<Value[]> rows, string catalog,
+        Constraints.ConstraintDomain constraint)
+    {
+        Schemas.Domain domain = constraint.GetDomain();
+        Add(
+            rows,
+            // CONSTRAINT_CATALOG
+            catalog,
+            // CONSTRAINT_SCHEMA
+            constraint.GetSchema()?.GetName(),
+            // CONSTRAINT_NAME
+            constraint.GetName(),
+            // DOMAIN_CATALOG
+            catalog,
+            // DOMAIN_SCHEMA
+            domain.GetSchema()?.GetName(),
+            // DOMAIN_NAME
+            domain.GetName(),
+            // IS_DEFERRABLE
+            "NO",
+            // INITIALLY_DEFERRED
+            "NO",
+            // extensions
+            // REMARKS
+            constraint.GetComment());
     }
 
     /// <summary>

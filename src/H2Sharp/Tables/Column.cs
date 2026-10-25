@@ -63,6 +63,8 @@ public class Column : Typed
 
     private bool nullable = true;
 
+    private Schemas.Domain? domain;
+
     private Expression? defaultExpression;
 
     private Expression? onUpdateExpression;
@@ -336,6 +338,12 @@ public class Column : Typed
         type = newType;
     }
 
+    /// <summary>Sets the domain this column belongs to.</summary>
+    public void SetDomain(Schemas.Domain? domain) => this.domain = domain;
+
+    /// <summary>Gets the domain this column belongs to, or null.</summary>
+    public Schemas.Domain? GetDomain() => domain;
+
     /// <summary>
     /// Sets whether this column may be null.
     /// </summary>
@@ -590,6 +598,20 @@ public class Column : Typed
         return defaultExpression;
     }
 
+    /// <summary>
+    /// Gets the effective default expression: an identity column has none, otherwise the
+    /// column's own default or the one inherited from its domain.
+    /// </summary>
+    public Expression? GetEffectiveDefaultExpression()
+    {
+        if (sequence is not null)
+        {
+            return null;
+        }
+
+        return defaultExpression ?? domain?.GetEffectiveDefaultExpression();
+    }
+
     /// <summary>Gets the on-update expression, if any.</summary>
     public Expression? GetOnUpdateExpression()
     {
@@ -606,7 +628,7 @@ public class Column : Typed
             return null;
         }
 
-        return onUpdateExpression;
+        return onUpdateExpression ?? domain?.GetEffectiveOnUpdateExpression();
     }
 
     /// <summary>Whether the default is used when an explicit NULL is given.</summary>
@@ -715,7 +737,9 @@ public class Column : Typed
             // The reference converts for assignment: the session is the provider, so a value
             // that has to be moved between zones knows the zone of the reader, and the name
             // of the column is in the message when the value does not fit.
-            return v.ConvertForAssignTo(type, session, name);
+            Value converted = v.ConvertForAssignTo(type, session, name);
+            domain?.CheckConstraints(session, converted);
+            return converted;
         }
         catch (H2SharpException e) when (e.H2ErrorCode == ErrorCode.DataConversionError1)
         {
@@ -749,11 +773,13 @@ public class Column : Typed
         {
             onUpdateExpression = onUpdateExpression.Optimize(session);
         }
+
+        domain?.PrepareExpressions(session);
     }
 
     private Value GetDefaultOrGenerated(Engine.SessionLocal session, Row? row)
     {
-        Expression? localDefault = defaultExpression;
+        Expression? localDefault = GetEffectiveDefaultExpression();
         if (localDefault is null)
         {
             return ValueNull.Instance;

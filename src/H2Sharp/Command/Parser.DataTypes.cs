@@ -60,6 +60,7 @@ public sealed partial class Parser
     /// <returns>the type, or null if the tokens do not start a type</returns>
     private TypeInfo? ReadIfDataType1()
     {
+        int typeIndex = position;
         switch (CurrentType)
         {
             case ParserUtil.Identifier:
@@ -103,18 +104,10 @@ public sealed partial class Parser
         Read();
         if (CurrentType == Token.Dot)
         {
-            // A qualified name is a name and not a type. The reference reads the schema of
-            // the name and refuses the name when the schema is not there, and then looks
-            // the name up in the schema as a domain. The port has no domains, so the
-            // lookup has one answer.
-            Read();
-            string name = ReadIdentifier();
-            if (session is not null && session.GetDatabase().FindSchema(originalCase) is null)
-            {
-                throw DbException.Get(ErrorCode.SchemaNotFound1, originalCase);
-            }
-
-            throw DbException.Get(ErrorCode.DomainNotFound1, name);
+            // A qualified name is a name and not a type: its schema and domain are resolved
+            // by the caller that reads a column type.
+            position = typeIndex;
+            return null;
         }
 
         string original = originalCase.ToUpperInvariant();
@@ -242,6 +235,18 @@ public sealed partial class Parser
         DataType? dataType = DataType.GetTypeByName(original);
         if (dataType is null)
         {
+            // A name that is not a type may still be a domain of the current schema; the
+            // caller then resolves it through readColumnWithType.
+            if (session is not null)
+            {
+                Schemas.Schema current = session.GetDatabase().GetSchema(session.GetCurrentSchemaName());
+                if (current.FindDomain(originalCase) is not null)
+                {
+                    position = typeIndex;
+                    return null;
+                }
+            }
+
             throw DbException.Get(ErrorCode.UnknownDataType1, original);
         }
 
@@ -875,7 +880,43 @@ public sealed partial class Parser
             return typeInfo;
         }
 
-        throw DbException.Get(ErrorCode.DomainNotFound1, ReadIdentifier());
+        if (session is null)
+        {
+            throw DbException.Get(ErrorCode.DomainNotFound1, ReadIdentifier());
+        }
+
+        string name = ReadIdentifier();
+        Schemas.Schema schema = session.GetCurrentSchema();
+        if (ReadIf(Token.Dot))
+        {
+            string first = name;
+            name = ReadIdentifier();
+            if (CurrentType == Token.Dot
+                && first.Equals(session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
+            {
+                Read();
+                schema = session.GetDatabase().GetSchema(name);
+                name = ReadIdentifier();
+            }
+            else
+            {
+                // The port does not create the PG_CATALOG schema yet; the reference resolves
+                // it and reports the missing domain instead. A really missing schema keeps
+                // the reference's SCHEMA_NOT_FOUND.
+                schema = session.GetDatabase().FindSchema(first)
+                    ?? (first.Equals(Engine.Constants.SchemaPgCatalog, StringComparison.OrdinalIgnoreCase)
+                        ? throw DbException.Get(ErrorCode.DomainNotFound1, name)
+                        : throw DbException.Get(ErrorCode.SchemaNotFound1, first));
+            }
+        }
+
+        Schemas.Domain? domain = schema.FindDomain(name);
+        if (domain is null)
+        {
+            throw DbException.Get(ErrorCode.DomainNotFound1, name);
+        }
+
+        return domain.GetDataType();
     }
 
     /// <summary>

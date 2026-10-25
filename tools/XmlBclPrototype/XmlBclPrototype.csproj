@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Prototype only: this installed shared framework exposes Microsoft's C14N transform.
+         No dependency or reference is added to H2Sharp itself. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <None Update="JarProbe.java" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

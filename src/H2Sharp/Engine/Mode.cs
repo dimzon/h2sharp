@@ -202,6 +202,9 @@ public sealed class Mode
     /// <summary>Whether a comma may separate a JSON_OBJECT key and value (MySQL/MariaDB).</summary>
     public bool AcceptsCommaAsJsonKeyValueSeparator { get; }
 
+    /// <summary>Whether sequences of this mode use NUMERIC instead of BIGINT by default.</summary>
+    public bool DecimalSequences { get; }
+
     /// <summary>
     /// The name of the mode, as it is written in a URL.
     /// </summary>
@@ -226,7 +229,8 @@ public sealed class Mode
         bool greatestLeastIgnoreNulls = false,
         bool swapLogFunctionParameters = false,
         bool logIsLogBase10 = false,
-        bool acceptsCommaAsJsonKeyValueSeparator = false)
+        bool acceptsCommaAsJsonKeyValueSeparator = false,
+        bool decimalSequences = false)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -243,6 +247,7 @@ public sealed class Mode
         SwapLogFunctionParameters = swapLogFunctionParameters;
         LogIsLogBase10 = logIsLogBase10;
         AcceptsCommaAsJsonKeyValueSeparator = acceptsCommaAsJsonKeyValueSeparator;
+        DecimalSequences = decimalSequences;
     }
 
     /// <summary>
@@ -298,7 +303,8 @@ public sealed class Mode
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
-                CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true),
+                CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true,
+                decimalSequences: true),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
                 logIsLogBase10: true),

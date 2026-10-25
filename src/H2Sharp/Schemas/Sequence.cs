@@ -81,10 +81,21 @@ public sealed class Sequence : SchemaObject
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(options);
         dataType = options.GetDataType();
-        increment = options.GetIncrement(session);
-        startValue = options.GetStartValue(session) ?? 1;
-        minValue = options.GetMinValue(this, session);
-        maxValue = options.GetMaxValue(this, session);
+        if (dataType is null)
+        {
+            dataType = session.GetMode().DecimalSequences ? TypeInfo.TypeNumericBigint : TypeInfo.TypeBigint;
+            options.SetDataType(dataType);
+        }
+
+        long[] bounds = options.GetBounds();
+        long? writtenIncrement = options.GetIncrement(session);
+        increment = writtenIncrement ?? 1;
+        long? start = options.GetStartValue(session);
+        long? min = options.GetMinValue(null, session);
+        long? max = options.GetMaxValue(null, session);
+        minValue = min ?? GetDefaultMinValue(start, increment, bounds);
+        maxValue = max ?? GetDefaultMaxValue(start, increment, bounds);
+        startValue = start ?? (increment >= 0 ? minValue : maxValue);
         cycle = options.GetCycle();
         long? writtenCacheSize = options.GetCacheSize(session);
         bool mayAdjustCacheSize = writtenCacheSize is null;
@@ -202,7 +213,8 @@ public sealed class Sequence : SchemaObject
             && minValue < maxValue && increment != 0L)
         {
             long range = maxValue - minValue;
-            if (Math.Abs(increment) <= range && cacheSize >= 0L)
+            long magnitude = increment == long.MinValue ? long.MinValue : Math.Abs(increment);
+            if ((ulong)magnitude <= (ulong)range && cacheSize >= 0L)
             {
                 if (cacheSize <= 1L)
                 {
@@ -243,10 +255,37 @@ public sealed class Sequence : SchemaObject
     {
         if (increment > 0L)
         {
-            return Math.Min(range / increment, 100_000);
+            if (range < 0)
+            {
+                range = long.MaxValue;
+            }
+            else
+            {
+                range += increment;
+                if (range < 0)
+                {
+                    range = long.MaxValue;
+                }
+            }
+        }
+        else
+        {
+            range = -range;
+            if (range > 0)
+            {
+                range = long.MinValue;
+            }
+            else
+            {
+                range += increment;
+                if (range >= 0)
+                {
+                    range = long.MinValue;
+                }
+            }
         }
 
-        return Math.Min(range / -increment, 100_000);
+        return range / increment;
     }
 
     /// <summary>

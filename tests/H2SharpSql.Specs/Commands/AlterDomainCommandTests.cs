@@ -2,6 +2,7 @@
 // Licensed under the MPL 2.0 or the EPL 1.0.
 //
 // docs/commands.html — ALTER DOMAIN command, one test per checklist row.
+using System;
 using System.Data;
 using Dapper;
 using H2SharpSql.Specs.Infrastructure;
@@ -81,7 +82,9 @@ public sealed class AlterDomainCommandTests
         _ = connection.Execute("ALTER DOMAIN D DROP ON UPDATE");
         _ = connection.Execute("UPDATE T SET ID = 2");
 
-        Assert.Equal(1, connection.QuerySingle<int>("SELECT V FROM T"));
+        // SET ON UPDATE copied the expression into the dependent column; DROP ON UPDATE
+        // clears only the domain, the column keeps the copied value in H2 2.5.
+        Assert.Equal(7, connection.QuerySingle<int>("SELECT V FROM T"));
     }
 
     /// <summary>docs/commands.html:1120 — ALTER DOMAIN [ IF EXISTS ] [schemaName.]domainName</summary>
@@ -116,11 +119,13 @@ public sealed class AlterDomainCommandTests
         using IDbConnection connection = TestDatabase.Open();
         _ = connection.Execute("CREATE DOMAIN D AS INT");
         _ = connection.Execute("CREATE TABLE T(V D)");
-
-        _ = connection.Execute("ALTER DOMAIN D ADD CONSTRAINT D_POSITIVE CHECK (VALUE > 0) NOCHECK");
+        // NOCHECK skips validation of rows that already exist, not of new rows.
         _ = connection.Execute("INSERT INTO T(V) VALUES (-1)");
 
+        _ = connection.Execute("ALTER DOMAIN D ADD CONSTRAINT D_POSITIVE CHECK (VALUE > 0) NOCHECK");
+
         Assert.Equal(-1, connection.QuerySingle<int>("SELECT V FROM T"));
+        _ = Assert.ThrowsAny<Exception>(() => connection.Execute("INSERT INTO T(V) VALUES (-2)"));
     }
 
     /// <summary>docs/commands.html:1143 — ALTER DOMAIN [ IF EXISTS ] [schemaName.]domainName</summary>

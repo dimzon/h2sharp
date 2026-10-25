@@ -290,6 +290,9 @@ public sealed class InsertStatement : Statement
 
     /// <summary>The rows, each the expressions of its values.</summary>
     public List<List<Expression>> Rows { get; } = [];
+
+    /// <summary>Whether this is INSERT ... DEFAULT VALUES.</summary>
+    public bool DefaultValues { get; set; }
 }
 
 /// <summary>UPDATE ... SET ... WHERE.</summary>
@@ -388,6 +391,9 @@ public sealed partial class Parser
     /// The prepared statement being read, as the reference's <c>currentPrepared</c>.
     /// </summary>
     private Prepared? currentPrepared;
+
+    /// <summary>Whether VALUE is the domain value in a domain constraint.</summary>
+    private bool parseDomainConstraint;
 
     /// <summary>
     /// The common table expressions this statement names, by name.
@@ -579,6 +585,18 @@ public sealed partial class Parser
         else if (IsWord("CREATE", consume: false) && NextIs("SEQUENCE"))
         {
             prepared = PrepareCreateSequence(current);
+        }
+        else if (IsWord("CREATE", consume: false) && NextIs("DOMAIN"))
+        {
+            prepared = PrepareCreateDomain(current);
+        }
+        else if (IsWord("ALTER", consume: false) && NextIs("DOMAIN"))
+        {
+            prepared = PrepareAlterDomain(current);
+        }
+        else if (IsWord("DROP", consume: false) && NextIs("DOMAIN"))
+        {
+            prepared = PrepareDropDomain(current);
         }
 
         else if (IsWord("DROP", consume: false) && NextIs("ALL"))
@@ -2512,6 +2530,227 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Builds the command of a CREATE DOMAIN statement.
+    /// </summary>
+    private Ddl.CreateDomain PrepareCreateDomain(SessionLocal session)
+    {
+        ExpectWord("CREATE");
+        ExpectWord("DOMAIN");
+        bool ifNotExists = ReadIfNotExists();
+        string domainName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        Ddl.CreateDomain command = new(session, schema);
+        command.SetIfNotExists(ifNotExists);
+        command.SetTypeName(domainName);
+        _ = IsWord("AS");
+
+        TypeInfo? dataType = ReadIfDataType();
+        if (dataType is not null)
+        {
+            command.SetDataType(dataType);
+        }
+        else
+        {
+            string parentName = ReadIdentifierWithSchema(session, out Schemas.Schema parentSchema);
+            command.SetParentDomain(parentSchema.FindDomain(parentName)
+                ?? throw DbException.Get(Api.ErrorCode.DomainNotFound1, parentName));
+        }
+
+        if (IsWord("DEFAULT"))
+        {
+            command.SetDefaultExpression(ReadExpression());
+        }
+
+        if (ReadIfWords("ON", "UPDATE"))
+        {
+            command.SetOnUpdateExpression(ReadExpression());
+        }
+
+        if (IsWord("COMMENT"))
+        {
+            command.SetComment(ReadString());
+        }
+
+        while (true)
+        {
+            string? constraintName;
+            if (IsWord("CONSTRAINT"))
+            {
+                constraintName = ReadIdentifier();
+                ExpectWord("CHECK");
+            }
+            else if (IsWord("CHECK"))
+            {
+                constraintName = null;
+            }
+            else
+            {
+                break;
+            }
+
+            Ddl.AlterDomainAddConstraint constraint = new(session, schema, ifNotExists);
+            constraint.SetConstraintName(constraintName);
+            constraint.SetDomainName(domainName);
+            parseDomainConstraint = true;
+            try
+            {
+                constraint.SetCheckExpression(ReadExpression());
+            }
+            finally
+            {
+                parseDomainConstraint = false;
+            }
+
+            command.AddConstraintCommand(constraint);
+        }
+
+        return command;
+    }
+
+    /// <summary>
+    /// Builds the command of an ALTER DOMAIN statement.
+    /// </summary>
+    private Ddl.AlterDomain PrepareAlterDomain(SessionLocal session)
+    {
+        ExpectWord("ALTER");
+        ExpectWord("DOMAIN");
+        bool ifDomainExists = ReadIfExists(false);
+        string domainName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        if (IsWord("ADD"))
+        {
+            bool ifNotExists = false;
+            string? constraintName = null;
+            if (IsWord("CONSTRAINT"))
+            {
+                ifNotExists = ReadIfNotExists();
+                constraintName = ReadIdentifierWithSchema(session, out Schemas.Schema constraintSchema);
+                if (!ReferenceEquals(schema, constraintSchema))
+                {
+                    throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
+                }
+            }
+
+            ExpectWord("CHECK");
+            Ddl.AlterDomainAddConstraint command = new(session, schema, ifNotExists);
+            command.SetDomainName(domainName);
+            command.SetConstraintName(constraintName);
+            parseDomainConstraint = true;
+            try
+            {
+                command.SetCheckExpression(ReadExpression());
+            }
+            finally
+            {
+                parseDomainConstraint = false;
+            }
+
+            command.SetIfDomainExists(ifDomainExists);
+            if (IsWord("NOCHECK"))
+            {
+                command.SetCheckExisting(false);
+            }
+            else
+            {
+                _ = IsWord("CHECK");
+                command.SetCheckExisting(true);
+            }
+
+            return command;
+        }
+
+        if (IsWord("DROP"))
+        {
+            if (IsWord("CONSTRAINT"))
+            {
+                bool ifConstraintExists = ReadIfExists(false);
+                string constraintName = ReadIdentifierWithSchema(session, out Schemas.Schema constraintSchema);
+                if (!ReferenceEquals(schema, constraintSchema))
+                {
+                    throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
+                }
+
+                Ddl.AlterDomainDropConstraint command = new(session, schema, ifConstraintExists);
+                command.SetConstraintName(constraintName);
+                command.SetDomainName(domainName);
+                command.SetIfDomainExists(ifDomainExists);
+                return command;
+            }
+
+            if (IsWord("DEFAULT"))
+            {
+                Ddl.AlterDomainExpressions command = new(session, schema, CommandInterface.AlterDomainDefault);
+                command.SetDomainName(domainName);
+                command.SetIfDomainExists(ifDomainExists);
+                command.SetExpression(null);
+                return command;
+            }
+
+            if (ReadIfWords("ON", "UPDATE"))
+            {
+                Ddl.AlterDomainExpressions command = new(session, schema, CommandInterface.AlterDomainOnUpdate);
+                command.SetDomainName(domainName);
+                command.SetIfDomainExists(ifDomainExists);
+                command.SetExpression(null);
+                return command;
+            }
+        }
+        else if (IsWord("RENAME"))
+        {
+            if (IsWord("CONSTRAINT"))
+            {
+                string constraintName = ReadIdentifierWithSchema(session, out Schemas.Schema constraintSchema);
+                if (!ReferenceEquals(schema, constraintSchema))
+                {
+                    throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
+                }
+
+                ExpectWord("TO");
+                Ddl.AlterDomainRenameConstraint command = new(session, schema);
+                command.SetDomainName(domainName);
+                command.SetIfDomainExists(ifDomainExists);
+                command.SetConstraintName(constraintName);
+                command.SetNewConstraintName(ReadIdentifier());
+                return command;
+            }
+
+            ExpectWord("TO");
+            string newName = ReadIdentifierWithSchema(session, out Schemas.Schema newSchema);
+            if (!ReferenceEquals(schema, newSchema))
+            {
+                throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
+            }
+
+            Ddl.AlterDomainRename rename = new(session, schema);
+            rename.SetDomainName(domainName);
+            rename.SetIfDomainExists(ifDomainExists);
+            rename.SetNewDomainName(newName);
+            return rename;
+        }
+        else
+        {
+            ExpectWord("SET");
+            if (IsWord("DEFAULT"))
+            {
+                Ddl.AlterDomainExpressions command = new(session, schema, CommandInterface.AlterDomainDefault);
+                command.SetDomainName(domainName);
+                command.SetIfDomainExists(ifDomainExists);
+                command.SetExpression(ReadExpression());
+                return command;
+            }
+
+            if (ReadIfWords("ON", "UPDATE"))
+            {
+                Ddl.AlterDomainExpressions command = new(session, schema, CommandInterface.AlterDomainOnUpdate);
+                command.SetDomainName(domainName);
+                command.SetIfDomainExists(ifDomainExists);
+                command.SetExpression(ReadExpression());
+                return command;
+            }
+        }
+
+        throw DbException.GetSyntaxError(sql, Current.Start);
+    }
+
+    /// <summary>
     /// Builds the command of a CREATE SEQUENCE statement.
     /// </summary>
     /// <param name="session">the session</param>
@@ -2548,6 +2787,30 @@ public sealed partial class Parser
         Ddl.SequenceOptions options = new();
         ReadSequenceOptions(options, command: null, allowDataType: false, forAlterColumn: false);
         command.SetOptions(options);
+        return command;
+    }
+
+    /// <summary>
+    /// Builds the command of a DROP DOMAIN statement.
+    /// </summary>
+    private Ddl.DropDomain PrepareDropDomain(SessionLocal session)
+    {
+        ExpectWord("DROP");
+        ExpectWord("DOMAIN");
+        bool ifExists = ReadIfExists(false);
+        string domainName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        Ddl.DropDomain command = new(session, schema);
+        command.SetDomainName(domainName);
+        command.SetIfExists(ifExists);
+        if (IsWord("CASCADE"))
+        {
+            command.SetCascade(true);
+        }
+        else
+        {
+            _ = IsWord("RESTRICT");
+        }
+
         return command;
     }
 
@@ -4044,6 +4307,12 @@ public sealed partial class Parser
     // Java readTerm's postfix operations are applied after every term shape.
     private Expressions.Expression ReadTermWithoutPostfix(Query.Select? aggregateSelect)
     {
+        if (parseDomainConstraint && Current.AsIdentifier?.Equals("VALUE", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            Read();
+            return new Expressions.DomainValueExpression();
+        }
+
         if (ReadIf(ParserUtil.Array))
         {
             if (!ReadIf(Token.OpenBracket))
@@ -4138,6 +4407,12 @@ public sealed partial class Parser
         {
             Read();
             return Expressions.ValueExpression.Null;
+        }
+
+        if (CurrentType == ParserUtil.Value && parseDomainConstraint)
+        {
+            Read();
+            return new Expressions.DomainValueExpression();
         }
 
         if (CurrentType is ParserUtil.True or ParserUtil.False)
@@ -4848,20 +5123,25 @@ public sealed partial class Parser
                     Expressions.Functions.TrimFunction.Leading | Expressions.Functions.TrimFunction.Trailing
                         | Expressions.Functions.TrimFunction.MultiCharacter);
 
-            // RegexpFunction (not ported).
             case "REGEXP_LIKE":
+                return ReadParameters(new Expressions.Functions.RegexpFunction(Expressions.Functions.RegexpFunction.REGEXP_LIKE), aggregateSelect);
             case "REGEXP_REPLACE":
+                return ReadParameters(new Expressions.Functions.RegexpFunction(Expressions.Functions.RegexpFunction.REGEXP_REPLACE), aggregateSelect);
             case "REGEXP_SUBSTR":
-                throw new TODOException("Parser.readBuiltinFunctionIf: RegexpFunction is not ported");
+                return ReadParameters(new Expressions.Functions.RegexpFunction(Expressions.Functions.RegexpFunction.REGEXP_SUBSTR), aggregateSelect);
 
-            // XMLFunction (not ported).
             case "XMLATTR":
+                return ReadParameters(new Expressions.Functions.XMLFunction(Expressions.Functions.XMLFunction.XMLATTR), aggregateSelect);
             case "XMLCDATA":
+                return ReadParameters(new Expressions.Functions.XMLFunction(Expressions.Functions.XMLFunction.XMLCDATA), aggregateSelect);
             case "XMLCOMMENT":
+                return ReadParameters(new Expressions.Functions.XMLFunction(Expressions.Functions.XMLFunction.XMLCOMMENT), aggregateSelect);
             case "XMLNODE":
+                return ReadParameters(new Expressions.Functions.XMLFunction(Expressions.Functions.XMLFunction.XMLNODE), aggregateSelect);
             case "XMLSTARTDOC":
+                return ReadParameters(new Expressions.Functions.XMLFunction(Expressions.Functions.XMLFunction.XMLSTARTDOC), aggregateSelect);
             case "XMLTEXT":
-                throw new TODOException("Parser.readBuiltinFunctionIf: XMLFunction is not ported");
+                return ReadParameters(new Expressions.Functions.XMLFunction(Expressions.Functions.XMLFunction.XMLTEXT), aggregateSelect);
 
             case "TRIM_ARRAY":
                 return new Expressions.Functions.ArrayFunction(ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect), null,
@@ -5608,6 +5888,18 @@ public sealed partial class Parser
         return f;
     }
 
+    // H2 2.5 Parser.readParameters; the select is explicit in this parser's expression reader.
+    private T ReadParameters<T>(T expression, Query.Select? aggregateSelect)
+        where T : Expressions.IExpressionWithVariableParameters
+    {
+        if (!ReadIf(Token.CloseParen))
+        {
+            do { expression.AddParameter(ReadQueryOr(aggregateSelect)); } while (ReadIfMore());
+        }
+        expression.DoneWithParameters();
+        return expression;
+    }
+
     private Expressions.Expression ReadCoalesceFunction(int function, Query.Select? aggregateSelect)
     {
         Expressions.Functions.CoalesceFunction f = new(function);
@@ -5806,7 +6098,18 @@ public sealed partial class Parser
         int id = 0;
         foreach (ColumnDefinition column in statement.Columns)
         {
-            Tables.Column tableColumn = new(column.Name, ParseDataType(column.Type), null, id++);
+            Tables.Column tableColumn;
+            Schemas.Domain? columnDomain = schema.FindDomain(column.Type);
+            if (columnDomain is not null)
+            {
+                tableColumn = new Tables.Column(column.Name, columnDomain.GetDataType(), null, id++);
+                tableColumn.SetComment(columnDomain.GetComment());
+                tableColumn.SetDomain(columnDomain);
+            }
+            else
+            {
+                tableColumn = new Tables.Column(column.Name, ParseDataType(column.Type), null, id++);
+            }
             if (column.NotNull)
             {
                 tableColumn.SetNullable(false);
@@ -6009,7 +6312,7 @@ public sealed partial class Parser
             {
                 options.SetRestartValue(IsWord("WITH")
                     ? ReadExpression()
-                    : Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+                    : Expressions.ValueExpression.Default);
             }
             else if (command is not null && ReadCreateSequenceOption(command))
             {
@@ -6090,11 +6393,11 @@ public sealed partial class Parser
         {
             if (IsWord("MINVALUE"))
             {
-                options.SetMinValue(Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+                options.SetMinValue(Expressions.ValueExpression.Null);
             }
             else if (IsWord("MAXVALUE"))
             {
-                options.SetMaxValue(Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+                options.SetMaxValue(Expressions.ValueExpression.Null);
             }
             else if (IsWord("CYCLE"))
             {
@@ -6119,11 +6422,11 @@ public sealed partial class Parser
         }
         else if (IsWord("NOMINVALUE"))
         {
-            options.SetMinValue(Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+            options.SetMinValue(Expressions.ValueExpression.Null);
         }
         else if (IsWord("NOMAXVALUE"))
         {
-            options.SetMaxValue(Expressions.ValueExpression.Get(Values.ValueNull.Instance));
+            options.SetMaxValue(Expressions.ValueExpression.Null);
         }
         else if (IsWord("NOCYCLE"))
         {
@@ -6287,6 +6590,17 @@ public sealed partial class Parser
         }
 
         insert.SetColumns(columns);
+        if (statement.DefaultValues)
+        {
+            List<Expressions.Expression> defaults = new(columns.Length);
+            for (int i = 0; i < columns.Length; i++)
+            {
+                defaults.Add(columns[i].GetEffectiveDefaultExpression() ?? Expressions.ValueExpression.Null);
+            }
+
+            insert.AddRow([.. defaults]);
+        }
+
         foreach (List<Expressions.Expression> row in statement.Rows)
         {
             insert.AddRow([.. row]);
@@ -7447,6 +7761,13 @@ public sealed partial class Parser
             Expect(Token.CloseParen, ")");
         }
 
+        if (IsWord("DEFAULT"))
+        {
+            ExpectWord("VALUES");
+            statement.DefaultValues = true;
+            return statement;
+        }
+
         ExpectWord("VALUES");
         do
         {
@@ -7599,7 +7920,14 @@ public sealed partial class Parser
     private string ReadTypeName()
     {
         int start = Current.Start;
-        _ = ReadIfDataType() ?? throw DbException.GetSyntaxError(sql, start, "data type");
-        return sql[start..Current.Start].Trim();
+        int index = position;
+        if (ReadIfDataType() is not null)
+        {
+            return sql[start..Current.Start].Trim();
+        }
+
+        position = index;
+        string name = ReadIdentifierWithSchemaName(out string? schemaName);
+        return schemaName is null ? name : schemaName + "." + name;
     }
 }

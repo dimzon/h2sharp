@@ -1,7 +1,12 @@
 # Спринт: builtin- и aggregate-функции (SQL conformance)
 
-План утверждён. **Batch A (A0, A1, A3, A4) выполнен**; результаты — в §9.
-После A4 выполнение остановлено для обсуждения дальнейших действий до Batch B.
+План утверждён. **Batch A (A0, A1, A3, A4), B2 XML и B5 REGEXP выполнены**.
+Текущий conformance — **740/952**. DDL/grammar: sequence options 15/15 и
+CREATE/ALTER/DROP DOMAIN перенесены; Domain-набор 26/26, новый полный
+lifecycle доменного столбца 5/5. Весь B6 HASH/ORA_HASH отложен; B7
+ENCRYPT/DECRYPT и HASH вынесены в опциональный `H2Sharp.Crypto` (D-022).
+После A4 остановка для обсуждения соблюдена; XML выполнен по отдельным
+утверждённым решениям D-012—D-018 и конкретному XML-diff тестов.
 
 ## 0. Правила
 
@@ -156,19 +161,28 @@
 
 ## 5. Batch B — после обсуждения (2, 5, 6, 7, 8)
 
-- **B2. XML (6 тестов):** порт `XMLFunction.java` (144 строки);
-  `StringUtils.Xml*` уже есть. Перед этим — исправить 5 ожиданий по jar (§2.1).
+- **B2. XML — выполнено (6 тестов):** XMLFunction/SQL-reader перенесены,
+  BCL-поведение утверждено D-012—D-018. Пять проверок изменены только после
+  отдельной визы точного diff. Итоги: XML 6/6, новые SQL/XML 37/37;
+  [XML_BCL_SQL_IMPLEMENTATION.md](XML_BCL_SQL_IMPLEMENTATION.md).
 - **B5. Regexp (3 теста):** порт `RegexpFunction.java` (251 строка) на
   `System.Text.RegularExpressions` (D-001). Добавить
   `Mode.RegexpReplaceBackslashReferences` (REGULAR=false; MariaDB/MySQL/Oracle/
   PostgreSQL=true). Oracle-кейсы: flags `i/c/n/m/g`, position/occurrence/group,
   замена `$1`/`\1`, регион.
+  **Pattern передаётся System.Text.RegularExpressions как есть**: никакого
+  переписывания групп, якорей, escape или иных попыток воспроизвести Java.
+  Расхождения документируются. Replacement тоже .NET как есть, утверждено D-019.
+  Выполнено: исходные 3/3, новые 41/41; результаты и отличия — в
+  [REGEXP_BCL_IMPLEMENTATION.md](REGEXP_BCL_IMPLEMENTATION.md).
 - **B6. HASH/ORA_HASH (2 теста):** порт `HashFunction.java` (177 строк).
   SHA-224 нет в BCL; SHA3 — решить: BCL (с проверкой совпадения) или порт
   `org.h2.security.SHA3`. ORA_HASH — SHA-1 + старшие 8 байт big-endian.
-- **B7. ENCRYPT/DECRYPT (2 теста):** порт `CryptFunction.java` + срез
-  `org.h2.security` (`BlockCipher`, `CipherFactory`, `AES`). Исправить тест
-  `Decrypt` (16 байт).
+  Последнее указание пользователя: **все хэши, включая базовый HASH,
+  откладываются** в [SPRINT_DOTNET_EXTENSIONS.md](SPRINT_DOTNET_EXTENSIONS.md).
+  Сейчас B6 не выполняется; существующие HASH/ORA_HASH тесты сохраняются.
+- **B7. ENCRYPT/DECRYPT (2 теста):** переносятся не в ядро, а в опциональный
+  пакет `H2Sharp.Crypto` на общем .NET UDF API (D-022). Сейчас отложено.
 - **B8. Дата/время (5 тестов):** `FORMATDATETIME`/`PARSEDATETIME` (307 строк) и
   `TO_CHAR` (1057 строк) — нужен транслятор Java-шаблонов (отклонение) либо
   `BlockedByPort` отдельным этапом.
@@ -189,9 +203,13 @@
 - **Q1 (XML/Decrypt):** разрешается править 5 XML-ожиданий и `Decrypt` по jar?
   (hex: `XMLSTARTDOC` = `3c3f786d6c2076657273696f6e3d22312e30223f3e0a`;
   decrypt = 16 байт).
-- **Q2 (Regexp):** подтверждается .NET Regex + перевод replacement-семантики и
-  правка `Mode`?
+  XML-часть закрыта отдельным утверждением конкретного diff; Decrypt открыт.
+- **Q2 (Regexp) — закрыт:** pattern и replacement передаются .NET Regex как есть,
+  без перевода replacement по режимам (D-001/D-019). Иные mode-правила SQL
+  (Oracle argument count, PostgreSQL g/default-first) берутся из H2 2.5.
 - **Q3 (HASH):** BCL-хеши (с проверкой совпадения) или полный порт H2 `SHA3`?
+  Закрыто: .NET HashAlgorithm и словарь фабрик; дополнительные primitives идут
+  через optional пакеты отложенного extension-спринта, без собственной реализации.
 - **Q4 (CRYPT):** порт H2 security AES (рекомендуется) или .NET AES (не будет
   совместим с Java)?
 - **Q5 (дата/время):** порт с транслятором сейчас или `BlockedByPort` отдельным
@@ -235,5 +253,14 @@ LISTAGG ON OVERFLOW ×2, JSON_ARRAYAGG ORDER BY).
 Подробности и согласованные изменения:
 [REGRESSION_BATCH_A_INVESTIGATION.md](REGRESSION_BATCH_A_INVESTIGATION.md).
 
-**СТОП после A4 соблюдён.** Вопросы XML, regexp, hash, crypt и форматирования
-дат остаются для отдельного обсуждения; Batch B не начат.
+**СТОП после A4 соблюдён.** B2 XML затем отдельно согласован и выполнен.
+B5 выполнен: pattern и replacement без преобразований утверждены.
+Hash, crypt и форматирование дат остаются для последующих пунктов.
+
+## 10. Отложенный extension-спринт
+
+DI, .NET UDF, SQL aliases, triggers, trace/diagnostics, optional NuGet hashes и
+ORA_HASH объединены в [SPRINT_DOTNET_EXTENSIONS.md](SPRINT_DOTNET_EXTENSIONS.md).
+Вся криптография вынесена в опциональный `H2Sharp.Crypto` (D-022).
+По указанию пользователя сначала продолжаем оставшийся conformance, затем
+возвращаемся к реализации этого спринта.

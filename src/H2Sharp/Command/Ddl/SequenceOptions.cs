@@ -92,7 +92,7 @@ public class SequenceOptions
     public long? GetStartValue(SessionLocal session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        return startValue?.GetValue(session).GetLong();
+        return Check(GetLong(session, startValue));
     }
 
     /// <summary>Sets the start value.</summary>
@@ -111,17 +111,9 @@ public class SequenceOptions
     public long? GetRestartValue(SessionLocal session, long startValue)
     {
         ArgumentNullException.ThrowIfNull(session);
-        if (restartValue is null)
-        {
-            return null;
-        }
-
-        if (ReferenceEquals(restartValue, Expressions.ValueExpression.Null))
-        {
-            return startValue;
-        }
-
-        return restartValue.GetValue(session).GetLong();
+        return Check(ReferenceEquals(restartValue, Expressions.ValueExpression.Default)
+            ? startValue
+            : GetLong(session, restartValue));
     }
 
     /// <summary>Sets the value to restart from.</summary>
@@ -131,10 +123,10 @@ public class SequenceOptions
     /// <summary>Gets the increment.</summary>
     /// <param name="session">the session</param>
     /// <returns>the increment</returns>
-    public long GetIncrement(SessionLocal session)
+    public long? GetIncrement(SessionLocal session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        return increment is null ? 1 : increment.GetValue(session).GetLong();
+        return Check(GetLong(session, increment));
     }
 
     /// <summary>Sets the increment.</summary>
@@ -145,16 +137,21 @@ public class SequenceOptions
     /// <param name="sequence">the sequence</param>
     /// <param name="session">the session</param>
     /// <returns>the maximum value</returns>
-    public long GetMaxValue(Sequence sequence, SessionLocal session)
+    public long? GetMaxValue(Sequence? sequence, SessionLocal session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        long[] b = GetBounds();
-        if (maxValue is not null)
+        long? v;
+        if (ReferenceEquals(maxValue, Expressions.ValueExpression.Null) && sequence is not null)
         {
-            return maxValue.GetValue(session).GetLong();
+            v = Sequence.GetDefaultMaxValue(GetCurrentStart(sequence, session),
+                increment is not null ? GetIncrement(session)!.Value : sequence.GetIncrement(), GetBounds());
+        }
+        else
+        {
+            v = GetLong(session, maxValue);
         }
 
-        return Sequence.GetDefaultMaxValue(GetStartValue(session), GetIncrement(session), b);
+        return Check(v);
     }
 
     /// <summary>Sets the maximum value.</summary>
@@ -165,16 +162,21 @@ public class SequenceOptions
     /// <param name="sequence">the sequence</param>
     /// <param name="session">the session</param>
     /// <returns>the minimum value</returns>
-    public long GetMinValue(Sequence sequence, SessionLocal session)
+    public long? GetMinValue(Sequence? sequence, SessionLocal session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        long[] b = GetBounds();
-        if (minValue is not null)
+        long? v;
+        if (ReferenceEquals(minValue, Expressions.ValueExpression.Null) && sequence is not null)
         {
-            return minValue.GetValue(session).GetLong();
+            v = Sequence.GetDefaultMinValue(GetCurrentStart(sequence, session),
+                increment is not null ? GetIncrement(session)!.Value : sequence.GetIncrement(), GetBounds());
+        }
+        else
+        {
+            v = GetLong(session, minValue);
         }
 
-        return Sequence.GetDefaultMinValue(GetStartValue(session), GetIncrement(session), b);
+        return Check(v);
     }
 
     /// <summary>Sets the minimum value.</summary>
@@ -310,10 +312,45 @@ public class SequenceOptions
     public long? GetCacheSize(SessionLocal session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        return cacheSize is null ? null : cacheSize.GetValue(session).GetLong();
+        return GetLong(session, cacheSize);
     }
 
     /// <summary>Sets the number of values handed out at once.</summary>
     /// <param name="cacheSize">the expression</param>
     public void SetCacheSize(Expression? cacheSize) => this.cacheSize = cacheSize;
+
+    // H2 2.5 SequenceOptions.getLong: an option that was not written, or is NULL, has no value.
+    private static long? GetLong(SessionLocal session, Expression? expression)
+    {
+        if (expression is null)
+        {
+            return null;
+        }
+
+        Value value = expression.Optimize(session).GetValue(session);
+        return value == ValueNull.Instance ? null : value.GetLong();
+    }
+
+    // H2 2.5 SequenceOptions.check: an explicit option has to fit the sequence's data type.
+    private long? Check(long? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        long[] limits = GetBounds();
+        long v = value.Value;
+        if (v < limits[0] || v > limits[1])
+        {
+            throw DbException.Get(Api.ErrorCode.NumericValueOutOfRange1,
+                v.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        return value;
+    }
+
+    // H2 2.5 SequenceOptions.getCurrentStart.
+    private long GetCurrentStart(Sequence sequence, SessionLocal session)
+        => startValue is not null ? GetStartValue(session)!.Value : sequence.GetBaseValue();
 }

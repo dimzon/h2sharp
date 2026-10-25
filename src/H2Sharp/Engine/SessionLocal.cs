@@ -624,12 +624,10 @@ public sealed class SessionLocal : Session
     /// Gets the database mode, which decides how identifiers and aliases are spelled.
     /// </summary>
     /// <remarks>
-    /// The reference asks the database, which keeps the mode from the connection settings. The
-    /// port's Database does not keep one yet, and the tokenizer, the parser and every conversion
-    /// read the mode through the cast provider, so the session answers the same mode those see.
-    /// When Database keeps its own, this asks it instead.
+    /// H2 SessionLocal.getMode asks the database. Database now stores SET MODE, so reading the
+    /// fixed clock/cast facade here would silently keep regular regex semantics after SET MODE.
     /// </remarks>
-    public override Mode GetMode() => CastDataProvider.GetMode();
+    public override Mode GetMode() => GetDatabase().GetMode();
 
     /// <summary>
     /// Prepares a command for execution.

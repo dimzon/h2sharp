@@ -769,6 +769,44 @@ public sealed partial class Database : CastDataProvider
     }
 
     /// <summary>
+    /// Updates a table in the system table.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="table">the table</param>
+    public void UpdateMeta(SessionLocal session, Tables.Table table)
+    {
+        int id = table.GetId();
+        if (id > 0)
+        {
+            if (!starting && !table.IsTemporary())
+            {
+                Result.Row newRow = meta!.GetTemplateRow();
+                MetaRecord.PopulateRowFromTable(table, newRow);
+                Result.Row? oldRow = FindMetaRow(session, id);
+                if (oldRow is not null)
+                {
+                    meta.UpdateRow(session, oldRow, newRow);
+                }
+            }
+
+            lock (objectIds)
+            {
+                objectIds.Set(id);
+            }
+        }
+    }
+
+    /// <summary>Renames a schema object.</summary>
+    /// <param name="session">the session</param>
+    /// <param name="obj">the object</param>
+    /// <param name="newName">the new name</param>
+    public void RenameSchemaObject(SessionLocal session, Schemas.SchemaObject obj, string newName)
+    {
+        obj.GetSchema().Rename(obj, newName);
+        UpdateMeta(session, obj);
+    }
+
+    /// <summary>
     /// Removes the given object from the system table, the reference's <c>removeMeta</c>.
     /// </summary>
     /// <param name="session">the session</param>

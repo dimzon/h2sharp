@@ -174,10 +174,11 @@ public sealed class SequenceGrammarTests
     public void BasicSequenceOption_Cycle_WrapsAround() // GRM-3346
     {
         using IDbConnection connection = TestDatabase.Open();
-        _ = connection.Execute("CREATE SEQUENCE SEQ_ID MAXVALUE 1 START WITH 1 CYCLE");
+        _ = connection.Execute("CREATE SEQUENCE SEQ_ID MAXVALUE 2 START WITH 1 CYCLE");
         _ = connection.Execute("CREATE SEQUENCE SEQ_ID2 NOCYCLE");
 
         Assert.Equal(1, connection.QuerySingle<int>("SELECT NEXT VALUE FOR SEQ_ID"));
+        Assert.Equal(2, connection.QuerySingle<int>("SELECT NEXT VALUE FOR SEQ_ID"));
         Assert.Equal(1, connection.QuerySingle<int>("SELECT NEXT VALUE FOR SEQ_ID"));
     }
 

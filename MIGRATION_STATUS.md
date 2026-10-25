@@ -7172,5 +7172,134 @@ Indent, FALSE отключает его, SQL NULL остаётся NULL (D-014).
 Наличие настоящего xml:space='preserve' на корне или любом вложенном элементе
 отключает Indent для всего XMLNODE даже при TRUE (D-015). Проверка выполняется
 XPath BCL с XML namespace; похожие обычные атрибуты и текст комментариев не
-влияют на форматирование. Исходные текст/LF сохраняются. Наследуемый namespace
-остаётся открытым пунктом обсуждения.
+влияют на форматирование. Исходные текст/LF сохраняются.
+Фрагментный namespace-контекст утверждён D-016: вложенный QName может
+получить привязку от будущего родителя. BCL reader/XmlConvert проверяют
+структуру и имена, XmlNamespaceManager — области привязок. Namespace-aware
+проверка выполняется при достаточном контексте; ожидающие его фрагменты
+выделяются явно. Фиктивные URI и собственный реестр не вводятся.
+XMLCDATA при `]]>` использует стандартное разбиение WriteCData на несколько
+секций (D-017), сохраняет прочитанное содержимое и тип CDATA. H2 2.5 в таком
+случае возвращает экранированный текст; различие утверждено и проверяется
+отдельно по типам/числу узлов, включая вложенный XMLNODE и namespace-контекст.
+XMLSTARTDOC возвращает Unicode-декларацию XML 1.0 без encoding/standalone
+(D-018), созданную BCL. Кодировка определяется на границе байтового потока.
+Макет проверяет версию/тип декларации, чтение UTF-8 и UTF-16 с BOM и соответствие
+encoding реальному stream writer; декларация не проверяется одной C14N.
+
+### XMLFunction: SQL-обвязка внедрена, исходные XML-тесты утверждены отдельно
+
+Перенесены XMLFunction и Parser.readParameters из H2 2.5. XML-конструирование
+использует BCL по D-012—D-018; локальные платформенные адаптеры не расширяют
+интерфейс H2. Эталонные uppercase-константы оставлены, чтобы XMLNODE не
+столкнулся с PascalCase метода xmlNode. BCL-валидация XML отображается в SQL
+90008; arity, VARCHAR, NULL и constant folding следуют эталону.
+
+Пользователь отдельно утвердил показанный XML-diff: пять проверок в четырёх
+методах и новый XmlFunctionAssert. Восемь SQL, QuerySingle<string>, данные,
+имена шести тестов и Fact сохранены; helper не ослабляет escapeNewline=TRUE.
+Исходные XML-тесты 6/6, новые SQL/XML проверки 37/37; движок против макета
+131/131. Существующие StringUtils JVM-проверки сохраняют эталонный контракт.
+
+Полный core: 1334 passed / 3 прежних PostfixCast WIP failed; прежние 1297
+проверок сохранили Passed. SQL-conformance: 702/947, ровно шесть XML-тестов
+исправлены, 245 прежних падений. По именам регрессий и пропавших — 0.
+Checksum 273 ненативных файлов: только точный утверждённый XML-diff,
+неожиданных изменений — 0. Полные результаты и ограничения описаны в
+`docs/XML_BCL_SQL_IMPLEMENTATION.md`.
+
+### B5 REGEXP: SQL pattern без преобразований
+
+Следующий пункт builtin-спринта — RegexpFunction. Пользователь явно запретил
+препроцессинг SQL regex-текста ради имитации Java: шаблон передаётся
+System.Text.RegularExpressions как есть, SQL-флаги задаются RegexOptions.
+Уточнение закреплено в AGENTS.md и D-001. Несовпадения движков документируются,
+не исправляются вставками в pattern. Для отдельного replacement-аргумента
+пользователь выбрал .NET как есть (D-019): Regex.Replace/Match.Result без
+перевода `$1`/`\1` по режимам. RegexpFunction и три ветви Parser перенесены.
+MakeRegexpFlags возвращает RegexOptions; константы оставлены в эталонном
+uppercase из-за коллизии с PascalCase методов regexpReplace/regexpSubstr.
+
+Исходные SQL regex-тесты 3/3 без правок; новые проверки 41/41. Слеш отдельно
+локализован: обычное '\1' и E'\\1' передают один слеш одинаково JVM/порту;
+различия replacement и region/matching проверены явно и не исправляются
+препроцессингом. SessionLocal.GetMode перенесён как GetDatabase().GetMode()
+из той же Java-версии: прежний cast-provider не видел SET MODE.
+
+Полный core: 1374 passed / 3 старых PostfixCast failed, conformance 705/947
+(242 прежних падения). По именам новых регрессий/пропавших — 0; checksum 273
+ненативных файлов без новых изменений старых тестов. Отчёт:
+`docs/REGEXP_BCL_IMPLEMENTATION.md`. Следующий пункт builtin-спринта — B6 HASH.
+
+### Отложенный спринт .NET-расширений
+
+Пользователь определил общую архитектуру: фабрики Func<HashAlgorithm>, optional
+NuGet-примитивы, произвольные .NET UDF с DI, SQL aliases, DI-triggers и DI-trace.
+ORA_HASH переносится в будущий optional пакет как обычная UDF. План и границы
+эталона — в `docs/SPRINT_DOTNET_EXTENSIONS.md`. Реализация спринта отложена до
+продолжения текущих conformance-задач; исходные тесты отложенных функций сохраняются.
+
+Принятое решение оформлено отдельно в `docs/ADR_DOTNET_EXTENSIONS.md`
+(ADR-001), ссылка и обязательное правило добавлены в AGENTS.md. Соответствующие
+ADR .NET API/адаптеры/фабрики/DI/UDF/aliases/triggers/trace не удаляются из-за
+отсутствия аналога в Java; пересмотр архитектуры требует отдельного решения
+пользователя. Extension-спринт отложен, сам ADR уже принят.
+Уточнение API: главная точка — RegisterXXXX через отдельный эксплицитный
+интерфейс H2Connection только при Closed (создать → настроить → Open),
+DI/builders — отдельные надстройки. Обычный IntelliSense connection/command
+не содержит регистрационных методов.
+ADR/AGENTS/спринт обновлены; существующий IH2Test служит примером pre-Open
+настроек, но production registration не переносится в тестовый интерфейс.
+RegisterUdf проектируется на стандартных BCL Func<TResult>, Func<TArgument,
+TResult> и дальнейших перегрузках; они используют единый registration path.
+DI-фабрика обработчика и вызываемая SQL-реализация различаются явно. Требование
+зафиксировано в ADR/AGENTS/extension-спринте, публичные custom delegate-обёртки
+для обычных UDF не вводятся.
+Дополнения: UUID generation — заменяемая UDF с реализацией по умолчанию;
+обычные FunctionName(arg, ...) builtins/UDF идут через общий parser параметров
+и data-driven dispatcher, расширяется registry, а не код parser. Специальная
+SQL-грамматика и эталонные Expression/Prepared сохраняются. Решения закреплены
+в ADR/AGENTS/extension-спринте; реализация отложена, текущий приоритет — conformance.
+Последнее уточнение: весь HASH/ORA_HASH, включая базовые BCL-хэши, отложен.
+Очередь текущего conformance продолжается с ENCRYPT/DECRYPT и даты/времени;
+хэш-тесты сохраняются в наборе.
+
+### DDL/grammar: sequence options (первый пункт)
+
+`SequenceOptions`, `Sequence` ctor, `CheckOptions`/`GetMaxCacheSize` и разбор
+`NOMINVALUE`/`NOMAXVALUE`/`RESTART` приведены к H2 2.5: nullable getLong,
+`ValueExpression.NULL`/`DEFAULT`, вычисление min/max/start, unsigned-сравнение и
+отсутствующий в эталоне cap 100000 устранены. Добавлен `Mode.DecimalSequences`
+(Oracle), как в эталоне. SequenceGrammarTests 15/15; conformance 705→708,
+core без регрессий. Тест CYCLE исправлен только после отдельного утверждения
+точного diff и jar-доказательства (90009 для min=max=1; 1,2,1 для MAXVALUE 2).
+Все криптофункции по указанию пользователя вынесены в опциональный
+`H2Sharp.Crypto` (D-022), включая HASH/ORA_HASH/ENCRYPT/DECRYPT.
+
+### DDL/grammar: CREATE/ALTER/DROP DOMAIN — перенесено
+
+Перед переносом все сценарии `CreateDomainCommandTests`/`AlterDomainCommandTests`
+сверены с jar 2.5.259. Два старых теста расходились и исправлены после отдельного
+утверждения точных diff: `SET ON UPDATE` копирует выражение в зависимую колонку
+(`DROP ON UPDATE` оставляет 7), а `NOCHECK` не проверяет только существующие
+строки — новые всегда дают 23513.
+
+Перенесены `Domain`, `ConstraintDomain`/`DomainColumnResolver`,
+`DomainValueExpression`, DDL-команды Create/Alter(Expressions, AddConstraint,
+DropConstraint, Rename, RenameConstraint)/DropDomain, Schema/Database registry и
+`RenameSchemaObject`, поддержка домена в `Column` (effective default/onUpdate,
+проверка ограничений, SQL типа), разбор CREATE/ALTER/DROP DOMAIN, `VALUE` в
+domain constraint, `INSERT ... DEFAULT VALUES` и строки
+INFORMATION_SCHEMA.DOMAINS/DOMAIN_CONSTRAINTS. Парсер типов понимает доменное
+имя и квалифицированное имя, сохраняя эталонные коды ошибок
+`SCHEMA_NOT_FOUND`/`DOMAIN_NOT_FOUND` (PG_CATALOG schema в порте пока не
+создаётся — отдельный зафиксированный пробел).
+
+Результаты: Domain-набор 26/26 (Create+Alter+Drop+InformationSchema), новый
+`DomainColumnLifecycleTests` 5/5 — полный цикл доменного столбца:
+CREATE DOMAIN → CREATE TABLE → INSERT (включая DEFAULT VALUES) → UPDATE (в т.ч.
+ON UPDATE и смена ключа) → SELECT/ORDER BY, наследование родительского домена и
+CHECK на INSERT/UPDATE. Полный conformance **740/952** (было 708/947), 212
+прежних падений; core 1375 passed / 3 прежних PostfixCast падения, регрессий по
+именам нет. Checksum 273 защищённых ненативных файлов: только утверждённые
+XML/DDL-изменения, неожиданностей — 0.

@@ -62,6 +62,9 @@ public sealed class Schema : DbObject
     private readonly ConcurrentDictionary<string, Sequence> sequences =
         new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, Domain> domains =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly bool system;
 
     private readonly HashSet<string> temporaryUniqueNames = new(StringComparer.OrdinalIgnoreCase);
@@ -256,6 +259,48 @@ public sealed class Schema : DbObject
     /// <returns>the sequences</returns>
     public List<Sequence> GetAllSequences() => [.. sequences.Values];
 
+    /// <summary>Finds a domain by name.</summary>
+    public Domain? FindDomain(string name) => domains.TryGetValue(name, out Domain? domain) ? domain : null;
+
+    /// <summary>Gets all domains.</summary>
+    public List<Domain> GetAllDomains() => [.. domains.Values];
+
+    /// <summary>Gets all constraints of this schema.</summary>
+    public List<Constraint> GetAllConstraints() => [.. constraints.Values];
+
+    /// <summary>Gets a name for a new constraint of the domain.</summary>
+    public string GetUniqueDomainConstraintName(SessionLocal session, Domain domain)
+        => GetUniqueName(domain.GetName()!, constraints, "CONSTRAINT_");
+
+    /// <summary>Renames a schema object.</summary>
+    public void Rename(SchemaObject obj, string newName)
+    {
+        string oldName = obj.GetName()!;
+        switch (obj)
+        {
+            case Domain domain:
+                _ = domains.TryRemove(oldName, out _);
+                domain.Rename(newName);
+                if (!domains.TryAdd(newName, domain))
+                {
+                    throw DbException.GetInternalError("object already exists: " + newName);
+                }
+
+                break;
+            case Constraint constraint:
+                _ = constraints.TryRemove(oldName, out _);
+                constraint.Rename(newName);
+                if (!constraints.TryAdd(newName, constraint))
+                {
+                    throw DbException.GetInternalError("object already exists: " + newName);
+                }
+
+                break;
+            default:
+                throw new TODOException("Schema.rename: the object kind is not ported");
+        }
+    }
+
     /// <summary>
     /// Adds a schema object to this schema.
     /// </summary>
@@ -301,6 +346,18 @@ public sealed class Schema : DbObject
                 {
                     string name = sequence.GetName()!;
                     if (!sequences.TryAdd(name, sequence))
+                    {
+                        throw DbException.GetInternalError("object already exists: " + name);
+                    }
+
+                    FreeUniqueName(name);
+                    return;
+                }
+
+            case Domain domain:
+                {
+                    string name = domain.GetName()!;
+                    if (!domains.TryAdd(name, domain))
                     {
                         throw DbException.GetInternalError("object already exists: " + name);
                     }
@@ -374,6 +431,18 @@ public sealed class Schema : DbObject
                 {
                     string objName = sequence.GetName()!;
                     if (!sequences.TryRemove(objName, out _))
+                    {
+                        throw DbException.GetInternalError("not found: " + objName);
+                    }
+
+                    FreeUniqueName(objName);
+                    return;
+                }
+
+            case Domain domain:
+                {
+                    string objName = domain.GetName()!;
+                    if (!domains.TryRemove(objName, out _))
                     {
                         throw DbException.GetInternalError("not found: " + objName);
                     }
