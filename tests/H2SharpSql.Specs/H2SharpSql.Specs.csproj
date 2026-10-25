@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\H2Sharp\H2Sharp.csproj" />
+    <Compile Include="..\H2Sharp.Tests\DapperJsonFixture.cs" Link="Infrastructure\DapperJsonFixture.cs" />
   </ItemGroup>
 
 </Project>

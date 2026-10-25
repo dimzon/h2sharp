@@ -743,9 +743,14 @@ public sealed class BuiltinFunctionCallTests
         SessionLocal session = NewSeededSession(out TransactionStore store);
         try
         {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT ID FROM T WHERE COUNT(*) > 1"));
-            Assert.Contains("aggregate calls outside the select list", e.Message);
+            // The jar accepts preparation and refuses execution with 90054.
+            // Preserve the same SQL, input rows and test identity; test the actual refusal.
+            const string sql = "SELECT ID FROM T WHERE COUNT(*) > 1";
+            CommandContainer command = Assert.IsType<CommandContainer>(session.PrepareCommand(sql));
+            H2SharpException e = Assert.Throws<H2SharpException>(() => command.Query(-1));
+            Assert.Equal(ErrorCode.InvalidUseOfAggregateFunction1, e.H2ErrorCode);
+            Assert.Equal(["PREPARE:OK", "EXECUTE:ERR:" + e.H2ErrorCode],
+                RegressionTransitionOracle.Read(sql));
         }
         finally
         {

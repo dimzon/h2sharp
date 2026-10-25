@@ -2081,14 +2081,16 @@ public sealed class SelectTextTests
     [Fact]
     public void GcdAggWaitsForAggregates()
     {
-        // HISTOGRAM, MODE and the JSON aggregates run now; the rest still refuse by name
-        // rather than misreading as a syntax error.
+        // GCD_AGG(NAME) must still refuse a VARCHAR argument, now with the jar's 90008.
+        // This verifies a type error, not an unimplemented-function placeholder.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT GCD_AGG(NAME) FROM T"));
-            Assert.Contains("GCD_AGG", e.Message);
+            const string sql = "SELECT GCD_AGG(NAME) FROM T";
+            H2SharpException e = Assert.Throws<H2SharpException>(() => session.PrepareCommand(sql));
+            Assert.Equal(H2Sharp.Api.ErrorCode.InvalidValue2, e.H2ErrorCode);
+            Assert.Contains("GCD_AGG argument", e.Message);
+            Assert.Equal(["PREPARE:ERR:" + e.H2ErrorCode], RegressionTransitionOracle.Read(sql));
         }
         finally
         {
@@ -2099,13 +2101,20 @@ public sealed class SelectTextTests
     [Fact]
     public void ListaggOverflowWaitsForTruncate()
     {
-        // LISTAGG itself runs; only the ON OVERFLOW clause waits.
+        // ON OVERFLOW ERROR is legal. These original rows fit without overflow.
+        // Check successful preparation and the complete result against the jar.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT LISTAGG(NAME ON OVERFLOW ERROR) FROM T"));
-            Assert.Contains("ON OVERFLOW", e.Message);
+            const string sql = "SELECT LISTAGG(NAME ON OVERFLOW ERROR) FROM T";
+            CommandContainer command = Assert.IsType<CommandContainer>(session.PrepareCommand(sql));
+            using ResultInterface result = command.Query(-1);
+            Assert.True(result.Next());
+            string value = result.CurrentRow()[0]!.GetString()!;
+            Assert.Equal("b,b,c", value);
+            Assert.False(result.Next());
+            Assert.Equal(["PREPARE:OK", "ROW:" + value, "EXECUTE:OK"],
+                RegressionTransitionOracle.Read(sql));
         }
         finally
         {
