@@ -211,6 +211,11 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
 * **TestServlet — не перенесён.** javax.servlet.DbStarter — servlet-контейнер; в .NET
   это ASP.NET Core middleware/хост, другая поверхность. Вопрос: закрыть или делать
   вместе с ASP.NET-интеграцией провайдера.
+* **TestAutoReconnect — вне объёма (решение 2026-10-24).** AUTO_SERVER/auto-reconnect —
+  сетевой режим (Server.createTcpServer, переключение соединений); порт встроенный.
+  Вместе с server/.
+* **TestShell — вне объёма (решение 2026-10-24).** Shell-инструмент (интерактивная
+  консоль) — tools-поверхность, порт её не включает.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
