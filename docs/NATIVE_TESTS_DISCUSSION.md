@@ -250,6 +250,16 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   (beforeFirst/afterLast/absolute) и updatable (insertRow/updateRow) куски — читатель
   ADO.NET forward-only и read-only. Вопрос: перенести переносимую половину как отдельный
   тест геттеров (большая работа — сотни строк на каждый тип), или закрыть.
+* **TestJavaObjectSerializer / TestUrlJavaObjectSerializer — не перенесены.** Проверяют
+  подключение пользовательских JavaObjectSerializer (через свойства соединения и URL);
+  serializer-поверхности в порту нет. Перенести вместе с ней.
+* **TestUpdatableResultSet — не перенесён.** Целиком updatable-курсор (insertRow,
+  updateRow, moveToInsertRow) — та же нерешённая поверхность, что и updatable-куски
+  TestResultSet/TestCompatibilityOracle. Вместе с её решением.
+* **TestPreparedStatement — не перенесён.** Гибрид: переносимая половина (setXxx-типы,
+  batch, параметры) пересекается с TestStatement/TestTransactionIsolation; не переносимая
+  — scrollable/updatable/generated keys. Вопрос: переносить переносимую половину после
+  решения по TestResultSet, чтобы не дублировать.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
