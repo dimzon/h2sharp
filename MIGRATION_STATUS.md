@@ -697,7 +697,8 @@ TestConnection, TestStatement, TestTransaction, TestOptimizations, TestRights; �
 `unit/`: TestMathUtils, TestCollation, TestDbException, TestPattern, TestIntArray,
 TestBinaryOperation, TestOverflow, TestMultiThreadedKernel, TestConnectionInfo, TestStreams,
 TestConcurrentJdbc, TestStringCache, TestCases, TestAlter, TestCache, TestFile,
-TestDateTimeTemplate). Порядок: `db/` и `jdbc/` до конца, `unit/` параллельно.
+TestDateTimeTemplate). Пакеты `db/`, `jdbc/` и `unit/` разобраны полностью: каждый
+файл эталона либо перенесён, либо лежит в docs/NATIVE_TESTS_DISCUSSION.md с причиной.
 
 ## Страховка от тихой деградации (сделано)
 
