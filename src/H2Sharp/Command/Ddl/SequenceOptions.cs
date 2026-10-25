@@ -55,6 +55,8 @@ public class SequenceOptions
 
     private Sequence.Cycle cycle = Sequence.Cycle.NO_CYCLE;
 
+    private readonly Sequence? oldSequence;
+
     /// <summary>
     /// Creates options with nothing set.
     /// </summary>
@@ -70,13 +72,36 @@ public class SequenceOptions
     public SequenceOptions(Sequence oldSequence, TypeInfo dataType)
     {
         ArgumentNullException.ThrowIfNull(oldSequence);
+        this.oldSequence = oldSequence;
         this.dataType = dataType;
         bounds = SequenceOptions.GetBounds(dataType);
     }
 
     /// <summary>Gets the data type.</summary>
     /// <returns>the data type</returns>
-    public TypeInfo GetDataType() => dataType;
+    public TypeInfo GetDataType()
+    {
+        if (oldSequence is not null)
+            lock (oldSequence) CopyFromOldSequence();
+        return dataType;
+    }
+
+    private void CopyFromOldSequence()
+    {
+        long[] limits = GetBounds();
+        long min = System.Math.Max(oldSequence!.GetMinValue(), limits[0]);
+        long max = System.Math.Min(oldSequence.GetMaxValue(), limits[1]);
+        if (max < min) { min = limits[0]; max = limits[1]; }
+        minValue = ValueExpression.Get(ValueBigint.Get(min));
+        maxValue = ValueExpression.Get(ValueBigint.Get(max));
+        long value = oldSequence.GetStartValue();
+        if (value >= min && value <= max) startValue = ValueExpression.Get(ValueBigint.Get(value));
+        value = oldSequence.GetBaseValue();
+        if (value >= min && value <= max) restartValue = ValueExpression.Get(ValueBigint.Get(value));
+        increment = ValueExpression.Get(ValueBigint.Get(oldSequence.GetIncrement()));
+        cycle = oldSequence.GetCycle();
+        cacheSize = ValueExpression.Get(ValueBigint.Get(oldSequence.GetCacheSize()));
+    }
 
     /// <summary>Sets the data type.</summary>
     /// <param name="dataType">the data type</param>

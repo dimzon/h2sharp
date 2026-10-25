@@ -802,8 +802,38 @@ public sealed partial class Database : CastDataProvider
     /// <param name="newName">the new name</param>
     public void RenameSchemaObject(SessionLocal session, Schemas.SchemaObject obj, string newName)
     {
+        CheckWritingAllowed();
         obj.GetSchema().Rename(obj, newName);
         UpdateMeta(session, obj);
+        ClearQueryCache(obj.GetId());
+    }
+
+    /// <summary>Renames a table, with the D-011 table metadata entry point.</summary>
+    public void RenameSchemaObject(SessionLocal session, Tables.Table table, string newName)
+    {
+        CheckWritingAllowed();
+        table.GetSchema()!.Rename(table, newName);
+        UpdateMeta(session, table);
+        foreach (DbObject child in table.GetChildren())
+            if (child.GetCreateSql() is not null) UpdateMeta(session, child);
+        ClearQueryCache(table.GetId());
+    }
+
+    private int nextTempTableId;
+
+    /// <summary>Gets a unique temporary table name for an ALTER TABLE copy.</summary>
+    public string GetTempTableName(string baseName, SessionLocal session)
+    {
+        int maxBaseLength = Constants.MaxIdentifierLength - (7 + Values.ValueInteger.DisplaySize * 2);
+        if (baseName.Length > maxBaseLength) baseName = baseName[..maxBaseLength];
+        string tempName;
+        do
+        {
+            int id = System.Threading.Interlocked.Increment(ref nextTempTableId) - 1;
+            tempName = baseName + "_COPY_" + session.GetId() + '_' + id;
+        }
+        while (GetSchema(Constants.SchemaMain).FindTableOrView(session, tempName) is not null);
+        return tempName;
     }
 
     /// <summary>

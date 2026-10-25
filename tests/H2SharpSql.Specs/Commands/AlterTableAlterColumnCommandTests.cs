@@ -3,6 +3,7 @@
 //
 // docs/commands.html — ALTER TABLE ... ALTER COLUMN, one test per checklist row.
 using System;
+using System.Collections.Generic;
 using System.Data;
 using Dapper;
 using H2SharpSql.Specs.Infrastructure;
@@ -154,7 +155,8 @@ public sealed class AlterTableAlterColumnCommandTests
 
         string value = connection.QuerySingle<string>(
             "SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'TEST' AND COLUMN_NAME = 'NAME'");
-        Assert.Null(value);
+        // H2 2.5 DROP EXPRESSION removes a generated expression, not an ordinary DEFAULT.
+        Assert.Equal("'n/a'", value);
     }
 
     /// <summary>docs/commands.html:1341 — | { SET ON UPDATE expression }</summary>
@@ -256,7 +258,11 @@ public sealed class AlterTableAlterColumnCommandTests
 
         _ = connection.Execute("ALTER TABLE TEST ALTER COLUMN NAME SET INVISIBLE");
 
-        _ = Assert.ThrowsAny<Exception>(() => connection.ExecuteScalar("SELECT NAME FROM TEST"));
+        // Invisible columns remain addressable explicitly, but are excluded from SELECT *.
+        Assert.Equal("Ada", connection.ExecuteScalar<string>("SELECT NAME FROM TEST"));
+        IDictionary<string, object> row = connection.QuerySingle("SELECT * FROM TEST");
+        Assert.Single(row);
+        Assert.Equal(1, row["ID"]);
     }
 
     private static int ColumnCount(IDbConnection connection, string column) =>

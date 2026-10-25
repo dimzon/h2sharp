@@ -489,8 +489,10 @@ public sealed class Select : Query
                 break;
             case ExpressionVisitor.Deterministic:
             case ExpressionVisitor.SetMaxDataModificationId:
-            case ExpressionVisitor.GetDependencies:
                 throw new TODOException("Select.isEverything: this visitor needs unported table metadata");
+            case ExpressionVisitor.GetDependencies:
+                foreach (TableFilter filter in filters) visitor.AddDependency(filter.GetTable());
+                break;
             default:
                 // The reference's optimizeEvaluatableSubqueries setting defaults to true;
                 // DbSettings is not ported, so the default traversal is used here.

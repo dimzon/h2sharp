@@ -67,6 +67,14 @@ public sealed partial class Store : IDisposable
     /// </summary>
     private readonly TransactionStore transactionStore;
 
+    private int temporaryMapId;
+
+    /// <summary>Gets a new temporary map name, as Store.nextTemporaryMapName.</summary>
+    public string NextTemporaryMapName()
+    {
+        lock (this) return "temp." + temporaryMapId++;
+    }
+
     private readonly bool encrypted;
 
     private readonly string? fileName;

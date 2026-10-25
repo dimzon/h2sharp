@@ -1192,6 +1192,53 @@ public abstract class Table
         return null;
     }
 
+    /// <summary>Gets a column, allowing a missing name for IF EXISTS.</summary>
+    public Column? GetColumn(string columnName, bool ifExists)
+    {
+        Column? column = FindColumn(columnName);
+        if (column is null && !ifExists) throw DbException.Get(Api.ErrorCode.ColumnNotFound1, columnName);
+        return column;
+    }
+
+    /// <summary>Renames a column after checking for a duplicate name.</summary>
+    public void RenameColumn(Column column, string newName)
+    {
+        foreach (Column c in GetColumns())
+        {
+            if (!ReferenceEquals(c, column) && c.GetName().Equals(newName, StringComparison.Ordinal))
+                throw DbException.Get(Api.ErrorCode.DuplicateColumnName1, newName);
+        }
+        // This table hierarchy resolves columns from the array; no separate name map exists.
+        column.Rename(newName);
+    }
+
+    /// <summary>Checks whether the table supports ALTER TABLE.</summary>
+    public virtual void CheckSupportAlter() => throw DbException.GetUnsupportedException("ALTER TABLE");
+
+    /// <summary>Renames this schema object.</summary>
+    public virtual void Rename(string newName) => throw new TODOException("Table.rename: this table kind is not ported");
+
+    /// <summary>Gets first-level schema children, in the reference's order.</summary>
+    public List<DbObject> GetChildren()
+    {
+        List<DbObject> children = [.. GetIndexes()];
+        if (constraints is not null) children.AddRange(constraints);
+        if (sequences is not null) children.AddRange(sequences);
+        // Triggers, persistent views, synonyms and rights do not exist in this hierarchy yet.
+        return children;
+    }
+
+    /// <summary>Gets the columns included in an implicit INSERT column list.</summary>
+    public Column[] GetVisibleColumns()
+    {
+        List<Column> columns = [];
+        foreach (Column column in GetColumns()) if (column.GetVisible()) columns.Add(column);
+        return columns.ToArray();
+    }
+
+    /// <summary>Gets the SQL used by the metadata table.</summary>
+    public virtual string? GetCreateSqlForMeta() => GetCreateSql();
+
     /// <summary>
     /// Gets the schema name of this table, or null when it has none.
     /// </summary>

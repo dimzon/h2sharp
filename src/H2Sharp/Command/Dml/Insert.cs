@@ -32,7 +32,7 @@ namespace H2Sharp.Command.Dml;
 /// <summary>
 /// An INSERT statement.
 /// </summary>
-public sealed class Insert : CommandWithValues
+public sealed class Insert : CommandWithValues, ResultTarget
 {
     /// <summary>
     /// Creates the statement.
@@ -82,6 +82,12 @@ public sealed class Insert : CommandWithValues
 
     private long rowNumber;
 
+    private Query.Query? query;
+    private bool? overridingSystem;
+    private bool insertFromSelect;
+    private ResultTarget? deltaChangeCollector;
+    private Tables.DataChangeDeltaTable.ResultOption? deltaChangeCollectionMode;
+
     /// <summary>
     /// Sets the columns the values are for.
     /// </summary>
@@ -104,14 +110,14 @@ public sealed class Insert : CommandWithValues
     /// </summary>
     /// <param name="query">the query</param>
     public void SetQuery(Query.Query query)
-        => throw new TODOException("Insert.setQuery: Query is not ported");
+        => this.query = query;
 
     /// <summary>
     /// Sets whether the values override what the system would generate.
     /// </summary>
     /// <param name="overridingSystem">true when the statement says OVERRIDING SYSTEM VALUE</param>
-    public void SetOverridingSystem(bool overridingSystem)
-        => throw new TODOException("Insert.setOverridingSystem: not ported");
+    public void SetOverridingSystem(bool? overridingSystem)
+        => this.overridingSystem = overridingSystem;
 
     /// <summary>
     /// Sets what a column becomes when the row duplicates a key, for ON DUPLICATE KEY UPDATE.
@@ -130,6 +136,18 @@ public sealed class Insert : CommandWithValues
     /// </remarks>
     public override long Run(ResultTarget? deltaChangeCollector, Tables.DataChangeDeltaTable.ResultOption? deltaChangeCollectionMode)
     {
+        this.deltaChangeCollector = deltaChangeCollector;
+        this.deltaChangeCollectionMode = deltaChangeCollectionMode;
+        try { return InsertRows(); }
+        finally
+        {
+            this.deltaChangeCollector = null;
+            this.deltaChangeCollectionMode = null;
+        }
+    }
+
+    private long InsertRows()
+    {
         SessionLocal session = GetSession();
         Table target = table ?? throw Message.DbException.GetInternalError("INSERT without a table");
         Column[] targetColumns = columns
@@ -140,11 +158,12 @@ public sealed class Insert : CommandWithValues
             Row newRow = target.GetTemplateRow();
             for (int i = 0; i < targetColumns.Length; i++)
             {
-                newRow.SetValue(targetColumns[i].GetColumnId(), expr[i].GetValue(session));
+                if (!ReferenceEquals(expr[i], ValueExpression.Default))
+                    newRow.SetValue(targetColumns[i].GetColumnId(), expr[i].GetValue(session));
             }
 
             rowNumber++;
-            target.ConvertInsertRow(session, newRow, null);
+            target.ConvertInsertRow(session, newRow, overridingSystem);
             if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.NEW)
             {
                 // The row as it is now: the defaults are evaluated, the triggers have not run.
@@ -155,6 +174,7 @@ public sealed class Insert : CommandWithValues
             // after-row fires only for the row that was written.
             if (!target.FireBeforeRow(session, null, newRow))
             {
+                target.Lock(session, Table.WriteLock);
                 target.AddRow(session, newRow);
                 Tables.DataChangeDeltaTable.CollectForInsert(
                     session, target, deltaChangeCollector, deltaChangeCollectionMode, newRow);
@@ -167,6 +187,21 @@ public sealed class Insert : CommandWithValues
             }
         }
 
+        if (ValuesExpressionList.Count == 0)
+        {
+            target.Lock(session, Table.WriteLock);
+            if (insertFromSelect) throw new TODOException("Insert.insertRows: DIRECT query-to-target streaming is not ported");
+            else
+            {
+                ResultInterface rows = query!.Run(0);
+                try
+                {
+                    while (rows.Next()) AddRow(rows.CurrentRow());
+                }
+                finally { rows.Close(); }
+            }
+        }
+
         return rowNumber;
     }
 
@@ -175,14 +210,29 @@ public sealed class Insert : CommandWithValues
     /// </summary>
     /// <param name="values">the values</param>
     public void AddRow(params Value?[] values)
-        => throw new TODOException("Insert.addRow: not ported");
+    {
+        Table target = table!;
+        Row row = target.GetTemplateRow();
+        SetCurrentRowNumber(++rowNumber);
+        for (int i = 0; i < columns!.Length; i++) row.SetValue(columns[i].GetColumnId(), values[i]!);
+        target.ConvertInsertRow(GetSession(), row, overridingSystem);
+        if (deltaChangeCollectionMode == Tables.DataChangeDeltaTable.ResultOption.NEW)
+            deltaChangeCollector?.AddRow([.. row.GetValueList()]);
+        if (!target.FireBeforeRow(GetSession(), null, row))
+        {
+            target.AddRow(GetSession(), row);
+            Tables.DataChangeDeltaTable.CollectForInsert(GetSession(), target, deltaChangeCollector, deltaChangeCollectionMode, row);
+            target.FireAfterRow(GetSession(), null, row, false);
+        }
+        else Tables.DataChangeDeltaTable.CollectForInsert(GetSession(), target, deltaChangeCollector, deltaChangeCollectionMode, row);
+    }
 
     /// <inheritdoc/>
     public override long GetRowCount() => rowNumber;
 
     /// <inheritdoc/>
     public void LimitsWereApplied()
-        => throw new TODOException("Insert.limitsWereApplied: not ported");
+    { }
 
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
@@ -202,7 +252,7 @@ public sealed class Insert : CommandWithValues
     /// </summary>
     /// <param name="value">true for INSERT INTO ... SELECT</param>
     public void SetInsertFromSelect(bool value)
-        => throw new TODOException("Insert.setInsertFromSelect: not ported");
+        => insertFromSelect = value;
 
     /// <summary>
     /// Gets what a column becomes when the row duplicates a key.
@@ -230,6 +280,9 @@ public sealed class Insert : CommandWithValues
     /// </remarks>
     protected override void DoPrepare()
     {
+        if (columns is null)
+            columns = ValuesExpressionList.Count > 0 && ValuesExpressionList[0].Length == 0
+                ? [] : table!.GetVisibleColumns();
         Column[] targetColumns = columns
             ?? throw Message.DbException.GetInternalError("INSERT without columns");
         foreach (Expression[] row in ValuesExpressionList)
@@ -249,6 +302,12 @@ public sealed class Insert : CommandWithValues
 
                 row[i] = expression;
             }
+        }
+        if (ValuesExpressionList.Count == 0)
+        {
+            query!.Prepare();
+            if (query.GetColumnCount() != targetColumns.Length)
+                throw Message.DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
         }
     }
 }

@@ -216,11 +216,15 @@ public abstract class Index : SchemaObject
     /// statement that creates it. <see cref="MvStore.Db.MVPrimaryIndex"/> says so.
     /// </remarks>
     public override string? GetCreateSql()
+        => GetCreateSqlForCopy(table!, GetSql(HasSql.DefaultSqlFlags));
+
+    /// <inheritdoc/>
+    public override string? GetCreateSqlForCopy(Table targetTable, string quotedName)
     {
         StringBuilder builder = new("CREATE ");
         _ = builder.Append(indexType is null ? "INDEX" : indexType.GetSql(true));
-        _ = builder.Append(' ').Append(GetSql(HasSql.DefaultSqlFlags)).Append(" ON ");
-        _ = table!.GetSql(builder, HasSql.DefaultSqlFlags);
+        _ = builder.Append(' ').Append(quotedName).Append(" ON ");
+        _ = targetTable.GetSql(builder, HasSql.DefaultSqlFlags);
         if (comment is not null)
         {
             _ = builder.Append(" COMMENT ");

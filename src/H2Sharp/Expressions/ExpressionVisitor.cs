@@ -149,6 +149,9 @@ public sealed class ExpressionVisitor
 
     private readonly HashSet<Column>? columns2;
 
+    // D-011: table objects and DbObject share this dependency set through object.
+    private HashSet<object>? dependencies;
+
     // Typed CLR counterpart of the reference visitor's set for this visitor kind.
     private HashSet<ColumnResolver>? columnResolvers;
 
@@ -301,7 +304,13 @@ public sealed class ExpressionVisitor
     /// Create a new visitor object to collect dependencies.
     /// </summary>
     public static ExpressionVisitor GetDependenciesVisitor(HashSet<object> dependencies)
-        => throw new TODOException("ExpressionVisitor.GetDependenciesVisitor: DbObject is not ported");
+        => new(GetDependencies) { dependencies = dependencies };
+
+    /// <summary>Adds a schema dependency.</summary>
+    public void AddDependency(object? dependency)
+    {
+        if (dependency is not null) dependencies!.Add(dependency);
+    }
 
     /// <summary>
     /// Create a new visitor to get all referenced columns, grouped by table.

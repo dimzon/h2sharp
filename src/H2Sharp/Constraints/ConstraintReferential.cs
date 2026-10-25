@@ -89,7 +89,7 @@ public class ConstraintReferential : Constraint
     /// <param name="forTable">the table to create the object for</param>
     /// <param name="quotedName">the name of this object (quoted if necessary)</param>
     /// <returns>the SQL statement</returns>
-    public string GetCreateSqlForCopy(Table forTable, string quotedName)
+    public override string GetCreateSqlForCopy(Table forTable, string quotedName)
     {
         return GetCreateSqlForCopy(forTable, refTable!, quotedName, internalIndex: true);
     }

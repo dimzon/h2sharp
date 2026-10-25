@@ -40,6 +40,18 @@ else:
             domain = json.loads((OUT / "approved-domain-test-changes.json").read_text(encoding="utf-8"))
             assert domain["user_approval"] == "Утверждаю оба diff"
             allowed.update(domain["expected_files"])
+            alter_column_path = OUT / "approved-alter-column-test-changes.json"
+            if alter_column_path.exists():
+                alter_column = json.loads(alter_column_path.read_text(encoding="utf-8"))
+                assert alter_column["user_approval"] == "Утверждаю оба diff"
+                assert set(alter_column["expected_files"]) == {"tests/H2SharpSql.Specs/Commands/AlterTableAlterColumnCommandTests.cs"}
+                allowed.update(alter_column["expected_files"])
+            mv_path = OUT / "approved-mv-table-test-change.json"
+            if mv_path.exists():
+                mv = json.loads(mv_path.read_text(encoding="utf-8"))
+                assert mv["user_approval"] == "Утверждаю diff"
+                assert set(mv["expected_files"]) == {"tests/H2Sharp.Tests/MVTableTests.cs"}
+                allowed.update(mv["expected_files"])
     changed = [name for name, expected in files.items()
         if not (ROOT / name).is_file() or checksum(ROOT / name) != allowed.get(name, expected)]
     changed += [name for name, expected in allowed.items()

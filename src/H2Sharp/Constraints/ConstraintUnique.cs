@@ -92,7 +92,7 @@ public class ConstraintUnique : Constraint
         return GetCreateSqlForCopy(table, GetSql(HasSql.DefaultSqlFlags), internalIndex: false);
     }
 
-    private string GetCreateSqlForCopy(Table forTable, string quotedName)
+    public override string GetCreateSqlForCopy(Table forTable, string quotedName)
     {
         return GetCreateSqlForCopy(forTable, quotedName, internalIndex: true);
     }

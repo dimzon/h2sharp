@@ -7303,3 +7303,77 @@ CHECK на INSERT/UPDATE. Полный conformance **740/952** (было 708/947
 прежних падений; core 1375 passed / 3 прежних PostfixCast падения, регрессий по
 именам нет. Checksum 273 защищённых ненативных файлов: только утверждённые
 XML/DDL-изменения, неожиданностей — 0.
+
+### DDL/grammar: ALTER TABLE ALTER COLUMN — перенесено
+
+Накопленная работа XML/REGEXP/sequence/DOMAIN сначала зафиксирована коммитом
+`2e560c9` (`Port XML and regexp functions, sequence options and domains`).
+Эталон ALTER COLUMN — `Parser.java:8152–8322,8579–8634`,
+`AlterTableAlterColumn.java`, `AlterTableRenameColumn.java`, `Column.java`
+из зафиксированного H2 2.5.259.
+
+Перенесены RENAME, SELECTIVITY, SET/DROP DEFAULT, DROP EXPRESSION,
+SET/DROP ON UPDATE, SET/DROP DEFAULT ON NULL, SET NOT NULL, DROP NOT NULL /
+SET NULL, SET VISIBLE/INVISIBLE, полное определение столбца и SET DATA TYPE /
+TYPE с USING. Сохранены прежние identity options, SET GENERATED и DROP IDENTITY;
+при смене типа identity копируются границы, шаг, cache и следующий номер
+(`SequenceOptions.copyFromOldSequence`). IF EXISTS для таблицы и столбца
+разрешает отсутствующий объект, сохраняя разбор оставшегося SQL.
+
+`Parser.Columns.cs` использует эталонные Prepared/Column напрямую. Для
+эталонного copyData понадобились parseColumnForTable, CREATE TABLE metadata
+replay, INSERT SELECT / OVERRIDING, DROP TABLE ... IGNORE, CreateTableData /
+Schema.createTable, Column.copy/isWideningConversion и GetCreateSql(forMeta).
+Порядок копирования: clone definitions → CREATE copy → основной индекс при
+возможности → INSERT ... OVERRIDING SYSTEM VALUE SELECT (с USING) → остальные
+индексы/ограничения → DROP old → RENAME copy и детей. При ошибке конвертации
+копия удаляется, исходные строки остаются. Перед NOT NULL проверяются строки;
+identity/primary key не разрешают DROP NOT NULL. Dependency visitor запрещает
+default/on-update, зависящие от самой изменяемой таблицы. Persistent TableView,
+triggers и synonyms пока не создаются портом; соответствующих детей у таблиц
+ещё нет, их lifecycle остаётся будущей работой.
+
+Для файлового копирования перенесены MVTable.rebuildIndexBlockMerge /
+dumpBufferIntoTempMap и Store.nextTemporaryMapName; используется существующий
+MVSecondaryIndex.addRowsToBuffer/addBufferedRows, без нового алгоритма сортировки.
+C# не поддерживает Java wildcard capture `MVIndex<?,?>`: эталонные методы
+закрыты generic-параметрами и вызываются для существующих пар ключ/значение
+`SearchRow/Value` и `long/SearchRow`. D-011 сохраняется: Table не DbObject,
+поэтому RenameSchemaObject/Schema.Rename имеют table-overload, а существующий
+dependency visitor собирает `HashSet<object>`. Это платформенные подписи;
+SQL-структура и порядок обхода остаются эталонными.
+
+Отдельно утверждены три точных исправления тестов после запуска jar:
+- DROP EXPRESSION оставляет обычный DEFAULT `'n/a'` (удаляет только generated).
+- INVISIBLE скрывает столбец из wildcard и не запрещает явный SELECT NAME.
+- MVTableTests проверяет `CREATE MEMORY TABLE`, а не подстроку `CREATE TABLE`:
+  эталонный TableBase formatter указывает тип хранения.
+`record_alter_column_approval.py` сверяет эти diff с `2e560c9`; исходный checksum
+manifest не обновлялся. 273 защищённых файла: ровно 6 утверждённых XML/DDL/MVTable
+файлов, неожиданных изменений — 0.
+
+Проверки:
+- `AlterTableAlterColumnCommandTests` **19/19** (16 прежних падений исправлено).
+- Новый `AlterColumnOracleTests` **11/11**: SQL и коды ошибок построчно против
+  jar, default/onUpdate/nullability, visibility, rename с index/FK,
+  type/USING с индексами, identity/generation, domain и неудачная конвертация,
+  входящие FK, точный SQL metadata. Файловый сценарий принудительно проходит
+  несколько отсортированных блоков, переоткрывает порт и читает файл на JVM.
+- Полный core: **1386 passed / 3 failed / 1389 total**; три прежних
+  PostfixCastOracleTests, новых падений по именам нет; добавлено 11 зелёных тестов.
+- Полный conformance: **760/952**, 192 прежних падения (было 740/952);
+  помимо ALTER COLUMN зелёными стали INSERT SELECT, OVERRIDING, column
+  SELECTIVITY/COMMENT и INVISIBLE wildcard. Passed → Failed: **0**.
+- Engine Debug build net8.0/net10.0: 0 errors / 0 warnings; git diff --check чистый.
+- Дополнительный запуск native TestIndexHints / TestCompoundIndexSearch /
+  TestCompoundIndexParamSearch с H2SHARP_NATIVE_TESTS=1 останавливается на
+  неперенесённом EXPLAIN ANALYZE; файлы этих тестов не менялись.
+- После запроса полного native-прогона обнаружено 99 xUnit entry points.
+  Общий запуск всех категорий оборван stack overflow в ConditionAndOr.Optimize
+  из TestOptimizations.TestConditionsStackOverflow: успели завершиться 52
+  (7 passed / 45 failed). Для проверки остальных начат запуск каждого entry
+  point отдельным процессом; общий оборванный запуск не считается полным результатом.
+
+TRX: `alter-column-core-final.trx`, `alter-column-specs-final.trx`,
+`alter-column-oracle-final.trx`, `alter-column-native-enabled.trx` в прежней
+внешней директории `h2-xml-bcl-prototype-20261025/xml-test-proposal`.

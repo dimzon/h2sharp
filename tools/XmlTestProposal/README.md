@@ -22,3 +22,11 @@ source files, and `report_results.py` for name-by-name TRX transitions.
 sealed proposal after applying the approved patch. It is not a baseline updater.
 
 Result summary and commands: `docs/XML_BCL_SQL_IMPLEMENTATION.md`.
+
+Subsequent DDL batches have separately approved changes for CYCLE, DOMAIN and
+ALTER COLUMN. `record_alter_column_approval.py` checks the exact two ALTER COLUMN
+diffs and one MVTable formatter assertion against commit `2e560c9`; its sealed
+approval records are stored in the same external evidence directory. Run
+`scoped_baseline.py verify-approved` to check all 273 original protected files
+with exactly these six approved XML/DDL/MVTable files. The original manifest is
+not regenerated. Current DDL and regression results are in `MIGRATION_STATUS.md`.

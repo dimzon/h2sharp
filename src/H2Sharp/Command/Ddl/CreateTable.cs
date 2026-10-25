@@ -126,11 +126,6 @@ public sealed class CreateTable : CommandWithColumns
             throw new TODOException("CreateTable.update: table engines are not ported");
         }
 
-        if (comment is not null)
-        {
-            throw new TODOException("CreateTable.update: table comments are not ported");
-        }
-
         SessionLocal session = GetSession();
         Engine.Database db = session.GetDatabase();
         Schema schema = GetSchema();
@@ -145,24 +140,19 @@ public sealed class CreateTable : CommandWithColumns
         }
 
         ChangePrimaryKeysToNotNull(columns);
-        MvStore.Db.MVTable table = new(
-            db,
-            schema,
-            GetObjectId(),
-            tableName,
-            [.. columns],
-            db.IsPersistent() && persistIndexes,
-            db.IsPersistent() && persistData);
-        foreach (Column column in columns)
+        CreateTableData data = new()
         {
-            column.SetTable(table, column.GetColumnId());
-        }
+            Id = GetObjectId(), TableName = tableName, Columns = columns, Session = session,
+            PersistIndexes = db.IsPersistent() && persistIndexes, PersistData = persistData,
+        };
+        Table table = schema.CreateTable(data);
 
         // The sequences of the identity columns are created after the table, because the
         // column needs the table to resolve its names, and the expressions of the generated
         // columns are prepared after that, because their resolver needs the columns of the
         // table.
         List<Sequence> sequences = GenerateSequences(columns, temporary);
+        table.SetComment(comment);
         db.LockMeta(session);
         db.AddSchemaObject(session, table);
         try

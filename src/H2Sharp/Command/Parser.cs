@@ -586,6 +586,23 @@ public sealed partial class Parser
         {
             prepared = PrepareCreateSequence(current);
         }
+        else if (IsWord("ALTER", consume: false) && NextIs("TABLE"))
+        {
+            prepared = ParseAlterTable();
+        }
+        else if (IsWord("INSERT"))
+        {
+            prepared = ParseInsert(start);
+        }
+        else if (IsWord("CREATE", consume: false) && (NextIs("TABLE") || NextIs("MEMORY") || NextIs("CACHED")))
+        {
+            Read();
+            bool memory = IsWord("MEMORY");
+            bool cached = !memory && IsWord("CACHED");
+            bool persistIndexes = cached || !memory && current.GetDatabase().GetDefaultTableType() == Tables.Table.TYPE_CACHED;
+            ExpectWord("TABLE");
+            prepared = ParseCreateTable(false, false, persistIndexes);
+        }
         else if (IsWord("CREATE", consume: false) && NextIs("DOMAIN"))
         {
             prepared = PrepareCreateDomain(current);
@@ -597,6 +614,10 @@ public sealed partial class Parser
         else if (IsWord("DROP", consume: false) && NextIs("DOMAIN"))
         {
             prepared = PrepareDropDomain(current);
+        }
+        else if (IsWord("DROP", consume: false) && NextIs("TABLE"))
+        {
+            prepared = ParseDrop();
         }
 
         else if (IsWord("DROP", consume: false) && NextIs("ALL"))
@@ -940,6 +961,7 @@ public sealed partial class Parser
         List<Expressions.Expression> columns = [];
         foreach (Tables.Column column in filter.GetTable().GetColumns())
         {
+            if (!column.GetVisible()) continue;
             columns.Add(new Expressions.ExpressionColumn(column, filter, 0));
         }
 
@@ -3066,6 +3088,7 @@ public sealed partial class Parser
 
                 foreach (Tables.Column column in f.GetTable().GetColumns())
                 {
+                    if (!column.GetVisible()) continue;
                     if (exceptColumns is not null)
                     {
                         bool excluded = false;

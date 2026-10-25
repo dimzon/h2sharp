@@ -296,8 +296,43 @@ public sealed class Schema : DbObject
                 }
 
                 break;
+            case Index index:
+                _ = indexes.TryRemove(oldName, out _);
+                index.Rename(newName);
+                if (!indexes.TryAdd(newName, index))
+                    throw DbException.GetInternalError("object already exists: " + newName);
+                break;
             default:
                 throw new TODOException("Schema.rename: the object kind is not ported");
+        }
+    }
+
+    /// <summary>Renames a table (D-011: Table is not a SchemaObject in this hierarchy).</summary>
+    public void Rename(Table table, string newName)
+    {
+        string oldName = table.GetTableName();
+        if (oldName == newName || tablesAndViews.ContainsKey(newName))
+            throw DbException.GetInternalError("object already exists: " + newName);
+        if (!tablesAndViews.TryRemove(oldName, out _))
+            throw DbException.GetInternalError("not found: " + oldName);
+        table.Rename(newName);
+        tablesAndViews[newName] = table;
+    }
+
+    /// <summary>Creates a table from its definition, as Schema.createTable.</summary>
+    public Table CreateTable(Command.Ddl.CreateTableData data)
+    {
+        lock (GetDatabase())
+        {
+            if (!data.Temporary || data.GlobalTemporary) GetDatabase().LockMeta(data.Session);
+            data.Schema = this;
+            if (data.TableEngine is not null || data.TableEngineParams is { Count: > 0 })
+                throw new TODOException("Schema.createTable: external table engines are not ported");
+            if (data.Temporary || data.GlobalTemporary)
+                throw new TODOException("Schema.createTable: temporary table factory is not ported");
+            // The port's existing default store table factory is the MVTable constructor.
+            return new MvStore.Db.MVTable(GetDatabase(), this, data.Id, data.TableName,
+                [.. data.Columns], data.PersistIndexes, data.PersistData);
         }
     }
 

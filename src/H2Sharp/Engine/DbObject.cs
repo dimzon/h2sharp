@@ -260,6 +260,10 @@ public abstract class DbObject
     /// <returns>the SQL statement, or null</returns>
     public abstract string? GetCreateSql();
 
+    /// <summary>Gets the SQL to copy this child to another table.</summary>
+    public virtual string? GetCreateSqlForCopy(Tables.Table table, string quotedName)
+        => throw new TODOException("DbObject.getCreateSQLForCopy: this object kind is not ported");
+
     /// <summary>
     /// Construct a DROP ... SQL statement for this object.
     /// </summary>

@@ -76,7 +76,7 @@ public sealed class MetaRecord : IComparable<MetaRecord>
         r.SetValue(0, ValueInteger.Get(table.GetId()));
         r.SetValue(1, ValueInteger.Get(0));
         r.SetValue(2, ValueInteger.Get(DbObject.TableOrView));
-        r.SetValue(3, ValueVarchar.Get(table.GetCreateSql()!));
+        r.SetValue(3, ValueVarchar.Get(table.GetCreateSqlForMeta()!));
     }
 
     /// <summary>

@@ -1,9 +1,11 @@
 # Спринт: builtin- и aggregate-функции (SQL conformance)
 
 План утверждён. **Batch A (A0, A1, A3, A4), B2 XML и B5 REGEXP выполнены**.
-Текущий conformance — **740/952**. DDL/grammar: sequence options 15/15 и
+Текущий conformance — **760/952**. DDL/grammar: sequence options 15/15 и
 CREATE/ALTER/DROP DOMAIN перенесены; Domain-набор 26/26, новый полный
-lifecycle доменного столбца 5/5. Весь B6 HASH/ORA_HASH отложен; B7
+lifecycle доменного столбца 5/5; ALTER COLUMN 19/19 и JVM lifecycle/error/metadata
+сверка 11/11. Смена типа копирует таблицу, индексы и ограничения по эталону,
+включая файловый block-merge и переоткрытие. Весь B6 HASH/ORA_HASH отложен; B7
 ENCRYPT/DECRYPT и HASH вынесены в опциональный `H2Sharp.Crypto` (D-022).
 После A4 остановка для обсуждения соблюдена; XML выполнен по отдельным
 утверждённым решениям D-012—D-018 и конкретному XML-diff тестов.

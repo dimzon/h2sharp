@@ -148,7 +148,7 @@ public sealed class MVTableTests : IDisposable
         // the rows live in the scan index.
         Assert.Null(table.FindPrimaryKey());
         Assert.NotNull(table.GetScanIndex(session));
-        Assert.Contains("CREATE TABLE", table.GetCreateSql(), StringComparison.Ordinal);
+        Assert.Contains("CREATE MEMORY TABLE", table.GetCreateSql(), StringComparison.Ordinal);
 
         // "CHARACTER VARYING", not "VARCHAR": the name table is the reference's, and the
         // reference prints the SQL-standard spelling. A test that looked for "VARCHAR" here

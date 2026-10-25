@@ -77,6 +77,9 @@ public sealed class SequenceValue : Expression
                 return false;
             case ExpressionVisitor.ReadOnly:
                 return current;
+            case ExpressionVisitor.GetDependencies:
+                visitor.AddDependency(sequence);
+                return true;
             default:
                 return true;
         }

@@ -353,6 +353,9 @@ public sealed class ExpressionColumn : Expression
 
                 visitor.AddColumn1(column);
                 return true;
+            case ExpressionVisitor.GetDependencies:
+                if (column is not null) visitor.AddDependency(column.GetTable());
+                return true;
             case ExpressionVisitor.GetColumns2:
                 if (column is null)
                 {

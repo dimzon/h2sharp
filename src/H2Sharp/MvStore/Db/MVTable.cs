@@ -139,6 +139,7 @@ public sealed class MVTable : Table
         Id = id;
         Name = name;
         this.columns = columns;
+        for (int i = 0; i < columns.Length; i++) columns[i].SetTable(this, i);
         // The database's own store, as in the reference: a table on another store would be
         // invisible to every transaction but its own.
         store = database.GetStore().GetTransactionStore();
@@ -159,7 +160,17 @@ public sealed class MVTable : Table
     public int Id { get; }
 
     /// <summary>Gets the table name.</summary>
-    public string Name { get; }
+    public string Name { get; private set; }
+
+    /// <inheritdoc/>
+    public override void Rename(string newName)
+    {
+        Name = newName;
+        SetModified();
+    }
+
+    /// <inheritdoc/>
+    public override void CheckSupportAlter() { }
 
     /// <summary>Whether the data is persisted; an in-memory table keeps it in memory.</summary>
     public bool IsPersistData => persistData;
@@ -620,7 +631,52 @@ public sealed class MVTable : Table
     /// <param name="session">the session</param>
     /// <param name="index">the index</param>
     private void RebuildIndexBlockMerge(SessionLocal session, Index index)
-        => throw new TODOException("MVTable.rebuildIndexBlockMerge");
+    {
+        // C# has no MVIndex<?,?> wildcard capture. Close the same generic reader
+        // over the two key/value pairs implemented by this port's MV indexes.
+        switch (index)
+        {
+            case MVIndex<SearchRow, Value> secondary: RebuildIndexBlockMerge(session, secondary); break;
+            case MVIndex<long, SearchRow> primary: RebuildIndexBlockMerge(session, primary); break;
+            default: throw new TODOException("MVTable.rebuildIndexBlockMerge: this MVIndex key/value pair is not ported");
+        }
+    }
+
+    private void RebuildIndexBlockMerge<TKey, TValue>(SessionLocal session, MVIndex<TKey, TValue> index)
+    {
+        Index scan = GetScanIndex(session)!;
+        long remaining = scan.GetRowCount(session);
+        long total = remaining;
+        Cursor cursor = scan.GetCursor(session, null, null, false)!;
+        Store storage = session.GetDatabase().GetStore();
+        int bufferSize = (int)Math.Min(total, database!.GetMaxMemoryRows() / 2);
+        List<Row> buffer = new(bufferSize);
+        List<string> bufferNames = [];
+        while (cursor.Next())
+        {
+            buffer.Add(cursor.Get()!);
+            // DatabaseEventListener progress notification is not implemented yet.
+            if (buffer.Count >= bufferSize) DumpBufferIntoTempMap(index, buffer, storage, bufferNames);
+            remaining--;
+        }
+        if (bufferNames.Count > 0)
+        {
+            DumpBufferIntoTempMap(index, buffer, storage, bufferNames);
+            index.AddBufferedRows(bufferNames);
+        }
+        else AddRowsToIndex(session, buffer, index);
+        if (remaining != 0) throw DbException.GetInternalError("rowcount remaining=" + remaining + ' ' + Name);
+    }
+
+    private static void DumpBufferIntoTempMap<TKey, TValue>(MVIndex<TKey, TValue> index, List<Row> buffer,
+        Store storage, List<string> bufferNames)
+    {
+        SortRows(buffer, index);
+        string mapName = storage.NextTemporaryMapName();
+        index.AddRowsToBuffer(buffer, mapName);
+        bufferNames.Add(mapName);
+        buffer.Clear();
+    }
 
     /// <summary>
     /// Begins a transaction on the store this table's rows live in.
@@ -805,22 +861,31 @@ public sealed class MVTable : Table
     }
 
     /// <inheritdoc/>
-    public override string? GetCreateSql()
+    public override string? GetCreateSql() => GetCreateSql(false);
+
+    /// <inheritdoc/>
+    public override string? GetCreateSqlForMeta() => GetCreateSql(true);
+
+    // TableBase.getCreateSQL; this port's MVTable carries TableBase's metadata.
+    private string GetCreateSql(bool forMeta)
     {
-        StringBuilder builder = new("CREATE TABLE ");
-        _ = ParserUtil.QuoteIdentifier(builder, Name, HasSql.DefaultSqlFlags);
-        _ = builder.Append("(");
+        StringBuilder builder = new(persistIndexes ? "CREATE CACHED TABLE " : "CREATE MEMORY TABLE ");
+        _ = GetSql(builder, HasSql.DefaultSqlFlags);
+        if (GetComment() is string comment) StringUtils.QuoteStringSql(builder.Append(" COMMENT "), comment);
+        _ = builder.Append("(\n    ");
         for (int i = 0; i < columns.Length; i++)
         {
             if (i > 0)
             {
-                _ = builder.Append(", ");
+                _ = builder.Append(",\n    ");
             }
 
-            _ = builder.Append(columns[i].GetCreateSql());
+            _ = builder.Append(columns[i].GetCreateSql(forMeta));
         }
 
-        return builder.Append(')').ToString();
+        builder.Append("\n)");
+        if (!persistIndexes && !persistData) builder.Append("\nNOT PERSISTENT");
+        return builder.ToString();
     }
 
     /// <inheritdoc/>

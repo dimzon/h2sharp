@@ -187,18 +187,43 @@ public class Column : Typed
         return newColumn;
     }
 
-    private void Copy(Column other)
+    /// <summary>Copies the definition, keeping the current table and column id.</summary>
+    public void Copy(Column other)
     {
+        name = other.name;
+        type = other.type;
+        domain = other.domain;
         nullable = other.nullable;
         defaultExpression = other.defaultExpression;
         onUpdateExpression = other.onUpdateExpression;
         defaultOnNull = other.defaultOnNull;
+        sequence = other.sequence;
+        generatedTableFilter = other.generatedTableFilter;
         isGeneratedAlways = other.isGeneratedAlways;
         selectivity = other.selectivity;
         comment = other.comment;
         primaryKey = other.primaryKey;
         visible = other.visible;
         rowId = other.rowId;
+    }
+
+    /// <summary>Whether a type change can be made without copying stored rows.</summary>
+    public bool IsWideningConversion(Column newColumn)
+    {
+        TypeInfo newType = newColumn.type;
+        int valueType = type.GetValueType();
+        if (valueType != newType.GetValueType()) return false;
+        long precision = type.GetPrecision(), newPrecision = newType.GetPrecision();
+        if (precision > newPrecision
+            || precision < newPrecision && valueType is Value.Char or Value.Binary) return false;
+        if (type.GetScale() != newType.GetScale()
+            || !Equals(type.GetExtTypeInfo(), newType.GetExtTypeInfo())) return false;
+        if (nullable && !newColumn.nullable || primaryKey != newColumn.primaryKey) return false;
+        if (identityOptions is not null || newColumn.identityOptions is not null) return false;
+        if (!ReferenceEquals(domain, newColumn.domain)) return false;
+        if (defaultExpression is not null || newColumn.defaultExpression is not null) return false;
+        if (isGeneratedAlways || newColumn.isGeneratedAlways) return false;
+        return onUpdateExpression is null && newColumn.onUpdateExpression is null;
     }
 
     /// <summary>
@@ -247,6 +272,9 @@ public class Column : Typed
     {
         name = newName.ToString();
     }
+
+    /// <summary>Renames the column (Column.rename).</summary>
+    public void Rename(string newName) => name = newName;
 
     /// <inheritdoc/>
     public virtual string GetSql(int sqlFlags)
@@ -673,7 +701,7 @@ public class Column : Typed
     /// <param name="newSelectivity">the new value</param>
     public void SetSelectivity(int newSelectivity)
     {
-        selectivity = newSelectivity;
+        selectivity = newSelectivity < 0 ? 0 : newSelectivity > 100 ? 100 : newSelectivity;
     }
 
     /// <summary>
@@ -826,21 +854,33 @@ public class Column : Typed
     /// The CREATE ... SQL of this column, as it appears inside a CREATE TABLE.
     /// </summary>
     /// <returns>the SQL</returns>
-    public string GetCreateSql()
+    public string GetCreateSql() => GetCreateSql(false);
+
+    /// <summary>Gets the column definition, with sequence names for metadata replay.</summary>
+    public string GetCreateSql(bool forMeta)
     {
         StringBuilder builder = new();
-        _ = GetSql(builder, HasSql.DefaultSqlFlags);
-        _ = type.GetSql(builder, HasSql.DefaultSqlFlags);
-        if (null != defaultExpression)
+        _ = GetSql(builder, HasSql.DefaultSqlFlags).Append(' ');
+        if (domain is not null) domain.GetSql(builder, HasSql.DefaultSqlFlags);
+        else type.GetSql(builder, HasSql.DefaultSqlFlags);
+        if (!visible) builder.Append(" INVISIBLE ");
+        if (sequence is not null)
         {
-            _ = builder.Append(" DEFAULT ").Append(defaultExpression.GetSql(HasSql.DefaultSqlFlags));
+            builder.Append(" GENERATED ").Append(isGeneratedAlways ? "ALWAYS" : "BY DEFAULT").Append(" AS IDENTITY");
+            if (!forMeta) sequence.GetSequenceOptionsSql(builder.Append('(')).Append(')');
         }
-
-        if (!nullable)
+        else if (defaultExpression is not null)
         {
-            _ = builder.Append(" NOT NULL");
+            if (isGeneratedAlways) defaultExpression.GetEnclosedSql(builder.Append(" GENERATED ALWAYS AS "), HasSql.DefaultSqlFlags);
+            else defaultExpression.GetUnenclosedSql(builder.Append(" DEFAULT "), HasSql.DefaultSqlFlags);
         }
-
+        if (onUpdateExpression is not null)
+            onUpdateExpression.GetUnenclosedSql(builder.Append(" ON UPDATE "), HasSql.DefaultSqlFlags);
+        if (defaultOnNull) builder.Append(" DEFAULT ON NULL");
+        if (forMeta && sequence is not null) sequence.GetSql(builder.Append(" SEQUENCE "), HasSql.DefaultSqlFlags);
+        if (selectivity != 0) builder.Append(" SELECTIVITY ").Append(selectivity);
+        if (comment is not null) StringUtils.QuoteStringSql(builder.Append(" COMMENT "), comment);
+        if (!nullable) builder.Append(" NOT NULL");
         return builder.ToString();
     }
 
