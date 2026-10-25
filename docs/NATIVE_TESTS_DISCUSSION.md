@@ -222,6 +222,15 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   провайдера.
 * **TestJakartaServlet — не перенесён.** Тот же DbStarter, что TestServlet, но на
   jakarta.servlet — поверхность ASP.NET-интеграции, отдельное решение.
+* **TestPageStoreCoverage — не перенесён.** PageStore (не-MVStore движок хранения) в
+  порту нет — порт сразу MVStore. Вопрос: закрыть (PageStore вне объёма).
+* **TestRecovery — не перенесён.** Инструмент org.h2.tools.Recover (чтение .h2.db-
+  скриптов и восстановление) в порту нет. Перенести вместе с Recover.
+* **TestReopen — не перенесён.** Recording file system (rec:) + случайные переоткрытия
+  для поиска race-условий; rec:-ФС в порту нет. Перенести вместе с rec-ФС (или закрыть —
+  стратегия тестирования другая).
+* **TestSampleApps — не перенесён.** Запускает примеры org.h2.samples как подпроцессы;
+  samples в порт не входят. Вопрос: закрыть.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
