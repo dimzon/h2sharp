@@ -7491,8 +7491,12 @@ snapshot. Native TestScript больше не падает на инициали
 `alter user sa set password test` (D-004: users/roles отсутствуют). Затем
 перенесён `Mode.groupByColumnIndex`: `GROUP BY <integer>` — позиция только в
 MySQL/MariaDB/PostgreSQL, в остальных режимах остаётся константой (эталонные
-90016/90157/42001 сохранены). `TestScript` теперь доходит до `CREATE ROLE` —
-осознанная остановка на D-004; тест остаётся BlockedByPort.
+90016/90157/42001 сохранены). По указанию пользователя из локальной копии
+testScript.sql удалены все user/role/password-конструкции вместе с ожидаемым
+выводом (включая SCRIPT-строки CREATE USER и sections users/rights); исполняемых
+identity-операторов в корпусе не осталось. `TestScript` проходит user/role-места
+и теперь останавливается на `UNIQUE`/`CHECK` column constraints
+(`Parser.readColumnConstraints`); тест остаётся BlockedByPort.
 
 Issue #66 исправлен: `PrepareInsert` (legacy-путь внутри `FINAL TABLE`) больше не
 материализует `ValueExpression.Null` на каждый столбец для `DEFAULT VALUES`,

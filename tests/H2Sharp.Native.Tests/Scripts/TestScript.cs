@@ -24,9 +24,9 @@
 //    config.big), and it refuses loudly when reached.
 //  - The LineNumberReader's line number is counted here, and the output file is written
 //    UTF-8, because PrintStream's platform charset has no .NET counterpart.
-//  - BlockedByPort: SET PASSWORD / ALTER USER ... SET PASSWORD were removed from the
-//    local testScript.sql copy because D-004 has no users; the corpus then reaches
-//    CREATE ROLE, which the identity DDL refuses with a named TODOException (D-004).
+//  - BlockedByPort: all user/role/password statements and their expected output were
+//    removed from the local testScript.sql copy because D-004 has no users or roles;
+//    the corpus then reaches UNIQUE/CHECK column constraints, which are not ported.
 using System;
 using System.Collections.Generic;
 using System.Data;
