@@ -51,7 +51,8 @@
 * `mvcc/`: `TestMvcc1`, `TestMvcc2`, `TestMvcc3`, `TestMvcc4`,
   `TestMvccMultiThreaded`, `TestMvccMultiThreaded2`.
 * `rowlock/`: `TestRowLocks`.
-* `db/`: `TestCompoundIndexSearch`, `TestCompoundIndexParamSearch`.
+* `db/`: `TestCompoundIndexSearch`, `TestCompoundIndexParamSearch`,
+  `TestMergeUsing` (кроме триггерного случая — нет `Trigger` API), `TestMultiThread`.
 * `unit/`: `TestMultiThreadedKernel` (одноимённый тест из `db/` был перенесён
   раньше; это другой файл).
 * `jdbc/`: `TestDatabaseEventListener` — перенесён, но `BlockedByPort` (#65).
@@ -63,19 +64,26 @@ commit/rollback, `Task.stop` — `CancellationTokenSource`, `CountDownLatch` —
 `DbTransaction.Save/Rollback(name)`.
 
 Что ещё переносимо **без изменения API движка** (следующие кандидаты):
-`db/TestMultiThread` (Task/IOUtils есть), `db/TestCompatibility`
-(режимы совместимости), `db/TestFunctions` (BigDecimal/java.text-форматирование
-нужно заменить на .NET), `db/TestIndex` (кроме фрагмента с `SimpleResultSet`),
-`db/TestMergeUsing` (кроме фрагмента с `Trigger`), `jdbc/TestBatchUpdates`
-(batch как цикл), `jdbc/TestLob`/`TestLobApi` (уже есть содержательные
-половины), `unit/TestDateTimeUtils`/`TestTimeStampWithTimeZone` (нужна сверка
-имён с портированным `DateTimeUtils`).
+`db/TestCompatibility` (режимы совместимости; `ResultSetMetaData` заменяется
+на `reader.GetName`, `DatabaseMetaData.getTables` — на запрос
+`INFORMATION_SCHEMA.TABLES`), `db/TestFunctions` (BigDecimal/java.text-
+форматирование нужно заменить на .NET), `db/TestIndex` (кроме фрагмента с
+`SimpleResultSet`, а `getIndexInfo` — на `INFORMATION_SCHEMA.INDEXES`),
+`unit/TestJsonUtils` (классы `Util/Json` есть; нужна адаптация дженерик-
+инициализаторов), `unit/TestValue` (сверить поверхность `Value`).
+`jdbc/TestBatchUpdates` — JDBC-only поверхность: batch-массивы, цепочки
+`getNextException`, `supportsBatchUpdates`; в ADO.NET batch как цикла уже
+покрыт `TestStatement`, поэтому тест не переносится (как и раньше решено для
+JDBC-only частей `TestStatement`).
 Не переносимы без новых классов движка: `TestScriptReader`, `TestSort`,
 `TestPerfectHash`, `TestBitStream`, `TestAnsCompression`, `TestRecovery`,
 `TestSecurity`, `TestTriggersConstraints`, `TestSpatial`, `TestFullText`,
 `TestLinkedTable`, `TestTableEngines`, `TestRunscript`, `TestFileSystem`
-(частично), `TestFileLock` (нет `TraceSystem`), `TestBatchUpdates` поверх
-реального batch-API и весь `jdbcx/`.
+(частично), `TestFileLock` (нет `TraceSystem`), `TestDateTimeUtils`
+(нет `LegacyDateTimeUtils`), `TestDate`/`TestDateStorage` (таймзоны JVM),
+`TestValueMemory` (нет `DataHandler`/`MemoryFootprint`), `TestMetaData`,
+`TestGetGeneratedKeys`, `TestUpdatableResultSet`, `TestCallableStatement`,
+`TestLobApi`/`TestLob` (JDBC LOB-модель) и весь `jdbcx/`.
 
 ---
 
