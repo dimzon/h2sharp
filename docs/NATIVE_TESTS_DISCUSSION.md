@@ -40,6 +40,42 @@
     (21S02), хотя эталон берёт первичный ключ ссылаемой таблицы.
 * Чтение ENUM-порядкового номера как Int32 не работает (`Cannot read ENUM as
   Int32`) — дополнено к issue #14.
+* **#65** — `DatabaseEventListener` не загружается и не вызывается:
+  `Database.SetEventListenerClass` отказывает любому имени (90099), поэтому
+  `TestListener` и `TestDatabaseEventListener` помечены `BlockedByPort`.
+
+### Вторая партия переноса (2026-10-25, сборка без запуска)
+
+Перенесены целиком пакеты, которым хватает существующего API движка:
+
+* `mvcc/`: `TestMvcc1`, `TestMvcc2`, `TestMvcc3`, `TestMvcc4`,
+  `TestMvccMultiThreaded`, `TestMvccMultiThreaded2`.
+* `rowlock/`: `TestRowLocks`.
+* `db/`: `TestCompoundIndexSearch`, `TestCompoundIndexParamSearch`.
+* `unit/`: `TestMultiThreadedKernel` (одноимённый тест из `db/` был перенесён
+  раньше; это другой файл).
+* `jdbc/`: `TestDatabaseEventListener` — перенесён, но `BlockedByPort` (#65).
+
+Адаптации те же, что в уже перенесённых: `setAutoCommit(false)` — явная
+транзакция у каждой команды с повторным `BeginTransaction` после
+commit/rollback, `Task.stop` — `CancellationTokenSource`, `CountDownLatch` —
+`CountdownEvent`, JDBC-`Properties` — опции строки подключения, `Savepoint` —
+`DbTransaction.Save/Rollback(name)`.
+
+Что ещё переносимо **без изменения API движка** (следующие кандидаты):
+`db/TestMultiThread` (Task/IOUtils есть), `db/TestCompatibility`
+(режимы совместимости), `db/TestFunctions` (BigDecimal/java.text-форматирование
+нужно заменить на .NET), `db/TestIndex` (кроме фрагмента с `SimpleResultSet`),
+`db/TestMergeUsing` (кроме фрагмента с `Trigger`), `jdbc/TestBatchUpdates`
+(batch как цикл), `jdbc/TestLob`/`TestLobApi` (уже есть содержательные
+половины), `unit/TestDateTimeUtils`/`TestTimeStampWithTimeZone` (нужна сверка
+имён с портированным `DateTimeUtils`).
+Не переносимы без новых классов движка: `TestScriptReader`, `TestSort`,
+`TestPerfectHash`, `TestBitStream`, `TestAnsCompression`, `TestRecovery`,
+`TestSecurity`, `TestTriggersConstraints`, `TestSpatial`, `TestFullText`,
+`TestLinkedTable`, `TestTableEngines`, `TestRunscript`, `TestFileSystem`
+(частично), `TestFileLock` (нет `TraceSystem`), `TestBatchUpdates` поверх
+реального batch-API и весь `jdbcx/`.
 
 ---
 
