@@ -668,17 +668,16 @@ public sealed class SelectTextTests
     }
 
     [Fact]
-    public void GroupByPositionWaitsForMode()
+    public void GroupByPositionIsConstantInRegularMode()
     {
-        // A bare number groups by position only where the mode says so, and the flag is
-        // not ported: in regular mode it would group by a constant instead, which is a
-        // guess this reader refuses to make either way.
+        // GROUP BY <integer> is a select-list position only in MySQL/MariaDB/PostgreSQL.
+        // In regular mode it is the constant 1, so NAME is not grouped.
         SessionLocal session = NewSession(out TransactionStore store, out _);
         try
         {
-            TODOException e = Assert.Throws<TODOException>(
-                () => session.PrepareCommand("SELECT NAME, COUNT(*) FROM T GROUP BY 1"));
-            Assert.Contains("groupByColumnIndex", e.Message);
+            H2SharpException e = Assert.Throws<H2SharpException>(
+                () => RunText(session, "SELECT NAME, COUNT(*) FROM T GROUP BY 1"));
+            Assert.Equal(H2Sharp.Api.ErrorCode.MustGroupByColumn1, e.H2ErrorCode);
         }
         finally
         {

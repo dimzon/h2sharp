@@ -3183,16 +3183,32 @@ public sealed partial class Parser
             List<Expressions.Expression> group = [];
             do
             {
-                // A bare number groups by position only where the mode says so, and the
-                // flag is not ported: in regular mode it groups by a constant instead,
-                // which is a guess this reader refuses to make either way.
-                if (Current.GetValue(provider) is Values.ValueInteger)
+                Expressions.Expression groupExpression = ReadQueryOr();
+                if (current.GetMode().GroupByColumnIndex
+                    && groupExpression is Expressions.ValueExpression valueExpression
+                    && valueExpression.GetTypeInfo().GetValueType() == Values.Value.Integer)
                 {
-                    throw new TODOException(
-                        "Parser.parseQuerySelect: GROUP BY position needs Mode.groupByColumnIndex");
-                }
+                    // H2 parseQuerySelect: an integer is a select-list position in these
+                    // modes; a wildcard cannot be addressed by position.
+                    if (star is not null)
+                    {
+                        throw DbException.GetSyntaxError(sql, Current.Start, "GROUP BY");
+                    }
 
-                group.Add(ReadQueryOr());
+                    int index = valueExpression.GetValue(current).GetInt();
+                    if (index < 1 || index > selectList.Count)
+                    {
+                        throw DbException.Get(Api.ErrorCode.GroupByNotInTheResult,
+                            index.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            selectList.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    }
+
+                    group.Add(selectList[index - 1]);
+                }
+                else
+                {
+                    group.Add(groupExpression);
+                }
             }
             while (ReadIf(Token.Comma));
 
@@ -6693,16 +6709,17 @@ public sealed partial class Parser
             }
         }
 
-        insert.SetColumns(columns);
+        if (statement.Columns.Count > 0)
+        {
+            insert.SetColumns(columns);
+        }
         if (statement.DefaultValues)
         {
-            List<Expressions.Expression> defaults = new(columns.Length);
-            for (int i = 0; i < columns.Length; i++)
-            {
-                defaults.Add(columns[i].GetEffectiveDefaultExpression() ?? Expressions.ValueExpression.Null);
-            }
-
-            insert.AddRow([.. defaults]);
+            // Parser.parseInsert: DEFAULT VALUES adds an empty row; Insert.doPrepare then
+            // chooses the table's columns and ConvertInsertRow supplies defaults/identity.
+            // Materializing a NULL expression per column would turn an identity column
+            // into an explicit NULL and raise 23502.
+            insert.AddRow(System.Array.Empty<Expressions.Expression>());
         }
 
         foreach (List<Expressions.Expression> row in statement.Rows)

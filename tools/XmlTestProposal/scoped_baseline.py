@@ -52,6 +52,12 @@ else:
                 assert mv["user_approval"] == "Утверждаю diff"
                 assert set(mv["expected_files"]) == {"tests/H2Sharp.Tests/MVTableTests.cs"}
                 allowed.update(mv["expected_files"])
+            groupby_path = OUT / "approved-groupby-position-test-change.json"
+            if groupby_path.exists():
+                groupby = json.loads(groupby_path.read_text(encoding="utf-8"))
+                assert groupby["user_approval"] == "Утверждаю обновление"
+                assert set(groupby["expected_files"]) == {"tests/H2Sharp.Tests/SelectTextTests.cs"}
+                allowed.update(groupby["expected_files"])
     changed = [name for name, expected in files.items()
         if not (ROOT / name).is_file() or checksum(ROOT / name) != allowed.get(name, expected)]
     changed += [name for name, expected in allowed.items()

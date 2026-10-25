@@ -7488,9 +7488,23 @@ snapshot. Native TestScript больше не падает на инициали
 с фильтром PUBLIC|STATIC|FINAL и без Deprecated; PascalCase-имена CLR не
 подменяют ожидаемые SQL-имена. TestScript проходит дальше; по указанию
 пользователя из локальной копии testScript.sql удалены `set password test` и
-`alter user sa set password test` (D-004: users/roles отсутствуют). Следующий
-блокер — `GROUP BY <position>` (Mode.groupByColumnIndex ещё не перенесён);
-тест остаётся BlockedByPort.
+`alter user sa set password test` (D-004: users/roles отсутствуют). Затем
+перенесён `Mode.groupByColumnIndex`: `GROUP BY <integer>` — позиция только в
+MySQL/MariaDB/PostgreSQL, в остальных режимах остаётся константой (эталонные
+90016/90157/42001 сохранены). `TestScript` теперь доходит до `CREATE ROLE` —
+осознанная остановка на D-004; тест остаётся BlockedByPort.
+
+Issue #66 исправлен: `PrepareInsert` (legacy-путь внутри `FINAL TABLE`) больше не
+материализует `ValueExpression.Null` на каждый столбец для `DEFAULT VALUES`,
+а добавляет пустую строку, как `Parser.parseInsert` эталона. `Insert.doPrepare`
+сам выбирает столбцы, `ConvertInsertRow` подставляет defaults и генерирует
+identity. Явный список столбцов с `DEFAULT VALUES` теперь даёт эталонный
+`COLUMN_COUNT_DOES_NOT_MATCH` (21002). `FinalTableDefaultValuesTests` 2/2:
+identity/defaults в FINAL TABLE, контрольная явная вставка, повторные DEFAULT
+VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2.5.259.
+Обновлён устаревший защищённый `SelectTextTests.GroupByPositionWaitsForMode`
+(одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
+checksum-манифест разрешает ровно это изменение.
 
 Исправлен дефект ADO.NET-провайдера: update-путь H2Command увеличивал
 openReaders, но у его reader нет onClose, поэтому после любого UPDATE команда

@@ -205,6 +205,9 @@ public sealed class Mode
     /// <summary>Whether sequences of this mode use NUMERIC instead of BIGINT by default.</summary>
     public bool DecimalSequences { get; }
 
+    /// <summary>Whether an integer in GROUP BY is a select-list position (MySQL/MariaDB/PostgreSQL).</summary>
+    public bool GroupByColumnIndex { get; }
+
     /// <summary>
     /// The name of the mode, as it is written in a URL.
     /// </summary>
@@ -230,7 +233,8 @@ public sealed class Mode
         bool swapLogFunctionParameters = false,
         bool logIsLogBase10 = false,
         bool acceptsCommaAsJsonKeyValueSeparator = false,
-        bool decimalSequences = false)
+        bool decimalSequences = false,
+        bool groupByColumnIndex = false)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -248,6 +252,7 @@ public sealed class Mode
         LogIsLogBase10 = logIsLogBase10;
         AcceptsCommaAsJsonKeyValueSeparator = acceptsCommaAsJsonKeyValueSeparator;
         DecimalSequences = decimalSequences;
+        GroupByColumnIndex = groupByColumnIndex;
     }
 
     /// <summary>
@@ -298,16 +303,16 @@ public sealed class Mode
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
                 greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
-                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true),
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
-                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true),
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true,
                 decimalSequences: true),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
-                logIsLogBase10: true),
+                logIsLogBase10: true, groupByColumnIndex: true),
         };
 
         return modes.ToFrozenDictionary(StringComparer.Ordinal);
