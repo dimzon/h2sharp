@@ -7,6 +7,7 @@
 // Java enum-with-static-field trick (the type drives the shared parse helper) becomes a
 // delegate field.
 using H2Sharp.Util;
+using H2Sharp.Values;
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Unit;
