@@ -89,3 +89,11 @@
 - [ ] 3.7c. Отдельный `.lock.db` (`FileLock`, методы `FILE`/`SOCKET`, heartbeat)
   — отложено.
 - [ ] 3.8. `DB_CLOSE_ON_EXIT` (AppDomain.ProcessExit) — не сделано.
+
+## Фаза 4. Builtin- и aggregate-функции
+
+Отдельный план и очередность: [SPRINT_BUILTIN_FUNCTIONS.md](SPRINT_BUILTIN_FUNCTIONS.md).
+Batch A (A0, A1, A3, A4) завершён: 696/947 conformance, исходные регрессионные
+тесты зелёные. R1–R3 и локальная J применены после отдельного утверждения.
+После A4 выполнение остановлено; отчёт и контроль baseline:
+[REGRESSION_BATCH_A_INVESTIGATION.md](REGRESSION_BATCH_A_INVESTIGATION.md).

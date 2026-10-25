@@ -7100,3 +7100,52 @@ DDL-хуки `AddSchemaObject`/`RemoveSchemaObject`/`AddDatabaseObject`. Все 
 эталон открывать не даёт, код 90020; `FileLockedByThePortIsRefusedByTheReference`). Read-only у нас тоже эксклюзивен (P-009).
 Отложены: отдельный `.lock.db` для `FILE_LOCK=FILE|SOCKET` (класс `FileLock`,
 heartbeat) и `DB_CLOSE_ON_EXIT`.
+
+## Builtin/aggregate Batch A: эталонный разбор, GCD, JSON, ENVELOPE
+
+По `docs/SPRINT_BUILTIN_FUNCTIONS.md` завершены A0, A1, A3, A4. `Parser`
+использует полный реестр `Aggregate.getAggregateType` перед встроенными и
+оконными функциями; собственный список `IsAggregateCall` удалён. Ветки
+`readAggregate`/`readWithinGroup` перенесены из той же версии H2, включая
+делегирование пустых RANK/DENSE_RANK/PERCENT_RANK/CUME_DIST в window reader,
+MODE, LISTAGG ON OVERFLOW и JSON_ARRAYAGG ORDER BY. Неперенесённые реализации
+отказывают именованным TODOException в Aggregate, а неизвестное имя — 90022.
+
+Перенесены GCDFunction и AggregateDataGCD. Java `gcd`/`lcm` названы
+`GcdValue`/`LcmValue`, потому что после PascalCase они иначе совпали бы с
+константами Gcd/Lcm; алгоритм и порядок вычислений сохраняются.
+`Value.getBigInteger` перенесён как `GetBigDecimal().ToBigInteger()` — прежняя
+заглушка мешала GCD над NUMERIC произвольной точности.
+
+JSON-конструкторы используют существующие ValueJson/JsonConstructorUtils,
+добавлены только JsonConstructorFunction, Format и ExpressionWithFlags,
+SQL-ветки и FORMAT JSON. System.Text.Json, его интеграция, JSON-targets,
+энкодеры и производственный ADO.NET mapping не переписывались.
+
+AggregateDataEnvelope накапливает GeometryUtils.union и возвращает
+ValueGeometry.fromEnvelope. Ускорение через MVSpatialIndex отложено вместе
+с пространственными индексами; обычный проход, FILTER, группы и окна
+проверены против jar, включая точную геометрию и пустые множества.
+
+R1–R3 заменены только после утверждения точного diff: подготовка COUNT в WHERE
+успешна, выполнение отказывает 90054; GCD_AGG(VARCHAR) отказывает 90008;
+исходный LISTAGG ON OVERFLOW ERROR возвращает b,b,c. SQL, данные, имена и Fact
+сохранены. Для девяти JSON-conformance тестов отдельно утверждена локальная J:
+фикстура загружает свою копию Dapper в collectible AssemblyLoadContext на тест.
+Её типизированные маппинги не меняют default Dapper и общий TestDatabase.Open.
+
+24 новых контрактных проверки закрепляют GetFieldValue<string>/byte[]/object,
+GetValue, Dapper QuerySingle<string>/byte[] и ExecuteScalar<object>, нативный
+byte[]-тип JSON, SQL NULL против JSON null, Unicode, независимость фикстур и
+неизменность default mapper. Getter-результаты сверены с jar построчно.
+
+Замороженный baseline 8e78f98 повторно прогнан отдельно. По именам новых
+регрессий, пропавших и пропущенных тестов — 0. Контроль 730 исходных файлов:
+четыре файла изменены строго по согласованным R1–R3/J, остальных изменений
+тестов/фикстур — 0. Полные TRX, checksum-manifest и разрешённые diff описаны
+в `docs/REGRESSION_BATCH_A_INVESTIGATION.md`.
+
+Итоги: исходные H2Sharp.Tests 1268/1268, отдельно новые 29/29 (в сумме
+1297/1297); Data 467/467, MvStore 87/87; conformance 696/947 (251 прежнее
+падение), без BlockedByPort 696/935 (239 падений). После A4 остановка соблюдена,
+Batch B и его вопросы ожидают обсуждения.
