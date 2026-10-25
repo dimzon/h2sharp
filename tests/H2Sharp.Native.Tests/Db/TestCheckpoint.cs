@@ -7,6 +7,10 @@
 // explicit transaction that the statements after it carry, and the reference's COMMIT
 // statement stays a statement. The reference's main() entry is the runner; xUnit runs
 // Test() directly.
+//
+// Blocked by the port: the parser does not dispatch CHECKPOINT yet (issue #64), so the
+// test refuses at its first statement. The trait keeps it in the suite as the defect's
+// checklist entry.
 namespace H2Sharp.Native.Tests.Db;
 
 /// <summary>
@@ -18,6 +22,7 @@ public sealed class TestCheckpoint : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         // TODO test checkpoint with rollback, not only just run the command

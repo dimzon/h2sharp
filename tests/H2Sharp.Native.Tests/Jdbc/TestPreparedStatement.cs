@@ -21,22 +21,23 @@
 // java.time ZonedDateTime/Instant (no CLR counterpart), and the YEAR TO MONTH interval
 // parameter forms of testInterval/testInterval8 (the TIME-only TimeSpan parameter shape
 // carries DAY TO SECOND only). testExecuteUpdateCall is skipped: the CALL statement
-// is not parsed yet (syntax error instead of the reference's DATA_CONVERSION_ERROR_1),
-// and the DUAL table is not in the engine (issue #58) — the FROM-less SELECT form is
-// the documented equivalent used here. testPrepareExecute (PREPARE/EXECUTE session
-// statements) is also skipped: the statements are not parsed yet. testExecuteErrorTwice
+// is not parsed yet (issue #64), so the reference's DATA_CONVERSION_ERROR_1 is
+// unreachable; the DUAL table is also absent (issue #58) — the FROM-less SELECT form
+// is the documented equivalent used here. testPrepareExecute (PREPARE/EXECUTE session
+// statements) is skipped for the same parser gap (issue #64). testExecuteErrorTwice
 // is skipped: CREATE TABLE ... AS SELECT is not parsed yet — the reference's
 // COLUMN_NOT_FOUND_1 on the missing column cannot be reached before the DDL form exists.
-// testInsertFunction is skipped: HASH is not ported yet. testUuid is skipped: a UUID
-// PRIMARY KEY table hits the unported MVTable.rebuildIndexBlockMerge (TODOException).
-// testJson is skipped: a JSON column's create/insert panics the MVStore writer
-// (issue #60). testArray is skipped: the array parameter form yields no rows (array
-// gaps, issue #14). testPreparedSubquery and testMultipleStatements are skipped:
-// the IDENTITY data type is not parsed yet. testLikeIndex is skipped: CREATE INDEX
-// hits the unported MVTable.rebuildIndexBlockMerge (TODOException). testDataTypes is
-// skipped: CREATE TABLE with a PRIMARY KEY on one of two columns fails with "Column
-// count does not match" in the engine's constraint creation. testParameterInSubquery,
-// testAfterRollback and testDateTimeWithParameter are skipped for the same shape.
+// testInsertFunction is skipped: HASH is not ported yet (issue #59). testUuid and
+// testLikeIndex are skipped: on a file database a secondary index built over a table
+// goes through MVTable.rebuildIndexBlockMerge, which is not ported (issue #62) — that
+// covers a UUID primary key and CREATE INDEX alike. testJson is skipped: a JSON column
+// written to a file database panics the MVStore writer (issue #60). testArray is
+// skipped: the array parameter form yields no rows (array gaps, issue #14).
+// testPreparedSubquery and testMultipleStatements are skipped: the IDENTITY data type
+// is not parsed yet (issue #61). testParameterInSubquery is skipped: inline REFERENCES
+// without a column list fails with ColumnCountDoesNotMatch (issue #63).
+// testDateTimeWithParameter is skipped: CREATE TABLE ... AS VALUES is not parsed yet
+// (issue #61).
 using System.Numerics;
 using System.Text.Json;
 using H2Sharp.Api;
@@ -92,11 +93,12 @@ public sealed class TestPreparedStatement : TestDb
         // (TODOException), see the header.
         TestCasewhen(conn);
         TestSubquery(conn);
-        // testDataTypes: CREATE TABLE with a PRIMARY KEY on one of two columns fails
-        // with "Column count does not match" in the engine's constraint creation, see
-        // the header.
-        // testParameterInSubquery, testAfterRollback, testDateTimeWithParameter: same
-        // multi-column PRIMARY KEY shape as testDataTypes, see the header.
+        TestDataTypes(conn);
+        // testParameterInSubquery: inline REFERENCES without a column list is
+        // ColumnCountDoesNotMatch, see the header and issue #63.
+        TestAfterRollback(conn);
+        // testDateTimeWithParameter: CREATE TABLE ... AS VALUES is not parsed yet, see
+        // the header and issue #61.
         TestUnnestWithArrayParameter(conn);
         conn.Close();
         TestPreparedStatementWithLiteralsNone();
@@ -1058,31 +1060,39 @@ public sealed class TestPreparedStatement : TestDb
             AssertEquals(1L, rs2.GetInt64(0));
         }
 
-        Execute(stat, "DROP TABLE T2, T1");
+        // The reference's single DROP TABLE T2, T1; the multi-table form is not parsed
+        // yet, two drops are the same statements.
+        Execute(stat, "DROP TABLE T2");
+        Execute(stat, "DROP TABLE T1");
     }
 
     private void TestAfterRollback(DbConnection conn)
     {
-        using DbCommand stat = conn.CreateCommand();
-        using (DbTransaction transaction = conn.BeginTransaction())
+        DbCommand stat = conn.CreateCommand();
+        using (DbCommand pstmt = conn.CreateCommand())
         {
-            stat.Transaction = transaction;
+            // CREATE TABLE runs before setAutoCommit(false) in the reference
             Execute(stat, "CREATE TABLE TEST(ID INT PRIMARY KEY, NAME VARCHAR(255))");
-            Execute(stat, "INSERT INTO TEST VALUES(1, 'Hello')");
-            using (DbCommand pstmt = conn.CreateCommand())
+            using (DbTransaction transaction = conn.BeginTransaction())
             {
+                stat.Transaction = transaction;
                 pstmt.Transaction = transaction;
+                Execute(stat, "INSERT INTO TEST VALUES(1, 'Hello')");
                 pstmt.CommandText = "SELECT count(*) FROM TEST";
                 using (DbDataReader rs = pstmt.ExecuteReader())
                 {
                     AssertTrue(rs.Read());
                     AssertEquals(1, rs.GetInt32(0));
                 }
+
+                transaction.Rollback();
             }
 
-            transaction.Rollback();
-            using (DbCommand pstmt = conn.CreateCommand())
+            // the reference keeps autocommit off and re-executes the same statement,
+            // which opens a new transaction; ADO.NET begins it explicitly
+            using (DbTransaction transaction = conn.BeginTransaction())
             {
+                stat.Transaction = transaction;
                 pstmt.Transaction = transaction;
                 pstmt.CommandText = "SELECT count(*) FROM TEST";
                 using (DbDataReader rs = pstmt.ExecuteReader())
@@ -1090,6 +1100,9 @@ public sealed class TestPreparedStatement : TestDb
                     AssertTrue(rs.Read());
                     AssertEquals(0, rs.GetInt32(0));
                 }
+
+                Execute(stat, "DROP TABLE TEST");
+                transaction.Commit();
             }
         }
     }

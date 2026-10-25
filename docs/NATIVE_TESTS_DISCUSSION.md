@@ -26,11 +26,18 @@
     принимает Reader (setCharacterStream/setObject(Reader)).
   - #58 — нет системной таблицы `DUAL`; эталон всегда её предоставляет.
   - #59 — функция `HASH` не портирована (TODOException при разборе).
-  - #60 — JSON-колонка паникует MVStore-запись (`Unsupported value type 38`).
-  - #61 — пробелы грамматики DDL/DML: IDENTITY, CREATE TABLE AS SELECT, CREATE
-    LOCAL/GLOBAL TEMPORARY, DROP нескольких таблиц, INSERT ... SELECT, CREATE INDEX
-    (rebuildIndexBlockMerge), `Column count does not match` для PRIMARY KEY при
-    нескольких колонках.
+  - #60 — JSON-колонка в файловой БД паникует MVStore-запись (`Unsupported value
+    type 38`); на `mem:` баг скрыт, потому что страницы не сериализуются.
+  - #61 — пробелы грамматики DDL/DML: `IDENTITY`, `CREATE TABLE ... AS SELECT`
+    (в т.ч. `AS VALUES`), `CREATE LOCAL/GLOBAL TEMPORARY TABLE`, `DROP TABLE a, b`,
+    `INSERT INTO t SELECT ...`.
+  - #64 — парсер не знает `CHECKPOINT`, `CALL`, `PREPARE`/`EXECUTE`/`DEALLOCATE`;
+    `TestCheckpoint` помечен `BlockedByPort`.
+  - #62 — `CREATE INDEX` на файловой БД (и любой вторичный индекс, например
+    `UUID PRIMARY KEY`) упирается в непортированный
+    `MVTable.rebuildIndexBlockMerge`; на `mem:` работает буферный путь.
+  - #63 — inline `REFERENCES` без списка колонок даёт `ColumnCountDoesNotMatch`
+    (21S02), хотя эталон берёт первичный ключ ссылаемой таблицы.
 * Чтение ENUM-порядкового номера как Int32 не работает (`Cannot read ENUM as
   Int32`) — дополнено к issue #14.
 
@@ -272,14 +279,15 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   — scrollable/updatable/generated keys. Вопрос: переносить переносимую половину после
   решения по TestResultSet, чтобы не дублировать.
   **Выполнено 2026-10-25** (`TestPreparedStatement.cs`, зелёный): переносимая половина
-  портирована — values/changeType/table(params) (CALL/PREPARE/EXECUTE — не разбираются,
-  см. ниже), LOB-файлы, tempView, recompile после DDL, unknown-data-type (BITAND),
-  coalesce, enum (без ordinal-чтения — читатель не читает ENUM как Int32), BigDecimal,
-  Date/Time/DateTime/OffsetDateTime (CLR-формы), CASEWHEN/CASE, subquery, UNNEST с
+  портирована — values/changeType/table(params), LOB-файлы, tempView, recompile после
+  DDL, unknown-data-type (BITAND), coalesce, enum (без ordinal-чтения — читатель не
+  читает ENUM как Int32), BigDecimal, Date/Time/DateTime/OffsetDateTime (CLR-формы),
+  CASEWHEN/CASE, subquery, dataTypes (все шесть таблиц), afterRollback, UNNEST с
   массивом, ALLOW_LITERALS=NONE. Пропущено с обоснованием в шапке: CALL (syntax error),
-  PREPARE/EXECUTE, CTAS/IDENTITY/INSERT..SELECT/DROP нескольких таблиц (issue #61),
-  UUID PRIMARY KEY и CREATE INDEX (MVTable.rebuildIndexBlockMerge), JSON-колонка (issue
-  #60), массив-параметр в table() (issue #14), HASH (issue #59).
+  PREPARE/EXECUTE, CTAS/IDENTITY/INSERT..SELECT/DROP нескольких таблиц/AS VALUES
+  (issue #61), UUID PRIMARY KEY и CREATE INDEX (issue #62), JSON-колонка (issue #60),
+  массив-параметр в table() (issue #14), HASH (issue #59), inline REFERENCES
+  (issue #63).
 * **TestFileSystem — не перенесён.** Тест-контракт всех ФС-схем эталона (zip, zip2,
   cache, rec, encrypt, split, async, nioMapped, memLZF, nioMem*, classpath, debug);
   порт регистрирует только file, memFS, split. Переносима disk-часть
