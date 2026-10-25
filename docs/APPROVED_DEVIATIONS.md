@@ -280,6 +280,23 @@ UDF/aliases/DI/triggers/trace являются принятой .NET-грани�
 молчаливое значение. Исходные conformance-тесты сохраняются как перечень
 отложенной работы и не удаляются/не фильтруются без отдельной визы.
 
+### D-023. Блокировка Session — reentrant Monitor вместо ReentrantLock
+
+Утверждено пользователем при разборе native TestSequence: `Утверждаю Monitor`.
+Существующие Session.Lock/Unlock/IsLockedByCurrentThread используют отдельный
+Monitor (Enter/Exit/IsEntered), сохраняя reentrancy и владение потоком
+эталонного `java.util.concurrent.locks.ReentrantLock`. Прежний счётчик,
+не удерживавший блокировку между вызовами, удалён. SQL/metadata lifecycle
+sequence flush переносится из H2 2.5 без замены правил транзакции и cache margin.
+
+### D-024. org.h2.util.Task называется H2Task
+
+Указание пользователя при переносе native Task lifecycle: `Переимнуй класс в H2Task`.
+Имя `H2Sharp.Util.Task` конфликтует с `System.Threading.Tasks.Task` в коде и
+тестах, импортирующих оба namespace. Класс называется `H2Sharp.Util.H2Task`;
+Call/Run/Execute/Get/GetException/Join/IsFinished и stop-lifecycle сохраняют
+эталонную структуру. Старые тесты не требуют дополнительных alias.
+
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 
 ### P-007. `ROWNUM` в DML — текущей команды нет

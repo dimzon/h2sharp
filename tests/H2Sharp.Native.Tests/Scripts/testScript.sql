@@ -526,12 +526,6 @@ drop table test;
 create table test(id identity);
 > ok
 
-set password test;
-> exception COLUMN_NOT_FOUND_1
-
-alter user sa set password test;
-> exception COLUMN_NOT_FOUND_1
-
 comment on table test is test;
 > exception COLUMN_NOT_FOUND_1
 

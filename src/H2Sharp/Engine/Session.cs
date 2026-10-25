@@ -33,17 +33,15 @@ namespace H2Sharp.Engine;
 /// </summary>
 public abstract class Session : CastDataProvider, IDisposable
 {
-    private int lockCount;
+    // Approved D-023: Java ReentrantLock is a private reentrant BCL Monitor.
+    private readonly object @lock = new();
 
     /// <summary>
     /// Acquires the lock of this session.
     /// </summary>
     public void Lock()
     {
-        lock (this)
-        {
-            lockCount++;
-        }
+        Monitor.Enter(@lock);
     }
 
     /// <summary>
@@ -51,10 +49,7 @@ public abstract class Session : CastDataProvider, IDisposable
     /// </summary>
     public void Unlock()
     {
-        lock (this)
-        {
-            lockCount--;
-        }
+        Monitor.Exit(@lock);
     }
 
     /// <summary>
@@ -63,10 +58,7 @@ public abstract class Session : CastDataProvider, IDisposable
     /// <returns>true if it is</returns>
     public bool IsLockedByCurrentThread()
     {
-        lock (this)
-        {
-            return lockCount > 0 && Monitor.IsEntered(this);
-        }
+        return Monitor.IsEntered(@lock);
     }
 
     /// <summary>

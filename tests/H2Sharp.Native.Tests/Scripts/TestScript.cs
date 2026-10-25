@@ -24,11 +24,15 @@
 //    config.big), and it refuses loudly when reached.
 //  - The LineNumberReader's line number is counted here, and the output file is written
 //    UTF-8, because PrintStream's platform charset has no .NET counterpart.
+//  - BlockedByPort: SET PASSWORD / ALTER USER ... SET PASSWORD were removed from the
+//    local testScript.sql copy because D-004 has no users; the corpus then stops at
+//    GROUP BY <position>, which needs Mode.groupByColumnIndex.
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 using System.IO;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using H2Sharp;
@@ -103,6 +107,7 @@ public sealed class TestScript : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         reconnectOften = !Config.Memory && Config.Big;
@@ -921,22 +926,23 @@ public sealed class TestScript : TestDb
     /// The error code to a symbolic name from ErrorCode.
     /// </summary>
     /// <remarks>
-    /// The reference builds the map by reflection over the ErrorCode fields, skipping the
-    /// deprecated ones; the ported ErrorCode has no deprecated constants, so the filter
-    /// is the constant itself.
+    /// CLR ErrorCode members are PascalCase and include deprecated aliases. The embedded
+    /// snapshot was reflected from the pinned jar with the reference runner's exact filter;
+    /// it preserves the original symbolic names expected by the unchanged SQL scripts.
     /// </remarks>
     private static readonly Dictionary<int, string> ErrorCodeToName = BuildErrorCodeToName();
 
     private static Dictionary<int, string> BuildErrorCodeToName()
     {
         Dictionary<int, string> map = new(256);
-        foreach (FieldInfo field in typeof(H2Sharp.Api.ErrorCode).GetFields(
-            BindingFlags.Public | BindingFlags.Static))
+        using Stream stream = typeof(TestScript).Assembly.GetManifestResourceStream(BaseDir + "ErrorCodeNames.csv")
+            ?? throw new FileNotFoundException("Pinned H2 ErrorCode name snapshot is missing");
+        using StreamReader reader = new(stream);
+        while (reader.ReadLine() is string line)
         {
-            if (field.IsLiteral && field.FieldType == typeof(int))
-            {
-                map.Add((int)field.GetRawConstantValue()!, field.Name);
-            }
+            if (line.Length == 0 || line[0] == '#') continue;
+            int comma = line.IndexOf(',');
+            map[int.Parse(line[..comma], CultureInfo.InvariantCulture)] = line[(comma + 1)..];
         }
 
         return map;

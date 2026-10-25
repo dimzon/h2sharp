@@ -190,7 +190,11 @@ public sealed class Insert : CommandWithValues, ResultTarget
         if (ValuesExpressionList.Count == 0)
         {
             target.Lock(session, Table.WriteLock);
-            if (insertFromSelect) throw new TODOException("Insert.insertRows: DIRECT query-to-target streaming is not ported");
+            if (insertFromSelect)
+            {
+                // H2 insertRows: query.query(0, this), the ResultTarget streaming path.
+                _ = query!.Run(0, this);
+            }
             else
             {
                 ResultInterface rows = query!.Run(0);

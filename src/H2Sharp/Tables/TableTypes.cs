@@ -1125,6 +1125,9 @@ public abstract class Table
     /// <returns>true if the table was already exclusively locked by this session</returns>
     public virtual bool Lock(H2Sharp.Engine.SessionLocal session, int lockType) => false;
 
+    /// <summary>Whether the table is exclusively locked by this session.</summary>
+    public virtual bool IsLockedExclusivelyBy(SessionLocal session) => false;
+
     /// <summary>
     /// Get the row id column if this table has one.
     /// </summary>

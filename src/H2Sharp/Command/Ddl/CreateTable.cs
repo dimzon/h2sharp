@@ -23,6 +23,7 @@
 using System;
 using System.Collections.Generic;
 using H2Sharp.Engine;
+using H2Sharp.Expressions;
 using H2Sharp.Schemas;
 using H2Sharp.Tables;
 
@@ -116,11 +117,6 @@ public sealed class CreateTable : CommandWithColumns
             throw new TODOException("CreateTable.update: temporary tables are not ported");
         }
 
-        if (select is not null || withNoData)
-        {
-            throw new TODOException("CreateTable.update: CREATE TABLE AS SELECT is not ported");
-        }
-
         if (tableEngine is not null || tableEngineParams is not null)
         {
             throw new TODOException("CreateTable.update: table engines are not ported");
@@ -140,6 +136,27 @@ public sealed class CreateTable : CommandWithColumns
         }
 
         ChangePrimaryKeysToNotNull(columns);
+        if (select is not null)
+        {
+            select.Prepare();
+            if (columns.Count == 0)
+            {
+                GenerateColumnsFromQuery();
+            }
+            else if (columns.Count != select.GetColumnCount())
+            {
+                throw Message.DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
+            }
+            else
+            {
+                Expression[] expressions = select.GetExpressions();
+                for (int i = 0; i < columns.Count; i++)
+                {
+                    if (columns[i].GetTypeInfo().GetValueType() == Values.Value.Unknown)
+                        columns[i] = new Column(columns[i].GetName(), expressions[i].GetTypeInfo());
+                }
+            }
+        }
         CreateTableData data = new()
         {
             Id = GetObjectId(), TableName = tableName, Columns = columns, Session = session,
@@ -168,6 +185,7 @@ public sealed class CreateTable : CommandWithColumns
             }
 
             CreateConstraints();
+            if (select is not null && !withNoData) InsertAsData(table);
         }
         catch (H2SharpException)
         {
@@ -223,8 +241,31 @@ public sealed class CreateTable : CommandWithColumns
     public void SetTableEngine(string tableEngine) => this.tableEngine = tableEngine;
 
     /// <summary>Sets the table engine parameters.</summary>
-    /// <param name="tableEngineParams">the parameters</param>
+    /// <param name="engineParams">the parameters</param>
     public void SetTableEngineParams(List<string> engineParams) => tableEngineParams = engineParams;
+
+    /// <summary>Inserts the rows of the query, for CREATE TABLE ... AS SELECT.</summary>
+    private void InsertAsData(Table table)
+    {
+        Dml.Insert insert = new(GetSession());
+        insert.SetQuery(select!);
+        insert.SetTable(table);
+        insert.SetInsertFromSelect(true);
+        insert.Prepare();
+        _ = insert.Run(null, null);
+    }
+
+    /// <summary>Derives the column definitions from the query, as the reference does.</summary>
+    private void GenerateColumnsFromQuery()
+    {
+        Expression[] expressions = select!.GetExpressions();
+        for (int i = 0; i < select.GetColumnCount(); i++)
+        {
+            AddColumn(new Column(
+                expressions[i].GetColumnName(GetSession(), i), expressions[i].GetTypeInfo()));
+        }
+    }
+
 
     /// <inheritdoc/>
     public override int GetCommandType() => CommandInterface.CreateTable;

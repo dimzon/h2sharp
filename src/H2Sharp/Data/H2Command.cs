@@ -263,6 +263,9 @@ public sealed class H2Command : DbCommand
             }
 
             reader = new H2DataReader(count);
+            // An update result has no rows and no result set to close; it must not keep
+            // the command marked as having an open reader (H2 Statement does not either).
+            return reader;
         }
         else
         {

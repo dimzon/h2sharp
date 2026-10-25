@@ -230,7 +230,7 @@ public sealed class TableValueConstructor : Query
         => rows.Count;
 
     /// <inheritdoc/>
-    public override ResultInterface Run(long limit)
+    public override ResultInterface? Run(long limit, ResultTarget? target)
     {
         SessionLocal current = GetSession();
         OffsetFetch offsetFetch = GetOffsetFetch(limit);
@@ -256,7 +256,7 @@ public sealed class TableValueConstructor : Query
             result.AddRow(values);
         }
 
-        return FinishResult(result, offsetFetch.Offset, offsetFetch.Fetch, offsetFetch.FetchPercent, null)!;
+        return FinishResult(result, offsetFetch.Offset, offsetFetch.Fetch, offsetFetch.FetchPercent, target);
     }
 
     /// <summary>

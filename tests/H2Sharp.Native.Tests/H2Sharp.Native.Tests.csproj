@@ -26,6 +26,7 @@
       the output with what the file expects.
     -->
     <EmbeddedResource Include="Scripts\**\*.sql" />
+    <EmbeddedResource Include="Scripts\ErrorCodeNames.csv" />
   </ItemGroup>
 
 </Project>

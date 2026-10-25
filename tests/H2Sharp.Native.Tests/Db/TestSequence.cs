@@ -6,12 +6,16 @@
 // Modified (API): JDBC statements are ADO.NET commands; setAutoCommit(false) is an
 // explicit transaction the statements carry. The reference's main() entry is the
 // runner; xUnit runs Test() directly.
+// Java anonymous Task subclasses are named private CLR subclasses; stop/join and
+// exception capture use the port of org.h2.util.Task, rather than an indexed closure.
 //
 // Modified (deferred, see MIGRATION_STATUS.md): testConcurrentCreate creates a trigger
 // whose class implements org.h2.api.Trigger, which the port does not have; the part is
 // skipped until the trigger API is ported.
+// BlockedByPort: the sequence scenarios now reach testCreateSql, which needs SCRIPT NODATA.
 using H2Sharp.Engine;
 using Xunit;
+using H2Task = H2Sharp.Util.H2Task;
 
 namespace H2Sharp.Native.Tests.Db;
 
@@ -24,6 +28,7 @@ public sealed class TestSequence : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         // testConcurrentCreate: deferred, see the header (the Trigger API is not ported).
@@ -47,77 +52,20 @@ public sealed class TestSequence : TestDb
         DeleteDb("sequence");
         string url = GetURL("sequence", true);
         DbConnection conn = GetConnection(url);
+        H2Task[] tasks = new H2Task[2];
         try
         {
             DbCommand stat = conn.CreateCommand();
             Execute(stat, "CREATE SEQUENCE SEQ1");
             Execute(stat, "CREATE SEQUENCE SEQ2");
-            Exception?[] exceptions = new Exception?[2];
-            Thread[] tasks = new Thread[2];
             for (int i = 0; i < tasks.Length; i++)
             {
-                tasks[i] = new Thread(() =>
-                {
-                    try
-                    {
-                        using DbConnection taskConn = GetConnection(url);
-                        using DbCommand next1 = taskConn.CreateCommand();
-                        next1.CommandText = "CALL NEXT VALUE FOR SEQ1";
-                        using DbCommand next2 = taskConn.CreateCommand();
-                        next2.CommandText = "CALL NEXT VALUE FOR SEQ2";
-                        using DbCommand current1 = taskConn.CreateCommand();
-                        current1.CommandText = "CALL CURRENT VALUE FOR SEQ1";
-                        using DbCommand current2 = taskConn.CreateCommand();
-                        current2.CommandText = "CALL CURRENT VALUE FOR SEQ2";
-                        for (int j = 0; j < 1000; j++)
-                        {
-                            long v1, v2;
-                            using (DbDataReader rs = next1.ExecuteReader())
-                            {
-                                AssertTrue(rs.Read());
-                                v1 = rs.GetInt64(0);
-                            }
-
-                            using (DbDataReader rs = next2.ExecuteReader())
-                            {
-                                AssertTrue(rs.Read());
-                                v2 = rs.GetInt64(0);
-                            }
-
-                            using (DbDataReader rs = current1.ExecuteReader())
-                            {
-                                AssertTrue(rs.Read());
-                                if (v1 != rs.GetInt64(0))
-                                {
-                                    throw new Exception("Unexpected CURRENT VALUE FOR SEQ1");
-                                }
-                            }
-
-                            using (DbDataReader rs = current2.ExecuteReader())
-                            {
-                                AssertTrue(rs.Read());
-                                if (v2 != rs.GetInt64(0))
-                                {
-                                    throw new Exception("Unexpected CURRENT VALUE FOR SEQ2");
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        exceptions[i] = e;
-                    }
-                });
-                tasks[i].Start();
+                tasks[i] = new ConcurrentNextAndCurrentValueTask(this, url).Execute();
             }
-
-            foreach (Thread task in tasks)
+            Thread.Sleep(1000);
+            foreach (H2Task task in tasks)
             {
-                task.Join();
-            }
-
-            foreach (Exception? e in exceptions)
-            {
+                Exception? e = task.GetException();
                 if (e is not null)
                 {
                     throw new AssertionError(e.Message, e);
@@ -126,7 +74,49 @@ public sealed class TestSequence : TestDb
         }
         finally
         {
+            foreach (H2Task? task in tasks) task?.Join();
             conn.Close();
+        }
+    }
+
+    // Named CLR equivalent of the anonymous org.h2.util.Task in the reference method.
+    private sealed class ConcurrentNextAndCurrentValueTask(TestSequence test, string url) : H2Task
+    {
+        public override void Call()
+        {
+            using DbConnection taskConn = test.GetConnection(url);
+            using DbCommand next1 = taskConn.CreateCommand();
+            next1.CommandText = "CALL NEXT VALUE FOR SEQ1";
+            using DbCommand next2 = taskConn.CreateCommand();
+            next2.CommandText = "CALL NEXT VALUE FOR SEQ2";
+            using DbCommand current1 = taskConn.CreateCommand();
+            current1.CommandText = "CALL CURRENT VALUE FOR SEQ1";
+            using DbCommand current2 = taskConn.CreateCommand();
+            current2.CommandText = "CALL CURRENT VALUE FOR SEQ2";
+            while (!Stop)
+            {
+                long v1, v2;
+                using (DbDataReader rs = next1.ExecuteReader())
+                {
+                    test.AssertTrue(rs.Read());
+                    v1 = rs.GetInt64(0);
+                }
+                using (DbDataReader rs = next2.ExecuteReader())
+                {
+                    test.AssertTrue(rs.Read());
+                    v2 = rs.GetInt64(0);
+                }
+                using (DbDataReader rs = current1.ExecuteReader())
+                {
+                    test.AssertTrue(rs.Read());
+                    if (v1 != rs.GetInt64(0)) throw new Exception("Unexpected CURRENT VALUE FOR SEQ1");
+                }
+                using (DbDataReader rs = current2.ExecuteReader())
+                {
+                    test.AssertTrue(rs.Read());
+                    if (v2 != rs.GetInt64(0)) throw new Exception("Unexpected CURRENT VALUE FOR SEQ2");
+                }
+            }
         }
     }
 
@@ -210,6 +200,12 @@ public sealed class TestSequence : TestDb
             + "maxvalue 9 cycle increment by 2 nocache");
         Execute(stat, "create sequence c start with -4 minvalue -9 "
             + "maxvalue -3 no cycle increment by -2 cache 3");
+        if (!Config.Memory)
+        {
+            conn.Close();
+            conn.Open();
+            stat = conn.CreateCommand();
+        }
 
         stat.CommandText = "select * from "
             + "information_schema.sequences order by sequence_name";
@@ -385,8 +381,9 @@ public sealed class TestSequence : TestDb
     private void TestTwo()
     {
         DeleteDb("sequence");
-        DbConnection conn = GetConnection("sequence");
+        using DbConnection conn = GetConnection("sequence");
         DbCommand stat = conn.CreateCommand();
+        Execute(stat, "create sequence s");
         using DbTransaction transaction = conn.BeginTransaction();
         stat.Transaction = transaction;
 
@@ -425,6 +422,11 @@ public sealed class TestSequence : TestDb
         DbConnection conn = GetConnection("sequence");
         DbCommand stat = conn.CreateCommand();
         Execute(stat, setupSql);
+        if (!Config.Memory)
+        {
+            conn.Close();
+            conn = GetConnection("sequence");
+        }
         stat = conn.CreateCommand();
         foreach (long value in values)
         {

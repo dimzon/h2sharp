@@ -23,6 +23,7 @@
  * cache of pre-read values all belong to the transaction layer.
  */
 using System;
+using System.Globalization;
 using System.Text;
 using H2Sharp.Api;
 using H2Sharp.Command.Ddl;
@@ -65,6 +66,9 @@ public sealed class Sequence : SchemaObject
     /// counted out and do not have to be written down again.
     /// </summary>
     private long margin;
+
+    // While flushing, metadata reserves the cached margin instead of the current base.
+    private bool writeWithMargin = false;
 
     /// <summary>
     /// Creates a sequence.
@@ -395,9 +399,11 @@ public sealed class Sequence : SchemaObject
     {
         StringBuilder builder = new("CREATE SEQUENCE ");
         _ = GetSql(builder, 0);
-        StringBuilder options = new();
-        _ = GetSequenceOptionsSql(options);
-        return builder.Append(options).ToString();
+        if (dataType.GetValueType() != Value.Bigint) dataType.GetSql(builder.Append(" AS "), 0);
+        builder.Append(' ');
+        lock (this) GetSequenceOptionsSql(builder, writeWithMargin ? margin : baseValue);
+        if (belongsToTable) builder.Append(" BELONGS_TO_TABLE");
+        return builder.ToString();
     }
 
     /// <summary>
@@ -408,26 +414,28 @@ public sealed class Sequence : SchemaObject
     public StringBuilder GetSequenceOptionsSql(StringBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        bool[] known = [true, startValue != 1, increment != 1, cacheSize != DefaultCacheSize,
-            cycle != Cycle.NO_CYCLE, minValue != GetDefaultMinValue(null, increment, [0, 0]),
-            maxValue != GetDefaultMaxValue(null, increment, [0, 0])];
-        string[] commands =
-        [
-            "START WITH " + startValue,
-            "INCREMENT BY " + increment,
-            "CACHE " + cacheSize,
-            cycle == Cycle.CYCLE ? "CYCLE" : "NO CYCLE",
-            "MINVALUE " + minValue,
-            "MAXVALUE " + maxValue,
-        ];
-        for (int i = 0; i < commands.Length; i++)
-        {
-            if (known[i])
-            {
-                _ = builder.Append(' ').Append(commands[i]);
-            }
-        }
+        lock (this) return GetSequenceOptionsSql(builder, baseValue);
+    }
 
+    private StringBuilder GetSequenceOptionsSql(StringBuilder builder, long value)
+    {
+        builder.Append("START WITH ").Append(startValue.ToString(CultureInfo.InvariantCulture));
+        if (value != startValue && cycle != Cycle.EXHAUSTED)
+            builder.Append(" RESTART WITH ").Append(value.ToString(CultureInfo.InvariantCulture));
+        if (increment != 1) builder.Append(" INCREMENT BY ").Append(increment.ToString(CultureInfo.InvariantCulture));
+        long[] bounds = SequenceOptions.GetBounds(dataType);
+        if (minValue != GetDefaultMinValue(value, increment, bounds))
+            builder.Append(" MINVALUE ").Append(minValue.ToString(CultureInfo.InvariantCulture));
+        if (maxValue != GetDefaultMaxValue(value, increment, bounds))
+            builder.Append(" MAXVALUE ").Append(maxValue.ToString(CultureInfo.InvariantCulture));
+        if (cycle == Cycle.CYCLE) builder.Append(" CYCLE");
+        else if (cycle == Cycle.EXHAUSTED) builder.Append(" EXHAUSTED");
+        if (cacheSize != DefaultCacheSize)
+        {
+            if (cacheSize == 1) builder.Append(" NO CACHE");
+            else if (cacheSize > DefaultCacheSize || cacheSize != GetMaxCacheSize(maxValue - minValue, increment))
+                builder.Append(" CACHE ").Append(cacheSize.ToString(CultureInfo.InvariantCulture));
+        }
         return builder;
     }
 
@@ -558,29 +566,61 @@ public sealed class Sequence : SchemaObject
     /// <summary>
     /// Writes the current value without a margin.
     /// </summary>
-    /// <remarks>
-    /// The sequences of this port live in memory, so there is nothing to write down: the
-    /// store of the sequences is not ported, and a database of this port is in memory
-    /// anyway.
-    /// </remarks>
     public void FlushWithoutMargin()
     {
+        if (margin != baseValue)
+        {
+            margin = baseValue;
+            Flush(null);
+        }
     }
 
     /// <summary>
     /// Writes the current value.
     /// </summary>
-    /// <remarks>
-    /// Nothing to write down: the sequences of this port live in memory.
-    /// </remarks>
     /// <param name="session">the session</param>
-    public void Flush(SessionLocal session)
+    public void Flush(SessionLocal? session)
     {
+        if (IsTemporary()) return;
+        Database database = GetSchema().GetDatabase();
+        if (session is null || !database.IsSysTableLockedBy(session))
+        {
+            SessionLocal systemSession = database.GetSystemSession();
+            systemSession.Lock();
+            try
+            {
+                FlushInternal(systemSession);
+                systemSession.Commit(false);
+            }
+            finally { systemSession.Unlock(); }
+        }
+        else
+        {
+            session.Lock();
+            try { FlushInternal(session); }
+            finally { session.Unlock(); }
+        }
+    }
+
+    private void FlushInternal(SessionLocal session)
+    {
+        Database database = GetSchema().GetDatabase();
+        bool metaWasLocked = database.LockMeta(session);
+        try
+        {
+            writeWithMargin = true;
+            database.UpdateMeta(session, this);
+        }
+        finally
+        {
+            writeWithMargin = false;
+            if (!metaWasLocked) database.UnlockMeta(session);
+        }
     }
 
     /// <summary>Closes this sequence.</summary>
     public void Close()
-        => throw new TODOException("Sequence.close: the store is not ported");
+        => FlushWithoutMargin();
 
     /// <inheritdoc/>
     public override int GetTypeId() => DbObject.Sequence;
@@ -588,19 +628,19 @@ public sealed class Sequence : SchemaObject
     /// <inheritdoc/>
     public override void RemoveChildrenAndResources(SessionLocal session)
     {
-        // The sequences of this port live in memory, so there is nothing to remove: the
-        // store of the sequences is not ported.
+        GetSchema().GetDatabase().RemoveMeta(session, GetId());
+        Invalidate();
     }
 
     /// <summary>Gets the base value.</summary>
-    public long GetBaseValue() => baseValue;
+    public long GetBaseValue() { lock (this) return baseValue; }
 
     /// <summary>Gets the current value.</summary>
     /// <remarks>
     /// The value that was handed out last, which is the base value less the increment.
     /// </remarks>
     /// <returns>the current value</returns>
-    public long GetCurrentValue() => baseValue - increment;
+    public long GetCurrentValue() { lock (this) return baseValue - increment; }
 
     /// <summary>Sets whether this sequence belongs to a table.</summary>
     /// <param name="b">true if it does</param>

@@ -280,6 +280,12 @@ public sealed partial class Database : CastDataProvider
         return true;
     }
 
+    /// <summary>Checks the actual SYS-table lock (D-011: meta locking remains unported).</summary>
+    public bool IsSysTableLockedBy(SessionLocal session) => meta is null || meta.IsLockedExclusivelyBy(session);
+
+    /// <summary>Gets the internal session used for immediately committed metadata writes.</summary>
+    public SessionLocal GetSystemSession() => systemSession!;
+
     /// <summary>
     /// Adds a schema object to the database.
     /// </summary>
@@ -669,6 +675,14 @@ public sealed partial class Database : CastDataProvider
             records.Sort();
             foreach (MetaRecord rec in records)
             {
+                // D-011: the port has no users, roles or rights (D-004), so the rows the
+                // reference stores for them cannot be replayed. Skip them explicitly instead
+                // of relying on their SQL failing as a syntax error.
+                if (rec.GetObjectType() is DbObject.User or DbObject.Role or DbObject.Right)
+                {
+                    continue;
+                }
+
                 rec.PrepareAndExecute(this, systemSession!, listener: null, throwIt: false);
             }
         }
@@ -1356,6 +1370,13 @@ public sealed partial class Database : CastDataProvider
 
         if (!alreadyClosed)
         {
+            // Database.close: sequences flush their exact next value before the store closes.
+            if (systemSession is not null && !readOnly)
+            {
+                foreach (Schemas.Schema schema in GetSchemas())
+                    foreach (Schemas.Sequence sequence in schema.GetAllSequences()) sequence.Close();
+                systemSession.Commit(true);
+            }
             // Reference: store.close(allowedCompactionTime). Nothing in the port asks for
             // compaction on close, so the store is closed immediately.
             store.Close(0);

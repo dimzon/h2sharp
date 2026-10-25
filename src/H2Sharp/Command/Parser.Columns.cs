@@ -361,6 +361,13 @@ public sealed partial class Parser
         if (CurrentType is ParserUtil.Unique or ParserUtil.Check)
             throw new TODOException("Parser.parseTableConstraintIf: UNIQUE and table CHECK commands are not ported");
         string columnName = ReadIdentifier();
+        if (forCreateTable && CurrentType is Token.Comma or Token.CloseParen)
+        {
+            // CREATE TABLE ... AS SELECT may name its columns without types; the query
+            // supplies them (Parser.parseTableColumnDefinition).
+            command.AddColumn(new Column(columnName, TypeInfo.TypeUnknown));
+            return;
+        }
         Column column = ParseColumnForTable(columnName, true);
         command.AddColumn(column);
         ReadColumnConstraints(command, schema, tableName, column);
@@ -390,10 +397,12 @@ public sealed partial class Parser
             else if (IsWord("REFERENCES"))
             {
                 ReadReferences(tableName, out string? refSchema, out string refTable, out List<string>? refColumns,
+                    out string? refIndexSchema, out string? refIndexName,
                     out Constraints.ConstraintActionType updateAction, out Constraints.ConstraintActionType deleteAction);
                 TableConstraintDefinition definition = new(constraintName, false, [column.GetName()], false,
                     CommandInterface.AlterTableAddConstraintReferential, RefTableSchema: refSchema, RefTable: refTable,
-                    RefColumns: refColumns, UpdateAction: updateAction, DeleteAction: deleteAction);
+                    RefColumns: refColumns, UpdateAction: updateAction, DeleteAction: deleteAction,
+                    RefIndexSchema: refIndexSchema, RefIndexName: refIndexName);
                 command.AddConstraintCommand(CreateAddConstraintCommand(session!, schema, tableName, false, definition));
             }
             else if (ReadIfWords("NOT", "NULL")) column.SetNullable(false);

@@ -155,12 +155,12 @@ public sealed partial class Parser
         else if (ReadIfName("PASSWORD"))
         {
             throw new TODOException(
-                "Parser.parseSet: SET PASSWORD needs AlterUser and users, neither is ported");
+                "Parser.parseSet: SET PASSWORD needs AlterUser and users, neither is ported (D-004)");
         }
         else if (ReadIfName("SALT"))
         {
             throw new TODOException(
-                "Parser.parseSet: SET SALT ... HASH needs AlterUser and users, neither is ported");
+                "Parser.parseSet: SET SALT ... HASH needs AlterUser and users, neither is ported (D-004)");
         }
         else if (ReadIfName("MODE"))
         {

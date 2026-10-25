@@ -45,10 +45,10 @@ public sealed class SelectUnion : Query
     public LocalResult GetEmptyResult() => CreateLocalResult(left.GetColumnCount());
     private LocalResult CreateLocalResult(int columnCount) => new(GetSession(), expressionArray, columnCount, columnCount);
 
-    public override ResultInterface Run(long limit)
+    public override ResultInterface? Run(long limit, ResultTarget? target)
     {
-        // H2 queryWithoutCache's materialized path. Target insertion and lazy UNION ALL
-        // remain outside the existing Query.Run interface.
+        // H2 queryWithoutCache's materialized path. Union always builds a LocalResult;
+        // FinishResult writes it to the target when one is given.
         OffsetFetch offsetFetch = GetOffsetFetch(limit);
         int count = left.GetColumnCount();
         LocalResult result = CreateLocalResult(count);
@@ -89,7 +89,7 @@ public sealed class SelectUnion : Query
                 break;
             default: throw DbException.GetInternalError("type=" + unionType);
         }
-        return FinishResult(result, offsetFetch.Offset, offsetFetch.Fetch, offsetFetch.FetchPercent, null)!;
+        return FinishResult(result, offsetFetch.Offset, offsetFetch.Fetch, offsetFetch.FetchPercent, target);
     }
 
     public override void Init()

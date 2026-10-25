@@ -822,7 +822,7 @@ public sealed class Select : Query
     /// drops duplicates as rows arrive. The index fast path that would walk them in order
     /// waits for secondary indexes, which are still a stub.
     /// </remarks>
-    public override ResultInterface Run(long limit)
+    public override ResultInterface? Run(long limit, ResultTarget? target)
     {
         if (windows is not null || isDistinct || forUpdate is not null)
         {
@@ -841,14 +841,23 @@ public sealed class Select : Query
         Expression[] array = expressionArray ?? [.. expressions];
         int columnCount = array.Length;
         int resultWidth = resultColumnCount > 0 ? resultColumnCount : array.Length;
-        LocalResult result = new(session, array, visibleColumnCount, resultWidth);
+        // H2 queryWithoutCache: with optimizeInsertFromSelect (its default) a flat query
+        // writes straight to the target. Ordering, grouping, distinct, windows and
+        // offset/fetch still need a LocalResult first.
+        bool needResult = target is null
+            || (sort is not null && indexSortedColumns != Indexes.IndexSort.FullySorted)
+            || distinct || isWindowQuery || isGroupQuery
+            || fetch >= 0 || offset > 0;
+        LocalResult? result = needResult
+            ? new LocalResult(session, array, visibleColumnCount, resultWidth) : null;
+        ResultTarget to = result ?? target!;
         topTableFilter!.StartQuery(session);
         topTableFilter.Reset();
         topTableFilter.Lock(session);
         QuickOffset quickOffset = QuickOffset.Yes;
         if (sort is not null && indexSortedColumns != Indexes.IndexSort.FullySorted)
         {
-            result.SetSortOrder(sort);
+            result!.SetSortOrder(sort);
             // PARTIAL waits for index-sort resolution: without a sorted index the offset cannot
             // be skipped up front, the result trims it after the sort.
             quickOffset = QuickOffset.No;
@@ -856,7 +865,7 @@ public sealed class Select : Query
 
         if (distinct)
         {
-            result.SetDistinct();
+            result!.SetDistinct();
             // A deduplicated row is not the row that was read: skipping the offset up front
             // would skip raw rows and trim the wrong ones, so the result trims afterwards.
             quickOffset = QuickOffset.No;
@@ -864,32 +873,32 @@ public sealed class Select : Query
 
         if (isQuickAggregateQuery)
         {
-            QueryQuick(array, result, columnCount, offset, fetch);
+            QueryQuick(array, to, columnCount, offset, fetch);
             offset = 0;
         }
         else if (isWindowQuery)
         {
-            if (isGroupQuery) QueryGroupWindow(columnCount, result);
-            else QueryWindow(columnCount, result);
+            if (isGroupQuery) QueryGroupWindow(columnCount, result!);
+            else QueryWindow(columnCount, result!);
             quickOffset = QuickOffset.No;
         }
         else if (isGroupQuery)
         {
             // Groups form after the walk, so the offset cannot be skipped up front: the
             // result trims it after the sort, like the reference trims its own.
-            QueryGroup(result);
+            QueryGroup(to);
             quickOffset = QuickOffset.No;
         }
         else
         {
-            QueryFlat(array, result, offset, fetch, withTies, quickOffset);
+            QueryFlat(array, to, offset, fetch, withTies, quickOffset);
             if (quickOffset == QuickOffset.Yes)
             {
                 offset = 0;
             }
         }
 
-        return FinishResult(result, offset, fetch, fetchPercent, null)!;
+        return result is null ? null : FinishResult(result, offset, fetch, fetchPercent, target);
     }
 
     /// <summary>

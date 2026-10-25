@@ -193,7 +193,7 @@ public abstract partial class Value
     /// Get the value as an integer.
     /// </summary>
     /// <returns>the integer value</returns>
-    public virtual int GetInt() => throw GetUnsupportedException("getInt");
+    public virtual int GetInt() => ConvertToIntType(null).GetInt();
 
     /// <summary>
     /// Get the value as a long.

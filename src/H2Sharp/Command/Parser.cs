@@ -126,7 +126,9 @@ public sealed record TableConstraintDefinition(
     Constraints.ConstraintActionType DeleteAction = Constraints.ConstraintActionType.NO_ACTION,
     bool CheckExisting = true,
     string? IndexSchema = null,
-    string? IndexName = null);
+    string? IndexName = null,
+    string? RefIndexSchema = null,
+    string? RefIndexName = null);
 
 /// <summary>ALTER TABLE ... ADD/DROP CONSTRAINT.</summary>
 public sealed class AlterTableStatement : Statement
@@ -582,6 +584,36 @@ public sealed partial class Parser
             Read();
             prepared = PrepareSet(current);
         }
+        else if (IsWord("CREATE", consume: false) && NextIs("USER"))
+        {
+            throw new TODOException(
+                "Parser.parseCreateUser: CreateUser and users are not ported (D-004)");
+        }
+        else if (IsWord("CREATE", consume: false) && NextIs("ROLE"))
+        {
+            throw new TODOException(
+                "Parser.parseCreateRole: CreateRole and roles are not ported (D-004)");
+        }
+        else if (IsWord("ALTER", consume: false) && NextIs("USER"))
+        {
+            throw new TODOException(
+                "Parser.parseAlterUser: AlterUser and users are not ported (D-004)");
+        }
+        else if (IsWord("DROP", consume: false) && NextIs("USER"))
+        {
+            throw new TODOException(
+                "Parser.parseDropUser: DropUser and users are not ported (D-004)");
+        }
+        else if (IsWord("DROP", consume: false) && NextIs("ROLE"))
+        {
+            throw new TODOException(
+                "Parser.parseDropRole: DropRole and roles are not ported (D-004)");
+        }
+        else if (IsWord("GRANT") || IsWord("REVOKE"))
+        {
+            throw new TODOException(
+                "Parser.parseGrantRevoke: GrantRevoke, users, roles and rights are not ported (D-004)");
+        }
         else if (IsWord("CREATE", consume: false) && NextIs("SEQUENCE"))
         {
             prepared = PrepareCreateSequence(current);
@@ -593,6 +625,10 @@ public sealed partial class Parser
         else if (IsWord("INSERT"))
         {
             prepared = ParseInsert(start);
+        }
+        else if (IsWord("CALL"))
+        {
+            prepared = ParseCall();
         }
         else if (IsWord("CREATE", consume: false) && (NextIs("TABLE") || NextIs("MEMORY") || NextIs("CACHED")))
         {
@@ -711,6 +747,21 @@ public sealed partial class Parser
     {
         Dml.TransactionCommand command = new(session!, CommandInterface.Savepoint);
         command.SetSavepointName(ReadIdentifier());
+        return command;
+    }
+
+    private Dml.Call ParseCall()
+    {
+        Dml.Call command = new(session!);
+        currentPrepared = command;
+        if (IsWord("TABLE", consume: false) && position + 1 < tokens.Count
+            && tokens[position + 1].TokenType == Token.OpenParen)
+        {
+            Read();
+            Read();
+            command.SetTableFunction(ReadTableFunction(Expressions.Functions.Table.ArrayTableFunction.Table));
+        }
+        else command.SetExpression(ReadExpression());
         return command;
     }
     private Prepared ParseReleaseSavepoint()
@@ -3364,6 +3415,7 @@ public sealed partial class Parser
             || word.Equals("NATURAL", StringComparison.OrdinalIgnoreCase)
             || word.Equals("ON", StringComparison.OrdinalIgnoreCase)
             || word.Equals("USING", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("WITH", StringComparison.OrdinalIgnoreCase)
             || word.Equals("KEY", StringComparison.OrdinalIgnoreCase);
     /// <summary>
     /// Reads a column name with an optional table prefix.
@@ -4715,14 +4767,26 @@ public sealed partial class Parser
     /// <returns>the sequence</returns>
     private Schemas.Sequence ReadSequence(SessionLocal session)
     {
-        string sequenceName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
-        Schemas.Sequence? sequence = schema.FindSequence(sequenceName);
-        if (sequence is null)
-        {
-            throw DbException.Get(Api.ErrorCode.SequenceNotFound1, sequenceName);
-        }
+        string sequenceName = ReadIdentifierWithSchemaName(out string? schemaName);
+        if (schemaName is not null) return session.GetDatabase().GetSchema(schemaName).GetSequence(sequenceName);
+        return FindSequence(session.GetCurrentSchemaName(), sequenceName)
+            ?? throw DbException.Get(Api.ErrorCode.SequenceNotFound1, sequenceName);
+    }
 
-        return sequence;
+    private Schemas.Sequence? FindSequence(string schema, string sequenceName)
+    {
+        Schemas.Sequence? sequence = session!.GetDatabase().GetSchema(schema).FindSequence(sequenceName);
+        if (sequence is not null) return sequence;
+        string[]? path = session.GetSchemaSearchPath();
+        if (path is not null)
+        {
+            foreach (string name in path)
+            {
+                sequence = session.GetDatabase().GetSchema(name).FindSequence(sequenceName);
+                if (sequence is not null) return sequence;
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -6542,6 +6606,17 @@ public sealed partial class Parser
             key.SetRefIndexColumns([.. refIndexColumns]);
         }
 
+        if (constraint.RefIndexName is not null)
+        {
+            Schemas.Schema refIndexSchema = constraint.RefIndexSchema is null
+                ? (constraint.RefTableSchema is null
+                    ? CurrentSchema(session)
+                    : session.GetDatabase().GetSchema(constraint.RefTableSchema))
+                : session.GetDatabase().GetSchema(constraint.RefIndexSchema);
+            key.SetRefIndex(refIndexSchema.FindIndex(session, constraint.RefIndexName)
+                ?? throw DbException.Get(Api.ErrorCode.IndexNotFound1, constraint.RefIndexName));
+        }
+
         key.SetUpdateAction(constraint.UpdateAction);
         key.SetDeleteAction(constraint.DeleteAction);
         key.SetCheckExisting(constraint.CheckExisting);
@@ -7183,7 +7258,7 @@ public sealed partial class Parser
                         }
 
                         ReadReferences(statement.Name, out refTableSchema, out string namedRefTable,
-                            out refColumns, out refUpdateAction, out refDeleteAction);
+                            out refColumns, out _, out _, out refUpdateAction, out refDeleteAction);
                         refTable = namedRefTable;
                         break;
                     default:
@@ -7195,7 +7270,7 @@ public sealed partial class Parser
             if (refTable is null && IsWord("REFERENCES"))
             {
                 ReadReferences(statement.Name, out refTableSchema, out string plainRefTable,
-                    out refColumns, out refUpdateAction, out refDeleteAction);
+                    out refColumns, out _, out _, out refUpdateAction, out refDeleteAction);
                 refTable = plainRefTable;
             }
 
@@ -7271,6 +7346,7 @@ public sealed partial class Parser
 
             ExpectWord("REFERENCES");
             ReadReferences(tableName, out string? refSchemaName, out string refTable, out List<string>? refColumns,
+                out string? refIndexSchema, out string? refIndexName,
                 out Constraints.ConstraintActionType updateAction, out Constraints.ConstraintActionType deleteAction);
             bool checkExisting = true;
             if (IsWord("NOCHECK"))
@@ -7285,7 +7361,7 @@ public sealed partial class Parser
             return new TableConstraintDefinition(name, ifNotExists, columns, Hash: false,
                 CommandInterface.AlterTableAddConstraintReferential, comment,
                 refSchemaName, refTable, refColumns, updateAction, deleteAction, checkExisting,
-                indexSchema, indexName);
+                indexSchema, indexName, refIndexSchema, refIndexName);
         }
 
         Expect(ParserUtil.Primary, "PRIMARY");
@@ -7330,6 +7406,8 @@ public sealed partial class Parser
         out string? refSchemaName,
         out string refTable,
         out List<string>? refColumns,
+        out string? refIndexSchema,
+        out string? refIndexName,
         out Constraints.ConstraintActionType updateAction,
         out Constraints.ConstraintActionType deleteAction)
     {
@@ -7365,8 +7443,13 @@ public sealed partial class Parser
 
         if (IsWord("INDEX", consume: false))
         {
-            throw new TODOException(
-                "Parser.readReferences: the INDEX clause of a foreign key is not ported");
+            Read();
+            refIndexName = ReadIdentifierWithSchemaName(out refIndexSchema);
+        }
+        else
+        {
+            refIndexSchema = null;
+            refIndexName = null;
         }
 
         updateAction = Constraints.ConstraintActionType.NO_ACTION;

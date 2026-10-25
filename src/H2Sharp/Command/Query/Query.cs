@@ -282,11 +282,21 @@ public abstract class Query : Prepared
     /// </summary>
     /// <remarks>
     /// Named Run rather than the reference's query, because C# forbids a member with the same
-    /// name as its enclosing type and this class is called Query.
+    /// name as its enclosing type and this class is called Query. The overload with a target is
+    /// the reference's <c>query(limit, target)</c>: rows go to the target and null is returned.
+    /// Result caching and SELECT triggers are not ported yet, so this always takes the
+    /// no-cache path.
     /// </remarks>
     /// <param name="limit">the limit</param>
     /// <returns>the rows</returns>
-    public abstract override ResultInterface Run(long limit);
+    public sealed override ResultInterface Run(long limit) => Run(limit, null)!;
+
+    /// <summary>Runs the query, writing rows to the target when one is given.</summary>
+    /// <param name="limit">the limit</param>
+    /// <param name="target">the target, or null to return a result</param>
+    /// <returns>the result when the target is null; otherwise null</returns>
+    public virtual ResultInterface? Run(long limit, ResultTarget? target)
+        => throw new TODOException("Query.Run(limit,target): this query kind is not ported");
 
     /// <summary>Execute the EXISTS predicate over the query.</summary>
     public bool Exists()
@@ -962,7 +972,10 @@ public abstract class Query : Prepared
     public LocalResult ConvertToInPredicateValueList(ResultInterface result)
     {
         int count = GetColumnCount();
-        LocalResult distinctResult = new(GetSession(), GetExpressions(), count, count);
+        // H2 uses expressionArray and resultColumnCount: the row width includes hidden
+        // ORDER BY expressions, while only visible columns are exposed.
+        Expression[] expressions = GetExpressions();
+        LocalResult distinctResult = new(GetSession(), expressions, count, expressions.Length);
         distinctResult.SetInPredicateValueListResult(inPredicateSortTypes!);
         result.Reset();
         while (result.Next())

@@ -7454,3 +7454,116 @@ TRX: `condition-types-core-full.trx`, `condition-types-specs-full.trx`,
 `condition-types-data-full.trx`, `condition-types-native.trx`,
 `condition-types-targeted.trx`, `dialect-numeric-types-final.trx` во внешней
 директории `h2-xml-bcl-prototype-20261025/xml-test-proposal`.
+
+### Native continuation: Task, CALL, sequence flush, Query ResultTarget
+
+Перенесён `org.h2.util.Task` как `H2Sharp.Util.H2Task` (D-024: указание
+пользователя переименовать из-за конфликта с `System.Threading.Tasks.Task`):
+Call/Run/Execute/Get/GetException/Join/IsFinished, stop и захват исключения.
+`TestSequence.testConcurrentNextAndCurrentValue` использует его вместо массива
+потоков с захваченным `i`; необработанный IndexOutOfRangeException в рабочем
+потоке устранён. Session.Lock/Unlock/IsLockedByCurrentThread переведены на
+reentrant BCL Monitor (D-023, утверждено: «Утверждаю Monitor»).
+
+Перенесены `Call` (scalar и TABLE, queryMeta/update/Run/prepare) и общий
+`ReadSequence` с эталонным поиском по current schema + SCHEMA_SEARCH_PATH и
+квалифицированным именем. `GetBoolean` и `GetInt` больше не заглушки:
+они вызывают уже перенесённые convertToBoolean/convertToInt, как Value.java.
+
+Sequence lifecycle: GetCreateSql теперь печатает AS type, START/RESTART,
+только не-дефолтные INCREMENT/MINVALUE/MAXVALUE, CYCLE/EXHAUSTED, NO CACHE и
+CACHE с эталонным getMaxCacheSize; BELONGS_TO_TABLE сохранён. Перенесены
+flush/flushWithoutMargin/flushInternal с cache margin через system session,
+close и removeMeta; Database.Close закрывает sequences. Потеря `CACHE 3`
+при reopen исправлена. `TestSequence` проходит concurrent, search path,
+alter sequence, cache, two, metadata, min/max, errors, default min/max и
+останавливается на `SCRIPT NODATA`; тест помечен BlockedByPort этим пробелом.
+
+`CallAndSequenceLifecycleOracleTests` 5/5 на JVM: scalar/TABLE CALL, current
+schema/search path/qualification, update vs query metadata, file reopen +
+rollback + Java read, formatter/restart. `TaskAndSessionOracleTests` 4/4:
+Task exception/join, Monitor reentrancy and ownership, точный ErrorCode-name
+snapshot. Native TestScript больше не падает на инициализации словаря:
+имена кодов берутся из `Scripts/ErrorCodeNames.csv`, отражённого из pinned jar
+с фильтром PUBLIC|STATIC|FINAL и без Deprecated; PascalCase-имена CLR не
+подменяют ожидаемые SQL-имена. TestScript проходит дальше; по указанию
+пользователя из локальной копии testScript.sql удалены `set password test` и
+`alter user sa set password test` (D-004: users/roles отсутствуют). Следующий
+блокер — `GROUP BY <position>` (Mode.groupByColumnIndex ещё не перенесён);
+тест остаётся BlockedByPort.
+
+Исправлен дефект ADO.NET-провайдера: update-путь H2Command увеличивал
+openReaders, но у его reader нет onClose, поэтому после любого UPDATE команда
+навсегда считалась имеющей открытый reader. Update-reader больше не входит в
+счётчик; сообщение «The command has an open reader» после UPDATE исчезло.
+
+Перенесён `Query.query(limit, target)` (ResultTarget): Query.Run(limit) —
+sealed обёртка над перегрузкой; Select пишет плоские строки прямо в target,
+а ORDER BY/DISTINCT/GROUP/OFFSET/FETCH/TIES строят LocalResult и
+FinishResult копирует его в target. SelectUnion/TableValueConstructor также
+принимают target через FinishResult. Insert.insertFromSelect вызывает
+`query.Run(0, this)` вместо материализации; CreateTable AS SELECT использует
+этот путь. Перенесены `CreateTable.update` для AS SELECT, generateColumnsFromQuery,
+insertAsData, явные имена колонок без типов (TypeInfo.Unknown заменяется типом
+запроса), WITH NO DATA, ошибка COLUMN_COUNT_DOES_NOT_MATCH и cleanup.
+`WITH` добавлен в clause words, чтобы не становиться алиасом таблицы и работать
+как `WITH NO DATA`. `ConvertToInPredicateValueList` сохраняет полную ширину
+строки (hidden ORDER BY columns), как resultColumnCount эталона.
+
+Перенесён `REFERENCES ... INDEX` для table/column FK: RefIndexSchema/RefIndexName
+читаются ReadReferences, передаются TableConstraintDefinition и вызывают
+AlterTableAddConstraint.SetRefIndex; INDEX без schema ищется в schema
+referenced table. Foreign key INDEX в TestScript больше не TODO.
+`QueryTargetOracleTests` 4/4: streaming flat, ORDER/DISTINCT/GROUP/OFFSET/FETCH,
+CTAS/имена/WITH NO DATA/GROUP/LIMIT/ошибки, INSERT SELECT. JVM oracle совпал
+построчно.
+
+Проверки:
+- core: **1407 passed / 3 прежних PostfixCast failed / 1410 total**; новый
+  прирост — 13 тестов (9 Call/Task/Sequence + 4 QueryTarget), регрессий по именам 0.
+- conformance: **762/952** (было 760); новых Passed→Failed по именам 0.
+- H2Sharp.Data.Tests: **491/491**; native targeted Task/CALL/sequence 9/9.
+- Native после исправлений: TestScript теперь BlockedByPort на D-004 (SET PASSWORD),
+  TestSequence — BlockedByPort на SCRIPT NODATA; CTAS/FK INDEX/CALL/Search Path
+  и update-reader доведены до следующих отдельных пробелов.
+- Debug engine net8.0/net10.0: 0 errors / 0 warnings; новые D-023/D-024
+  записаны в APPROVED_DEVIATIONS.md; старые core/conformance тесты не менялись.
+
+TRX: `native-query-target-core.trx`, `native-query-target-specs.trx`,
+`native-query-target-data.trx`, `native-script-current.trx`,
+`query-target3.trx`, `native-ctas-targeted.trx`, `native-sequence-persistent.trx`,
+`native-blockers-oracle3.trx`.
+
+### Identity DDL: осмысленные отказы и границы conformance
+
+Conformance-набор действительно содержит DDL, включая `CREATE/ALTER/DROP USER`,
+`CREATE/DROP ROLE`, `GRANT/REVOKE`, `ALTER TABLE ADD/DROP/RENAME` и
+`CREATE VIEW`. «Покрыли» не означает «прошли»: из 952 conformance-тестов
+**762 passed / 190 failed**; в красных, в частности, DropObject 10/14,
+Privilege 10/10, AlterTableAdd 5/5, CreateTable 5/7, AlterTableDrop 4/5,
+AlterTableRename 4/4, CreateTrigger 6/6, Script 7/7, CreateUser 0/2,
+AlterUser 0/3, CreateRole 0/1. Эти тесты ждут успешного выполнения и по
+D-004 не могут быть зелёными; native-тесты дополнительно проверяют формы,
+которых нет в чеклисте (`CREATE USER ... SALT/HASH`, `GRANT ALTER ANY SCHEMA`,
+многострочные GRANT/REVOKE, сценарии выполнения).
+
+Добавлен `UnportedIdentityDdlTests` — **26/26**: на каждую identity-конструкцию
+`CREATE USER` (PASSWORD/IF NOT EXISTS/ADMIN/SALT-HASH/IDENTIFIED BY),
+`CREATE ROLE` (+IF NOT EXISTS), `ALTER USER` (ADMIN TRUE/FALSE, RENAME,
+SET PASSWORD, SET SALT), `SET PASSWORD`, `SET SALT`, `DROP USER` (+IF EXISTS),
+`DROP ROLE` (+IF EXISTS), `GRANT`/`REVOKE` (right, role, ALTER ANY SCHEMA)
+проверяется `TODOException` с текстом «Not ported yet», именем эталонного
+класса (`CreateUser`/`CreateRole`/`AlterUser`/`DropUser`/`DropRole`/
+`GrantRevoke`), подсистемой (`users`/`roles`/`rights`) и `D-004`, без
+«Syntax error». `COMMENT ON USER/ROLE` проверяется по эталонным кодам
+`USER_NOT_FOUND_1`/`ROLE_NOT_FOUND_1`.
+
+Парсер теперь распознаёт эти конструкции и отказывает осмысленно; прежний
+ответ «expected TABLE» устранён. Обнаруженная при этом регрессия открытия
+файловой БД исправлена: файл эталона содержит meta-строки USER/ROLE/RIGHT,
+которые порт по D-011 теперь пропускает явно в `Database.ExecuteMeta`, а не
+прерывает открытие.
+
+Итог после исправления: core **1433 passed / 3 прежних PostfixCast failed /
+1436 total**, conformance **762/952** без изменений, identity-тесты 26/26,
+`FileDatabaseOracleTests` 34/34 в целевом прогоне.
