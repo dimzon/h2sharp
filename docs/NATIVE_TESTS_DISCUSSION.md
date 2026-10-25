@@ -260,6 +260,10 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   batch, параметры) пересекается с TestStatement/TestTransactionIsolation; не переносимая
   — scrollable/updatable/generated keys. Вопрос: переносить переносимую половину после
   решения по TestResultSet, чтобы не дублировать.
+* **TestFileSystem — не перенесён.** Тест-контракт всех ФС-схем эталона (zip, zip2,
+  cache, rec, encrypt, split, async, nioMapped, memLZF, nioMem*, classpath, debug);
+  порт регистрирует только file, memFS, split. Переносима disk-часть
+  (testFileSystem/moveTo/directories) против FilePath API; остальное ждёт схемы.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
