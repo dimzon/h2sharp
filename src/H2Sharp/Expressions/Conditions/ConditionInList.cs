@@ -6,9 +6,8 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * Sliced to the scalar IN list. The reference's row-IN path (createUniqueIndexConditions,
- * getAdditional) needs ExpressionList, which is still a stub here — nothing builds one — so
- * those two members are left out rather than written against a type that cannot be built.
+ * The scalar IN list and getAdditional follow H2 2.5. The specialized row-IN
+ * createUniqueIndexConditions path is not ported yet.
  */
 using System.Collections.Generic;
 
@@ -222,5 +221,22 @@ public sealed class ConditionInList : ConditionIn
         }
 
         return cost;
+    }
+
+    /// <summary>Extends an IN list with the matching operand of an OR equality.</summary>
+    internal Expression? GetAdditional(Comparison other)
+    {
+        if (!not && !whenOperand && left.IsEverything(ExpressionVisitor.DeterministicVisitor))
+        {
+            Expression? add = other.GetIfEquals(left);
+            if (add is not null)
+            {
+                List<Expression> list = new(valueList.Count + 1);
+                list.AddRange(valueList);
+                list.Add(add);
+                return new ConditionInList(left, false, false, list);
+            }
+        }
+        return null;
     }
 }

@@ -133,4 +133,21 @@ public sealed class ConditionInConstantSet : ConditionIn
 
     /// <inheritdoc/>
     public override int GetCost() => left.GetCost();
+
+    /// <summary>Extends a constant IN set with a matching constant OR operand.</summary>
+    internal Expression? GetAdditional(SessionLocal session, Comparison other)
+    {
+        if (!not && !whenOperand && left.IsEverything(ExpressionVisitor.DeterministicVisitor))
+        {
+            Expression? add = other.GetIfEquals(left);
+            if (add is not null && add.IsConstant())
+            {
+                List<Expression> list = new(valueList.Count + 1);
+                list.AddRange(valueList);
+                list.Add(add);
+                return new ConditionInConstantSet(session, left, false, false, list);
+            }
+        }
+        return null;
+    }
 }

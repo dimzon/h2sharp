@@ -791,6 +791,10 @@ public static class Dialect
     /// <summary>
     /// Appends a NUMERIC literal from a BigInteger.
     /// </summary>
+    /// <remarks>
+    /// A value that fits in BIGINT needs the same NUMERIC cast as ValueNumeric.getSQL,
+    /// otherwise reading a small BigInteger literal would infer INTEGER or BIGINT.
+    /// </remarks>
     /// <param name="builder">string builder to append to</param>
     /// <param name="value">the value, or null for NULL</param>
     /// <returns>the same builder</returns>
@@ -802,7 +806,14 @@ public static class Dialect
             return AppendNullCast(builder, "NUMERIC");
         }
 
-        return builder.Append(value.GetValueOrDefault().ToString(System.Globalization.CultureInfo.InvariantCulture));
+        BigInteger number = value.GetValueOrDefault();
+        string digits = number.ToString(CultureInfo.InvariantCulture);
+        if (number >= long.MinValue && number <= long.MaxValue)
+        {
+            int precision = digits.Length - (number.Sign < 0 ? 1 : 0);
+            return builder.Append("CAST(").Append(digits).Append(" AS NUMERIC(").Append(precision).Append("))");
+        }
+        return builder.Append(digits);
     }
 
     // ------------------------------------------------------------------

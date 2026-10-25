@@ -37,6 +37,7 @@ using H2Sharp.Indexes;
 using H2Sharp.Message;
 using H2Sharp.Tables;
 using H2Sharp.Values;
+using H2Sharp.Util;
 
 namespace H2Sharp.Expressions.Conditions;
 
@@ -604,6 +605,61 @@ public sealed class Comparison : Condition
     {
         return left.GetCost() + 1 + right.GetCost();
     }
+
+    /// <summary>Gets the other expression of an equality when one side matches.</summary>
+    internal Expression? GetIfEquals(Expression match)
+    {
+        if (compareType == Equal)
+        {
+            string sql = match.GetSql(HasSql.DefaultSqlFlags);
+            if (left.GetSql(HasSql.DefaultSqlFlags) == sql) return right;
+            if (right.GetSql(HasSql.DefaultSqlFlags) == sql) return left;
+        }
+        return null;
+    }
+
+    /// <summary>Derives an additional equality used only for index conditions.</summary>
+    internal Expression? GetAdditionalAnd(SessionLocal session, Comparison other)
+    {
+        if (compareType == Equal && other.compareType == Equal && !whenOperand)
+        {
+            bool lc = left.IsConstant(), rc = right.IsConstant();
+            bool l2c = other.left.IsConstant(), r2c = other.right.IsConstant();
+            string l = left.GetSql(HasSql.DefaultSqlFlags), l2 = other.left.GetSql(HasSql.DefaultSqlFlags);
+            string r = right.GetSql(HasSql.DefaultSqlFlags), r2 = other.right.GetSql(HasSql.DefaultSqlFlags);
+            if (!(rc && r2c) && l == l2) return new Comparison(Equal, right, other.right, false);
+            if (!(rc && l2c) && l == r2) return new Comparison(Equal, right, other.left, false);
+            if (!(lc && r2c) && r == l2) return new Comparison(Equal, left, other.right, false);
+            if (!(lc && l2c) && r == r2) return new Comparison(Equal, left, other.left, false);
+        }
+        return null;
+    }
+
+    /// <summary>Combines matching equalities into an IN predicate.</summary>
+    internal Expression? OptimizeOr(SessionLocal session, Comparison other)
+    {
+        if (compareType == Equal && other.compareType == Equal)
+        {
+            Expression left2 = other.left, right2 = other.right;
+            string l2 = left2.GetSql(HasSql.DefaultSqlFlags), r2 = right2.GetSql(HasSql.DefaultSqlFlags);
+            if (left.IsEverything(ExpressionVisitor.DeterministicVisitor))
+            {
+                string l = left.GetSql(HasSql.DefaultSqlFlags);
+                if (l == l2) return GetConditionIn(left, right, right2);
+                if (l == r2) return GetConditionIn(left, right, left2);
+            }
+            if (right.IsEverything(ExpressionVisitor.DeterministicVisitor))
+            {
+                string r = right.GetSql(HasSql.DefaultSqlFlags);
+                if (r == l2) return GetConditionIn(right, left, right2);
+                if (r == r2) return GetConditionIn(right, left, left2);
+            }
+        }
+        return null;
+    }
+
+    private static ConditionInList GetConditionIn(Expression left, Expression value1, Expression value2)
+        => new(left, false, false, [value1, value2]);
 
     /// <inheritdoc/>
     public override int GetSubexpressionCount()

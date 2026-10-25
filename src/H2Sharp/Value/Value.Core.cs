@@ -152,7 +152,7 @@ public abstract partial class Value
     /// </summary>
     /// <returns>the boolean value</returns>
     public virtual bool GetBoolean()
-        => throw GetUnsupportedException("getBoolean");
+        => ConvertToBooleanType().GetBoolean();
 
     /// <summary>
     /// Get the value as a byte.

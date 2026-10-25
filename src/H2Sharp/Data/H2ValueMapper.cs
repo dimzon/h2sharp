@@ -480,7 +480,10 @@ internal static class H2ValueMapper
         int scale = value.Scale;
         if (unscaled.IsZero)
         {
-            return decimal.Zero;
+            // Keep the NUMERIC scale when decimal can represent it: 0.00 must not
+            // become scale-zero 0 on the ADO.NET boundary. Wider zero scales reduce
+            // to decimal's maximum just as trailing zero digits do below.
+            return new decimal(0, 0, 0, false, (byte)Math.Clamp(scale, 0, 28));
         }
 
         bool negative = unscaled.Sign < 0;

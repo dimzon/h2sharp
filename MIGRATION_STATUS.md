@@ -7377,3 +7377,80 @@ manifest не обновлялся. 273 защищённых файла: ров�
 TRX: `alter-column-core-final.trx`, `alter-column-specs-final.trx`,
 `alter-column-oracle-final.trx`, `alter-column-native-enabled.trx` в прежней
 внешней директории `h2-xml-bcl-prototype-20261025/xml-test-proposal`.
+
+### Native stack overflow: плоские AND/OR и типизированные константы
+
+После коммита `4c51414` все 99 native entry points запущены отдельными процессами
+с H2SHARP_NATIVE_TESTS=1, без исключения BlockedByPort: 19 passed / 77 failed /
+1 timeout (TestMvcc4, 300 секунд) / 2 aborted (TestOptimizations: stack overflow;
+TestSequence: IndexOutOfRangeException в обработчике рабочего потока). TestScript
+не приступает к SQL corpus: словарь кодов ошибок имеет дублирующийся ключ 90119.
+Это исходная точка диагностики; отчёт `native-full-report.md` и отдельные TRX/log
+хранятся во внешней директории результатов. Два падения с остаточными таблицами
+перепроверены в чистой test deployment: настоящие причины — SELECT *, expression
+и ALTER TABLE RENAME, а не оставшийся файл БД.
+
+Первым исправлен stack overflow в `TestOptimizations.TestConditionsStackOverflow`:
+SQL `SELECT 1` + 10 000 `AND 1`. Старые ReadQueryAnd/ReadQueryOr строили бинарную
+цепь слева, а ConditionAndOr ошибочно содержал неполную реализацию N-варианта;
+получалось 10 000 рекурсивных вызовов Optimize (и такой же риск в MapColumns).
+
+Перенесены из H2 2.5 Parser.java:2991–3030 построение списка непосредственно при
+разборе третьего операнда и отдельные эталонные ConditionAndOr / ConditionAndOrN.
+Два операнда сохраняют бинарный узел; длинные однотипные цепочки используют N-узел
+до любого обхода. Восстановлены optimizeN/optimizeMerge, дополнительные равенства
+для индексов, OR → IN и слияние IN/OR, distributive-law преобразование, boolean
+cast единственного оставшегося операнда и эталонные фильтровые обходы.
+Comparison.getIfEquals/getAdditionalAnd/optimizeOr/getConditionIn и оба
+ConditionIn*.getAdditional перенесены из той же версии. DbSettings ещё не
+перенесён: optimizeTwoEquals/optimizeOr используют эталонные true-defaults,
+как существующий optimizeInList. Collections.sort стабилен, List.Sort — нет:
+для N-узла BCL OrderBy сохраняет относительный порядок равных по cost операндов,
+без изменения comparator или алгоритма обхода; это адаптация библиотечного API.
+
+Первое успешное раскрытие цепочки обнаружило прежнюю заглушку Value.getBoolean:
+NUMERIC/INTEGER-операнд обязан вызвать уже перенесённую convertToBoolean.
+Теперь GetBoolean → ConvertToBooleanType().GetBoolean, ровно как Value.java:839.
+Неизменённый native TestOptimizations проходит stack-overflow сценарий и
+доходит до следующего TestIdentityIndexUsage, где остаётся обычное падение
+Unknown data type IDENTITY. Testhost больше не обрывается на этой цепочке.
+
+Уточнение пользователя: общий Dialect, которым пользуются провайдеры, сохраняет
+NUMERIC / REAL / DOUBLE и остальные SQL-числовые типы даже для значения 1.
+AppendTinyint/Smallint/Bigint/Real/Double и целый decimal уже печатают CAST, когда
+голый литерал сузил бы тип. Дробный decimal печатается как 0.5 (это NUMERIC).
+Проба jar: NUMERIC '0.5' — 42000; CAST(0.5 AS NUMERIC) — 1 (default scale 0);
+CAST(0.5 AS NUMERIC(1,1)) — 0.5. Слепой CAST без scale не заменяет дробный литерал.
+Исправлен AppendBigInteger: числа в диапазоне long используют эталонный
+ValueNumeric.getSQL CAST(... AS NUMERIC(precision)), а не INTEGER/BIGINT-литерал.
+SQL NUMERIC сохраняет существующее ADO.NET отображение в decimal; собственного
+SQL-типа для CLR BigInteger не вводилось. На ADO.NET-границе ToDecimalExact
+больше не стирает представимый scale у нуля: 0.00 читается с scale 2; scale > 28
+у численного нуля сводится к максимальному представимому decimal scale.
+
+Отдельного кэша констант не потребовалось: CastSpecification.optimize уже
+вычисляет constant CAST при prepare и возвращает ValueExpression либо
+TypedValueExpression с сохранённым TypeInfo. Проверка через counting literal
+на обеих платформах: исходник вычислен 1 раз; следующие 100 GetValue используют
+тот же готовый Value, NUMERIC(10,2), REAL, DOUBLE PRECISION и целые типы не теряются.
+
+Проверки:
+- LongConditionOracleTests 6/6: бинарный/N AST как JVM, 10 000 AND/OR, NULL,
+  non-constant MapColumns/SQL/visitors, вложенные условия, порядок равных cost,
+  общие Dialect NUMERIC literals.
+- TypedConstantOracleTests 2/2: однократное вычисление с точным TypeInfo и
+  BigInteger literal SQL против ValueNumeric на JVM.
+- Новый DialectNumericTypeTests 24/24: одинаковый 1 для sbyte/short/int/long/
+  float/double/decimal, value + GetFieldType/GetValue type, typed NULL и scale.
+- Полный H2Sharp.Data.Tests: **491/491**; core: **1394 passed / 3 прежних failed /
+  1397 total**; conformance: **760/952**, прежние 192 падения. Сверка имён с
+  alter-column-*-final.trx: Passed → Failed **0**, 8 новых core-тестов зелёные.
+- Native targeted: TestBinaryOperation, TestPreparedStatement, TestSQLXML —
+  3/3; TestOptimizations — обычное падение на следующем IDENTITY, без abort.
+- Debug engine net8.0/net10.0: 0 errors / 0 warnings. Старые тесты не менялись;
+  checksum 273 защищённых файлов допускает только прежние 6 утверждённых изменений.
+
+TRX: `condition-types-core-full.trx`, `condition-types-specs-full.trx`,
+`condition-types-data-full.trx`, `condition-types-native.trx`,
+`condition-types-targeted.trx`, `dialect-numeric-types-final.trx` во внешней
+директории `h2-xml-bcl-prototype-20261025/xml-test-proposal`.

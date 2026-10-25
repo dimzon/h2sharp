@@ -3882,14 +3882,17 @@ public sealed partial class Parser
     private Expressions.Expression ReadQueryOr(Query.Select? aggregateSelect = null)
     {
         Expressions.Expression left = ReadQueryAnd(aggregateSelect);
-        while (CurrentType == ParserUtil.Or)
+        if (!ReadIf(ParserUtil.Or)) return left;
+        Expressions.Expression right = ReadQueryAnd(aggregateSelect);
+        if (!ReadIf(ParserUtil.Or))
         {
-            Read();
-            left = new Expressions.Conditions.ConditionAndOr(
-                Expressions.Conditions.ConditionAndOr.Or, left, ReadQueryAnd(aggregateSelect));
+            return new Expressions.Conditions.ConditionAndOr(
+                Expressions.Conditions.ConditionAndOr.Or, left, right);
         }
-
-        return left;
+        // H2 readExpressionPart2: flatten at parse time, before mapColumns / optimize.
+        List<Expressions.Expression> expressions = [left, right];
+        do { expressions.Add(ReadQueryAnd(aggregateSelect)); } while (ReadIf(ParserUtil.Or));
+        return new Expressions.Conditions.ConditionAndOrN(Expressions.Conditions.ConditionAndOr.Or, expressions);
     }
 
     /// <summary>
@@ -3899,14 +3902,17 @@ public sealed partial class Parser
     private Expressions.Expression ReadQueryAnd(Query.Select? aggregateSelect = null)
     {
         Expressions.Expression left = ReadQueryComparison(aggregateSelect);
-        while (CurrentType == ParserUtil.And)
+        if (!ReadIf(ParserUtil.And)) return left;
+        Expressions.Expression right = ReadQueryComparison(aggregateSelect);
+        if (!ReadIf(ParserUtil.And))
         {
-            Read();
-            left = new Expressions.Conditions.ConditionAndOr(
-                Expressions.Conditions.ConditionAndOr.And, left, ReadQueryComparison(aggregateSelect));
+            return new Expressions.Conditions.ConditionAndOr(
+                Expressions.Conditions.ConditionAndOr.And, left, right);
         }
-
-        return left;
+        // H2 readAnd: long generated predicates must not become a recursive binary spine.
+        List<Expressions.Expression> expressions = [left, right];
+        do { expressions.Add(ReadQueryComparison(aggregateSelect)); } while (ReadIf(ParserUtil.And));
+        return new Expressions.Conditions.ConditionAndOrN(Expressions.Conditions.ConditionAndOr.And, expressions);
     }
 
     /// <summary>
