@@ -231,6 +231,19 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   стратегия тестирования другая).
 * **TestSampleApps — не перенесён.** Запускает примеры org.h2.samples как подпроцессы;
   samples в порт не входят. Вопрос: закрыть.
+* **TestGetGeneratedKeys — не перенесён.** Все ~40 методов тестируют одну поверхность:
+  флаги RETURN_GENERATED_KEYS у execute/executeUpdate/executeBatch и
+  Statement.getGeneratedKeys(). В ADO.NET у DbCommand такой поверхности нет (это уже
+  зафиксировано в TestStatement-пункте). Перенести целиком вместе с generated-keys
+  поверхностью провайдера.
+* **TestMetaData — не перенесён.** Целиком DatabaseMetaData: getTables/getColumns/
+  getProcedures/getIndexInfo/getBestRowIdentifier/getCrossReference и ~40 других
+  методов с точными таблицами ожиданий. Провайдер не имеет metadata-поверхности;
+  переносить вместе с ней (это большой отдельный кусок провайдера).
+* **TestCallableStatement — не перенесён.** CallableStatement = `{call ...}` escape
+  + выходные параметры регистрируемые через registerOutParameter; у ADO.NET другой
+  механизм (параметры с Direction=Output через команду). Вопрос: перенести против
+  Direction=Output, когда провайдер проведёт выходные параметры.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
