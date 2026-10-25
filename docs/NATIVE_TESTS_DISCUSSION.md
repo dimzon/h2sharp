@@ -27,21 +27,13 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
 
 ## Вопросы к обсуждению
 
-* **TestZloty.testZloty — пропущен целиком.** Тест скармливает движку подклассы
-  java.math.BigDecimal (с инвертированным compareTo и чужим toString) и ждёт
-  INVALID_CLASS_2: H2 сериализует чужой класс как JAVA_OBJECT и отказывает ему в
-  DECIMAL-параметре. В ADO.NET параметр несёт значение, а не класс: вопрос «чужой ли
-  это класс» не существует, INVALID_CLASS_2 недостижим. Порт сечас примет подкласс как
-  свой BigDecimal. Вопрос к обсуждению: (а) принять, что тест не имеет ADO.NET-формы, и
-  вычеркнуть; (б) завести в провайдере явный отказ для типов-не-из-списка (это уже
-  отступление); (в) ограничить параметр только известными типами значений.
-  Для теста были сделаны: BigDecimal без sealed, публичный конструктор строки (как в
-  JDK) и виртуальный CompareTo — сами по себе верны эталону (java.math.BigDecimal не
-  final), но если тест вычёркиваем, их можно и вернуть (обсудить).
-* **jdbcx/ (TestConnectionPool, TestDataSource, TestXA, TestXASimple) — не переносятся
-  при решении «только embedded»?** javax.sql.DataSource и XA-транзакции — JEE-поверхность
-  для серверов пулов; для встраиваемой БД потребителей у них нет. Предлагаю вычеркнуть
-  вместе с server/ — обсудить.
+* ~~TestZloty.testZloty~~ — **вычеркнут (решение 2026-10-25):** параметры ADO.NET не
+  несут класс, INVALID_CLASS_2 недостижим; вопрос «чужой ли класс» не имеет формы.
+  Возврат BigDecimal-изменений (unsealed, строковый конструктор, виртуальный CompareTo)
+  — не требуется: они верны эталону (java.math.BigDecimal не final).
+* ~~jdbcx/ (TestConnectionPool, TestDataSource, TestXA, TestXASimple)~~ — **вычеркнуты
+  (решение 2026-10-25):** javax.sql.DataSource и XA — JEE-поверхность серверных пулов,
+  для встраиваемой БД потребителей нет.
 * **TestOpenClose: testErrorMessageWrongSplit, testBackup и
   testBackupWithYoungDeadChunks — пропущены.** Первому нужна split-файловая система
   (`split:` URL и .part-файлы), вторым — BACKUP TO и инструмент Restore; всё это не
@@ -60,8 +52,9 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
 * **TestCompatibilityOracle: updatable-половина testVarchar — пропущена.**
   updateString/updateNString/updateObject + updateRow на CONCUR_UPDATABLE курсоре — у
   читателя ADO.NET нет записи через курсор; .NET-вызыватель обновляет командой.
-  **Решение: перенести как отдельный тест «обновление через команду»** (то же
-  содержимое, но обновление командой — что ADO-вызыватель и делает).
+  **Решение: перенести как отдельный тест «обновление через команду» (в работе с
+  2026-10-25)** — то же содержимое, но обновление командой, что ADO-вызыватель и
+  делает.
   
   
 * **TestFunctionOverload: meta.getProcedures-проверки — пропущены.** Провайдер пока
@@ -114,12 +107,8 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   регистрировать ли кодовые страницы (установка пакета System.Text.Encoding.CodePages)
   или не поддерживать EBCDIC-колляции. Остальные проверки (UTF-8, сила сравнения)
   переносимы.
-* **TestObjectDeserialization — не перенесён.** Предмет — Java-двоичная сериализация
-  (hex-дампы Java ObjectInputStream: SampleObject, GoodSampleObject, BadSampleObject) и
-  механизм контекстного класслоадера (`h2.useThreadContextClassLoader`); в .NET ни
-  двоичного формата Java, ни класслоадерной механики нет. Вопрос: закрыть, либо
-  перенести содержательную часть (проверка allowedClasses через собственный .NET-
-  механизм) как отдельный тест.
+* ~~TestObjectDeserialization — вычеркнут (решение 2026-10-25).~~ Java-двоичного
+  формата и класслоадерной механики в .NET нет.
 * **TestUtils: testGetNonPrimitiveClass и testReflectionUtils — пропущены.** Это
   рефлексивная Java-интероп-проверка (callStaticMethod("java.lang.System.nanoTime"),
   newInstance классов Java, маппинг примитив→обёртка). Порт явно документирует (шапка
@@ -172,12 +161,11 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
 * **TestScriptReader — не перенесён** — построен на org.h2.util.ScriptReader (разрезание
   SQL-скрипта на операторы с учётом строк, комментариев, $$-квот); класса в порту нет.
   Перенести вместе с ScriptReader.
-* **TestClassLoaderLeak — не перенесён** — проверяет сборку мусора по WeakReference на
-  URLClassLoader; .NET-аналог сборки классов отсутствует. Вопрос: закрыть.
-* **TestMVTempResult — вне объёма?** Запускает подпроцесс с -Xmx64M и гонит миллион строк
-  через ORDER BY; в .NET нет ограничения managed heap таким способом. Вопрос: закрыть
-  или перенести содержательную часть (миллион строк через ORDER BY и повторный обход)
-  без лимита памяти.
+* ~~TestClassLoaderLeak — вычеркнут (решение 2026-10-25).~~ Проверяет сборку мусора
+  по WeakReference на URLClassLoader; .NET-аналог сборки классов отсутствует.
+
+* ~~TestMVTempResult — вычеркнут (решение 2026-10-25).~~ -Xmx-пердиала в .NET нет.
+
 * **TestGeometryUtils — не перенесён.** Построен на Java Topology Suite (JTS):
   WKBWriter/WKTReader/WKTWriter, Geometry, Envelope, JTSUtils. В .NET аналог —
   NetTopologySuite, но зависимости нет и конверсии поверхностей не 1:1. Переносить
@@ -192,9 +180,9 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   org.h2.store.FileLock (FS/SOCKET-блокировки, Heartbeat, listen-процесс) — класса в
   порту нет. Перенести вместе с FileLock (TestFileLockProcess — вместе с решением о
   подпроцессах).
-* **TestUpgrade — не перенесён.** Загружает старую версию H2 (1.2.120) из jar и гоняет
-  upgrade-утилиту между версиями; в .NET ни механизма подгрузки другой версии сборки,
-  ни старой H2 нет. Вопрос: закрыть.
+* ~~TestUpgrade — вычеркнут (решение 2026-10-25).~~ Загрузка другой версии сборки
+  и старой H2 из jar в .NET не имеет смысла.
+
 * **TestExit — не перенесён.** Поднимает подпроцесс с
   database_event_listener + db_close_on_exit и проверяет файл-маркер закрытия после
   смерти процесса. Это и DatabaseEventListener-сэм (см. TestListener), и подпроцессная
@@ -205,32 +193,33 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   сервера (network tool), плюс SimpleResultSet (нет в порту). Переносимы только
   testJdbcDriverUtils (JdbcUtils.getConnection) и testDeleteFiles (DeleteDbFiles) —
   и те частично. Перенести вместе с tools-пакетом.
-* **TestMemoryUnmapper — не перенесён.** Подпроцесс + sun.misc.Unsafe (cleaner hack,
-  security manager) — JVM-механика прямого unmapping ByteBuffer; в .NET её нет.
-  Вопрос: закрыть.
-* **TestServlet — не перенесён.** javax.servlet.DbStarter — servlet-контейнер; в .NET
-  это ASP.NET Core middleware/хост, другая поверхность. Вопрос: закрыть или делать
-  вместе с ASP.NET-интеграцией провайдера.
+* ~~TestMemoryUnmapper — вычеркнут (решение 2026-10-25).~~ JVM-механики прямого
+  unmapping ByteBuffer в .NET нет.
+
+* ~~TestServlet — вычеркнут (решение 2026-10-25).~~ servlet-контейнера в .NET нет;
+  ASP.NET Core middleware — другая поверхность.
+
 * **TestAutoReconnect — вне объёма (решение 2026-10-24).** AUTO_SERVER/auto-reconnect —
   сетевой режим (Server.createTcpServer, переключение соединений); порт встроенный.
   Вместе с server/.
 * **TestShell — вне объёма (решение 2026-10-24).** Shell-инструмент (интерактивная
   консоль) — tools-поверхность, порт её не включает.
-* **TestJmx — не перенесён.** JMX (MBeanServer, ObjectName, динамические MBeans
-  документа) — JVM-механика; .NET-аналог (System.Management, WMI/EventCounters) — другое
-  решение по дизайну. Вопрос: закрыть или делать вместе с диагностической поверхностью
-  провайдера.
-* **TestJakartaServlet — не перенесён.** Тот же DbStarter, что TestServlet, но на
-  jakarta.servlet — поверхность ASP.NET-интеграции, отдельное решение.
-* **TestPageStoreCoverage — не перенесён.** PageStore (не-MVStore движок хранения) в
-  порту нет — порт сразу MVStore. Вопрос: закрыть (PageStore вне объёма).
+* ~~TestJmx — вычеркнут (решение 2026-10-25).~~ JMX — JVM-механика; .NET-аналог
+  (System.Management/EventCounters) — отдельное решение по дизайну провайдера.
+
+* ~~TestJakartaServlet — вычеркнут (решение 2026-10-25).~~ Тот же DbStarter на
+  jakarta.servlet; servlet-контейнера в .NET нет.
+
+* ~~TestPageStoreCoverage — вычеркнут (решение 2026-10-25).~~ Порт сразу MVStore,
+  PageStore вне объёма.
+
 * **TestRecovery — не перенесён.** Инструмент org.h2.tools.Recover (чтение .h2.db-
   скриптов и восстановление) в порту нет. Перенести вместе с Recover.
 * **TestReopen — не перенесён.** Recording file system (rec:) + случайные переоткрытия
   для поиска race-условий; rec:-ФС в порту нет. Перенести вместе с rec-ФС (или закрыть —
   стратегия тестирования другая).
-* **TestSampleApps — не перенесён.** Запускает примеры org.h2.samples как подпроцессы;
-  samples в порт не входят. Вопрос: закрыть.
+* ~~TestSampleApps — вычеркнут (решение 2026-10-25).~~ samples в порт не входят.
+
 * **TestGetGeneratedKeys — не перенесён.** Все ~40 методов тестируют одну поверхность:
   флаги RETURN_GENERATED_KEYS у execute/executeUpdate/executeBatch и
   Statement.getGeneratedKeys(). В ADO.NET у DbCommand такой поверхности нет (это уже
@@ -248,8 +237,9 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   (testInt/testSmallInt/testBigInt/testVarchar/testDecimal/testDoubleFloat — значения,
   wasNull, переходы строк), findColumn, parse-особые значения. Не переносимая: scrollable
   (beforeFirst/afterLast/absolute) и updatable (insertRow/updateRow) куски — читатель
-  ADO.NET forward-only и read-only. Вопрос: перенести переносимую половину как отдельный
-  тест геттеров (большая работа — сотни строк на каждый тип), или закрыть.
+  ADO.NET forward-only и read-only. **Решение: перенести переносимую половину как
+  отдельный тест геттеров (в работе с 2026-10-25)**; scrollable/updatable остаются
+  на обсуждении.
 * **TestJavaObjectSerializer / TestUrlJavaObjectSerializer — не перенесены.** Проверяют
   подключение пользовательских JavaObjectSerializer (через свойства соединения и URL);
   serializer-поверхности в порту нет. Перенести вместе с ней.
@@ -283,23 +273,21 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   getSubString, toString-рендеринги ('x', X'00', <closed>), FEATURE_NOT_SUPPORTED_1-отказы
   на position/truncate. В ADO.NET этой модели нет: параметр несёт byte[]/строку/Stream/
   TextReader, читатель материализует значение. **Решение: перенести содержательную
-  половину** — round-trip byte[]/Stream/TextReader на длинах 0/1/100/100000 как
-  отдельный тест значений LOB (это будет новый тест, не порт).
+  половину (в работе с 2026-10-25)** — round-trip byte[]/Stream/TextReader на длинах
+  0/1/100/100000 как отдельный тест значений LOB (это будет новый тест, не порт).
   
-* **TestStatement: JDBC-only поверхности — пропущены** (переносимая половина —
-  executeUpdate-счётчики, execute-через RecordsAffected, сэйвпойнты по имени,
-  REGEXP-подготовленный оператор поверх перестройки индекса, batch как цикл,
-  multi-command через NextResult, рост trace-файла): unwrap/type-map,
+* **TestStatement: JDBC-only поверхности — вычеркнуты (решение 2026-10-25).**
+  Переносимая половина уже перенесена (executeUpdate-счётчики, execute-через
+  RecordsAffected, сэйвпойнты по имени, REGEXP-подготовленный оператор, batch как цикл,
+  multi-command через NextResult, рост trace-файла). unwrap/type-map,
   holdability/poolable/fetch-size/max-field-size, getMoreResults/getUpdateCount,
-  warnings, closeOnCompletion, generated keys у merge (у провайдера нет поверхности
-  generated keys — отдельный вопрос), и enquoteIdentifier/isSimpleIdentifier (хелперы
-  кавычек JDBC Statement). executeQuery-отказы (METHOD_ONLY_ALLOWED_FOR_QUERY) в порту
-  не выражаются: провайдер отвечает пустым update-count читателем вместо отказа.
-* **TestNativeSQL — не перенесён.** Тест целиком про Connection.nativeSQL — JDBC-
-  обработку escape-ов `{d '...'}`, `{fn ...}`, `{oj ...}`. В ADO.NET такой поверхности
-  нет (параметры типизованы, escape-ов не существует), метода на H2Connection тоже нет.
-  Вопрос: вычеркнуть (ADO.NET-вызыватель так не пишет), или перенести translateSQL
-  как отдельный хелпер, если он когда-нибудь понадобится провайдеру.
+  warnings, closeOnCompletion, generated keys, enquoteIdentifier/isSimpleIdentifier —
+  JDBC API, которого в ADO.NET нет; вычёркиваются окончательно. executeQuery-отказы
+  (METHOD_ONLY_ALLOWED_FOR_QUERY) не выражаются: провайдер отвечает пустым update-count
+  читателем.
+* ~~TestNativeSQL — вычеркнут (решение 2026-10-25).~~ identifyBC-обработка escape-ов
+  `{d '...'}`, `{fn ...}`, `{oj ...}` в ADO.NET не существует; ADO.NET-вызыватель так
+  не пишет.
 * **TestCancel — не перенесён.** Стоит на поверхности отмены: Statement.cancel /
   setQueryTimeout / MAX_QUERY_TIMEOUT. В порту `H2Command.Cancel()` — пустая заглушка,
   CommandTimeout не связан с движком. Это портовая работа (SessionLocal.cancel, проверка
