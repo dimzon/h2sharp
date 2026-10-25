@@ -12,6 +12,13 @@
 // port does not have yet; the deletion is done here by the same rules
 // (FileLister.getDatabaseFiles for the database's file suffixes, then delete). When the
 // tool is ported, this goes back to calling it.
+//
+// Modified (port gap, issue #55): the engine's ConnectionInfo refuses URL settings it
+// does not implement, while the reference accepts every documented one and TestDb.getURL
+// ships the defaults below (LOCK_TIMEOUT, MAX_COMPACT_TIME, MV_STORE, ...). Until the
+// settings are ported, the test URL carries IGNORE_UNKNOWN_SETTINGS=TRUE so the native
+// suite can open databases; the still-ignored settings are visible in issue #55 and in
+// TestDriver.TestSettingsAsProperties.
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
@@ -177,6 +184,9 @@ public abstract class TestDb : TestBase
             url = AddOption(url, "COLLATION", Config.Collation);
         }
 
+        // See the header: issue #55, the engine does not implement the settings the
+        // reference accepts; ignore them until it does.
+        url = AddOption(url, "IGNORE_UNKNOWN_SETTINGS", "true");
         return Constants.StartUrl + url;
     }
 

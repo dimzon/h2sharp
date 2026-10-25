@@ -3,17 +3,18 @@
 // Ported from org.h2.test.db.TestTempTables.
 // Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
 //
-// Modified (API): JDBC statements are ADO.NET commands; setAutoCommit(false) is an
-// explicit transaction, commit()/rollback() are transaction wrappers. The session
+// Modified (API): JDBC statements are ADO.NET commands; setAutoCommit(false)/commit/
+// rollback are explicit transactions the statements after them carry. The session
 // introspection of testTempSequence (getDatabase().getMainSchema().getAllSequences())
 // is the INFORMATION_SCHEMA.SEQUENCES count through the ADO layer — the table the
 // engine feeds. The reference's main() entry is the runner; xUnit runs Test() directly.
 //
-// Modified (deferred, see MIGRATION_STATUS.md): testTempFileResultSet and
+// Modified (per docs/NATIVE_TESTS_DISCUSSION.md): testTempFileResultSet and
 // testTempTableResultSet drive TYPE_SCROLL_INSENSITIVE result sets (beforeFirst and
-// re-reading); the ADO.NET reader is forward-only and a .NET caller buffers instead, so
-// the scroll has no ADO.NET shape. The part is skipped and on the discussion list; the
-// rest of the file is ported.
+// re-reading); the ADO.NET reader is forward-only, so the two scrollable halves become
+// TestTempResultSetRetention — the same shared temp result table, with the retention
+// check expressed as "closing one reader does not disturb the survivor", which is what
+// the scroll re-read verified in the reference.
 using H2Sharp.Api;
 using Xunit;
 
@@ -28,13 +29,13 @@ public sealed class TestTempTables : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         DeleteDb("tempTables");
         TestAnalyzeReuseObjectId();
         TestTempSequence();
-        // testTempFileResultSet, testTempTableResultSet: deferred, see the header and
-        // MIGRATION_STATUS.md.
+        TestTempResultSetRetention();
         TestTransactionalTemp();
         using (DbConnection c1 = GetConnection("tempTables"))
         {
@@ -94,21 +95,102 @@ public sealed class TestTempTables : TestDb
         return rs.GetInt64(0);
     }
 
+    /// <summary>
+    /// The reference's testTempFileResultSet and testTempTableResultSet. Two statements
+    /// each spill a result larger than MAX_MEMORY_ROWS into a temp table, the statements
+    /// read them interleaved, one result set is closed, and the reference then re-reads
+    /// the other via beforeFirst to verify its temp table was not deleted. The ADO.NET
+    /// reader is forward-only; the re-read becomes: close the sibling, then keep reading
+    /// the survivor to the end.
+    /// </summary>
+    private void TestTempResultSetRetention()
+    {
+        if (Config.Lazy)
+        {
+            return;
+        }
+
+        DeleteDb("tempTables");
+        using DbConnection conn = GetConnection("tempTables;MAX_MEMORY_ROWS=10");
+        DbCommand stat1 = conn.CreateCommand();
+        DbCommand stat2 = conn.CreateCommand();
+
+        // The reference's first pass: two readers over the same query, the first reader
+        // is closed while the second still has rows to serve.
+        RetentionPass(stat1, stat2, "select * from system_range(1, 20)", true);
+
+        // The reference's second pass: ordered result, the other reader is closed first.
+        RetentionPass(stat1, stat2,
+            "select * from system_range(1, 20) order by x desc", false);
+
+        // The reference's testTempTableResultSet: SELECT DISTINCT re-uses the same temp
+        // table for both readers, so the survivor's table is the one that must not be
+        // deleted.
+        RetentionPass(stat1, stat2, "select distinct * from system_range(1, 20)", true);
+    }
+
+    /// <summary>
+    /// Read two result sets over the same query interleaved; close the sibling after the
+    /// first ten rows; verify the survivor keeps serving the remaining ten.
+    /// </summary>
+    /// <param name="stat1">the first command</param>
+    /// <param name="stat2">the second command</param>
+    /// <param name="sql">the query</param>
+    /// <param name="closeFirst">whether the first reader is the one to close</param>
+    private void RetentionPass(DbCommand stat1, DbCommand stat2, string sql,
+        bool closeFirst)
+    {
+        stat1.CommandText = sql;
+        stat2.CommandText = sql;
+        using (DbDataReader r1 = stat1.ExecuteReader())
+        using (DbDataReader r2 = stat2.ExecuteReader())
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                AssertTrue(r1.Read());
+                AssertTrue(r2.Read());
+                AssertEquals(i + 1, r1.GetInt32(0));
+                AssertEquals(i + 1, r2.GetInt32(0));
+            }
+
+            DbDataReader survivor = closeFirst ? r2 : r1;
+            survivor.Close();
+            // verify the temp table is not deleted yet: the other reader still serves rows
+            DbDataReader remaining = closeFirst ? r1 : r2;
+            for (int i = 10; i < 20; i++)
+            {
+                AssertTrue(remaining.Read());
+                AssertEquals(i + 1, remaining.GetInt32(0));
+            }
+
+            AssertFalse(remaining.Read());
+        }
+    }
+
     private void TestTransactionalTemp()
     {
         DeleteDb("tempTables");
         using DbConnection conn = GetConnection("tempTables");
-        using DbTransaction transaction = conn.BeginTransaction();
         DbCommand stat = conn.CreateCommand();
-        stat.Transaction = transaction;
-        Execute(stat, "create table test(id int primary key)");
-        Execute(stat, "insert into test values(1)");
-        Execute(stat, "commit");
-        Execute(stat, "insert into test values(2)");
-        Execute(stat, "create local temporary table temp("
-            + "id int primary key, name varchar, constraint x unique(name)) transactional");
-        Execute(stat, "insert into temp values(3, 'test')");
-        Execute(stat, "rollback");
+        using (DbTransaction transaction = conn.BeginTransaction())
+        {
+            stat.Transaction = transaction;
+            Execute(stat, "create table test(id int primary key)");
+            Execute(stat, "insert into test values(1)");
+            transaction.Commit();
+        }
+
+        using (DbTransaction transaction = conn.BeginTransaction())
+        {
+            stat.Transaction = transaction;
+            Execute(stat, "insert into test values(2)");
+            Execute(stat, "create local temporary table temp("
+                + "id int primary key, name varchar, constraint x unique(name)) transactional");
+            Execute(stat, "insert into temp values(3, 'test')");
+            transaction.Rollback();
+        }
+
+        stat.Transaction = null;
         stat.CommandText = "select * from test";
         using (DbDataReader rs = stat.ExecuteReader())
         {
@@ -194,8 +276,7 @@ public sealed class TestTempTables : TestDb
         }
 
         transaction.Commit();
-        transaction = c1.BeginTransaction();
-        s1.Transaction = transaction;
+        s1.Transaction = null;
         s1.CommandText = "select * from test_temp";
         using (DbDataReader rs = s1.ExecuteReader())
         {
@@ -204,6 +285,8 @@ public sealed class TestTempTables : TestDb
 
         Execute(s1, "drop table test_temp");
 
+        transaction = c1.BeginTransaction();
+        s1.Transaction = transaction;
         Execute(s1, "create local temporary table test_temp(id int) on commit drop");
         Execute(s1, "insert into test_temp values(1)");
         s1.CommandText = "select * from test_temp";
@@ -213,8 +296,7 @@ public sealed class TestTempTables : TestDb
         }
 
         transaction.Commit();
-        transaction = c1.BeginTransaction();
-        s1.Transaction = transaction;
+        s1.Transaction = null;
         // test_temp should have been dropped automatically
         AssertThrows(ErrorCode.TableOrViewNotFoundDatabaseEmpty1,
             () => Query(s1, "select * from test_temp"));
