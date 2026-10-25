@@ -11,6 +11,9 @@
 // the INFORMATION_SCHEMA.TABLES query through the ADO layer; setCharacterStream is a
 // string parameter (issue #57 tracks the TextReader form). The reference's main() entry
 // is the runner; xUnit runs Test() directly.
+//
+// Blocked by the port: CREATE TABLE TEST(ID IDENTITY, ...) needs the IDENTITY column
+// type, which the parser does not read yet (issue #61).
 using H2Sharp.Api;
 using Xunit;
 
