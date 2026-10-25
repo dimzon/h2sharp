@@ -216,6 +216,10 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   Вместе с server/.
 * **TestShell — вне объёма (решение 2026-10-24).** Shell-инструмент (интерактивная
   консоль) — tools-поверхность, порт её не включает.
+* **TestJmx — не перенесён.** JMX (MBeanServer, ObjectName, динамические MBeans
+  документа) — JVM-механика; .NET-аналог (System.Management, WMI/EventCounters) — другое
+  решение по дизайну. Вопрос: закрыть или делать вместе с диагностической поверхностью
+  провайдера.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
