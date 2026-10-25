@@ -218,7 +218,7 @@ public abstract partial class Value
     /// </summary>
     /// <returns>the integer value</returns>
     public virtual BigInteger GetBigInteger()
-        => throw GetUnsupportedException("getBigInteger");
+        => GetBigDecimal().ToBigInteger();
 
     /// <summary>
     /// Get the value as an arbitrary precision decimal.

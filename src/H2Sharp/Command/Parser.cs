@@ -3104,379 +3104,245 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Whether the current token names an aggregate this reader builds, without consuming it.
-    /// A name followed by anything else is a column that happens to share the spelling.
-    /// </summary>
-    /// <param name="aggregateType">the aggregate type, when this is a call</param>
-    /// <returns>true for a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG or two-argument regression call</returns>
-    private bool IsAggregateCall(out Expressions.Aggregate.AggregateType aggregateType)
-    {
-        aggregateType = default;
-        string? name = Current.AsIdentifier;
-        if (name is null || tokens.Count <= position + 1
-            || tokens[position + 1].TokenType != Token.OpenParen)
-        {
-            return false;
-        }
-
-        if (name.Equals("COUNT", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Count;
-        }
-        else if (name.Equals("SUM", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Sum;
-        }
-        else if (name.Equals("MIN", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Min;
-        }
-        else if (name.Equals("MAX", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Max;
-        }
-        else if (name.Equals("AVG", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Avg;
-        }
-        else if (name.Equals("STDDEV_POP", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("STDDEVP", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.StddevPop;
-        }
-        else if (name.Equals("STDDEV_SAMP", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("STDDEV", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.StddevSamp;
-        }
-        else if (name.Equals("VAR_POP", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("VARP", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.VarPop;
-        }
-        else if (name.Equals("VAR_SAMP", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("VAR", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("VARIANCE", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.VarSamp;
-        }
-        else if (name.Equals("ANY", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("SOME", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("BOOL_OR", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Any;
-        }
-        else if (name.Equals("EVERY", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("BOOL_AND", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Every;
-        }
-        else if (name.Equals("MEDIAN", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Median;
-        }
-        else if (name.Equals("ANY_VALUE", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.AnyValue;
-        }
-        else if (name.Equals("PERCENTILE_CONT", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.PercentileCont;
-        }
-        else if (name.Equals("PERCENTILE_DISC", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.PercentileDisc;
-        }
-        else if (name.Equals("LISTAGG", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("GROUP_CONCAT", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("STRING_AGG", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Listagg;
-        }
-        else if (name.Equals("ARRAY_AGG", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.ArrayAgg;
-        }
-        else if (name.Equals("HISTOGRAM", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Histogram;
-        }
-        else if (name.Equals("MODE", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("STATS_MODE", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Mode;
-        }
-        else if (name.Equals("JSON_ARRAYAGG", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.JsonArrayagg;
-        }
-        else if (name.Equals("JSON_OBJECTAGG", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.JsonObjectagg;
-        }
-        else if (name.Equals("BIT_AND_AGG", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("BIT_AND", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.BitAndAgg;
-        }
-        else if (name.Equals("BIT_OR_AGG", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("BIT_OR", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.BitOrAgg;
-        }
-        else if (name.Equals("BIT_XOR_AGG", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.BitXorAgg;
-        }
-        else if (name.Equals("BIT_NAND_AGG", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.BitNandAgg;
-        }
-        else if (name.Equals("BIT_NOR_AGG", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.BitNorAgg;
-        }
-        else if (name.Equals("BIT_XNOR_AGG", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.BitXnorAgg;
-        }
-        else if (name.Equals("REGR_COUNT", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.RegrCount;
-        }
-        else if (name.Equals("REGR_AVGX", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.RegrAvgx;
-        }
-        else if (name.Equals("REGR_AVGY", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.RegrAvgy;
-        }
-        else if (name.Equals("REGR_SXX", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.RegrSxx;
-        }
-        else if (name.Equals("REGR_SYY", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.RegrSyy;
-        }
-        else if (name.Equals("COVAR_POP", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.CovarPop;
-        }
-        else if (name.Equals("COVAR_SAMP", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.CovarSamp;
-        }
-        else if (name.Equals("CORR", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.Corr;
-        }
-        else if (name.Equals("REGR_SLOPE", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.RegrSlope;
-        }
-        else if (name.Equals("REGR_INTERCEPT", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.RegrIntercept;
-        }
-        else if (name.Equals("REGR_R2", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.RegrR2;
-        }
-        else if (name.Equals("REGR_SXY", StringComparison.OrdinalIgnoreCase))
-        {
-            aggregateType = Expressions.Aggregate.AggregateType.RegrSxy;
-        }
-        else
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Reads a COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, ANY, EVERY, MEDIAN, ANY_VALUE, PERCENTILE_CONT, PERCENTILE_DISC, LISTAGG or two-argument regression call: the aggregates the engine runs.
+    /// Reads an aggregate using the branches of org.h2.command.Parser.readAggregate.
     /// </summary>
     /// <remarks>
-    /// The reference reads every aggregate name here and builds the matching type; only
-    /// the ported ones are built, anything else never reaches this branch. DISTINCT and ALL
-    /// spellings follow the reference; FILTER and OVER wait for their machinery, and the
-    /// select is marked a group query the way readOver does.
+    /// The name and opening parenthesis have already been consumed by ReadFunction.
+    /// Recognition uses Aggregate's complete registry; an unfinished implementation refuses
+    /// in Aggregate itself. The select is explicit in this parser's expression reader.
     /// </remarks>
     /// <param name="select">the select being read</param>
     /// <param name="aggregateType">the aggregate type</param>
+    /// <param name="aggregateName">the upper-case spelling of the call</param>
     /// <returns>the aggregate</returns>
-    private Expressions.Aggregate.Aggregate ReadQueryAggregate(
-        Query.Select select, Expressions.Aggregate.AggregateType aggregateType)
+    private Expressions.Expression ReadQueryAggregate(
+        Query.Select? select, Expressions.Aggregate.AggregateType aggregateType, string aggregateName)
     {
-        string functionName = Current.AsIdentifier!;
-        Read();
-        Expect(Token.OpenParen, "(");
+        select ??= currentSelect;
+        if (select is null)
+        {
+            throw DbException.GetSyntaxError(sql, Current.Start);
+        }
+
         Expressions.Aggregate.Aggregate aggregate;
-        if (aggregateType == Expressions.Aggregate.AggregateType.Count && ReadIf(Token.Asterisk))
+        switch (aggregateType)
         {
-            Expect(Token.CloseParen, ")");
-            aggregate = new Expressions.Aggregate.Aggregate(
-                Expressions.Aggregate.AggregateType.CountAll, [], select, distinct: false);
-        }
-        else if (aggregateType is Expressions.Aggregate.AggregateType.PercentileCont
-            or Expressions.Aggregate.AggregateType.PercentileDisc)
-        {
-            // readWithinGroup in its simple form: the fraction, then
-            // WITHIN GROUP (ORDER BY expression sortType). DISTINCT never
-            // applies here, the reference hardcodes it to false.
-            Expressions.Expression fraction = ReadQueryOr();
-            Expect(Token.CloseParen, ")");
-            ExpectWord("WITHIN");
-            ExpectWord("GROUP");
-            Expect(Token.OpenParen, "(");
-            ExpectWord("ORDER");
-            ExpectWord("BY");
-            Query.QueryOrderBy order = new()
-            {
-                expression = ReadQueryOr(),
-                sortType = ReadQuerySortType(),
-            };
-            Expect(Token.CloseParen, ")");
-            aggregate = new Expressions.Aggregate.Aggregate(
-                aggregateType, [fraction], select, distinct: false);
-            aggregate.SetOrderByList([order]);
-        }
-        else if (aggregateType == Expressions.Aggregate.AggregateType.Listagg)
-        {
-            aggregate = ReadQueryListagg(select, functionName);
-        }
-        else if (aggregateType == Expressions.Aggregate.AggregateType.ArrayAgg)
-        {
-            // ARRAY_AGG(expression [ORDER BY ...]): the argument is read the same way as
-            // any single-argument aggregate, but the ORDER BY list inside the
-            // parentheses has no reader yet — the reference reads it here via
-            // readIfOrderBy, and without it the list cannot be kept.
-            bool distinct = IsWord("DISTINCT");
-            if (!distinct)
-            {
-                _ = IsWord("ALL");
-            }
-
-            Expressions.Expression arg = ReadQueryOr();
-            List<Query.QueryOrderBy>? order = ReadIfOrderBy();
-            Expect(Token.CloseParen, ")");
-            aggregate = new Expressions.Aggregate.Aggregate(
-                aggregateType, [arg], select, distinct);
-            if (order is not null) aggregate.SetOrderByList(order);
-        }
-        else if (aggregateType == Expressions.Aggregate.AggregateType.Mode)
-        {
-            // MODE takes no argument on the expression list: the reference builds the aggregate
-            // with an empty args array and carries the value on the ORDER BY list. DISTINCT
-            // never applies here, the reference hardcodes it to false. With ORDER BY the value
-            // repeats inside the clause, as readAggregateOrder wants; the sort type is parsed
-            // after it, before the closing parenthesis.
-            Expressions.Expression arg = ReadQueryOr();
-            if (IsWord("ORDER", consume: false))
-            {
-                ExpectWord("ORDER");
-                ExpectWord("BY");
-                _ = ReadQueryOr();
-            }
-
-            int orderSortType = ReadQuerySortType();
-            Expect(Token.CloseParen, ")");
-            aggregate = new Expressions.Aggregate.Aggregate(
-                aggregateType, [], select, distinct: false);
-            aggregate.SetOrderByList(
-            [
-                new Query.QueryOrderBy
+            case Expressions.Aggregate.AggregateType.Count:
+                if (ReadIf(Token.Asterisk))
                 {
-                    expression = arg,
-                    sortType = orderSortType,
-                },
-            ]);
-        }
-        else if (aggregateType == Expressions.Aggregate.AggregateType.JsonArrayagg)
-        {
-            // JSON_ARRAYAGG([DISTINCT] expression [NULL|ABSENT ON NULL] [ORDER BY ...]):
-            // the reference reads an ORDER BY list inside the parentheses, which this reader
-            // does not build yet, so that clause refuses by name. The ABSENT ON NULL flag is
-            // the default for an array aggregate.
-            bool distinct = IsWord("DISTINCT");
-            if (!distinct)
+                    aggregate = new(Expressions.Aggregate.AggregateType.CountAll, [], select, false);
+                }
+                else
+                {
+                    bool distinct = ReadDistinctAgg();
+                    aggregate = new(aggregateType, [ReadQueryOr(select)], select, distinct);
+                }
+                break;
+            case Expressions.Aggregate.AggregateType.CovarPop:
+            case Expressions.Aggregate.AggregateType.CovarSamp:
+            case Expressions.Aggregate.AggregateType.Corr:
+            case Expressions.Aggregate.AggregateType.RegrSlope:
+            case Expressions.Aggregate.AggregateType.RegrIntercept:
+            case Expressions.Aggregate.AggregateType.RegrCount:
+            case Expressions.Aggregate.AggregateType.RegrR2:
+            case Expressions.Aggregate.AggregateType.RegrAvgx:
+            case Expressions.Aggregate.AggregateType.RegrAvgy:
+            case Expressions.Aggregate.AggregateType.RegrSxx:
+            case Expressions.Aggregate.AggregateType.RegrSyy:
+            case Expressions.Aggregate.AggregateType.RegrSxy:
+                aggregate = new(aggregateType, [ReadQueryOr(select), ReadNextArgument(select)], select, false);
+                break;
+            case Expressions.Aggregate.AggregateType.Histogram:
+                aggregate = new(aggregateType, [ReadQueryOr(select)], select, false);
+                break;
+            case Expressions.Aggregate.AggregateType.Listagg:
             {
-                _ = IsWord("ALL");
+                bool distinct = ReadDistinctAgg();
+                Expression arg = ReadQueryOr(select);
+                Expressions.Aggregate.ListaggArguments extra = new();
+                List<Query.QueryOrderBy>? order;
+                if (aggregateName == "STRING_AGG")
+                {
+                    Expect(Token.Comma, ",");
+                    extra.SetSeparator(ReadListaggSeparator());
+                    order = ReadIfOrderBy(select);
+                }
+                else if (aggregateName == "GROUP_CONCAT")
+                {
+                    order = ReadIfOrderBy(select);
+                    if (IsWord("SEPARATOR")) extra.SetSeparator(ReadListaggSeparator());
+                }
+                else
+                {
+                    if (ReadIf(Token.Comma)) extra.SetSeparator(ReadListaggSeparator());
+                    if (IsWord("ON"))
+                    {
+                        ExpectWord("OVERFLOW");
+                        if (IsWord("TRUNCATE"))
+                        {
+                            extra.SetOnOverflowTruncate(true);
+                            if (CurrentType == Token.Literal) extra.SetFilter(ReadListaggSeparator());
+                            if (!IsWord("WITH"))
+                            {
+                                ExpectWord("WITHOUT");
+                                extra.SetWithoutCount(true);
+                            }
+                            ExpectWord("COUNT");
+                        }
+                        else ExpectWord("ERROR");
+                    }
+                    order = null;
+                }
+                int index = position;
+                Expect(Token.CloseParen, ")");
+                if (order is null && IsWord("WITHIN", false))
+                {
+                    aggregate = ReadWithinGroup(select, aggregateType, [arg], distinct, extra, false, false);
+                }
+                else
+                {
+                    position = index;
+                    aggregate = new(aggregateType, [arg], select, distinct);
+                    aggregate.SetExtraArguments(extra);
+                    if (order is not null) aggregate.SetOrderByList(order);
+                }
+                break;
             }
+            case Expressions.Aggregate.AggregateType.ArrayAgg:
+            {
+                bool distinct = ReadDistinctAgg();
+                aggregate = new(aggregateType, [ReadQueryOr(select)], select, distinct);
+                aggregate.SetOrderByList(ReadIfOrderBy(select));
+                break;
+            }
+            case Expressions.Aggregate.AggregateType.Rank:
+            case Expressions.Aggregate.AggregateType.DenseRank:
+            case Expressions.Aggregate.AggregateType.PercentRank:
+            case Expressions.Aggregate.AggregateType.CumeDist:
+            {
+                if (CurrentType == Token.CloseParen) return ReadWindowFunctionIf(aggregateName, select)!;
+                List<Expression> expressions = [];
+                do { expressions.Add(ReadQueryOr(select)); } while (ReadIfMore());
+                aggregate = ReadWithinGroup(select, aggregateType, [.. expressions], false, null, true, false);
+                break;
+            }
+            case Expressions.Aggregate.AggregateType.PercentileCont:
+            case Expressions.Aggregate.AggregateType.PercentileDisc:
+            {
+                Expression num = ReadQueryOr(select);
+                Expect(Token.CloseParen, ")");
+                aggregate = ReadWithinGroup(select, aggregateType, [num], false, null, false, true);
+                break;
+            }
+            case Expressions.Aggregate.AggregateType.Mode:
+                if (ReadIf(Token.CloseParen))
+                {
+                    aggregate = ReadWithinGroup(select, aggregateType, [], false, null, false, true);
+                }
+                else
+                {
+                    Expression expr = ReadQueryOr(select);
+                    aggregate = new(aggregateType, [], select, false);
+                    if (IsWord("ORDER"))
+                    {
+                        ExpectWord("BY");
+                        Expression expr2 = ReadQueryOr(select);
+                        string sql1 = expr.GetSql(HasSql.DefaultSqlFlags);
+                        string sql2 = expr2.GetSql(HasSql.DefaultSqlFlags);
+                        if (sql1 != sql2)
+                        {
+                            throw DbException.GetSyntaxError(Api.ErrorCode.IdenticalExpressionsShouldBeUsed,
+                                sql, Current.Start, sql1, sql2);
+                        }
+                        ReadAggregateOrder(aggregate, expr, true);
+                    }
+                    else ReadAggregateOrder(aggregate, expr, false);
+                }
+                break;
+            case Expressions.Aggregate.AggregateType.JsonObjectagg:
+            {
+                bool withKey = IsWord("KEY");
+                Expression key = ReadQueryOr(select);
+                if (withKey) ExpectWord("VALUE");
+                else if (!(IsWord("VALUE") || (provider.GetMode().AcceptsCommaAsJsonKeyValueSeparator
+                    && ReadIf(Token.Comma)))) Expect(Token.Colon, ":");
+                aggregate = new(aggregateType, [key, ReadQueryOr(select)], select, false);
+                ReadJsonObjectFunctionFlags(aggregate, false);
+                break;
+            }
+            case Expressions.Aggregate.AggregateType.JsonArrayagg:
+            {
+                bool distinct = ReadDistinctAgg();
+                aggregate = new(aggregateType, [ReadQueryOr(select)], select, distinct);
+                aggregate.SetOrderByList(ReadIfOrderBy(select));
+                aggregate.SetFlags(Util.Json.JsonConstructorUtils.JsonAbsentOnNull);
+                ReadJsonObjectFunctionFlags(aggregate, true);
+                break;
+            }
+            default:
+            {
+                bool distinct = ReadDistinctAgg();
+                aggregate = new(aggregateType, [ReadQueryOr(select)], select, distinct);
+                break;
+            }
+        }
 
-            Expressions.Expression arg = ReadQueryOr();
-            if (IsWord("ORDER", consume: false))
-            {
-                throw new TODOException("Parser.parseQuerySelect: JSON_ARRAYAGG ORDER BY is not ported");
-            }
+        Expect(Token.CloseParen, ")");
+        ReadFilterAndOver(aggregate, select);
+        return aggregate;
+    }
 
-            aggregate = new Expressions.Aggregate.Aggregate(
-                aggregateType, [arg], select, distinct);
-            aggregate.SetFlags(Util.Json.JsonConstructorUtils.JsonAbsentOnNull);
-            ReadJsonFunctionFlags(aggregate, forArray: true);
-            Expect(Token.CloseParen, ")");
-        }
-        else if (aggregateType == Expressions.Aggregate.AggregateType.JsonObjectagg)
+    // Port of Parser.readWithinGroup. The closing parenthesis is consumed by readAggregate.
+    private Expressions.Aggregate.Aggregate ReadWithinGroup(Query.Select select,
+        Expressions.Aggregate.AggregateType aggregateType, Expression[] args, bool distinct,
+        object? extraArguments, bool forHypotheticalSet, bool simple)
+    {
+        ExpectWord("WITHIN");
+        ExpectWord("GROUP");
+        Expect(Token.OpenParen, "(");
+        ExpectWord("ORDER");
+        ExpectWord("BY");
+        Expressions.Aggregate.Aggregate aggregate = new(aggregateType, args, select, distinct);
+        aggregate.SetExtraArguments(extraArguments);
+        if (forHypotheticalSet)
         {
-            // JSON_OBJECTAGG([KEY] key VALUE value | key : value) [flags]: without the
-            // KEY/VALUE keywords the default separator is ':'. The value's NULL is kept
-            // unless ABSENT ON NULL is asked for; the key's NULL always refuses.
-            bool withKey = IsWord("KEY");
-            Expressions.Expression key = ReadQueryOr();
-            if (withKey)
+            List<Query.QueryOrderBy> order = new(args.Length);
+            for (int i = 0; i < args.Length; i++)
             {
-                ExpectWord("VALUE");
+                if (i > 0) Expect(Token.Comma, ",");
+                order.Add(new() { expression = ReadQueryOr(select), sortType = ReadQuerySortType() });
             }
-            else if (!IsWord("VALUE"))
-            {
-                Expect(Token.Colon, ":");
-            }
-
-            Expressions.Expression value = ReadQueryOr();
-            aggregate = new Expressions.Aggregate.Aggregate(
-                aggregateType, [key, value], select, distinct: false);
-            ReadJsonFunctionFlags(aggregate, forArray: false);
-            Expect(Token.CloseParen, ")");
+            aggregate.SetOrderByList(order);
         }
-        else if (aggregateType is Expressions.Aggregate.AggregateType.RegrCount
-            or Expressions.Aggregate.AggregateType.RegrAvgx
-            or Expressions.Aggregate.AggregateType.RegrAvgy
-            or Expressions.Aggregate.AggregateType.RegrSxx
-            or Expressions.Aggregate.AggregateType.RegrSyy
-            or Expressions.Aggregate.AggregateType.CovarPop
-            or Expressions.Aggregate.AggregateType.CovarSamp
-            or Expressions.Aggregate.AggregateType.Corr
-            or Expressions.Aggregate.AggregateType.RegrSlope
-            or Expressions.Aggregate.AggregateType.RegrIntercept
-            or Expressions.Aggregate.AggregateType.RegrR2
-            or Expressions.Aggregate.AggregateType.RegrSxy)
-        {
-            // The two-argument regressions: the values first, then a comma, then the
-            // second one. DISTINCT never applies here, the reference hardcodes it to false.
-            Expressions.Expression first = ReadQueryOr();
-            Expect(Token.Comma, ",");
-            Expressions.Expression second = ReadQueryOr();
-            Expect(Token.CloseParen, ")");
-            aggregate = new Expressions.Aggregate.Aggregate(
-                aggregateType, [first, second], select, distinct: false);
-        }
+        else if (simple) ReadAggregateOrder(aggregate, ReadQueryOr(select), true);
         else
         {
-            bool distinct = IsWord("DISTINCT");
-            if (!distinct)
-            {
-                _ = IsWord("ALL");
-            }
-
-            Expressions.Expression arg = ReadQueryOr();
-            Expect(Token.CloseParen, ")");
-            aggregate = new Expressions.Aggregate.Aggregate(
-                aggregateType, [arg], select, distinct);
+            List<Query.QueryOrderBy> order = [];
+            do { order.Add(new() { expression = ReadQueryOr(select), sortType = ReadQuerySortType() }); }
+            while (ReadIf(Token.Comma));
+            aggregate.SetOrderByList(order);
         }
+        return aggregate;
+    }
 
+    private void ReadAggregateOrder(Expressions.Aggregate.Aggregate aggregate, Expression expr, bool parseSortType)
+    {
+        aggregate.SetOrderByList([new Query.QueryOrderBy
+        {
+            expression = expr,
+            sortType = parseSortType ? ReadQuerySortType() : 0,
+        }]);
+    }
+
+    private bool ReadDistinctAgg()
+    {
+        if (IsWord("DISTINCT")) return true;
+        _ = IsWord("ALL");
+        return false;
+    }
+
+    private void ReadFilterAndOver(Expressions.Aggregate.AbstractAggregate aggregate, Query.Select select)
+    {
         if (IsWord("FILTER"))
         {
             Expect(Token.OpenParen, "(");
@@ -3491,7 +3357,6 @@ public sealed partial class Parser
             select.SetWindowQuery();
         }
         else select.SetGroupQuery();
-        return aggregate;
     }
 
     private List<Query.QueryOrderBy>? ReadIfOrderBy(Query.Select? currentSelect = null)
@@ -3566,26 +3431,22 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Reads the NULL/ABSENT ON NULL and WITH/WITHOUT UNIQUE KEYS clauses of a JSON aggregate.
+    /// Reads the NULL/ABSENT ON NULL and WITH/WITHOUT UNIQUE KEYS clauses of a JSON expression.
     /// </summary>
-    /// <param name="function">the aggregate being read</param>
-    /// <param name="forArray">whether the aggregate is an array aggregate</param>
-    private void ReadJsonFunctionFlags(Expressions.Aggregate.Aggregate function, bool forArray)
+    /// <param name="function">the expression being read</param>
+    /// <param name="forArray">whether the expression is an array constructor or aggregate</param>
+    /// <returns>true if flags were consumed</returns>
+    private bool ReadJsonObjectFunctionFlags(Expressions.ExpressionWithFlags function, bool forArray)
     {
         bool result = false;
         int flags = function.GetFlags();
-        if (ReadIf(ParserUtil.Null))
+        if (ReadIfWords("NULL", "ON", "NULL"))
         {
-            ExpectWord("ON");
-            Expect(ParserUtil.Null, "NULL");
             flags &= ~Util.Json.JsonConstructorUtils.JsonAbsentOnNull;
             result = true;
         }
-        else if (IsWord("ABSENT", consume: false))
+        else if (ReadIfWords("ABSENT", "ON", "NULL"))
         {
-            ExpectWord("ABSENT");
-            ExpectWord("ON");
-            Expect(ParserUtil.Null, "NULL");
             flags |= Util.Json.JsonConstructorUtils.JsonAbsentOnNull;
             result = true;
         }
@@ -3608,6 +3469,7 @@ public sealed partial class Parser
         {
             function.SetFlags(flags);
         }
+        return result;
     }
 
     /// <summary>
@@ -3672,68 +3534,6 @@ public sealed partial class Parser
     /// <param name="select">the select being read</param>
     /// <param name="functionName">the spelling used: LISTAGG, GROUP_CONCAT or STRING_AGG</param>
     /// <returns>the aggregate</returns>
-    private Expressions.Aggregate.Aggregate ReadQueryListagg(Query.Select select, string functionName)
-    {
-        bool distinct = false;
-        Expressions.Expression arg;
-        Expressions.Aggregate.ListaggArguments extraArguments = new();
-        List<Query.QueryOrderBy>? order = null;
-        if (functionName.Equals("STRING_AGG", StringComparison.OrdinalIgnoreCase))
-        {
-            // PostgreSQL compatibility: string_agg(expression, delimiter)
-            arg = ReadQueryOr();
-            Expect(Token.Comma, ",");
-            extraArguments.SetSeparator(ReadListaggSeparator());
-            order = ReadIfOrderBy();
-        }
-        else
-        {
-            distinct = IsWord("DISTINCT");
-            if (!distinct)
-            {
-                _ = IsWord("ALL");
-            }
-
-            arg = ReadQueryOr();
-            if (functionName.Equals("GROUP_CONCAT", StringComparison.OrdinalIgnoreCase))
-            {
-                order = ReadIfOrderBy();
-
-                if (IsWord("SEPARATOR"))
-                {
-                    extraArguments.SetSeparator(ReadListaggSeparator());
-                }
-            }
-            else
-            {
-                if (ReadIf(Token.Comma))
-                {
-                    extraArguments.SetSeparator(ReadListaggSeparator());
-                }
-
-                if (IsWord("ON", consume: false))
-                {
-                    throw new TODOException("Parser.parseQuerySelect: LISTAGG ON OVERFLOW is not ported");
-                }
-            }
-        }
-
-        Expect(Token.CloseParen, ")");
-        if (IsWord("WITHIN"))
-        {
-            ExpectWord("GROUP");
-            Expect(Token.OpenParen, "(");
-            order = ReadIfOrderBy() ?? throw DbException.GetSyntaxError(sql, Current.Start, "ORDER BY");
-            Expect(Token.CloseParen, ")");
-        }
-
-        Expressions.Aggregate.Aggregate aggregate = new(
-            Expressions.Aggregate.AggregateType.Listagg, [arg], select, distinct);
-        aggregate.SetExtraArguments(extraArguments);
-        if (order is not null) aggregate.SetOrderByList(order);
-        return aggregate;
-    }
-
     /// <summary>
     /// Reads a CAST call: the value, the type it becomes and, in the reference, the format
     /// template it is written with.
@@ -4229,6 +4029,13 @@ public sealed partial class Parser
                 continue;
             }
 
+            // Parser.readTerm: FORMAT JSON is a postfix over any expression shape.
+            if (ReadIfWords("FORMAT", "JSON"))
+            {
+                expression = new Expressions.Format(expression, Expressions.Format.FormatEnum.Json);
+                continue;
+            }
+
             break;
         }
         return expression;
@@ -4261,11 +4068,6 @@ public sealed partial class Parser
 
             Expect(Token.CloseBracket, "]");
             return new Expressions.ExpressionList([.. elements], isArray: true);
-        }
-
-        if (aggregateSelect is not null && IsAggregateCall(out Expressions.Aggregate.AggregateType havingAggregate))
-        {
-            return ReadQueryAggregate(aggregateSelect, havingAggregate);
         }
 
         if (ReadIf(Token.OpenParen))
@@ -4506,17 +4308,15 @@ public sealed partial class Parser
 
             if (tokens[position + 1].TokenType == Token.OpenParen)
             {
-                if (aggregateSelect is null && IsAggregateCall(out _))
-                {
-                    // The reference reads an aggregate through readFunction as well, and the
-                    // select it belongs to decides whether it is legal there; outside the select
-                    // list that answer is different SQL, not a missing function.
-                    throw new TODOException(
-                        "Parser.parseQuerySelect: aggregate calls outside the select list are not ported");
-                }
-
                 switch (CurrentType)
                 {
+                    case ParserUtil.Any:
+                    case ParserUtil.Some:
+                        // Parser.readTermWithoutIdentifier has explicit keyword branches.
+                        Read();
+                        Expect(Token.OpenParen, "(");
+                        return ReadQueryAggregate(aggregateSelect, Expressions.Aggregate.AggregateType.Any, "ANY");
+
                     case ParserUtil.Cast:
                         // The reference reads a cast in its term reader, and the select list
                         // is read through the same reader, so a cast is a term here too.
@@ -4629,12 +4429,9 @@ public sealed partial class Parser
     /// exhausted.
     /// </summary>
     /// <remarks>
-    /// The reference looks for aggregates and for user-defined functions around these switches;
-    /// here the ported aggregates are read by the select list before this method is reached, and
-    /// no user-defined function can exist because the port has no CREATE ALIAS, so only their
-    /// absence is left to state. A name that is still a reference aggregate when this method
-    /// sees it belongs to a type this reader does not build, and it refuses by name rather than
-    /// pretending the function is missing.
+    /// Aggregate names come from the reference's registry, before built-ins, window functions
+    /// and compatibility spellings. The implementation of an aggregate may still be missing;
+    /// that gap belongs to Aggregate, not to a second list of names in the parser.
     /// </remarks>
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     /// <returns>the function expression</returns>
@@ -4644,6 +4441,13 @@ public sealed partial class Parser
         Read();
         Expect(Token.OpenParen, "(");
         string upperName = StringUtils.ToUpperEnglish(name);
+        Expressions.Aggregate.AggregateType? aggregateType =
+            Expressions.Aggregate.Aggregate.GetAggregateType(upperName);
+        if (aggregateType is not null)
+        {
+            return ReadQueryAggregate(aggregateSelect, aggregateType.Value, upperName);
+        }
+
         Expressions.Expression? expression = ReadBuiltinFunctionIf(upperName, aggregateSelect);
         if (expression is not null)
         {
@@ -4660,11 +4464,6 @@ public sealed partial class Parser
         if (expression is not null)
         {
             return expression;
-        }
-
-        if (Expressions.Aggregate.Aggregate.GetAggregateType(upperName) is not null)
-        {
-            throw new TODOException("Parser.readFunction: the aggregate " + name + " is not ported");
         }
 
         if (Expressions.Functions.BuiltinFunctions.IsBuiltinFunction(provider.GetMode(), upperName))
@@ -5090,11 +4889,39 @@ public sealed partial class Parser
                     ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
                     Expressions.Functions.SoundexFunction.Difference);
 
-            // JsonConstructorFunction (not ported).
             case "JSON_OBJECT":
+            {
+                Expressions.Functions.JsonConstructorFunction function = new(false);
+                if (CurrentType != Token.CloseParen && !ReadJsonObjectFunctionFlags(function, false))
+                {
+                    do
+                    {
+                        bool withKey = IsWord("KEY");
+                        function.AddParameter(ReadQueryOr(aggregateSelect));
+                        if (withKey) ExpectWord("VALUE");
+                        else if (!(IsWord("VALUE") || (provider.GetMode().AcceptsCommaAsJsonKeyValueSeparator
+                            && ReadIf(Token.Comma)))) Expect(Token.Colon, ":");
+                        function.AddParameter(ReadQueryOr(aggregateSelect));
+                    } while (ReadIf(Token.Comma));
+                    ReadJsonObjectFunctionFlags(function, false);
+                }
+                Expect(Token.CloseParen, ")");
+                function.DoneWithParameters();
+                return function;
+            }
             case "JSON_ARRAY":
-                throw new TODOException(
-                    "Parser.readBuiltinFunctionIf: JsonConstructorFunction is not ported");
+            {
+                Expressions.Functions.JsonConstructorFunction function = new(true);
+                function.SetFlags(Util.Json.JsonConstructorUtils.JsonAbsentOnNull);
+                if (CurrentType != Token.CloseParen && !ReadJsonObjectFunctionFlags(function, true))
+                {
+                    do { function.AddParameter(ReadQueryOr(aggregateSelect)); } while (ReadIf(Token.Comma));
+                    ReadJsonObjectFunctionFlags(function, true);
+                }
+                Expect(Token.CloseParen, ")");
+                function.DoneWithParameters();
+                return function;
+            }
 
             // CryptFunction (not ported).
             case "ENCRYPT":
@@ -5260,10 +5087,10 @@ public sealed partial class Parser
                 return new Expressions.Functions.DBObjectFunction(objectType, arg1, arg2, function);
             }
 
-            // GCDFunction (not ported).
             case "GCD":
+                return ReadGCDFunction(Expressions.Functions.GCDFunction.Gcd, aggregateSelect);
             case "LCM":
-                throw new TODOException("Parser.readBuiltinFunctionIf: GCDFunction is not ported");
+                return ReadGCDFunction(Expressions.Functions.GCDFunction.Lcm, aggregateSelect);
 
             default:
                 return null;
@@ -5757,6 +5584,16 @@ public sealed partial class Parser
 
         Expect(Token.CloseParen, ")");
         return false;
+    }
+
+    // Parser.readGCDFunction: require two arguments, then use readRemainingParameters.
+    private Expression ReadGCDFunction(int function, Query.Select? aggregateSelect)
+    {
+        Expressions.Functions.GCDFunction f = new(function);
+        f.AddParameter(ReadQueryOr(aggregateSelect));
+        Expect(Token.Comma, ",");
+        f.AddParameter(ReadQueryOr(aggregateSelect));
+        return ReadRemainingParameters(f, aggregateSelect);
     }
 
     private Expressions.Expression ReadRemainingParameters(

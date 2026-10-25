@@ -21,6 +21,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using System.Text;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
@@ -35,7 +36,7 @@ namespace H2Sharp.Expressions.Aggregate;
 /// <summary>
 /// Implements the integrated aggregate functions, such as COUNT, MAX, SUM.
 /// </summary>
-public class Aggregate : AbstractAggregate
+public class Aggregate : AbstractAggregate, ExpressionWithFlags
 {
     private readonly AggregateType aggregateType;
 
@@ -209,13 +210,13 @@ public class Aggregate : AbstractAggregate
     /// Sets the ORDER BY list of a WITHIN GROUP aggregate.
     /// </summary>
     /// <param name="orderBy">the ORDER BY list</param>
-    public void SetOrderByList(List<QueryOrderBy> orderBy) => orderByList = orderBy;
+    public void SetOrderByList(List<QueryOrderBy>? orderBy) => orderByList = orderBy;
 
     /// <summary>
     /// Sets the additional arguments of this aggregate.
     /// </summary>
     /// <param name="extraArguments">the additional arguments</param>
-    public void SetExtraArguments(object extraArguments) => this.extraArguments = extraArguments;
+    public void SetExtraArguments(object? extraArguments) => this.extraArguments = extraArguments;
 
     /// <summary>
     /// Returns the additional arguments of this aggregate.
@@ -330,6 +331,12 @@ public class Aggregate : AbstractAggregate
                 // ROW(key, value) is collected, so NULL values cannot be passed.
                 return new AggregateDataCollecting(
                     distinct, false, AggregateDataCollecting.NullCollectionMode.UsedOrImpossible);
+            case AggregateType.GcdAgg:
+                return new AggregateDataGCD(false);
+            case AggregateType.LcmAgg:
+                return new AggregateDataGCD(true);
+            case AggregateType.Envelope:
+                return new AggregateDataEnvelope();
             default:
                 throw new TODOException(
                     "Aggregate.createAggregateData: only COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR, MEDIAN, ANY_VALUE, PERCENTILE, LISTAGG, ARRAY_AGG, HISTOGRAM, MODE, JSON_ARRAYAGG, JSON_OBJECTAGG, the BIT_*_AGG reductions, REGR_COUNT, REGR_AVGX, REGR_AVGY, REGR_SXX, REGR_SYY, COVAR_POP, COVAR_SAMP, CORR, REGR_SLOPE, REGR_INTERCEPT, REGR_R2 and REGR_SXY are ported (type="
@@ -1143,12 +1150,14 @@ public class Aggregate : AbstractAggregate
                     break;
                 }
             case AggregateType.Mode:
-                // MODE takes no argument on the expression list; the value it reads is carried
-                // on the ORDER BY list, so there is nothing to type here.
+                type = orderByList![0].expression!.GetTypeInfo();
                 break;
             case AggregateType.JsonObjectagg:
             case AggregateType.JsonArrayagg:
                 type = TypeInfo.TypeJson;
+                break;
+            case AggregateType.Envelope:
+                type = TypeInfo.TypeGeometry;
                 break;
             case AggregateType.BitAndAgg:
             case AggregateType.BitOrAgg:
@@ -1161,8 +1170,28 @@ public class Aggregate : AbstractAggregate
             case AggregateType.Listagg:
                 type = TypeInfo.TypeVarchar;
                 break;
+            case AggregateType.GcdAgg:
+            case AggregateType.LcmAgg:
+                {
+                    Expression e = args[0];
+                    GCDFunction.CheckType(e, aggregateType == AggregateType.GcdAgg ? "GCD_AGG" : "LCM_AGG");
+                    if (e.IsConstant())
+                    {
+                        if (e.IsNullConstant())
+                        {
+                            return TypedValueExpression.Get(ValueNull.Instance, TypeInfo.TypeNumericScale0);
+                        }
+
+                        return ValueExpression.Get(ValueNumeric.Get(
+                            BigInteger.Abs(e.GetValue(session).GetBigInteger())));
+                    }
+
+                    type = TypeInfo.TypeNumericScale0;
+                    break;
+                }
+
             default:
-                throw Message.DbException.GetInternalError("type=" + aggregateType);
+                throw new TODOException("Aggregate.optimize: " + aggregateType + " is not ported");
         }
 
         return this;
@@ -1428,6 +1457,13 @@ public class Aggregate : AbstractAggregate
             AggregateType.RegrIntercept => "REGR_INTERCEPT",
             AggregateType.RegrR2 => "REGR_R2",
             AggregateType.RegrSxy => "REGR_SXY",
+            AggregateType.Rank => "RANK",
+            AggregateType.DenseRank => "DENSE_RANK",
+            AggregateType.PercentRank => "PERCENT_RANK",
+            AggregateType.CumeDist => "CUME_DIST",
+            AggregateType.Envelope => "ENVELOPE",
+            AggregateType.GcdAgg => "GCD_AGG",
+            AggregateType.LcmAgg => "LCM_AGG",
             _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
         };
 

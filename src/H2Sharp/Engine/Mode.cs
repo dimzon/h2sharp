@@ -199,6 +199,9 @@ public sealed class Mode
     /// </remarks>
     public bool LogIsLogBase10 { get; }
 
+    /// <summary>Whether a comma may separate a JSON_OBJECT key and value (MySQL/MariaDB).</summary>
+    public bool AcceptsCommaAsJsonKeyValueSeparator { get; }
+
     /// <summary>
     /// The name of the mode, as it is written in a URL.
     /// </summary>
@@ -222,7 +225,8 @@ public sealed class Mode
         bool treatEmptyStringsAsNull = false,
         bool greatestLeastIgnoreNulls = false,
         bool swapLogFunctionParameters = false,
-        bool logIsLogBase10 = false)
+        bool logIsLogBase10 = false,
+        bool acceptsCommaAsJsonKeyValueSeparator = false)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -238,6 +242,7 @@ public sealed class Mode
         GreatestLeastIgnoreNulls = greatestLeastIgnoreNulls;
         SwapLogFunctionParameters = swapLogFunctionParameters;
         LogIsLogBase10 = logIsLogBase10;
+        AcceptsCommaAsJsonKeyValueSeparator = acceptsCommaAsJsonKeyValueSeparator;
     }
 
     /// <summary>
@@ -288,9 +293,9 @@ public sealed class Mode
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
                 greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
-                allowUnrelatedOrderByExpressionsInDistinctQueries: true),
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
-                allowUnrelatedOrderByExpressionsInDistinctQueries: true),
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true),
