@@ -244,6 +244,12 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   + выходные параметры регистрируемые через registerOutParameter; у ADO.NET другой
   механизм (параметры с Direction=Output через команду). Вопрос: перенести против
   Direction=Output, когда провайдер проведёт выходные параметры.
+* **TestResultSet (2100 строк) — гибрид.** Переносимая половина: геттеры всех типов
+  (testInt/testSmallInt/testBigInt/testVarchar/testDecimal/testDoubleFloat — значения,
+  wasNull, переходы строк), findColumn, parse-особые значения. Не переносимая: scrollable
+  (beforeFirst/afterLast/absolute) и updatable (insertRow/updateRow) куски — читатель
+  ADO.NET forward-only и read-only. Вопрос: перенести переносимую половину как отдельный
+  тест геттеров (большая работа — сотни строк на каждый тип), или закрыть.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
