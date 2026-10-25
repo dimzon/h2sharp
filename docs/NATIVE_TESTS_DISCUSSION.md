@@ -220,6 +220,8 @@ TestInit, TestJakartaWeb, TestNestedLoop, TestWeb) и `TestCluster`; ветки
   документа) — JVM-механика; .NET-аналог (System.Management, WMI/EventCounters) — другое
   решение по дизайну. Вопрос: закрыть или делать вместе с диагностической поверхностью
   провайдера.
+* **TestJakartaServlet — не перенесён.** Тот же DbStarter, что TestServlet, но на
+  jakarta.servlet — поверхность ASP.NET-интеграции, отдельное решение.
 * **TestMode — не перенесён** — проверяет supportedClientInfoPropertiesRegEx для семи
   режимов (DB2/Derby/HSQLDB/MSSQLServer/MySQL/Oracle/PostgreSQL); это та же JDBC
   client-info-поверхность, что отложена в TestConnection — перенести вместе с её
