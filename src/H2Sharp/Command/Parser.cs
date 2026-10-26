@@ -4988,6 +4988,17 @@ public sealed partial class Parser
             return new Expressions.Functions.CurrentGeneralValueSpecification(specification);
         }
 
+        if (CurrentType == Token.At)
+        {
+            Read();
+            SessionLocal variableSession = session
+                ?? throw new TODOException("Parser.readTermWithoutIdentifier: @variable: no session");
+            Expressions.Variable variable = new(variableSession, ReadIdentifier());
+            return ReadIf(Token.ColonEq)
+                ? new Expressions.Functions.SetFunction(variable, ReadExpression())
+                : variable;
+        }
+
         if (CurrentType == Token.MinusSign)
         {
             Read();

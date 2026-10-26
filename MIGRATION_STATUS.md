@@ -7572,6 +7572,22 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### Переменные `@name` и `SET()`
+
+Парсер читает `Token.At`: `@name` становится `Variable`, `@name := expr` —
+`SetFunction`. Класс `Variable` и session-хранилище уже были, не хватало
+токен-ветки `readTermWithoutIdentifier`; parser без сессии по-прежнему даёт
+TODO с "no session" (ParserTests).
+
+`VariableOracleTests` 1/1 против JVM: последовательность `@N :=`, `SET(@T,
+...)` и чтение `@T`. `BinaryOperation.getUnenclosedSQL` переведён на
+`AUTO_PARENTHESES`, как эталон, поэтому алиас `SET(@T, COALESCE(...) + X)`
+печатается без лишних скобок. TestScript прошёл 541–547 и 1000; осталось
+3 строки: 372 (`scanCount`) и 1134/1159 (два плана).
+
+Проверки: core **1468 passed / 0 failed**, conformance **785/952** без
+регрессий, Data **512/512**.
+
 ### PREPARE COMMIT и named transactions
 
 `PREPARE COMMIT name`, `COMMIT TRANSACTION name`, `ROLLBACK TRANSACTION name`:

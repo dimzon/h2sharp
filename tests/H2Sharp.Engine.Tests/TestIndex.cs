@@ -39,6 +39,7 @@ public sealed class TestIndex
     public void OrderIndex()
     {
         using H2Connection conn = new("jdbc:h2:mem:index");
+        conn.Open();
         using DbCommand stat = conn.CreateCommand();
         stat.CommandText = "create table test(id int, name varchar)";
         _ = stat.ExecuteNonQuery();
@@ -67,6 +68,7 @@ public sealed class TestIndex
     public void IndexTypes(string type)
     {
         using H2Connection conn = new("jdbc:h2:mem:index");
+        conn.Open();
         using DbCommand stat = conn.CreateCommand();
 
         stat.CommandText = "create table test(id int)";
@@ -107,6 +109,7 @@ public sealed class TestIndex
     public void ErrorMessage()
     {
         using H2Connection conn = new("jdbc:h2:mem:index");
+        conn.Open();
         using DbCommand stat = conn.CreateCommand();
         stat.CommandText = "create table test(id int primary key, name varchar)";
         _ = stat.ExecuteNonQuery();

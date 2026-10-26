@@ -30,9 +30,9 @@
 //    row-value UPDATE assignments, EXPLAIN, DELETE LIMIT, DIRECT/SORTED inserts and views
 //    (CREATE/OR REPLACE/DROP/ALTER, dependencies, cascade) now run, as do IDENTITY/SERIAL/
 //    BIGSERIAL shorthand, built-in type name conflicts in CREATE DOMAIN and multiple qualified
-//    stars and SCRIPT NODATA/NOPASSWORDS/NOSETTINGS/NOVERSION now run. Plan text at 372
-//    still differs in scanCount; the first functional mismatch is @variables at 541, then
-//    @variables, SET() alias text and two remaining EXPLAIN plans.
+//    stars, SCRIPT NODATA/NOPASSWORDS/NOSETTINGS/NOVERSION, IDENTITY/SERIAL/BIGSERIAL,
+//    AUTO_INCREMENT, table rename, views, HAVING aliases and referential-integrity switches
+//    now run. Only plan text at 372 and two EXPLAIN plans at 1134/1159 remain.
 using System;
 using System.Collections.Generic;
 using System.Data;

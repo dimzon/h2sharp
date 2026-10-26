@@ -83,9 +83,9 @@ public class BinaryOperation : Operation2
     public override StringBuilder GetUnenclosedSql(StringBuilder builder, int sqlFlags)
     {
         // The space stays: without it the text could become "--1", which is a remark.
-        left.GetSql(builder, sqlFlags, Expression.WithParentheses).Append(' ')
+        left.GetSql(builder, sqlFlags, Expression.AutoParentheses).Append(' ')
             .Append(GetOperationToken()).Append(' ');
-        return right.GetSql(builder, sqlFlags, Expression.WithParentheses);
+        return right.GetSql(builder, sqlFlags, Expression.AutoParentheses);
     }
 
     private string GetOperationToken() => opType switch
