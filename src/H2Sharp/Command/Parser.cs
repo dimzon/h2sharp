@@ -704,6 +704,10 @@ public sealed partial class Parser
         {
             prepared = PrepareDropSequence(current);
         }
+        else if (IsWord("DROP", consume: false) && NextIs("SCHEMA"))
+        {
+            prepared = PrepareDropSchema(current);
+        }
         else if (IsWord("TRUNCATE", consume: false))
         {
             prepared = PrepareTruncateTable(current);
@@ -3214,6 +3218,30 @@ public sealed partial class Parser
         Ddl.DropSequence command = new(session, schema);
         command.SetSequenceName(sequenceName);
         command.SetIfExists(ifExists);
+        return command;
+    }
+
+    /// <summary>
+    /// Builds the command of a DROP SCHEMA statement.
+    /// </summary>
+    private Ddl.DropSchema PrepareDropSchema(SessionLocal session)
+    {
+        ExpectWord("DROP");
+        ExpectWord("SCHEMA");
+        bool ifExists = ReadIfExists(false);
+        string schemaName = ReadIdentifier();
+        Ddl.DropSchema command = new(session);
+        command.SetSchemaName(schemaName);
+        command.SetIfExists(ifExists);
+        if (IsWord("CASCADE"))
+        {
+            command.SetDropAction(Constraints.ConstraintActionType.CASCADE);
+        }
+        else if (IsWord("RESTRICT"))
+        {
+            command.SetDropAction(Constraints.ConstraintActionType.RESTRICT);
+        }
+
         return command;
     }
 
@@ -7192,7 +7220,7 @@ public sealed partial class Parser
         Dml.Update update = new(session);
         update.SetSql(statement.Sql, null);
         update.SetTableFilter(new Tables.TableFilter(
-            session, table, statement.Alias ?? table.GetTableName(),
+            session, table, statement.Alias,
             rightsChecked: true, select: null, 0, null));
         Dml.SetClauseList assignments = new(table);
         foreach ((string name, Expression[]? indexes, Expression value) in statement.Assignments)
@@ -7270,7 +7298,7 @@ public sealed partial class Parser
         Dml.Delete delete = new(session);
         delete.SetSql(statement.Sql, null);
         delete.SetTableFilter(new Tables.TableFilter(
-            session, table, statement.Alias ?? table.GetTableName(),
+            session, table, statement.Alias,
             rightsChecked: true, select: null, 0, null));
         if (statement.Fetch is not null)
         {

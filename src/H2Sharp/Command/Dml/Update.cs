@@ -72,7 +72,6 @@ public sealed class Update : FilteredDataChangeStatement
         Tables.Table table = filter.GetTable();
         SetClauseList assignments = setClauseList
             ?? throw Message.DbException.GetInternalError("UPDATE without assignments");
-        filter.SetIndex(table.GetScanIndex(session)!, reverse: false);
         filter.StartQuery(session);
         filter.Reset();
         List<(Result.Row OldRow, Result.Row NewRow)> staged = [];
@@ -144,7 +143,12 @@ public sealed class Update : FilteredDataChangeStatement
 
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
-        => throw new TODOException("Update.getPlanSQL: not ported");
+    {
+        _ = GetTableFilter().GetPlanSql(builder.Append("UPDATE "), isJoin: false, sqlFlags);
+        _ = setClauseList?.GetSql(builder, sqlFlags)
+            ?? throw Message.DbException.GetInternalError("UPDATE without assignments");
+        return AppendFilterCondition(builder, sqlFlags);
+    }
 
     /// <summary>
     /// Gets the kind of this statement.
@@ -181,22 +185,27 @@ public sealed class Update : FilteredDataChangeStatement
     protected override void DoPrepare()
     {
         Tables.TableFilter filter = GetTableFilter();
-        if (setClauseList is not null)
-        {
-            setClauseList.MapColumns(GetSession(), filter);
-        }
-
         Expressions.Expression? condition = GetCondition();
         if (condition is not null)
         {
             condition.MapColumns(filter, 0, Expressions.Expression.MapInitial);
-            SetCondition(condition.OptimizeCondition(GetSession()));
+            condition = condition.OptimizeCondition(GetSession());
+            SetCondition(condition);
+            condition?.CreateIndexConditions(GetSession(), filter);
         }
+
+        setClauseList?.MapColumns(GetSession(), filter);
 
         if (fetchExpr is not null)
         {
             fetchExpr.MapColumns(filter, 0, Expressions.Expression.MapInitial);
             fetchExpr = fetchExpr.Optimize(GetSession());
         }
+
+        Tables.TableFilter[] filters = [filter];
+        Tables.PlanItem item = filter.GetBestPlanItem(GetSession(), filters, 0,
+            new H2Sharp.Command.Query.AllColumnsForPlan(filters), isSelectCommand: false);
+        filter.SetPlanItem(item);
+        filter.Prepare();
     }
 }

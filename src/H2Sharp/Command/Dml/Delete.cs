@@ -50,7 +50,6 @@ public sealed class Delete : FilteredDataChangeStatement
         SessionLocal session = GetSession();
         Tables.TableFilter filter = GetTableFilter();
         Tables.Table table = filter.GetTable();
-        filter.SetIndex(table.GetScanIndex(session)!, reverse: false);
         filter.StartQuery(session);
         filter.Reset();
         List<Result.Row> matched = [];
@@ -103,7 +102,10 @@ public sealed class Delete : FilteredDataChangeStatement
 
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
-        => throw new TODOException("Delete.getPlanSQL: not ported");
+    {
+        _ = GetTableFilter().GetPlanSql(builder.Append("DELETE FROM "), isJoin: false, sqlFlags);
+        return AppendFilterCondition(builder, sqlFlags);
+    }
 
     /// <summary>
     /// Gets the kind of this statement.
@@ -137,7 +139,9 @@ public sealed class Delete : FilteredDataChangeStatement
         if (condition is not null)
         {
             condition.MapColumns(filter, 0, Expressions.Expression.MapInitial);
-            SetCondition(condition.OptimizeCondition(GetSession()));
+            condition = condition.OptimizeCondition(GetSession());
+            SetCondition(condition);
+            condition?.CreateIndexConditions(GetSession(), filter);
         }
 
         if (fetchExpr is not null)
@@ -145,5 +149,11 @@ public sealed class Delete : FilteredDataChangeStatement
             fetchExpr.MapColumns(filter, 0, Expressions.Expression.MapInitial);
             fetchExpr = fetchExpr.Optimize(GetSession());
         }
+
+        Tables.TableFilter[] filters = [filter];
+        Tables.PlanItem item = filter.GetBestPlanItem(GetSession(), filters, 0,
+            new H2Sharp.Command.Query.AllColumnsForPlan(filters), isSelectCommand: false);
+        filter.SetPlanItem(item);
+        filter.Prepare();
     }
 }

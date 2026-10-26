@@ -16,6 +16,7 @@
  *
  * Not ported: the members are the reference's and each one refuses.
  */
+using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Tables;
@@ -77,6 +78,30 @@ public abstract class FilteredDataChangeStatement : DataChangeStatement
     /// </summary>
     /// <returns>the condition, or null for all rows</returns>
     public Expression? GetCondition() => condition;
+
+    /// <summary>
+    /// Appends the WHERE and FETCH clauses of this statement, as the reference's
+    /// appendFilterCondition does.
+    /// </summary>
+    protected StringBuilder AppendFilterCondition(StringBuilder builder, int sqlFlags)
+    {
+        if (condition is not null)
+        {
+            _ = builder.Append("\nWHERE ");
+            _ = condition.GetUnenclosedSql(builder, sqlFlags);
+        }
+
+        if (fetchExpr is not null)
+        {
+            _ = builder.Append("\nFETCH FIRST ");
+            string count = fetchExpr.GetSql(sqlFlags, Expression.WithoutParentheses);
+            _ = count == "1"
+                ? builder.Append("ROW ONLY")
+                : builder.Append(count).Append(" ROWS ONLY");
+        }
+
+        return builder;
+    }
 
     /// <summary>
     /// Sets the FETCH clause, which is what keeps a data change statement read only.

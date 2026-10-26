@@ -33,7 +33,7 @@ public class UnaryOperation : Operation1
     public override StringBuilder GetUnenclosedSql(StringBuilder builder, int sqlFlags)
     {
         // The space stays: without it the text could become "--1", which is a remark.
-        return arg.GetSql(builder.Append("- "), sqlFlags, Expression.WithParentheses);
+        return arg.GetSql(builder.Append("- "), sqlFlags, Expression.AutoParentheses);
     }
 
     /// <inheritdoc/>

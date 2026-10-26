@@ -74,6 +74,12 @@ public sealed class SetClauseList
             throw Message.DbException.Get(Api.ErrorCode.DuplicateColumnName1, column.GetName());
         }
 
+        if (ReferenceEquals(expression, ValueExpression.Default))
+        {
+            actions[id] = UpdateAction.SetDefault;
+            return;
+        }
+
         actions[id] = new SetSimple(arrayIndexes, expression);
         if (expression is Parameter parameter)
         {
@@ -153,7 +159,47 @@ public sealed class SetClauseList
     /// <param name="sqlFlags">the SQL flags</param>
     /// <returns>the builder</returns>
     public StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => throw new TODOException("SetClauseList.getSQL: not ported");
+    {
+        Column[] columns = table.GetColumns();
+        _ = builder.Append("\nSET\n    ");
+        bool firstAssignment = false;
+        for (int i = 0; i < actions.Length; i++)
+        {
+            UpdateAction? action = actions[i];
+            if (action is null || ReferenceEquals(action, UpdateAction.OnUpdate)) continue;
+            if (action is SetMultiple multiple)
+            {
+                if (!multiple.first) continue;
+                if (firstAssignment) _ = builder.Append(",\n    ");
+                firstAssignment = true;
+                _ = builder.Append('(');
+                int[] cols = multiple.row.columns;
+                for (int j = 0; j < cols.Length; j++)
+                {
+                    if (j > 0) _ = builder.Append(", ");
+                    _ = columns[cols[j]].GetSql(builder, sqlFlags);
+                }
+
+                _ = multiple.row.expression.GetUnenclosedSql(builder.Append(") = "), sqlFlags);
+            }
+            else
+            {
+                if (firstAssignment) _ = builder.Append(",\n    ");
+                firstAssignment = true;
+                Column column = columns[i];
+                if (ReferenceEquals(action, UpdateAction.SetDefault))
+                {
+                    _ = column.GetSql(builder, sqlFlags).Append(" = DEFAULT");
+                }
+                else
+                {
+                    action.GetSql(builder, sqlFlags, column);
+                }
+            }
+        }
+
+        return builder;
+    }
 
     /// <summary>
     /// Maps the assigned expressions against the updated table.
@@ -415,6 +461,9 @@ public sealed class SetClauseList
 
             expression = expression.Optimize(session);
         }
+
+        internal override void GetSql(StringBuilder builder, int sqlFlags, Column column)
+            => _ = expression.GetUnenclosedSql(column.GetSql(builder, sqlFlags).Append(" = "), sqlFlags);
     }
 
     private sealed class RowExpression
@@ -448,11 +497,11 @@ public sealed class SetClauseList
 
     private sealed class SetMultiple : SetAction
     {
-        private readonly RowExpression row;
+        internal readonly RowExpression row;
 
         private readonly int position;
 
-        private readonly bool first;
+        internal readonly bool first;
 
         private readonly bool last;
 

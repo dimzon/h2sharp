@@ -31,6 +31,20 @@ public sealed class ExplainOracleTests
         ]);
     }
 
+    [JavaOracleFact]
+    public void ExplainUpdateAndDelete()
+    {
+        Check([
+            "CREATE TABLE U(A INT, B INT DEFAULT 5)",
+            "INSERT INTO U(A) VALUES(1), (2)",
+            "EXPLAIN UPDATE U SET B = DEFAULT WHERE A = 2",
+            "EXPLAIN DELETE FROM U WHERE A = 1",
+            "EXPLAIN UPDATE U SET (A, B) = (2, 3) WHERE A = 1",
+            "UPDATE U SET B = DEFAULT WHERE A = 2",
+            "SELECT A, B FROM U ORDER BY A",
+        ]);
+    }
+
     private static void Check(string[] statements)
     {
         List<string> port = [];

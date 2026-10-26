@@ -138,7 +138,38 @@ public sealed class Schema : DbObject
 
     /// <inheritdoc/>
     public override void RemoveChildrenAndResources(SessionLocal session)
-        => throw new TODOException("Schema.removeChildrenAndResources: the schema holds more than tables");
+    {
+        Database database = GetDatabase();
+        foreach (Constraint constraint in GetAllConstraints().ToArray())
+        {
+            database.RemoveSchemaObject(session, constraint);
+        }
+
+        while (true)
+        {
+            List<Table> tables = GetAllTablesAndViews(session);
+            if (tables.Count == 0) break;
+            database.RemoveSchemaObject(session, tables[0]);
+        }
+
+        foreach (Domain domain in GetAllDomains().ToArray())
+        {
+            database.RemoveSchemaObject(session, domain);
+        }
+
+        foreach (Index index in GetAllIndexes().ToArray())
+        {
+            database.RemoveSchemaObject(session, index);
+        }
+
+        foreach (Sequence sequence in GetAllSequences().ToArray())
+        {
+            database.RemoveSchemaObject(session, sequence);
+        }
+
+        database.RemoveMeta(session, GetId());
+        Invalidate();
+    }
 
     /// <summary>
     /// Gets the owner name used by CREATE SCHEMA.

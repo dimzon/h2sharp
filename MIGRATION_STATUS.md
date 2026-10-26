@@ -7510,6 +7510,43 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### DROP SCHEMA и алиас `-TEST.A`
+
+Перенесён `DropSchema`: `DROP SCHEMA [IF EXISTS] name [CASCADE|RESTRICT]`,
+`SCHEMA_NOT_FOUND_1`, `SCHEMA_CAN_NOT_BE_DROPPED_1`, restrict-список
+объектов и каскадное удаление. `Schema.RemoveChildrenAndResources` удаляет
+constraints, tables/views (включая зависимости), domains, indexes и
+sequences, затем meta. Схема убирается из реестра до очистки, потому что
+`Invalidate` обнуляет имя.
+
+`UnaryOperation` печатает операнд через `AUTO_PARENTHESES`, как эталон:
+`-TEST.A` остаётся `- TEST.A`, без лишних скобок.
+
+`SchemaDropAndUnaryAliasOracleTests` 2/2: restrict/cascade, missing/IF EXISTS,
+имя колонки `- TEST.A` и значения. Conformance +1
+(`DropSchema_Cascade_RemovesIt`). TestScript прошёл 648, 724, 875, 892, 895;
+следующая функциональная ошибка всё ещё `@`-переменные на 541.
+
+Проверки: core **1460 passed / 0 failed**, conformance **779/952** без
+регрессий, Data.Tests **491/491**.
+
+### EXPLAIN UPDATE/DELETE и UPDATE SET DEFAULT
+
+`Update`/`Delete` теперь готовят план так же, как эталон: условие
+мапится/оптимизируется, создаёт index conditions, выбирается
+`GetBestPlanItem`, фильтр подготавливается. Из `Run` убран принудительный
+scan index, иначе выбранный план и cursor-условия расходились. План
+печатает `UPDATE/DELETE ...`, `SET` и WHERE/FETCH; алиас таблицы в
+UPDATE/DELETE больше не подставляется именем таблицы.
+
+`SetClauseList.GetSql` и `SetSimple.GetSql` портированы; `UPDATE SET B =
+DEFAULT` теперь ставит `SET_DEFAULT` (раньше писал NULL) и печатается в
+плане. `ExplainOracleTests.ExplainUpdateAndDelete` проверяет UPDATE DEFAULT,
+DELETE, row-value и реальное восстановление default; всё против JVM.
+
+TestScript прошёл строку 931; core **1458 passed / 0 failed**, conformance
+**778/952** (+1, `SetClauseList_DefaultKeyword_RestoresTheDefault`), Data 491.
+
 ### SCRIPT: NODATA/NOPASSWORDS/NOSETTINGS/NOVERSION
 
 Перенесён in-memory `ScriptCommand`: `SCRIPT [NODATA] [NOPASSWORDS]
