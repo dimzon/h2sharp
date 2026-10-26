@@ -761,6 +761,10 @@ public sealed partial class Parser
                 query.SetNeverLazy(true);
             }
         }
+        else if (IsWord("INSERT"))
+        {
+            nested = ParseInsert(nestedStart);
+        }
         else
         {
             Statement statement = ReadStatement();
@@ -8220,7 +8224,50 @@ public sealed partial class Parser
         statement.Schema = deleteSchema;
         statement.Alias = ReadFromAlias();
         statement.Where = ReadWhere();
+        if (statement.Fetch is null)
+        {
+            statement.Fetch = ReadFetchOrLimit();
+        }
+
         return statement;
+    }
+
+    /// <summary>
+    /// Reads FETCH FIRST/NEXT or LIMIT after a data change statement, as the reference's
+    /// readFetchOrLimit does.
+    /// </summary>
+    private Expression? ReadFetchOrLimit()
+    {
+        Expression? fetch = null;
+        if (CurrentType == ParserUtil.Fetch)
+        {
+            Read();
+            if (!IsWord("FIRST"))
+            {
+                ExpectWord("NEXT");
+            }
+
+            if (IsWord("ROW") || IsWord("ROWS"))
+            {
+                fetch = Expressions.ValueExpression.Get(Values.ValueInteger.Get(1));
+            }
+            else
+            {
+                fetch = ReadQueryLimitExpression();
+                if (!IsWord("ROW"))
+                {
+                    ExpectWord("ROWS");
+                }
+            }
+
+            ExpectWord("ONLY");
+        }
+        else if ((session?.GetMode() ?? provider.GetMode()).Limit && IsWord("LIMIT"))
+        {
+            fetch = ReadQueryLimitExpression();
+        }
+
+        return fetch;
     }
 
     private SelectStatement ReadSelect()

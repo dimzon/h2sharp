@@ -7510,6 +7510,30 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### DELETE LIMIT, INSERT DIRECT/SORTED и точность плана
+
+`DELETE` читает `FETCH FIRST/NEXT ... ONLY` и `LIMIT`, порт `readFetchOrLimit`
+сохранён; `LIMIT 0`, положительный лимит и `INVALID_VALUE_2` для NULL/
+отрицательного совпадают с JVM. `INSERT` читает `DIRECT` (включая
+`SetInsertFromSelect`) и `SORTED`; EXPLAIN вложенного INSERT идёт через
+`ParseInsert`, а `Insert.GetPlanSql` печатает `INSERT INTO ... (columns)` и
+`DIRECT`/VALUES/query как эталон.
+
+План EXPLAIN приведён ближе к эталону: `MVPrimaryIndex` печатает
+`<table>.tableScan`, а `ConditionIsNull` создаёт null-safe индексное условие,
+поэтому `WHERE ID IS NULL` выбирает NOT NULL primary key index. Осталось
+расхождение `scanCount: 5` вместо 1 на строке 372 — исполнение null-safe
+индексного условия ещё не считает строки как эталон.
+
+Тесты: `DeleteLimitOracleTests` 1/1, `InsertDirectSortedOracleTests` 1/1,
+`ExplainOracleTests` 1/1 (добавлены tableScan и IS NULL plans). Conformance +1
+(`Explain_Insert_ReturnsThePlan`). TestScript прошёл 339–360; первая
+функциональная ошибка — `CREATE VIEW` (384).
+
+Проверки: core **1447 passed / 3 прежних PostfixCast failed / 1450 total**;
+conformance **771/952**, новых Passed→Failed 0; Data.Tests **491/491**.
+TRX: `next-specs.trx`, `testscript_plan.log`.
+
 ### EXPLAIN и EXPLAIN ANALYZE
 
 Перенесён `org.h2.command.dml.Explain`: `EXPLAIN`, `EXPLAIN PLAN [FOR]`,

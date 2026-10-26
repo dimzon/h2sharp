@@ -21,6 +21,7 @@
  */
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Indexes;
 using H2Sharp.Tables;
 using H2Sharp.Values;
 
@@ -112,6 +113,41 @@ public sealed class ConditionIsNull : Condition
     {
         left = left.Optimize(session);
         return this;
+    }
+
+    /// <inheritdoc/>
+    public override void CreateIndexConditions(SessionLocal session, TableFilter filter)
+    {
+        if (not || whenOperand || !filter.GetTable()!.IsQueryComparable())
+        {
+            return;
+        }
+
+        if (left is ExpressionColumn column)
+        {
+            CreateNullIndexCondition(filter, column);
+        }
+        else if (left is ExpressionList list && !list.IsArray())
+        {
+            for (int i = 0, count = list.GetSubexpressionCount(); i < count; i++)
+            {
+                if (list.GetSubexpression(i) is ExpressionColumn item)
+                {
+                    CreateNullIndexCondition(filter, item);
+                }
+            }
+        }
+    }
+
+    private static void CreateNullIndexCondition(TableFilter filter, ExpressionColumn column)
+    {
+        // Columns with a ROW type are not valid here, but the reference checks anyway.
+        if (ReferenceEquals(filter, column.GetTableFilter())
+            && column.GetTypeInfo().GetValueType() != Value.Row)
+        {
+            filter.AddIndexCondition(
+                IndexCondition.Get(Comparison.EqualNullSafe, column, ValueExpression.Null));
+        }
     }
 
     /// <inheritdoc/>

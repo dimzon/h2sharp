@@ -23,6 +23,8 @@ public sealed class ExplainOracleTests
             "EXPLAIN SELECT * FROM SYSTEM_RANGE(1, 3) WHERE X > 1",
             "CREATE TABLE T(ID INT PRIMARY KEY, NAME VARCHAR)",
             "INSERT INTO T VALUES(1, 'a'), (2, 'b')",
+            "EXPLAIN SELECT * FROM T",
+            "EXPLAIN SELECT * FROM T WHERE ID IS NULL",
             "EXPLAIN SELECT * FROM T WHERE ID = 1",
             "EXPLAIN ANALYZE SELECT * FROM T WHERE ID = 1",
             "EXPLAIN SELECT * FROM T ORDER BY ID",

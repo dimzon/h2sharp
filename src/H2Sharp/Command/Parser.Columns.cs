@@ -455,8 +455,23 @@ public sealed partial class Parser
             ExpectWord("VALUE");
         }
         command.SetOverridingSystem(overridingSystem);
-        if (overridingSystem is null && ReadIfWords("DEFAULT", "VALUES")) command.AddRow(System.Array.Empty<Expression>());
-        else if (IsWord("VALUES"))
+        bool requireQuery = false;
+        if (ReadIfCompat("DIRECT"))
+        {
+            requireQuery = true;
+            command.SetInsertFromSelect(true);
+        }
+
+        if (ReadIfCompat("SORTED"))
+        {
+            requireQuery = true;
+        }
+
+        if (!requireQuery && overridingSystem is null && ReadIfWords("DEFAULT", "VALUES"))
+        {
+            command.AddRow(System.Array.Empty<Expression>());
+        }
+        else if (!requireQuery && IsWord("VALUES"))
         {
             do
             {

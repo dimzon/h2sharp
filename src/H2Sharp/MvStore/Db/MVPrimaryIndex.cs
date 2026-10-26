@@ -609,6 +609,10 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    public override string GetPlanSql()
+        => table!.GetSql(new System.Text.StringBuilder(), Util.HasSql.TraceSqlFlags).Append(".tableScan").ToString();
+
+    /// <inheritdoc/>
     /// <remarks>
     /// Always the miss: a condition on a primary column is served by the delegate that wraps
     /// it, never by the primary itself.

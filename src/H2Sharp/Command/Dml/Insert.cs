@@ -240,7 +240,41 @@ public sealed class Insert : CommandWithValues, ResultTarget
 
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
-        => throw new TODOException("Insert.getPlanSQL: not ported");
+    {
+        _ = table!.GetSql(builder.Append("INSERT INTO "), sqlFlags).Append('(');
+        _ = Tables.Column.WriteColumns(builder, columns ?? table.GetVisibleColumns(), sqlFlags);
+        _ = builder.Append(")\n");
+        if (insertFromSelect)
+        {
+            _ = builder.Append("DIRECT ");
+        }
+
+        if (ValuesExpressionList.Count > 0)
+        {
+            _ = builder.Append("VALUES ");
+            int row = 0;
+            if (ValuesExpressionList.Count > 1)
+            {
+                _ = builder.Append('\n');
+            }
+
+            foreach (Expression[] expr in ValuesExpressionList)
+            {
+                if (row++ > 0)
+                {
+                    _ = builder.Append(",\n");
+                }
+
+                _ = Expression.WriteExpressions(builder.Append('('), expr, sqlFlags).Append(')');
+            }
+        }
+        else
+        {
+            _ = query!.GetPlanSql(builder, sqlFlags);
+        }
+
+        return builder;
+    }
 
     /// <summary>
     /// Gets the kind of this statement.
