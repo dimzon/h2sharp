@@ -25,6 +25,9 @@ public class TransactionCommand : Prepared
             case CommandInterface.Rollback: session.Rollback(); break;
             case CommandInterface.Savepoint: session.AddSavepoint(savepointName!); break;
             case CommandInterface.RollbackToSavepoint: session.RollbackToSavepoint(savepointName!); break;
+            case CommandInterface.PrepareCommit: session.PrepareCommit(transactionName!); break;
+            case CommandInterface.CommitTransaction: session.SetPreparedTransaction(transactionName!, true); break;
+            case CommandInterface.RollbackTransaction: session.SetPreparedTransaction(transactionName!, false); break;
             default: throw new TODOException("TransactionCommand.update: transaction command " + type + " is not ported (" + transactionName + ")");
         }
         return 0;

@@ -302,13 +302,13 @@ public class ConstraintReferential : Constraint
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The database-wide switch of the reference is not ported, so only the table's own switch
-    /// is asked: SET REFERENTIAL_INTEGRITY is a statement the port refuses, and a check that
-    /// read a switch nobody can flip would be a check that never runs.
-    /// </remarks>
     public override void CheckRow(SessionLocal session, Table t, Row? oldRow, Row? newRow)
     {
+        if (!session.GetDatabase().IsReferentialIntegrity())
+        {
+            return;
+        }
+
         if (!table.GetCheckForeignKeyConstraints() || !refTable!.GetCheckForeignKeyConstraints())
         {
             return;

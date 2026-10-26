@@ -609,7 +609,8 @@ public sealed partial class Parser
         else if (IsWord("SAVEPOINT")) prepared = ParseSavepoint();
         else if (IsWord("RELEASE")) prepared = ParseReleaseSavepoint();
         else if (IsWord("ROLLBACK")) prepared = ParseRollback();
-        else if (IsWord("COMMIT")) { IsWord("WORK"); prepared = new Dml.TransactionCommand(current, CommandInterface.Commit); }
+        else if (IsWord("COMMIT")) prepared = ParseCommit();
+        else if (IsWord("PREPARE")) prepared = ParsePrepare();
         else if (IsWord("BEGIN")) { IsWord("WORK"); prepared = new Dml.TransactionCommand(current, CommandInterface.Begin); }
         else if (IsWord("SET", consume: false))
         {
@@ -1017,8 +1018,40 @@ public sealed partial class Parser
         IsWord("SAVEPOINT"); ReadIdentifier();
         return new Dml.NoOperation(session!);
     }
+    private Dml.TransactionCommand ParseCommit()
+    {
+        if (IsWord("TRANSACTION"))
+        {
+            Dml.TransactionCommand command = new(session!, CommandInterface.CommitTransaction);
+            command.SetTransactionName(ReadIdentifier());
+            return command;
+        }
+
+        IsWord("WORK");
+        return new Dml.TransactionCommand(session!, CommandInterface.Commit);
+    }
+
+    private Prepared ParsePrepare()
+    {
+        if (IsWord("COMMIT"))
+        {
+            Dml.TransactionCommand command = new(session!, CommandInterface.PrepareCommit);
+            command.SetTransactionName(ReadIdentifier());
+            return command;
+        }
+
+        throw new TODOException("Parser.parsePrepare: PREPARE of a procedure is not ported");
+    }
+
     private Dml.TransactionCommand ParseRollback()
     {
+        if (IsWord("TRANSACTION"))
+        {
+            Dml.TransactionCommand transaction = new(session!, CommandInterface.RollbackTransaction);
+            transaction.SetTransactionName(ReadIdentifier());
+            return transaction;
+        }
+
         IsWord("WORK");
         if (ReadIf(ParserUtil.To))
         {

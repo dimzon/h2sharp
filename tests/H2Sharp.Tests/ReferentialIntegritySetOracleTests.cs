@@ -27,6 +27,10 @@ public sealed class ReferentialIntegritySetOracleTests
             "ALTER TABLE C SET REFERENTIAL_INTEGRITY FALSE",
             "INSERT INTO C VALUES(4, 4)",
             "ALTER TABLE C SET REFERENTIAL_INTEGRITY TRUE CHECK",
+            "SET REFERENTIAL_INTEGRITY FALSE",
+            "INSERT INTO C VALUES(5, 5)",
+            "SET REFERENTIAL_INTEGRITY TRUE",
+            "INSERT INTO C VALUES(6, 6)",
             "SELECT COUNT(*) FROM C",
         ]);
     }

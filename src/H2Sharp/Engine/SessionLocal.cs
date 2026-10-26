@@ -184,6 +184,8 @@ public sealed class SessionLocal : Session
 
     private bool autoCommitAtTransactionEnd;
 
+    private string? currentTransactionName;
+
     private IsolationLevel isolationLevel = IsolationLevel.ReadCommitted;
 
     /// <summary>
@@ -299,6 +301,52 @@ public sealed class SessionLocal : Session
             }
         }
         savepoints = null;
+    }
+
+    /// <summary>
+    /// Prepares the current transaction under the given name.
+    /// </summary>
+    /// <param name="transactionName">the transaction name</param>
+    public void PrepareCommit(string transactionName)
+    {
+        if (HasPendingTransaction())
+        {
+            Transaction!.SetName(transactionName);
+            Transaction.Prepare();
+            GetDatabase().GetStore().Flush();
+        }
+
+        currentTransactionName = transactionName;
+    }
+
+    /// <summary>Whether this session has a prepared transaction.</summary>
+    public bool HasPreparedTransaction() => currentTransactionName is not null;
+
+    /// <summary>
+    /// Commits or rolls back the prepared transaction with the given name.
+    /// </summary>
+    /// <param name="transactionName">the transaction name</param>
+    /// <param name="commit">true to commit, false to roll back</param>
+    public void SetPreparedTransaction(string transactionName, bool commit)
+    {
+        if (transactionName.Equals(currentTransactionName, StringComparison.Ordinal))
+        {
+            currentTransactionName = null;
+            if (commit) Commit(false); else Rollback();
+            return;
+        }
+
+        foreach (MvStore.Tx.Transaction transaction in
+            GetDatabase().GetStore().GetTransactionStore().GetOpenTransactions())
+        {
+            if (transactionName.Equals(transaction.GetName(), StringComparison.Ordinal))
+            {
+                if (commit) transaction.Commit(); else transaction.Rollback();
+                return;
+            }
+        }
+
+        throw DbException.Get(Api.ErrorCode.TransactionNotFound1, transactionName);
     }
 
     /// <summary>
@@ -790,8 +838,7 @@ public sealed class SessionLocal : Session
     /// Whether this session has a pending transaction.
     /// </summary>
     /// <returns>true if it has</returns>
-    public override bool HasPendingTransaction()
-        => throw new TODOException("SessionLocal.hasPendingTransaction");
+    public override bool HasPendingTransaction() => Transaction is not null;
 
     /// <summary>
     /// Cancels the statement being run.

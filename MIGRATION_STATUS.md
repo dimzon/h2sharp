@@ -7510,6 +7510,27 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### PREPARE COMMIT и named transactions
+
+`PREPARE COMMIT name`, `COMMIT TRANSACTION name`, `ROLLBACK TRANSACTION name`:
+`SessionLocal.PrepareCommit` именует и готовит текущую MVStore-транзакцию,
+`SetPreparedTransaction` фиксирует/откатывает её по имени; `ROLLBACK TRANSACTION`
+ищет prepared transaction в store. `HasPendingTransaction` больше не TODO.
+`PREPARE <procedure>` остаётся TODO с именем непортированного.
+
+Заодно `ConstraintReferential.CheckRow` спрашивает глобальный
+`Database.IsReferentialIntegrity()`, поэтому `SET REFERENTIAL_INTEGRITY FALSE`
+действует на все FK, а не только на ALTER TABLE вариант.
+
+`PrepareCommitOracleTests` 1/1 и расширенный
+`ReferentialIntegritySetOracleTests` 1/1 против JVM: commit/rollback prepared,
+missing transaction, глобальный FK-выключатель. Conformance +2
+(`TransactionCommandTests`). TestScript остался на 11 уникальных строках:
+`@`-переменные, `SET()` в алиасе и два EXPLAIN-плана.
+
+Проверки: core **1464 passed / 0 failed**, conformance **785/952** без
+регрессий, Data **491/491**.
+
 ### ALTER TABLE SET REFERENTIAL_INTEGRITY
 
 Перенесён `AlterTableSet`: `ALTER TABLE ... SET REFERENTIAL_INTEGRITY
