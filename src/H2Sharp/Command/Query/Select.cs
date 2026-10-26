@@ -318,7 +318,18 @@ public sealed class Select : Query
             MapColumns(f, 0, false);
         }
 
+        MapCondition(havingIndex);
+        MapCondition(qualifyIndex);
+
         checkInit = true;
+    }
+
+    private void MapCondition(int index)
+    {
+        if (index < 0) return;
+        Expression expression = expressions[index];
+        SelectListColumnResolver resolver = new(this);
+        expression.MapColumns(resolver, 0, Expression.MapInitial);
     }
 
     /// <summary>

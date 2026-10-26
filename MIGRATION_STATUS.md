@@ -7510,6 +7510,41 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### HAVING через SelectListColumnResolver
+
+Перенесён `SelectListColumnResolver` и вызовы `mapCondition(havingIndex/qualifyIndex)`
+после маппинга фильтров, как в эталонном `Select.init`. `ExpressionColumn.optimize`
+теперь спрашивает resolver, поэтому HAVING видит select-алиасы. Как и H2,
+ссылка на неагрегатный alias в HAVING даёт `MUST_GROUP_BY_COLUMN_1`;
+агрегатный alias (`COUNT(*) C` → `HAVING C > 2`) работает.
+
+`GroupByAliasOracleTests.HavingUsesSelectListAliases` проверяет оба случая
+против JVM. TestScript прошёл 654–658 и 684; осталось 24 уникальных строки:
+`@`-переменные, EXPLAIN derived/direct-lookup, SET REFERENTIAL_INTEGRITY,
+PREPARE COMMIT и транзакционные следствия.
+
+Проверки: core **1462 passed / 0 failed**, conformance **780/952** без
+регрессий, Data **491/491**.
+
+### AUTO_INCREMENT и ALTER TABLE RENAME
+
+Добавлены `Mode.AutoIncrementClause` (Regular/Legacy/MariaDB/MySQL) и
+`IdentityClause` (Legacy/MSSQLServer). `ReadColumnConstraints` читает
+`AUTO_INCREMENT`/`IDENTITY` после типа колонки через тот же
+`parseCompatibilityIdentityOptions`, что и shorthand; BIGINT/INT identity
+работают с `PRIMARY KEY`.
+
+Перенесён `AlterTableRename`: `RENAME TO`, проверка существующего имени,
+`TABLE_OR_VIEW_ALREADY_EXISTS_1`, запрет temporary, `META` для системной
+таблицы (`FEATURE_NOT_SUPPORTED_1`), `Schema.Rename` и meta таблицы/детей.
+`RENAME COLUMN` уже работал; `RENAME CONSTRAINT` пока TODO с именем
+непортированного.
+
+`ShorthandAndStarOracleTests.AutoIncrementAndRenameTable` 1/1 против JVM.
+TestScript прошёл 835 (системный rename) и 1028–1082 (AUTO_INCREMENT и
+LIMIT/OFFSET); core **1461 passed / 0 failed**, conformance **780/952**,
+Data 491.
+
 ### DROP SCHEMA и алиас `-TEST.A`
 
 Перенесён `DropSchema`: `DROP SCHEMA [IF EXISTS] name [CASCADE|RESTRICT]`,

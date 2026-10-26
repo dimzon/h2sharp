@@ -32,7 +32,7 @@
 //    BIGSERIAL shorthand, built-in type name conflicts in CREATE DOMAIN and multiple qualified
 //    stars and SCRIPT NODATA/NOPASSWORDS/NOSETTINGS/NOVERSION now run. Plan text at 372
 //    still differs in scanCount; the first functional mismatch is @variables at 541, then
-//    GROUP BY aliases and the remaining compatibility DDL.
+//    @variables, SET REFERENTIAL_INTEGRITY, PREPARE COMMIT and remaining EXPLAIN text.
 using System;
 using System.Collections.Generic;
 using System.Data;

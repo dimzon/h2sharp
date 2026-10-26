@@ -302,7 +302,7 @@ public sealed class ExpressionColumn : Expression
         {
             throw DbException.Get(Api.ErrorCode.ColumnNotFound1, tableAlias is null ? columnAlias : tableAlias + '.' + columnAlias);
         }
-        return this;
+        return columnResolver.Optimize(this, column!);
     }
 
     /// <inheritdoc/>

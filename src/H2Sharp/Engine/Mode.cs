@@ -224,6 +224,12 @@ public sealed class Mode
     /// <summary>Whether SERIAL and BIGSERIAL declare identity columns.</summary>
     public bool SerialDataTypes { get; }
 
+    /// <summary>Whether AUTO_INCREMENT declares an identity column.</summary>
+    public bool AutoIncrementClause { get; }
+
+    /// <summary>Whether the IDENTITY clause declares an identity column.</summary>
+    public bool IdentityClause { get; }
+
     /// <summary>
     /// The type names this mode does not allow, as in the reference's disallowedTypes.
     /// </summary>
@@ -260,6 +266,8 @@ public sealed class Mode
         bool topInDml = false,
         bool identityDataType = false,
         bool serialDataTypes = false,
+        bool autoIncrementClause = false,
+        bool identityClause = false,
         IReadOnlySet<string>? disallowedTypes = null)
     {
         Enum = modeEnum;
@@ -283,6 +291,8 @@ public sealed class Mode
         TopInDml = topInDml;
         IdentityDataType = identityDataType;
         SerialDataTypes = serialDataTypes;
+        AutoIncrementClause = autoIncrementClause;
+        IdentityClause = identityClause;
         DisallowedTypes = disallowedTypes ?? FrozenSet<string>.Empty;
     }
 
@@ -325,21 +335,24 @@ public sealed class Mode
         Dictionary<string, Mode> modes = new(StringComparer.Ordinal)
         {
             ["REGULAR"] = new(ModeEnum.Regular, false, false, false, true, true, topInSelect: true,
-                identityDataType: true, serialDataTypes: true),
+                identityDataType: true, serialDataTypes: true, autoIncrementClause: true),
             ["STRICT"] = new(ModeEnum.Strict, false, false, false, false, false),
             ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true,
                 greatestLeastIgnoreNulls: true, topInSelect: true, topInDml: true,
-                identityDataType: true, serialDataTypes: true),
+                identityDataType: true, serialDataTypes: true, autoIncrementClause: true,
+                identityClause: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true, topInSelect: true),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
                 greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true,
-                topInSelect: true, topInDml: true),
+                topInSelect: true, topInDml: true, identityClause: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
-                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true),
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true,
+                autoIncrementClause: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
-                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true),
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true,
+                autoIncrementClause: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true,

@@ -32,6 +32,23 @@ public sealed class ShorthandAndStarOracleTests
     }
 
     [JavaOracleFact]
+    public void AutoIncrementAndRenameTable()
+    {
+        Check([
+            "CREATE TABLE P(ID BIGINT AUTO_INCREMENT, V INT)",
+            "INSERT INTO P(V) VALUES(1), (2)",
+            "SELECT ID, V FROM P ORDER BY ID",
+            "CREATE TABLE Q(ID INT AUTO_INCREMENT PRIMARY KEY, V INT)",
+            "INSERT INTO Q(V) VALUES(3)",
+            "SELECT ID, V FROM Q",
+            "ALTER TABLE P RENAME TO R",
+            "SELECT ID, V FROM R ORDER BY ID",
+            "SELECT * FROM P",
+            "ALTER TABLE INFORMATION_SCHEMA.INFORMATION_SCHEMA_CATALOG_NAME RENAME TO INFORMATION_SCHEMA.CAT",
+        ]);
+    }
+
+    [JavaOracleFact]
     public void SerialAndBigSerialShorthand()
     {
         Check([

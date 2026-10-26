@@ -1,6 +1,7 @@
 /* Copyright 2004-2026 H2 Group. MPL 2.0 or EPL 1.0.
  * Ported from org.h2.command.Parser, H2 2.5: column definitions and ALTER COLUMN.
  * These readers return the reference's Prepared / Column directly. */
+using System;
 using System.Collections.Generic;
 using H2Sharp.Command.Ddl;
 using H2Sharp.Engine;
@@ -23,11 +24,52 @@ public sealed partial class Parser
         bool ifTableExists = ReadIfExists(false);
         string tableName = ReadIdentifierWithSchema(session!, out Schema schema);
         if (IsWord("ALTER")) return ParseAlterTableAlter(schema, tableName, ifTableExists);
+        if (IsWord("RENAME")) return ParseAlterTableRename(schema, tableName, ifTableExists);
         // Other ALTER TABLE branches still use their existing reader; no new DTO is added.
         position = index;
         AlterTableStatement statement = (AlterTableStatement)ReadStatement();
         statement.Sql = sql;
         return PrepareAlterTable(session!, statement);
+    }
+
+    private Prepared ParseAlterTableRename(Schema schema, string tableName, bool ifTableExists)
+    {
+        if (IsWord("COLUMN"))
+        {
+            string columnName = ReadIdentifier();
+            ExpectWord("TO");
+            AlterTableRenameColumn column = new(session!, schema);
+            column.SetTableName(tableName);
+            column.SetIfTableExists(ifTableExists);
+            column.SetOldColumnName(columnName);
+            column.SetNewColumnName(ReadIdentifier());
+            return column;
+        }
+
+        if (IsWord("CONSTRAINT"))
+        {
+            _ = ReadIdentifierWithSchema(session!, out Schema constraintSchema);
+            if (!ReferenceEquals(constraintSchema, schema))
+            {
+                throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
+            }
+
+            throw new TODOException("Parser.parseAlterTableRename: constraint rename is not ported");
+        }
+
+        ExpectWord("TO");
+        string newName = ReadIdentifierWithSchemaName(out string? newSchemaName);
+        if (newSchemaName is not null
+            && !newSchemaName.Equals(schema.GetName(), StringComparison.Ordinal))
+        {
+            throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
+        }
+
+        AlterTableRename command = new(session!, schema);
+        command.SetTableName(tableName);
+        command.SetIfTableExists(ifTableExists);
+        command.SetNewTableName(newName);
+        return command;
     }
 
     private Prepared ParseAlterTableAlter(Schema schema, string tableName, bool ifTableExists)
@@ -466,6 +508,18 @@ public sealed partial class Parser
             else if (ReadIfWords("NOT", "NULL")) column.SetNullable(false);
             else if (IsWord("NULL")) column.SetNullable(true);
             else if (IsWord("COMMENT")) { IsWord("IS"); column.SetComment(ReadString()); }
+            else if (constraintName is null && !column.IsIdentity()
+                && (session?.GetMode() ?? provider.GetMode()).AutoIncrementClause
+                && IsWord("AUTO_INCREMENT"))
+            {
+                ParseCompatibilityIdentityOptions(column);
+            }
+            else if (constraintName is null && !column.IsIdentity()
+                && (session?.GetMode() ?? provider.GetMode()).IdentityClause
+                && IsWord("IDENTITY"))
+            {
+                ParseCompatibilityIdentityOptions(column);
+            }
             else
             {
                 if (constraintName is not null) throw DbException.GetSyntaxError(sql, Current.Start);

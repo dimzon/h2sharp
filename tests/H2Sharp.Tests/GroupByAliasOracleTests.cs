@@ -28,6 +28,19 @@ public sealed class GroupByAliasOracleTests
         ]);
     }
 
+    [JavaOracleFact]
+    public void HavingUsesSelectListAliases()
+    {
+        Check([
+            "SELECT X / 3 AS A, COUNT(*) C FROM SYSTEM_RANGE(1, 10) GROUP BY A HAVING C > 2",
+            "CREATE TABLE T(ID INT)",
+            "INSERT INTO T VALUES(1), (2)",
+            "SELECT ID + 1 AS X, COUNT(*) FROM T GROUP BY X HAVING X > 2",
+            "SELECT ID + 1 AS X, COUNT(*) FROM T GROUP BY 1",
+            "SELECT ID AS X, COUNT(*) FROM T GROUP BY ID HAVING X > 1",
+        ]);
+    }
+
     private static void Check(string[] statements)
     {
         List<string> port = [];
