@@ -589,6 +589,19 @@ public sealed partial class Parser
         {
             prepared = PrepareExplain(start);
         }
+        else if (IsWord("CREATE", consume: false)
+            && (NextIs("VIEW") || NextIs("OR") || NextIs("FORCE")))
+        {
+            prepared = PrepareCreateView(current);
+        }
+        else if (IsWord("DROP", consume: false) && NextIs("VIEW"))
+        {
+            prepared = PrepareDropView(current);
+        }
+        else if (IsWord("ALTER", consume: false) && NextIs("VIEW"))
+        {
+            prepared = PrepareAlterView(current);
+        }
         else if (IsWord("SAVEPOINT")) prepared = ParseSavepoint();
         else if (IsWord("RELEASE")) prepared = ParseReleaseSavepoint();
         else if (IsWord("ROLLBACK")) prepared = ParseRollback();
@@ -729,6 +742,124 @@ public sealed partial class Parser
             SelectStatement select => new Query.Select(current),
             _ => new Dml.NoOperation(current),
         };
+
+    /// <summary>
+    /// Parses CREATE [OR REPLACE] [FORCE] VIEW.
+    /// </summary>
+    private Prepared PrepareCreateView(SessionLocal current)
+    {
+        ExpectWord("CREATE");
+        bool orReplace = false;
+        if (IsWord("OR"))
+        {
+            ExpectWord("REPLACE");
+            orReplace = true;
+        }
+
+        bool force = IsWord("FORCE");
+        ExpectWord("VIEW");
+        bool ifNotExists = ReadIfNotExists();
+        string viewName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
+        Ddl.CreateView command = new(current, schema);
+        command.SetViewName(viewName);
+        command.SetIfNotExists(ifNotExists);
+        command.SetOrReplace(orReplace);
+        command.SetForce(force);
+        if (IsWord("COMMENT"))
+        {
+            _ = IsWord("IS");
+            command.SetComment(ReadString());
+        }
+
+        if (ReadIf(Token.OpenParen))
+        {
+            List<string> columns = [];
+            do
+            {
+                columns.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
+            command.SetColumnNames([.. columns]);
+        }
+
+        ExpectWord("AS");
+        string selectSql = sql[Current.Start..];
+        try
+        {
+            current.SetParsingCreateView(true);
+            Query.Query query;
+            try
+            {
+                query = ParseQueryExpression(prepare: false);
+                query.Prepare();
+            }
+            finally
+            {
+                current.SetParsingCreateView(false);
+            }
+
+            command.SetQuery(query);
+        }
+        catch (H2SharpException)
+        {
+            if (!force)
+            {
+                throw;
+            }
+
+            command.SetSelectSql(selectSql);
+            while (CurrentType != Token.EndOfInput)
+            {
+                Read();
+            }
+        }
+
+        return command;
+    }
+
+    /// <summary>Parses DROP VIEW.</summary>
+    private Prepared PrepareDropView(SessionLocal current)
+    {
+        ExpectWord("DROP");
+        ExpectWord("VIEW");
+        bool ifExists = ReadIfExists(false);
+        string viewName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
+        Ddl.DropView command = new(current, schema);
+        command.SetViewName(viewName);
+        command.SetIfExists(ifExists);
+        if (IsWord("CASCADE"))
+        {
+            command.SetDropAction(Constraints.ConstraintActionType.CASCADE);
+        }
+        else if (IsWord("RESTRICT"))
+        {
+            command.SetDropAction(Constraints.ConstraintActionType.RESTRICT);
+        }
+
+        return command;
+    }
+
+    /// <summary>Parses ALTER VIEW ... RECOMPILE.</summary>
+    private Prepared PrepareAlterView(SessionLocal current)
+    {
+        ExpectWord("ALTER");
+        ExpectWord("VIEW");
+        bool ifExists = ReadIfExists(false);
+        string viewName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
+        Table? table = schema.FindTableOrView(current, viewName);
+        if (table is not null && table is not Tables.TableView)
+        {
+            throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, viewName);
+        }
+
+        ExpectWord("RECOMPILE");
+        Ddl.AlterView command = new(current);
+        command.SetIfExists(ifExists);
+        command.SetView(table as Tables.TableView);
+        return command;
+    }
 
     /// <summary>
     /// Parses EXPLAIN and EXPLAIN ANALYZE, as the reference's parseExplain does.
@@ -1015,6 +1146,37 @@ public sealed partial class Parser
     /// A query in parentheses is a select, or the rows a VALUES clause names.
     /// </remarks>
     /// <returns>the query</returns>
+    /// <summary>
+    /// Compiles the query text of a view, as TableView.compileViewQuery does.
+    /// </summary>
+    internal static Query.Query CompileViewQuery(SessionLocal session, string sql)
+    {
+        BitSet parameters = new();
+        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, session);
+        Parser parser = new(sql, session.CastDataProvider, tokens, session);
+        session.SetParsingCreateView(true);
+        Query.Query query;
+        try
+        {
+            query = parser.ParseQueryExpression(prepare: false);
+        }
+        finally
+        {
+            session.SetParsingCreateView(false);
+        }
+
+        if (parser.CurrentType != Token.EndOfInput)
+        {
+            throw DbException.GetSyntaxError(sql, parser.Current.Start);
+        }
+
+        // Prepare outside the view-parsing flag: the plan built while a view is parsed is a
+        // fake plan and leaves the table filters unprepared, which a query later run from the
+        // view index cannot use.
+        query.Prepare();
+        return query;
+    }
+
     private Query.Query ParseQueryExpression(bool prepare = true)
     {
         if (IsWord("WITH", consume: false)) ReadWith();
@@ -1335,6 +1497,21 @@ public sealed partial class Parser
         }
 
         return query;
+    }
+
+    /// <summary>
+    /// Whether the current token starts a query after any opening parentheses.
+    /// </summary>
+    /// <returns>true when a query follows</returns>
+    private bool IsQueryQuick()
+    {
+        int offset = position;
+        while (tokens[offset].TokenType == Token.OpenParen)
+        {
+            offset++;
+        }
+
+        return IsDirectQuery(offset);
     }
 
     /// <summary>
@@ -3544,13 +3721,15 @@ public sealed partial class Parser
             || word.Equals("WITH", StringComparison.OrdinalIgnoreCase)
             || word.Equals("KEY", StringComparison.OrdinalIgnoreCase);
     /// <summary>
-    /// Reads a column name with an optional table prefix.
+    /// Reads a column name with optional schema and table prefixes.
     /// </summary>
+    /// <param name="schemaName">the schema prefix, or null</param>
     /// <param name="tableAlias">the table prefix, or null</param>
     /// <returns>the column name</returns>
-    private string ReadQueryColumnName(out string? tableAlias)
+    private string ReadQueryColumnName(out string? schemaName, out string? tableAlias)
     {
         string first = ReadIdentifier();
+        schemaName = null;
         tableAlias = null;
         if (ReadIf(Token.Dot))
         {
@@ -3561,7 +3740,15 @@ public sealed partial class Parser
                 return Tables.Column.RowId;
             }
 
-            return ReadIdentifier();
+            string second = ReadIdentifier();
+            if (ReadIf(Token.Dot))
+            {
+                schemaName = tableAlias;
+                tableAlias = second;
+                return ReadIdentifier();
+            }
+
+            return second;
         }
 
         return first;
@@ -4851,13 +5038,13 @@ public sealed partial class Parser
                 }
             }
 
-            string columnName = ReadQueryColumnName(out string? tableAlias);
+            string columnName = ReadQueryColumnName(out string? schemaName, out string? tableAlias);
             if (columnName.Equals(Tables.Column.RowId, StringComparison.OrdinalIgnoreCase))
             {
                 return Expressions.ExpressionColumn.RowId(tableAlias);
             }
 
-            return new Expressions.ExpressionColumn(columnName, tableAlias, 0);
+            return new Expressions.ExpressionColumn(columnName, schemaName, tableAlias, 0);
         }
 
         throw new TODOException("Parser.parseQuerySelect: this expression is not ported");

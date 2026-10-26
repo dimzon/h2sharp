@@ -7510,6 +7510,36 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### VIEW: CREATE/OR REPLACE/FORCE, DROP, ALTER и зависимости
+
+Перенесены `TableView`, `CreateView`, `DropView`, `AlterView`:
+`CREATE [OR REPLACE] [FORCE] VIEW`, список колонок, `COMMENT`, пересборка query
+из plan SQL, `DROP VIEW [IF EXISTS] [CASCADE|RESTRICT]`, `ALTER VIEW ...
+RECOMPILE`. `TableView` использует существующий `QueryExpressionTable` и
+`RegularQueryExpressionIndex`; `GetId`/`GetTableType`/`GetCreateSql` и
+`SetModified` добавлены по эталону.
+
+В `Table` появились зависимые view: `AddDependentView`/`RemoveDependentView`/
+`GetDependentViews`; `RemoveChildrenAndResources` удаляет их каскадно, а
+`DROP TABLE RESTRICT` возвращает `CANNOT_DROP_2` при зависимой view.
+`SessionLocal` получил настоящий `IsParsingCreateView`; view query готовится
+после снятия этого флага, иначе остаётся fake plan с неподготовленными
+фильтрами.
+
+`ExpressionColumn` теперь читает `schema.table.column` и проверяет schema в
+`MapColumns`; это нужно планам, сохранённым в querySQL view. `INSERT INTO t
+(query)` распознаётся через `IsQueryQuick` и не путается со списком колонок.
+
+`ViewOracleTests` 2/2 против JVM: create/select, column list, OR REPLACE,
+IF NOT EXISTS, ошибки, DROP VIEW, зависимые view, DROP TABLE RESTRICT/CASCADE.
+Conformance +3 (`CreateView_ColumnList`, `CreateView_OrReplace`,
+`AlterView_Recompile`). TestScript прошёл view-секцию 384–390 и INSERT (query)
+на 478; остались scanCount на 372 и compat-тип IDENTITY на 521.
+
+Проверки: core **1449 passed / 3 прежних PostfixCast failed / 1452 total**;
+conformance **774/952**, новых Passed→Failed 0; Data.Tests **491/491**.
+TRX: `view-specs.trx`, `testscript_view3.log`, `view.trx`.
+
 ### DELETE LIMIT, INSERT DIRECT/SORTED и точность плана
 
 `DELETE` читает `FETCH FIRST/NEXT ... ONLY` и `LIMIT`, порт `readFetchOrLimit`

@@ -27,9 +27,10 @@
 //  - BlockedByPort: all user/role/password statements and their expected output were
 //    removed from the local testScript.sql copy because D-004 has no users or roles.
 //    UNIQUE, CHECK, TOP, explicit DUAL, qualified GROUP BY names, REFERENCES ... INDEX,
-//    row-value UPDATE assignments, EXPLAIN/EXPLAIN ANALYZE, DELETE LIMIT and DIRECT/SORTED
-//    inserts now run. The first remaining mismatch is CREATE VIEW (line 384); plan text at
-//    372 still differs in scanCount, and later sections need SCRIPT NODATA and DROP ALIAS.
+//    row-value UPDATE assignments, EXPLAIN, DELETE LIMIT, DIRECT/SORTED inserts and views
+//    (CREATE/OR REPLACE/DROP/ALTER, dependencies, cascade) now run. Plan text at line 372
+//    still differs in scanCount; the first functional mismatch is the compatibility
+//    IDENTITY data type at line 521, then SCRIPT NODATA and DROP ALIAS.
 using System;
 using System.Collections.Generic;
 using System.Data;

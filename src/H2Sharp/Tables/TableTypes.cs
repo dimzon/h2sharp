@@ -1031,6 +1031,11 @@ public abstract class Table
     public const int TYPE_MEMORY = 1;
 
     /// <summary>
+    /// A view, a table whose rows are the rows of a query.
+    /// </summary>
+    public const int VIEW = 6;
+
+    /// <summary>
     /// Whether this table is temporary.
     /// </summary>
     /// <remarks>
@@ -1227,7 +1232,7 @@ public abstract class Table
         List<DbObject> children = [.. GetIndexes()];
         if (constraints is not null) children.AddRange(constraints);
         if (sequences is not null) children.AddRange(sequences);
-        // Triggers, persistent views, synonyms and rights do not exist in this hierarchy yet.
+        // Triggers, synonyms and rights do not exist in this hierarchy yet.
         return children;
     }
 
@@ -1267,6 +1272,11 @@ public abstract class Table
     /// The sequences that belong to this table: the sequences of its identity columns.
     /// </summary>
     private List<Schemas.Sequence>? sequences;
+
+    /// <summary>
+    /// The views that read this table.
+    /// </summary>
+    private List<TableView>? dependentViews;
 
     /// <summary>
     /// Add a constraint to the table.
@@ -2130,6 +2140,14 @@ public abstract class Table
     /// <param name="session">the session</param>
     public virtual void RemoveChildrenAndResources(H2Sharp.Engine.SessionLocal session)
     {
+        while (dependentViews is not null && dependentViews.Count > 0)
+        {
+            TableView view = dependentViews[0];
+            dependentViews.RemoveAt(0);
+            (GetSchema() ?? throw new TODOException("Table.removeChildrenAndResources: no schema"))
+                .GetDatabase().RemoveSchemaObject(session, view);
+        }
+
         while (constraints is not null && constraints.Count > 0)
         {
             Constraint constraint = constraints[0];
@@ -2169,6 +2187,25 @@ public abstract class Table
     /// </summary>
     /// <param name="sequence">the sequence</param>
     public void RemoveSequence(Schemas.Sequence sequence) => sequences?.Remove(sequence);
+
+    /// <summary>Adds a view that reads this table.</summary>
+    /// <param name="view">the view</param>
+    public void AddDependentView(TableView view)
+    {
+        dependentViews ??= [];
+        if (!dependentViews.Contains(view))
+        {
+            dependentViews.Add(view);
+        }
+    }
+
+    /// <summary>Removes a view that no longer reads this table.</summary>
+    /// <param name="view">the view</param>
+    public void RemoveDependentView(TableView view) => dependentViews?.Remove(view);
+
+    /// <summary>Gets the views that read this table.</summary>
+    /// <returns>the views; empty when there are none</returns>
+    public List<TableView> GetDependentViews() => dependentViews is null ? [] : [.. dependentViews];
 
     /// <summary>
     /// Whether this table depends on the given object.

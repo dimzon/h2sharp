@@ -739,14 +739,20 @@ public sealed class SessionLocal : Session
     /// </summary>
     public override bool GetAutoCommit() => autoCommit;
 
+    private bool parsingCreateView;
+
     /// <summary>
     /// Whether this session is only parsing a view, without running anything.
     /// </summary>
-    /// <remarks>
-    /// Always false: view parsing does not exist here yet, so no session can be in it.
-    /// </remarks>
-    /// <returns>false</returns>
-    public bool IsParsingCreateView() => false;
+    /// <returns>true while a view is being compiled</returns>
+    public bool IsParsingCreateView() => parsingCreateView;
+
+    /// <summary>
+    /// Sets whether this session is parsing a view.
+    /// </summary>
+    /// <param name="parsingCreateView">the new value</param>
+    public void SetParsingCreateView(bool parsingCreateView)
+        => this.parsingCreateView = parsingCreateView;
 
     /// <summary>
     /// Checks whether this session may read the given table.

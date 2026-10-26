@@ -439,6 +439,13 @@ public sealed partial class Parser
         command.SetTable(table);
         if (ReadIf(Token.OpenParen))
         {
+            if (IsQueryQuick())
+            {
+                command.SetQuery(ParseQueryExpression(prepare: false));
+                Expect(Token.CloseParen, ")");
+                return command;
+            }
+
             List<Column> columns = [];
             if (!ReadIf(Token.CloseParen))
             {

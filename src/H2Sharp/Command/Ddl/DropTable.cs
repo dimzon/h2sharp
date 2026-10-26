@@ -99,6 +99,16 @@ public sealed class DropTable : DefineCommand
         Engine.Database db = session.GetDatabase();
         foreach ((Schema _, Tables.Table table) in drops)
         {
+            if (dropAction == ConstraintActionType.RESTRICT)
+            {
+                List<Tables.TableView> views = table.GetDependentViews();
+                if (views.Count > 0)
+                {
+                    throw Message.DbException.Get(Api.ErrorCode.CannotDrop2, table.GetTableName(),
+                        views[0].GetTableName());
+                }
+            }
+
             table.SetModified();
             db.LockMeta(session);
             db.RemoveSchemaObject(session, table);

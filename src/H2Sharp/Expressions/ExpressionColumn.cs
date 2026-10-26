@@ -84,8 +84,21 @@ public sealed class ExpressionColumn : Expression
     /// <param name="tableAlias">the table alias</param>
     /// <param name="queryLevel">the query level</param>
     public ExpressionColumn(string columnName, string? tableAlias, int queryLevel)
+        : this(columnName, null, tableAlias, queryLevel)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new expression column by schema, table alias and column name.
+    /// </summary>
+    /// <param name="columnName">the column name</param>
+    /// <param name="schemaName">the schema name, or null</param>
+    /// <param name="tableAlias">the table alias</param>
+    /// <param name="queryLevel">the query level</param>
+    public ExpressionColumn(string columnName, string? schemaName, string? tableAlias, int queryLevel)
     {
         columnAlias = columnName;
+        this.schemaName = schemaName;
         this.tableAlias = tableAlias;
         this.queryLevel = queryLevel;
     }
@@ -241,6 +254,11 @@ public sealed class ExpressionColumn : Expression
         {
             // The reference leaves a column alone when it names another table: in a join
             // every table is a resolver of its own, and the column belongs to one of them.
+            return;
+        }
+
+        if (schemaName != null && !schemaName.Equals(resolver.GetSchemaName(), StringComparison.Ordinal))
+        {
             return;
         }
 
