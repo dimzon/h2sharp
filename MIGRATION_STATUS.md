@@ -7510,6 +7510,25 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### GROUP BY: квалифицированное имя не путается с алиасом
+
+`ExpressionColumn.getAlias` эталона для ещё не смапленной колонки возвращает
+`tableAlias + '.' + columnName`; порт возвращал только `columnName`. Из-за
+этого `GROUP BY D.X` совпадал с select-алиасом `X` в `Select.Init` и
+схлопывался с константой: `SELECT 0 AS X FROM SYSTEM_RANGE(1,2) D GROUP BY D.X`
+давала одну строку вместо двух. `GetAlias` приведён к эталону; алиасы без
+квалификации и позиции GROUP BY не изменились.
+
+`GroupByAliasOracleTests` 1/1 против JVM: `D.X` против `X`, алиасы и
+квалифицированные колонки в таблице и `SYSTEM_RANGE`. TestScript прошёл
+строки 36–41; следующее расхождение — строка 157:
+`ALTER TABLE ... ADD CONSTRAINT ... REFERENCES TEST(ID) INDEX IDX_TEST_PID`
+падает `INDEX_NOT_FOUND_1`, тогда как эталон создаёт индекс.
+
+Проверки: core **1442 passed / 3 прежних PostfixCast failed / 1445 total**;
+conformance **768/952**, новых Passed→Failed 0; Data.Tests **491/491**.
+TRX: `groupby-core.trx`, `groupby-specs.trx`, `testscript_groupby.log`.
+
 ### UNIQUE и CHECK
 
 `ConstraintCheck` перенесён из `org.h2.constraint.ConstraintCheck`: `CHECK`-тип,

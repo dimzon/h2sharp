@@ -436,6 +436,16 @@ public sealed class ExpressionColumn : Expression
     /// <inheritdoc/>
     public override string GetAlias(SessionLocal session, int columnIndex)
     {
+        if (column is not null)
+        {
+            return columnResolver is not null ? columnResolver.GetColumnName(column) : column.GetName();
+        }
+
+        if (tableAlias is not null)
+        {
+            return tableAlias + '.' + columnAlias;
+        }
+
         return columnAlias ?? GetSql(HasSql.QuoteOnlyWhenRequired | HasSql.NoCasts, WithoutParentheses);
     }
 

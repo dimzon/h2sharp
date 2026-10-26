@@ -26,9 +26,9 @@
 //    UTF-8, because PrintStream's platform charset has no .NET counterpart.
 //  - BlockedByPort: all user/role/password statements and their expected output were
 //    removed from the local testScript.sql copy because D-004 has no users or roles.
-//    UNIQUE, CHECK, TOP and explicit DUAL now run; the corpus continues into unported
-//    statements (SCRIPT NODATA, EXPLAIN, DROP ALIAS, CREATE VIEW) after the GROUP BY
-//    alias-resolution defect at the start of the special-grammar section.
+//    UNIQUE, CHECK, TOP, explicit DUAL and qualified GROUP BY names now run. The first
+//    remaining mismatch is REFERENCES ... INDEX in ALTER TABLE ADD CONSTRAINT (line 157);
+//    later sections still hit SCRIPT NODATA, EXPLAIN, DROP ALIAS and CREATE VIEW.
 using System;
 using System.Collections.Generic;
 using System.Data;
