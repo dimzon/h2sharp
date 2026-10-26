@@ -516,6 +516,12 @@ public sealed class Schema : DbObject
         => [.. tablesAndViews.Values];
 
     /// <summary>
+    /// Gets all indexes of this schema.
+    /// </summary>
+    /// <returns>all indexes</returns>
+    public List<Index> GetAllIndexes() => [.. indexes.Values];
+
+    /// <summary>
     /// Whether this schema holds nothing.
     /// </summary>
     public bool IsEmpty()

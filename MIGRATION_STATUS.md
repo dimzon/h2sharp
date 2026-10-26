@@ -7510,6 +7510,26 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### PostfixCast: закрыты три прежних BlockedByPort-падения
+
+`ValueStringBase.GetBigDecimal` читает `CHARACTER VARYING` через
+`BigDecimal.Parse(trim)` с `DATA_CONVERSION_ERROR_1`, поэтому
+`'1.235'::NUMERIC(10,2)` даёт эталонное `1.24`. `ConvertToByteChecked`
+исправлен: раньше границы `sbyte.MaxValue + 128` пропускали 128..255 и
+`128::TINYINT` молча становился `-128`; теперь `OUT_OF_RANGE` (22003).
+В `Mode` добавлен `DisallowedTypes`; PostgreSQL запрещает `NUMBER`, `TINYINT`,
+`BLOB`, `VARCHAR_IGNORECASE` (50004), как эталон. `Regclass` ищет таблицы и
+индексы по точному имени (через `Schema.GetAllTablesAndViews/GetAllIndexes`),
+поэтому `'t'::REGCLASS` больше не находит `T`.
+
+Все три прежних `PostfixCastOracleTests` теперь проходят; core впервые
+**1452 passed / 0 failed**, Data 491/491, conformance 774/952 без регрессий.
+По одобрению пользователя тесты переименованы в
+`NumericAndTinyintConversionsMatchReference`,
+`PostgreSqlDisallowedTypesMatchReference` и
+`SchemaObjectLookupIsCaseSensitive`; трейт `BlockedByPort` снят, изменение
+записано в checksum-approval `approved-postfix-cast-test-change.json`.
+
 ### VIEW: CREATE/OR REPLACE/FORCE, DROP, ALTER и зависимости
 
 Перенесены `TableView`, `CreateView`, `DropView`, `AlterView`:

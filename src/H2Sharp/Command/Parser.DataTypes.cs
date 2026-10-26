@@ -232,6 +232,11 @@ public sealed partial class Parser
                 return ParseTimestampType();
         }
 
+        if (provider.GetMode().DisallowedTypes.Contains(original))
+        {
+            throw DbException.Get(ErrorCode.UnknownDataType1, original);
+        }
+
         DataType? dataType = DataType.GetTypeByName(original);
         if (dataType is null)
         {

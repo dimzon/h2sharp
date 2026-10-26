@@ -89,8 +89,7 @@ public sealed class PostfixCastOracleTests
     }
 
     [JavaOracleFact]
-    [Trait("Category", "BlockedByPort")]
-    public void ExistingConversionGapsAlsoAffectPostfixCasts()
+    public void NumericAndTinyintConversionsMatchReference()
     {
         AssertMatches(
         [
@@ -141,8 +140,7 @@ public sealed class PostfixCastOracleTests
     }
 
     [JavaOracleFact]
-    [Trait("Category", "BlockedByPort")]
-    public void PostgreSqlDisallowedTypesAreNotPortedYet()
+    public void PostgreSqlDisallowedTypesMatchReference()
     {
         AssertMatches(
         [
@@ -152,8 +150,7 @@ public sealed class PostfixCastOracleTests
     }
 
     [JavaOracleFact]
-    [Trait("Category", "BlockedByPort")]
-    public void SchemaObjectLookupIsNotCaseSensitiveYet()
+    public void SchemaObjectLookupIsCaseSensitive()
     {
         AssertMatches(
         [

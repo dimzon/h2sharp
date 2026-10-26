@@ -58,6 +58,12 @@ else:
                 assert groupby["user_approval"] == "Утверждаю обновление"
                 assert set(groupby["expected_files"]) == {"tests/H2Sharp.Tests/SelectTextTests.cs"}
                 allowed.update(groupby["expected_files"])
+            postfix_path = OUT / "approved-postfix-cast-test-change.json"
+            if postfix_path.exists():
+                postfix = json.loads(postfix_path.read_text(encoding="utf-8"))
+                assert postfix["user_approval"] == "одобряю"
+                assert set(postfix["expected_files"]) == {"tests/H2Sharp.Tests/PostfixCastOracleTests.cs"}
+                allowed.update(postfix["expected_files"])
     changed = [name for name, expected in files.items()
         if not (ROOT / name).is_file() or checksum(ROOT / name) != allowed.get(name, expected)]
     changed += [name for name, expected in allowed.items()

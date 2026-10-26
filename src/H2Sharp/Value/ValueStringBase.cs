@@ -177,6 +177,19 @@ public abstract class ValueStringBase : Value
     public sealed override long GetLong() => Parse(value, static (ReadOnlySpan<char> s, NumberStyles st, IFormatProvider p, out long r) => long.TryParse(s, st, p, out r));
 
     /// <inheritdoc/>
+    public sealed override BigDecimal GetBigDecimal()
+    {
+        try
+        {
+            return BigDecimal.Parse(value.Trim());
+        }
+        catch (FormatException e)
+        {
+            throw DbException.Get(ErrorCode.DataConversionError1, e, value);
+        }
+    }
+
+    /// <inheritdoc/>
     // NumberStyles.Float rather than Integer, because a float may carry a point and an exponent
     // and Java's parser accepts both. Float is the style that allows exactly those two and not
     // a thousands separator, which Java also refuses. The type suffix is Java's too.

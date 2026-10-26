@@ -219,6 +219,11 @@ public sealed class Mode
     public bool TopInDml { get; }
 
     /// <summary>
+    /// The type names this mode does not allow, as in the reference's disallowedTypes.
+    /// </summary>
+    public IReadOnlySet<string> DisallowedTypes { get; }
+
+    /// <summary>
     /// The name of the mode, as it is written in a URL.
     /// </summary>
     public string Name { get; }
@@ -246,7 +251,8 @@ public sealed class Mode
         bool decimalSequences = false,
         bool groupByColumnIndex = false,
         bool topInSelect = false,
-        bool topInDml = false)
+        bool topInDml = false,
+        IReadOnlySet<string>? disallowedTypes = null)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -267,6 +273,7 @@ public sealed class Mode
         GroupByColumnIndex = groupByColumnIndex;
         TopInSelect = topInSelect;
         TopInDml = topInDml;
+        DisallowedTypes = disallowedTypes ?? FrozenSet<string>.Empty;
     }
 
     /// <summary>
@@ -327,7 +334,11 @@ public sealed class Mode
                 decimalSequences: true),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
-                logIsLogBase10: true, groupByColumnIndex: true),
+                logIsLogBase10: true, groupByColumnIndex: true,
+                disallowedTypes: new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "NUMBER", "TINYINT", "BLOB", "VARCHAR_IGNORECASE",
+                }),
         };
 
         return modes.ToFrozenDictionary(StringComparer.Ordinal);

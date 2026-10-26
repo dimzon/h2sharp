@@ -55,16 +55,21 @@ public sealed class Regclass : Operation1
         // Database.getAllSchemas is exposed as GetSchemas by the existing database port.
         foreach (Schema schema in session.GetDatabase().GetSchemas())
         {
-            Table? table = schema.FindTableOrView(session, name);
-            if (table is not null)
+            foreach (Table table in schema.GetAllTablesAndViews(session))
             {
-                return ValueInteger.Get(table.GetId());
+                if (table.GetTableName().Equals(name, System.StringComparison.Ordinal))
+                {
+                    return ValueInteger.Get(table.GetId());
+                }
             }
 
-            Index? index = schema.FindIndex(session, name);
-            if (index is not null && index.GetCreateSql() is not null)
+            foreach (Index index in schema.GetAllIndexes())
             {
-                return ValueInteger.Get(index.GetId());
+                if (name.Equals(index.GetName(), System.StringComparison.Ordinal)
+                    && index.GetCreateSql() is not null)
+                {
+                    return ValueInteger.Get(index.GetId());
+                }
             }
         }
 

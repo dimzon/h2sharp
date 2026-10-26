@@ -2058,7 +2058,7 @@ public abstract partial class Value
     /// <returns>the signed byte</returns>
     private static sbyte ConvertToByteChecked(long x, object? column)
     {
-        if (x > sbyte.MaxValue + 128 || x < sbyte.MinValue - 128)
+        if (x > sbyte.MaxValue || x < sbyte.MinValue)
         {
             throw GetOutOfRangeException(x.ToString(System.Globalization.CultureInfo.InvariantCulture), column);
         }
