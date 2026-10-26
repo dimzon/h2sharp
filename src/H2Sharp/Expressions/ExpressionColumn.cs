@@ -39,6 +39,8 @@ public sealed class ExpressionColumn : Expression
 {
     private string? columnAlias;
 
+    private string? schemaName;
+
     private string? tableAlias;
 
     private Column? column;
@@ -69,6 +71,7 @@ public sealed class ExpressionColumn : Expression
     {
         this.column = column;
         columnAlias = resolver.GetColumnName(column);
+        schemaName = resolver.GetSchemaName();
         tableAlias = resolver.GetTableAlias();
         this.queryLevel = queryLevel;
         columnResolver = resolver;
@@ -292,7 +295,12 @@ public sealed class ExpressionColumn : Expression
     /// <inheritdoc/>
     public override StringBuilder GetUnenclosedSql(StringBuilder builder, int sqlFlags)
     {
-        if (tableAlias != null)
+        if (schemaName is not null)
+        {
+            ParserUtil.QuoteIdentifier(builder, schemaName, sqlFlags).Append('.');
+        }
+
+        if (tableAlias is not null)
         {
             ParserUtil.QuoteIdentifier(builder, tableAlias, sqlFlags).Append('.');
         }

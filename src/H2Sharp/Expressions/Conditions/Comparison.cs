@@ -201,6 +201,40 @@ public sealed class Comparison : Condition
             compareType = GetReversedCompareType(compareType);
         }
 
+        if (left is ExpressionColumn leftExpressionColumn)
+        {
+            if (right.IsConstant())
+            {
+                Value r = right.GetValue(session);
+                if (r == ValueNull.Instance)
+                {
+                    if ((compareType & ~1) != EqualNullSafe)
+                    {
+                        return TypedValueExpression.Unknown;
+                    }
+                }
+                else
+                {
+                    TypeInfo colType = leftExpressionColumn.GetTypeInfo(), constType = r.GetTypeInfo();
+                    int constValueType = constType.GetValueType();
+                    if (constValueType != colType.GetValueType() || constValueType >= Value.Array)
+                    {
+                        TypeInfo resType = TypeInfo.GetHigherType(colType, constType);
+                        // If not, the column values will need to be promoted to the constant
+                        // type, but the other way round, so do it once here.
+                        if (constValueType != resType.GetValueType() || constValueType >= Value.Array)
+                        {
+                            right = ValueExpression.Get(r.ConvertToType(resType, session));
+                        }
+                    }
+                }
+            }
+            else if (right is Parameter parameter)
+            {
+                parameter.SetColumn(leftExpressionColumn.GetColumn());
+            }
+        }
+
         if (left.IsConstant() && right.IsConstant())
         {
             return TypedValueExpression.GetTypedIfNull(GetValue(session), TypeInfo.TypeBoolean);

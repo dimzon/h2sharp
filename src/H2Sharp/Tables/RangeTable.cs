@@ -67,7 +67,7 @@ public sealed class RangeTable : Table
             columns[i].SetTable(this, i);
         }
 
-        index = new RangeIndex(this);
+        index = new RangeIndex(this, IndexColumn.Wrap(columns));
     }
 
     /// <summary>

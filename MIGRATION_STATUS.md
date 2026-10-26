@@ -7510,6 +7510,31 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### EXPLAIN и EXPLAIN ANALYZE
+
+Перенесён `org.h2.command.dml.Explain`: `EXPLAIN`, `EXPLAIN PLAN [FOR]`,
+`EXPLAIN ANALYZE`, вложенный SELECT/WITH/VALUES/UPDATE/DELETE/INSERT/MERGE,
+`PLAN`-строка с `ADD_PLAN_INFORMATION` и выполнение вложенного оператора для
+ANALYZE. Store-статистика для persistent БД не портирована; в памяти блока
+статистики нет и на JVM.
+
+Для планов приведены к эталону `IndexCondition.getSql` (сейчас реально
+печатает условие), `TableFilter.getSchemaName`/aliasm и `RangeIndex` с колонкой
+X. `Comparison.optimize` теперь приводит константу к типу колонки
+(`X > CAST(1 AS BIGINT)`), включая NULL/Parameter ветки как в эталоне.
+
+`ExplainOracleTests` 1/1 против JVM: EXPLAIN SELECT, PLAN FOR, SYSTEM_RANGE,
+индексное условие, EXPLAIN ANALYZE и ORDER BY. Conformance +1
+(`Explain_PlanForQuery_ReturnsThePlan`). TestScript проходит EXPLAIN-блоки 299,
+371 и 377; остаются расхождения выбора индекса в тексте плана (360/372),
+`DIRECT SORTED` (357), затем первая ошибка — `DELETE ... LIMIT` (339).
+Доступ к вложенному `Prepared` через `getCommand` не объявлен: базовый
+`Prepared.GetCommand` уже возвращает `Command?`; порт его не использует.
+
+Проверки: core **1445 passed / 3 прежних PostfixCast failed / 1448 total**;
+conformance **770/952**, новых Passed→Failed 0; Data.Tests **491/491**.
+TRX: `explain-core.trx`, `explain-specs.trx`, `testscript_explain.log`.
+
 ### UPDATE SET (columns) = row value
 
 Перенесён `SetClauseList.addMultiple` с `RowExpression` и `SetMultiple`:

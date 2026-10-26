@@ -266,16 +266,95 @@ public class IndexCondition
     /// <summary>
     /// Gets the SQL of this condition.
     /// </summary>
-    /// <remarks>
-    /// Not ported. In the reference this delegates to <c>buildSql</c>, which prints an IN list,
-    /// a compound column list or a plain comparison depending on what the condition holds — and
-    /// guessing at that shape would give a caller a statement that looks like the condition and
-    /// is not it.
-    /// </remarks>
     /// <param name="sqlFlags">the SQL flags</param>
     /// <returns>the SQL</returns>
     public string GetSql(int sqlFlags)
-        => throw new TODOException("IndexCondition.getSQL: it prints what the condition holds");
+    {
+        if (compareType == Comparison.False)
+        {
+            return "FALSE";
+        }
+
+        StringBuilder builder = new();
+        builder = compoundColumns
+            ? BuildSql(sqlFlags, builder)
+            : BuildSql(sqlFlags, column!, builder);
+        return builder.ToString();
+    }
+
+    private StringBuilder BuildSql(int sqlFlags, StringBuilder builder)
+    {
+        if (compareType == Comparison.InList)
+        {
+            _ = builder.Append(" IN(");
+            for (int i = 0, size = expressionList!.Count; i < size; i++)
+            {
+                if (i > 0)
+                {
+                    _ = builder.Append(", ");
+                }
+
+                _ = expressionList[i].GetSql(builder, sqlFlags);
+            }
+
+            return builder.Append(')');
+        }
+
+        throw Message.DbException.GetInternalError(
+            "Multiple columns can only be used with compound IN lists.");
+    }
+
+    private StringBuilder BuildSql(int sqlFlags, Column column, StringBuilder builder)
+    {
+        _ = column.GetSql(builder, sqlFlags);
+        switch (compareType)
+        {
+            case Comparison.Equal:
+                _ = builder.Append(" = ");
+                break;
+            case Comparison.EqualNullSafe:
+                _ = builder.Append(expression!.IsNullConstant()
+                    || (column.GetTypeInfo().GetValueType() == Values.Value.Boolean && expression.IsConstant())
+                        ? " IS "
+                        : " IS NOT DISTINCT FROM ");
+                break;
+            case Comparison.BiggerEqual:
+                _ = builder.Append(" >= ");
+                break;
+            case Comparison.Bigger:
+                _ = builder.Append(" > ");
+                break;
+            case Comparison.SmallerEqual:
+                _ = builder.Append(" <= ");
+                break;
+            case Comparison.Smaller:
+                _ = builder.Append(" < ");
+                break;
+            case Comparison.InList:
+                _ = Expression.WriteExpressions(builder.Append(" IN("), [.. expressionList!], sqlFlags).Append(')');
+                break;
+            case Comparison.InArray:
+                return expression!.GetSql(builder.Append(" = ANY("), sqlFlags, Expression.AutoParentheses)
+                    .Append(')');
+            case Comparison.InQuery:
+                _ = builder.Append(" IN(");
+                _ = expressionQuery!.GetPlanSql(builder, sqlFlags);
+                _ = builder.Append(')');
+                break;
+            case Comparison.SpatialIntersects:
+                _ = builder.Append(" && ");
+                break;
+            default:
+                throw Message.DbException.GetInternalError("type=" + compareType);
+        }
+
+        if (expression is not null)
+        {
+            _ = expression.GetSql(builder, sqlFlags, Expression.AutoParentheses);
+        }
+
+        return builder;
+    }
 
     /// <summary>
     /// Gets the search mask for the given conditions.

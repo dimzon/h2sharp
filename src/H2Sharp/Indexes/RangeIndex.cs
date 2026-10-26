@@ -29,8 +29,9 @@ public sealed class RangeIndex : Index
     /// Creates the index of the range table.
     /// </summary>
     /// <param name="table">the table</param>
-    public RangeIndex(RangeTable table)
-        : base(table, 0, "RANGE_INDEX", [], 0, null)
+    /// <param name="columns">the index columns</param>
+    public RangeIndex(RangeTable table, IndexColumn[] columns)
+        : base(table, 0, "RANGE_INDEX", columns, 0, null)
     {
         rangeTable = table;
     }

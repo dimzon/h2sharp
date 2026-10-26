@@ -892,7 +892,18 @@ public class TableFilter : ColumnResolver
         && joinCondition is null && filterCondition is null);
 
     /// <summary>
-    /// Get the table alias: the alias, or the table's own name when there is none.
+    /// Gets the schema name of this filter's table when the filter has no alias.
+    /// </summary>
+    /// <remarks>
+    /// The reference's TableFilter.getSchemaName: an alias replaces the schema in qualified
+    /// names, so a named filter answers null; virtual tables have no schema of their own and
+    /// answer null through the table.
+    /// </remarks>
+    /// <returns>the schema name, or null</returns>
+    public string? GetSchemaName() => alias is null ? table.GetSchemaName() : null;
+
+    /// <summary>
+    /// Gets the table alias this filter answers to.
     /// </summary>
     /// <remarks>
     /// The fallback is not a convenience. "SELECT NAME FROM TEST" reads through the same path

@@ -585,6 +585,10 @@ public sealed partial class Parser
         {
             prepared = ParseQueryExpression(prepare: false);
         }
+        else if (IsWord("EXPLAIN", consume: false))
+        {
+            prepared = PrepareExplain(start);
+        }
         else if (IsWord("SAVEPOINT")) prepared = ParseSavepoint();
         else if (IsWord("RELEASE")) prepared = ParseReleaseSavepoint();
         else if (IsWord("ROLLBACK")) prepared = ParseRollback();
@@ -699,25 +703,74 @@ public sealed partial class Parser
         {
             Statement statement = ReadStatement();
             statement.Sql = sql;
-            prepared = statement switch
-            {
-                CreateTableStatement create => PrepareCreateTable(current, create),
-                CreateIndexStatement createIndex => PrepareCreateIndex(current, createIndex),
-                AlterTableStatement alter => PrepareAlterTable(current, alter),
-                DropTableStatement drop => PrepareDropTable(current, drop),
-                DropIndexStatement dropIndex => PrepareDropIndex(current, dropIndex),
-                InsertStatement insert => PrepareInsert(current, insert),
-                UpdateStatement update => PrepareUpdate(current, update),
-                DeleteStatement delete => PrepareDelete(current, delete),
-                SelectStatement select => new Query.Select(current),
-                _ => new Dml.NoOperation(current),
-            };
+            prepared = PrepareParsedStatement(current, statement);
         }
 
         SetSql(prepared, start);
         prepared.SetPrepareAlways(recompileAlways);
         prepared.SetParameterList(parameterList.Count == 0 ? null : parameterList);
         return prepared;
+    }
+
+    /// <summary>
+    /// Builds the command of a statement the parser read.
+    /// </summary>
+    private Prepared PrepareParsedStatement(SessionLocal current, Statement statement)
+        => statement switch
+        {
+            CreateTableStatement create => PrepareCreateTable(current, create),
+            CreateIndexStatement createIndex => PrepareCreateIndex(current, createIndex),
+            AlterTableStatement alter => PrepareAlterTable(current, alter),
+            DropTableStatement drop => PrepareDropTable(current, drop),
+            DropIndexStatement dropIndex => PrepareDropIndex(current, dropIndex),
+            InsertStatement insert => PrepareInsert(current, insert),
+            UpdateStatement update => PrepareUpdate(current, update),
+            DeleteStatement delete => PrepareDelete(current, delete),
+            SelectStatement select => new Query.Select(current),
+            _ => new Dml.NoOperation(current),
+        };
+
+    /// <summary>
+    /// Parses EXPLAIN and EXPLAIN ANALYZE, as the reference's parseExplain does.
+    /// </summary>
+    private Prepared PrepareExplain(int start)
+    {
+        SessionLocal current = session
+            ?? throw new TODOException("Parser.parseExplain: this parser has no session");
+        ExpectWord("EXPLAIN");
+        Dml.Explain command = new(current);
+        if (IsWord("ANALYZE"))
+        {
+            command.SetExecuteCommand(true);
+        }
+        else
+        {
+            if (IsWord("PLAN"))
+            {
+                _ = IsWord("FOR");
+            }
+        }
+
+        int nestedStart = position;
+        Prepared nested;
+        if (position < tokens.Count && (IsDirectQuery(position) || CurrentType == Token.OpenParen))
+        {
+            nested = ParseQueryExpression(prepare: false);
+            if (nested is Query.Query query)
+            {
+                query.SetNeverLazy(true);
+            }
+        }
+        else
+        {
+            Statement statement = ReadStatement();
+            statement.Sql = sql;
+            nested = PrepareParsedStatement(current, statement);
+        }
+
+        SetSql(nested, nestedStart);
+        command.SetCommand(nested);
+        return command;
     }
 
     private void SetSql(Prepared command, int start)
@@ -1510,7 +1563,8 @@ public sealed partial class Parser
             }
         }
         return new(
-            session, fromTable, filterAlias ?? tableName, rightsChecked: true, select, 0, indexHints);
+            session, fromTable, filterAlias ?? (hasAlias ? null : tableName),
+            rightsChecked: true, select, 0, indexHints);
     }
 
     /// <summary>
