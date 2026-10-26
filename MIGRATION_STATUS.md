@@ -7510,6 +7510,24 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### REFERENCES ... INDEX: отсутствующий индекс — не ошибка
+
+Эталонный `parseReferences` вызывает `setRefIndex(findIndex(...))` и передаёт
+`null`, если индекс не найден; ошибка возникает только позже, если для
+ссылочных колонок нет PRIMARY KEY/UNIQUE. Порт бросал `INDEX_NOT_FOUND_1` уже
+при разборе, из-за чего `FOREIGN KEY (pid) REFERENCES test(id) INDEX
+idx_test_pid` падал, хотя PK(test.id) делает индекс необязательным.
+
+`SetRefIndex` теперь принимает `null`, а `CreateAddConstraintCommand` не
+бросает на отсутствующем индексе. `ForeignKeyIndexOracleTests` 1/1 против JVM:
+несуществующий INDEX при PK игнорируется, FK работает, нарушение целостности
+ловится; существующий INDEX тоже принимается. TestScript прошёл строку 157;
+следующее расхождение — строка 285, `UPDATE ... SET (id) = (id)`.
+
+Проверки: core **1443 passed / 3 прежних PostfixCast failed / 1446 total**;
+conformance **768/952**, новых Passed→Failed 0; Data.Tests **491/491**.
+TRX: `fkindex-specs.trx`, `testscript_fkindex.log`.
+
 ### GROUP BY: квалифицированное имя не путается с алиасом
 
 `ExpressionColumn.getAlias` эталона для ещё не смапленной колонки возвращает

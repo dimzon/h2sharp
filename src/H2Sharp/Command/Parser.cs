@@ -6691,8 +6691,7 @@ public sealed partial class Parser
                     ? CurrentSchema(session)
                     : session.GetDatabase().GetSchema(constraint.RefTableSchema))
                 : session.GetDatabase().GetSchema(constraint.RefIndexSchema);
-            key.SetRefIndex(refIndexSchema.FindIndex(session, constraint.RefIndexName)
-                ?? throw DbException.Get(Api.ErrorCode.IndexNotFound1, constraint.RefIndexName));
+            key.SetRefIndex(refIndexSchema.FindIndex(session, constraint.RefIndexName));
         }
 
         key.SetUpdateAction(constraint.UpdateAction);

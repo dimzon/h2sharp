@@ -579,7 +579,7 @@ public class AlterTableAddConstraint : AlterTable
     /// Sets the index of the other table that the foreign key points at.
     /// </summary>
     /// <param name="refIndex">the index</param>
-    public void SetRefIndex(H2Sharp.Indexes.Index refIndex)
+    public void SetRefIndex(H2Sharp.Indexes.Index? refIndex)
     {
         this.refIndex = refIndex;
     }
