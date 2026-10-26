@@ -26,9 +26,9 @@
 //    UTF-8, because PrintStream's platform charset has no .NET counterpart.
 //  - BlockedByPort: all user/role/password statements and their expected output were
 //    removed from the local testScript.sql copy because D-004 has no users or roles.
-//    UNIQUE, CHECK, TOP, explicit DUAL, qualified GROUP BY names and REFERENCES ... INDEX
-//    now run. The first remaining mismatch is UPDATE ... SET (columns) = expr (line 285);
-//    later sections still hit EXPLAIN, DELETE LIMIT, SCRIPT NODATA, DROP ALIAS and CREATE VIEW.
+//    UNIQUE, CHECK, TOP, explicit DUAL, qualified GROUP BY names, REFERENCES ... INDEX and
+//    row-value UPDATE assignments now run. The first remaining mismatch is EXPLAIN (line 300);
+//    later sections still hit DELETE LIMIT, SCRIPT NODATA, DROP ALIAS and CREATE VIEW.
 using System;
 using System.Collections.Generic;
 using System.Data;

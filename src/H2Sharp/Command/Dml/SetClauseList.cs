@@ -17,8 +17,8 @@
  * assignment rather than a column and an expression.
  *
  * Not ported: the reference's ON UPDATE expressions, generated columns, delta collectors and
- * triggers, which need their own layers; and row-value assignment (SET (a, b) = ...), which
- * needs ExpressionList. The array element write itself refuses: it would write half a row.
+ * triggers, which need their own layers. The array element write itself refuses: it would write
+ * half a row.
  */
 using System;
 using System.Collections.Generic;
@@ -87,9 +87,64 @@ public sealed class SetClauseList
     /// <param name="columns">the columns</param>
     /// <param name="allIndexes">the indexes of each assignment's array element</param>
     /// <param name="expression">what to set them to</param>
-    public void AddMultiple(List<Column> columns, List<Expression[]> allIndexes, Expression expression)
-        => throw new TODOException(
-            "SetClauseList.addMultiple: row-value assignment needs ExpressionList");
+    public void AddMultiple(List<Column> columns, List<Expression[]?> allIndexes, Expression expression)
+    {
+        int columnCount = columns.Count;
+        if (expression is ExpressionList expressions)
+        {
+            if (!expressions.IsArray())
+            {
+                if (columnCount != expressions.GetSubexpressionCount())
+                {
+                    throw Message.DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
+                }
+
+                for (int i = 0; i < columnCount; i++)
+                {
+                    AddSingle(columns[i], allIndexes[i], expressions.GetSubexpression(i));
+                }
+
+                return;
+            }
+        }
+
+        if (columnCount == 1)
+        {
+            // Row value special case
+            AddSingle(columns[0], allIndexes[0], expression);
+            return;
+        }
+
+        int[] cols = new int[columnCount];
+        RowExpression row = new(expression, cols);
+        int minId = table.GetColumns().Length - 1, maxId = 0;
+        for (int i = 0; i < columnCount; i++)
+        {
+            int id = columns[i].GetColumnId();
+            if (id < minId)
+            {
+                minId = id;
+            }
+
+            if (id > maxId)
+            {
+                maxId = id;
+            }
+        }
+
+        for (int i = 0; i < columnCount; i++)
+        {
+            Column column = columns[i];
+            int id = column.GetColumnId();
+            cols[i] = id;
+            if (actions[id] is not null)
+            {
+                throw Message.DbException.Get(Api.ErrorCode.DuplicateColumnName1, column.GetName());
+            }
+
+            actions[id] = new SetMultiple(allIndexes[i], row, i, id == minId, id == maxId);
+        }
+    }
 
     /// <summary>
     /// Appends the SQL of this list, as it appears in the UPDATE.
@@ -359,6 +414,99 @@ public sealed class SetClauseList
             }
 
             expression = expression.Optimize(session);
+        }
+    }
+
+    private sealed class RowExpression
+    {
+        internal Expression expression;
+
+        internal readonly int[] columns;
+
+        internal Value[]? values;
+
+        internal RowExpression(Expression expression, int[] columns)
+        {
+            this.expression = expression;
+            this.columns = columns;
+        }
+
+        internal bool IsEverything(ExpressionVisitor visitor) => expression.IsEverything(visitor);
+
+        internal void MapAndOptimize(
+            SessionLocal session, ColumnResolver resolver1, ColumnResolver? resolver2)
+        {
+            expression.MapColumns(resolver1, 0, Expression.MapInitial);
+            if (resolver2 is not null)
+            {
+                expression.MapColumns(resolver2, 0, Expression.MapInitial);
+            }
+
+            expression = expression.Optimize(session);
+        }
+    }
+
+    private sealed class SetMultiple : SetAction
+    {
+        private readonly RowExpression row;
+
+        private readonly int position;
+
+        private readonly bool first;
+
+        private readonly bool last;
+
+        internal SetMultiple(Expression[]? arrayIndexes, RowExpression row, int position,
+            bool first, bool last)
+            : base(arrayIndexes)
+        {
+            this.row = row;
+            this.position = position;
+            this.first = first;
+            this.last = last;
+        }
+
+        protected override Value Update(SessionLocal session)
+        {
+            Value[] v;
+            if (first)
+            {
+                Value value = row.expression.GetValue(session);
+                if (value == ValueNull.Instance)
+                {
+                    throw Message.DbException.Get(
+                        Api.ErrorCode.DataConversionError1, "NULL to assigned row value");
+                }
+
+                row.values = v = value.ConvertToAnyRow().GetList();
+                if (v.Length != row.columns.Length)
+                {
+                    throw Message.DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
+                }
+            }
+            else
+            {
+                v = row.values!;
+                if (last)
+                {
+                    row.values = null;
+                }
+            }
+
+            return v[position];
+        }
+
+        internal override bool IsEverything(ExpressionVisitor visitor)
+            => base.IsEverything(visitor) && (!first || row.IsEverything(visitor));
+
+        internal override void MapAndOptimize(
+            SessionLocal session, ColumnResolver resolver1, ColumnResolver? resolver2)
+        {
+            base.MapAndOptimize(session, resolver1, resolver2);
+            if (first)
+            {
+                row.MapAndOptimize(session, resolver1, resolver2);
+            }
         }
     }
 }

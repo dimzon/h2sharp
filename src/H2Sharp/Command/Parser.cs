@@ -317,6 +317,9 @@ public sealed class UpdateStatement : Statement
     /// <summary>What to set each column to.</summary>
     public List<(string Column, Expression[]? ArrayIndexes, Expression Value)> Assignments { get; } = [];
 
+    /// <summary>Row-value assignments: one expression sets several columns.</summary>
+    public List<(List<string> Columns, List<Expression[]?> AllIndexes, Expression Value)> RowAssignments { get; } = [];
+
     /// <summary>The condition, or null.</summary>
     public Expression? Where { get; set; }
 
@@ -6894,6 +6897,32 @@ public sealed partial class Parser
             assignments.AddSingle(match, indexes, value);
         }
 
+        foreach ((List<string> names, List<Expression[]?> allIndexes, Expression value) in statement.RowAssignments)
+        {
+            List<Tables.Column> matched = [];
+            foreach (string name in names)
+            {
+                Tables.Column? match = null;
+                foreach (Tables.Column candidate in table.GetColumns())
+                {
+                    if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        match = candidate;
+                        break;
+                    }
+                }
+
+                if (match is null)
+                {
+                    throw DbException.GetSyntaxError(sql, 0, name);
+                }
+
+                matched.Add(match);
+            }
+
+            assignments.AddMultiple(matched, allIndexes, value);
+        }
+
         update.SetSetClauseList(assignments);
         if (statement.Fetch is not null)
         {
@@ -8073,20 +8102,51 @@ public sealed partial class Parser
         ExpectWord("SET");
         do
         {
-            string column = ReadIdentifier();
-            List<Expression>? indexes = null;
-            while (ReadIf(Token.OpenBracket))
+            if (ReadIf(Token.OpenParen))
             {
-                (indexes ??= []).Add(ReadExpression());
-                Expect(Token.CloseBracket, "]");
+                List<string> columns = [];
+                List<Expression[]?> allIndexes = [];
+                do
+                {
+                    columns.Add(ReadIdentifier());
+                    allIndexes.Add(ReadUpdateSetClauseArrayIndexes());
+                }
+                while (ReadIf(Token.Comma));
+
+                Expect(Token.CloseParen, ")");
+                Expect(Token.Equal, "=");
+                statement.RowAssignments.Add((columns, allIndexes, ReadExpression()));
+                continue;
             }
+
+            string column = ReadIdentifier();
+            Expression[]? indexes = ReadUpdateSetClauseArrayIndexes();
             Expect(Token.Equal, "=");
-            statement.Assignments.Add((column, indexes?.ToArray(), ReadExpressionOrDefault()));
+            statement.Assignments.Add((column, indexes,
+                indexes is null ? ReadExpressionOrDefault() : ReadExpression()));
         }
         while (ReadIf(Token.Comma));
 
         statement.Where = ReadWhere();
         return statement;
+    }
+
+    private Expression[]? ReadUpdateSetClauseArrayIndexes()
+    {
+        if (!ReadIf(Token.OpenBracket))
+        {
+            return null;
+        }
+
+        List<Expression> list = [];
+        do
+        {
+            list.Add(ReadExpression());
+            Expect(Token.CloseBracket, "]");
+        }
+        while (ReadIf(Token.OpenBracket));
+
+        return [.. list];
     }
 
     private DeleteStatement ReadDelete()

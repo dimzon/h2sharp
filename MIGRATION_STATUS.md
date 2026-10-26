@@ -7510,6 +7510,28 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### UPDATE SET (columns) = row value
+
+Перенесён `SetClauseList.addMultiple` с `RowExpression` и `SetMultiple`:
+список колонок в скобках получает одно row-значение, `ExpressionList` той же
+ширины раскладывается в отдельные `AddSingle`, для одной колонки работает
+row-value special case. `ConvertToAnyRow` уже был в порте. Ошибки совпадают с
+эталоном: `COLUMN_COUNT_DOES_NOT_MATCH`, `DUPLICATE_COLUMN_NAME_1`,
+`DATA_CONVERSION_ERROR_1` для NULL row.
+
+Парсер читает `SET (a, b[, ...]) = expr` и array-индексы через
+`ReadUpdateSetClauseArrayIndexes`; AST хранит row-присваивания отдельно от
+одиночных, чтобы не менять существующий контракт `Assignments`.
+
+`UpdateRowAssignmentOracleTests` 1/1 против JVM: обмен колонок, одна колонка,
+WHERE, несовпадение числа колонок, дубликат и NULL. Conformance +1
+(`SetClauseList_MultiColumnAssignment_UpdatesBothColumns`). TestScript прошёл
+строку 285; следующее расхождение — `EXPLAIN` (строка 300).
+
+Проверки: core **1444 passed / 3 прежних PostfixCast failed / 1447 total**;
+conformance **769/952**, новых Passed→Failed 0; Data.Tests **491/491**.
+TRX: `rowset-specs.trx`, `testscript_rowset.log`.
+
 ### REFERENCES ... INDEX: отсутствующий индекс — не ошибка
 
 Эталонный `parseReferences` вызывает `setRefIndex(findIndex(...))` и передаёт
