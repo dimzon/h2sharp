@@ -41,6 +41,7 @@ using System.Linq;
 using System.Text;
 using H2Sharp.Constraints;
 using H2Sharp.Engine;
+using H2Sharp.Extensions;
 using H2Sharp.Expressions;
 using H2Sharp.Message;
 using H2Sharp.Schemas;
@@ -5342,6 +5343,11 @@ public sealed partial class Parser
             return ReadQueryAggregate(aggregateSelect, aggregateType.Value, upperName);
         }
 
+        if (session is not null && session.Extensions.HasUdf(upperName))
+        {
+            return ReadUdfCall(upperName, aggregateSelect);
+        }
+
         Expressions.Expression? expression = ReadBuiltinFunctionIf(upperName, aggregateSelect);
         if (expression is not null)
         {
@@ -5369,6 +5375,32 @@ public sealed partial class Parser
         }
 
         throw DbException.Get(Api.ErrorCode.FunctionNotFound1, name);
+    }
+
+    private Expressions.Expression ReadUdfCall(string name, Query.Select? aggregateSelect)
+    {
+        SessionLocal current = session
+            ?? throw new TODOException("Parser.readUdfCall: this parser has no session");
+        List<Expressions.Expression> args = [];
+        if (!ReadIf(Token.CloseParen))
+        {
+            do
+            {
+                args.Add(ReadQueryOr(aggregateSelect));
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
+        }
+
+        UdfDefinition? definition = current.Extensions.FindUdf(name, args.Count);
+        if (definition is null)
+        {
+            throw DbException.Get(Api.ErrorCode.MethodNotFound1,
+                name + " (parameter count: " + args.Count + ")");
+        }
+
+        return new ClrFunction(definition, [.. args]);
     }
 
     /// <summary>
@@ -5841,10 +5873,13 @@ public sealed partial class Parser
             case "CONCAT_WS":
                 return ReadConcatFunction(Expressions.Functions.ConcatFunction.ConcatWs, aggregateSelect);
 
-            // HashFunction (not ported).
             case "HASH":
+                return new Expressions.Functions.HashFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
+                    ReadIfArgument(aggregateSelect));
             case "ORA_HASH":
-                throw new TODOException("Parser.readBuiltinFunctionIf: HashFunction is not ported");
+                throw new TODOException(
+                    "Parser.readBuiltinFunctionIf: ORA_HASH is provided by H2Sharp.JavaLegacy");
 
             case "RAND":
             case "RANDOM":

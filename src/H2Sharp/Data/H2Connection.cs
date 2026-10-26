@@ -26,6 +26,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using H2Sharp.Engine;
+using H2Sharp.Extensions;
 using H2Sharp.Util;
 using H2DbException = H2Sharp.Message.DbException;
 // The engine's isolation level and the ADO.NET one share the name; the transaction surface
@@ -43,7 +44,7 @@ namespace H2Sharp.Data;
 /// not members of a connection that nobody is testing, and a caller who wants them casts
 /// the connection to the interface first.
 /// </remarks>
-public sealed class H2Connection : DbConnection, IH2Test
+public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawExtensions
 {
     private string connectionString = string.Empty;
 
@@ -60,6 +61,10 @@ public sealed class H2Connection : DbConnection, IH2Test
     private Func<Guid>? uuidProvider;
 
     private Func<Util.TimeZoneProvider>? timeZoneProviderProvider;
+
+    private readonly ExtensionConfiguration extensionConfiguration = new();
+
+    private bool disposed;
 
     /// <inheritdoc/>
     Func<DateTimeOffset>? IH2Test.SystemClockProvider
@@ -262,7 +267,7 @@ public sealed class H2Connection : DbConnection, IH2Test
         ConnectionInfo connectionInfo = new(connectionString);
         session = H2Sharp.Engine.Engine.OpenSession(
             connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider,
-            timeZoneProviderProvider);
+            timeZoneProviderProvider, extensionConfiguration.Clone());
         openedDatabaseName = connectionInfo.GetName();
         OnStateChange(new StateChangeEventArgs(ConnectionState.Closed, ConnectionState.Open));
     }
@@ -285,6 +290,83 @@ public sealed class H2Connection : DbConnection, IH2Test
 
         Open();
         return Task.CompletedTask;
+    }
+
+    private void EnsureCanRegister()
+    {
+        if (disposed)
+        {
+            throw new ObjectDisposedException(nameof(H2Connection));
+        }
+
+        if (State != ConnectionState.Closed)
+        {
+            throw new InvalidOperationException("Extensions can only be registered while the connection is closed");
+        }
+    }
+
+    void IH2Extensions.RegisterUdf<TResult>(string name, Func<TResult> implementation, bool deterministic)
+    {
+        EnsureCanRegister();
+        extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterUdf<T1, TResult>(string name, Func<T1, TResult> implementation, bool deterministic)
+    {
+        EnsureCanRegister();
+        extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterUdf<T1, T2, TResult>(string name, Func<T1, T2, TResult> implementation, bool deterministic)
+    {
+        EnsureCanRegister();
+        extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterUdf<T1, T2, T3, TResult>(string name, Func<T1, T2, T3, TResult> implementation, bool deterministic)
+    {
+        EnsureCanRegister();
+        extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterUdf<T1, T2, T3, T4, TResult>(string name, Func<T1, T2, T3, T4, TResult> implementation, bool deterministic)
+    {
+        EnsureCanRegister();
+        extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2RawExtensions.RegisterRawUdf(
+        string name, int arity, H2Sharp.Values.TypeInfo resultType,
+        Func<H2Sharp.Values.Value[], H2Sharp.Values.Value> implementation, bool deterministic)
+    {
+        EnsureCanRegister();
+        ArgumentNullException.ThrowIfNull(implementation);
+        extensionConfiguration.AddRaw(SqlName(name), arity, resultType, deterministic, implementation);
+    }
+
+    void IH2Extensions.RegisterHashAlgorithm(string name, Func<System.Security.Cryptography.HashAlgorithm> factory)
+    {
+        EnsureCanRegister();
+        ArgumentNullException.ThrowIfNull(factory);
+        extensionConfiguration.AddHash(SqlName(name), factory);
+    }
+
+    void IH2Extensions.RegisterRandomGenerator(Func<long?, Random> factory)
+    {
+        EnsureCanRegister();
+        extensionConfiguration.SetRandomGenerator(factory ?? throw new ArgumentNullException(nameof(factory)));
+    }
+
+    void IH2Extensions.RegisterUuidGenerator(Func<int, Guid> factory)
+    {
+        EnsureCanRegister();
+        extensionConfiguration.SetUuidGenerator(factory ?? throw new ArgumentNullException(nameof(factory)));
+    }
+
+    private static string SqlName(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        return StringUtils.ToUpperEnglish(name);
     }
 
     /// <summary>
@@ -328,6 +410,7 @@ public sealed class H2Connection : DbConnection, IH2Test
         if (disposing)
         {
             Close();
+            disposed = true;
         }
 
         base.Dispose(disposing);

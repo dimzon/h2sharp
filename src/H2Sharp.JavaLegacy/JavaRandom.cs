@@ -5,7 +5,7 @@
  */
 using System;
 
-namespace H2Sharp.Util;
+namespace H2Sharp.JavaLegacy;
 
 /// <summary>
 /// The random generator of the JDK: a 48-bit linear congruential generator with the multiplier and
@@ -249,3 +249,4 @@ public class JavaRandom : Random
     /// <inheritdoc/>
     protected override double Sample() => NextDouble();
 }
+

@@ -47,6 +47,7 @@ using System.Reflection;
 using System.Text;
 using H2Sharp;
 using H2Sharp.Data;
+using H2Sharp.JavaLegacy;
 using H2Sharp.Util;
 using Xunit;
 

@@ -23,6 +23,7 @@
  */
 using System;
 using System.Collections.Generic;
+using H2Sharp.Extensions;
 using H2Sharp.Store.FileSystem;
 using H2Sharp.Util;
 using H2Sharp.Api;
@@ -66,6 +67,16 @@ public static class Engine
         Func<long?, Random>? randomGeneratorProvider = null,
         Func<Guid>? uuidProvider = null,
         Func<Util.TimeZoneProvider>? timeZoneProviderProvider = null)
+        => OpenSession(connectionInfo, systemClockProvider, randomGeneratorProvider,
+            uuidProvider, timeZoneProviderProvider, extensions: null);
+
+    internal static SessionLocal OpenSession(
+        ConnectionInfo connectionInfo,
+        Func<DateTimeOffset>? systemClockProvider,
+        Func<long?, Random>? randomGeneratorProvider,
+        Func<Guid>? uuidProvider,
+        Func<Util.TimeZoneProvider>? timeZoneProviderProvider,
+        ExtensionConfiguration? extensions)
     {
         string name = connectionInfo.GetName();
         if (connectionInfo.IsRemote())
@@ -155,6 +166,7 @@ public static class Engine
                 : new DelegatedCastDataProvider(systemClockProvider, timeZoneProviderProvider),
             RandomGeneratorProvider = randomGeneratorProvider,
             UuidProvider = uuidProvider,
+            Extensions = ExtensionRuntime.Create(extensions),
         };
     }
 

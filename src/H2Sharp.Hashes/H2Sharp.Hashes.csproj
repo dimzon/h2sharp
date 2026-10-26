@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RootNamespace>H2Sharp.Hashes</RootNamespace>
+    <AssemblyName>H2Sharp.Hashes</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <Description>Optional SHA-224 and SHA3-224 providers for H2Sharp.</Description>
+    <PackageLicenseExpression>MPL-2.0 OR EPL-1.0</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CryptoHives.Foundation.Security.Cryptography" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\H2Sharp\H2Sharp.csproj" />
+  </ItemGroup>
+
+</Project>

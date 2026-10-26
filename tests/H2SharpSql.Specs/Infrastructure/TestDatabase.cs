@@ -20,6 +20,8 @@
 using System;
 using System.Data;
 using H2Sharp.Data;
+using H2Sharp.Hashes;
+using H2Sharp.JavaLegacy;
 
 namespace H2SharpSql.Specs.Infrastructure;
 
@@ -36,7 +38,9 @@ internal static class TestDatabase
     /// </remarks>
     public static IDbConnection Open()
     {
-        IDbConnection connection = new H2Connection($"jdbc:h2:mem:{Guid.NewGuid():N}");
+        H2Connection connection = new($"jdbc:h2:mem:{Guid.NewGuid():N}");
+        ((IH2Extensions)connection).UseJavaLegacy();
+        ((IH2Extensions)connection).UseH2Hashes();
         connection.Open();
         return connection;
     }

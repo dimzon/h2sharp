@@ -1,5 +1,30 @@
 # MIGRATION STATUS — рабочая памятка
 
+### .NET-расширения: первый срез
+
+Добавлен `IH2Extensions` на `H2Connection` (явная реализация, только
+`ConnectionState.Closed`, до `Dispose`):
+
+* `RegisterUdf` с типизированными `Func` для 0–4 аргументов; UDF разрешается
+  в `Parser.ReadFunction` до builtin-ов и вызывается через `ClrFunction`.
+* `RegisterHashAlgorithm` и per-session `ExtensionRuntime`; BCL MD5/SHA-1/
+  SHA-256/384/512 и SHA3-256/384/512 регистрируются автоматически.
+* `HASH(algorithm, value [, iterations])` перенесён на этот registry.
+* `ValueUuid.GetNewRandom` больше не Java-алгоритм: v4 — `Guid.NewGuid`,
+  v7 — BCL `Guid.CreateVersion7` (net9+) или native RFC 9562 layout (net8).
+* `JavaRandom` вынесен в `H2Sharp.JavaLegacy`; `UseJavaLegacy()` возвращает
+  JDK-последовательность `RAND(seed)` и регистрирует `ORA_HASH`. UUID туда не
+  переносим.
+* `H2Sharp.Hashes` (CryptoHives.Foundation.Security.Cryptography) регистрирует
+  все fixed-output алгоритмы пакета, отсутствующие в BCL: SHA-224, SHA3-224,
+  SHA-512/224, SHA-512/256, SHAKE, cSHAKE, TurboSHAKE, Keccak, BLAKE2/3, KT,
+  ASCON, Kupyna, LSH, Streebog, RIPEMD-160, SM3 и Whirlpool. По умолчанию BCL
+  остаётся; `UseH2Hashes(overrideBcl: true)` заменяет и BCL-реализации.
+
+TODO следующего среза: полноценный data-driven catalog builtins вместо
+`ReadBuiltinFunctionIf`, schema/FunctionAlias metadata, persistence/reopen,
+`CREATE/DROP ALIAS`, DI/triggers/trace и table-valued UDF.
+
 ### TestScript: планы, производные таблицы и ранние блокеры
 
 `TestScript` доведён до восьми строк в трёх оставшихся функциях:

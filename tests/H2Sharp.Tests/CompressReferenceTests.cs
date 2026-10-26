@@ -20,6 +20,7 @@ using System;
 using System.IO;
 using System.Text;
 using H2Sharp.Compression;
+using H2Sharp.JavaLegacy;
 using H2Sharp.Util;
 using Xunit;
 

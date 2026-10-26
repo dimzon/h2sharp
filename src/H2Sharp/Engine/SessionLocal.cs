@@ -22,6 +22,7 @@ using H2Sharp.Values;
 using H2Sharp.Api;
 using H2Sharp.Command;
 using H2Sharp.Message;
+using H2Sharp.Extensions;
 using H2Sharp.Util;
 
 namespace H2Sharp.Engine;
@@ -143,7 +144,9 @@ public sealed class SessionLocal : Session
     /// </remarks>
     /// <returns>the random generator</returns>
     public Random GetRandom()
-        => random ??= RandomGeneratorProvider?.Invoke(null) ?? new JavaRandom(Environment.TickCount64);
+        => random ??= RandomGeneratorProvider?.Invoke(null)
+            ?? Extensions.RandomGenerator?.Invoke(null)
+            ?? new Random((int)Environment.TickCount64);
 
     /// <summary>
     /// Reseeds the session's random number generator, creating it on first use.
@@ -158,7 +161,9 @@ public sealed class SessionLocal : Session
     /// <returns>the reseeded generator</returns>
     internal Random ReseedRandom(long seed)
     {
-        random = RandomGeneratorProvider?.Invoke(seed) ?? new JavaRandom(seed);
+        random = RandomGeneratorProvider?.Invoke(seed)
+            ?? Extensions.RandomGenerator?.Invoke(seed)
+            ?? new Random((int)seed);
         return random;
     }
 
@@ -485,6 +490,9 @@ public sealed class SessionLocal : Session
     /// here, and the statement that needs a UUID asks it.
     /// </remarks>
     public Func<Guid>? UuidProvider { get; init; }
+
+    /// <summary>The extension snapshot of this session.</summary>
+    internal ExtensionRuntime Extensions { get; init; } = ExtensionRuntime.Create(null);
 
     /// <summary>
     /// Gets how values are compared.

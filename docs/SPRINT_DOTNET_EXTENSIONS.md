@@ -1,7 +1,8 @@
 # Отложенный спринт: .NET-расширения, DI и необязательные провайдеры
 
-Статус: **план согласован пользователем, реализация отложена** до завершения
-текущих conformance-задач. В этот спринт объединены UDF, SQL aliases, триггеры,
+Статус: **реализация начата**: S0-каркас, RegisterUdf, RegisterHashAlgorithm,
+BCL hashes, H2Sharp.Hashes (все алгоритмы CryptoHives вне BCL) и H2Sharp.JavaLegacy
+(JavaRandom + ORA_HASH). Остальные пункты — по TODO. В этот спринт объединены UDF, SQL aliases, триггеры,
 trace/diagnostics, внешние hash-примитивы и совместимые функции вроде ORA_HASH.
 Уточнение очередности пользователя: **все хэши, включая базовый HASH ядра,
 выполняются позже**; текущий conformance продолжается с нехэшовыми функциями.
@@ -89,20 +90,21 @@ SHA3-256/384/512; SHA-224 и SHA3-224 отсутствуют. Нельзя по�
 
 | Пакет | Наблюдения |
 |---|---|
-| [BouncyCastle.Cryptography 2.7.0](https://www.nuget.org/packages/BouncyCastle.Cryptography/2.7.0) | поддерживаемая библиотека, MIT, .NET 6/.NET Standard 2.0; Sha224Digest и Sha3Digest(224) есть в исходниках |
+| [CryptoHives.Foundation.Security.Cryptography 0.7.37](https://www.nuget.org/packages/CryptoHives.Foundation.Security.Cryptography/0.7.37) | выбран; MIT; алгоритмы сразу являются `System.Security.Cryptography.HashAlgorithm`, без адаптера; SHA-224, SHA3-224, SHA-512/t, SHAKE/cSHAKE/TurboSHAKE, Keccak, BLAKE2/3, KT, ASCON, Kupyna, LSH, Streebog, RIPEMD-160, SM3, Whirlpool |
+| [BouncyCastle.Cryptography 2.7.0](https://www.nuget.org/packages/BouncyCastle.Cryptography/2.7.0) | поддерживаемая библиотека, MIT, .NET 6/.NET Standard 2.0; требует адаптер digest → HashAlgorithm |
 | [HashLib4CSharp 1.5.0](https://www.nuget.org/packages/HashLib4CSharp/1.5.0) | .NET Standard 2.1, широкий список hashes; последняя NuGet-публикация 2020 года |
 
-Первый кандидат — BouncyCastle. Ядро не получает PackageReference на него.
-Будущий наш пакет-провайдер оборачивает библиотечный digest в HashAlgorithm и
-регистрирует те же Func<HashAlgorithm>. Названия наших пакетов ещё не утверждены
-и не означают, что они уже опубликованы на NuGet.
+Ядро не получает PackageReference на провайдера. `H2Sharp.Hashes` регистрирует
+все fixed-output алгоритмы пакета, отсутствующие в BCL; `ParallelHash` — статический
+one-shot API и в `HashAlgorithm`-registry не входит. Регистрация явная:
+`UseH2Hashes()` на закрытом соединении; `UseH2Hashes(overrideBcl: true)` дополнительно
+заменяет BCL-реализации MD5, SHA-1, SHA-2 и SHA3-256/384/512.
 
-- [ ] Пакет отсутствует: база и BCL HASH работают; вызов отсутствующего алгоритма
+- [x] Пакет отсутствует: база и BCL HASH работают; вызов отсутствующего алгоритма
   даёт ясную SQL-ошибку с инструкцией, какой пакет и как подключить.
-- [ ] Пакет установлен/зарегистрирован: алгоритм появляется без правок ядра.
-- [ ] Выбрать явный вызов регистрации или гарантированный startup integration.
-  Один PackageReference сам по себе не гарантирует загрузку assembly и выполнение
-  module initializer — это должно проверяться на приложении-потребителе.
+- [x] Пакет установлен/зарегистрирован: алгоритмы появляются без правок ядра.
+- [x] Выбрать явный вызов регистрации или гарантированный startup integration.
+  Выбран явный `UseH2Hashes()`; PackageReference сам по себе ничего не грузит.
 - [ ] Проверить empty, Unicode bytes, длинные потоки, chunking, reuse, iterations
   и параллельность against JVM и известные криптографические векторы.
 

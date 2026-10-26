@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\H2Sharp\H2Sharp.csproj" />
+    <ProjectReference Include="..\..\src\H2Sharp.JavaLegacy\H2Sharp.JavaLegacy.csproj" />
+    <ProjectReference Include="..\..\src\H2Sharp.Hashes\H2Sharp.Hashes.csproj" />
     <Compile Include="..\H2Sharp.Tests\DapperJsonFixture.cs" Link="Infrastructure\DapperJsonFixture.cs" />
   </ItemGroup>
 

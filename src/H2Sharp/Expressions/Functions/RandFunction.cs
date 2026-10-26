@@ -90,9 +90,12 @@ public sealed class RandFunction : Function0_1
             case RandomUuid:
                 // A test that holds the UUIDs still sets a factory on the session, and the
                 // statement gets the UUID the factory answers with.
-                v = session.UuidProvider is null
-                    ? ValueUuid.GetNewRandom(v != null ? v.GetInt() : 4)
-                    : ValueUuid.Get(session.UuidProvider());
+                int version = v != null ? v.GetInt() : 4;
+                v = session.UuidProvider is not null
+                    ? ValueUuid.Get(session.UuidProvider())
+                    : session.Extensions.UuidGenerator is not null
+                        ? ValueUuid.Get(session.Extensions.UuidGenerator(version))
+                        : ValueUuid.GetNewRandom(version);
                 break;
             default:
                 throw DbException.GetInternalError("function=" + function);

@@ -17,6 +17,7 @@ using H2Sharp.Api;
 using H2Sharp.Command;
 using H2Sharp.Engine;
 using H2Sharp.Indexes;
+using H2Sharp.JavaLegacy;
 using H2Sharp.Message;
 using H2Sharp.MvStore;
 using H2Sharp.MvStore.Db;
@@ -37,6 +38,7 @@ public sealed class BuiltinFunctionCallTests
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
+            RandomGeneratorProvider = seed => new JavaRandom(seed ?? Environment.TickCount64),
         };
 
     private static SessionLocal NewSeededSession(out TransactionStore store)
@@ -45,6 +47,7 @@ public sealed class BuiltinFunctionCallTests
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
+            RandomGeneratorProvider = seed => new JavaRandom(seed ?? Environment.TickCount64),
         };
 
         store = new TransactionStore(MVStore.Open(null!));
@@ -165,6 +168,7 @@ public sealed class BuiltinFunctionCallTests
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
+            RandomGeneratorProvider = seed => new JavaRandom(seed ?? Environment.TickCount64),
         };
 
         store = new TransactionStore(MVStore.Open(null!));
@@ -239,6 +243,7 @@ public sealed class BuiltinFunctionCallTests
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
+            RandomGeneratorProvider = seed => new JavaRandom(seed ?? Environment.TickCount64),
         };
 
         store = new TransactionStore(MVStore.Open(null!));

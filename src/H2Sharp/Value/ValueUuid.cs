@@ -66,40 +66,30 @@ public sealed class ValueUuid : Value
     /// <returns>the new value</returns>
     public static ValueUuid GetNewRandom(int version)
     {
-        long high;
-        long low;
         switch (version)
         {
             case 4:
-                high = MathUtils.SecureRandomLong();
-                low = MathUtils.SecureRandomLong();
-                break;
+                return Get(Guid.NewGuid());
 
             case 7:
+#if NET9_0_OR_GREATER
+                return Get(Guid.CreateVersion7());
+#else
                 {
-                    DateTimeOffset now = DateTimeOffset.UtcNow;
-                    long nanos = (now.Ticks - TicksAtUnixEpoch) * 100L;
-                    int sub = (int)(nanos % 1_000_000L) * 2_000 / 488_281;
-                    high = (((now.ToUnixTimeSeconds() * 1_000L) + (nanos / 1_000_000L)) << 16) | (long)sub;
-                    low = MathUtils.SecureRandomLong();
-                    break;
+                    long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    long randomA = MathUtils.SecureRandomLong() & 0xFFFL;
+                    long high = (timestamp << 16) | (7L << 12) | randomA;
+                    long low = MathUtils.SecureRandomLong();
+                    low = (low & 0x3FFF_FFFF_FFFF_FFFFL) | unchecked((long)0x8000_0000_0000_0000UL);
+                    return new ValueUuid(high, low);
                 }
+#endif
 
             default:
                 throw DbException.GetInvalidValueException("RANDOM_UUID version", version);
         }
-
-        return new ValueUuid(
-            (high & ~0xF000L) | ((long)version << 12),
-
-            // The variant 0b10, which is the sign bit of the low half read as an unsigned number.
-            (low & 0x3FFF_FFFF_FFFF_FFFFL) | unchecked((long)0x8000_0000_0000_0000UL));
     }
 
-    /// <summary>
-    /// The ticks of the epoch, which is how a time is turned into the 100-nanosecond units that the
-    /// version 7 layout is written in.
-    /// </summary>
     private const long TicksAtUnixEpoch = 621_355_968_000_000_000L;
 
     /// <summary>
