@@ -16,25 +16,27 @@
 
 ## Прогон 2026-10-26
 
-Текущее рабочее дерево после `43427f5` и разметки user/role-тестов как
-`BlockedByPort`.
+Текущее рабочее дерево после `b4ef56c` и D-004 cleanup.
 
 * Полный набор: **803 / 952**, 149 падений.
-* Зелёный прогон `--filter "Category!=BlockedByPort"`: **801 / 932**, 131 падение.
-* `BlockedByPort`: **20** тестов; из них 12 прежних (коллатор, `SET PASSWORD`/`SET SALT`,
-  CSV/FILE, memory/DB_OBJECT_SQL, ESTIMATED_ENVELOPE) и 8 D-004 user/role:
-  `CREATE USER` ×2, `ALTER USER` ×3, `CREATE ROLE` ×1, `DROP USER` ×1, `DROP ROLE` ×1.
+* Зелёный прогон `--filter "Category!=BlockedByPort"`: **801 / 922**, 121 падение.
+* `BlockedByPort`: **30** тестов; из них 12 прежних (коллатор, `SET PASSWORD`/`SET SALT`,
+  CSV/FILE, memory/DB_OBJECT_SQL, ESTIMATED_ENVELOPE) и 18 D-004:
+  8 user/role-команд и 10 `PrivilegeCommandTests`. `INFORMATION_SCHEMA.USERS/ROLES/
+  RIGHTS/TABLE_PRIVILEGES/COLUMN_PRIVILEGES` не блокируются: на пустой базе они
+  возвращают 0 строк; их тесты пока красные только из-за непортированных
+  `CREATE USER`/`CREATE ROLE`/`GRANT`.
 
 | Область | Прошло (полный) | Всего | Прошло (без BlockedByPort) | Всего |
 |---|---:|---:|---:|---:|
-| `Commands/` | 165 | 259 | 165 | 247 |
+| `Commands/` | 166 | 259 | 166 | 237 |
 | `Functions/` | 304 | 325 | 302 | 317 |
 | `Grammar/` | 243 | 263 | 243 | 263 |
 | `Datatypes/` | 65 | 66 | 65 | 66 |
 | `SystemTables/` | 23 | 37 | 23 | 37 |
 | `Dml/` | 2 | 2 | 2 | 2 |
 
-Причины 131 зелёного падения: 69 — синтаксис/непрочитанная конструкция, 41 — явный
+Причины 121 зелёного падения: 69 — синтаксис/непрочитанная конструкция, 31 — явный
 `TODOException` (не портировано), 11 — отсутствующий объект/функция, 5 — расхождение
 значений, остальное — отдельные conversion/parameter/collation-дефекты.
 
@@ -42,8 +44,7 @@
 
 | Класс | Падений | Что это |
 |---|---:|---|
-| `PrivilegeCommandTests` | 10 | `GRANT`/`REVOKE` (D-004) |
-| `InformationSchemaMoreTests` | 10 | `ROUTINES`, `TRIGGERS`, `VIEWS`, `SESSIONS`, `PARAMETERS` и др. |
+| `InformationSchemaMoreTests` | 10 | `USERS/ROLES/RIGHTS/...` с непортированным D-004 setup, `ROUTINES`, `TRIGGERS`, `SESSIONS` |
 | `ExpressionTests` | 8 | `FIELD`, `WITHIN GROUP`, time zone, прочие выражения |
 | `DropObjectCommandTests` | 7 | `DROP AGGREGATE/ALIAS/CONSTANT/MATERIALIZED VIEW` и др. |
 | `StatementGrammarTests` | 6 | непрочитанные формы DDL/DML |
@@ -51,8 +52,11 @@
 | `DateTimeFunctionTests` | 6 | `TO_CHAR`, `DAY_OF_WEEK`, `PARSE_DATETIME` |
 | `CreateLinkedTableCommandTests` | 5 | linked tables |
 | `ScriptCommandTests` | 5 | SCRIPT-опции |
-| `MaintenanceCommandTests`, `InformationSchemaTests`, `CreateTableCommandTests`, `CreateRoutineCommandTests` | 4 each | maintenance, information schema, CREATE TABLE/ROUTINE |
-| остальные | 52 | routines, `RUNSCRIPT`, materialized views, window/table functions, crypto, grammar и др. |
+| `CreateRoutineCommandTests` | 4 | routines/aliases |
+| `MaintenanceCommandTests` | 4 | maintenance |
+| `CreateTableCommandTests` | 4 | CREATE TABLE |
+| `InformationSchemaTests` | 4 | info-schema columns/privileges |
+| остальные | 52 | `RUNSCRIPT`, materialized views, window/table functions, crypto, grammar и др. |
 
 `AggregateMiscTests` теперь **35/35**: перенесены `RANK`, `DENSE_RANK`, `PERCENT_RANK`,
 `CUME_DIST`. Для `CUME_DIST(2)` на `1,2,3` ожидание исправлено на `0.75`: H2 2.5 включает
@@ -64,8 +68,9 @@
 отвергает.
 
 Приоритет на следующий заход: закрыть 69 syntax-дефектов (это не «не портировано», а
-неполный парсер), затем 41 явный TODO; отдельно решить D-004 (`PrivilegeCommandTests` + 8
-уже помеченных user/role).
+неполный парсер), затем 31 явный TODO. D-004-команды users/roles/privileges вынесены в
+`BlockedByPort`; INFORMATION_SCHEMA-представления прав остаются активными и возвращают
+пустые данные.
 
 ## Устройство
 

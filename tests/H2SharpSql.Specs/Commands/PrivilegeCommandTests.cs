@@ -9,6 +9,7 @@ using Xunit;
 
 namespace H2SharpSql.Specs.Commands;
 
+[Trait("Category", "BlockedByPort")]
 public sealed class PrivilegeCommandTests
 {
     /// <summary>docs/commands.html:2349 — GRANT { { SELECT | INSERT | UPDATE | DELETE } [,..] | ALL [ PRIVILEGES ] } ON</summary>
