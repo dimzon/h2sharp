@@ -87,7 +87,7 @@ public sealed class CreateTriggerCommandTests
 
     private static int TriggerCount(IDbConnection connection, string name) =>
         connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_NAME = @Name",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_NAME = $Name",
             new { Name = name });
 
     private static void GivenTestTable(IDbConnection connection)

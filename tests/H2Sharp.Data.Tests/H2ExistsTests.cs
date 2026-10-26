@@ -36,7 +36,7 @@ public sealed class H2ExistsTests
         connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY)");
         connection.Execute("INSERT INTO T VALUES (1), (2)");
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT EXISTS (SELECT 1 FROM T WHERE ID = @id)";
+        command.CommandText = "SELECT EXISTS (SELECT 1 FROM T WHERE ID = $id)";
         DbParameter parameter = command.CreateParameter();
         parameter.ParameterName = "id";
         parameter.Value = 1;
@@ -72,11 +72,11 @@ public sealed class H2ExistsTests
         DynamicParameters parameters = new();
         parameters.Add("patterns", new[] { "a%", "b%" }, System.Data.DbType.Object);
         Assert.True(connection.QuerySingle<bool>(
-            "SELECT EXISTS (SELECT 1 FROM UNNEST(@patterns) p WHERE 'abc' LIKE p.C1)", parameters));
+            "SELECT EXISTS (SELECT 1 FROM UNNEST($patterns) p WHERE 'abc' LIKE p.C1)", parameters));
         parameters = new DynamicParameters();
         parameters.Add("patterns", new[] { "a%", "%c" }, System.Data.DbType.Object);
         Assert.True(connection.QuerySingle<bool>(
-            "SELECT NOT EXISTS (SELECT 1 FROM UNNEST(@patterns) p WHERE NOT ('abc' LIKE p.C1))", parameters));
+            "SELECT NOT EXISTS (SELECT 1 FROM UNNEST($patterns) p WHERE NOT ('abc' LIKE p.C1))", parameters));
     }
 
     private static H2Connection Open()

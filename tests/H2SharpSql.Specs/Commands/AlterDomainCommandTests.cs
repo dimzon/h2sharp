@@ -209,6 +209,6 @@ public sealed class AlterDomainCommandTests
 
     private static int CountConstraints(IDbConnection connection, string name) =>
         connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.DOMAIN_CONSTRAINTS WHERE CONSTRAINT_NAME = @Name",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.DOMAIN_CONSTRAINTS WHERE CONSTRAINT_NAME = $Name",
             new { Name = name });
 }

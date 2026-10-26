@@ -28,11 +28,11 @@ public sealed class H2ManyParametersTests
         Execute(connection, "CREATE TABLE T(A INT, B INT, C INT, D INT, E INT)");
 
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "INSERT INTO T VALUES (@a, @b, @c, @d, @e), (@a, @b, @c, @d, @e), (@a, @b, @c, @d, @e)";
+        command.CommandText = "INSERT INTO T VALUES ($a, $b, $c, $d, $e), ($a, $b, $c, $d, $e), ($a, $b, $c, $d, $e)";
         foreach (string name in new[] { "a", "b", "c", "d", "e" })
         {
             DbParameter parameter = command.CreateParameter();
-            parameter.ParameterName = "@" + name;
+            parameter.ParameterName = "$" + name;
             parameter.Value = 1;
             command.Parameters.Add(parameter);
         }

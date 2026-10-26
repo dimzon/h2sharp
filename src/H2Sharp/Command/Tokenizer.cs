@@ -169,10 +169,10 @@ public sealed class Tokenizer
                     }
                     else
                     {
-                        // A bare question mark: numbered in the order it is read. A parameter
-                        // written by name comes through as an At token followed by the name as an
-                        // identifier — that is how this tokenizer spells "@Age", and the parser
-                        // binds the two.
+                        // A bare question mark: numbered in the order it is read. "@Age" is an At
+                        // token followed by the name as an identifier, which the parser binds to
+                        // a session variable; named parameters are written "$name" and are
+                        // rewritten by the ADO.NET layer before the engine sees the text.
                         token = new Token.ParameterToken(i, 0);
                     }
 

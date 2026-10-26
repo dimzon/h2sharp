@@ -2,19 +2,13 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * How the three ways of writing a parameter come out of the tokenizer.
+ * How a question mark parameter and an at-variable come out of the tokenizer.
  *
- * The finding that matters for the parser: a parameter written **by name** is two tokens, an
- * `At` and the name as an identifier; a parameter written as a **bare question mark** is one
- * token that is then numbered by the order it was read; and `?2` is one token that carries the
- * position that was written. A statement cannot mix the first two ways, and the tokenizer
- * refuses that — so the parser gets either all names or all positions, and has to bind the two
- * tokens of a name itself.
- *
- * That is pinned here rather than discovered later: a parser that expects one token for a name
- * would read "@Age" as an at-sign followed by a column named AGE, and the statement would run
- * against the column instead of the parameter. Nothing in a test of the tokenizer alone would
- * have said so.
+ * A parameter written as a **bare question mark** is one token that is then numbered by the
+ * order it was read; `?2` is one token that carries the position that was written. `@Age` is
+ * two tokens, an `At` and the name as an identifier, and it is an H2 session variable, not a
+ * parameter: the ADO.NET layer's named parameters are written `$name` and are rewritten before
+ * the text reaches the engine.
  */
 using System;
 using System.Collections;
@@ -29,7 +23,7 @@ namespace H2Sharp.Tests;
 public sealed class ParameterTokenTests
 {
     [Fact]
-    public void AParameterWrittenByNameIsAnAtAndTheName()
+    public void AVariableIsAnAtAndTheName()
     {
         List<Token> tokens = Tokenize("SELECT * FROM T WHERE ID = @Id AND AGE = @Age");
 
@@ -61,11 +55,11 @@ public sealed class ParameterTokenTests
     }
 
     [Fact]
-    public void ANameIsFoldedToUpperCaseLikeAnyOtherIdentifier()
+    public void AVariableNameIsFoldedToUpperCaseLikeAnyOtherIdentifier()
     {
-        // The name of a parameter is an identifier and is folded like one. It is worth knowing,
-        // because a caller that binds "@age" must find the parameter the statement wrote as
-        // "@AGE" — the fold happens once, here, and not again where the name is bound.
+        // The name of a variable is an identifier and is folded like one. It is worth knowing,
+        // because the parser binds "@age" and "@AGE" to the same variable — the fold happens
+        // once, here, and not again where the variable is looked up.
         Assert.Equal(
             ["AGE"],
             Tokenize("SELECT * FROM T WHERE A = @age")

@@ -16,7 +16,7 @@ public sealed class H2OrderParameterTests
         connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY, N INT)");
         connection.Execute("INSERT INTO T VALUES (1, 80), (2, 10), (3, 20)");
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT ID, N FROM T ORDER BY @position";
+        command.CommandText = "SELECT ID, N FROM T ORDER BY $position";
         DbParameter parameter = command.CreateParameter();
         parameter.ParameterName = "position";
         parameter.Value = 2;
@@ -42,7 +42,7 @@ public sealed class H2OrderParameterTests
         connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY, N INT)");
         connection.Execute("INSERT INTO T VALUES (1, 80), (2, 10), (3, 20)");
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT ID, N FROM T ORDER BY @first; SELECT ID, N FROM T ORDER BY @second DESC";
+        command.CommandText = "SELECT ID, N FROM T ORDER BY $first; SELECT ID, N FROM T ORDER BY $second DESC";
         foreach (string name in new[] { "first", "second" })
         {
             DbParameter parameter = command.CreateParameter();

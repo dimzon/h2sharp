@@ -20,7 +20,7 @@ public sealed class H2PositionTests
         Assert.Equal([1, 2], connection.Query<int>(
             "SELECT ID FROM SETTINGS WHERE POSITION(X'7F' IN TOKEN) > 0 ORDER BY ID"));
         Assert.Equal([2], connection.Query<int>(
-            "SELECT ID FROM SETTINGS AS s WHERE POSITION(@marker IN s.TOKEN) > 0",
+            "SELECT ID FROM SETTINGS AS s WHERE POSITION($marker IN s.TOKEN) > 0",
             new { marker = new byte[] { 0x80 } }));
         Assert.Empty(connection.Query<int>(
             "SELECT ID FROM SETTINGS WHERE POSITION(X'02' IN TOKEN) > 0"));

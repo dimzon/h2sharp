@@ -76,12 +76,12 @@ public sealed class AlterTableDropCommandTests
 
     private static int ColumnCount(IDbConnection connection, string column) =>
         connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'TEST' AND COLUMN_NAME = @Column",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'TEST' AND COLUMN_NAME = $Column",
             new { Column = column });
 
     private static int ConstraintCount(IDbConnection connection, string name) =>
         connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_NAME = @Name",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_NAME = $Name",
             new { Name = name });
 
     private static void GivenTestTable(IDbConnection connection)

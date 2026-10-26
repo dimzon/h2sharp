@@ -18,7 +18,7 @@ public sealed class H2WindowFunctionTests
         Assert.Equal(new long[] { 1, 2, 3 }, connection.Query<long>(
             "SELECT ROW_NUMBER() OVER (ORDER BY \"Id\") FROM \"Blogs\" ORDER BY \"Id\""));
         Assert.Equal(new long[] { 1, 2 }, connection.Query<long>(
-            "SELECT ROW_NUMBER() OVER (ORDER BY \"Id\") FROM \"Blogs\" WHERE \"Id\" > @id ORDER BY \"Id\"", new { id = 1 }));
+            "SELECT ROW_NUMBER() OVER (ORDER BY \"Id\") FROM \"Blogs\" WHERE \"Id\" > $id ORDER BY \"Id\"", new { id = 1 }));
     }
 
     [Fact]

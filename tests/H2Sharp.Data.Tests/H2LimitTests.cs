@@ -37,9 +37,9 @@ public sealed class H2LimitTests
         Prepare(connection);
 
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT ID FROM T ORDER BY ID LIMIT @p0";
+        command.CommandText = "SELECT ID FROM T ORDER BY ID LIMIT $p0";
         DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "@p0";
+        parameter.ParameterName = "$p0";
         parameter.Value = 3;
         command.Parameters.Add(parameter);
 

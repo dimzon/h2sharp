@@ -18,9 +18,9 @@ public sealed class H2OrderByExpressionTests
         Assert.Equal(new[] { 1, 2, 3 }, connection.Query<int>("SELECT ID FROM T ORDER BY MOD(ID, 7)"));
         Assert.Equal(new[] { 1, 3, 2 }, connection.Query<int>("SELECT ID FROM T ORDER BY N % 7, ID"));
         Assert.Equal(new[] { 1, 3 }, connection.Query<int>(
-            "SELECT ID FROM T ORDER BY MOD(N, @divisor), ID LIMIT @take", new { divisor = 7, take = 2 }));
+            "SELECT ID FROM T ORDER BY MOD(N, $divisor), ID LIMIT $take", new { divisor = 7, take = 2 }));
         Assert.Equal(new[] { 1, 2 }, connection.Query<int>(
-            "SELECT ID FROM T ORDER BY MOD(N, @divisor), ID LIMIT @take", new { divisor = 9, take = 2 }));
+            "SELECT ID FROM T ORDER BY MOD(N, $divisor), ID LIMIT $take", new { divisor = 9, take = 2 }));
 
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "SELECT ID AS RESULT_ID FROM T ORDER BY MOD(N, 7), ID";

@@ -77,7 +77,7 @@ public sealed class AlterTableAddCommandTests
 
     private static int ColumnCount(IDbConnection connection, string column) =>
         connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'TEST' AND COLUMN_NAME = @Column",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'TEST' AND COLUMN_NAME = $Column",
             new { Column = column });
 
     private static void GivenTestTable(IDbConnection connection)

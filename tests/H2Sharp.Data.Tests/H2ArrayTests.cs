@@ -22,7 +22,7 @@ public sealed class H2ArrayTests
         for (int i = 0; i < inputs.Length; i++)
         {
             using DbCommand command = connection.CreateCommand();
-            command.CommandText = "INSERT INTO T VALUES (@id, @a)";
+            command.CommandText = "INSERT INTO T VALUES ($id, $a)";
             Add(command, "id", i);
             Add(command, "a", inputs[i]);
             Assert.Equal(1, command.ExecuteNonQuery());
@@ -57,7 +57,7 @@ public sealed class H2ArrayTests
         for (int i = 0; i < inputs.Length; i++)
         {
             using DbCommand command = connection.CreateCommand();
-            command.CommandText = "INSERT INTO T VALUES (@id, @a)";
+            command.CommandText = "INSERT INTO T VALUES ($id, $a)";
             Add(command, "id", i);
             Add(command, "a", inputs[i]);
             command.ExecuteNonQuery();
@@ -88,7 +88,7 @@ public sealed class H2ArrayTests
     {
         using H2Connection connection = Open();
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT @a";
+        command.CommandText = "SELECT $a";
         Add(command, "a", new List<Guid>());
         using DbDataReader reader = command.ExecuteReader();
         Assert.True(reader.Read());
@@ -103,7 +103,7 @@ public sealed class H2ArrayTests
         connection.Execute("CREATE TABLE T(A INTEGER ARRAY ARRAY, B VARBINARY ARRAY, C VARCHAR ARRAY)");
         using (DbCommand command = connection.CreateCommand())
         {
-            command.CommandText = "INSERT INTO T VALUES (@a, @b, @c)";
+            command.CommandText = "INSERT INTO T VALUES ($a, $b, $c)";
             Add(command, "a", new[] { new[] { 1, 2 }, Array.Empty<int>(), new[] { 3 } });
             Add(command, "b", new byte[][] { [0, 128, 255], [] });
             Add(command, "c", new string?[] { "O'Brien", null, "" });
@@ -132,7 +132,7 @@ public sealed class H2ArrayTests
     {
         using H2Connection connection = Open();
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT @bytes, @text";
+        command.CommandText = "SELECT $bytes, $text";
         Add(command, "bytes", new byte[] { 1, 2, 255 });
         Add(command, "text", "abc");
         using DbDataReader reader = command.ExecuteReader();
@@ -152,7 +152,7 @@ public sealed class H2ArrayTests
         // Explicit DbType.Object selects a single native array rather than Dapper's IN-list expansion.
         parameters.Add("numbers", new List<int> { 10, 20 }, DbType.Object);
         parameters.Add("tags", new[] { "a", "b" }, DbType.Object);
-        Assert.Equal(1, connection.Execute("INSERT INTO T VALUES (@id, @numbers, @tags)", parameters));
+        Assert.Equal(1, connection.Execute("INSERT INTO T VALUES ($id, $numbers, $tags)", parameters));
         ArrayRow row = connection.QuerySingle<ArrayRow>("SELECT ID, NUMBERS, TAGS FROM T");
         Assert.Equal(1, row.Id);
         Assert.Equal(new[] { 10, 20 }, row.Numbers);
@@ -161,7 +161,7 @@ public sealed class H2ArrayTests
 
         parameters = new DynamicParameters();
         parameters.Add("numbers", new SinglePassEnumerable(30, 40, 50), DbType.Object);
-        Assert.Equal(1, connection.Execute("UPDATE T SET NUMBERS = @numbers", parameters));
+        Assert.Equal(1, connection.Execute("UPDATE T SET NUMBERS = $numbers", parameters));
         Assert.Equal(new[] { 30, 40, 50 }, connection.QuerySingle<ArrayRow>("SELECT ID, NUMBERS, TAGS FROM T").Numbers);
     }
 
@@ -171,9 +171,9 @@ public sealed class H2ArrayTests
         using H2Connection connection = Open();
         connection.Execute("CREATE TABLE T(ID INT)");
         connection.Execute("INSERT INTO T VALUES (1), (2), (3)");
-        Assert.Equal(new[] { 1, 3 }, connection.Query<int>("SELECT ID FROM T WHERE ID IN @ids ORDER BY ID",
+        Assert.Equal(new[] { 1, 3 }, connection.Query<int>("SELECT ID FROM T WHERE ID IN $ids ORDER BY ID",
             new { ids = new[] { 1, 3 } }));
-        Assert.Empty(connection.Query<int>("SELECT ID FROM T WHERE ID IN @ids", new { ids = Array.Empty<int>() }));
+        Assert.Empty(connection.Query<int>("SELECT ID FROM T WHERE ID IN $ids", new { ids = Array.Empty<int>() }));
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public sealed class H2ArrayTests
         using H2Connection connection = Open();
         connection.Execute("CREATE TABLE T(A INTEGER ARRAY[2])");
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "INSERT INTO T VALUES (@a)";
+        command.CommandText = "INSERT INTO T VALUES ($a)";
         Add(command, "a", new[] { 1, 2, 3 });
         Assert.Equal(22001, Assert.Throws<H2SharpException>(() => command.ExecuteNonQuery()).H2ErrorCode);
         command.Parameters[0].Value = new[] { "bad" };
@@ -213,7 +213,7 @@ public sealed class H2ArrayTests
         Assert.Equal(new int?[] { 1, 2 }, rows[0].Numbers);
         Assert.Equal(new int?[] { 3, null }, rows[1].Numbers);
         Assert.Null(rows[2].Numbers);
-        Assert.Equal(1, connection.Execute("INSERT INTO T(ID, NUMBERS) VALUES (@id, @numbers)",
+        Assert.Equal(1, connection.Execute("INSERT INTO T(ID, NUMBERS) VALUES ($id, $numbers)",
             new { id = 4, numbers = new int?[] { 4, null } }));
         Assert.Equal(new int?[] { 4, null }, connection.QuerySingle<NullableArrayRow>(
             "SELECT ID, NUMBERS, TAGS FROM T WHERE ID = 4").Numbers);
@@ -226,7 +226,7 @@ public sealed class H2ArrayTests
         connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY)");
         connection.Execute("INSERT INTO T VALUES (1), (2), (3)");
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT ID FROM T WHERE ID = ANY(@ids) ORDER BY ID";
+        command.CommandText = "SELECT ID FROM T WHERE ID = ANY($ids) ORDER BY ID";
         Add(command, "ids", new[] { 1, 2 });
         using (DbDataReader reader = command.ExecuteReader())
         {
@@ -245,7 +245,7 @@ public sealed class H2ArrayTests
         // ordinary IN-list expansion, which is a separate, supported calling convention.
         DynamicParameters parameters = new();
         parameters.Add("__ids_0", new[] { 1, 2 }, DbType.Object);
-        const string Sql = "SELECT ID FROM T WHERE ID = ANY(@__ids_0) ORDER BY ID";
+        const string Sql = "SELECT ID FROM T WHERE ID = ANY($__ids_0) ORDER BY ID";
         Assert.Equal(new[] { 1, 2 }, connection.Query<int>(Sql, parameters));
         parameters = new DynamicParameters();
         parameters.Add("__ids_0", new List<int> { 1, 3 }, DbType.Object);
@@ -256,7 +256,7 @@ public sealed class H2ArrayTests
         parameters = new DynamicParameters();
         parameters.Add("__ids_0", new[] { 1, 2 }, DbType.Object);
         Assert.Equal(new[] { 3 }, connection.Query<int>(
-            "SELECT ID FROM T WHERE ID <> ALL(@__ids_0) ORDER BY ID", parameters));
+            "SELECT ID FROM T WHERE ID <> ALL($__ids_0) ORDER BY ID", parameters));
     }
 
     private static H2Connection Open()

@@ -123,7 +123,7 @@ public sealed class H2LikeSemanticsTests
         using IDbConnection connection = Open();
         PrepareNames(connection);
         using IDbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT NAME FROM T WHERE NAME LIKE @pattern ORDER BY ID";
+        command.CommandText = "SELECT NAME FROM T WHERE NAME LIKE $pattern ORDER BY ID";
         IDbDataParameter parameter = command.CreateParameter();
         parameter.ParameterName = "pattern";
         parameter.Value = "ab%";
@@ -148,7 +148,7 @@ public sealed class H2LikeSemanticsTests
         Assert.Equal(6, connection.Query<int>("SELECT COUNT(*) FROM T WHERE NAME LIKE '%'").Single());
         // A NULL pattern makes the predicate UNKNOWN for every known name.
         using IDbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM T WHERE NAME LIKE @pattern";
+        command.CommandText = "SELECT COUNT(*) FROM T WHERE NAME LIKE $pattern";
         IDbDataParameter parameter = command.CreateParameter();
         parameter.ParameterName = "pattern";
         parameter.Value = DBNull.Value;

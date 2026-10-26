@@ -40,7 +40,7 @@ public sealed class DapperSmokeTests
         _ = connection.Execute("CREATE TABLE PERSON(ID INT PRIMARY KEY, NAME VARCHAR(100) NOT NULL, AGE INT)");
 
         int inserted = connection.Execute(
-            "INSERT INTO PERSON(ID, NAME, AGE) VALUES (@Id, @Name, @Age)",
+            "INSERT INTO PERSON(ID, NAME, AGE) VALUES ($Id, $Name, $Age)",
             new Person { Id = 1, Name = "Ada", Age = 36 });
         Assert.Equal(1, inserted);
 
@@ -52,7 +52,7 @@ public sealed class DapperSmokeTests
         Assert.Equal(36, insertedPerson.Age);
 
         int updated = connection.Execute(
-            "UPDATE PERSON SET AGE = @Age WHERE ID = @Id",
+            "UPDATE PERSON SET AGE = $Age WHERE ID = $Id",
             new { Id = 1, Age = 37 });
         Assert.Equal(1, updated);
 
@@ -60,7 +60,7 @@ public sealed class DapperSmokeTests
         // and leaves the old value in place is the shape of bug a smoke test exists to catch,
         // and a single select would miss it.
         Person afterUpdate = connection.QuerySingle<Person>(
-            "SELECT ID, NAME, AGE FROM PERSON WHERE ID = @Id", new { Id = 1 });
+            "SELECT ID, NAME, AGE FROM PERSON WHERE ID = $Id", new { Id = 1 });
         Assert.Equal(1, afterUpdate.Id);
         Assert.Equal("Ada", afterUpdate.Name);
         Assert.Equal(37, afterUpdate.Age);
@@ -71,14 +71,14 @@ public sealed class DapperSmokeTests
         int count = connection.QuerySingle<int>("SELECT COUNT(*) FROM PERSON");
         Assert.Equal(1, count);
 
-        _ = connection.Execute("DELETE FROM PERSON WHERE ID = @Id", new { Id = 1 });
+        _ = connection.Execute("DELETE FROM PERSON WHERE ID = $Id", new { Id = 1 });
         Assert.Equal(0, connection.QuerySingle<int>("SELECT COUNT(*) FROM PERSON"));
     }
 
     [Fact]
     public void ParametersAreNotConcatenatedIntoTheText()
     {
-        // The statement above carries '@Id' and the value travels beside it, which is how
+        // The statement above carries '$Id' and the value travels beside it, which is how
         // Dapper calls a provider. A provider that inlined the value would answer these calls
         // perfectly and be a SQL injection, so the shape is asserted separately from the flow:
         // the text keeps its placeholders whatever the value is.
@@ -86,7 +86,7 @@ public sealed class DapperSmokeTests
         connection.Open();
 
         _ = connection.Execute("CREATE TABLE T(ID INT, TEXT VARCHAR(50))");
-        _ = connection.Execute("INSERT INTO T(ID, TEXT) VALUES (@Id, @Text)",
+        _ = connection.Execute("INSERT INTO T(ID, TEXT) VALUES ($Id, $Text)",
             new { Id = 1, Text = "O'Brien'; DROP TABLE T; --" });
 
         Assert.Equal("O'Brien'; DROP TABLE T; --", connection.QuerySingle<string>("SELECT TEXT FROM T WHERE ID = 1"));

@@ -63,7 +63,7 @@ public sealed class AlterTableRenameCommandTests
 
     private static int ConstraintCount(IDbConnection connection, string name) =>
         connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_NAME = @Name",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_NAME = $Name",
             new { Name = name });
 
     private static void GivenConstrainedTable(IDbConnection connection)

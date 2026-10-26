@@ -19,7 +19,7 @@ public sealed class H2JsonReadingTests
         using H2Connection connection = Open();
         connection.Execute("CREATE TABLE J(D JSON)");
         byte[] expected = Encoding.UTF8.GetBytes("{\"текст\":\"привет 🎉\"}");
-        connection.Execute("INSERT INTO J VALUES (@document)", new { document = expected });
+        connection.Execute("INSERT INTO J VALUES ($document)", new { document = expected });
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "SELECT D FROM J";
         using DbDataReader reader = command.ExecuteReader();
@@ -57,14 +57,14 @@ public sealed class H2JsonReadingTests
         using H2Connection connection = Open();
         connection.Execute("CREATE TABLE J(ID INT PRIMARY KEY, D JSON)");
         const string Document = "{\"a\": 1}";
-        connection.Execute("INSERT INTO J VALUES (1, @document)", new { document = Encoding.UTF8.GetBytes(Document) });
+        connection.Execute("INSERT INTO J VALUES (1, $document)", new { document = Encoding.UTF8.GetBytes(Document) });
         byte[] value = connection.QuerySingle<byte[]>("SELECT D FROM J WHERE ID = 1");
         Assert.Equal("{\"a\":1}", Encoding.UTF8.GetString(value));
-        connection.Execute("INSERT INTO J VALUES (2, @document)", new { document = value });
+        connection.Execute("INSERT INTO J VALUES (2, $document)", new { document = value });
         Assert.Equal(value, connection.QuerySingle<byte[]>("SELECT D FROM J WHERE ID = 2"));
         Assert.Equal(value, Assert.IsType<byte[]>(connection.ExecuteScalar("SELECT D FROM J WHERE ID = 1")));
 
-        connection.Execute("INSERT INTO J VALUES (3, @document)", new { document = Document });
+        connection.Execute("INSERT INTO J VALUES (3, $document)", new { document = Document });
         Assert.Equal("\"{\\\"a\\\": 1}\"", Encoding.UTF8.GetString(connection.QuerySingle<byte[]>("SELECT D FROM J WHERE ID = 3")));
         // CAST to VARCHAR exposes text for callers that need ordinary Dapper string mapping.
         Assert.Equal("{\"a\":1}", connection.QuerySingle<string>("SELECT CAST(D AS VARCHAR) FROM J WHERE ID = 1"));
@@ -105,7 +105,7 @@ public sealed class H2JsonReadingTests
         using H2Connection connection = Open();
         connection.Execute("CREATE TABLE J(ID INT PRIMARY KEY, D JSON)");
         using DbCommand insert = connection.CreateCommand();
-        insert.CommandText = "INSERT INTO J VALUES (@id, @document)";
+        insert.CommandText = "INSERT INTO J VALUES ($id, $document)";
         DbParameter id = insert.CreateParameter();
         id.ParameterName = "id";
         insert.Parameters.Add(id);
@@ -142,10 +142,10 @@ public sealed class H2JsonReadingTests
         DynamicParameters parameters = new();
         using JsonDocument arrayDocument = JsonDocument.Parse("[1, null, true]");
         parameters.Add("document", arrayDocument, DbType.Object);
-        connection.Execute("INSERT INTO J VALUES (5, @document)", parameters);
+        connection.Execute("INSERT INTO J VALUES (5, $document)", parameters);
         parameters = new DynamicParameters();
         parameters.Add("document", arrayDocument.RootElement, DbType.Object);
-        connection.Execute("INSERT INTO J VALUES (6, @document)", parameters);
+        connection.Execute("INSERT INTO J VALUES (6, $document)", parameters);
         Assert.Equal("[1,null,true]"u8.ToArray(), connection.QuerySingle<byte[]>("SELECT D FROM J WHERE ID = 5"));
         Assert.Equal("[1,null,true]"u8.ToArray(), connection.QuerySingle<byte[]>("SELECT D FROM J WHERE ID = 6"));
     }

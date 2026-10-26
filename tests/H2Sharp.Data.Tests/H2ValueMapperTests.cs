@@ -21,9 +21,9 @@ public sealed class H2ValueMapperTests
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE T(VAL NUMERIC(10, 2))";
         _ = command.ExecuteNonQuery();
-        command.CommandText = "INSERT INTO T(VAL) VALUES (@v)";
+        command.CommandText = "INSERT INTO T(VAL) VALUES ($v)";
         DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "@v";
+        parameter.ParameterName = "$v";
         parameter.Value = 123.45m;
         command.Parameters.Add(parameter);
         Assert.Equal(1, command.ExecuteNonQuery());

@@ -606,7 +606,7 @@ public sealed class SetCommandTests
 
     private static string Setting(IDbConnection connection, string name) =>
         connection.QuerySingle<string>(
-            "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = @Name",
+            "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = $Name",
             new { Name = name });
 
     /// <summary>
@@ -616,6 +616,6 @@ public sealed class SetCommandTests
     /// </summary>
     private static System.Collections.Generic.List<string> Settings(IDbConnection connection, string name) =>
         connection.Query<string>(
-            "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = @Name",
+            "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = $Name",
             new { Name = name }).AsList();
 }

@@ -75,6 +75,6 @@ public sealed class CreateLinkedTableCommandTests
 
     private static int TableCount(IDbConnection connection, string table) =>
         connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = @Table",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = $Table",
             new { Table = table });
 }

@@ -94,7 +94,7 @@ public sealed class H2RegexpSemanticsTests
         using IDbConnection connection = Open();
         PrepareNames(connection);
         using IDbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT NAME FROM T WHERE NAME REGEXP @pattern ORDER BY ID";
+        command.CommandText = "SELECT NAME FROM T WHERE NAME REGEXP $pattern ORDER BY ID";
         IDbDataParameter parameter = command.CreateParameter();
         parameter.ParameterName = "pattern";
         parameter.Value = "b.";

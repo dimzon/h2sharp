@@ -29,9 +29,9 @@ public sealed class H2DataChangeDeltaTableTests
 
         // The form the providers write: the key of the row the insert wrote.
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT \"Id\" FROM FINAL TABLE (INSERT INTO \"Items\" (\"Name\") VALUES (@p0))";
+        command.CommandText = "SELECT \"Id\" FROM FINAL TABLE (INSERT INTO \"Items\" (\"Name\") VALUES ($p0))";
         DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "@p0";
+        parameter.ParameterName = "$p0";
         parameter.Value = "x";
         command.Parameters.Add(parameter);
 

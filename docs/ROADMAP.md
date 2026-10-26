@@ -15,7 +15,7 @@ DML, query, reader, Dapper. The Dapper flow is green.
 **SQL that executes:**
 
 * `SELECT` — flat select, `UNION`/`UNION ALL`, `DISTINCT`, `GROUP BY`/`HAVING`, `ORDER BY`,
-  `LIMIT`/`OFFSET`/`FETCH`, `DUAL`, `CAST`, literals, parameters (`?` and rewritten `@name`).
+  `LIMIT`/`OFFSET`/`FETCH`, `DUAL`, `CAST`, literals, parameters (`?`, `$N` and rewritten `$name`).
 * Aggregates — `COUNT`/`COUNT(*)`, `SUM`, `MIN`, `MAX`, `AVG`, `STDDEV*`, `VAR*`, `ANY`/`EVERY`,
   `MEDIAN`, `ANY_VALUE`, `PERCENTILE_CONT`/`DISC`, `LISTAGG` (+ `GROUP_CONCAT`/`STRING_AGG`),
   `REGR_COUNT`/`AVGX`/`AVGY`/`SXX`/`SYY`/`SLOPE`/`INTERCEPT`/`R2`/`SXY`, `COVAR_*`, `CORR`,
@@ -156,8 +156,8 @@ erasure to `object` sits in 6+ Tx files, and heterogeneous undo-log is a proven 
 
 `H2Sharp.Data`: `H2Connection`, `H2ProviderFactory`, `H2Command`, `H2Parameter`,
 `H2DataReader`, `H2Transaction`, `H2ConnectionStringBuilder`, `H2CommandBuilder`,
-`H2DataAdapter`, `H2DbColumn`, `H2ValueMapper`, `H2ParameterRewriter`. Named `@name`
-parameters are rewritten to `?` before the engine sees them.
+`H2DataAdapter`, `H2DbColumn`, `H2ValueMapper`, `H2ParameterRewriter`. Named `$name`
+parameters are rewritten to `$N` before the engine sees them.
 
 Tests live in their own project, `tests/H2Sharp.Data.Tests` (297 green), and the gate is
 Dapper: `DapperSmokeTests` drives an in-memory database end to end over `IDbConnection`

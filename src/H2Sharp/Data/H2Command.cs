@@ -13,6 +13,10 @@
  * Running hands the text to the session's parser, binds the parameter values by the positions
  * the rewriter gave them, and keeps one container per statement of the text: the first answers,
  * and the rest run for effect — drained if they are queries, counted if they are updates.
+ *
+ * Named parameters are written "$name" and rewritten to "$N" before the text reaches the engine.
+ * "@" and ":" are not parameter prefixes: the first is an H2 session variable and the second is
+ * ordinary syntax (see JSON_OBJECT), so they pass through untouched.
  */
 using System;
 using System.Collections.Generic;
@@ -407,12 +411,12 @@ public sealed class H2Command : DbCommand
     /// statement the text holds.
     /// </summary>
     /// <remarks>
-    /// The engine only knows positional parameters, so named ones are rewritten before
-    /// the text reaches it, and the values are bound by the positions they took. A
-    /// placeholder with no value is refused here rather than read as NULL there: NULL is
-    /// a value the caller could have meant, a missing one is a mistake in the call.
-    /// Parameters are numbered across the whole text, and every container of one parse
-    /// shares the same list, so one pass binds every statement of it.
+    /// The engine knows "?", "?N" and "$N"; "$name" is rewritten to "$N" before the text
+    /// reaches it, and the values are bound by the positions they took. A placeholder with no
+    /// value is refused here rather than read as NULL there: NULL is a value the caller could
+    /// have meant, a missing one is a mistake in the call. Parameters are numbered across the
+    /// whole text, and every container of one parse shares the same list, so one pass binds
+    /// every statement of it.
     /// </remarks>
     /// <returns>the prepared containers, in order</returns>
     private List<Command.CommandContainer> PrepareEngines()
@@ -422,9 +426,10 @@ public sealed class H2Command : DbCommand
 
         string text = commandText;
         List<H2Parameter> ordered = NoParameters;
-        if (parameters.Count > 0)
+        if (parameters.Count > 0 || commandText.IndexOf('$') >= 0)
         {
-            (text, ordered) = H2ParameterRewriter.Rewrite(commandText, parameterCollection);
+            (text, ordered) = H2ParameterRewriter.Rewrite(
+                commandText, parameterCollection, current);
         }
 
         if (owner.CurrentTransaction is not null && transaction is null)

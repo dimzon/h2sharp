@@ -55,7 +55,7 @@ public sealed class SelectClauseTests
         GivenTestTable(connection);
 
         List<int> ids = connection.Query<int>(
-            "SELECT ID FROM TEST WHERE NAME = @Name ORDER BY ID",
+            "SELECT ID FROM TEST WHERE NAME = $Name ORDER BY ID",
             new { Name = "Alan" }).AsList();
 
         Assert.Equal(new[] { 2 }, ids);

@@ -255,19 +255,22 @@ public sealed class H2ParameterCollection : DbParameterCollection
     }
 
     /// <summary>
-    /// Whether a parameter name matches. The leading '@' and ':' that a caller may write is
-    /// theirs, not the parameter's: Dapper names parameters without them and the SQL keeps them,
-    /// so the comparison drops the prefix on both sides rather than making the caller agree.
+    /// Whether a parameter name matches. The leading '$' that a caller may write is theirs, not
+    /// the parameter's, so the comparison drops it on both sides. The rest of the name is
+    /// case-sensitive: "$id" and "$Id" are different parameters, and a lookup that ignored case
+    /// could not say which index to return when both are present. A leading '@' or ':' is not
+    /// stripped: those are not parameter prefixes, and silently accepting one would hide a
+    /// mistake in the caller's parameter name.
     /// </summary>
     private static bool NameEquals(string name, string other)
     {
-        return string.Equals(Trim(name), Trim(other), StringComparison.OrdinalIgnoreCase);
+        return string.Equals(Trim(name), Trim(other), StringComparison.Ordinal);
     }
 
     private static string Trim(string name)
     {
         ReadOnlySpan<char> span = name.AsSpan();
-        if (span.Length > 0 && (span[0] == '@' || span[0] == ':'))
+        if (span.Length > 0 && span[0] == '$')
         {
             span = span[1..];
         }

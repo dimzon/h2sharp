@@ -30,9 +30,9 @@ public sealed class H2TimeParameterTests
         command.CommandText = "CREATE TABLE T(VAL TIME)";
         _ = command.ExecuteNonQuery();
 
-        command.CommandText = "INSERT INTO T(VAL) VALUES (@v)";
+        command.CommandText = "INSERT INTO T(VAL) VALUES ($v)";
         DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "@v";
+        parameter.ParameterName = "$v";
         parameter.DbType = DbType.Time;
         parameter.Value = new TimeSpan(12, 34, 56);
         command.Parameters.Add(parameter);
@@ -52,7 +52,7 @@ public sealed class H2TimeParameterTests
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE T(VAL TIME(9))";
         command.ExecuteNonQuery();
-        command.CommandText = "INSERT INTO T VALUES (@time)";
+        command.CommandText = "INSERT INTO T VALUES ($time)";
         DbParameter parameter = command.CreateParameter();
         parameter.ParameterName = "time";
         TimeOnly time = new TimeOnly(10, 0).Add(TimeSpan.FromTicks(1));
@@ -73,9 +73,9 @@ public sealed class H2TimeParameterTests
     {
         using H2Connection connection = Open("interval_parameter");
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT @v";
+        command.CommandText = "SELECT $v";
         DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "@v";
+        parameter.ParameterName = "$v";
         parameter.Value = new TimeSpan(1, 2, 3);
         command.Parameters.Add(parameter);
 
@@ -97,9 +97,9 @@ public sealed class H2TimeParameterTests
         command.CommandText = "CREATE TABLE T(VAL TIME)";
         _ = command.ExecuteNonQuery();
 
-        command.CommandText = "INSERT INTO T(VAL) VALUES (@v)";
+        command.CommandText = "INSERT INTO T(VAL) VALUES ($v)";
         DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "@v";
+        parameter.ParameterName = "$v";
         parameter.DbType = DbType.Time;
         parameter.Value = new TimeSpan(25, 0, 0);
         command.Parameters.Add(parameter);

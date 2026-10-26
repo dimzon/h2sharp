@@ -23,7 +23,7 @@ public sealed class TimeParameterOracleTests
         setup.CommandText = "CREATE TABLE T(ID INT PRIMARY KEY, TM TIME(9))";
         setup.ExecuteNonQuery();
         using DbCommand insert = connection.CreateCommand();
-        insert.CommandText = "INSERT INTO T VALUES (@id, @time)";
+        insert.CommandText = "INSERT INTO T VALUES ($id, $time)";
         DbParameter id = insert.CreateParameter();
         id.ParameterName = "id";
         DbParameter time = insert.CreateParameter();
@@ -79,7 +79,7 @@ public sealed class TimeParameterOracleTests
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE T(TM TIME)";
         command.ExecuteNonQuery();
-        command.CommandText = "INSERT INTO T VALUES (@value)";
+        command.CommandText = "INSERT INTO T VALUES ($value)";
         DbParameter parameter = command.CreateParameter();
         parameter.ParameterName = "value";
         parameter.Value = TimeSpan.FromHours(10);
@@ -88,7 +88,7 @@ public sealed class TimeParameterOracleTests
         List<string> port = ["=E:" + error.H2ErrorCode];
         // CLR TimeSpan uses the port's existing DAY TO SECOND mapping; JDBC Duration
         // defaults to SECOND. Compare the same declared SQL interval type.
-        command.CommandText = "SELECT CAST(@value AS INTERVAL DAY TO SECOND)";
+        command.CommandText = "SELECT CAST($value AS INTERVAL DAY TO SECOND)";
         using (DbDataReader reader = command.ExecuteReader())
         {
             Assert.True(reader.Read());
@@ -96,7 +96,7 @@ public sealed class TimeParameterOracleTests
         }
         parameter.Value = DBNull.Value;
         parameter.DbType = DbType.Time;
-        command.CommandText = "INSERT INTO T VALUES (@value)";
+        command.CommandText = "INSERT INTO T VALUES ($value)";
         port.Add("=U:" + command.ExecuteNonQuery());
         List<string> java = OracleRunner.Run([], """
             try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:duration_parameters")) {

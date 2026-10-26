@@ -51,6 +51,25 @@ dotnet build H2Sharp.sln
 dotnet test
 ```
 
+## Named parameters
+
+The ADO.NET provider writes a named parameter as `$name`:
+
+```csharp
+connection.QuerySingle<int>("SELECT $Id", new { Id = 1 });
+```
+
+Names are case-sensitive (`$Id` and `$id` are different parameters), a name used
+twice is the same parameter, and a name with no supplied value is an error. The
+rewriter turns `$name` into H2's indexed `$N` before the engine parses the
+statement.
+
+`@name` is an H2 session variable and `:name` is ordinary H2 syntax (for example
+inside `JSON_OBJECT`); neither is a parameter. This is a breaking change from
+older H2Sharp versions, which treated `@name` and `:name` as named parameters.
+The EF Core and linq2db providers emit `$` placeholders. Dapper 2.1.66 recognizes
+`$` in its parameter filtering and list expansion, so `$Id` and `IN $Ids` work.
+
 ## Arrays with ADO.NET and Dapper
 
 H2 array columns use `INTEGER ARRAY`, `VARCHAR(20) ARRAY`, or a bounded type such as
@@ -66,12 +85,12 @@ connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY, NUMBERS INTEGER ARRAY)");
 var parameters = new Dapper.DynamicParameters();
 parameters.Add("id", 1);
 parameters.Add("numbers", new List<int> { 10, 20 }, DbType.Object);
-connection.Execute("INSERT INTO T VALUES (@id, @numbers)", parameters);
+connection.Execute("INSERT INTO T VALUES ($id, $numbers)", parameters);
 int[] numbers = connection.QuerySingle<int[]>("SELECT NUMBERS FROM T WHERE ID = 1");
 ```
 
 The example uses `Dapper`, `System.Data`, and `System.Collections.Generic`. Explicit
-`DbType.Object` sends one native array parameter. Dapper's ordinary `IN @ids` list expansion
+`DbType.Object` sends one native array parameter. Dapper's ordinary `IN $ids` list expansion
 also works.
 
 `DbDataReader.GetValue()` returns typed arrays: `int[]`, `string[]`, `Guid[]`, etc.
@@ -111,7 +130,7 @@ are not disposed by the provider.
 using var document = System.Text.Json.JsonDocument.Parse("{\"a\": 1}");
 var parameters = new Dapper.DynamicParameters();
 parameters.Add("document", document, System.Data.DbType.Object);
-connection.Execute("INSERT INTO J(D) VALUES (@document)", parameters);
+connection.Execute("INSERT INTO J(D) VALUES ($document)", parameters);
 byte[] json = connection.QuerySingle<byte[]>("SELECT D FROM J");
 ```
 

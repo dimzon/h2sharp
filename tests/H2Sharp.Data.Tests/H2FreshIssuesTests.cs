@@ -30,7 +30,7 @@ public sealed class H2FreshIssuesTests
         Assert.Equal(new[] { 1 }, connection.Query<int>("SELECT ID FROM (SELECT 1 ID) i INTERSECT SELECT ID FROM (SELECT 1 ID) j"));
         Assert.Equal(new[] { 1 }, connection.Query<int>("SELECT ID FROM (SELECT 1 ID) i EXCEPT SELECT ID FROM (SELECT 2 ID) j"));
         Assert.Equal(new[] { 2, 1 }, connection.Query<int>(
-            "SELECT CAST(@a AS INT) AS ID UNION SELECT CAST(@b AS INT) UNION SELECT CAST(@c AS INT) ORDER BY ID DESC LIMIT @take OFFSET @skip",
+            "SELECT CAST($a AS INT) AS ID UNION SELECT CAST($b AS INT) UNION SELECT CAST($c AS INT) ORDER BY ID DESC LIMIT $take OFFSET $skip",
             new { a = 1, b = 2, c = 3, take = 2, skip = 1 }));
     }
 

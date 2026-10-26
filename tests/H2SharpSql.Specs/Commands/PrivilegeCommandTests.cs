@@ -138,7 +138,7 @@ public sealed class PrivilegeCommandTests
 
     private static int RightCount(IDbConnection connection, string grantee) =>
         connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.RIGHTS WHERE GRANTEE = @Grantee",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.RIGHTS WHERE GRANTEE = $Grantee",
             new { Grantee = grantee });
 
     private static void GivenGuardedTable(IDbConnection connection)

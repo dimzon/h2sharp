@@ -26,6 +26,7 @@ using System.Text;
 using AdoNet.Specification.Tests;
 using H2Sharp.Data;
 using Xunit;
+using Xunit.Sdk;
 
 namespace H2Sharp.Data.Tests;
 
@@ -213,6 +214,48 @@ public sealed class H2CommandTests : CommandTestBase<H2FactoryFixture>
         : base(fixture)
     {
     }
+
+    public override void ExecuteReader_binds_parameters()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT $Parameter;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$Parameter";
+        parameter.Value = 1;
+        command.Parameters.Add(parameter);
+
+        var scalar = command.ExecuteScalar();
+        if (scalar is int)
+            Assert.Equal(1, scalar);
+        else
+            Assert.Equal(1L, scalar);
+    }
+
+    public override void Execute_throws_for_unknown_ParameterValue_type()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT $Parameter;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$Parameter";
+        parameter.Value = new CustomClass();
+        command.Parameters.Add(parameter);
+
+        try
+        {
+            var value = command.ExecuteScalar();
+            if (!"custom".Equals(value as string))
+                throw new UnexpectedValueException(value ?? DBNull.Value);
+        }
+        catch (Exception ex) when (ex is NotSupportedException || ex is InvalidOperationException)
+        {
+        }
+        catch (Exception ex) when (!(ex is UnexpectedValueException))
+        {
+            throw new ThrowsException(typeof(NotSupportedException), ex);
+        }
+    }
 }
 
 /// <summary>
@@ -234,6 +277,83 @@ public sealed class H2ParameterTests : ParameterTestBase<H2FactoryFixture>
     public H2ParameterTests(H2FactoryFixture fixture)
         : base(fixture)
     {
+    }
+
+    public override void Bind_requires_set_name()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT $Parameter;";
+        var parameter = command.CreateParameter();
+        parameter.Value = 1;
+        command.Parameters.Add(parameter);
+
+        AssertThrowsAny<InvalidOperationException, DbException>(() => command.ExecuteNonQuery());
+    }
+
+    public override void Bind_requires_set_value()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT $Parameter;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$Parameter";
+        command.Parameters.Add(parameter);
+
+        Assert.Throws<InvalidOperationException>(() => command.ExecuteNonQuery());
+    }
+
+    public override void Bind_works_with_string()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT $Parameter;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$Parameter";
+        parameter.Value = "test";
+        command.Parameters.Add(parameter);
+
+        Assert.Equal("test", command.ExecuteScalar());
+    }
+
+    public override void Bind_works_with_byte_array()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT $Parameter;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$Parameter";
+        parameter.Value = new byte[] { 1, 2, 3, 4 };
+        command.Parameters.Add(parameter);
+
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, command.ExecuteScalar());
+    }
+
+    public override void Bind_works_with_stream()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT $Parameter;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$Parameter";
+        using var stream = new System.IO.MemoryStream(new byte[] { 1, 2, 3, 4 });
+        parameter.Value = stream;
+        command.Parameters.Add(parameter);
+
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, command.ExecuteScalar());
+    }
+
+    public override void Bind_throws_when_unknown()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT $Parameter;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$Parameter";
+        parameter.Value = new object();
+        command.Parameters.Add(parameter);
+
+        AssertThrowsAny<InvalidOperationException, NotSupportedException>(() => command.ExecuteScalar());
     }
 }
 

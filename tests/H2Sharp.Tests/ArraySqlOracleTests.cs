@@ -200,7 +200,7 @@ public sealed class ArraySqlOracleTests
         for (int i = 0; i < inputs.Length; i++)
         {
             using DbCommand command = connection.CreateCommand();
-            command.CommandText = "SELECT CAST(@a AS " + types[i] + " ARRAY)";
+            command.CommandText = "SELECT CAST($a AS " + types[i] + " ARRAY)";
             DbParameter parameter = command.CreateParameter();
             parameter.ParameterName = "a";
             parameter.Value = inputs[i];
@@ -245,7 +245,7 @@ public sealed class ArraySqlOracleTests
         foreach (string op in new[] { "= ANY", "<> ALL" })
         {
             using DbCommand command = connection.CreateCommand();
-            command.CommandText = "SELECT ID FROM T WHERE ID " + op + "(@__ids_0) ORDER BY ID";
+            command.CommandText = "SELECT ID FROM T WHERE ID " + op + "($__ids_0) ORDER BY ID";
             DbParameter parameter = command.CreateParameter();
             parameter.ParameterName = "__ids_0";
             parameter.DbType = DbType.Object;

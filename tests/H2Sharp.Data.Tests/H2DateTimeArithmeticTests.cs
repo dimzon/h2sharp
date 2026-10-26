@@ -28,11 +28,11 @@ public sealed class H2DateTimeArithmeticTests
     {
         using H2Connection connection = Open();
         DateTime start = new(2024, 2, 28, 23, 30, 0), end = start.AddMinutes(90);
-        const string HoursSql = "SELECT EXTRACT(EPOCH FROM (CAST(@end AS TIMESTAMP) - CAST(@start AS TIMESTAMP))) / 3600";
+        const string HoursSql = "SELECT EXTRACT(EPOCH FROM (CAST($end AS TIMESTAMP) - CAST($start AS TIMESTAMP))) / 3600";
         Assert.Equal(1.5m, connection.QuerySingle<decimal>(HoursSql, new { start, end }));
         Assert.Equal(-1.5m, connection.QuerySingle<decimal>(HoursSql, new { start = end, end = start }));
         Assert.Equal(end, connection.QuerySingle<DateTime>(
-            "SELECT CAST(@start AS TIMESTAMP) + CAST(@duration AS INTERVAL DAY TO SECOND)",
+            "SELECT CAST($start AS TIMESTAMP) + CAST($duration AS INTERVAL DAY TO SECOND)",
             new { start, duration = TimeSpan.FromMinutes(90) }));
     }
 
