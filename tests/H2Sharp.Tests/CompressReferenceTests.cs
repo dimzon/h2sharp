@@ -119,11 +119,11 @@ public sealed class CompressReferenceTests
             "2004—2026", "(см. [[]])",
         ];
         byte[] bytes = new byte[length];
-        JavaRandom r = new(0x5EED_1234);
+        Random r = new JavaRandom(0x5EED_1234);
         int at = 0;
         while (at < length)
         {
-            string word = words[r.NextInt(words.Length)];
+            string word = words[r.Next(words.Length)];
             int n = Encoding.UTF8.GetByteCount(word);
             if (at + n + 1 > length)
             {
@@ -132,7 +132,7 @@ public sealed class CompressReferenceTests
 
             Encoding.UTF8.GetBytes(word, bytes.AsSpan(at));
             at += n;
-            bytes[at++] = (byte)r.NextInt(4) switch { 0 => (byte)' ', 1 => (byte)',', 2 => (byte)'.', _ => (byte)'\n' };
+            bytes[at++] = (byte)r.Next(4) switch { 0 => (byte)' ', 1 => (byte)',', 2 => (byte)'.', _ => (byte)'\n' };
         }
 
         return bytes;
@@ -151,7 +151,7 @@ public sealed class CompressReferenceTests
 
     private static void RoundTrip(int length)
     {
-        JavaRandom r = new(length);
+        Random r = new JavaRandom(length);
         for (int pattern = 0; pattern < 4; pattern++)
         {
             byte[] b = new byte[length];
@@ -182,13 +182,13 @@ public sealed class CompressReferenceTests
                     break;
             }
 
-            if (r.NextInt(2) < 1)
+            if (r.Next(2) < 1)
             {
                 for (int x = 0; x < length; x++)
                 {
-                    if (r.NextInt(20) < 1)
+                    if (r.Next(20) < 1)
                     {
-                        b[x] = (byte)r.NextInt(255);
+                        b[x] = (byte)r.Next(255);
                     }
                 }
             }
@@ -199,7 +199,7 @@ public sealed class CompressReferenceTests
 
     private static void WindowRoundTrip(int length)
     {
-        JavaRandom r = new(length);
+        Random r = new JavaRandom(length);
         for (int pattern = 0; pattern < 4; pattern++)
         {
             byte[] b = new byte[length];
@@ -229,13 +229,13 @@ public sealed class CompressReferenceTests
                     break;
             }
 
-            if (r.NextInt(2) < 1)
+            if (r.Next(2) < 1)
             {
                 for (int x = 0; x < length; x++)
                 {
-                    if (r.NextInt(20) < 1)
+                    if (r.Next(20) < 1)
                     {
-                        b[x] = (byte)r.NextInt(255);
+                        b[x] = (byte)r.Next(255);
                     }
                 }
             }
@@ -303,7 +303,7 @@ public sealed class CompressReferenceTests
 
     private static void StreamRoundTrip(int length)
     {
-        JavaRandom r = new(length);
+        Random r = new JavaRandom(length);
         byte[] b = new byte[length];
         r.NextBytes(b);
         Assert.True(Hex.BytesToHex(b) == Hex.BytesToHex(ReadStream(WriteStream(b))), $"stream {length}");

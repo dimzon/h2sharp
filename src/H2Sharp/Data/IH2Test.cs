@@ -47,11 +47,12 @@ public interface IH2Test
     /// The generator of random numbers the database draws from.
     /// </summary>
     /// <remarks>
-    /// The delegate is asked once per session, the first time a statement needs a number, and
-    /// the generator it answers with is the one the session keeps. A test that wants the same
-    /// numbers every run answers with a generator of a fixed seed.
+    /// The delegate is asked with <c>null</c> the first time a statement needs a number, and with
+    /// the seed when <c>RAND(seed)</c> reseeds the generator. The generator it answers with is the
+    /// one the session keeps. A test that wants the same numbers every run answers with a
+    /// generator of a fixed seed.
     /// </remarks>
-    Func<JavaRandom>? RandomGeneratorProvider { get; set; }
+    Func<long?, Random>? RandomGeneratorProvider { get; set; }
 
     /// <summary>
     /// The generator of UUIDs the database hands out.

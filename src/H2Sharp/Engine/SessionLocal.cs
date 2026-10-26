@@ -131,7 +131,7 @@ public sealed class SessionLocal : Session
     /// </summary>
     private readonly Dictionary<H2Sharp.Schemas.Sequence, Value> currentValueFor = [];
 
-    private JavaRandom? random;
+    private Random? random;
 
     /// <summary>
     /// Gets the session's random number generator, creating it on first use.
@@ -142,8 +142,25 @@ public sealed class SessionLocal : Session
     /// numbers every run hands the session a generator of its own.
     /// </remarks>
     /// <returns>the random generator</returns>
-    public JavaRandom GetRandom()
-        => random ??= RandomGeneratorProvider?.Invoke() ?? new JavaRandom(Environment.TickCount64);
+    public Random GetRandom()
+        => random ??= RandomGeneratorProvider?.Invoke(null) ?? new JavaRandom(Environment.TickCount64);
+
+    /// <summary>
+    /// Reseeds the session's random number generator, creating it on first use.
+    /// </summary>
+    /// <remarks>
+    /// The reference calls <c>getRandom().setSeed(seed)</c>. <see cref="System.Random"/> has no
+    /// reseed method, so the session asks its generator provider for a seeded generator, or
+    /// replaces its own with a freshly seeded JDK-compatible one when no provider is set. The
+    /// seeded sequence is the one <c>RAND(seed)</c> has to draw to agree with H2.
+    /// </remarks>
+    /// <param name="seed">the seed</param>
+    /// <returns>the reseeded generator</returns>
+    internal Random ReseedRandom(long seed)
+    {
+        random = RandomGeneratorProvider?.Invoke(seed) ?? new JavaRandom(seed);
+        return random;
+    }
 
     private IComparer<Values.Value>? valueComparer;
 
@@ -453,10 +470,11 @@ public sealed class SessionLocal : Session
     /// </summary>
     /// <remarks>
     /// The reference has no such a member: it draws random numbers from the generator of the
-    /// runtime. A test that has to see the same numbers every run sets a factory here, and the
-    /// session asks it once, the first time a statement needs a number.
+    /// runtime. A test that has to see the same numbers every run sets a factory here. The
+    /// session asks it with <c>null</c> on first use and with the seed when <c>RAND(seed)</c>
+    /// reseeds the generator.
     /// </remarks>
-    public Func<JavaRandom>? RandomGeneratorProvider { get; init; }
+    public Func<long?, Random>? RandomGeneratorProvider { get; init; }
 
     /// <summary>
     /// Gets the factory of UUIDs, when a test set one.

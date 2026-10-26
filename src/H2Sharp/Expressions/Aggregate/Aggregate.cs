@@ -494,7 +494,7 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
                             return ValueNull.Instance;
                         }
 
-                        return values[session.GetRandom().NextInt(values.Length)];
+                        return values[session.GetRandom().NextNonNegativeInt32(values.Length)];
                     }
 
                     break;

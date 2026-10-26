@@ -74,10 +74,10 @@ public sealed class RandFunction : Function0_1
         {
             case Rand:
                 {
-                    JavaRandom random = session.GetRandom();
+                    Random random = session.GetRandom();
                     if (v != null)
                     {
-                        random.SetSeed(v.GetInt());
+                        random = session.ReseedRandom(v.GetInt());
                     }
 
                     v = ValueDouble.Get(random.NextDouble());

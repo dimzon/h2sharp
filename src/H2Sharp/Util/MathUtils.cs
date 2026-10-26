@@ -267,7 +267,7 @@ public static class MathUtils
     /// </summary>
     /// <param name="lowerThan">the value returned will be lower than this value</param>
     /// <returns>the random long value</returns>
-    public static int RandomInt(int lowerThan) => Random.Shared.Next(lowerThan);
+    public static int RandomInt(int lowerThan) => Random.Shared.NextNonNegativeInt32(lowerThan);
 
     /// <summary>
     /// Get a cryptographically secure pseudo random int value between 0 (including) and the

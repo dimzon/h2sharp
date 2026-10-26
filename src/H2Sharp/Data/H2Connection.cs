@@ -55,7 +55,7 @@ public sealed class H2Connection : DbConnection, IH2Test
 
     private Func<DateTimeOffset>? systemClockProvider;
 
-    private Func<JavaRandom>? randomGeneratorProvider;
+    private Func<long?, Random>? randomGeneratorProvider;
 
     private Func<Guid>? uuidProvider;
 
@@ -69,7 +69,7 @@ public sealed class H2Connection : DbConnection, IH2Test
     }
 
     /// <inheritdoc/>
-    Func<JavaRandom>? IH2Test.RandomGeneratorProvider
+    Func<long?, Random>? IH2Test.RandomGeneratorProvider
     {
         get => randomGeneratorProvider;
         set => randomGeneratorProvider = value;

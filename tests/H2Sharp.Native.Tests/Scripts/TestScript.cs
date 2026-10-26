@@ -107,7 +107,7 @@ public sealed class TestScript : TestDb
 
     private bool foundErrors;
 
-    private readonly JavaRandom random = new(1);
+    private readonly Random random = new JavaRandom(1);
 
     /// <summary>
     /// Run just this test.

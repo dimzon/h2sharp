@@ -26,7 +26,8 @@ internal sealed class AggregateDataAnyValue : AggregateData
         }
 
         long filter = _filter;
-        if (filter == long.MinValue || (session.GetRandom().NextLong() | filter) == filter)
+        if (filter == long.MinValue
+            || (session.GetRandom().NextSignedInt64() | filter) == filter)
         {
             _values.Add(v!);
             if (_values.Count == MaxValues)
@@ -39,11 +40,11 @@ internal sealed class AggregateDataAnyValue : AggregateData
     private void Compact(SessionLocal session)
     {
         _filter <<= 1;
-        JavaRandom random = session.GetRandom();
+        Random random = session.GetRandom();
         for (int s = 0, t = 0; t < MaxValues / 2; s += 2, t++)
         {
             int idx = s;
-            if (random.NextBoolean())
+            if (random.NextNonNegativeInt32(2) == 0)
             {
                 idx++;
             }
@@ -62,6 +63,6 @@ internal sealed class AggregateDataAnyValue : AggregateData
             return ValueNull.Instance;
         }
 
-        return _values[session.GetRandom().NextInt(count)];
+        return _values[session.GetRandom().NextNonNegativeInt32(count)];
     }
 }

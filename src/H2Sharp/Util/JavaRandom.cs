@@ -3,6 +3,8 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
+using System;
+
 namespace H2Sharp.Util;
 
 /// <summary>
@@ -15,12 +17,16 @@ namespace H2Sharp.Util;
 /// different number for the same seed, so the generator is ported too and the session hands out
 /// this one, exactly as the reference hands out the JDK's.
 /// <para>
-/// The class is not sealed and its methods are virtual, so that a test can hand out a generator
-/// that answers with the numbers it wants. The JDK's <c>java.util.Random</c> is not final
-/// either, and the reference's own tests subclass it for the same reason.
+/// Принятое проектное решение — максимально переиспользовать уже существующие классы и
+/// контракты: генератор наследует <see cref="System.Random"/> и реализует его виртуальные
+/// методы, а не вводит параллельный API. Поэтому порт просит случайные числа через
+/// стандартный API, а тест может передать сессии любой <see cref="System.Random"/>, не только
+/// этот класс. Переопределения сохраняют битовые последовательности JDK; полный знаковый
+/// <c>nextLong()</c> используется ограниченными перегрузками и полнодиапазонным вызовом
+/// ANY_VALUE.
 /// </para>
 /// </remarks>
-public class JavaRandom
+public class JavaRandom : Random
 {
     private const long Multiplier = 0x5DEEC_E66D;
 
@@ -30,6 +36,8 @@ public class JavaRandom
 
     private const double DoubleUnit = 1.0 / (1L << 53);
 
+    private const float SingleUnit = 1.0f / (1 << 24);
+
     private long seed;
 
     /// <summary>
@@ -37,6 +45,7 @@ public class JavaRandom
     /// </summary>
     /// <param name="seed">the seed</param>
     public JavaRandom(long seed)
+        : base(0)
     {
         SetSeed(seed);
     }
@@ -46,7 +55,8 @@ public class JavaRandom
     /// </summary>
     /// <remarks>
     /// The reference calls <c>setSeed(int)</c>; Java has only <c>setSeed(long)</c>, which widens
-    /// the int with its sign, and so does this.
+    /// the int with its sign, and so does this. <see cref="System.Random"/> has no reseed method,
+    /// so the JDK's own operation stays on this class.
     /// </remarks>
     /// <param name="seed">the seed</param>
     public virtual void SetSeed(long seed)
@@ -54,74 +64,179 @@ public class JavaRandom
         this.seed = (seed ^ Multiplier) & Mask;
     }
 
-    private int Next(int bits)
+    private int NextBits(int bits)
     {
         seed = ((seed * Multiplier) + Addend) & Mask;
         return (int)(seed >> (48 - bits));
     }
 
-    /// <summary>
-    /// The next 32 bits.
-    /// </summary>
-    /// <returns>the next 32 bits</returns>
-    public virtual int NextInt() => Next(32);
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The JDK has no non-negative <c>nextInt()</c>; this is the JDK's top 31 bits, which is what
+    /// a <see cref="System.Random.Next()"/> caller expects.
+    /// </remarks>
+    public override int Next() => NextBits(31);
 
-    /// <summary>
-    /// A number in <c>[0, bound)</c>.
-    /// </summary>
-    /// <param name="bound">the bound, which must be positive</param>
-    /// <returns>the number</returns>
-    public virtual int NextInt(int bound)
+    /// <inheritdoc/>
+    public override int Next(int maxValue)
     {
-        if (bound <= 0)
+        if (maxValue < 0)
         {
-            throw new System.ArgumentOutOfRangeException(nameof(bound), "bound must be positive");
+            throw new ArgumentOutOfRangeException(nameof(maxValue));
         }
 
-        int r = Next(31);
+        if (maxValue == 0)
+        {
+            return 0;
+        }
+
+        return NextInt(maxValue);
+    }
+
+    /// <inheritdoc/>
+    public override int Next(int minValue, int maxValue)
+    {
+        if (minValue > maxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minValue));
+        }
+
+        if (minValue == maxValue)
+        {
+            return minValue;
+        }
+
+        long range = (long)maxValue - minValue;
+        if (range <= int.MaxValue)
+        {
+            return (int)(minValue + (long)NextInt((int)range));
+        }
+
+        // The range is wider than an int, so draw a 32-bit value and reject the tail.
+        uint unsignedRange = (uint)range;
+        uint value;
+        do
+        {
+            value = (uint)NextInt64();
+        }
+        while (value >= unsignedRange);
+
+        return (int)(minValue + value);
+    }
+
+    /// <summary>
+    /// The JDK's <c>nextInt(bound)</c>.
+    /// </summary>
+    private int NextInt(int bound)
+    {
+        int r = NextBits(31);
         int m = bound - 1;
         if ((bound & m) == 0)
         {
             return (int)((bound * (long)r) >> 31);
         }
 
-        for (int u = r; u - (r = u % bound) + m < 0; u = Next(31))
+        for (int u = r; u - (r = u % bound) + m < 0; u = NextBits(31))
         {
         }
 
         return r;
     }
 
-    /// <summary>
-    /// The next 64 bits.
-    /// </summary>
-    /// <returns>the next 64 bits</returns>
-    public virtual long NextLong() => ((long)Next(32) << 32) + Next(32);
+    /// <inheritdoc/>
+    public override long NextInt64() => NextJavaLong() & long.MaxValue;
 
     /// <summary>
-    /// The next boolean.
+    /// The JDK's <c>nextLong()</c>, the full signed 64-bit value.
     /// </summary>
-    /// <returns>the next boolean</returns>
-    public virtual bool NextBoolean() => Next(1) != 0;
+    private long NextJavaLong() => ((long)NextBits(32) << 32) + NextBits(32);
+
+    /// <inheritdoc/>
+    public override long NextInt64(long maxValue)
+    {
+        if (maxValue < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxValue));
+        }
+
+        if (maxValue == 0)
+        {
+            return 0;
+        }
+
+        return NextLong(maxValue);
+    }
+
+    /// <inheritdoc/>
+    public override long NextInt64(long minValue, long maxValue)
+    {
+        if (minValue > maxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minValue));
+        }
+
+        if (minValue == maxValue)
+        {
+            return minValue;
+        }
+
+        long range = unchecked(maxValue - minValue);
+        if (range > 0)
+        {
+            return minValue + NextLong(range);
+        }
+
+        long value;
+        do
+        {
+            value = NextJavaLong();
+        }
+        while (value < minValue || value >= maxValue);
+
+        return value;
+    }
 
     /// <summary>
-    /// A number in <c>[0, 1)</c>.
+    /// The JDK's <c>nextLong(bound)</c>.
     /// </summary>
-    /// <returns>the number</returns>
-    public virtual double NextDouble() => (((long)Next(26) << 27) + Next(27)) * DoubleUnit;
+    private long NextLong(long bound)
+    {
+        long r = NextJavaLong();
+        long m = bound - 1;
+        if ((bound & m) == 0L)
+        {
+            return r & m;
+        }
 
-    /// <summary>
-    /// Fills the buffer with the next bytes of the generator: one 32-bit word at a time, most
-    /// significant byte first, and the tail of a word goes on filling where the buffer ends.
-    /// </summary>
-    /// <param name="bytes">where to fill</param>
-    public virtual void NextBytes(byte[] bytes)
+        long u = (long)((ulong)r >> 1);
+        while (unchecked(u + m - (r = u % bound)) < 0L)
+        {
+            u = (long)((ulong)NextJavaLong() >> 1);
+        }
+
+        return r;
+    }
+
+    /// <inheritdoc/>
+    public override double NextDouble()
+        => (((long)NextBits(26) << 27) + NextBits(27)) * DoubleUnit;
+
+    /// <inheritdoc/>
+    public override float NextSingle() => NextBits(24) * SingleUnit;
+
+    /// <inheritdoc/>
+    public override void NextBytes(byte[] buffer) => FillBytes(buffer);
+
+    /// <inheritdoc/>
+    public override void NextBytes(Span<byte> buffer) => FillBytes(buffer);
+
+    private void FillBytes(Span<byte> bytes)
     {
         int i = 0;
         while (i < bytes.Length)
         {
-            int word = NextInt();
-            int n = System.Math.Min(bytes.Length - i, 4);
+            int word = NextBits(32);
+            int n = Math.Min(bytes.Length - i, 4);
             for (int k = 0; k < n; k++)
             {
                 bytes[i + k] = (byte)(word >> (24 - (8 * k)));
@@ -130,4 +245,7 @@ public class JavaRandom
             i += n;
         }
     }
+
+    /// <inheritdoc/>
+    protected override double Sample() => NextDouble();
 }

@@ -63,7 +63,7 @@ public static class Engine
     public static SessionLocal OpenSession(
         ConnectionInfo connectionInfo,
         Func<DateTimeOffset>? systemClockProvider = null,
-        Func<JavaRandom>? randomGeneratorProvider = null,
+        Func<long?, Random>? randomGeneratorProvider = null,
         Func<Guid>? uuidProvider = null,
         Func<Util.TimeZoneProvider>? timeZoneProviderProvider = null)
     {

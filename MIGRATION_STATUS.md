@@ -1,5 +1,26 @@
 # MIGRATION STATUS — рабочая памятка
 
+### Генератор случайных чисел — `System.Random`
+
+`JavaRandom` теперь наследует `System.Random` и переопределяет все виртуальные методы
+(`Next`, `Next(int)`, `Next(int,int)`, `NextInt64`, `NextInt64(long)`,
+`NextInt64(long,long)`, `NextDouble`, `NextSingle`, `NextBytes`, `Sample`). Биты остаются
+JDK-овскими: `NextDouble()`/`NextBytes()` и ограниченные `Next(int)`/`NextInt64(bound)` —
+прежние последовательности, а `Next()`/`NextInt64()` следуют неотрицательному контракту
+.NET.
+
+Все точки порта принимают и возвращают базовый `System.Random`, а не `JavaRandom`:
+`SessionLocal.GetRandom()`, `RandomGeneratorProvider` (`Func<long?, Random>`),
+`Engine.OpenSession`, `IH2Test.RandomGeneratorProvider`, `RandFunction`,
+`AggregateDataAnyValue`, `Aggregate`, `Optimizer`, `MathUtils.RandomInt`. Провайдер
+спрашивается с `null` при первом обращении и с seed при `RAND(seed)`. Целочисленные вызовы
+идут через `RandomExtensions`:
+`NextNonNegativeInt32`/`NextNonNegativeInt64` сбрасывают знаковый бит для любой реализации
+`Random`. Единственное исключение — `NextSignedInt64` для `ANY_VALUE`: эталон использует
+`nextLong()` как битовую маску, и сброс знака изменил бы фильтр. `RAND(seed)` пересоздаёт
+генератор через `SessionLocal.ReseedRandom` — у `System.Random` нет `setSeed`;
+последовательность после seed остаётся эталонной.
+
 ### Issue #67 — ExecuteReader и хвост смешанного пакета
 
 В `ExecuteDbDataReader` ветка «первый оператор — не запрос» больше не вызывает

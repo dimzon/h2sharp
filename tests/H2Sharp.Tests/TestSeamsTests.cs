@@ -10,7 +10,6 @@
  */
 using System;
 using H2Sharp.Engine;
-using H2Sharp.Util;
 using H2Sharp.Values;
 using Xunit;
 
@@ -34,9 +33,9 @@ public sealed class TestSeamsTests
     public void TheRandomGeneratorIsTheOneTheTestHolds()
     {
         SessionLocal session = H2Sharp.Engine.Engine.OpenSession(
-            new ConnectionInfo("jdbc:h2:mem:seams_random"), null, () => new FixedRandom());
+            new ConnectionInfo("jdbc:h2:mem:seams_random"), null, _ => new FixedRandom());
 
-        JavaRandom random = session.GetRandom();
+        Random random = session.GetRandom();
 
         Assert.Equal(0.5, random.NextDouble());
     }
@@ -44,7 +43,7 @@ public sealed class TestSeamsTests
     /// <summary>
     /// A generator that always answers with the same number.
     /// </summary>
-    private sealed class FixedRandom : JavaRandom
+    private sealed class FixedRandom : Random
     {
         /// <summary>
         /// Creates the generator.

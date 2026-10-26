@@ -263,7 +263,7 @@ internal sealed class Optimizer
         ArgumentNullException.ThrowIfNull(random);
         for (int i = 0; i < f.Length - 1; i++)
         {
-            int j = i + random.Next(f.Length - i);
+            int j = i + random.NextNonNegativeInt32(f.Length - i);
             if (j != i)
             {
                 TableFilter temp = f[i];
@@ -282,8 +282,8 @@ internal sealed class Optimizer
         int i = 0;
         for (; i < 20; i++)
         {
-            a = random.Next(f.Length);
-            b = random.Next(f.Length);
+            a = random.NextNonNegativeInt32(f.Length);
+            b = random.NextNonNegativeInt32(f.Length);
             if (a == b)
             {
                 continue;
