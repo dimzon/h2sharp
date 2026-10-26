@@ -8,10 +8,12 @@
  *
  * A derived table: a table whose rows are the rows of a query.
  */
+using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Command;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
+using H2Sharp.Expressions;
 using H2Sharp.Indexes;
 using H2Sharp.Message;
 using H2Sharp.Schemas;
@@ -32,6 +34,10 @@ namespace H2Sharp.Tables;
 public sealed class DerivedTable : QueryExpressionTable
 {
     private readonly Query? topQuery;
+
+    private readonly string querySql;
+
+    private readonly List<Parameter>? originalParameters;
 
     private readonly Index index;
 
@@ -54,6 +60,8 @@ public sealed class DerivedTable : QueryExpressionTable
         SetTemporary(true);
         this.topQuery = topQuery;
         query.PrepareExpressions();
+        querySql = query.GetPlanSql(HasSql.DefaultSqlFlags);
+        originalParameters = query.GetParameters();
         tables = [.. query.GetTables()];
         columns = InitColumns(session, columnTemplates, query, true, false);
         viewQuery = query;
@@ -67,16 +75,48 @@ public sealed class DerivedTable : QueryExpressionTable
     public override Index GetScanIndex(SessionLocal session) => index;
 
     /// <inheritdoc/>
+    public override PlanItem GetBestPlanItem(
+        SessionLocal session,
+        int[]? masks,
+        TableFilter[]? filters,
+        int filter,
+        Result.SortOrder? sortOrder,
+        Command.Query.AllColumnsForPlan? allColumnsSet,
+        bool isSelectCommand)
+    {
+        bool hasMask = false;
+        if (masks is not null)
+        {
+            foreach (int mask in masks)
+            {
+                if (mask != 0)
+                {
+                    hasMask = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasMask)
+        {
+            return base.GetBestPlanItem(session, masks, filters, filter, sortOrder, allColumnsSet, isSelectCommand);
+        }
+
+        RegularQueryExpressionIndex pushed = new(
+            this, querySql, originalParameters, session, masks);
+        PlanItem item = new();
+        item.SetIndex(pushed);
+        item.Cost = pushed.GetCost(session, masks, filters, filter, sortOrder, allColumnsSet, isSelectCommand);
+        return item;
+    }
+
+    /// <inheritdoc/>
     public override Index? GetIndexFor(SessionLocal session, Result.SearchRow row) => GetScanIndex(session);
 
     /// <inheritdoc/>
     public override string GetSql(int sqlFlags) => GetSql(new StringBuilder(), sqlFlags).ToString();
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The reference writes the text of the query the table stands for, in parentheses; this
-    /// port has no plan text yet, so the table writes its name.
-    /// </remarks>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => builder.Append(name);
+        => StringUtils.Indent(builder.Append("(\n"), querySql, 4, true).Append(')');
 }

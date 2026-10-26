@@ -32,7 +32,11 @@
 //    BIGSERIAL shorthand, built-in type name conflicts in CREATE DOMAIN and multiple qualified
 //    stars, SCRIPT NODATA/NOPASSWORDS/NOSETTINGS/NOVERSION, IDENTITY/SERIAL/BIGSERIAL,
 //    AUTO_INCREMENT, table rename, views, HAVING aliases and referential-integrity switches
-//    now run. Only plan text at 372 and two EXPLAIN plans at 1134/1159 remain.
+//    now run, as do the EXPLAIN plans at 372/1134/1159, DROP TABLE of a cascade-dropped view,
+//    schema search path, three-part database.schema.object names, INSERT ... SET, duplicate
+//    column names, SCRIPT CLOB chunking and ALTER TABLE ADD COLUMN. The remaining Java
+//    CREATE/DROP ALIAS and alias call (2014/2023/2036) stay BlockedByPort: the port does not
+//    load Java classes, and .NET aliases are a separate ADR-governed extension.
 using System;
 using System.Collections.Generic;
 using System.Data;

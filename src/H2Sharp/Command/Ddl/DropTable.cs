@@ -97,8 +97,16 @@ public sealed class DropTable : DefineCommand
 
         SessionLocal session = GetSession();
         Engine.Database db = session.GetDatabase();
-        foreach ((Schema _, Tables.Table table) in drops)
+        foreach ((Schema schema, Tables.Table resolved) in drops)
         {
+            // The table may be gone by now: a cascade drop of an earlier table in this
+            // statement takes its dependent views with it, and one of them may be named here.
+            Tables.Table? table = schema.FindTableOrView(null, resolved.GetTableName());
+            if (table is null)
+            {
+                continue;
+            }
+
             if (dropAction == ConstraintActionType.RESTRICT)
             {
                 List<Tables.TableView> views = table.GetDependentViews();

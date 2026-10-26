@@ -26,11 +26,60 @@ public sealed partial class Parser
         if (IsWord("ALTER")) return ParseAlterTableAlter(schema, tableName, ifTableExists);
         if (IsWord("SET")) return ParseAlterTableSet(schema, tableName, ifTableExists);
         if (IsWord("RENAME")) return ParseAlterTableRename(schema, tableName, ifTableExists);
+        if (IsWord("ADD", consume: false)
+            && !NextIs("CONSTRAINT") && !NextIs("PRIMARY") && !NextIs("FOREIGN")
+            && !NextIs("UNIQUE") && !NextIs("CHECK"))
+        {
+            Read();
+            return ParseAlterTableAdd(schema, tableName, ifTableExists);
+        }
         // Other ALTER TABLE branches still use their existing reader; no new DTO is added.
         position = index;
         AlterTableStatement statement = (AlterTableStatement)ReadStatement();
         statement.Sql = sql;
         return PrepareAlterTable(session!, statement);
+    }
+
+    private Prepared ParseAlterTableAdd(Schema schema, string tableName, bool ifTableExists)
+    {
+        IsWord("COLUMN");
+        AlterTableAlterColumn command = new(session!, schema);
+        command.SetType(CommandInterface.AlterTableAddColumn);
+        command.SetTableName(tableName);
+        command.SetIfTableExists(ifTableExists);
+        if (ReadIf(Token.OpenParen))
+        {
+            command.SetIfNotExists(false);
+            do
+            {
+                ParseTableColumnDefinition(command, schema, tableName, false);
+            }
+            while (ReadIfMore());
+        }
+        else
+        {
+            command.SetIfNotExists(ReadIfNotExists());
+            ParseTableColumnDefinition(command, schema, tableName, false);
+            if (IsWord("USING"))
+            {
+                command.SetUsingExpression(ReadExpression());
+            }
+        }
+
+        if (IsWord("BEFORE"))
+        {
+            command.SetAddBefore(ReadIdentifier());
+        }
+        else if (IsWord("AFTER"))
+        {
+            command.SetAddAfter(ReadIdentifier());
+        }
+        else if (IsWord("FIRST"))
+        {
+            command.SetAddFirst();
+        }
+
+        return command;
     }
 
     private Prepared ParseAlterTableSet(Schema schema, string tableName, bool ifTableExists)
@@ -557,6 +606,7 @@ public sealed partial class Parser
         string tableName = ReadIdentifierWithSchema(session!, out Schema schema);
         Table table = schema.GetTableOrView(session, tableName);
         command.SetTable(table);
+        List<Column>? columns = null;
         if (ReadIf(Token.OpenParen))
         {
             if (IsQueryQuick())
@@ -566,10 +616,21 @@ public sealed partial class Parser
                 return command;
             }
 
-            List<Column> columns = [];
+            columns = [];
             if (!ReadIf(Token.CloseParen))
             {
-                do { columns.Add(table.GetColumn(ReadIdentifier())); } while (ReadIf(Token.Comma));
+                do
+                {
+                    Column column = table.GetColumn(ReadIdentifier());
+                    if (columns.Contains(column))
+                    {
+                        throw Message.DbException.Get(
+                            Api.ErrorCode.DuplicateColumnName1, column.GetName());
+                    }
+
+                    columns.Add(column);
+                }
+                while (ReadIf(Token.Comma));
                 Expect(Token.CloseParen, ")");
             }
             command.SetColumns([.. columns]);
@@ -612,6 +673,27 @@ public sealed partial class Parser
                 command.AddRow(values.ToArray());
             }
             while (ReadIf(Token.Comma));
+        }
+        else if (!requireQuery && CurrentType == ParserUtil.Set)
+        {
+            if (columns is not null)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start);
+            }
+
+            Read();
+            List<Column> setColumns = [];
+            List<Expression> values = [];
+            do
+            {
+                setColumns.Add(table.GetColumn(ReadIdentifier()));
+                Expect(Token.Equal, "=");
+                values.Add(ReadExpressionOrDefault());
+            }
+            while (ReadIf(Token.Comma));
+
+            command.SetColumns([.. setColumns]);
+            command.AddRow([.. values]);
         }
         else command.SetQuery(ParseQueryExpression(prepare: false));
         return command;

@@ -14,7 +14,9 @@
  * ported. Asking for either through the options still builds the same script, because the
  * default switches are read from the grammar exactly as in the reference.
  */
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using H2Sharp.Api;
 using H2Sharp.Command.Query;
@@ -28,6 +30,7 @@ using H2Sharp.Schemas;
 using H2Sharp.Tables;
 using H2Sharp.Util;
 using H2Sharp.Values;
+using Index = H2Sharp.Indexes.Index;
 
 namespace H2Sharp.Command.Dml;
 
@@ -47,6 +50,12 @@ public sealed class ScriptCommand : Prepared
     private bool simple;
 
     private bool withColumns;
+
+    private int lobBlockSize = Constants.IoBufferSize;
+
+    private bool tempLobTableCreated;
+
+    private int nextLobId;
 
     /// <summary>Creates the statement.</summary>
     public ScriptCommand(SessionLocal session)
@@ -74,6 +83,10 @@ public sealed class ScriptCommand : Prepared
 
     /// <summary>Sets whether INSERT lists columns explicitly.</summary>
     public void SetWithColumns(bool value) => withColumns = value;
+
+    /// <summary>Sets the maximum size of a LOB block.</summary>
+    public void SetLobBlockSize(long value)
+        => lobBlockSize = (int)Math.Min(int.MaxValue, value);
 
     /// <inheritdoc/>
     public override bool IsQuery() => true;
@@ -178,7 +191,7 @@ public sealed class ScriptCommand : Prepared
 
                 if (data)
                 {
-                    Add(GenerateInsertValues(table));
+                    GenerateInsertValues(table, Add);
                 }
             }
 
@@ -211,7 +224,7 @@ public sealed class ScriptCommand : Prepared
         return result;
     }
 
-    private string GenerateInsertValues(Table table)
+    private void GenerateInsertValues(Table table, Action<string> add)
     {
         StringBuilder builder = new("INSERT INTO ");
         _ = table.GetSql(builder, HasSql.DefaultSqlFlags);
@@ -279,18 +292,130 @@ public sealed class ScriptCommand : Prepared
                 if (columns[i].IsGenerated()) continue;
                 if (needComma) _ = builder.Append(", ");
                 needComma = true;
-                _ = row.GetValue(i)!.GetSql(builder, HasSql.NoCasts);
+                Value value = row.GetValue(i)!;
+                if (value.GetTypeInfo().GetPrecision() > lobBlockSize)
+                {
+                    if (value.GetValueType() == Value.Clob)
+                    {
+                        int id = WriteLobStream(value, add);
+                        _ = builder.Append("SYSTEM_COMBINE_CLOB(").Append(id).Append(')');
+                        continue;
+                    }
+
+                    if (value.GetValueType() == Value.Blob)
+                    {
+                        int id = WriteLobStream(value, add);
+                        _ = builder.Append("SYSTEM_COMBINE_BLOB(").Append(id).Append(')');
+                        continue;
+                    }
+                }
+
+                _ = value.GetSql(builder, HasSql.NoCasts);
             }
 
             _ = builder.Append(')');
         }
 
-        if (firstRow)
+        if (!firstRow)
         {
-            // A table with no rows still gets its INSERT statement? The reference writes none.
-            return string.Empty;
+            add(builder.ToString());
         }
 
-        return builder.ToString();
+        if (tempLobTableCreated)
+        {
+            add("DROP TABLE IF EXISTS SYSTEM_LOB_STREAM");
+            add("DROP ALIAS IF EXISTS SYSTEM_COMBINE_CLOB");
+            add("DROP ALIAS IF EXISTS SYSTEM_COMBINE_BLOB");
+            tempLobTableCreated = false;
+        }
+    }
+
+    private int WriteLobStream(Value value, Action<string> add)
+    {
+        if (!tempLobTableCreated)
+        {
+            add("CREATE CACHED LOCAL TEMPORARY TABLE IF NOT EXISTS SYSTEM_LOB_STREAM"
+                + "(ID INT NOT NULL, PART INT NOT NULL, CDATA VARCHAR, BDATA VARBINARY)");
+            add("ALTER TABLE SYSTEM_LOB_STREAM ADD CONSTRAINT SYSTEM_LOB_STREAM_PRIMARY_KEY PRIMARY KEY(ID, PART)");
+            add("CREATE ALIAS IF NOT EXISTS SYSTEM_COMBINE_CLOB FOR 'org.h2.command.dml.ScriptCommand.combineClob'");
+            add("CREATE ALIAS IF NOT EXISTS SYSTEM_COMBINE_BLOB FOR 'org.h2.command.dml.ScriptCommand.combineBlob'");
+            tempLobTableCreated = true;
+        }
+
+        int id = nextLobId++;
+        if (value.GetValueType() == Value.Blob)
+        {
+            byte[] bytes = new byte[lobBlockSize];
+            using Stream input = value.GetInputStream();
+            for (int part = 0;; part++)
+            {
+                int len = ReadFully(input, bytes);
+                if (len <= 0)
+                {
+                    break;
+                }
+
+                StringBuilder buff = new(lobBlockSize * 2);
+                _ = buff.Append("INSERT INTO SYSTEM_LOB_STREAM VALUES(").Append(id)
+                    .Append(", ").Append(part).Append(", NULL, X'");
+                _ = StringUtils.ConvertBytesToHex(buff, bytes, len).Append("')");
+                add(buff.ToString());
+            }
+        }
+        else
+        {
+            char[] chars = new char[lobBlockSize];
+            using TextReader reader = value.GetReader()!;
+            for (int part = 0;; part++)
+            {
+                int len = ReadFully(reader, chars);
+                if (len == 0)
+                {
+                    break;
+                }
+
+                StringBuilder buff = new(lobBlockSize * 2);
+                _ = buff.Append("INSERT INTO SYSTEM_LOB_STREAM VALUES(").Append(id)
+                    .Append(", ").Append(part).Append(", ");
+                _ = StringUtils.QuoteStringSql(buff, new string(chars, 0, len)).Append(", NULL)");
+                add(buff.ToString());
+            }
+        }
+
+        return id;
+    }
+
+    private static int ReadFully(Stream input, byte[] buffer)
+    {
+        int total = 0;
+        while (total < buffer.Length)
+        {
+            int read = input.Read(buffer, total, buffer.Length - total);
+            if (read <= 0)
+            {
+                break;
+            }
+
+            total += read;
+        }
+
+        return total;
+    }
+
+    private static int ReadFully(TextReader input, char[] buffer)
+    {
+        int total = 0;
+        while (total < buffer.Length)
+        {
+            int read = input.Read(buffer, total, buffer.Length - total);
+            if (read <= 0)
+            {
+                break;
+            }
+
+            total += read;
+        }
+
+        return total;
     }
 }

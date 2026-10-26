@@ -1570,6 +1570,73 @@ public sealed class Select : Query
     /// <returns>the condition, or null</returns>
     public Expression? GetCondition() => condition;
 
+    /// <inheritdoc/>
+    public override void AddGlobalCondition(Parameter param, int columnId, int comparisonType)
+    {
+        AddParameter(param);
+        Expression col = expressions[columnId].GetNonAliasExpression();
+        Expression comp = col.IsEverything(ExpressionVisitor.QueryComparableVisitor)
+            ? new Comparison(comparisonType, col, param, false)
+            // This condition will always evaluate to true, but the parameter is still added so
+            // that the caller can set it later.
+            : new Comparison(Comparison.EqualNullSafe, param, param, false);
+        comp = comp.Optimize(session);
+        if (isWindowQuery)
+        {
+            throw new TODOException("Select.addGlobalCondition: QUALIFY is not ported");
+        }
+
+        if (isGroupQuery)
+        {
+            for (int i = 0; groupIndex is not null && i < groupIndex.Length; i++)
+            {
+                if (groupIndex[i] == columnId)
+                {
+                    condition = AddGlobalCondition(condition, comp);
+                    return;
+                }
+            }
+
+            if (havingIndex >= 0)
+            {
+                having = expressions[havingIndex];
+            }
+
+            having = AddGlobalCondition(having, comp);
+        }
+        else
+        {
+            condition = AddGlobalCondition(condition, comp);
+        }
+    }
+
+    /// <inheritdoc/>
+    public override bool AllowGlobalConditions() => GetOffset() is null && GetFetch() is null;
+
+    private static Expression AddGlobalCondition(Expression? condition, Expression additional)
+    {
+        if (condition is not ConditionLocalAndGlobal)
+        {
+            return new ConditionLocalAndGlobal(condition, additional);
+        }
+
+        Expression? oldLocal, oldGlobal;
+        if (condition.GetSubexpressionCount() == 1)
+        {
+            oldLocal = null;
+            oldGlobal = condition.GetSubexpression(0)!;
+        }
+        else
+        {
+            oldLocal = condition.GetSubexpression(0);
+            oldGlobal = condition.GetSubexpression(1)!;
+        }
+
+        return new ConditionLocalAndGlobal(
+            oldLocal,
+            new ConditionAndOr(ConditionAndOr.And, oldGlobal, additional));
+    }
+
     /// <summary>
     /// Builds the plan and marks everything in it evaluatable.
     /// </summary>

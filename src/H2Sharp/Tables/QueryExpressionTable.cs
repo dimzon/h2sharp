@@ -8,6 +8,7 @@
  *
  * A derived table or a common table expression: a table whose rows are the rows of a query.
  */
+using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Command;
@@ -80,6 +81,23 @@ public abstract class QueryExpressionTable : Table
     /// </summary>
     /// <returns>the top query, or null</returns>
     public abstract Query? GetTopQuery();
+
+    /// <summary>
+    /// Returns the first index of an artificial parameter used by the index of this table.
+    /// </summary>
+    /// <param name="additionalParameters">the parameters of the table's query, or null</param>
+    /// <returns>the first free parameter index</returns>
+    public int GetParameterOffset(List<Parameter>? additionalParameters)
+    {
+        Query? topQuery = GetTopQuery();
+        int result = topQuery is null ? 0 : Parameter.GetMaxIndex(topQuery.GetParameters() ?? []);
+        if (additionalParameters is not null)
+        {
+            result = Math.Max(result, Parameter.GetMaxIndex(additionalParameters));
+        }
+
+        return result;
+    }
 
     /// <summary>
     /// Creates the columns of the table out of the columns of the query.
@@ -166,7 +184,7 @@ public abstract class QueryExpressionTable : Table
     public override bool IsView() => true;
 
     /// <inheritdoc/>
-    public override Index[] GetIndexes() => [];
+    public override H2Sharp.Indexes.Index[] GetIndexes() => [];
 
     /// <inheritdoc/>
     public override bool IsQueryComparable()

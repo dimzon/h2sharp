@@ -187,6 +187,18 @@ public sealed class ExpressionColumn : Expression
         return column.GetTypeInfo();
     }
 
+    /// <inheritdoc/>
+    public override void CreateIndexConditions(SessionLocal session, TableFilter filter)
+    {
+        if (ReferenceEquals(filter, GetTableFilter())
+            && column is not null && column.GetTypeInfo().GetValueType() == Value.Boolean)
+        {
+            filter.AddIndexCondition(H2Sharp.Indexes.IndexCondition.Get(
+                H2Sharp.Expressions.Conditions.Comparison.Equal, this,
+                ValueExpression.Get(ValueBoolean.True)));
+        }
+    }
+
     /// <summary>
     /// Maps this column to a column of a resolver, or fails with the name it was looking for.
     /// </summary>

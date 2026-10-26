@@ -156,6 +156,15 @@ public sealed class MVDelegateIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    public override bool CanGetFirstOrLast() => true;
+
+    /// <inheritdoc/>
+    public override Indexes.Cursor FindFirstOrLast(SessionLocal session, bool first)
+    {
+        return mainIndex.FindFirstOrLast(session, first);
+    }
+
+    /// <inheritdoc/>
     public override bool IsRowIdIndex()
     {
         return true;

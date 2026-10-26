@@ -443,17 +443,14 @@ public sealed partial class Parser
     /// <summary>Supplies the existing parameter objects for command recompilation.</summary>
     public void SetSuppliedParameters(List<Expressions.Parameter> suppliedParameters)
     {
-        // ParserBase.setSuppliedParameters. This port's Parameter.GetIndex is currently
-        // one-based (documented in Parameter); slot indexes are zero-based as in Java.
-        int max = 0;
-        foreach (Expressions.Parameter parameter in suppliedParameters)
-            max = Math.Max(max, parameter.GetIndex());
+        // ParserBase.setSuppliedParameters; Parameter.GetIndex is zero-based as in Java.
+        int max = Expressions.Parameter.GetMaxIndex(suppliedParameters);
         if (max > suppliedParameters.Count)
         {
             parameterList = new(max);
             for (int i = 0; i < max; i++) parameterList.Add(null!);
             foreach (Expressions.Parameter parameter in suppliedParameters)
-                parameterList[parameter.GetIndex() - 1] = parameter;
+                parameterList[parameter.GetIndex()] = parameter;
         }
         else parameterList = suppliedParameters;
     }
@@ -523,6 +520,32 @@ public sealed partial class Parser
         }
 
         return new CommandList(current, sql, prepared);
+    }
+
+    /// <summary>
+    /// Parses a query and prepares its expressions, as the reference's
+    /// prepareQueryExpression does. Rights and literals must already be checked.
+    /// </summary>
+    /// <param name="sql">the query SQL</param>
+    /// <returns>the query</returns>
+    public Query.Query PrepareQueryExpression(string sql)
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+        SessionLocal current = session ?? throw new TODOException("Parser.prepareQueryExpression: this parser has no session");
+        BitSet parameters = new();
+        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        CheckParameterIndex(parameters);
+        Parser parser = new(sql, provider, tokens, current);
+        parser.SetSuppliedParameters(parameterList);
+        Query.Query query = parser.ParseQueryExpression(prepare: false);
+        query.PrepareExpressions();
+        query.SetParameterList(parser.parameterList.Count == 0 ? null : parser.parameterList);
+        if (!parser.AtEnd())
+        {
+            throw DbException.GetSyntaxError(sql, parser.Current.Start);
+        }
+
+        return query;
     }
 
     /// <summary>
@@ -894,7 +917,7 @@ public sealed partial class Parser
         if (IsWord("NOSETTINGS")) settings = false;
         if (IsWord("NOVERSION")) version = false;
         if (IsWord("DROP")) drop = true;
-        if (IsWord("BLOCKSIZE")) _ = ReadLong();
+        if (IsWord("BLOCKSIZE")) command.SetLobBlockSize(ReadLong());
         command.SetData(data);
         command.SetPasswords(passwords);
         command.SetSettings(settings);
@@ -1748,8 +1771,21 @@ public sealed partial class Parser
             if (ReadIf(Token.Dot))
             {
                 // The reference reads the schema of the name and looks the table up in it.
-                string schemaName = tableName;
+                string first = tableName;
                 tableName = ReadIdentifier();
+                string schemaName;
+                if (CurrentType == Token.Dot
+                    && first.Equals(session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
+                {
+                    Read();
+                    schemaName = tableName;
+                    tableName = ReadIdentifier();
+                }
+                else
+                {
+                    schemaName = first;
+                }
+
                 Schemas.Schema? foundSchema = session.GetDatabase().FindSchema(schemaName);
                 if (foundSchema is null)
                 {
@@ -1805,7 +1841,7 @@ public sealed partial class Parser
             }
             else
             {
-                fromTable = ReadTableOrView(session, schema, tableName);
+                fromTable = ReadTableOrView(session, schema, tableName, searchPath: !schemaExplicit);
             }
         }
 
@@ -2143,6 +2179,30 @@ public sealed partial class Parser
         {
             schemaName = name;
             name = ReadIdentifier();
+        }
+
+        return name;
+    }
+
+    private string ReadIdentifierWithSchemaName(SessionLocal? session, out string? schemaName)
+    {
+        string name = ReadIdentifier();
+        schemaName = null;
+        if (ReadIf(Token.Dot))
+        {
+            string first = name;
+            name = ReadIdentifier();
+            if (CurrentType == Token.Dot && session is not null
+                && first.Equals(session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
+            {
+                Read();
+                schemaName = name;
+                name = ReadIdentifier();
+            }
+            else
+            {
+                schemaName = first;
+            }
         }
 
         return name;
@@ -7145,6 +7205,7 @@ public sealed partial class Parser
         else
         {
             columns = new Tables.Column[statement.Columns.Count];
+            HashSet<Tables.Column> seen = [];
             for (int i = 0; i < statement.Columns.Count; i++)
             {
                 string name = statement.Columns[i];
@@ -7158,8 +7219,17 @@ public sealed partial class Parser
                     }
                 }
 
-                columns[i] = match
-                    ?? throw DbException.GetSyntaxError(sql, 0, name);
+                if (match is null)
+                {
+                    throw DbException.GetSyntaxError(sql, 0, name);
+                }
+
+                if (!seen.Add(match))
+                {
+                    throw DbException.Get(Api.ErrorCode.DuplicateColumnName1, name);
+                }
+
+                columns[i] = match;
             }
         }
 
@@ -7365,7 +7435,8 @@ public sealed partial class Parser
     /// <param name="schema">the schema</param>
     /// <param name="tableName">the table name</param>
     /// <returns>the table or view</returns>
-    private Tables.Table ReadTableOrView(SessionLocal session, Schemas.Schema schema, string tableName)
+    private Tables.Table ReadTableOrView(
+        SessionLocal session, Schemas.Schema schema, string tableName, bool searchPath = false)
     {
         Tables.Table? table = schema.FindTableOrView(session, tableName);
         if (table is not null)
@@ -7378,6 +7449,18 @@ public sealed partial class Parser
         if (ctes.TryGetValue(tableName, out Tables.CTE? cte))
         {
             return cte;
+        }
+
+        if (searchPath && session.GetSchemaSearchPath() is { } path)
+        {
+            foreach (string schemaName in path)
+            {
+                table = session.GetDatabase().GetSchema(schemaName).FindTableOrView(session, tableName);
+                if (table is not null)
+                {
+                    return table;
+                }
+            }
         }
 
         if (session.GetDatabase().GetFirstUserTable() is null)
@@ -7446,7 +7529,7 @@ public sealed partial class Parser
         int index = ((Token.ParameterToken)Current).Index - 1;
         Read();
         while (parameterList.Count <= index)
-            parameterList.Add(new Expressions.Parameter(parameterList.Count + 1));
+            parameterList.Add(new Expressions.Parameter(parameterList.Count));
         return parameterList[index];
     }
 
@@ -8302,12 +8385,12 @@ public sealed partial class Parser
                 statement.IfNotExists = true;
             }
 
-            statement.Name = ReadIdentifierWithSchemaName(out string? indexSchemaName);
+            statement.Name = ReadIdentifierWithSchemaName(session, out string? indexSchemaName);
             statement.Schema = indexSchemaName;
         }
 
         ExpectWord("ON");
-        statement.TableName = ReadIdentifierWithSchemaName(out string? tableSchemaName);
+        statement.TableName = ReadIdentifierWithSchemaName(session, out string? tableSchemaName);
         statement.TableSchema = tableSchemaName;
         if (IsWord("COMMENT", consume: false))
         {
@@ -8431,7 +8514,14 @@ public sealed partial class Parser
             Read();
             do
             {
-                statement.Columns.Add(ReadIdentifier());
+                string column = ReadIdentifier();
+                if (statement.Columns.Exists(
+                    name => name.Equals(column, StringComparison.OrdinalIgnoreCase)))
+                {
+                    throw DbException.Get(Api.ErrorCode.DuplicateColumnName1, column);
+                }
+
+                statement.Columns.Add(column);
             }
             while (ReadIf(Token.Comma));
 
@@ -8442,6 +8532,27 @@ public sealed partial class Parser
         {
             ExpectWord("VALUES");
             statement.DefaultValues = true;
+            return statement;
+        }
+
+        if (CurrentType == ParserUtil.Set)
+        {
+            if (statement.Columns.Count > 0)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start);
+            }
+
+            Read();
+            List<Expression> setRow = [];
+            do
+            {
+                statement.Columns.Add(ReadIdentifier());
+                Expect(Token.Equal, "=");
+                setRow.Add(ReadExpressionOrDefault());
+            }
+            while (ReadIf(Token.Comma));
+
+            statement.Rows.Add(setRow);
             return statement;
         }
 

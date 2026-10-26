@@ -3,6 +3,7 @@
  * Ported from org.h2.command.ddl.AlterTableAlterColumn, H2 2.5.
  * Copyright 2026 H2Sharp contributors.
  */
+using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Api;
@@ -30,6 +31,11 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
     private Expression? usingExpression;
     private bool ifTableExists;
     private bool booleanFlag;
+    private bool ifNotExists;
+    private bool addFirst;
+    private string? addBefore;
+    private string? addAfter;
+    private readonly List<Column> columnsToAdd = [];
 
     public AlterTableAlterColumn(SessionLocal session, Schema schema) : base(session, schema) { }
     public void SetIfTableExists(bool b) => ifTableExists = b;
@@ -41,8 +47,11 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
     public void SetUsingExpression(Expression usingExpression) => this.usingExpression = usingExpression;
     public void SetNewColumn(Column newColumn) => this.newColumn = newColumn;
     public void SetBooleanFlag(bool booleanFlag) => this.booleanFlag = booleanFlag;
-    public override void AddColumn(Column column)
-        => throw new TODOException("AlterTableAlterColumn.addColumn: ADD COLUMN is not ported");
+    public void SetIfNotExists(bool value) => ifNotExists = value;
+    public void SetAddFirst() => addFirst = true;
+    public void SetAddBefore(string column) => addBefore = column;
+    public void SetAddAfter(string column) => addAfter = column;
+    public override void AddColumn(Column column) => columnsToAdd.Add(column);
 
     public override long Update()
     {
@@ -62,8 +71,33 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
             CheckDefaultReferencesTable(table, newColumn.GetDefaultExpression());
             CheckClustering(newColumn);
         }
+        foreach (Column column in columnsToAdd)
+        {
+            CheckDefaultReferencesTable(table, column.GetDefaultExpression());
+            CheckClustering(column);
+        }
         switch (type)
         {
+            case CommandInterface.AlterTableAddColumn:
+                bool exists = false;
+                if (ifNotExists && columnsToAdd.Count == 1)
+                {
+                    foreach (Column c in table.GetColumns())
+                    {
+                        if (c.GetName().Equals(columnsToAdd[0].GetName(), StringComparison.OrdinalIgnoreCase))
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!exists)
+                {
+                    CopyData(table, null, true);
+                }
+
+                break;
             case CommandInterface.AlterTableAlterColumnNotNull:
                 if (oldColumn is null || oldColumn.IsNullable() == Column.NotNullable) break;
                 CheckNoNullValues(table);
@@ -223,7 +257,35 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
     private Table CloneTableStructure(Table table, Column[] columns, Database db, string tempName, List<Column> newColumns)
     {
         foreach (Column column in columns) newColumns.Add(column.GetClone());
-        newColumns[oldColumn!.GetColumnId()] = newColumn!;
+        if (type == CommandInterface.AlterTableAddColumn)
+        {
+            int position;
+            if (addFirst)
+            {
+                position = 0;
+            }
+            else if (addBefore is not null)
+            {
+                position = table.GetColumn(addBefore).GetColumnId();
+            }
+            else if (addAfter is not null)
+            {
+                position = table.GetColumn(addAfter).GetColumnId() + 1;
+            }
+            else
+            {
+                position = columns.Length;
+            }
+
+            foreach (Column column in columnsToAdd)
+            {
+                newColumns.Insert(position++, column);
+            }
+        }
+        else
+        {
+            newColumns[oldColumn!.GetColumnId()] = newColumn!;
+        }
         CreateTableData data = new()
         {
             TableName = tempName, Id = db.AllocateObjectId(), Columns = newColumns,
@@ -238,6 +300,17 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
         foreach (Column column in newColumns)
         {
             if (column.IsGenerated()) continue;
+            if (type == CommandInterface.AlterTableAddColumn && columnsToAdd.Contains(column))
+            {
+                if (usingExpression is not null)
+                {
+                    usingExpression.GetUnenclosedSql(
+                        AddColumn(column, columnNames, columnValues), HasSql.DefaultSqlFlags);
+                }
+
+                continue;
+            }
+
             if (ReferenceEquals(column, newColumn) && usingExpression is not null)
                 usingExpression.GetUnenclosedSql(AddColumn(column, columnNames, columnValues), HasSql.DefaultSqlFlags);
             else column.GetSql(AddColumn(column, columnNames, columnValues), HasSql.DefaultSqlFlags);

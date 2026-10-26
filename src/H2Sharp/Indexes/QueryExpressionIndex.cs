@@ -13,6 +13,7 @@ using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Tables;
+using H2Sharp.Util;
 
 namespace H2Sharp.Indexes;
 
@@ -43,7 +44,8 @@ public abstract class QueryExpressionIndex : Index
     public Query GetQuery() => query;
 
     /// <inheritdoc/>
-    public override string GetPlanSql() => "query expression index";
+    public override string GetPlanSql()
+        => query.GetPlanSql(HasSql.TraceSqlFlags | HasSql.AddPlanInformation);
 
     /// <inheritdoc/>
     public override void Close(SessionLocal session)

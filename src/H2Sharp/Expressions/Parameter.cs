@@ -87,11 +87,11 @@ public sealed class Parameter : Expression, ParameterInterface
     }
 
     /// <summary>
-    /// Gets the 1-based index of this parameter.
+    /// Gets the zero-based index of this parameter.
     /// </summary>
     /// <remarks>
-    /// One-based like the ?N form: the first placeholder is 1, and a bare ? takes the
-    /// next number in order. A caller that binds by position shifts by one.
+    /// Zero-based as in the reference: the SQL form numbers the first placeholder 1, and
+    /// <see cref="GetUnenclosedSql"/> adds the one the text shows.
     /// </remarks>
     public int GetIndex()
     {

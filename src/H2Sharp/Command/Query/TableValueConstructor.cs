@@ -259,6 +259,15 @@ public sealed class TableValueConstructor : Query
         return FinishResult(result, offsetFetch.Offset, offsetFetch.Fetch, offsetFetch.FetchPercent, target);
     }
 
+    /// <inheritdoc/>
+    public override void AddGlobalCondition(Parameter param, int columnId, int comparisonType)
+    {
+        // The values are fixed; there is nothing an index condition can narrow.
+    }
+
+    /// <inheritdoc/>
+    public override bool AllowGlobalConditions() => false;
+
     /// <summary>
     /// Works out the columns of the table: their names and the types the rows hold.
     /// </summary>

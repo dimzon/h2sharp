@@ -434,7 +434,7 @@ public class IndexCondition
     {
         return compareType switch
         {
-            Comparison.Equal or Comparison.BiggerEqual or Comparison.Bigger => true,
+            Comparison.Equal or Comparison.EqualNullSafe or Comparison.BiggerEqual or Comparison.Bigger => true,
             _ => false,
         };
     }
@@ -447,7 +447,7 @@ public class IndexCondition
     {
         return compareType switch
         {
-            Comparison.Equal or Comparison.SmallerEqual or Comparison.Smaller => true,
+            Comparison.Equal or Comparison.EqualNullSafe or Comparison.SmallerEqual or Comparison.Smaller => true,
             _ => false,
         };
     }

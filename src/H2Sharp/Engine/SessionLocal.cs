@@ -707,6 +707,15 @@ public sealed class SessionLocal : Session
     /// </remarks>
     /// <param name="sql">the SQL</param>
     /// <returns>the prepared command</returns>
+    /// <summary>
+    /// Parses and prepares the expressions of a query, as the reference's
+    /// <c>prepareQueryExpression</c> does.
+    /// </summary>
+    /// <param name="sql">the query SQL</param>
+    /// <returns>the query</returns>
+    public H2Sharp.Command.Query.Query PrepareQueryExpression(string sql)
+        => new H2Sharp.Command.Parser(this).PrepareQueryExpression(sql);
+
     public override H2Sharp.Command.CommandInterface PrepareCommand(string sql)
     {
         ArgumentNullException.ThrowIfNull(sql);

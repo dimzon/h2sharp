@@ -56,7 +56,7 @@ public class AlterTableAddConstraint : AlterTable
 
     private IndexColumn[] indexColumns = [];
 
-    private IndexColumn[] refIndexColumns = [];
+    private IndexColumn[]? refIndexColumns;
 
     private Schema? refSchema;
 

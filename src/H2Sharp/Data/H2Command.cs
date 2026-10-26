@@ -448,13 +448,11 @@ public sealed class H2Command : DbCommand
         foreach (Expressions.ParameterInterface engineParameter in containers[0].GetParameters())
         {
             Expressions.Parameter parameter = (Expressions.Parameter)engineParameter;
-            // The tokenizer numbers placeholders from 1, like the ?N form: the first
-            // placeholder is index 1, so the ordered values shift by one.
-            int index = parameter.GetIndex() - 1;
+            int index = parameter.GetIndex();
             if (index < 0 || index >= ordered.Count)
             {
                 throw new InvalidOperationException(
-                    "No value was given for parameter #" + parameter.GetIndex());
+                    "No value was given for parameter #" + (parameter.GetIndex() + 1));
             }
 
             object? value = ordered[index].Value;

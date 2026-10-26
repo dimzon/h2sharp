@@ -1,5 +1,32 @@
 # MIGRATION STATUS — рабочая памятка
 
+### TestScript: планы, производные таблицы и ранние блокеры
+
+`TestScript` доведён до восьми строк в трёх оставшихся функциях:
+
+* 372 — `IS NULL` не давал границ поиска: `IndexCondition.IsStart/IsEnd`
+  не включали `EQUAL_NULL_SAFE`; теперь `scanCount: 1`, как на JVM.
+* 1134/1159 — портированы `ConditionLocalAndGlobal`, `Query.addGlobalCondition`
+  и `RegularQueryExpressionIndex` с повторным разбором SQL и параметрами;
+  `MVDelegateIndex` получил `CanGetFirstOrLast`/`FindFirstOrLast`, поэтому
+  `MAX(ID)` снова `direct lookup`.
+* `DROP TABLE A, B, C, V CASCADE` не падал на V, которую уже удалил каскад:
+  таблица переименовывается и ищется заново перед каждым удалением, как в
+  эталонном `DropTable.executeDrop`.
+
+Там же исправлены скрытые за этим исключением блокеры: bool-колонка в WHERE
+создаёт индексное условие (`ExpressionColumn.createIndexConditions`), поиск
+таблицы по `SCHEMA_SEARCH_PATH`, имена `database.schema.object`, `INSERT ... SET`,
+`DUPLICATE_COLUMN_NAME_1` для повторной колонки и внешний ключ `REFERENCES T`
+без списка колонок (берётся PK). Нумерация `Parameter` приведена к эталонной
+0-based; `?1` в планах и привязка ADO.NET сохранены. `ALTER TABLE ADD COLUMN`
+идёт через эталонный `copyData`/`cloneTableStructure`; `SCRIPT ... BLOCKSIZE`
+режет CLOB/BLOB на `SYSTEM_LOB_STREAM` + `SYSTEM_COMBINE_*`.
+
+Остались только Java `CREATE/DROP ALIAS` и вызов алиаса (2014/2023/2036);
+они помечены **BlockedByPort**: порт не умеет загружать Java-классы, а подмена
+Java alias на .NET-метод была бы отдельным ADR-решением, не переносом эталона.
+
 ### Генератор случайных чисел — `System.Random`
 
 `JavaRandom` теперь наследует `System.Random` и переопределяет все виртуальные методы

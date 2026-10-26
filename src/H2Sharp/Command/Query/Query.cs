@@ -339,6 +339,31 @@ public abstract class Query : Prepared
     public abstract void PrepareExpressions();
 
     /// <summary>
+    /// Adds a condition evaluated by the query expression index that reads this query.
+    /// </summary>
+    /// <param name="param">the parameter the index fills</param>
+    /// <param name="columnId">the derived column the condition is on</param>
+    /// <param name="comparisonType">the comparison type</param>
+    public abstract void AddGlobalCondition(Parameter param, int columnId, int comparisonType);
+
+    /// <summary>
+    /// Whether this query accepts conditions pushed into it by its index.
+    /// </summary>
+    /// <returns>true if it does</returns>
+    public abstract bool AllowGlobalConditions();
+
+    /// <summary>
+    /// Adds a parameter to this query.
+    /// </summary>
+    /// <param name="param">the parameter</param>
+    public void AddParameter(Parameter param)
+    {
+        List<Parameter> list = GetParameters() ?? [];
+        list.Add(param);
+        SetParameterList(list);
+    }
+
+    /// <summary>
     /// Whether the query is initialized.
     /// </summary>
     /// <remarks>

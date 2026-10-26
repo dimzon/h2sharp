@@ -27,6 +27,28 @@ public sealed class SelectUnion : Query
     { this.unionType = unionType; this.left = left; this.right = right; }
 
     public override bool IsUnion() => true;
+    public override void AddGlobalCondition(Parameter param, int columnId, int comparisonType)
+    {
+        AddParameter(param);
+        switch (unionType)
+        {
+            case UnionType.UNION_ALL:
+            case UnionType.UNION:
+            case UnionType.INTERSECT:
+                left.AddGlobalCondition(param, columnId, comparisonType);
+                right.AddGlobalCondition(param, columnId, comparisonType);
+                break;
+            case UnionType.EXCEPT:
+                left.AddGlobalCondition(param, columnId, comparisonType);
+                break;
+            default:
+                throw DbException.GetInternalError("type=" + unionType);
+        }
+    }
+
+    public override bool AllowGlobalConditions()
+        => left.AllowGlobalConditions() && right.AllowGlobalConditions();
+
     public override bool IsConstantQuery() => base.IsConstantQuery() && left.IsConstantQuery() && right.IsConstantQuery();
     // Query.GetUnionType currently has an int interface in the port.
     public override int GetUnionType() => (int)unionType;
