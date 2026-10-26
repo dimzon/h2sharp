@@ -7,6 +7,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System.Collections.Generic;
+using System.Text;
 using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
@@ -80,6 +81,28 @@ public sealed class CreateDomain : SchemaCommand
             }
 
             throw DbException.Get(ErrorCode.DomainAlreadyExists1, typeName);
+        }
+
+        if (!typeName.Contains(' '))
+        {
+            DataType? builtIn = DataType.GetTypeByName(typeName);
+            if (builtIn is not null)
+            {
+                if (GetSession().GetDatabase().EqualsIdentifiers(
+                    typeName, Value.GetTypeName(builtIn.Type)))
+                {
+                    throw DbException.Get(ErrorCode.DomainAlreadyExists1, typeName);
+                }
+
+                Tables.Table? table = GetSession().GetDatabase().GetFirstUserTable();
+                if (table is not null)
+                {
+                    StringBuilder builder = new(typeName);
+                    _ = builder.Append(" (").Append(
+                        table.GetSql(new StringBuilder(), Util.HasSql.TraceSqlFlags)).Append(')');
+                    throw DbException.Get(ErrorCode.DomainAlreadyExists1, builder.ToString());
+                }
+            }
         }
 
         int id = GetObjectId();

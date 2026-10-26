@@ -7510,6 +7510,28 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### IDENTITY shorthand, домены с именем типа и несколько `*`
+
+Добавлен `Mode.IdentityDataType` (Regular/Legacy). `ParseColumnForTable`
+читает `IDENTITY[(start[, increment])]` как BIGINT с identity и primary key;
+`ParseTableColumnDefinition` создаёт PK-ограничение, если колонка пришла из
+этого shorthand. Поэтому работают `CREATE TABLE T(ID IDENTITY)` и
+`ALTER TABLE ... ALTER COLUMN ID IDENTITY`.
+
+`CreateDomain` воспроизводит проверку эталона: имя без пробела, совпадающее с
+каноническим именем встроенного типа, даёт `DOMAIN_ALREADY_EXISTS_1`; при
+наличии пользовательской таблицы ошибка также называет её. `INT` остаётся
+разрешённым именем домена, как на JVM.
+
+SELECT-список теперь принимает несколько qualified star (`t1.*, t2.*`) и
+смешивание с выражениями: star превращается в маркер и разворачивается после
+чтения FROM, как reference expansion. `ShorthandAndStarOracleTests` 3/3:
+IDENTITY/defaults/ALTER, конфликт домена и multiple stars. TestScript прошёл
+520–637; первая функциональная ошибка теперь `@n := ...` на 541.
+
+Проверки: core **1455 passed / 0 failed**, conformance **774/952** без
+регрессий, Data.Tests **491/491**.
+
 ### PostfixCast: закрыты три прежних BlockedByPort-падения
 
 `ValueStringBase.GetBigDecimal` читает `CHARACTER VARYING` через

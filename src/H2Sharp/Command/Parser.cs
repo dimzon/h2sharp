@@ -3282,15 +3282,6 @@ public sealed partial class Parser
         {
             star = string.Empty;
         }
-        else if (IsNameToken()
-            && position + 2 < tokens.Count
-            && tokens[position + 1].TokenType == Token.Dot
-            && tokens[position + 2].TokenType == Token.Asterisk)
-        {
-            star = ReadIdentifier();
-            Read();
-            Read();
-        }
 
         if (star is not null && IsWord("EXCEPT"))
         {
@@ -3310,21 +3301,44 @@ public sealed partial class Parser
         {
             do
             {
-                // H2 parseSelectExpressions reads every item through readExpression;
-                // aggregates are terms too, so their postfixes and operators use that reader.
-                Expressions.Expression item = ReadQueryOr(select);
+                Expressions.Expression item;
+                if (ReadIf(Token.Asterisk))
+                {
+                    item = new Expressions.ExpressionColumn("*", null, 0);
+                }
+                else if (IsNameToken()
+                    && position + 2 < tokens.Count
+                    && tokens[position + 1].TokenType == Token.Dot
+                    && tokens[position + 2].TokenType == Token.Asterisk)
+                {
+                    string itemTable = ReadIdentifier();
+                    Read();
+                    Read();
+                    item = new Expressions.ExpressionColumn("*", itemTable, 0);
+                }
+                else
+                {
+                    // H2 parseSelectExpressions reads every item through readExpression;
+                    // aggregates are terms too, so their postfixes and operators use that
+                    // reader.
+                    item = ReadQueryOr(select);
+                }
 
                 string? alias = null;
-                if (IsWord("AS"))
+                if (item is not Expressions.ExpressionColumn marker
+                    || marker.GetOriginalColumnName() != "*")
                 {
-                    alias = ReadIdentifier();
-                }
-                else if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
-                {
-                    // The reference reads the alias of a select item the same way it reads the
-                    // alias of a table: with the AS or without it, and the two forms mean
-                    // the same thing.
-                    alias = ReadIdentifier();
+                    if (IsWord("AS"))
+                    {
+                        alias = ReadIdentifier();
+                    }
+                    else if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+                    {
+                        // The reference reads the alias of a select item the same way it reads
+                        // the alias of a table: with the AS or without it, and the two forms
+                        // mean the same thing.
+                        alias = ReadIdentifier();
+                    }
                 }
 
                 if (alias is not null)
@@ -3406,20 +3420,18 @@ public sealed partial class Parser
         }
 
         List<Expressions.Expression> selectList = [];
-        if (star is not null)
+
+        void ExpandStar(string? starAlias, List<string>? except)
         {
             if (fromFilters.Count == 0)
             {
                 throw DbException.GetSyntaxError(sql, Current.Start, "statement");
             }
 
-            // The reference expands the star in init; there is no star expression here to
-            // carry there, so the columns land directly. A star with a table in front of
-            // it names the columns of that table.
             foreach (Tables.TableFilter f in fromFilters)
             {
-                if (star.Length > 0
-                    && !f.GetTableAlias().Equals(star, StringComparison.OrdinalIgnoreCase))
+                if (starAlias is { Length: > 0 }
+                    && !f.GetTableAlias().Equals(starAlias, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -3427,10 +3439,10 @@ public sealed partial class Parser
                 foreach (Tables.Column column in f.GetTable().GetColumns())
                 {
                     if (!column.GetVisible()) continue;
-                    if (exceptColumns is not null)
+                    if (except is not null)
                     {
                         bool excluded = false;
-                        foreach (string c in exceptColumns)
+                        foreach (string c in except)
                         {
                             if (c.Equals(column.GetName(), StringComparison.OrdinalIgnoreCase))
                             {
@@ -3449,9 +3461,25 @@ public sealed partial class Parser
                 }
             }
         }
+
+        if (star is not null)
+        {
+            ExpandStar(star, exceptColumns);
+        }
         else
         {
-            selectList.AddRange(selectItems);
+            foreach (Expressions.Expression item in selectItems)
+            {
+                if (item is Expressions.ExpressionColumn marker
+                    && marker.GetOriginalColumnName() == "*")
+                {
+                    ExpandStar(marker.GetOriginalTableAliasName(), null);
+                }
+                else
+                {
+                    selectList.Add(item);
+                }
+            }
         }
 
         select.SetExpressions([.. selectList]);

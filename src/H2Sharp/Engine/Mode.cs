@@ -218,6 +218,9 @@ public sealed class Mode
     /// </summary>
     public bool TopInDml { get; }
 
+    /// <summary>Whether IDENTITY is a data type, as in H2's regular and legacy modes.</summary>
+    public bool IdentityDataType { get; }
+
     /// <summary>
     /// The type names this mode does not allow, as in the reference's disallowedTypes.
     /// </summary>
@@ -252,6 +255,7 @@ public sealed class Mode
         bool groupByColumnIndex = false,
         bool topInSelect = false,
         bool topInDml = false,
+        bool identityDataType = false,
         IReadOnlySet<string>? disallowedTypes = null)
     {
         Enum = modeEnum;
@@ -273,6 +277,7 @@ public sealed class Mode
         GroupByColumnIndex = groupByColumnIndex;
         TopInSelect = topInSelect;
         TopInDml = topInDml;
+        IdentityDataType = identityDataType;
         DisallowedTypes = disallowedTypes ?? FrozenSet<string>.Empty;
     }
 
@@ -314,10 +319,12 @@ public sealed class Mode
     {
         Dictionary<string, Mode> modes = new(StringComparer.Ordinal)
         {
-            ["REGULAR"] = new(ModeEnum.Regular, false, false, false, true, true, topInSelect: true),
+            ["REGULAR"] = new(ModeEnum.Regular, false, false, false, true, true, topInSelect: true,
+                identityDataType: true),
             ["STRICT"] = new(ModeEnum.Strict, false, false, false, false, false),
             ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true,
-                greatestLeastIgnoreNulls: true, topInSelect: true, topInDml: true),
+                greatestLeastIgnoreNulls: true, topInSelect: true, topInDml: true,
+                identityDataType: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true, topInSelect: true),

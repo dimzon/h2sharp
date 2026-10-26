@@ -262,9 +262,39 @@ public sealed partial class Parser
         return column;
     }
 
+    /// <summary>Reads the optional (start[, increment]) after the IDENTITY type.</summary>
+    private void ParseCompatibilityIdentityOptions(Column column)
+    {
+        SequenceOptions options = new();
+        if (ReadIf(Token.OpenParen))
+        {
+            options.SetStartValue(Expressions.ValueExpression.Get(Values.ValueBigint.Get(ReadLong())));
+            if (ReadIf(Token.Comma))
+            {
+                options.SetIncrement(Expressions.ValueExpression.Get(Values.ValueBigint.Get(ReadLong())));
+            }
+
+            Expect(Token.CloseParen, ")");
+        }
+
+        column.SetIdentityOptions(options, false);
+    }
+
     private Column ParseColumnForTable(string columnName, bool defaultNullable)
     {
-        Column column = ParseColumnWithType(columnName);
+        Column column;
+        Mode mode = session?.GetMode() ?? provider.GetMode();
+        if (mode.IdentityDataType && ReadIfCompat("IDENTITY"))
+        {
+            column = new Column(columnName, TypeInfo.TypeBigint);
+            ParseCompatibilityIdentityOptions(column);
+            column.SetPrimaryKey(true);
+        }
+        else
+        {
+            column = ParseColumnWithType(columnName);
+        }
+
         if (IsWord("INVISIBLE")) column.SetVisible(false);
         else if (IsWord("VISIBLE")) column.SetVisible(true);
         bool defaultOnNull = false;
@@ -368,6 +398,11 @@ public sealed partial class Parser
             return;
         }
         Column column = ParseColumnForTable(columnName, true);
+        if (column.HasIdentityOptions() && column.IsPrimaryKey())
+        {
+            command.AddConstraintCommand(NewPrimaryKeyConstraintCommand(session!, schema, tableName, column));
+        }
+
         command.AddColumn(column);
         ReadColumnConstraints(command, schema, tableName, column);
     }
