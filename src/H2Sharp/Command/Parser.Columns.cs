@@ -353,13 +353,12 @@ public sealed partial class Parser
 
     private void ParseTableColumnDefinition(CommandWithColumns command, Schema schema, string tableName, bool forCreateTable)
     {
-        if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary or ParserUtil.Foreign)
+        if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary or ParserUtil.Foreign
+            or ParserUtil.Unique or ParserUtil.Check)
         {
             command.AddConstraintCommand(CreateAddConstraintCommand(session!, schema, tableName, false, ReadTableConstraint(tableName)));
             return;
         }
-        if (CurrentType is ParserUtil.Unique or ParserUtil.Check)
-            throw new TODOException("Parser.parseTableConstraintIf: UNIQUE and table CHECK commands are not ported");
         string columnName = ReadIdentifier();
         if (forCreateTable && CurrentType is Token.Comma or Token.CloseParen)
         {
@@ -405,11 +404,23 @@ public sealed partial class Parser
                     RefIndexSchema: refIndexSchema, RefIndexName: refIndexName);
                 command.AddConstraintCommand(CreateAddConstraintCommand(session!, schema, tableName, false, definition));
             }
+            else if (IsWord("UNIQUE"))
+            {
+                NullsDistinct nullsDistinct = ReadNullsDistinct(NullsDistinct.Distinct);
+                TableConstraintDefinition definition = new(constraintName, false, [column.GetName()], false,
+                    CommandInterface.AlterTableAddConstraintUnique, NullsDistinct: nullsDistinct);
+                command.AddConstraintCommand(CreateAddConstraintCommand(session!, schema, tableName, false, definition));
+            }
+            else if (IsWord("CHECK"))
+            {
+                Expression checkExpression = ReadExpression();
+                TableConstraintDefinition definition = new(constraintName, false, [], false,
+                    CommandInterface.AlterTableAddConstraintCheck, CheckExpression: checkExpression);
+                command.AddConstraintCommand(CreateAddConstraintCommand(session!, schema, tableName, false, definition));
+            }
             else if (ReadIfWords("NOT", "NULL")) column.SetNullable(false);
             else if (IsWord("NULL")) column.SetNullable(true);
             else if (IsWord("COMMENT")) { IsWord("IS"); column.SetComment(ReadString()); }
-            else if (CurrentType is ParserUtil.Unique or ParserUtil.Check)
-                throw new TODOException("Parser.readColumnConstraints: UNIQUE and table CHECK commands are not ported");
             else
             {
                 if (constraintName is not null) throw DbException.GetSyntaxError(sql, Current.Start);

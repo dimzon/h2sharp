@@ -128,7 +128,9 @@ public sealed record TableConstraintDefinition(
     string? IndexSchema = null,
     string? IndexName = null,
     string? RefIndexSchema = null,
-    string? RefIndexName = null);
+    string? RefIndexName = null,
+    Engine.NullsDistinct? NullsDistinct = null,
+    Expression? CheckExpression = null);
 
 /// <summary>ALTER TABLE ... ADD/DROP CONSTRAINT.</summary>
 public sealed class AlterTableStatement : Statement
@@ -317,6 +319,9 @@ public sealed class UpdateStatement : Statement
 
     /// <summary>The condition, or null.</summary>
     public Expression? Where { get; set; }
+
+    /// <summary>The optional TOP limit, or null.</summary>
+    public Expression? Fetch { get; set; }
 }
 
 /// <summary>DELETE FROM ... WHERE.</summary>
@@ -336,6 +341,9 @@ public sealed class DeleteStatement : Statement
 
     /// <summary>The condition, or null.</summary>
     public Expression? Where { get; set; }
+
+    /// <summary>The optional TOP limit, or null.</summary>
+    public Expression? Fetch { get; set; }
 }
 
 /// <summary>One item of a select list.</summary>
@@ -1416,13 +1424,28 @@ public sealed partial class Parser
         {
             tableName = ReadIdentifier();
             Schemas.Schema schema = session.GetCurrentSchema();
+            bool schemaExplicit = false;
+            string? tableSchemaName = null;
             if (ReadIf(Token.Dot))
             {
                 // The reference reads the schema of the name and looks the table up in it.
                 string schemaName = tableName;
                 tableName = ReadIdentifier();
-                schema = session.GetDatabase().FindSchema(schemaName)
-                    ?? throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schemaName);
+                Schemas.Schema? foundSchema = session.GetDatabase().FindSchema(schemaName);
+                if (foundSchema is null)
+                {
+                    if (!("SYS".Equals(schemaName, StringComparison.OrdinalIgnoreCase)
+                        && "DUAL".Equals(tableName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schemaName);
+                    }
+
+                    foundSchema = session.GetCurrentSchema();
+                }
+
+                schema = foundSchema;
+                schemaExplicit = true;
+                tableSchemaName = schemaName;
             }
 
             if (CurrentType == Token.OpenParen
@@ -1444,6 +1467,13 @@ public sealed partial class Parser
                 fromTable = step is null
                     ? new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max)
                     : new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max, step);
+            }
+            else if ((!schemaExplicit || "SYS".Equals(tableSchemaName, StringComparison.OrdinalIgnoreCase))
+                && "DUAL".Equals(tableName, StringComparison.OrdinalIgnoreCase))
+            {
+                // Parser.isDualTable: DUAL is a table of SYS, but H2 also answers it in the
+                // current schema when the name was not qualified.
+                fromTable = new Tables.DualTable(session.GetDatabase());
             }
             else if (IsWord("TABLE"))
             {
@@ -2981,6 +3011,25 @@ public sealed partial class Parser
     private Query.Query ParseQuerySelectBody(Query.Select select)
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parseQuerySelect: this parser has no session");
+        if (current.GetMode().TopInSelect && ReadIfCompat("TOP"))
+        {
+            Query.Select? oldSelect = currentSelect;
+            // The reference clears currentSelect so an aggregate cannot be read as TOP's limit.
+            currentSelect = null;
+            select.SetFetch(ReadQueryTerm().Optimize(current));
+            if (IsWord("PERCENT"))
+            {
+                select.SetFetchPercent(true);
+            }
+
+            if (ReadIfWords("WITH", "TIES"))
+            {
+                select.SetWithTies(true);
+            }
+
+            currentSelect = oldSelect;
+        }
+
         if (IsWord("DISTINCT"))
         {
             select.SetDistinct();
@@ -6587,8 +6636,21 @@ public sealed partial class Parser
                 ?? throw DbException.Get(Api.ErrorCode.IndexNotFound1, constraint.IndexName));
         }
 
-        if (constraint.Type == CommandInterface.AlterTableAddConstraintPrimaryKey)
+        if (constraint.Type == CommandInterface.AlterTableAddConstraintCheck)
         {
+            key.SetCheckExpression(constraint.CheckExpression!);
+            key.SetCheckExisting(constraint.CheckExisting);
+            return key;
+        }
+
+        if (constraint.Type == CommandInterface.AlterTableAddConstraintPrimaryKey
+            || constraint.Type == CommandInterface.AlterTableAddConstraintUnique)
+        {
+            if (constraint.Type == CommandInterface.AlterTableAddConstraintUnique)
+            {
+                key.SetNullsDistinct(constraint.NullsDistinct ?? Engine.NullsDistinct.Distinct);
+            }
+
             key.SetPrimaryKeyHash(constraint.Hash);
             List<Tables.IndexColumn> keyColumns = [];
             foreach (string columnName in constraint.Columns)
@@ -6834,6 +6896,11 @@ public sealed partial class Parser
         }
 
         update.SetSetClauseList(assignments);
+        if (statement.Fetch is not null)
+        {
+            update.SetFetch(statement.Fetch);
+        }
+
         if (statement.Where is not null)
         {
             update.SetCondition(statement.Where);
@@ -6859,6 +6926,11 @@ public sealed partial class Parser
         delete.SetTableFilter(new Tables.TableFilter(
             session, table, statement.Alias ?? table.GetTableName(),
             rightsChecked: true, select: null, 0, null));
+        if (statement.Fetch is not null)
+        {
+            delete.SetFetch(statement.Fetch);
+        }
+
         if (statement.Where is not null)
         {
             delete.SetCondition(statement.Where);
@@ -7307,12 +7379,11 @@ public sealed partial class Parser
     /// Reads a table-level constraint of a CREATE TABLE.
     /// </summary>
     /// <remarks>
-    /// PRIMARY KEY and FOREIGN KEY run: the reference's parseTableConstraintIf also reads UNIQUE
-    /// and CHECK, and the three kinds go to the same AlterTableAddConstraint whose UNIQUE and
-    /// CHECK branches are not ported, so the parser refuses those two where the reference would
-    /// accept the statements. The column lists are read as names; the tables resolve them when
-    /// the command runs, as they do on the JVM. The table name is the statement's own: a
-    /// REFERENCES without a table names the table being created, as it does on the JVM.
+    /// PRIMARY KEY, UNIQUE, CHECK and FOREIGN KEY run: the three kinds go to the same
+    /// AlterTableAddConstraint whose branches read their columns and expressions. The column
+    /// lists are read as names; the tables resolve them when the command runs, as they do on
+    /// the JVM. The table name is the statement's own: a REFERENCES without a table names the
+    /// table being created, as it does on the JVM.
     /// </remarks>
     /// <param name="tableName">the name of the table being created or changed</param>
     /// <returns>the constraint</returns>
@@ -7379,6 +7450,65 @@ public sealed partial class Parser
                 CommandInterface.AlterTableAddConstraintReferential, comment,
                 refSchemaName, refTable, refColumns, updateAction, deleteAction, checkExisting,
                 indexSchema, indexName, refIndexSchema, refIndexName);
+        }
+
+        if (CurrentType == ParserUtil.Unique)
+        {
+            Read();
+            NullsDistinct nullsDistinct = ReadNullsDistinct(NullsDistinct.Distinct);
+            if (IsWord("KEY") || IsWord("INDEX"))
+            {
+                Read();
+            }
+
+            Expect(Token.OpenParen, "(");
+            List<string> uniqueColumns = [];
+            do
+            {
+                uniqueColumns.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
+            if (IsWord("INDEX", consume: false))
+            {
+                Read();
+                indexName = ReadIdentifierWithSchemaName(out indexSchema);
+            }
+
+            bool checkUniqueExisting = true;
+            if (IsWord("NOCHECK"))
+            {
+                checkUniqueExisting = false;
+            }
+            else
+            {
+                _ = IsWord("CHECK");
+            }
+
+            return new TableConstraintDefinition(name, ifNotExists, uniqueColumns, Hash: false,
+                CommandInterface.AlterTableAddConstraintUnique, comment,
+                CheckExisting: checkUniqueExisting, IndexSchema: indexSchema, IndexName: indexName,
+                NullsDistinct: nullsDistinct);
+        }
+
+        if (CurrentType == ParserUtil.Check)
+        {
+            Read();
+            Expression checkExpression = ReadExpression();
+            bool checkExisting = true;
+            if (IsWord("NOCHECK"))
+            {
+                checkExisting = false;
+            }
+            else
+            {
+                _ = IsWord("CHECK");
+            }
+
+            return new TableConstraintDefinition(name, ifNotExists, [], Hash: false,
+                CommandInterface.AlterTableAddConstraintCheck, comment,
+                CheckExisting: checkExisting, CheckExpression: checkExpression);
         }
 
         Expect(ParserUtil.Primary, "PRIMARY");
@@ -7918,8 +8048,28 @@ public sealed partial class Parser
 
     private UpdateStatement ReadUpdate()
     {
-        UpdateStatement statement = new() { Name = ReadIdentifierWithSchemaName(out string? updateSchema) };
+        Expression? fetch = null;
+        if ((session?.GetMode() ?? provider.GetMode()).TopInDml && ReadIfCompat("TOP"))
+        {
+            fetch = ReadQueryTerm();
+        }
+
+        UpdateStatement statement = new()
+        {
+            Name = ReadIdentifierWithSchemaName(out string? updateSchema),
+            Fetch = fetch,
+        };
         statement.Schema = updateSchema;
+        // The reference resolves the target before it reads SET; doing it here keeps the
+        // error of a missing table ahead of a syntax error in the rest of the statement.
+        if (session is not null)
+        {
+            Schemas.Schema schema = updateSchema is null
+                ? CurrentSchema(session)
+                : session.GetDatabase().GetSchema(updateSchema);
+            _ = ReadTableOrView(session, schema, statement.Name);
+        }
+
         statement.Alias = ReadFromAlias();
         ExpectWord("SET");
         do
@@ -7942,8 +8092,18 @@ public sealed partial class Parser
 
     private DeleteStatement ReadDelete()
     {
+        Expression? fetch = null;
+        if ((session?.GetMode() ?? provider.GetMode()).TopInDml && ReadIfCompat("TOP"))
+        {
+            fetch = ReadQueryTerm();
+        }
+
         ExpectWord("FROM");
-        DeleteStatement statement = new() { Name = ReadIdentifierWithSchemaName(out string? deleteSchema) };
+        DeleteStatement statement = new()
+        {
+            Name = ReadIdentifierWithSchemaName(out string? deleteSchema),
+            Fetch = fetch,
+        };
         statement.Schema = deleteSchema;
         statement.Alias = ReadFromAlias();
         statement.Where = ReadWhere();

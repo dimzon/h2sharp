@@ -31,6 +31,9 @@ public abstract class FilteredDataChangeStatement : DataChangeStatement
 
     private Expression? condition;
 
+    /// <summary>The optional maximum number of rows, as written after TOP.</summary>
+    protected Expression? fetchExpr;
+
     /// <summary>
     /// Creates the statement.
     /// </summary>
@@ -80,5 +83,5 @@ public abstract class FilteredDataChangeStatement : DataChangeStatement
     /// </summary>
     /// <param name="fetch">the fetch expression</param>
     public void SetFetch(Expression fetch)
-        => throw new TODOException("FilteredDataChangeStatement.setFetch: not ported");
+        => fetchExpr = fetch;
 }

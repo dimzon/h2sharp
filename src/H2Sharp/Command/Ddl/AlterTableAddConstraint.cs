@@ -18,7 +18,8 @@
  * is a question about names, not lookup: the table may not exist yet, so the answer is whether
  * the referenced schema is this schema and the two names are the same identifier.
  *
- * Not ported: everything but the primary key needs the constraint machinery.
+ * Ported: PRIMARY KEY, UNIQUE, CHECK and both FOREIGN KEY kinds. Domain constraints are a
+ * separate statement (AlterDomainAddConstraint).
  */
 using System;
 using System.Collections.Generic;
@@ -349,8 +350,65 @@ public class AlterTableAddConstraint : AlterTable
                     break;
                 }
 
+            case CommandInterface.AlterTableAddConstraintUnique:
+                {
+                    if (indexColumns is null)
+                    {
+                        List<IndexColumn> list = [];
+                        foreach (Column column in table.GetColumns())
+                        {
+                            if (!column.GetVisible()) continue;
+                            list.Add(new IndexColumn(column));
+                        }
+
+                        if (list.Count == 0)
+                        {
+                            throw DbException.Get(Api.ErrorCode.SyntaxError1,
+                                "UNIQUE(VALUE) on table without columns");
+                        }
+
+                        indexColumns = [.. list];
+                    }
+                    else
+                    {
+                        indexColumns = IndexColumn.MapColumns(indexColumns, table);
+                    }
+
+                    constraint = CreateUniqueConstraint(table, index, indexColumns, false);
+                    break;
+                }
+
+            case CommandInterface.AlterTableAddConstraintCheck:
+                {
+                    HashSet<object> dependencies = [];
+                    checkExpression!.IsEverything(ExpressionVisitor.GetDependenciesVisitor(dependencies));
+                    foreach (object dependency in dependencies)
+                    {
+                        if (dependency is DbObject dbObject && table.IsTemporary() != dbObject.IsTemporary())
+                        {
+                            throw DbException.GetUnsupportedException(
+                                "check constraint uses temporary object " + dbObject.GetName());
+                        }
+                    }
+
+                    ConstraintCheck check = new(GetSchema(), GetObjectId(), GenerateConstraintName(table), table);
+                    // Rights are not ported (D-004); the table was resolved by this statement.
+                    TableFilter checkFilter = new(GetSession(), table, null, rightsChecked: true, null, 0, null);
+                    checkExpression!.MapColumns(checkFilter, 0, Expression.MapInitial);
+                    checkExpression = checkExpression.Optimize(GetSession());
+                    check.SetExpression(checkExpression);
+                    check.SetTableFilter(checkFilter);
+                    constraint = check;
+                    if (checkExisting)
+                    {
+                        check.CheckExistingData(GetSession());
+                    }
+
+                    break;
+                }
+
             default:
-                throw new TODOException("AlterTableAddConstraint.update: unique and check constraints are not ported");
+                throw new TODOException("AlterTableAddConstraint.update: this constraint kind is not ported");
         }
 
         // parent relationship is already set with addConstraint
@@ -553,6 +611,42 @@ public class AlterTableAddConstraint : AlterTable
         primaryKeyHash = b;
     }
 
+    /// <summary>Creates a UNIQUE constraint, reusing or creating its unique index.</summary>
+    private ConstraintUnique CreateUniqueConstraint(Table table, H2Sharp.Indexes.Index? existingIndex,
+        IndexColumn[] columns, bool forForeignKey)
+    {
+        NullsDistinct needNullsDistinct = nullsDistinct ?? NullsDistinct.Distinct;
+        bool indexOwner = false;
+        H2Sharp.Indexes.Index uniqueIndex;
+        if (existingIndex is not null && CanUseIndex(existingIndex, table, columns, needNullsDistinct))
+        {
+            indexOwner = true;
+            existingIndex.GetIndexType()!.SetBelongsToConstraint(true);
+            uniqueIndex = existingIndex;
+        }
+        else
+        {
+            H2Sharp.Indexes.Index? found = GetIndex(table, columns, needNullsDistinct);
+            if (found is not null)
+            {
+                uniqueIndex = found;
+            }
+            else
+            {
+                uniqueIndex = CreateConstraintIndex(table, columns, nullsDistinct ?? NullsDistinct.Distinct);
+                indexOwner = true;
+            }
+        }
+
+        if (columns.Length == 1 && needNullsDistinct == NullsDistinct.AllDistinct)
+        {
+            needNullsDistinct = NullsDistinct.Distinct;
+        }
+
+        return new ConstraintUnique(GetSchema(), GetObjectId(), GenerateConstraintName(table), table,
+            primaryKey: false, columns, uniqueIndex, indexOwner, needNullsDistinct);
+    }
+
     /// <summary>
     /// The unique constraint of the table whose index the given columns can use, or null.
     /// </summary>
@@ -665,16 +759,24 @@ public class AlterTableAddConstraint : AlterTable
     /// <param name="cols">the columns</param>
     /// <returns>the index</returns>
     private H2Sharp.Indexes.Index CreateConstraintIndex(Table table, IndexColumn[] cols)
+        => CreateConstraintIndex(table, cols, null);
+
+    private H2Sharp.Indexes.Index CreateConstraintIndex(Table table, IndexColumn[] cols,
+        NullsDistinct? nullsDistinct)
     {
         int indexId = GetSession().GetDatabase().AllocateObjectId();
-        Indexes.IndexType indexType = Indexes.IndexType.CreateNonUnique(table.IsPersistIndexes());
+        Indexes.IndexType indexType = nullsDistinct is null
+            ? Indexes.IndexType.CreateNonUnique(table.IsPersistIndexes())
+            : Indexes.IndexType.CreateUnique(table.IsPersistIndexes(), false, cols.Length, nullsDistinct.Value);
         indexType.SetBelongsToConstraint(true);
         string prefix = constraintName is null ? "CONSTRAINT" : constraintName;
         string indexName = table.GetSchema()!.GetUniqueIndexName(GetSession(), table, prefix + "_INDEX_");
         try
         {
             H2Sharp.Indexes.Index index = table.AddIndex(
-                GetSession(), indexName, indexId, cols, uniqueColumnCount: 0, indexType, create: true, indexComment: null);
+                GetSession(), indexName, indexId, cols,
+                uniqueColumnCount: nullsDistinct is null ? 0 : cols.Length,
+                indexType, create: true, indexComment: null);
             createdIndexes.Add(index);
             return index;
         }

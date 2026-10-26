@@ -7510,6 +7510,54 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### UNIQUE и CHECK
+
+`ConstraintCheck` перенесён из `org.h2.constraint.ConstraintCheck`: `CHECK`-тип,
+SQL с `NOCHECK`, проверка строки через `TableFilter`, `CHECK_EXISTING_DATA`,
+зависимости и временные объекты. В `AlterTableAddConstraint` добавлены ветви
+UNIQUE (переиспользование или создание unique index, `NullsDistinct`) и CHECK
+(map/optimize выражения, `checkExistingData`). Парсер читает column/table
+`UNIQUE [NULLS ...]`, column/table `CHECK`, `CONSTRAINT name`, `INDEX` и
+`NOCHECK`/`CHECK` по `parseTableConstraintIf` и `readColumnConstraints`.
+
+`UniqueCheckConstraintOracleTests` 3/3 против JVM: column/table UNIQUE и CHECK,
+ALTER TABLE ADD с проверкой старых строк, NULLS DISTINCT/NOT DISTINCT.
+Conformance вырос с 762 до **768/952**, новых Passed→Failed 0.
+
+### TOP в SELECT/UPDATE/DELETE и явный DUAL
+
+Перенесены `Mode.topInSelect`/`topInDML` с эталонной таблицей режимов:
+SELECT TOP — Regular, Legacy, HSQLDB, MSSQLServer; UPDATE/DELETE TOP — Legacy и
+MSSQLServer. В `parseSelectExpressions` TOP читается перед DISTINCT через
+`readTerm` при погашенном `currentSelect` (агрегат в TOP — синтаксическая
+ошибка), затем `PERCENT` и `WITH TIES`. В UPDATE/DELETE TOP попадает в
+`FilteredDataChangeStatement.fetchExpr`; `DoPrepare` мапит и оптимизирует
+выражение, `Run` ограничивает число строк и отвергает NULL/отрицательный FETCH
+через `INVALID_VALUE_2`, как эталон.
+
+Важная находка: `Parser` берёт режим из `provider.GetMode()`, а
+`SessionLocal.CastDataProvider` по умолчанию — `DefaultCastDataProvider` с
+Regular. Поэтому TOP читает режим из `session.GetMode()`; остальные проверки
+`provider.GetMode()` в парсере (LIMIT, JSON, REGCLASS и т.п.) остаются
+прежним дефектом и требуют отдельного аудита.
+
+Явный `FROM DUAL` перенесён из `Parser.readTablePrimary`/`isDualTable`: без
+квалификации и `SYS.DUAL` дают `DualTable`, даже если схемы SYS нет;
+`PUBLIC.DUAL` остаётся `TABLE_OR_VIEW_NOT_FOUND_1`, как на JVM. UPDATE теперь
+резолвит целевую таблицу до чтения SET, поэтому
+`UPDATE TOP (1) TEST ...` в Regular даёт `TABLE_OR_VIEW_NOT_FOUND_1`, а не
+синтаксическую ошибку, как в эталонном скрипте.
+
+`TopClauseOracleTests` 2/2 против JVM: SELECT TOP/PERCENT/WITH TIES, DUAL,
+SYS.DUAL, PUBLIC.DUAL, UPDATE/DELETE TOP в MSSQLServer и Legacy, TOP+FETCH.
+`TestScript` прошёл строки 9–35 и теперь первое расхождение — `GROUP BY D.X`
+(строка 36): порт группирует по алиасу `X` (константа) и отдаёт одну строку
+вместо двух; следующий блокер — разрешение имён в GROUP BY.
+
+Проверки: core **1441 passed / 3 прежних PostfixCast failed / 1444 total**;
+conformance **768/952**, новых Passed→Failed 0; Data.Tests **491/491**.
+TRX: `top-core.trx`, `top-specs.trx`, `testscript_top.log`.
+
 Исправлен дефект ADO.NET-провайдера: update-путь H2Command увеличивал
 openReaders, но у его reader нет onClose, поэтому после любого UPDATE команда
 навсегда считалась имеющей открытый reader. Update-reader больше не входит в

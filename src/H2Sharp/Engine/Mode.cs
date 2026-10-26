@@ -209,6 +209,16 @@ public sealed class Mode
     public bool GroupByColumnIndex { get; }
 
     /// <summary>
+    /// Whether a SELECT may start with TOP, as in SQL Server and H2's own regular mode.
+    /// </summary>
+    public bool TopInSelect { get; }
+
+    /// <summary>
+    /// Whether UPDATE and DELETE may start with TOP, as they may in SQL Server and Legacy.
+    /// </summary>
+    public bool TopInDml { get; }
+
+    /// <summary>
     /// The name of the mode, as it is written in a URL.
     /// </summary>
     public string Name { get; }
@@ -234,7 +244,9 @@ public sealed class Mode
         bool logIsLogBase10 = false,
         bool acceptsCommaAsJsonKeyValueSeparator = false,
         bool decimalSequences = false,
-        bool groupByColumnIndex = false)
+        bool groupByColumnIndex = false,
+        bool topInSelect = false,
+        bool topInDml = false)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -253,6 +265,8 @@ public sealed class Mode
         AcceptsCommaAsJsonKeyValueSeparator = acceptsCommaAsJsonKeyValueSeparator;
         DecimalSequences = decimalSequences;
         GroupByColumnIndex = groupByColumnIndex;
+        TopInSelect = topInSelect;
+        TopInDml = topInDml;
     }
 
     /// <summary>
@@ -293,15 +307,16 @@ public sealed class Mode
     {
         Dictionary<string, Mode> modes = new(StringComparer.Ordinal)
         {
-            ["REGULAR"] = new(ModeEnum.Regular, false, false, false, true, true),
+            ["REGULAR"] = new(ModeEnum.Regular, false, false, false, true, true, topInSelect: true),
             ["STRICT"] = new(ModeEnum.Strict, false, false, false, false, false),
             ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true,
-                greatestLeastIgnoreNulls: true),
+                greatestLeastIgnoreNulls: true, topInSelect: true, topInDml: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
-            ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true),
+            ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true, topInSelect: true),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
-                greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true),
+                greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true,
+                topInSelect: true, topInDml: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,

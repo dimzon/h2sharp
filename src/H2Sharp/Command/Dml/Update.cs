@@ -20,8 +20,10 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Tables;
+using H2Sharp.Values;
 
 namespace H2Sharp.Command.Dml;
 
@@ -75,9 +77,24 @@ public sealed class Update : FilteredDataChangeStatement
         filter.Reset();
         List<(Result.Row OldRow, Result.Row NewRow)> staged = [];
         Expressions.Expression? condition = GetCondition();
+        long limitRows = -1;
+        if (fetchExpr is not null)
+        {
+            Value v = fetchExpr.GetValue(session);
+            if (v == ValueNull.Instance || (limitRows = v.GetLong()) < 0)
+            {
+                throw DbException.GetInvalidValueException("FETCH", v);
+            }
+        }
+
         long count = 0;
         while (filter.Next())
         {
+            if (limitRows >= 0 && count >= limitRows)
+            {
+                break;
+            }
+
             Result.Row? row = filter.Get();
             session.SetCurrentRow(row);
             if (row is null || (condition is not null && !condition.GetBooleanValue(session)))
@@ -174,6 +191,12 @@ public sealed class Update : FilteredDataChangeStatement
         {
             condition.MapColumns(filter, 0, Expressions.Expression.MapInitial);
             SetCondition(condition.OptimizeCondition(GetSession()));
+        }
+
+        if (fetchExpr is not null)
+        {
+            fetchExpr.MapColumns(filter, 0, Expressions.Expression.MapInitial);
+            fetchExpr = fetchExpr.Optimize(GetSession());
         }
     }
 }
