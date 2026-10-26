@@ -221,6 +221,9 @@ public sealed class Mode
     /// <summary>Whether IDENTITY is a data type, as in H2's regular and legacy modes.</summary>
     public bool IdentityDataType { get; }
 
+    /// <summary>Whether SERIAL and BIGSERIAL declare identity columns.</summary>
+    public bool SerialDataTypes { get; }
+
     /// <summary>
     /// The type names this mode does not allow, as in the reference's disallowedTypes.
     /// </summary>
@@ -256,6 +259,7 @@ public sealed class Mode
         bool topInSelect = false,
         bool topInDml = false,
         bool identityDataType = false,
+        bool serialDataTypes = false,
         IReadOnlySet<string>? disallowedTypes = null)
     {
         Enum = modeEnum;
@@ -278,6 +282,7 @@ public sealed class Mode
         TopInSelect = topInSelect;
         TopInDml = topInDml;
         IdentityDataType = identityDataType;
+        SerialDataTypes = serialDataTypes;
         DisallowedTypes = disallowedTypes ?? FrozenSet<string>.Empty;
     }
 
@@ -320,11 +325,11 @@ public sealed class Mode
         Dictionary<string, Mode> modes = new(StringComparer.Ordinal)
         {
             ["REGULAR"] = new(ModeEnum.Regular, false, false, false, true, true, topInSelect: true,
-                identityDataType: true),
+                identityDataType: true, serialDataTypes: true),
             ["STRICT"] = new(ModeEnum.Strict, false, false, false, false, false),
             ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true,
                 greatestLeastIgnoreNulls: true, topInSelect: true, topInDml: true,
-                identityDataType: true),
+                identityDataType: true, serialDataTypes: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true, topInSelect: true),
@@ -341,7 +346,7 @@ public sealed class Mode
                 decimalSequences: true),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
-                logIsLogBase10: true, groupByColumnIndex: true,
+                logIsLogBase10: true, groupByColumnIndex: true, serialDataTypes: true,
                 disallowedTypes: new HashSet<string>(StringComparer.Ordinal)
                 {
                     "NUMBER", "TINYINT", "BLOB", "VARCHAR_IGNORECASE",

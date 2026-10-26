@@ -290,6 +290,16 @@ public sealed partial class Parser
             ParseCompatibilityIdentityOptions(column);
             column.SetPrimaryKey(true);
         }
+        else if (mode.SerialDataTypes && ReadIfCompat("BIGSERIAL"))
+        {
+            column = new Column(columnName, TypeInfo.TypeBigint);
+            column.SetIdentityOptions(new SequenceOptions(), false);
+        }
+        else if (mode.SerialDataTypes && ReadIfCompat("SERIAL"))
+        {
+            column = new Column(columnName, TypeInfo.TypeInteger);
+            column.SetIdentityOptions(new SequenceOptions(), false);
+        }
         else
         {
             column = ParseColumnWithType(columnName);

@@ -7510,13 +7510,38 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
-### IDENTITY shorthand, домены с именем типа и несколько `*`
+### SCRIPT: NODATA/NOPASSWORDS/NOSETTINGS/NOVERSION
 
-Добавлен `Mode.IdentityDataType` (Regular/Legacy). `ParseColumnForTable`
-читает `IDENTITY[(start[, increment])]` как BIGINT с identity и primary key;
-`ParseTableColumnDefinition` создаёт PK-ограничение, если колонка пришла из
-этого shorthand. Поэтому работают `CREATE TABLE T(ID IDENTITY)` и
-`ALTER TABLE ... ALTER COLUMN ID IDENTITY`.
+Перенесён in-memory `ScriptCommand`: `SCRIPT [NODATA] [NOPASSWORDS]
+[NOSETTINGS] [NOVERSION] [DROP] [SIMPLE] [COLUMNS]` с результатом
+`LocalResult` из строк SQL. Генерируются домены (parent-before-child не нужен
+для текущего корпуса), таблицы в порядке id, `-- N +/- SELECT COUNT(*)`,
+`INSERT ... VALUES` с пропуском generated-колонок и non-constraint индексы;
+системная PUBLIC-схема не печатается, пользовательские — через
+`Schema.GetCreateSql` (D-004: владелец `SA`). `TO/SCHEMA/TABLE`, file output,
+compression/cipher остаются TODO с именем непортированного.
+
+Заодно исправлен порядок разрешения типа: домен текущей схемы проверяется
+раньше built-in типа, как в `readIfDataType1`, поэтому `CREATE DOMAIN INT`
+влияет на последующие колонки.
+
+`ScriptOracleTests` 1/1: схема + NODATA, затем данные с Infinity/NaN.
+Conformance +3 (`ScriptCommandTests` ×2, `DbObjectSql_ForSchema`). TestScript
+прошёл оба SCRIPT-блока (581, 864); осталось: `@`-переменные, `DROP SCHEMA`,
+group-by aliases, формат `TEST.A`, EXPLAIN UPDATE.
+
+Проверки: core **1457 passed / 0 failed**, conformance **777/952** без
+регрессий, Data.Tests **491/491**.
+
+### IDENTITY/SERIAL shorthand, домены с именем типа и несколько `*`
+
+Добавлены `Mode.IdentityDataType`/`Mode.SerialDataTypes`
+(Regular/Legacy; SERIAL также PostgreSQL). `ParseColumnForTable` читает
+`IDENTITY[(start[, increment])]` как BIGINT с identity и primary key,
+`SERIAL` как INTEGER identity и `BIGSERIAL` как BIGINT identity;
+`ParseTableColumnDefinition` создаёт PK-ограничение для IDENTITY shorthand.
+Поэтому работают `CREATE TABLE T(ID IDENTITY)`, `ID SERIAL`,
+`ID BIGSERIAL NOT NULL PRIMARY KEY` и `ALTER COLUMN ID IDENTITY`.
 
 `CreateDomain` воспроизводит проверку эталона: имя без пробела, совпадающее с
 каноническим именем встроенного типа, даёт `DOMAIN_ALREADY_EXISTS_1`; при
@@ -7525,11 +7550,12 @@ checksum-манифест разрешает ровно это изменени�
 
 SELECT-список теперь принимает несколько qualified star (`t1.*, t2.*`) и
 смешивание с выражениями: star превращается в маркер и разворачивается после
-чтения FROM, как reference expansion. `ShorthandAndStarOracleTests` 3/3:
-IDENTITY/defaults/ALTER, конфликт домена и multiple stars. TestScript прошёл
-520–637; первая функциональная ошибка теперь `@n := ...` на 541.
+чтения FROM, как reference expansion. `ShorthandAndStarOracleTests` 4/4:
+IDENTITY/defaults/ALTER, SERIAL/BIGSERIAL, конфликт домена и multiple stars.
+TestScript прошёл 520–637 и 838–847; первая функциональная ошибка теперь
+`@n := ...` на 541.
 
-Проверки: core **1455 passed / 0 failed**, conformance **774/952** без
+Проверки: core **1456 passed / 0 failed**, conformance **774/952** без
 регрессий, Data.Tests **491/491**.
 
 ### PostfixCast: закрыты три прежних BlockedByPort-падения

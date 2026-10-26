@@ -589,6 +589,10 @@ public sealed partial class Parser
         {
             prepared = PrepareExplain(start);
         }
+        else if (IsWord("SCRIPT", consume: false))
+        {
+            prepared = PrepareScript(current);
+        }
         else if (IsWord("CREATE", consume: false)
             && (NextIs("VIEW") || NextIs("OR") || NextIs("FORCE")))
         {
@@ -858,6 +862,47 @@ public sealed partial class Parser
         Ddl.AlterView command = new(current);
         command.SetIfExists(ifExists);
         command.SetView(table as Tables.TableView);
+        return command;
+    }
+
+    /// <summary>
+    /// Parses SCRIPT and its NODATA/NOPASSWORDS/NOSETTINGS/NOVERSION options, as the
+    /// reference's parseScript does.
+    /// </summary>
+    private Prepared PrepareScript(SessionLocal current)
+    {
+        ExpectWord("SCRIPT");
+        Dml.ScriptCommand command = new(current);
+        bool data = true, passwords = true, settings = true, version = true;
+        bool drop = false, simple = false, withColumns = false;
+        if (IsWord("NODATA"))
+        {
+            data = false;
+        }
+        else
+        {
+            simple = IsWord("SIMPLE");
+            withColumns = IsWord("COLUMNS");
+        }
+
+        if (IsWord("NOPASSWORDS")) passwords = false;
+        if (IsWord("NOSETTINGS")) settings = false;
+        if (IsWord("NOVERSION")) version = false;
+        if (IsWord("DROP")) drop = true;
+        if (IsWord("BLOCKSIZE")) _ = ReadLong();
+        command.SetData(data);
+        command.SetPasswords(passwords);
+        command.SetSettings(settings);
+        command.SetVersion(version);
+        command.SetDrop(drop);
+        command.SetSimple(simple);
+        command.SetWithColumns(withColumns);
+        if (IsWord("TO") || IsWord("SCHEMA") || IsWord("TABLE"))
+        {
+            throw new TODOException(
+                "Parser.parseScript: SCRIPT TO/SCHEMA/TABLE filters are not ported");
+        }
+
         return command;
     }
 

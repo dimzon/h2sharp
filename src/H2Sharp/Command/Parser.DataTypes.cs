@@ -232,6 +232,18 @@ public sealed partial class Parser
                 return ParseTimestampType();
         }
 
+        // A domain of the current schema wins over a built-in type of the same name, as in
+        // the reference's readIfDataType1. Multi-word names cannot be domain names.
+        if (session is not null && originalCase.Length == original.Length)
+        {
+            Schemas.Schema current = session.GetDatabase().GetSchema(session.GetCurrentSchemaName());
+            if (current.FindDomain(originalCase) is not null)
+            {
+                position = typeIndex;
+                return null;
+            }
+        }
+
         if (provider.GetMode().DisallowedTypes.Contains(original))
         {
             throw DbException.Get(ErrorCode.UnknownDataType1, original);
@@ -240,18 +252,6 @@ public sealed partial class Parser
         DataType? dataType = DataType.GetTypeByName(original);
         if (dataType is null)
         {
-            // A name that is not a type may still be a domain of the current schema; the
-            // caller then resolves it through readColumnWithType.
-            if (session is not null)
-            {
-                Schemas.Schema current = session.GetDatabase().GetSchema(session.GetCurrentSchemaName());
-                if (current.FindDomain(originalCase) is not null)
-                {
-                    position = typeIndex;
-                    return null;
-                }
-            }
-
             throw DbException.Get(ErrorCode.UnknownDataType1, original);
         }
 

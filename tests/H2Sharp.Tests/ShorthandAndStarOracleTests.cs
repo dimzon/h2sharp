@@ -32,6 +32,19 @@ public sealed class ShorthandAndStarOracleTests
     }
 
     [JavaOracleFact]
+    public void SerialAndBigSerialShorthand()
+    {
+        Check([
+            "CREATE TABLE S(ID SERIAL, V INT)",
+            "INSERT INTO S(V) VALUES(1), (2)",
+            "SELECT ID, V FROM S ORDER BY ID",
+            "CREATE TABLE B(ID BIGSERIAL NOT NULL PRIMARY KEY, V INT)",
+            "INSERT INTO B(V) VALUES(3), (4)",
+            "SELECT ID, V FROM B ORDER BY ID",
+        ]);
+    }
+
+    [JavaOracleFact]
     public void DomainNameConflictsWithBuiltInType()
     {
         Check([

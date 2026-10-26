@@ -141,11 +141,15 @@ public sealed class Schema : DbObject
         => throw new TODOException("Schema.removeChildrenAndResources: the schema holds more than tables");
 
     /// <summary>
-    /// The name of the user that owns this schema.
+    /// Gets the owner name used by CREATE SCHEMA.
     /// </summary>
+    /// <remarks>
+    /// D-004 has no users or roles, so every schema is owned by the session user the port
+    /// creates, SA. The reference reads the owner object here; when users are ported this
+    /// becomes the owner's SQL name.
+    /// </remarks>
     /// <returns>the owner name</returns>
-    private string GetOwnerName()
-        => throw new TODOException("Schema.getCreateSQL: the owner of a schema is not ported");
+    private string GetOwnerName() => "SA";
 
     /// <summary>
     /// Whether this is a system schema.

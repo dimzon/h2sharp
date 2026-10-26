@@ -28,10 +28,11 @@
 //    removed from the local testScript.sql copy because D-004 has no users or roles.
 //    UNIQUE, CHECK, TOP, explicit DUAL, qualified GROUP BY names, REFERENCES ... INDEX,
 //    row-value UPDATE assignments, EXPLAIN, DELETE LIMIT, DIRECT/SORTED inserts and views
-//    (CREATE/OR REPLACE/DROP/ALTER, dependencies, cascade) now run, as do IDENTITY shorthand,
-//    built-in type name conflicts in CREATE DOMAIN and multiple qualified stars. Plan text at
-//    372 still differs in scanCount; the first functional mismatch is @variables at line 541,
-//    then SCRIPT NODATA and the remaining compatibility DDL.
+//    (CREATE/OR REPLACE/DROP/ALTER, dependencies, cascade) now run, as do IDENTITY/SERIAL/
+//    BIGSERIAL shorthand, built-in type name conflicts in CREATE DOMAIN and multiple qualified
+//    stars and SCRIPT NODATA/NOPASSWORDS/NOSETTINGS/NOVERSION now run. Plan text at 372
+//    still differs in scanCount; the first functional mismatch is @variables at 541, then
+//    DROP SCHEMA and EXPLAIN UPDATE.
 using System;
 using System.Collections.Generic;
 using System.Data;
