@@ -1611,7 +1611,13 @@ public sealed class Select : Query
     }
 
     /// <inheritdoc/>
-    public override bool AllowGlobalConditions() => GetOffset() is null && GetFetch() is null;
+    /// <remarks>
+    /// QUALIFY is not in this Select yet, so a window query cannot receive a pushed
+    /// condition: the outer filter still applies it after the window result, which is the
+    /// same answer for the conditions the index can push here.
+    /// </remarks>
+    public override bool AllowGlobalConditions()
+        => !isWindowQuery && GetOffset() is null && GetFetch() is null;
 
     private static Expression AddGlobalCondition(Expression? condition, Expression additional)
     {
