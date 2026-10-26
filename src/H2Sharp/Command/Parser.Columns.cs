@@ -24,12 +24,33 @@ public sealed partial class Parser
         bool ifTableExists = ReadIfExists(false);
         string tableName = ReadIdentifierWithSchema(session!, out Schema schema);
         if (IsWord("ALTER")) return ParseAlterTableAlter(schema, tableName, ifTableExists);
+        if (IsWord("SET")) return ParseAlterTableSet(schema, tableName, ifTableExists);
         if (IsWord("RENAME")) return ParseAlterTableRename(schema, tableName, ifTableExists);
         // Other ALTER TABLE branches still use their existing reader; no new DTO is added.
         position = index;
         AlterTableStatement statement = (AlterTableStatement)ReadStatement();
         statement.Sql = sql;
         return PrepareAlterTable(session!, statement);
+    }
+
+    private Prepared ParseAlterTableSet(Schema schema, string tableName, bool ifTableExists)
+    {
+        ExpectWord("REFERENTIAL_INTEGRITY");
+        bool value = ReadBooleanSetting();
+        Dml.AlterTableSet command = new(session!, schema,
+            CommandInterface.AlterTableSetReferentialIntegrity, value);
+        command.SetTableName(tableName);
+        command.SetIfTableExists(ifTableExists);
+        if (IsWord("CHECK"))
+        {
+            command.SetCheckExisting(true);
+        }
+        else if (IsWord("NOCHECK"))
+        {
+            command.SetCheckExisting(false);
+        }
+
+        return command;
     }
 
     private Prepared ParseAlterTableRename(Schema schema, string tableName, bool ifTableExists)

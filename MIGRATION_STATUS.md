@@ -7510,6 +7510,22 @@ VALUES, `UPDATE` FINAL и `DELETE` OLD; значения сверены с jvm 2
 (одобрено: «Утверждаю обновление») — теперь проверяет REGULAR mode/90016,
 checksum-манифест разрешает ровно это изменение.
 
+### ALTER TABLE SET REFERENTIAL_INTEGRITY
+
+Перенесён `AlterTableSet`: `ALTER TABLE ... SET REFERENTIAL_INTEGRITY
+TRUE|FALSE [CHECK|NOCHECK]`, `IF EXISTS`, transactional-флаг, поиск таблицы и
+`Table.SetCheckForeignKeyConstraints` с проверкой существующих строк только
+при `TRUE CHECK`. `ReadBooleanSetting` переиспользован из SET-парсера.
+
+`ReferentialIntegritySetOracleTests` 1/1 против JVM: отключение разрешает
+orphan, `TRUE` снова ловит FK, `TRUE CHECK` падает на уже существующей
+нарушающей строке. Conformance +3 (`AlterTableSetCommandTests` ×3).
+TestScript прошёл 1194–1282; осталось 15 уникальных строк: `@`-переменные,
+SET-функция в алиасе, два EXPLAIN-плана и `PREPARE COMMIT`.
+
+Проверки: core **1463 passed / 0 failed**, conformance **783/952** без
+регрессий, Data **491/491**.
+
 ### HAVING через SelectListColumnResolver
 
 Перенесён `SelectListColumnResolver` и вызовы `mapCondition(havingIndex/qualifyIndex)`
