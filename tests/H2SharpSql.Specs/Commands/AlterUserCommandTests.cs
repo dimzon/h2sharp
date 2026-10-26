@@ -9,6 +9,7 @@ using Xunit;
 
 namespace H2SharpSql.Specs.Commands;
 
+[Trait("Category", "BlockedByPort")]
 public sealed class AlterUserCommandTests
 {
     /// <summary>docs/commands.html:1471 — ALTER USER userName ADMIN { TRUE | FALSE }</summary>

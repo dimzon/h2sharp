@@ -303,6 +303,12 @@ public sealed class ExpressionColumn : Expression
         }
         else if (queryLevel == level && !ReferenceEquals(columnResolver, resolver))
         {
+            if (resolver is Command.Query.SelectListColumnResolver)
+            {
+                // Already mapped to the table; the select-list alias is a second name for it.
+                return;
+            }
+
             throw DbException.Get(Api.ErrorCode.AmbiguousColumnName1, columnAlias);
         }
     }

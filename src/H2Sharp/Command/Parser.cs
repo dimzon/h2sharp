@@ -3715,6 +3715,13 @@ public sealed partial class Parser
             } while (ReadIf(Token.Comma));
         }
 
+        if (CurrentType == ParserUtil.Qualify)
+        {
+            Read();
+            select.SetWindowQuery();
+            select.SetQualify(ReadQueryOr(select));
+        }
+
         return select;
     }
 
@@ -3895,6 +3902,7 @@ public sealed partial class Parser
             || word.Equals("GROUP", StringComparison.OrdinalIgnoreCase)
             || word.Equals("HAVING", StringComparison.OrdinalIgnoreCase)
             || word.Equals("WINDOW", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("QUALIFY", StringComparison.OrdinalIgnoreCase)
             || word.Equals("LIMIT", StringComparison.OrdinalIgnoreCase)
             || word.Equals("OFFSET", StringComparison.OrdinalIgnoreCase)
             || word.Equals("FETCH", StringComparison.OrdinalIgnoreCase)

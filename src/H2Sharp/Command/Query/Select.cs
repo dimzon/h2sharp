@@ -71,6 +71,8 @@ public sealed class Select : Query
 
     private Expression? having;
 
+    private Expression? qualify;
+
     private List<Expression>? groupBy;
 
     private List<Expression>? windows;
@@ -229,6 +231,17 @@ public sealed class Select : Query
         else
         {
             havingIndex = -1;
+        }
+
+        if (qualify is not null)
+        {
+            expressions.Add(qualify);
+            qualifyIndex = expressions.Count - 1;
+            qualify = null;
+        }
+        else
+        {
+            qualifyIndex = -1;
         }
 
         // first the select list (visible columns), then ORDER BY expressions,
@@ -627,6 +640,8 @@ public sealed class Select : Query
         }
         Expression? havingExpression = having ?? (havingIndex >= 0 ? exprList[havingIndex] : null);
         if (havingExpression is not null) havingExpression.GetNonAliasExpression().GetUnenclosedSql(builder.Append("\nHAVING "), sqlFlags);
+        Expression? qualifyExpression = qualify ?? (qualifyIndex >= 0 ? exprList[qualifyIndex] : null);
+        if (qualifyExpression is not null) qualifyExpression.GetNonAliasExpression().GetUnenclosedSql(builder.Append("\nQUALIFY "), sqlFlags);
         AppendEndOfQueryToSql(builder, sqlFlags, exprList, withTies);
         if (forUpdate is not null) builder.Append('\n').Append(forUpdate);
         if ((sqlFlags & HasSql.AddPlanInformation) != 0)
@@ -1076,6 +1091,11 @@ public sealed class Select : Query
                 continue;
             }
 
+            if (qualifyIndex >= 0 && !row[qualifyIndex]!.IsTrue())
+            {
+                continue;
+            }
+
             result.AddRow(RowForResult(row));
         }
     }
@@ -1405,6 +1425,13 @@ public sealed class Select : Query
     /// <param name="having">the condition</param>
     public void SetHaving(Expression? having) => this.having = having;
 
+    /// <summary>Sets the condition on the rows after window functions.</summary>
+    /// <param name="qualify">the condition</param>
+    public void SetQualify(Expression? qualify) => this.qualify = qualify;
+
+    /// <summary>Gets the QUALIFY condition, or null.</summary>
+    public Expression? GetQualify() => qualify;
+
     /// <summary>Sets the columns to group by.</summary>
     /// <param name="groupBy">the expressions</param>
     public void SetGroupBy(List<Expression>? groupBy) => this.groupBy = groupBy;
@@ -1583,7 +1610,8 @@ public sealed class Select : Query
         comp = comp.Optimize(session);
         if (isWindowQuery)
         {
-            throw new TODOException("Select.addGlobalCondition: QUALIFY is not ported");
+            qualify = AddGlobalCondition(qualify, comp);
+            return;
         }
 
         if (isGroupQuery)
@@ -1611,13 +1639,7 @@ public sealed class Select : Query
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// QUALIFY is not in this Select yet, so a window query cannot receive a pushed
-    /// condition: the outer filter still applies it after the window result, which is the
-    /// same answer for the conditions the index can push here.
-    /// </remarks>
-    public override bool AllowGlobalConditions()
-        => !isWindowQuery && GetOffset() is null && GetFetch() is null;
+    public override bool AllowGlobalConditions() => GetOffset() is null && GetFetch() is null;
 
     private static Expression AddGlobalCondition(Expression? condition, Expression additional)
     {

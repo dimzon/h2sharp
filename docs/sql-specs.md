@@ -1,6 +1,6 @@
-# Conformance-набор SQL-поверхности H2 (947 тестов)
+# Conformance-набор SQL-поверхности H2 (952 теста)
 
-`tests/H2SharpSql.Specs` — 947 тестов, проверяющих документированные конструкции SQL из
+`tests/H2SharpSql.Specs` — 952 теста, проверяющих документированные конструкции SQL из
 замороженного снимка документации в `docs/`. Набор перенесён из репозитория-донора
 `h2sharp-sql` (заморожен) вместе со снимком; дальше тесты живут здесь.
 
@@ -14,11 +14,64 @@
 
     dotnet test tests/H2SharpSql.Specs/H2SharpSql.Specs.csproj
 
+## Прогон 2026-10-26
+
+Текущее рабочее дерево после `43427f5` и разметки user/role-тестов как
+`BlockedByPort`.
+
+* Полный набор: **803 / 952**, 149 падений.
+* Зелёный прогон `--filter "Category!=BlockedByPort"`: **801 / 932**, 131 падение.
+* `BlockedByPort`: **20** тестов; из них 12 прежних (коллатор, `SET PASSWORD`/`SET SALT`,
+  CSV/FILE, memory/DB_OBJECT_SQL, ESTIMATED_ENVELOPE) и 8 D-004 user/role:
+  `CREATE USER` ×2, `ALTER USER` ×3, `CREATE ROLE` ×1, `DROP USER` ×1, `DROP ROLE` ×1.
+
+| Область | Прошло (полный) | Всего | Прошло (без BlockedByPort) | Всего |
+|---|---:|---:|---:|---:|
+| `Commands/` | 165 | 259 | 165 | 247 |
+| `Functions/` | 304 | 325 | 302 | 317 |
+| `Grammar/` | 243 | 263 | 243 | 263 |
+| `Datatypes/` | 65 | 66 | 65 | 66 |
+| `SystemTables/` | 23 | 37 | 23 | 37 |
+| `Dml/` | 2 | 2 | 2 | 2 |
+
+Причины 131 зелёного падения: 69 — синтаксис/непрочитанная конструкция, 41 — явный
+`TODOException` (не портировано), 11 — отсутствующий объект/функция, 5 — расхождение
+значений, остальное — отдельные conversion/parameter/collation-дефекты.
+
+Крупнейшие оставшиеся классы (без `BlockedByPort`):
+
+| Класс | Падений | Что это |
+|---|---:|---|
+| `PrivilegeCommandTests` | 10 | `GRANT`/`REVOKE` (D-004) |
+| `InformationSchemaMoreTests` | 10 | `ROUTINES`, `TRIGGERS`, `VIEWS`, `SESSIONS`, `PARAMETERS` и др. |
+| `ExpressionTests` | 8 | `FIELD`, `WITHIN GROUP`, time zone, прочие выражения |
+| `DropObjectCommandTests` | 7 | `DROP AGGREGATE/ALIAS/CONSTANT/MATERIALIZED VIEW` и др. |
+| `StatementGrammarTests` | 6 | непрочитанные формы DDL/DML |
+| `CreateTriggerCommandTests` | 6 | triggers |
+| `DateTimeFunctionTests` | 6 | `TO_CHAR`, `DAY_OF_WEEK`, `PARSE_DATETIME` |
+| `CreateLinkedTableCommandTests` | 5 | linked tables |
+| `ScriptCommandTests` | 5 | SCRIPT-опции |
+| `MaintenanceCommandTests`, `InformationSchemaTests`, `CreateTableCommandTests`, `CreateRoutineCommandTests` | 4 each | maintenance, information schema, CREATE TABLE/ROUTINE |
+| остальные | 52 | routines, `RUNSCRIPT`, materialized views, window/table functions, crypto, grammar и др. |
+
+`AggregateMiscTests` теперь **35/35**: перенесены `RANK`, `DENSE_RANK`, `PERCENT_RANK`,
+`CUME_DIST`. Для `CUME_DIST(2)` на `1,2,3` ожидание исправлено на `0.75`: H2 2.5 включает
+гипотетическую строку в популяцию (проверено эталонным jar).
+
+Оконные функции в conformance закрыты: `WindowFunctionTests` **18/18**,
+`WindowGrammarTests` **10/10**, `QUALIFY` проходит. `NTH_VALUE ... FROM LAST` читается в
+эталонной форме — `FROM LAST` после закрывающей скобки; вариант внутри скобок H2 2.5.259
+отвергает.
+
+Приоритет на следующий заход: закрыть 69 syntax-дефектов (это не «не портировано», а
+неполный парсер), затем 41 явный TODO; отдельно решить D-004 (`PrivilegeCommandTests` + 8
+уже помеченных user/role).
+
 ## Устройство
 
 | Каталог | Документ-источник | Тестов |
 |---|---|---:|
-| `Commands/` | `docs/commands.html` | 254 |
+| `Commands/` | `docs/commands.html` | 259 |
 | `Functions/` | `docs/functions(.aggregate,-window).html` | 325 |
 | `Grammar/` | `docs/grammar.html` | 263 |
 | `Datatypes/` | `docs/datatypes.html` | 66 |
@@ -52,7 +105,7 @@
 `reference/H2_COMMIT.txt`) описано в `docs/README.md`: при разногласии источником истины
 считается эталон, а не снимок.
 
-## Прогон 2026-10-25
+## Исторический прогон 2026-10-25 (947 тестов)
 
 Полный набор, коммит `8e78f98`: **673 из 947** прошли. Двенадцать падений помечены
 `Category=BlockedByPort` (утверждённые/зафиксированные пробелы порта), поэтому зелёный

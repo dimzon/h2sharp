@@ -9,6 +9,7 @@ using Xunit;
 
 namespace H2SharpSql.Specs.Commands;
 
+[Trait("Category", "BlockedByPort")]
 public sealed class CreateUserCommandTests
 {
     /// <summary>docs/commands.html:1879 — CREATE USER [ IF NOT EXISTS ] newUserName</summary>

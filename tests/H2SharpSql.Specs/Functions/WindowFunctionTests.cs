@@ -192,7 +192,7 @@ public sealed class WindowFunctionTests
                 "RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM TEST").AsList());
         Assert.Equal(new int?[] { 30, 30, 30 },
             connection.Query<int?>(
-                "SELECT NTH_VALUE(X, 1 FROM LAST) IGNORE NULLS OVER (ORDER BY ID " +
+                "SELECT NTH_VALUE(X, 1) FROM LAST IGNORE NULLS OVER (ORDER BY ID " +
                 "RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM TEST").AsList());
     }
 

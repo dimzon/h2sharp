@@ -303,7 +303,9 @@ public sealed class AggregateMiscTests
         using IDbConnection connection = TestDatabase.Open();
         GivenNumbers(connection);
 
-        Assert.Equal(2.0 / 3,
+        // H2 2.5 includes the hypothetical row in the population, so 1,2,3 plus 2
+        // gives CUME_DIST(2) = 3/4. The pinned jar returns 0.75, not the SQL-standard 2/3.
+        Assert.Equal(3.0 / 4,
             connection.QuerySingle<double>("SELECT CUME_DIST(2) WITHIN GROUP (ORDER BY ID) FROM TEST"), 10);
     }
 

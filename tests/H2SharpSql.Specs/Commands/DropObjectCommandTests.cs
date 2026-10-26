@@ -66,6 +66,7 @@ public sealed class DropObjectCommandTests
 
     /// <summary>docs/commands.html:2060 — DROP ROLE [ IF EXISTS ] roleName</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void DropRole_RemovesIt() // CMD-2060
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -106,6 +107,7 @@ public sealed class DropObjectCommandTests
 
     /// <summary>docs/commands.html:2157 — DROP USER [ IF EXISTS ] userName</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void DropUser_RemovesIt() // CMD-2157
     {
         using IDbConnection connection = TestDatabase.Open();

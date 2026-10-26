@@ -298,6 +298,10 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
                 }
 
                 break;
+            case AggregateType.Rank:
+            case AggregateType.DenseRank:
+            case AggregateType.PercentRank:
+            case AggregateType.CumeDist:
             case AggregateType.PercentileCont:
             case AggregateType.PercentileDisc:
                 break;
@@ -400,6 +404,100 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
         }
     }
 
+    private Value GetHypotheticalSet(SessionLocal session, AggregateData data)
+    {
+        AggregateDataCollecting collectingData = (AggregateDataCollecting)data;
+        Value? arg = collectingData.GetSharedArgument();
+        if (arg is null)
+        {
+            return aggregateType switch
+            {
+                AggregateType.Rank or AggregateType.DenseRank => ValueInteger.Get(1),
+                AggregateType.PercentRank => ValueDouble.Zero,
+                AggregateType.CumeDist => ValueDouble.One,
+                _ => throw Message.DbException.GetInternalError("type=" + aggregateType),
+            };
+        }
+
+        collectingData.Add(session, arg);
+        Value[] array = collectingData.GetArray()!;
+        Comparison<Value> sort = orderBySort!.GetRowValueComparator();
+        Array.Sort(array, sort);
+        return aggregateType == AggregateType.CumeDist
+            ? GetCumeDist(array, arg, sort)
+            : GetRank(array, arg, sort);
+    }
+
+    private Value GetRank(Value[] ordered, Value arg, Comparison<Value> sort)
+    {
+        int size = ordered.Length;
+        int number = 0;
+        for (int i = 0; i < size; i++)
+        {
+            Value row = ordered[i];
+            if (i == 0)
+            {
+                number = 1;
+            }
+            else if (sort(ordered[i - 1], row) != 0)
+            {
+                if (aggregateType == AggregateType.DenseRank)
+                {
+                    number++;
+                }
+                else
+                {
+                    number = i + 1;
+                }
+            }
+
+            Value v;
+            if (aggregateType == AggregateType.PercentRank)
+            {
+                int nm = number - 1;
+                v = nm == 0 ? ValueDouble.Zero : ValueDouble.Get((double)nm / (size - 1));
+            }
+            else
+            {
+                v = ValueBigint.Get(number);
+            }
+
+            if (sort(row, arg) == 0)
+            {
+                return v;
+            }
+        }
+
+        throw Message.DbException.GetInternalError();
+    }
+
+    private static Value GetCumeDist(Value[] ordered, Value arg, Comparison<Value> sort)
+    {
+        int size = ordered.Length;
+        for (int start = 0; start < size;)
+        {
+            Value current = ordered[start];
+            int end = start + 1;
+            while (end < size && sort(current, ordered[end]) == 0)
+            {
+                end++;
+            }
+
+            Value v = ValueDouble.Get((double)end / size);
+            for (int i = start; i < end; i++)
+            {
+                if (sort(ordered[i], arg) == 0)
+                {
+                    return v;
+                }
+            }
+
+            start = end;
+        }
+
+        throw Message.DbException.GetInternalError();
+    }
+
     private H2Sharp.Indexes.Index? GetMinMaxColumnIndex()
     {
         Expression arg = args[0];
@@ -499,6 +597,12 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
 
                     break;
                 }
+
+            case AggregateType.Rank:
+            case AggregateType.DenseRank:
+            case AggregateType.PercentRank:
+            case AggregateType.CumeDist:
+                return GetHypotheticalSet(session, data);
 
             case AggregateType.PercentileCont:
             case AggregateType.PercentileDisc:
@@ -897,6 +1001,30 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
                     return;
                 }
 
+            case AggregateType.Rank:
+            case AggregateType.DenseRank:
+            case AggregateType.PercentRank:
+            case AggregateType.CumeDist:
+                {
+                    int count = args.Length;
+                    Value[] a = new Value[count];
+                    for (int i = 0; i < count; i++)
+                    {
+                        a[i] = remembered is not null ? remembered[i]! : args[i].GetValue(session);
+                    }
+
+                    ((AggregateDataCollecting)data).SetSharedArgument(ValueRow.Get(a));
+                    a = new Value[count];
+                    for (int i = 0; i < count; i++)
+                    {
+                        a[i] = remembered is not null
+                            ? remembered[count + i]!
+                            : orderByList![i].expression!.GetValue(session);
+                    }
+
+                    v = ValueRow.Get(a);
+                    break;
+                }
             case AggregateType.PercentileCont:
             case AggregateType.PercentileDisc:
                 ((AggregateDataCollecting)data).SetSharedArgument(v!);
@@ -1121,6 +1249,14 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
                         break;
                 }
 
+                break;
+            case AggregateType.Rank:
+            case AggregateType.DenseRank:
+                type = TypeInfo.TypeBigint;
+                break;
+            case AggregateType.PercentRank:
+            case AggregateType.CumeDist:
+                type = TypeInfo.TypeDouble;
                 break;
             case AggregateType.PercentileCont:
                 type = orderByList![0].expression!.GetTypeInfo();

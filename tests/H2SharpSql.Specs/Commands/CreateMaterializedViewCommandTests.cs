@@ -59,6 +59,7 @@ public sealed class CreateMaterializedViewCommandTests
     }
 }
 
+[Trait("Category", "BlockedByPort")]
 public sealed class CreateRoleCommandTests
 {
     /// <summary>docs/commands.html:1756 — CREATE ROLE [ IF NOT EXISTS ] newRoleName</summary>
