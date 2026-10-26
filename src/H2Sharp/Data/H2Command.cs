@@ -261,10 +261,7 @@ public sealed class H2Command : DbCommand
         if (!containers[0].IsQuery())
         {
             long count = containers[0].ExecuteUpdate(false).GetUpdateCount();
-            for (int i = 1; i < containers.Count; i++)
-            {
-                _ = containers[i].ExecuteUpdate(false);
-            }
+            RunRemaining(containers);
 
             reader = new H2DataReader(count);
             // An update result has no rows and no result set to close; it must not keep

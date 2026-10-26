@@ -1,5 +1,14 @@
 # MIGRATION STATUS — рабочая памятка
 
+### Issue #67 — ExecuteReader и хвост смешанного пакета
+
+В `ExecuteDbDataReader` ветка «первый оператор — не запрос» больше не вызывает
+`ExecuteUpdate` для каждого хвостового контейнера. Хвост идёт через `RunRemaining`,
+как в `ExecuteNonQuery` и `ExecuteScalar`: запрос выполняется и вычитывается, а не
+попадает в `Prepared.Update`; не-запрос выполняется как прежде. `H2BatchReaderTests`
+проверяет `INSERT; SELECT` и `INSERT; UPDATE; SELECT`, включая результат и данные
+после `ExecuteReader`.
+
 ### Именованные параметры ADO.NET: `$name` → `$N`
 
 Именованный параметр ADO.NET теперь пишется `$name`. Переписывание живёт только
