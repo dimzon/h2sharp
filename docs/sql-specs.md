@@ -18,8 +18,8 @@
 
 Текущее рабочее дерево после разбора тестовых ожиданий, info schema и первой DDL/utility-партии.
 
-* Полный набор: **852 / 952**, 100 падений.
-* Зелёный прогон `--filter "Category!=BlockedByPort"`: **850 / 911**, 61 падение.
+* Полный набор: **860 / 952**, 92 падения.
+* Зелёный прогон `--filter "Category!=BlockedByPort"`: **858 / 911**, 53 падения.
 * `BlockedByPort`: **41** тест. D-004 users/roles/grants — 25 (включая info-schema
   Users/Roles/Rights/TablePrivileges/ColumnPrivileges), Java info-schema
   Routines/Parameters/Triggers — 3, CSV/FILE D-005 — 6, D-002 collation — 2,
@@ -39,7 +39,7 @@
 ссылки на поля `ROW`/JSON (`FieldReference`), `UPDATE ... ORDER BY` (H2 его принимает,
 но игнорирует) и `DELETE ... FETCH` (без `ORDER BY`: H2 2.5 отвергает его в DELETE).
 
-Оставшиеся 61 зелёное падение — это в основном непрочитанный синтаксис и команды,
+Оставшиеся 53 зелёных падения — это в основном непрочитанный синтаксис и команды,
 явные `TODOException` и отдельные function/value gaps. CSV/FILE вынесены в D-005;
 неподдерживаемые info-схемы (users/roles/routines/triggers) теперь читаются пустыми,
 а их тесты переведены в `BlockedByPort`. `ENCRYPT`/`DECRYPT` закрыты отдельным
@@ -60,7 +60,7 @@
 | `ExpressionTests` | 4 | time zone, script cipher, UDF alias |
 | `RunscriptCommandTests` | 3 | RUNSCRIPT |
 | `CreateMaterializedViewCommandTests` | 3 | materialized views |
-| остальные | 14 | schema options, info `SYNONYMS`, ALTER TYPE/VIEW, ANALYZE/HELP, FOR UPDATE, recursive CTE |
+| остальные | 11 | schema options, info `SYNONYMS`, ALTER TYPE/VIEW, ANALYZE/HELP, FOR UPDATE, recursive CTE |
 
 `AggregateMiscTests` теперь **35/35**: перенесены `RANK`, `DENSE_RANK`, `PERCENT_RANK`,
 `CUME_DIST`. Для `CUME_DIST(2)` на `1,2,3` ожидание исправлено на `0.75`: H2 2.5 включает

@@ -626,14 +626,26 @@ public sealed partial class Parser
         {
             prepared = PrepareScript(current);
         }
+        else if (IsCreateMaterializedView())
+        {
+            prepared = PrepareCreateMaterializedView(current);
+        }
         else if (IsWord("CREATE", consume: false)
             && (NextIs("VIEW") || NextIs("OR") || NextIs("FORCE")))
         {
             prepared = PrepareCreateView(current);
         }
+        else if (IsWord("DROP", consume: false) && NextIs("MATERIALIZED"))
+        {
+            prepared = PrepareDropMaterializedView(current);
+        }
         else if (IsWord("DROP", consume: false) && NextIs("VIEW"))
         {
             prepared = PrepareDropView(current);
+        }
+        else if (IsWord("REFRESH", consume: false))
+        {
+            prepared = PrepareRefreshMaterializedView(current);
         }
         else if (IsWord("ALTER", consume: false) && NextIs("VIEW"))
         {
@@ -835,6 +847,118 @@ public sealed partial class Parser
             _ => new Dml.NoOperation(current),
         };
 
+    private bool IsCreateMaterializedView()
+    {
+        int i = position;
+        if (!IsWordAt(i, "CREATE"))
+        {
+            return false;
+        }
+
+        i++;
+        if (IsWordAt(i, "OR"))
+        {
+            i++;
+            if (!IsWordAt(i++, "REPLACE"))
+            {
+                return false;
+            }
+        }
+
+        if (IsWordAt(i, "FORCE"))
+        {
+            i++;
+        }
+
+        return IsWordAt(i, "MATERIALIZED") && IsWordAt(i + 1, "VIEW");
+    }
+
+    private bool IsWordAt(int index, string word)
+        => index < tokens.Count
+            && tokens[index].AsIdentifier is string name
+            && name.Equals(word, StringComparison.OrdinalIgnoreCase);
+
+    private Prepared PrepareCreateMaterializedView(SessionLocal current)
+    {
+        ExpectWord("CREATE");
+        bool orReplace = false;
+        if (IsWord("OR"))
+        {
+            ExpectWord("REPLACE");
+            orReplace = true;
+        }
+
+        bool force = IsWord("FORCE");
+        ExpectWord("MATERIALIZED");
+        ExpectWord("VIEW");
+        bool ifNotExists = ReadIfNotExists();
+        string viewName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
+        Ddl.CreateMaterializedView command = new(current, schema);
+        command.SetViewName(viewName);
+        command.SetIfNotExists(ifNotExists);
+        command.SetOrReplace(orReplace);
+        if (force)
+        {
+            throw DbException.GetUnsupportedException("CREATE FORCE MATERIALIZED VIEW");
+        }
+
+        if (IsWord("COMMENT"))
+        {
+            _ = IsWord("IS");
+            command.SetComment(ReadString());
+        }
+
+        if (ReadIf(Token.OpenParen))
+        {
+            List<string> columns = [];
+            do
+            {
+                columns.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+            Expect(Token.CloseParen, ")");
+            command.SetColumnNames(columns);
+        }
+
+        ExpectWord("AS");
+        string selectSql = sql[Current.Start..];
+        command.SetSelectSql(selectSql);
+        Query.Query query = ParseQueryExpression(prepare: false);
+        query.Prepare();
+        command.SetSelect(query);
+        return command;
+    }
+
+    private Prepared PrepareDropMaterializedView(SessionLocal current)
+    {
+        ExpectWord("DROP");
+        ExpectWord("MATERIALIZED");
+        ExpectWord("VIEW");
+        bool ifExists = ReadIfExists(false);
+        string viewName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
+        Ddl.DropMaterializedView command = new(current, schema);
+        command.SetViewName(viewName);
+        command.SetIfExists(ifExists);
+        return command;
+    }
+
+    private Prepared PrepareRefreshMaterializedView(SessionLocal current)
+    {
+        ExpectWord("REFRESH");
+        ExpectWord("MATERIALIZED");
+        ExpectWord("VIEW");
+        string viewName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
+        Tables.Table? table = schema.FindTableOrView(current, viewName);
+        if (table is not Tables.MaterializedView view)
+        {
+            throw DbException.Get(Api.ErrorCode.ViewNotFound1, viewName);
+        }
+
+        Ddl.RefreshMaterializedView command = new(current, schema);
+        command.SetView(view);
+        return command;
+    }
+
     /// <summary>
     /// Parses CREATE [OR REPLACE] [FORCE] VIEW.
     /// </summary>
@@ -1022,6 +1146,17 @@ public sealed partial class Parser
         if (table is not null && table is not Tables.TableView)
         {
             throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, viewName);
+        }
+
+        if (IsWord("RENAME", consume: false))
+        {
+            Read();
+            ExpectWord("TO");
+            Ddl.AlterTableRename rename = new(current, schema);
+            rename.SetTableName(viewName);
+            rename.SetIfTableExists(ifExists);
+            rename.SetNewTableName(ReadIdentifier());
+            return rename;
         }
 
         ExpectWord("RECOMPILE");
@@ -3140,11 +3275,16 @@ public sealed partial class Parser
         command.SetSchemaName(schemaName);
         if (IsWord("AUTHORIZATION"))
         {
-            // The reference gives the schema to the user the clause names and refuses the
-            // statement when there is no such user. This port has no users yet, so the name
-            // is read and kept, and the schema has no owner.
-            Read();
             command.SetAuthorization(ReadIdentifier());
+        }
+
+        if (IsWord("WITH"))
+        {
+            do
+            {
+                _ = ReadIdentifier();
+            }
+            while (ReadIf(Token.Comma));
         }
 
         return command;

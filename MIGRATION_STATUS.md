@@ -67,8 +67,8 @@ linq2db его не используют. Info-схемы неподдержив
 `ENCRYPT`/`DECRYPT` вынесены в `H2Sharp.Crypto`: AES — BCL ECB/zero padding,
 XTEA и FOG — порты H2; векторы сверены с jar.
 
-Проверено: core **1468/1468**, Data **555/555**, conformance полный **852/952**,
-зелёный **850/911** (было 805/803). Провайдеры на текущем бинарнике: linq2db
+Проверено: core **1468/1468**, Data **555/555**, conformance полный **860/952**,
+зелёный **858/911** (было 805/803). Провайдеры на текущем бинарнике: linq2db
 **76/76** и ModelTests **180/180** на net8/net10; EF Core unit **129/129**, functional
 **5742/5762** на каждом net9/net10, 6 падений — `_LOCAL_AND_GLOBAL_` в
 `RegularQueryExpressionIndex` и связанные с ним shape-запросы.

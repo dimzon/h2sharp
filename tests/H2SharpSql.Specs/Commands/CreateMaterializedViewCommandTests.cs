@@ -46,7 +46,7 @@ public sealed class CreateMaterializedViewCommandTests
         using IDbConnection connection = TestDatabase.Open();
         GivenTestTable(connection);
 
-        _ = connection.Execute("CREATE MATERIALIZED VIEW TEST_VIEW(ID, NAME) AS SELECT ID, NAME FROM TEST WHERE ID < 100");
+        _ = connection.Execute("CREATE MATERIALIZED VIEW TEST_VIEW AS SELECT ID, NAME FROM TEST WHERE ID < 100");
 
         Assert.Equal("Ada", connection.QuerySingle<string>("SELECT NAME FROM TEST_VIEW WHERE ID = 1"));
     }

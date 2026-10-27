@@ -70,6 +70,8 @@ public sealed class Schema : DbObject
 
     private readonly bool system;
 
+    private readonly string ownerName;
+
     private readonly HashSet<string> temporaryUniqueNames = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -79,10 +81,12 @@ public sealed class Schema : DbObject
     /// <param name="id">the object id</param>
     /// <param name="schemaName">the schema name</param>
     /// <param name="system">whether this is a system schema (such a schema cannot be dropped)</param>
-    public Schema(Database database, int id, string schemaName, bool system)
+    /// <param name="ownerName">the owner name, or null for SA</param>
+    public Schema(Database database, int id, string schemaName, bool system, string? ownerName = null)
         : base(database, id, schemaName, Trace.Schema)
     {
         this.system = system;
+        this.ownerName = ownerName ?? "SA";
     }
 
     /// <summary>
@@ -188,7 +192,7 @@ public sealed class Schema : DbObject
     /// becomes the owner's SQL name.
     /// </remarks>
     /// <returns>the owner name</returns>
-    private string GetOwnerName() => "SA";
+    public string GetOwnerName() => ownerName;
 
     /// <summary>
     /// Whether this is a system schema.

@@ -47,7 +47,7 @@ public abstract class QueryExpressionTable : Table
     /// <summary>
     /// The name of the table.
     /// </summary>
-    protected readonly string name;
+    protected string name;
 
     /// <summary>
     /// The schema the table belongs to.

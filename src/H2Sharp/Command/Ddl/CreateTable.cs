@@ -245,7 +245,7 @@ public sealed class CreateTable : CommandWithColumns
     public void SetTableEngineParams(List<string> engineParams) => tableEngineParams = engineParams;
 
     /// <summary>Inserts the rows of the query, for CREATE TABLE ... AS SELECT.</summary>
-    private void InsertAsData(Table table)
+    internal void InsertAsData(Table table)
     {
         Dml.Insert insert = new(GetSession());
         insert.SetQuery(select!);

@@ -85,6 +85,9 @@ public sealed class TableView : QueryExpressionTable
     }
 
     /// <inheritdoc/>
+    public override void Rename(string newName) => name = newName;
+
+    /// <inheritdoc/>
     public override Index? GetScanIndex(SessionLocal session)
     {
         if (createException is not null)

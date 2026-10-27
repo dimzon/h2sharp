@@ -958,7 +958,7 @@ public sealed class InformationSchemaTable : Table
                         rows,
                         catalog,
                         schema.GetName(),
-                        session.GetUserName(),
+                        schema.GetOwnerName(),
                         catalog,
                         mainSchemaName,
                         CharacterSetName,
