@@ -1129,8 +1129,27 @@ public abstract class Table
     /// <returns>true if the table was already exclusively locked by this session</returns>
     public virtual bool Lock(H2Sharp.Engine.SessionLocal session, int lockType) => false;
 
+    /// <summary>Releases the locks this session holds on the table.</summary>
+    /// <param name="session">the session</param>
+    public virtual void Unlock(H2Sharp.Engine.SessionLocal session)
+    {
+    }
+
     /// <summary>Whether the table is exclusively locked by this session.</summary>
     public virtual bool IsLockedExclusivelyBy(SessionLocal session) => false;
+
+    /// <summary>Whether this table supports row-level locks.</summary>
+    /// <returns>true if the table supports row-level locks</returns>
+    public virtual bool IsRowLockable() => false;
+
+    /// <summary>Locks a row, preventing any updates except from the given session.</summary>
+    /// <param name="session">the session</param>
+    /// <param name="row">the row to lock</param>
+    /// <param name="timeoutMillis">the timeout in milliseconds, -1 for default, -2 to skip
+    /// locked rows</param>
+    /// <returns>the locked row, or null if it no longer exists or was skipped</returns>
+    public virtual Result.Row? LockRow(SessionLocal session, Result.Row row, int timeoutMillis)
+        => throw DbException.GetUnsupportedException("lockRow()");
 
     /// <summary>
     /// Get the row id column if this table has one.
@@ -1276,6 +1295,8 @@ public abstract class Table
     /// The views that read this table.
     /// </summary>
     private List<TableView>? dependentViews;
+
+    private List<TableSynonym>? synonyms;
 
     /// <summary>
     /// Add a constraint to the table.
@@ -2232,6 +2253,14 @@ public abstract class Table
                 .GetDatabase().RemoveSchemaObject(session, view);
         }
 
+        while (synonyms is not null && synonyms.Count > 0)
+        {
+            TableSynonym synonym = synonyms[0];
+            synonyms.RemoveAt(0);
+            (GetSchema() ?? throw new TODOException("Table.removeChildrenAndResources: no schema"))
+                .GetDatabase().RemoveSchemaObject(session, synonym);
+        }
+
         while (constraints is not null && constraints.Count > 0)
         {
             Constraint constraint = constraints[0];
@@ -2290,6 +2319,25 @@ public abstract class Table
     /// <summary>Gets the views that read this table.</summary>
     /// <returns>the views; empty when there are none</returns>
     public List<TableView> GetDependentViews() => dependentViews is null ? [] : [.. dependentViews];
+
+    /// <summary>Adds a synonym of this table.</summary>
+    /// <param name="synonym">the synonym</param>
+    public void AddSynonym(TableSynonym synonym)
+    {
+        synonyms ??= [];
+        if (!synonyms.Contains(synonym))
+        {
+            synonyms.Add(synonym);
+        }
+    }
+
+    /// <summary>Removes a synonym of this table.</summary>
+    /// <param name="synonym">the synonym</param>
+    public void RemoveSynonym(TableSynonym synonym) => synonyms?.Remove(synonym);
+
+    /// <summary>Gets the synonyms of this table.</summary>
+    /// <returns>the synonyms; empty when there are none</returns>
+    public List<TableSynonym> GetSynonyms() => synonyms is null ? [] : [.. synonyms];
 
     /// <summary>
     /// Whether this table depends on the given object.

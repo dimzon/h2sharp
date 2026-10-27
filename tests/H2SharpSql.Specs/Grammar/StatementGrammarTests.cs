@@ -141,6 +141,7 @@ public sealed class StatementGrammarTests
 
     /// <summary>docs/grammar.html:3182 — [ CIPHER cipher PASSWORD string ]</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void ScriptEncryption_Aes_IsAccepted() // GRM-3182
     {
         using IDbConnection connection = TestDatabase.Open();

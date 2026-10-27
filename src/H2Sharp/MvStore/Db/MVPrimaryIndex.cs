@@ -257,6 +257,16 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    public override void Remove(SessionLocal session)
+    {
+        TransactionMap<long, SearchRow> map = GetMap(session.GetTransaction());
+        if (!map.IsClosed())
+        {
+            session.GetTransaction().RemoveMap(map);
+        }
+    }
+
+    /// <inheritdoc/>
     public override void Truncate(SessionLocal session)
     {
         dataMap.Clear();
@@ -285,6 +295,29 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// <inheritdoc/>
     public override void AddBufferedRows(List<string> bufferNames)
         => throw new TODOException("MVPrimaryIndex.addBufferedRows");
+
+    /// <summary>
+    /// Locks the row for update.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="row">the row to lock</param>
+    /// <param name="timeoutMillis">the timeout in milliseconds, -1 for default, -2 to skip
+    /// locked rows</param>
+    /// <returns>the locked row, or null if it no longer exists or was skipped</returns>
+    public Row? LockRow(SessionLocal session, Row row, int timeoutMillis)
+    {
+        TransactionMap<long, SearchRow> map = GetMap(
+            session.Transaction ??= mvTable.GetTransactionBegin());
+        long key = row.GetKey();
+        try
+        {
+            return SetRowKey((Row?)map.Lock(key, timeoutMillis), key);
+        }
+        catch (MvStoreException e)
+        {
+            throw mvTable.ConvertLockException(e);
+        }
+    }
 
     /// <summary>
     /// Reads the row stored under the given key, on the given transaction.

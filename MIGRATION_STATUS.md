@@ -67,8 +67,28 @@ linq2db его не используют. Info-схемы неподдержив
 `ENCRYPT`/`DECRYPT` вынесены в `H2Sharp.Crypto`: AES — BCL ECB/zero padding,
 XTEA и FOG — порты H2; векторы сверены с jar.
 
-Проверено: core **1468/1468**, Data **555/555**, conformance полный **864/952**,
-зелёный **862/911** (было 805/803). Провайдеры на текущем бинарнике: linq2db
+`TO_CHAR`, `FORMATDATETIME` и `PARSEDATETIME` подключены в `Parser`. Шаблон
+форматируется/разбирается средствами .NET (`DateTime.ToString`/`ParseExact`);
+общие шаблоны H2 (`yyyy-MM-dd`, `yyyy-MM-dd HH:mm:ss`, `yyyy`) совпадают,
+Java-only поля не переводятся и дают ошибку, а не молчаливое искажение.
+`TO_CHAR` пока покрывает date-time значения; Oracle-модель чисел не портирована
+и отмечена в коде.
+
+Попутно закрыты `TRUNC(timestamp)`, `ANALYZE`, `CREATE TYPE`/`ALTER TYPE ADD
+VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
+`AT LOCAL` через `TimeZoneOperation`, именованные зоны в timestamp-литералах,
+`INSERT ... VALUES ROW(...)` и `MERGE` внутри `OLD/NEW/FINAL TABLE`.
+Рекурсивные CTE портированы через `ShadowTable` + `RecursiveIndex`: повторный
+разбор отличает самоссылку от обычного `WITH RECURSIVE`, а итерации читают
+`CTE.GetRecursiveResult()`. `FOR UPDATE`/`NOWAIT`/`WAIT`/`SKIP LOCKED` разобраны
+в `ForUpdate`, `Select` блокирует строки через `MVTable.LockRow` и
+`TransactionMap.Lock`.
+
+`SCRIPT CIPHER`, `HELP` и `RUNSCRIPT` вынесены из зелёного набора решениями
+D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
+
+Проверено: core **1468/1468**, Data **560/560**, conformance полный **880/952**,
+зелёный **878/905** (было 805/803). Провайдеры на текущем бинарнике: linq2db
 **76/76** и ModelTests **180/180** на net8/net10; EF Core unit **129/129**, functional
 **5742/5762** на каждом net9/net10, 6 падений — `_LOCAL_AND_GLOBAL_` в
 `RegularQueryExpressionIndex` и связанные с ним shape-запросы.
@@ -769,6 +789,23 @@ Java-имена и разрешать их: получился бы файл, к
 `[H2Fact]`, который ставит `Skip`, если не выставлено `H2SHARP_NATIVE_TESTS=1`.
 Механизм тот же, что у `JavaOracleFactAttribute` в `H2Sharp.Tests/Oracle`. Запуск
 оптом: `H2SHARP_NATIVE_TESTS=1 dotnet test tests/H2Sharp.Native.Tests`.
+
+**Прогон 2026-10-27:** **33 / 99** entry points прошли, 66 падают. Тесты запускаются
+последовательно (`AssemblyInfo.cs`), как эталонный `TestAll`: параллельный xUnit
+конфликтовал на общих файловых БД. `TestRecursiveQueries` доведён до зелёного:
+шаблоны CTE больше не оптимизируются по `ShadowTable`, а `_LOCAL_AND_GLOBAL_`
+читается в WHERE/HAVING/QUALIFY; также закрыт `||`-случай в `BinaryOperation`,
+`CREATE OR REPLACE SYNONYM` и кандидаты в сообщении `TABLE_OR_VIEW_NOT_FOUND`.
+`TestSubqueryPerformanceOnLazyExecutionMode` проходит.
+
+**MVCC-партия:** зелёные `TestMvcc1`, `TestMvcc2`, `TestMvcc3`, `TestMvcc4`,
+`TestMvccMultiThreaded`, `TestMvccMultiThreaded2`, `TestRowLocks`. В движке
+добавлены табличные write/exclusive locks с очередью и lock timeout, row locking
+в `UPDATE`/`DELETE`, освобождение блокировок на commit/rollback, удаление map
+таблицы при drop, `BLOCKER_ID` в `INFORMATION_SCHEMA.SESSIONS`, owner id и
+lock timeout у транзакции, а auto-commit `SELECT` теперь завершает транзакцию
+после выполнения. В `H2Sharp.Data.Tests` добавлены 4 регрессионных теста
+(`H2MvccRegressionTests`).
 
 Сделано:
 

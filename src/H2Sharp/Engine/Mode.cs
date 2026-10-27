@@ -190,6 +190,9 @@ public sealed class Mode
     /// </remarks>
     public bool SwapLogFunctionParameters { get; }
 
+    /// <summary>Whether <c>+</c> concatenates strings.</summary>
+    public bool AllowPlusForStringConcat { get; }
+
     /// <summary>
     /// Whether one-argument LOG() is base 10 rather than natural, as PostgreSQL's is.
     /// </summary>
@@ -258,6 +261,7 @@ public sealed class Mode
         bool treatEmptyStringsAsNull = false,
         bool greatestLeastIgnoreNulls = false,
         bool swapLogFunctionParameters = false,
+        bool allowPlusForStringConcat = false,
         bool logIsLogBase10 = false,
         bool acceptsCommaAsJsonKeyValueSeparator = false,
         bool decimalSequences = false,
@@ -283,6 +287,7 @@ public sealed class Mode
         TreatEmptyStringsAsNull = treatEmptyStringsAsNull;
         GreatestLeastIgnoreNulls = greatestLeastIgnoreNulls;
         SwapLogFunctionParameters = swapLogFunctionParameters;
+        AllowPlusForStringConcat = allowPlusForStringConcat;
         LogIsLogBase10 = logIsLogBase10;
         AcceptsCommaAsJsonKeyValueSeparator = acceptsCommaAsJsonKeyValueSeparator;
         DecimalSequences = decimalSequences;
@@ -343,10 +348,12 @@ public sealed class Mode
                 identityClause: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
-            ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true, topInSelect: true),
+            ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true,
+                allowPlusForStringConcat: true, topInSelect: true),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
                 greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true,
-                topInSelect: true, topInDml: true, identityClause: true),
+                allowPlusForStringConcat: true, topInSelect: true, topInDml: true,
+                identityClause: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true,
                 autoIncrementClause: true),

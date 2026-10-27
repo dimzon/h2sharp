@@ -354,8 +354,8 @@ public sealed class MathFunction : Function1_2
                             throw DbException.Get(ErrorCode.InvalidParameterCount2, "TRUNC", "1");
                         }
 
-                        throw new TODOException(
-                            "MathFunction.optimize: TRUNC of a datetime needs DateTimeFunction (DATE_TRUNC), which is not ported yet");
+                        return new DateTimeFunction(DateTimeFunction.DateTrunc,
+                            DateTimeFunction.Day, left, null).Optimize(session);
                     case Value.Date:
                         if (right != null)
                         {

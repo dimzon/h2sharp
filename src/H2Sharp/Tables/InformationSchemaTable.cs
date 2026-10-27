@@ -1173,11 +1173,25 @@ public sealed class InformationSchemaTable : Table
                     Column[] columns = table.GetColumns();
                     for (int i = 0; i < columns.Length; i++)
                     {
-                        if (columns[i].GetTypeInfo().GetValueType() == Value.Enum)
+                        TypeInfo columnType = columns[i].GetTypeInfo();
+                        if (columnType.GetValueType() == Value.Enum)
                         {
                             AddEnumValues(session, rows, catalog,
-                                table.GetSchema()?.GetName(), table.GetTableName(),
-                                (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), columns[i]);
+                                table.GetSchema()?.GetName(), table.GetTableName()!, "TABLE",
+                                (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), columnType);
+                        }
+                    }
+                }
+
+                foreach (Schemas.Schema schema in database.GetSchemas())
+                {
+                    foreach (Schemas.Domain domain in schema.GetAllDomains())
+                    {
+                        TypeInfo domainType = domain.GetDataType();
+                        if (domainType.GetValueType() == Value.Enum)
+                        {
+                            AddEnumValues(session, rows, catalog, schema.GetName(),
+                                domain.GetName()!, "DOMAIN", "TYPE", domainType);
                         }
                     }
                 }
@@ -1193,11 +1207,29 @@ public sealed class InformationSchemaTable : Table
                 }
 
                 break;
-            case Triggers:
             case Synonyms:
-                // The objects these views list do not exist in this port yet, so the views
-                // are empty. They are here with the columns of the reference, so that a query
-                // against one of them is answered rather than refused.
+                foreach (Schemas.Schema schema in database.GetSchemas())
+                {
+                    foreach (TableSynonym synonym in schema.GetAllSynonyms())
+                    {
+                        Add(
+                            rows,
+                            catalog,
+                            schema.GetName(),
+                            synonym.GetName(),
+                            synonym.GetSynonymForName(),
+                            synonym.GetSynonymForSchema().GetName(),
+                            "SYNONYM",
+                            "VALID",
+                            synonym.GetComment());
+                    }
+                }
+
+                break;
+            case Triggers:
+                // Triggers do not exist in this port yet, so the view is empty. It is here
+                // with the columns of the reference, so that a query against it is answered
+                // rather than refused.
                 break;
             default:
                 throw DbException.GetInternalError("type=" + type);
@@ -1382,6 +1414,7 @@ public sealed class InformationSchemaTable : Table
     /// <param name="other">the session to list</param>
     private static void AddSession(SessionLocal session, List<Value[]> rows, SessionLocal other)
     {
+        int blockingSessionId = other.Transaction?.GetBlockerId() ?? 0;
         Add(
             rows,
             ValueInteger.Get(other.GetId()),
@@ -1395,7 +1428,7 @@ public sealed class InformationSchemaTable : Table
             null,
             ValueBoolean.Get(other.HasPendingTransaction()),
             ReferenceEquals(session, other) ? "RUN" : "SLEEP",
-            null,
+            blockingSessionId == 0 ? null : ValueInteger.Get(blockingSessionId),
             null);
     }
 
@@ -1865,30 +1898,31 @@ public sealed class InformationSchemaTable : Table
     /// The rows of the ENUM_VALUES view for one enum column.
     /// </summary>
     /// <remarks>
-    /// The reference's rows: the table and the column's ordinal position identify the enum,
-    /// then one row per label with its ordinal. The ordinal starts at 0 or 1 the way the
-    /// session's enums do, as in the reference. Domains, routines and constants have no
-    /// enums here, so only table columns are listed. The ordinal travels as text: the view
-    /// declares the column without a type, which is VARCHAR, and the reference's add()
-    /// converts every row value to its view column, so an integer ordinal arrives as text.
+    /// The reference's rows: the object and the column's ordinal position (or TYPE for a
+    /// domain) identify the enum, then one row per label with its ordinal. The ordinal starts
+    /// at 0 or 1 the way the session's enums do, as in the reference. The ordinal travels as
+    /// text: the view declares the column without a type, which is VARCHAR, and the
+    /// reference's add() converts every row value to its view column, so an integer ordinal
+    /// arrives as text.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="rows">the rows</param>
     /// <param name="catalog">the catalog name</param>
-    /// <param name="objectSchema">the schema of the table</param>
-    /// <param name="objectName">the table name</param>
-    /// <param name="identifier">the column's ordinal position</param>
-    /// <param name="column">the enum column</param>
+    /// <param name="objectSchema">the schema of the table or domain</param>
+    /// <param name="objectName">the table or domain name</param>
+    /// <param name="objectType">TABLE or DOMAIN</param>
+    /// <param name="identifier">the column's ordinal position or TYPE</param>
+    /// <param name="typeInfo">the enum type</param>
     private static void AddEnumValues(
         SessionLocal session,
         List<Value[]> rows,
         string catalog,
         string? objectSchema,
         string objectName,
+        string objectType,
         string identifier,
-        Column column)
+        TypeInfo typeInfo)
     {
-        TypeInfo typeInfo = column.GetTypeInfo();
         ExtTypeInfoEnum enumerators = (ExtTypeInfoEnum)typeInfo.GetExtTypeInfo()!;
         int ordinal = session.ZeroBasedEnums() ? 0 : 1;
         for (int i = 0; i < enumerators.GetCount(); i++, ordinal++)
@@ -1898,7 +1932,7 @@ public sealed class InformationSchemaTable : Table
                 catalog,
                 objectSchema,
                 objectName,
-                "TABLE",
+                objectType,
                 identifier,
                 enumerators.GetEnumerator(i),
                 ValueVarchar.Get(ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture)));

@@ -25,7 +25,11 @@ namespace H2Sharp.Tables;
 /// </remarks>
 public sealed class CTE : QueryExpressionTable
 {
-    private readonly Index index;
+    private Index index = null!;
+
+    private bool recursive;
+
+    private ResultInterface? recursiveResult;
 
     /// <summary>
     /// Creates a common table expression.
@@ -35,15 +39,39 @@ public sealed class CTE : QueryExpressionTable
     /// <param name="columnTemplates">the names the clause gave the columns, or null</param>
     /// <param name="query">the query the rows come from</param>
     /// <param name="session">the session</param>
-    public CTE(Schema? schema, string name, Column[]? columnTemplates, Query query, SessionLocal session)
+    public CTE(Schema? schema, string name, Column[]? columnTemplates, Query query, SessionLocal session,
+        bool recursive = false)
         : base(schema, name)
+        => Initialize(session, columnTemplates, query, recursive);
+
+    internal void Initialize(
+        SessionLocal session, Column[]? columnTemplates, Query query, bool recursive)
     {
         SetTemporary(true);
         tables = [.. query.GetTables()];
         columns = InitColumns(session, columnTemplates, query, false, true);
         viewQuery = query;
-        index = new RegularQueryExpressionIndex(this, query);
+        this.recursive = recursive;
+        index = recursive ? new RecursiveIndex(this, query) : new RegularQueryExpressionIndex(this, query);
     }
+
+    internal void SetColumnsForResolution(Column[] resolutionColumns) => columns = resolutionColumns;
+
+    /// <summary>Whether this expression is recursive.</summary>
+    public bool IsRecursive() => recursive;
+
+    /// <summary>The result of the previous iteration of a recursive expression.</summary>
+    public ResultInterface? GetRecursiveResult() => recursiveResult;
+
+    /// <summary>Sets the result of the previous iteration of a recursive expression.</summary>
+    public void SetRecursiveResult(ResultInterface? value)
+    {
+        recursiveResult?.Close();
+        recursiveResult = value;
+    }
+
+    /// <inheritdoc/>
+    public override bool IsQueryComparable() => false;
 
     /// <inheritdoc/>
     public override Query? GetTopQuery() => null;

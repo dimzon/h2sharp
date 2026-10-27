@@ -972,7 +972,7 @@ public abstract class TestBase
         }
         catch (H2SharpException ex)
         {
-            AssertEquals(expectedErrorCode, ex.H2ErrorCode);
+            AssertEquals(ex.Message ?? "", expectedErrorCode, ex.H2ErrorCode);
         }
     }
 

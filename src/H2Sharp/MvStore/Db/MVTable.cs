@@ -28,6 +28,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Indexes;
@@ -50,6 +51,14 @@ public sealed class MVTable : Table
     private readonly Column[] columns;
 
     private readonly MVPrimaryIndex primaryIndex;
+
+    private readonly object tableLock = new();
+
+    private readonly HashSet<SessionLocal> lockSharedSessions = [];
+
+    private readonly LinkedList<SessionLocal> waitingSessions = [];
+
+    private SessionLocal? lockExclusiveSession;
 
     /// <summary>
     /// Every index of this table, the primary first.
@@ -263,6 +272,114 @@ public sealed class MVTable : Table
         ArgumentNullException.ThrowIfNull(session);
         return primaryIndex;
     }
+
+    /// <inheritdoc/>
+    public override bool Lock(SessionLocal session, int lockType)
+    {
+        if (lockType == Table.ReadLock && lockExclusiveSession is null)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(lockExclusiveSession, session))
+        {
+            return true;
+        }
+
+        if (lockType != Table.ExclusiveLock && lockSharedSessions.Contains(session))
+        {
+            return true;
+        }
+
+        lock (tableLock)
+        {
+            if (lockType != Table.ExclusiveLock && lockSharedSessions.Contains(session))
+            {
+                return true;
+            }
+
+            waitingSessions.AddLast(session);
+            long deadline = Environment.TickCount64 + session.GetLockTimeout();
+            try
+            {
+                while (true)
+                {
+                    if (ReferenceEquals(waitingSessions.First?.Value, session)
+                        && lockExclusiveSession is null && DoLock2(session, lockType))
+                    {
+                        return false;
+                    }
+
+                    long remaining = deadline - Environment.TickCount64;
+                    if (remaining <= 0)
+                    {
+                        throw DbException.Get(ErrorCode.LockTimeout1, Name);
+                    }
+
+                    _ = Monitor.Wait(tableLock, (int)Math.Min(remaining, 100));
+                }
+            }
+            finally
+            {
+                _ = waitingSessions.Remove(session);
+                Monitor.PulseAll(tableLock);
+            }
+        }
+    }
+
+    private bool DoLock2(SessionLocal session, int lockType)
+    {
+        if (lockType == Table.ExclusiveLock)
+        {
+            int size = lockSharedSessions.Count;
+            if (size == 0)
+            {
+                session.RegisterTableAsLocked(this);
+            }
+            else if (size == 1 && lockSharedSessions.Contains(session))
+            {
+                session.RegisterTableAsLocked(this);
+            }
+            else
+            {
+                return false;
+            }
+
+            lockExclusiveSession = session;
+        }
+        else if (lockSharedSessions.Add(session))
+        {
+            session.RegisterTableAsLocked(this);
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public override void Unlock(SessionLocal session)
+    {
+        lock (tableLock)
+        {
+            if (ReferenceEquals(lockExclusiveSession, session))
+            {
+                _ = lockSharedSessions.Remove(session);
+                lockExclusiveSession = null;
+            }
+            else
+            {
+                _ = lockSharedSessions.Remove(session);
+            }
+
+            Monitor.PulseAll(tableLock);
+        }
+    }
+
+    /// <inheritdoc/>
+    public override bool IsRowLockable() => true;
+
+    /// <inheritdoc/>
+    public override Row? LockRow(SessionLocal session, Row row, int timeoutMillis)
+        => primaryIndex.LockRow(session, row, timeoutMillis);
 
     /// <inheritdoc/>
     public override int GetMainIndexColumn()
@@ -698,6 +815,25 @@ public sealed class MVTable : Table
     public Exception ConvertException(Exception e)
         => DbException.GetInternalError(Name + ": " + e.Message);
 
+    /// <summary>Converts a store failure from an attempt to lock a row.</summary>
+    /// <param name="e">the store failure</param>
+    /// <returns>the error to raise</returns>
+    public Exception ConvertLockException(MvStoreException e)
+    {
+        int errorCode = e.GetErrorCode();
+        if (errorCode == DataUtils.ErrorTransactionLocked)
+        {
+            return DbException.Get(ErrorCode.LockTimeout1, e, Name);
+        }
+
+        if (errorCode == DataUtils.ErrorTransactionsDeadlock)
+        {
+            return DbException.Get(ErrorCode.Deadlock1, e, Name);
+        }
+
+        return ConvertException(e);
+    }
+
     /// <summary>
     /// Adds a row and returns the key it was given.
     /// </summary>
@@ -945,6 +1081,7 @@ public sealed class MVTable : Table
             _ = indexes.Remove(index);
         }
 
+        primaryIndex.Remove(session);
         indexes.Clear();
         Close();
     }

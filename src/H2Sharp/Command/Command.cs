@@ -188,17 +188,28 @@ public abstract class Command : CommandInterface
     /// <returns>the result set</returns>
     public virtual ResultInterface ExecuteQuery(long maxrows, int fetchSize, bool scrollable)
     {
-        // Port of executeQuery's query call and arithmetic-exception conversion. Statement
-        // locking, concurrent-update retries and transaction scope are still not ported.
-        // Exception conversion is deliberately partial: only the ArithmeticException family
-        // exposed by interval BigDecimal division is converted here (as Java Throwable is).
+        // Port of executeQuery's query call, arithmetic-exception conversion and the stop
+        // that commits an auto-commit SELECT. Statement locking, concurrent-update retries
+        // and transaction scope are still not ported. Exception conversion is deliberately
+        // partial: only the ArithmeticException family exposed by interval BigDecimal
+        // division is converted here (as Java Throwable is).
+        bool callStop = true;
         try
         {
-            return Query(maxrows);
+            ResultInterface result = Query(maxrows);
+            callStop = !result.IsLazy();
+            return result;
         }
         catch (ArithmeticException error)
         {
             throw DbException.AddSql(DbException.Convert(error), sql);
+        }
+        finally
+        {
+            if (callStop)
+            {
+                Stop(true);
+            }
         }
     }
 

@@ -21,10 +21,10 @@ namespace H2Sharp.Util;
 /// that makes a date sortable by the number that holds it. A time is a count of nanoseconds from
 /// midnight, and a timestamp is the pair.
 /// <para>
-/// The methods that need a time zone are not here: <c>currentTimestamp</c> and
-/// <c>timestampTimeZoneAtOffset</c> belong with the time zone types, which are not ported. Everything
-/// else is here, including the two parsers, because a literal in a statement is read by the parser
-/// and the parser must not have to wait for a time zone to read a date.
+/// The methods that need a time zone are here too: the two parsers and
+/// <c>timestampTimeZoneAtOffset</c> all work with <see cref="TimeZoneProvider"/>, because a literal
+/// in a statement is read by the parser and the parser must not have to wait for a time zone to
+/// read a date.
 /// </para>
 /// </remarks>
 public static class DateTimeUtils
@@ -928,10 +928,9 @@ public static class DateTimeUtils
     /// </summary>
     /// <remarks>
     /// The date and the time are separated by a space or, for the ISO shape, by a T. A text with a
-    /// time zone in it is refused: the reference answers with a TIMESTAMP WITH TIME ZONE, and the
-    /// types that hold a zone are not ported yet. The same is true of DB2's shape, where a dash
-    /// separates them, because that is a flag of the compatibility mode and this class carries only
-    /// the five flags the tokenizer reads.
+    /// time zone in it is read as one: an offset, Z, or a named <see cref="TimeZoneProvider"/>. The
+    /// same is true of DB2's shape, where a dash separates them, because that is a flag of the
+    /// compatibility mode and this class carries only the five flags the tokenizer reads.
     /// </remarks>
     /// <param name="s">the text</param>
     /// <param name="provider">where the mode comes from</param>
@@ -1229,12 +1228,60 @@ public static class DateTimeUtils
     /// <summary>
     /// Reads the offset written after a time, and answers the value it stands for.
     /// </summary>
+    /// <summary>
+    /// Moves a timestamp with time zone to a new time zone.
+    /// </summary>
+    /// <param name="dateValue">the date value</param>
+    /// <param name="timeNanos">the nanoseconds since midnight</param>
+    /// <param name="oldOffset">the old offset</param>
+    /// <param name="newOffset">the new offset</param>
+    /// <returns>the timestamp with time zone with the new offset</returns>
+    public static Values.ValueTimestampTimeZone TimestampTimeZoneAtOffset(
+        long dateValue, long timeNanos, int oldOffset, int newOffset)
+    {
+        timeNanos += (newOffset - oldOffset) * NanosPerSecond;
+        if (timeNanos < 0)
+        {
+            timeNanos += NanosPerDay;
+            dateValue = DecrementDateValue(dateValue);
+            if (timeNanos < 0)
+            {
+                timeNanos += NanosPerDay;
+                dateValue = DecrementDateValue(dateValue);
+            }
+        }
+        else if (timeNanos >= NanosPerDay)
+        {
+            timeNanos -= NanosPerDay;
+            dateValue = IncrementDateValue(dateValue);
+            if (timeNanos >= NanosPerDay)
+            {
+                timeNanos -= NanosPerDay;
+                dateValue = IncrementDateValue(dateValue);
+            }
+        }
+
+        return Values.ValueTimestampTimeZone.FromDateValueAndNanos(dateValue, timeNanos, newOffset);
+    }
+
     private static Values.Value ParseTimestampWithTimeZone(
         string s, int dateEnd, int timeEnd, long dateValue, Engine.CastDataProvider? provider)
     {
         long nanos = ParseTimeNanos(s, dateEnd, timeEnd);
-        return Values.ValueTimestampTimeZone.FromDateValueAndNanos(
-            dateValue, nanos, ParseTimeZoneOffset(s, timeEnd));
+        ReadOnlySpan<char> zone = s.AsSpan(timeEnd).Trim();
+        int offset;
+        if (zone.Length > 1 && zone[0] is not ('Z' or 'z' or '+' or '-'))
+        {
+            TimeZoneProvider timeZone = TimeZoneProvider.OfId(zone.ToString());
+            offset = timeZone.GetTimeZoneOffsetUtc(
+                timeZone.GetEpochSecondsFromLocal(dateValue, nanos));
+        }
+        else
+        {
+            offset = ParseTimeZoneOffset(s, timeEnd);
+        }
+
+        return Values.ValueTimestampTimeZone.FromDateValueAndNanos(dateValue, nanos, offset);
     }
 
     /// <summary>

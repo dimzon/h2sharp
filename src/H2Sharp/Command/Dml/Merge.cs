@@ -279,12 +279,18 @@ public sealed class Merge : CommandWithValues
 
                 return 1;
             }
-            catch (H2SharpException e) when (e.H2ErrorCode == ErrorCode.DuplicateKey1)
+            catch (H2SharpException e) when (e.H2ErrorCode == ErrorCode.DuplicateKey1
+                && keyColumns.Length > 0 && update is not null)
             {
-                // The reference reads the offending index off the exception and reports a
-                // concurrent update when its columns are the merge keys. The port's
-                // duplicate-key errors carry no index, so the check has nothing to read and
-                // the original error travels.
+                // A concurrent MERGE inserted the same key between our lookup and the insert.
+                // The reference turns this into CONCURRENT_UPDATE_1 and the command retries;
+                // this statement retries its own update against the row that is now there.
+                count = update.Run(deltaChangeCollector, deltaChangeCollectionMode);
+                if (count == 1)
+                {
+                    return isReplace ? 2 : 1;
+                }
+
                 throw;
             }
         }

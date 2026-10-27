@@ -439,7 +439,7 @@ public sealed partial class Parser
     /// <summary>
     /// The common table expressions this statement names, by name.
     /// </summary>
-    private readonly Dictionary<string, Tables.CTE> ctes = [];
+    private readonly Dictionary<string, Tables.Table> ctes = [];
 
     private Parser(string sql, CastDataProvider provider, List<Token> tokens, SessionLocal? session)
     {
@@ -640,6 +640,10 @@ public sealed partial class Parser
         {
             prepared = PrepareExplain(start);
         }
+        else if (IsWord("ANALYZE", consume: false))
+        {
+            prepared = PrepareAnalyze(current);
+        }
         else if (IsWord("SCRIPT", consume: false))
         {
             prepared = PrepareScript(current);
@@ -647,6 +651,12 @@ public sealed partial class Parser
         else if (IsCreateMaterializedView())
         {
             prepared = PrepareCreateMaterializedView(current);
+        }
+        else if (IsWord("CREATE", consume: false)
+            && IsWordAt(position + 1, "OR") && IsWordAt(position + 2, "REPLACE")
+            && IsWordAt(position + 3, "SYNONYM"))
+        {
+            prepared = PrepareCreateSynonym(current);
         }
         else if (IsWord("CREATE", consume: false)
             && (NextIs("VIEW") || NextIs("OR") || NextIs("FORCE")))
@@ -744,6 +754,14 @@ public sealed partial class Parser
             throw new TODOException(
                 "Parser.parseGrantRevoke: GrantRevoke, users, roles and rights are not ported (D-004)");
         }
+        else if (IsWord("CREATE", consume: false) && NextIs("SYNONYM"))
+        {
+            prepared = PrepareCreateSynonym(current);
+        }
+        else if (IsWord("DROP", consume: false) && NextIs("SYNONYM"))
+        {
+            prepared = PrepareDropSynonym(current);
+        }
         else if (IsWord("CREATE", consume: false) && NextIs("CONSTANT"))
         {
             prepared = PrepareCreateConstant(current);
@@ -804,15 +822,21 @@ public sealed partial class Parser
             ExpectWord("TABLE");
             prepared = ParseCreateTable(temporary, globalTemporary, persistIndexes);
         }
-        else if (IsWord("CREATE", consume: false) && NextIs("DOMAIN"))
+        else if (IsWord("CREATE", consume: false)
+            && (NextIs("DOMAIN") || NextIs("TYPE") || NextIs("DATATYPE")))
         {
             prepared = PrepareCreateDomain(current);
+        }
+        else if (IsWord("ALTER", consume: false) && NextIs("TYPE"))
+        {
+            prepared = PrepareAlterType(current);
         }
         else if (IsWord("ALTER", consume: false) && NextIs("DOMAIN"))
         {
             prepared = PrepareAlterDomain(current);
         }
-        else if (IsWord("DROP", consume: false) && NextIs("DOMAIN"))
+        else if (IsWord("DROP", consume: false)
+            && (NextIs("DOMAIN") || NextIs("TYPE") || NextIs("DATATYPE")))
         {
             prepared = PrepareDropDomain(current);
         }
@@ -1095,6 +1119,30 @@ public sealed partial class Parser
     }
 
     /// <summary>Parses the MySQL-compatible SHOW forms.</summary>
+    private Prepared PrepareAnalyze(SessionLocal current)
+    {
+        Read();
+        Ddl.Analyze command = new(current);
+        if (IsWord("TABLE"))
+        {
+            string name = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
+            command.SetTable(ReadTableOrView(current, schema, name));
+        }
+
+        if (IsWord("SAMPLE_SIZE"))
+        {
+            long sample = ReadLong();
+            if (sample < 0 || sample > int.MaxValue)
+            {
+                throw DbException.GetInvalidValueException("non-negative int", sample);
+            }
+
+            command.SetTop((int)sample);
+        }
+
+        return command;
+    }
+
     private Prepared PrepareShow(SessionLocal current)
     {
         ExpectWord("SHOW");
@@ -1692,19 +1740,24 @@ public sealed partial class Parser
         SessionLocal current = session
             ?? throw new TODOException("Parser.parseWith: this parser has no session");
         ExpectWord("WITH");
-        if (IsWord("RECURSIVE", consume: false))
-        {
-            // The reference reads a recursive expression with a table of its own that stands
-            // in for the expression while it reads it, and an index that feeds the rows back
-            // into the query. Neither is ported yet.
-            throw new TODOException("Parser.parseWith: a recursive common table expression is not ported");
-        }
+        bool recursive = IsWord("RECURSIVE");
 
         do
         {
             string name = ReadIdentifier();
             List<string>? columnNames = null;
-            if (ReadIf(Token.OpenParen))
+            bool hasColumns;
+            if (recursive)
+            {
+                Expect(Token.OpenParen, "(");
+                hasColumns = true;
+            }
+            else
+            {
+                hasColumns = ReadIf(Token.OpenParen);
+            }
+
+            if (hasColumns)
             {
                 columnNames = [];
                 do
@@ -1718,19 +1771,53 @@ public sealed partial class Parser
 
             ExpectWord("AS");
             Expect(Token.OpenParen, "(");
-            Query.Query query = ParseQueryExpression();
-            Expect(Token.CloseParen, ")");
-
-            Tables.Column[]? columnTemplates = columnNames is null
-                ? null
-                : CreateQueryColumnTemplateList(columnNames, query, cte: true);
             if (ctes.ContainsKey(name))
             {
                 throw DbException.Get(Api.ErrorCode.TableOrViewAlreadyExists1, name);
             }
 
-            ctes[name] = new Tables.CTE(
-                current.GetDatabase().GetMainSchema(), name, columnTemplates, query, current);
+            if (recursive)
+            {
+                Column[] shadowColumns = new Column[columnNames!.Count];
+                for (int i = 0; i < shadowColumns.Length; i++)
+                {
+                    shadowColumns[i] = new Column(columnNames[i], TypeInfo.TypeVarchar);
+                }
+
+                Tables.ShadowTable shadow = new(
+                    current.GetDatabase().GetMainSchema()!, name, shadowColumns);
+                ctes[name] = shadow;
+                int queryStart = position;
+                Query.Query firstQuery = ParseQueryExpression(prepare: false);
+                Tables.Column[] templates = CreateQueryColumnTemplateList(columnNames, firstQuery, cte: true);
+                Tables.CTE cte = new(
+                    current.GetDatabase().GetMainSchema(), name, templates, firstQuery, current, true);
+                Column[] resolutionColumns = new Column[columnNames.Count];
+                for (int i = 0; i < resolutionColumns.Length; i++)
+                {
+                    resolutionColumns[i] = new Column(columnNames[i], TypeInfo.TypeUnknown, cte, i);
+                }
+
+                cte.SetColumnsForResolution(resolutionColumns);
+                ctes[name] = cte;
+
+                position = queryStart;
+                Query.Query query = ParseQueryExpression();
+                bool selfReferenced = query.GetTables().Contains(cte);
+                Tables.Column[]? finalTemplates = CreateQueryColumnTemplateList(columnNames, query, cte: true);
+                cte.Initialize(current, finalTemplates, query, selfReferenced);
+            }
+            else
+            {
+                Query.Query query = ParseQueryExpression();
+                Tables.Column[]? columnTemplates = columnNames is null
+                    ? null
+                    : CreateQueryColumnTemplateList(columnNames, query, cte: true);
+                ctes[name] = new Tables.CTE(
+                    current.GetDatabase().GetMainSchema(), name, columnTemplates, query, current);
+            }
+
+            Expect(Token.CloseParen, ")");
         }
         while (ReadIf(Token.Comma));
     }
@@ -2593,14 +2680,22 @@ public sealed partial class Parser
 
         Expect(Token.OpenParen, "(");
 
-        Statement statement = ReadStatement();
-        Prepared prepared = statement switch
+        Prepared prepared;
+        if (IsWord("MERGE", consume: false))
         {
-            InsertStatement insert => PrepareInsert(session, insert),
-            UpdateStatement update => PrepareUpdate(session, update),
-            DeleteStatement delete => PrepareDelete(session, delete),
-            _ => throw DbException.GetSyntaxError(sql, Current.Start, "INSERT"),
-        };
+            prepared = PrepareMerge(session);
+        }
+        else
+        {
+            Statement statement = ReadStatement();
+            prepared = statement switch
+            {
+                InsertStatement insert => PrepareInsert(session, insert),
+                UpdateStatement update => PrepareUpdate(session, update),
+                DeleteStatement delete => PrepareDelete(session, delete),
+                _ => throw DbException.GetSyntaxError(sql, Current.Start, "INSERT"),
+            };
+        }
 
         Expect(Token.CloseParen, ")");
         return new Tables.DataChangeDeltaTable(
@@ -3342,6 +3437,41 @@ public sealed partial class Parser
     /// <summary>
     /// Builds the command of a CREATE DOMAIN statement.
     /// </summary>
+    private Prepared PrepareCreateSynonym(SessionLocal session)
+    {
+        ExpectWord("CREATE");
+        bool orReplace = ReadIfWords("OR", "REPLACE");
+        ExpectWord("SYNONYM");
+        bool ifNotExists = ReadIfNotExists();
+        string name = ReadIdentifierWithSchema(session, out Schemas.Schema synonymSchema);
+        ExpectWord("FOR");
+        string tableName = ReadIdentifierWithSchema(session, out Schemas.Schema targetSchema);
+        Ddl.CreateSynonym command = new(session, synonymSchema);
+        command.SetName(name);
+        command.SetSynonymFor(tableName);
+        command.SetOrReplace(orReplace);
+        command.SetSynonymForSchema(targetSchema);
+        command.SetIfNotExists(ifNotExists);
+        if (IsWord("COMMENT"))
+        {
+            command.SetComment(ReadString());
+        }
+
+        return command;
+    }
+
+    private Prepared PrepareDropSynonym(SessionLocal session)
+    {
+        ExpectWord("DROP");
+        ExpectWord("SYNONYM");
+        bool ifExists = ReadIfExists(false);
+        string name = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        Ddl.DropSynonym command = new(session, schema);
+        command.SetSynonymName(name);
+        command.SetIfExists(ifExists);
+        return command;
+    }
+
     private Prepared PrepareCreateConstant(SessionLocal session)
     {
         ExpectWord("CREATE");
@@ -3375,7 +3505,11 @@ public sealed partial class Parser
     private Ddl.CreateDomain PrepareCreateDomain(SessionLocal session)
     {
         ExpectWord("CREATE");
-        ExpectWord("DOMAIN");
+        if (!IsWord("DOMAIN") && !IsWord("TYPE"))
+        {
+            ExpectWord("DATATYPE");
+        }
+
         bool ifNotExists = ReadIfNotExists();
         string domainName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
         Ddl.CreateDomain command = new(session, schema);
@@ -3444,6 +3578,26 @@ public sealed partial class Parser
         }
 
         return command;
+    }
+
+    /// <summary>
+    /// Builds the command of an ALTER TYPE statement.
+    /// </summary>
+    private Ddl.AlterType PrepareAlterType(SessionLocal session)
+    {
+        ExpectWord("ALTER");
+        ExpectWord("TYPE");
+        string typeName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        if (IsWord("ADD"))
+        {
+            Ddl.AlterType command = new(session, schema);
+            command.SetDomainName(typeName);
+            ExpectWord("VALUE");
+            command.SetValue(ReadString());
+            return command;
+        }
+
+        throw DbException.GetSyntaxError(sql, Current.Start);
     }
 
     /// <summary>
@@ -3636,7 +3790,11 @@ public sealed partial class Parser
     private Ddl.DropDomain PrepareDropDomain(SessionLocal session)
     {
         ExpectWord("DROP");
-        ExpectWord("DOMAIN");
+        if (!IsWord("DOMAIN") && !IsWord("TYPE"))
+        {
+            ExpectWord("DATATYPE");
+        }
+
         bool ifExists = ReadIfExists(false);
         string domainName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
         Ddl.DropDomain command = new(session, schema);
@@ -4010,7 +4168,7 @@ public sealed partial class Parser
         if (CurrentType == ParserUtil.Where)
         {
             Read();
-            select.AddCondition(ReadQueryOr());
+            select.AddCondition(ReadExpressionWithGlobalConditions(select));
         }
 
         if (CurrentType == ParserUtil.Group)
@@ -4057,7 +4215,7 @@ public sealed partial class Parser
         {
             Read();
             select.SetGroupQuery();
-            select.SetHaving(ReadQueryOr(select));
+            select.SetHaving(ReadExpressionWithGlobalConditions(select));
         }
 
         if (IsWord("WINDOW"))
@@ -4076,7 +4234,7 @@ public sealed partial class Parser
         {
             Read();
             select.SetWindowQuery();
-            select.SetQualify(ReadQueryOr(select));
+            select.SetQualify(ReadExpressionWithGlobalConditions(select));
         }
 
         return select;
@@ -4192,6 +4350,71 @@ public sealed partial class Parser
 
             query.SetFetch(limit);
         }
+
+        if (IsWord("FOR"))
+        {
+            if (IsWord("UPDATE"))
+            {
+                if (ReadIfCompat("OF"))
+                {
+                    do
+                    {
+                        _ = ReadIdentifierWithSchema(
+                            session ?? throw new TODOException(
+                                "Parser.parseEndOfQuery: this parser has no session"),
+                            out _);
+                    }
+                    while (ReadIf(Token.Comma));
+                }
+
+                Query.ForUpdate forUpdate;
+                if (IsWord("NOWAIT"))
+                {
+                    forUpdate = Query.ForUpdate.NoWait;
+                }
+                else if (IsWord("WAIT"))
+                {
+                    if (CurrentType != Token.Literal
+                        || Current.GetValue(provider)?.GetBigDecimal() is not { } timeout
+                        || timeout.CompareTo(Util.BigDecimal.Parse("2147483.647")) > 0)
+                    {
+                        throw DbException.GetSyntaxError(
+                            sql, Current.Start, "timeout (0..2147483.647)");
+                    }
+
+                    Read();
+                    Query.ForUpdate? wait = null;
+                    if (timeout.Signum() >= 0)
+                    {
+                        wait = Query.ForUpdate.Wait(
+                            (int)timeout.Multiply(Util.BigDecimal.FromLong(1_000)).ToBigInteger());
+                    }
+
+                    forUpdate = wait ?? throw DbException.GetSyntaxError(
+                        sql, Current.Start, "timeout (0..2147483.647)");
+                }
+                else if (ReadIfWords("SKIP", "LOCKED"))
+                {
+                    forUpdate = Query.ForUpdate.SkipLocked;
+                }
+                else
+                {
+                    forUpdate = Query.ForUpdate.Default;
+                }
+
+                if (select is null)
+                {
+                    throw new TODOException(
+                        "Parser.parseEndOfQuery: FOR UPDATE on a set operation is not ported");
+                }
+
+                select.SetForUpdate(forUpdate);
+            }
+            else if (ReadIfCompat("READ") || ReadIfCompat("FETCH"))
+            {
+                ExpectWord("ONLY");
+            }
+        }
     }
 
     /// <summary>
@@ -4278,7 +4501,8 @@ public sealed partial class Parser
             || word.Equals("ON", StringComparison.OrdinalIgnoreCase)
             || word.Equals("USING", StringComparison.OrdinalIgnoreCase)
             || word.Equals("WITH", StringComparison.OrdinalIgnoreCase)
-            || word.Equals("KEY", StringComparison.OrdinalIgnoreCase);
+            || word.Equals("KEY", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("VALUES", StringComparison.OrdinalIgnoreCase);
     /// <summary>
     /// Reads a column name with optional schema and table prefixes.
     /// </summary>
@@ -4803,6 +5027,18 @@ public sealed partial class Parser
     /// Reads an OR of ANDs, as the reference's precedence does.
     /// </summary>
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    private Expressions.Expression ReadExpressionWithGlobalConditions(Query.Select? select)
+    {
+        Expressions.Expression expression = ReadQueryOr(select);
+        if (IsWord("_LOCAL_AND_GLOBAL_"))
+        {
+            expression = new Expressions.Conditions.ConditionLocalAndGlobal(
+                expression, ReadQueryOr(select));
+        }
+
+        return expression;
+    }
+
     private Expressions.Expression ReadQueryOr(Query.Select? aggregateSelect = null)
     {
         Expressions.Expression left = ReadQueryAnd(aggregateSelect);
@@ -5249,6 +5485,25 @@ public sealed partial class Parser
             {
                 expression = ReadColonColonAfterTerm(expression);
                 continue;
+            }
+
+            int timeZoneIndex = position;
+            if (IsWord("AT"))
+            {
+                if (ReadIfWords("TIME", "ZONE"))
+                {
+                    expression = new Expressions.TimeZoneOperation(
+                        expression, ReadQueryOr(aggregateSelect));
+                    continue;
+                }
+
+                if (IsWord("LOCAL"))
+                {
+                    expression = new Expressions.TimeZoneOperation(expression, null);
+                    continue;
+                }
+
+                position = timeZoneIndex;
             }
 
             // Parser.readTerm: FORMAT JSON is a postfix over any expression shape.
@@ -6013,11 +6268,12 @@ public sealed partial class Parser
                     Expressions.Functions.DateTimeFunction.LastDay, -1,
                     ReadSingleArgument(aggregateSelect), null);
 
-            // DateTimeFormatFunction (not ported).
             case "FORMATDATETIME":
+                return ReadDateTimeFormatFunction(
+                    Expressions.Functions.DateTimeFormatFunction.FormatDateTime, aggregateSelect);
             case "PARSEDATETIME":
-                throw new TODOException(
-                    "Parser.readBuiltinFunctionIf: DateTimeFormatFunction is not ported");
+                return ReadDateTimeFormatFunction(
+                    Expressions.Functions.DateTimeFormatFunction.ParseDateTime, aggregateSelect);
 
             case "DAYNAME":
                 return new Expressions.Functions.DayMonthNameFunction(
@@ -6105,9 +6361,16 @@ public sealed partial class Parser
             case "SUBSTRING":
                 return ReadSubstringFunction(aggregateSelect);
 
-            // ToCharFunction (not ported).
             case "TO_CHAR":
-                throw new TODOException("Parser.readBuiltinFunctionIf: ToCharFunction is not ported");
+                {
+                    Expressions.Expression value = ReadQueryOr(aggregateSelect);
+                    Expressions.Expression? format = ReadIf(Token.Comma)
+                        ? ReadQueryOr(aggregateSelect) : null;
+                    Expressions.Expression? nls = ReadIf(Token.Comma)
+                        ? ReadQueryOr(aggregateSelect) : null;
+                    Expect(Token.CloseParen, ")");
+                    return new Expressions.Functions.ToCharFunction(value, format, nls);
+                }
 
             case "CHAR_LENGTH":
             case "CHARACTER_LENGTH":
@@ -6755,6 +7018,19 @@ public sealed partial class Parser
 
         Read();
         return field;
+    }
+
+    private Expressions.Functions.FunctionN ReadDateTimeFormatFunction(
+        int function, Query.Select? aggregateSelect)
+    {
+        Expressions.Functions.DateTimeFormatFunction formatFunction = new(function);
+        do
+        {
+            formatFunction.AddParameter(ReadQueryOr(aggregateSelect));
+        }
+        while (ReadIf(Token.Comma));
+        Expect(Token.CloseParen, ")");
+        return formatFunction;
     }
 
     private Expressions.Expression? ReadIfSingleArgument(Query.Select? aggregateSelect)
@@ -7860,7 +8136,7 @@ public sealed partial class Parser
     private Tables.Table ReadTableOrView(
         SessionLocal session, Schemas.Schema schema, string tableName, bool searchPath = false)
     {
-        Tables.Table? table = schema.FindTableOrView(session, tableName);
+        Tables.Table? table = schema.ResolveTableOrView(session, tableName);
         if (table is not null)
         {
             return table;
@@ -7868,19 +8144,26 @@ public sealed partial class Parser
 
         // The reference asks the query scope for a table of a common table expression after
         // the schema has not answered.
-        if (ctes.TryGetValue(tableName, out Tables.CTE? cte))
+        if (ctes.TryGetValue(tableName, out Tables.Table? cte))
         {
             return cte;
         }
 
+        List<Schemas.Schema> schemas = [schema];
         if (searchPath && session.GetSchemaSearchPath() is { } path)
         {
             foreach (string schemaName in path)
             {
-                table = session.GetDatabase().GetSchema(schemaName).FindTableOrView(session, tableName);
+                Schemas.Schema pathSchema = session.GetDatabase().GetSchema(schemaName);
+                table = pathSchema.FindTableOrView(session, tableName);
                 if (table is not null)
                 {
                     return table;
+                }
+
+                if (!schemas.Contains(pathSchema))
+                {
+                    schemas.Add(pathSchema);
                 }
             }
         }
@@ -7890,7 +8173,26 @@ public sealed partial class Parser
             throw DbException.Get(Api.ErrorCode.TableOrViewNotFoundDatabaseEmpty1, tableName);
         }
 
-        throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
+        SortedSet<string> candidates = new(StringComparer.Ordinal);
+        foreach (Schemas.Schema candidateSchema in schemas)
+        {
+            foreach (Tables.Table candidate in candidateSchema.GetAllTablesAndViews(session))
+            {
+                string candidateName = candidate.GetTableName();
+                if (candidateName.Equals(tableName, StringComparison.OrdinalIgnoreCase))
+                {
+                    _ = candidates.Add(candidateName);
+                }
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
+        }
+
+        throw DbException.Get(Api.ErrorCode.TableOrViewNotFoundWithCandidates2,
+            tableName, string.Join(", ", candidates));
     }
 
     /// <summary>

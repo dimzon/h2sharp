@@ -134,6 +134,9 @@ public sealed class TestMvcc3 : TestDb
         transaction.Rollback("sp1");
         PrintRows("after rollback delete", s1, s2);
         transaction.Rollback();
+        // Modified (transaction shape): an ADO command keeps the transaction object it was
+        // given; JDBC statements do not. Clear it before reading outside the transaction.
+        s1.Transaction = null;
         PrintRows("after rollback all", s1, s2);
 
         s2.CommandText = "select * from test";

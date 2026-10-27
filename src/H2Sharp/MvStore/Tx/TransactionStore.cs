@@ -468,6 +468,14 @@ public class TransactionStore : IDisposable
     public Transaction Begin(IsolationLevel isolationLevel)
         => Begin(None, TimeoutMillis, 0, isolationLevel);
 
+    /// <summary>Begins a transaction owned by a session.</summary>
+    /// <param name="timeoutMillis">the lock timeout in milliseconds</param>
+    /// <param name="ownerId">the owner session id</param>
+    /// <param name="isolationLevel">the isolation level</param>
+    /// <returns>the transaction</returns>
+    public Transaction Begin(int timeoutMillis, int ownerId, IsolationLevel isolationLevel)
+        => Begin(None, timeoutMillis, ownerId, isolationLevel);
+
     /// <summary>
     /// Begins a transaction with a listener, timeout, owner, and isolation level.
     /// </summary>

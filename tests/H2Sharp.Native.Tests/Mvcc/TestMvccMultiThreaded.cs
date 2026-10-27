@@ -69,6 +69,9 @@ public sealed class TestMvccMultiThreaded : TestDb
 
         stopped.Cancel();
         Task.WaitAll(tasks);
+        // The reference closes the connection before deleting the file; the using block would
+        // dispose it only after DeleteDb, leaving the file locked.
+        conn.Close();
         DeleteDb(GetTestName());
     }
 

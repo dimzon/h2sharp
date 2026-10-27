@@ -321,6 +321,41 @@ Call/Run/Execute/Get/GetException/Join/IsFinished и stop-lifecycle сохран
 2.1.66 понимает `$` в `FilterParameters`/`GetInListRegex`; EF Core и linq2db
 провайдеры генерируют `$` в SQL.
 
+### D-026. Шифрование SQL-скриптов (`SCRIPT ... CIPHER`) — вне scope
+
+Указание пользователя от 2026-10-27: **«чипер не надо»**. Это относится к
+шифрованию логического SQL-дампа: `SCRIPT ... CIPHER AES PASSWORD ...` и
+`ScriptCommand` cipher не портируются. Тесты `Cipher_Aes_IsAcceptedByScript`
+и `ScriptEncryption_Aes_IsAccepted` остаются в наборе как `BlockedByPort` и
+не удаляются.
+
+Решение не отменяет SQL-функции `ENCRYPT`/`DECRYPT` в `H2Sharp.Crypto` и
+`HASH` в ядре: это другой слой. `SCRIPT TO`, `CHARSET` и `COMPRESSION`
+по-прежнему в работе; отсутствие cipher не является основанием сузить
+остальные опции.
+
+### D-027. Команда `HELP` — вне scope
+
+Указание пользователя от 2026-10-27: **«хелп тоже не надо»**. SQL-команда
+`HELP [anything ...]`, встроенный `org/h2/res/help.csv` и его CSV-читатель
+не портируются. Тест `Help_WithTopic_ReturnsHelpRows` остаётся в наборе как
+`BlockedByPort`.
+
+Заглушка, возвращающая пустой или выдуманный список тем, не вводится: это
+выглядело бы как поддержка, которой нет. D-005 (CSV/FILE-функции) это решение
+не расширяет.
+
+### D-028. Команда `RUNSCRIPT` — вне scope
+
+Указание пользователя от 2026-10-27: **«вообще ранскрипт нафиг»**. SQL-команда
+`RUNSCRIPT FROM ...`, её `CHARSET`/`QUIRKS_MODE`/compression-опции и чтение
+SQL-скрипта из файла не портируются. Тесты `RunscriptCommandTests` остаются
+в наборе как `BlockedByPort` и не удаляются.
+
+Это не отменяет `SCRIPT TO` и остальные опции `SCRIPT`: генерация SQL-дампа
+и его выполнение — разные команды. Заглушка, которая делает вид, что файл
+выполнен, не вводится.
+
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 
 ### P-007. `ROWNUM` в DML — текущей команды нет

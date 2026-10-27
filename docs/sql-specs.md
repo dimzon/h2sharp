@@ -18,30 +18,36 @@
 
 Текущее рабочее дерево после разбора тестовых ожиданий, info schema и первой DDL/utility-партии.
 
-* Полный набор: **864 / 952**, 88 падений.
-* Зелёный прогон `--filter "Category!=BlockedByPort"`: **862 / 911**, 49 падений.
-* `BlockedByPort`: **41** тест. D-004 users/roles/grants — 25 (включая info-schema
+* Полный набор: **880 / 952**, 72 падения.
+* Зелёный прогон `--filter "Category!=BlockedByPort"`: **878 / 905**, 27 падений.
+* `BlockedByPort`: **47** тестов. D-004 users/roles/grants — 25 (включая info-schema
   Users/Roles/Rights/TablePrivileges/ColumnPrivileges), Java info-schema
   Routines/Parameters/Triggers — 3, CSV/FILE D-005 — 6, D-002 collation — 2,
-  memory P-003 — 2, DB_OBJECT_SQL/DATA_TYPE_SQL/ESTIMATED_ENVELOPE — 3.
+  memory P-003 — 2, DB_OBJECT_SQL/DATA_TYPE_SQL/ESTIMATED_ENVELOPE — 3,
+  `SCRIPT CIPHER` D-026 — 2, `HELP` D-027 — 1, `RUNSCRIPT` D-028 — 3.
   Неподдерживаемые info-схемы остаются читаемыми и пустыми.
 
 | Область | Прошло (полный) | Всего | Прошло (без BlockedByPort) | Всего |
 |---|---:|---:|---:|---:|
-| `Commands/` | 194 | 259 | 194 | 237 |
-| `Functions/` | 310 | 325 | 308 | 316 |
-| `Grammar/` | 252 | 263 | 252 | 261 |
+| `Commands/` | 210 | 259 | 210 | 233 |
+| `Functions/` | 316 | 325 | 314 | 316 |
+| `Grammar/` | 257 | 263 | 257 | 259 |
 | `Datatypes/` | 66 | 66 | 66 | 66 |
-| `SystemTables/` | 28 | 37 | 28 | 37 |
+| `SystemTables/` | 29 | 37 | 29 | 29 |
 | `Dml/` | 2 | 2 | 2 | 2 |
 
-Последний срез закрыл ещё 9 тестов: `CREATE/DROP CONSTANT` и `INFORMATION_SCHEMA.CONSTANTS`,
-ссылки на поля `ROW`/JSON (`FieldReference`), `UPDATE ... ORDER BY` (H2 его принимает,
-но игнорирует) и `DELETE ... FETCH` (без `ORDER BY`: H2 2.5 отвергает его в DELETE).
+Последние срезы закрыли 16 тестов: `TO_CHAR`, `FORMATDATETIME` и
+`PARSEDATETIME` (общие шаблоны H2 совпадают с .NET; Java-only поля не переводятся),
+`TRUNC(timestamp)`, `ANALYZE`, `ALTER TYPE ADD VALUE`, `CREATE SYNONYM` и
+`INFORMATION_SCHEMA.SYNONYMS`, три формы `AT TIME ZONE`/`AT LOCAL`, именованные
+зоны в timestamp-литералах, `INSERT ... VALUES ROW(...)`, `MERGE` в
+data-change delta table, рекурсивный CTE и `SELECT ... FOR UPDATE` с MVStore
+row locking.
 
-Оставшиеся 49 зелёных падений — это в основном непрочитанный синтаксис и команды,
+Оставшиеся 27 зелёных падений — это в основном непрочитанный синтаксис и команды,
 явные `TODOException` и отдельные function/value gaps. CSV/FILE вынесены в D-005;
-неподдерживаемые info-схемы (users/roles/routines/triggers) теперь читаются пустыми,
+`SCRIPT CIPHER`, `HELP` и `RUNSCRIPT` — в D-026/D-027/D-028;
+неподдерживаемые info-схемы (users/roles/routines/triggers) читаются пустыми,
 а их тесты переведены в `BlockedByPort`. `ENCRYPT`/`DECRYPT` закрыты отдельным
 пакетом `H2Sharp.Crypto` через `UseCrypto()`.
 
@@ -52,15 +58,11 @@
 | `CreateTriggerCommandTests` | 6 | triggers |
 | `CreateLinkedTableCommandTests` | 5 | linked tables |
 | `ScriptCommandTests` | 5 | SCRIPT-опции |
-| `DateTimeFunctionTests` | 5 | `TO_CHAR`, `FORMATDATETIME`, `PARSEDATETIME` |
 | `CreateRoutineCommandTests` | 4 | routines/aliases |
-| `CreateTableCommandTests` | 4 | TEMP/ENGINE/NOT PERSISTENT |
-| `StatementGrammarTests` | 4 | data-change delta/MERGE, INSERT ROW, script cipher/compression |
-| `DropObjectCommandTests` | 4 | `DROP AGGREGATE/ALIAS/MATERIALIZED VIEW/TRIGGER` |
-| `ExpressionTests` | 4 | time zone, script cipher, UDF alias |
-| `RunscriptCommandTests` | 3 | RUNSCRIPT |
-| `CreateMaterializedViewCommandTests` | 3 | materialized views |
-| остальные | 11 | schema options, info `SYNONYMS`, ALTER TYPE/VIEW, ANALYZE/HELP, FOR UPDATE, recursive CTE |
+| `DropObjectCommandTests` | 3 | `DROP AGGREGATE/ALIAS/TRIGGER` |
+| `StatementGrammarTests` | 1 | script compression |
+| `ExpressionTests` | 1 | Java UDF alias |
+| `TableFunctionTests` | 2 | `LINK_SCHEMA` |
 
 `AggregateMiscTests` теперь **35/35**: перенесены `RANK`, `DENSE_RANK`, `PERCENT_RANK`,
 `CUME_DIST`. Для `CUME_DIST(2)` на `1,2,3` ожидание исправлено на `0.75`: H2 2.5 включает
@@ -71,10 +73,10 @@
 эталонной форме — `FROM LAST` после закрывающей скобки; вариант внутри скобок H2 2.5.259
 отвергает.
 
-Приоритет на следующий заход: закрыть 69 syntax-дефектов (это не «не портировано», а
-неполный парсер), затем 31 явный TODO. D-004-команды users/roles/privileges вынесены в
-`BlockedByPort`; INFORMATION_SCHEMA-представления прав остаются активными и возвращают
-пустые данные.
+Приоритет на следующий заход: 21 тест Java/JDBC-границы (triggers, aliases/aggregates,
+linked tables, `LINK_SCHEMA`), затем 5 тестов `SCRIPT` и 1 compression. D-004-команды
+users/roles/privileges вынесены в `BlockedByPort`; INFORMATION_SCHEMA-представления прав
+остаются активными и возвращают пустые данные.
 
 ## Устройство
 

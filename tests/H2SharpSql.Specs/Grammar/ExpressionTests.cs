@@ -142,6 +142,7 @@ public sealed class ExpressionTests
 
     /// <summary>docs/grammar.html:2197 — AES</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void Cipher_Aes_IsAcceptedByScript() // GRM-2197
     {
         using IDbConnection connection = TestDatabase.Open();

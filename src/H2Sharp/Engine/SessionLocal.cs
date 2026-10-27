@@ -240,7 +240,7 @@ public sealed class SessionLocal : Session
     /// the isolation level — and keeps the store's defaults for the rest.
     /// </remarks>
     public MvStore.Tx.Transaction GetTransaction()
-        => Transaction ??= GetDatabase().GetStore().GetTransactionStore().Begin(isolationLevel);
+        => Transaction ??= GetDatabase().GetStore().GetTransactionStore().Begin(lockTimeout, GetId(), isolationLevel);
 
     private Dictionary<string, Savepoint>? savepoints;
 
@@ -332,6 +332,7 @@ public sealed class SessionLocal : Session
             }
         }
         savepoints = null;
+        UnlockAllTables();
     }
 
     /// <summary>
@@ -405,6 +406,7 @@ public sealed class SessionLocal : Session
         }
         savepoints = null;
         queryCache?.Clear();
+        UnlockAllTables();
     }
 
     /// <summary>
@@ -624,6 +626,7 @@ public sealed class SessionLocal : Session
         }
 
         closed = true;
+        UnlockAllTables();
         _ = database.RemoveSession(this);
     }
 
@@ -1097,6 +1100,8 @@ public sealed class SessionLocal : Session
     /// <summary>The lock timeout, in milliseconds.</summary>
     private int lockTimeout;
 
+    private readonly HashSet<H2Sharp.Tables.Table> lockedTables = [];
+
     /// <summary>The delay between commands, in milliseconds.</summary>
     private int throttleMs;
 
@@ -1184,6 +1189,36 @@ public sealed class SessionLocal : Session
     public int GetLockTimeout()
     {
         return lockTimeout;
+    }
+
+    /// <summary>Registers a table locked by the current transaction.</summary>
+    /// <param name="table">the table</param>
+    public void RegisterTableAsLocked(H2Sharp.Tables.Table table)
+    {
+        lock (lockedTables)
+        {
+            _ = lockedTables.Add(table);
+        }
+    }
+
+    private void UnlockAllTables()
+    {
+        H2Sharp.Tables.Table[] tables;
+        lock (lockedTables)
+        {
+            if (lockedTables.Count == 0)
+            {
+                return;
+            }
+
+            tables = [.. lockedTables];
+            lockedTables.Clear();
+        }
+
+        foreach (H2Sharp.Tables.Table table in tables)
+        {
+            table.Unlock(this);
+        }
     }
 
     /// <summary>

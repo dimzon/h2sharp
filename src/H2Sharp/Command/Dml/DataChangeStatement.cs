@@ -163,11 +163,7 @@ public abstract class DataChangeStatement : Prepared
     /// </summary>
     /// <remarks>
     /// The reference locks the row when the table is row-lockable and rechecks the condition on
-    /// the row that came back from the lock. The port has no row locking — a lock is a
-    /// transaction feature that is not ported — so the row the filter holds is the row, and the
-    /// recheck has nothing to recheck against. The reference's own body says the same when the
-    /// table is not row-lockable, which is why this is the same answer for the tables the port
-    /// has, and not a shortcut.
+    /// the row that came back from the lock.
     /// </remarks>
     /// <param name="targetTableFilter">the table being scanned</param>
     /// <param name="condition">the condition</param>
@@ -175,7 +171,27 @@ public abstract class DataChangeStatement : Prepared
     protected Row? LockAndRecheckCondition(TableFilter targetTableFilter, Expression? condition)
     {
         ArgumentNullException.ThrowIfNull(targetTableFilter);
-        _ = condition;
-        return targetTableFilter.Get();
+        Table table = targetTableFilter.GetTable();
+        Row? row = targetTableFilter.Get();
+        if (row is not null && table.IsRowLockable())
+        {
+            Row? lockedRow = table.LockRow(GetSession(), row, -1);
+            if (lockedRow is null)
+            {
+                return null;
+            }
+
+            if (!row.HasSharedData(lockedRow))
+            {
+                row = lockedRow;
+                targetTableFilter.Set(row);
+                if (condition is not null && !condition.GetBooleanValue(GetSession()))
+                {
+                    return null;
+                }
+            }
+        }
+
+        return row;
     }
 }

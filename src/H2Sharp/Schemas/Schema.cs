@@ -68,6 +68,9 @@ public sealed class Schema : DbObject
     private readonly ConcurrentDictionary<string, Constant> constants =
         new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, TableSynonym> synonyms =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly bool system;
 
     private readonly string ownerName;
@@ -159,6 +162,11 @@ public sealed class Schema : DbObject
             database.RemoveSchemaObject(session, tables[0]);
         }
 
+        foreach (TableSynonym synonym in GetAllSynonyms().ToArray())
+        {
+            database.RemoveSchemaObject(session, synonym);
+        }
+
         foreach (Domain domain in GetAllDomains().ToArray())
         {
             database.RemoveSchemaObject(session, domain);
@@ -237,6 +245,35 @@ public sealed class Schema : DbObject
     }
 
     /// <summary>
+    /// Finds a table or view, resolving a synonym to its backing table.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="name">the object name</param>
+    /// <param name="resolveMaterializedView">whether to return the underlying table of a
+    /// materialized view</param>
+    /// <returns>the table or view, or null</returns>
+    public Table? ResolveTableOrView(
+        SessionLocal? session, string name, bool resolveMaterializedView = true)
+    {
+        Table? table = FindTableOrView(session, name);
+        if (table is null)
+        {
+            TableSynonym? synonym = FindSynonym(name);
+            if (synonym is not null)
+            {
+                return synonym.GetSynonymFor();
+            }
+        }
+
+        if (resolveMaterializedView && table is MaterializedView materializedView)
+        {
+            return materializedView.GetUnderlyingTable();
+        }
+
+        return table;
+    }
+
+    /// <summary>
     /// Try to find a constraint with this name. This method returns null if no constraint with
     /// this name exists.
     /// </summary>
@@ -311,6 +348,24 @@ public sealed class Schema : DbObject
 
     /// <summary>Gets all domains.</summary>
     public List<Domain> GetAllDomains() => [.. domains.Values];
+
+    /// <summary>Finds a synonym by name.</summary>
+    public TableSynonym? FindSynonym(string name)
+        => synonyms.TryGetValue(name, out TableSynonym? synonym) ? synonym : null;
+
+    /// <summary>Gets all synonyms of this schema.</summary>
+    public List<TableSynonym> GetAllSynonyms() => [.. synonyms.Values];
+
+    /// <summary>Creates a synonym from its definition, as Schema.createSynonym.</summary>
+    public TableSynonym CreateSynonym(Command.Ddl.CreateSynonymData data)
+    {
+        lock (GetDatabase())
+        {
+            GetDatabase().LockMeta(data.Session);
+            data.Schema = this;
+            return new TableSynonym(data);
+        }
+    }
 
     /// <summary>Finds a constant by name.</summary>
     public Constant? FindConstant(string name)
@@ -477,6 +532,18 @@ public sealed class Schema : DbObject
                     return;
                 }
 
+            case TableSynonym synonym:
+                {
+                    string name = synonym.GetName()!;
+                    if (!synonyms.TryAdd(name, synonym))
+                    {
+                        throw DbException.GetInternalError("object already exists: " + name);
+                    }
+
+                    FreeUniqueName(name);
+                    return;
+                }
+
             default:
                 throw new TODOException("Schema.add: the object kind is not ported");
         }
@@ -574,6 +641,18 @@ public sealed class Schema : DbObject
                     return;
                 }
 
+            case TableSynonym synonym:
+                {
+                    string objName = synonym.GetName()!;
+                    if (!synonyms.TryRemove(objName, out _))
+                    {
+                        throw DbException.GetInternalError("not found: " + objName);
+                    }
+
+                    FreeUniqueName(objName);
+                    return;
+                }
+
             default:
                 throw new TODOException("Schema.remove: the object kind is not ported");
         }
@@ -614,7 +693,7 @@ public sealed class Schema : DbObject
     /// </summary>
     public bool IsEmpty()
     {
-        return tablesAndViews.IsEmpty && indexes.IsEmpty && constraints.IsEmpty;
+        return tablesAndViews.IsEmpty && indexes.IsEmpty && constraints.IsEmpty && synonyms.IsEmpty;
     }
 
     /// <summary>

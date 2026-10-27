@@ -151,7 +151,7 @@ public sealed class Select : Query
 
     private bool isFetchDistinct;
 
-    private string? forUpdate;
+    private ForUpdate? forUpdate;
 
     private readonly List<TableFilter> filters = [];
 
@@ -643,7 +643,7 @@ public sealed class Select : Query
         Expression? qualifyExpression = qualify ?? (qualifyIndex >= 0 ? exprList[qualifyIndex] : null);
         if (qualifyExpression is not null) qualifyExpression.GetNonAliasExpression().GetUnenclosedSql(builder.Append("\nQUALIFY "), sqlFlags);
         AppendEndOfQueryToSql(builder, sqlFlags, exprList, withTies);
-        if (forUpdate is not null) builder.Append('\n').Append(forUpdate);
+        if (forUpdate is not null) _ = forUpdate.GetSql(builder.Append('\n'));
         if ((sqlFlags & HasSql.AddPlanInformation) != 0)
         {
             if (isQuickAggregateQuery) builder.Append("\n/* direct lookup */");
@@ -850,9 +850,9 @@ public sealed class Select : Query
     /// </remarks>
     public override ResultInterface? Run(long limit, ResultTarget? target)
     {
-        if (windows is not null || isDistinct || forUpdate is not null)
+        if (windows is not null || isDistinct)
         {
-            throw new TODOException("Select.query: windowed, distinct on and locking queries are not ported");
+            throw new TODOException("Select.query: windowed and distinct on queries are not ported");
         }
 
         long offset;
@@ -1401,13 +1401,44 @@ public sealed class Select : Query
     /// <summary>
     /// Whether the current row survives locking for update.
     /// </summary>
-    /// <remarks>
-    /// Not ported: it locks the row in every table and re-checks the condition on what came
-    /// back, and row locking does not exist here yet.
-    /// </remarks>
-    /// <returns>never returns</returns>
+    /// <returns>true when the row is selected and locked</returns>
     private bool IsConditionMetForUpdate()
-        => throw new TODOException("Select.isConditionMetForUpdate: row locking is not ported");
+    {
+        if (!IsConditionMet())
+        {
+            return false;
+        }
+
+        bool notChanged = true;
+        foreach (TableFilter tableFilter in filters)
+        {
+            if (tableFilter.IsJoinOuter() || tableFilter.IsJoinOuterIndirect())
+            {
+                continue;
+            }
+
+            Row? row = tableFilter.Get();
+            Table table = tableFilter.GetTable();
+            if (!table.IsRowLockable())
+            {
+                continue;
+            }
+
+            Row? lockedRow = table.LockRow(session, row!, forUpdate!.GetTimeoutMillis());
+            if (lockedRow is null)
+            {
+                return false;
+            }
+
+            if (!row!.HasSharedData(lockedRow))
+            {
+                tableFilter.Set(lockedRow);
+                notChanged = false;
+            }
+        }
+
+        return notChanged || IsConditionMet();
+    }
 
     /// <inheritdoc/>
     public override int GetCommandType() => CommandInterface.Select;
@@ -1457,7 +1488,7 @@ public sealed class Select : Query
 
     /// <summary>Sets the table this statement locks.</summary>
     /// <param name="forUpdate">the table name</param>
-    public void SetForUpdate(string? forUpdate) => this.forUpdate = forUpdate;
+    public void SetForUpdate(ForUpdate? forUpdate) => this.forUpdate = forUpdate;
 
     /// <summary>Sets the table filters of the plan.</summary>
     /// <param name="filters">the filters</param>

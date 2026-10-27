@@ -321,6 +321,13 @@ public sealed class DataType
     }
 
     /// <summary>
+    /// Checks whether the given value type is a large object (BLOB or CLOB).
+    /// </summary>
+    /// <param name="type">the value type</param>
+    /// <returns>true if the value type is a lob type</returns>
+    public static bool IsLargeObject(int type) => type == Value.Blob || type == Value.Clob;
+
+    /// <summary>
     /// The type of the given value type.
     /// </summary>
     /// <param name="type">the value type</param>

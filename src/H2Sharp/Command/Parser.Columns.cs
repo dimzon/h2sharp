@@ -636,7 +636,8 @@ public sealed partial class Parser
         currentPrepared = command;
         ExpectWord("INTO");
         string tableName = ReadIdentifierWithSchema(session!, out Schema schema);
-        Table table = schema.GetTableOrView(session, tableName);
+        Table table = schema.ResolveTableOrView(session, tableName)
+            ?? throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
         command.SetTable(table);
         List<Column>? columns = null;
         if (ReadIf(Token.OpenParen))
@@ -695,13 +696,34 @@ public sealed partial class Parser
         {
             do
             {
-                Expect(Token.OpenParen, "(");
                 List<Expression> values = [];
-                if (!ReadIf(Token.CloseParen))
+                bool multiColumn;
+                int rowIndex = position;
+                if (IsWord("ROW"))
                 {
-                    do { values.Add(ReadExpressionOrDefault()); } while (ReadIf(Token.Comma));
-                    Expect(Token.CloseParen, ")");
+                    multiColumn = ReadIf(Token.OpenParen);
+                    if (!multiColumn)
+                    {
+                        position = rowIndex;
+                    }
                 }
+                else
+                {
+                    multiColumn = ReadIf(Token.OpenParen);
+                }
+
+                if (multiColumn)
+                {
+                    if (!ReadIf(Token.CloseParen))
+                    {
+                        do { values.Add(ReadExpressionOrDefault()); } while (ReadIfMore());
+                    }
+                }
+                else
+                {
+                    values.Add(ReadExpressionOrDefault());
+                }
+
                 command.AddRow(values.ToArray());
             }
             while (ReadIf(Token.Comma));

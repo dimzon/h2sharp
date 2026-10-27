@@ -50,6 +50,7 @@ public sealed class Delete : FilteredDataChangeStatement
         SessionLocal session = GetSession();
         Tables.TableFilter filter = GetTableFilter();
         Tables.Table table = filter.GetTable();
+        _ = table.Lock(session, Tables.Table.WriteLock);
         filter.StartQuery(session);
         filter.Reset();
         List<Result.Row> matched = [];
@@ -75,7 +76,11 @@ public sealed class Delete : FilteredDataChangeStatement
             session.SetCurrentRow(row);
             if (row is not null && (condition is null || condition.GetBooleanValue(session)))
             {
-                matched.Add(row);
+                row = LockAndRecheckCondition(filter, condition);
+                if (row is not null)
+                {
+                    matched.Add(row);
+                }
             }
         }
 

@@ -154,6 +154,11 @@ public class BinaryOperation : Operation2
         if ((l == Value.Null && r == Value.Null) || (l == Value.Unknown && r == Value.Unknown))
         {
             // (? + ?) - the decimal is the safest type, and a string is not a number.
+            if (opType == OpType.PLUS && session.GetMode().AllowPlusForStringConcat)
+            {
+                return new ConcatenationOperation(left, right).Optimize(session);
+            }
+
             type = TypeInfo.TypeNumericFloatingPoint;
         }
         else if (DataType.IsIntervalType(l) || DataType.IsIntervalType(r))
@@ -184,12 +189,10 @@ public class BinaryOperation : Operation2
             {
                 type = TypeInfo.TypeInteger;
             }
-            else if (DataType.IsCharacterStringType(dataType))
+            else if (DataType.IsCharacterStringType(dataType)
+                && opType == OpType.PLUS && session.GetMode().AllowPlusForStringConcat)
             {
-                // The reference joins two strings with a plus when the mode allows it; the
-                // regular mode does not, and this port has no other mode.
-                throw new TODOException(
-                    "BinaryOperation.optimize: the concatenation of two strings is not ported");
+                return new ConcatenationOperation(left, right).Optimize(session);
             }
             else
             {

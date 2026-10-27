@@ -108,11 +108,14 @@ public sealed class TestMvcc2 : TestDb
         using (DbTransaction transaction = conn.BeginTransaction())
         {
             stat.Transaction = transaction;
+            // Modified (scheduling): lock the row on conn before the competing task starts.
+            // The reference relies on the JVM thread-start cost for this order; .NET can start
+            // the task first, which makes the test assert the opposite winner.
+            AssertEquals(1, ExecuteUpdate(stat, "update test set name = 'Hi'"));
             Task t = Task.Run(() =>
             {
                 AssertEquals(1, ExecuteUpdate(stat2, "update test set name = 'Hallo'"));
             });
-            AssertEquals(1, ExecuteUpdate(stat, "update test set name = 'Hi'"));
             transaction.Commit();
             t.Wait();
         }
@@ -150,21 +153,24 @@ public sealed class TestMvcc2 : TestDb
             transaction.Commit();
         }
 
+        // Modified (transaction shape): JDBC with autocommit off opens the next transaction
+        // implicitly after commit. The ADO port must keep this one open until conn2 probes it.
         using (DbTransaction transaction = conn.BeginTransaction())
         {
             stat.Transaction = transaction;
             Execute(stat, "select * from test where id = 3 for update");
-            transaction.Commit();
-        }
 
-        using (DbTransaction transaction = conn2.BeginTransaction())
-        {
-            DbCommand stat2 = conn2.CreateCommand();
-            stat2.Transaction = transaction;
-            Execute(stat2, "select * from test where id = 4 for update");
-            AssertThrows(ErrorCode.LockTimeout1, stat2,
-                "select * from test where id = 3 for update");
-            transaction.Rollback();
+            using (DbTransaction transaction2 = conn2.BeginTransaction())
+            {
+                DbCommand stat2 = conn2.CreateCommand();
+                stat2.Transaction = transaction2;
+                Execute(stat2, "select * from test where id = 4 for update");
+                AssertThrows(ErrorCode.LockTimeout1, stat2,
+                    "select * from test where id = 3 for update");
+                transaction2.Rollback();
+            }
+
+            transaction.Commit();
         }
     }
 

@@ -150,6 +150,7 @@ public sealed class Insert : CommandWithValues, ResultTarget
     {
         SessionLocal session = GetSession();
         Table target = table ?? throw Message.DbException.GetInternalError("INSERT without a table");
+        _ = target.Lock(session, Table.WriteLock);
         Column[] targetColumns = columns
             ?? throw Message.DbException.GetInternalError("INSERT without columns");
         rowNumber = 0;

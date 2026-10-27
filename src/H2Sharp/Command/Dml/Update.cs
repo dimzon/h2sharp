@@ -70,6 +70,7 @@ public sealed class Update : FilteredDataChangeStatement
         SessionLocal session = GetSession();
         Tables.TableFilter filter = GetTableFilter();
         Tables.Table table = filter.GetTable();
+        _ = table.Lock(session, Tables.Table.WriteLock);
         SetClauseList assignments = setClauseList
             ?? throw Message.DbException.GetInternalError("UPDATE without assignments");
         filter.StartQuery(session);
@@ -97,6 +98,12 @@ public sealed class Update : FilteredDataChangeStatement
             Result.Row? row = filter.Get();
             session.SetCurrentRow(row);
             if (row is null || (condition is not null && !condition.GetBooleanValue(session)))
+            {
+                continue;
+            }
+
+            row = LockAndRecheckCondition(filter, condition);
+            if (row is null)
             {
                 continue;
             }

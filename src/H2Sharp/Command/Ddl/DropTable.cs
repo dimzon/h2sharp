@@ -117,6 +117,7 @@ public sealed class DropTable : DefineCommand
                 }
             }
 
+            _ = table.Lock(session, Tables.Table.ExclusiveLock);
             table.SetModified();
             db.LockMeta(session);
             db.RemoveSchemaObject(session, table);

@@ -15,6 +15,7 @@ public sealed class HelpCommandTests
 {
     /// <summary>docs/commands.html:2410 — HELP [ anything [...] ]</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void Help_WithTopic_ReturnsHelpRows() // CMD-2410
     {
         using IDbConnection connection = TestDatabase.Open();
