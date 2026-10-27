@@ -73,10 +73,11 @@ public sealed class DropTable : DefineCommand
     /// <returns>0</returns>
     public override long Update()
     {
+        SessionLocal session = GetSession();
         List<(Schema Schema, Tables.Table Table)> drops = [];
         foreach ((Schema schema, string name) in tables)
         {
-            Tables.Table? table = schema.FindTableOrView(null, name);
+            Tables.Table? table = schema.FindTableOrView(session, name);
             if (table is null)
             {
                 if (!ifExists)
@@ -95,13 +96,12 @@ public sealed class DropTable : DefineCommand
             return 0;
         }
 
-        SessionLocal session = GetSession();
         Engine.Database db = session.GetDatabase();
         foreach ((Schema schema, Tables.Table resolved) in drops)
         {
             // The table may be gone by now: a cascade drop of an earlier table in this
             // statement takes its dependent views with it, and one of them may be named here.
-            Tables.Table? table = schema.FindTableOrView(null, resolved.GetTableName());
+            Tables.Table? table = schema.FindTableOrView(session, resolved.GetTableName());
             if (table is null)
             {
                 continue;
@@ -115,6 +115,14 @@ public sealed class DropTable : DefineCommand
                     throw Message.DbException.Get(Api.ErrorCode.CannotDrop2, table.GetTableName(),
                         views[0].GetTableName());
                 }
+            }
+
+            if (table.IsTemporary() && !table.IsGlobalTemporary())
+            {
+                session.RemoveLocalTempTable(table);
+                table.RemoveChildrenAndResources(session);
+                session.ClearQueryCache();
+                continue;
             }
 
             _ = table.Lock(session, Tables.Table.ExclusiveLock);

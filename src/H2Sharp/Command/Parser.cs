@@ -232,6 +232,12 @@ public sealed class CreateTableStatement : Statement
     /// <summary>Whether the table is transactional.</summary>
     public bool Transactional { get; set; }
 
+    /// <summary>Whether the table is dropped at commit.</summary>
+    public bool OnCommitDrop { get; set; }
+
+    /// <summary>Whether the table is truncated at commit.</summary>
+    public bool OnCommitTruncate { get; set; }
+
     /// <summary>The table engine, or null.</summary>
     public string? TableEngine { get; set; }
 
@@ -8615,13 +8621,20 @@ public sealed partial class Parser
 
         if (statement.Temporary)
         {
-            if (IsWord("ON") && IsWord("COMMIT"))
+            if (IsWord("ON"))
             {
-                throw new TODOException(
-                    "Parser.readCreateTable: ON COMMIT for temporary tables is not ported");
+                ExpectWord("COMMIT");
+                if (IsWord("DROP"))
+                {
+                    statement.OnCommitDrop = true;
+                }
+                else if (IsWord("DELETE"))
+                {
+                    ExpectWord("ROWS");
+                    statement.OnCommitTruncate = true;
+                }
             }
-
-            if (IsWord("NOT"))
+            else if (IsWord("NOT"))
             {
                 if (IsWord("PERSISTENT"))
                 {

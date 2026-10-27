@@ -1074,7 +1074,14 @@ public sealed class MVTable : Table
             index.Remove(session);
             if (index.GetName() is not null)
             {
-                database!.RemoveSchemaObject(session, index);
+                if (IsTemporary() && !IsGlobalTemporary())
+                {
+                    session.RemoveLocalTempTableIndex(index);
+                }
+                else
+                {
+                    database!.RemoveSchemaObject(session, index);
+                }
             }
 
             // needed for session temporary indexes

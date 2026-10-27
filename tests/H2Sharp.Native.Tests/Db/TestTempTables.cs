@@ -16,6 +16,7 @@
 // check expressed as "closing one reader does not disturb the survivor", which is what
 // the scroll re-read verified in the reference.
 using H2Sharp.Api;
+using H2Sharp.Data;
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Db;
@@ -74,8 +75,6 @@ public sealed class TestTempTables : TestDb
         using DbConnection conn = GetConnection("tempTables");
         DbCommand stat = conn.CreateCommand();
         Execute(stat, "create local temporary table test(id identity)");
-        // The reference asks the session for the sequences of the main schema; the count
-        // of INFORMATION_SCHEMA.SEQUENCES is the same answer through the ADO layer.
         AssertEquals(1L, CountSequences(conn));
         Execute(stat, "insert into test default values");
         Execute(stat, "shutdown");
@@ -87,13 +86,7 @@ public sealed class TestTempTables : TestDb
     }
 
     private long CountSequences(DbConnection conn)
-    {
-        DbCommand stat = conn.CreateCommand();
-        stat.CommandText = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SEQUENCES";
-        using DbDataReader rs = stat.ExecuteReader();
-        AssertTrue(rs.Read());
-        return rs.GetInt64(0);
-    }
+        => ((H2Connection)conn).Session!.GetDatabase().GetMainSchema()!.GetAllSequences().Count;
 
     /// <summary>
     /// The reference's testTempFileResultSet and testTempTableResultSet. Two statements

@@ -112,11 +112,6 @@ public sealed class CreateTable : CommandWithColumns
     /// </remarks>
     public override long Update()
     {
-        if (temporary && !globalTemporary || onCommitDrop || onCommitTruncate)
-        {
-            throw new TODOException("CreateTable.update: local temporary tables are not ported");
-        }
-
         if (tableEngine is not null)
         {
             throw Message.DbException.GetUnsupportedException(
@@ -126,6 +121,7 @@ public sealed class CreateTable : CommandWithColumns
         SessionLocal session = GetSession();
         Engine.Database db = session.GetDatabase();
         Schema schema = GetSchema();
+        bool isSessionTemporary = temporary && !globalTemporary;
         if (schema.FindTableOrView(session, tableName) is not null)
         {
             if (ifNotExists)
@@ -166,6 +162,8 @@ public sealed class CreateTable : CommandWithColumns
             TableEngine = tableEngine, TableEngineParams = tableEngineParams,
         };
         Table table = schema.CreateTable(data);
+        table.SetOnCommitDrop(onCommitDrop);
+        table.SetOnCommitTruncate(onCommitTruncate);
 
         // The sequences of the identity columns are created after the table, because the
         // column needs the table to resolve its names, and the expressions of the generated
@@ -173,8 +171,16 @@ public sealed class CreateTable : CommandWithColumns
         // table.
         List<Sequence> sequences = GenerateSequences(columns, temporary);
         table.SetComment(comment);
-        db.LockMeta(session);
-        db.AddSchemaObject(session, table);
+        if (isSessionTemporary)
+        {
+            session.AddLocalTempTable(table);
+            session.ClearQueryCache();
+        }
+        else
+        {
+            db.LockMeta(session);
+            db.AddSchemaObject(session, table);
+        }
         try
         {
             foreach (Column column in columns)
@@ -195,7 +201,16 @@ public sealed class CreateTable : CommandWithColumns
             // The reference also calls checkPowerOff here; there is no power-off path yet.
             try
             {
-                db.RemoveSchemaObject(session, table);
+                if (isSessionTemporary)
+                {
+                    session.RemoveLocalTempTable(table);
+                    table.RemoveChildrenAndResources(session);
+                }
+                else
+                {
+                    db.RemoveSchemaObject(session, table);
+                }
+
                 if (!transactional)
                 {
                     session.Commit(true);

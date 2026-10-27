@@ -512,7 +512,20 @@ public sealed partial class Parser
             command.SetTableEngineParams(parameters);
         }
 
-        if (IsWord("NOT"))
+        if (temporary && IsWord("ON"))
+        {
+            ExpectWord("COMMIT");
+            if (IsWord("DROP"))
+            {
+                command.SetOnCommitDrop();
+            }
+            else if (IsWord("DELETE"))
+            {
+                ExpectWord("ROWS");
+                command.SetOnCommitTruncate();
+            }
+        }
+        else if (IsWord("NOT"))
         {
             ExpectWord("PERSISTENT");
             command.SetPersistData(false);

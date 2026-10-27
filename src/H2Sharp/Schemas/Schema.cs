@@ -229,7 +229,7 @@ public sealed class Schema : DbObject
     public Table? FindTableOrView(SessionLocal? session, string name)
     {
         _ = tablesAndViews.TryGetValue(name, out Table? table);
-        return table;
+        return table ?? session?.FindLocalTempTable(name);
     }
 
     /// <summary>
@@ -439,11 +439,6 @@ public sealed class Schema : DbObject
             {
                 throw new TODOException(
                     "Schema.createTable: custom table engines are not ported: " + data.TableEngine);
-            }
-
-            if (data.Temporary && !data.GlobalTemporary)
-            {
-                throw new TODOException("Schema.createTable: local temporary tables are not ported");
             }
 
             // The port's existing default store table factory is the MVTable constructor.
@@ -742,7 +737,20 @@ public sealed class Schema : DbObject
     {
         if (table.IsTemporary() && !table.IsGlobalTemporary())
         {
-            throw new TODOException("Schema.getUniqueIndexName: session temporary tables are not ported");
+            Dictionary<string, object?> names = new(StringComparer.OrdinalIgnoreCase);
+            foreach (Table temp in session.GetLocalTempTables())
+            {
+                foreach (Index tempIndex in temp.GetIndexes())
+                {
+                    string? name = tempIndex.GetName();
+                    if (name is not null)
+                    {
+                        names[name] = null;
+                    }
+                }
+            }
+
+            return GetUniqueName(table.GetTableName(), names, prefix);
         }
 
         _ = session;
@@ -766,7 +774,20 @@ public sealed class Schema : DbObject
     {
         if (table.IsTemporary() && !table.IsGlobalTemporary())
         {
-            throw new TODOException("Schema.getUniqueConstraintName: session temporary tables are not ported");
+            Dictionary<string, object?> names = new(StringComparer.OrdinalIgnoreCase);
+            foreach (Table temp in session.GetLocalTempTables())
+            {
+                foreach (Constraint tempConstraint in temp.GetConstraints())
+                {
+                    string? name = tempConstraint.GetName();
+                    if (name is not null)
+                    {
+                        names[name] = null;
+                    }
+                }
+            }
+
+            return GetUniqueName(table.GetTableName(), names, "CONSTRAINT_");
         }
 
         _ = session;

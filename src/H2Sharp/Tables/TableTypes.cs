@@ -1045,6 +1045,10 @@ public abstract class Table
     /// </remarks>
     private bool temporary;
 
+    private bool onCommitDrop;
+
+    private bool onCommitTruncate;
+
     /// <summary>Whether this temporary table is global.</summary>
     private bool globalTemporary;
 
@@ -1056,6 +1060,22 @@ public abstract class Table
     {
         return temporary;
     }
+
+    /// <summary>Whether this table is dropped at commit.</summary>
+    /// <returns>true if it is dropped at commit</returns>
+    public bool GetOnCommitDrop() => onCommitDrop;
+
+    /// <summary>Sets whether this table is dropped at commit.</summary>
+    /// <param name="value">the new value</param>
+    public void SetOnCommitDrop(bool value) => onCommitDrop = value;
+
+    /// <summary>Whether this table is truncated at commit.</summary>
+    /// <returns>true if it is truncated at commit</returns>
+    public bool GetOnCommitTruncate() => onCommitTruncate;
+
+    /// <summary>Sets whether this table is truncated at commit.</summary>
+    /// <param name="value">the new value</param>
+    public void SetOnCommitTruncate(bool value) => onCommitTruncate = value;
 
     /// <summary>
     /// Tell this table that it is temporary or not.
@@ -2261,12 +2281,16 @@ public abstract class Table
                 .GetDatabase().RemoveSchemaObject(session, synonym);
         }
 
+        bool sessionTemporary = IsTemporary() && !IsGlobalTemporary();
         while (constraints is not null && constraints.Count > 0)
         {
             Constraint constraint = constraints[0];
             constraints.RemoveAt(0);
-            (GetSchema() ?? throw new TODOException("Table.removeChildrenAndResources: no schema"))
-                .GetDatabase().RemoveSchemaObject(session, constraint);
+            if (!sessionTemporary)
+            {
+                (GetSchema() ?? throw new TODOException("Table.removeChildrenAndResources: no schema"))
+                    .GetDatabase().RemoveSchemaObject(session, constraint);
+            }
         }
 
         // The sequences of the identity columns belong to the table and go with it.

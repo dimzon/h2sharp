@@ -447,8 +447,8 @@ public class AlterTableAddConstraint : AlterTable
     {
         if (table.IsTemporary() && !table.IsGlobalTemporary())
         {
-            throw new TODOException(
-                "AlterTableAddConstraint.addConstraintToTable: session temporary tables are not ported");
+            table.AddConstraint(constraint);
+            return;
         }
 
         db.AddSchemaObject(GetSession(), constraint);

@@ -548,6 +548,7 @@ public class Column : Typed
 
         identityOptions.SetDataType(type);
         Schemas.Sequence seq = new(session, schema, id, sequenceName, identityOptions, true);
+        seq.SetTemporary(temporary);
         session.GetDatabase().AddSchemaObject(session, seq);
         SetSequence(seq, isGeneratedAlways);
     }

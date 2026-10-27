@@ -14,6 +14,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using H2Sharp.Result;
@@ -333,6 +334,10 @@ public sealed class SessionLocal : Session
         }
         savepoints = null;
         UnlockAllTables();
+        if (!ddl)
+        {
+            CleanTempTables(false);
+        }
     }
 
     /// <summary>
@@ -407,6 +412,7 @@ public sealed class SessionLocal : Session
         savepoints = null;
         queryCache?.Clear();
         UnlockAllTables();
+        CleanTempTables(false);
     }
 
     /// <summary>
@@ -625,8 +631,18 @@ public sealed class SessionLocal : Session
             return;
         }
 
+        if (HasPreparedTransaction())
+        {
+            UnlockAllTables();
+        }
+        else
+        {
+            Rollback();
+            CleanTempTables(true);
+            Commit(true);
+        }
+
         closed = true;
-        UnlockAllTables();
         _ = database.RemoveSession(this);
     }
 
@@ -641,14 +657,37 @@ public sealed class SessionLocal : Session
     /// <summary>
     /// Registers an index of a session-local temporary table.
     /// </summary>
-    /// <remarks>
-    /// Not ported. It keeps the index by name and refuses a duplicate, which needs the
-    /// session's temporary-table registry — and there is no temporary-table lifecycle here
-    /// yet to register against.
-    /// </remarks>
     /// <param name="index">the index</param>
     public void AddLocalTempTableIndex(H2Sharp.Indexes.Index index)
-        => throw new TODOException("SessionLocal.addLocalTempTableIndex");
+    {
+        string? name = index.GetName();
+        if (name is null || !localTempTableIndexes.TryAdd(name, index))
+        {
+            throw DbException.GetInternalError(name ?? "index without name");
+        }
+    }
+
+    /// <summary>Finds an index of a local temporary table.</summary>
+    /// <param name="name">the index name</param>
+    /// <returns>the index, or null</returns>
+    public H2Sharp.Indexes.Index? FindLocalTempTableIndex(string name)
+        => localTempTableIndexes.TryGetValue(name, out H2Sharp.Indexes.Index? index) ? index : null;
+
+    /// <summary>Gets all indexes of local temporary tables.</summary>
+    /// <returns>the indexes by name</returns>
+    public Dictionary<string, H2Sharp.Indexes.Index> GetLocalTempTableIndexes()
+        => localTempTableIndexes;
+
+    /// <summary>Removes an index of a local temporary table.</summary>
+    /// <param name="index">the index</param>
+    public void RemoveLocalTempTableIndex(H2Sharp.Indexes.Index index)
+    {
+        string? name = index.GetName();
+        if (name is not null)
+        {
+            _ = localTempTableIndexes.Remove(name);
+        }
+    }
 
     /// <summary>
     /// Compares two values, answering the SQL rule for NULL: a comparison with NULL is
@@ -808,6 +847,9 @@ public sealed class SessionLocal : Session
     /// but correct, and is cheaper than tracking which object each cached command depended on.
     /// </remarks>
     private SmallLRUCache<string, H2Sharp.Command.Command>? queryCache;
+
+    /// <summary>Clears the cached commands of this session.</summary>
+    public void ClearQueryCache() => queryCache?.Clear();
 
     private long modificationMetaId;
 
@@ -1102,6 +1144,12 @@ public sealed class SessionLocal : Session
 
     private readonly HashSet<H2Sharp.Tables.Table> lockedTables = [];
 
+    private readonly Dictionary<string, H2Sharp.Tables.Table> localTempTables =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly Dictionary<string, H2Sharp.Indexes.Index> localTempTableIndexes =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>The delay between commands, in milliseconds.</summary>
     private int throttleMs;
 
@@ -1189,6 +1237,55 @@ public sealed class SessionLocal : Session
     public int GetLockTimeout()
     {
         return lockTimeout;
+    }
+
+    /// <summary>Finds a local temporary table of this session.</summary>
+    /// <param name="name">the table name</param>
+    /// <returns>the table, or null</returns>
+    public H2Sharp.Tables.Table? FindLocalTempTable(string name)
+        => localTempTables.TryGetValue(name, out H2Sharp.Tables.Table? table) ? table : null;
+
+    /// <summary>Gets all local temporary tables of this session.</summary>
+    /// <returns>the tables</returns>
+    public List<H2Sharp.Tables.Table> GetLocalTempTables() => [.. localTempTables.Values];
+
+    /// <summary>Adds a local temporary table to this session.</summary>
+    /// <param name="table">the table</param>
+    public void AddLocalTempTable(H2Sharp.Tables.Table table)
+    {
+        if (!localTempTables.TryAdd(table.GetTableName(), table))
+        {
+            throw DbException.GetInternalError(table.GetTableName());
+        }
+    }
+
+    /// <summary>Removes a local temporary table from this session.</summary>
+    /// <param name="table">the table</param>
+    public void RemoveLocalTempTable(H2Sharp.Tables.Table table)
+        => _ = localTempTables.Remove(table.GetTableName());
+
+    private void CleanTempTables(bool closeSession)
+    {
+        if (localTempTables.Count == 0)
+        {
+            return;
+        }
+
+        foreach ((string name, H2Sharp.Tables.Table table) in localTempTables.ToArray())
+        {
+            if (closeSession || table.GetOnCommitDrop())
+            {
+                table.SetModified();
+                _ = localTempTables.Remove(name);
+                database.LockMeta(this);
+                table.RemoveChildrenAndResources(this);
+                queryCache?.Clear();
+            }
+            else if (table.GetOnCommitTruncate())
+            {
+                table.Truncate(this);
+            }
+        }
     }
 
     /// <summary>Registers a table locked by the current transaction.</summary>
