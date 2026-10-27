@@ -102,7 +102,9 @@ public sealed class TestTransactionIsolation : TestDb
         }
 
         // conn2.setTransactionIsolation(level): the level the next transaction begins
-        // with, read back from the transaction itself.
+        // with, read back from the transaction itself. ADO cannot have two transactions on
+        // one connection, so the previous implicit one is completed first.
+        transaction2?.Rollback();
         transaction2 = conn2!.BeginTransaction(isolationLevel2);
         AssertEquals(isolationLevel2, transaction2.IsolationLevel);
 
@@ -120,6 +122,7 @@ public sealed class TestTransactionIsolation : TestDb
     private void TestDirtyRead(IsolationLevel isolationLevel, int value, bool dirtyVisible,
         bool committedVisible)
     {
+        transaction1?.Rollback();
         transaction1 = conn1!.BeginTransaction(isolationLevel);
         AssertSingleValue(Command1(), "SELECT * FROM TEST", value);
         int newValue = value + 1;
@@ -138,6 +141,7 @@ public sealed class TestTransactionIsolation : TestDb
 
     private void TestRowLocks(IsolationLevel isolationLevel)
     {
+        transaction1?.Rollback();
         transaction1 = conn1!.BeginTransaction(isolationLevel);
         AssertSingleValue(Command1(), "SELECT * FROM TEST", 1);
         AssertSingleValue(Command2(), "SELECT * FROM TEST FOR UPDATE", 1);
