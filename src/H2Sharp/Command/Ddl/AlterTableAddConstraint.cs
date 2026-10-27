@@ -447,6 +447,7 @@ public class AlterTableAddConstraint : AlterTable
     {
         if (table.IsTemporary() && !table.IsGlobalTemporary())
         {
+            GetSession().AddLocalTempTableConstraint(constraint);
             table.AddConstraint(constraint);
             return;
         }

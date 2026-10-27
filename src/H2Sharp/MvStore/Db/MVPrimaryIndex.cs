@@ -68,6 +68,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
         dataMap = t is null
             ? throw new TODOException("MVPrimaryIndex: the table has no transaction yet")
             : t.OpenMap(mapName, LongDataType.Instance, valueType);
+        t.Commit();
 
         // include uncommitted keys as well: the map's last key is where the counter resumes,
         // and a key that is still in flight is a key that will be taken.

@@ -120,7 +120,6 @@ public sealed class DropTable : DefineCommand
             if (table.IsTemporary() && !table.IsGlobalTemporary())
             {
                 session.RemoveLocalTempTable(table);
-                table.RemoveChildrenAndResources(session);
                 session.ClearQueryCache();
                 continue;
             }

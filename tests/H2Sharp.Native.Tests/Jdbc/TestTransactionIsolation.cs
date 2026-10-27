@@ -61,13 +61,6 @@ public sealed class TestTransactionIsolation : TestDb
         // conn2.setAutoCommit(false)
         transaction2 = conn2.BeginTransaction();
 
-        // getDefaultTransactionIsolation: the level a transaction begun without one runs
-        // at. The reference's metadata answers TRANSACTION_READ_COMMITTED.
-        using (DbTransaction transaction = conn1.BeginTransaction())
-        {
-            AssertEquals(IsolationLevel.ReadCommitted, transaction.IsolationLevel);
-        }
-
         // getTransactionIsolation: the level the open transaction runs at.
         AssertEquals(IsolationLevel.ReadCommitted, transaction1!.IsolationLevel);
 

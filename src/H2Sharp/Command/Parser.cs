@@ -3984,56 +3984,70 @@ public sealed partial class Parser
         }
 
         List<Expressions.Expression> selectItems = [];
+
+        Expressions.Expression ReadSelectItem()
+        {
+            Expressions.Expression item;
+            if (ReadIf(Token.Asterisk))
+            {
+                item = new Expressions.ExpressionColumn("*", null, 0);
+            }
+            else if (IsNameToken()
+                && position + 2 < tokens.Count
+                && tokens[position + 1].TokenType == Token.Dot
+                && tokens[position + 2].TokenType == Token.Asterisk)
+            {
+                string itemTable = ReadIdentifier();
+                Read();
+                Read();
+                item = new Expressions.ExpressionColumn("*", itemTable, 0);
+            }
+            else
+            {
+                // H2 parseSelectExpressions reads every item through readExpression;
+                // aggregates are terms too, so their postfixes and operators use that
+                // reader.
+                item = ReadQueryOr(select);
+            }
+
+            string? alias = null;
+            if (item is not Expressions.ExpressionColumn marker
+                || marker.GetOriginalColumnName() != "*")
+            {
+                if (IsWord("AS"))
+                {
+                    alias = ReadIdentifier();
+                }
+                else if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+                {
+                    // The reference reads the alias of a select item the same way it reads
+                    // the alias of a table: with the AS or without it, and the two forms
+                    // mean the same thing.
+                    alias = ReadIdentifier();
+                }
+            }
+
+            if (alias is not null)
+            {
+                item = new Expressions.Alias(item, alias, aliasColumnName: true);
+            }
+
+            return item;
+        }
+
         if (star is null)
         {
             do
             {
-                Expressions.Expression item;
-                if (ReadIf(Token.Asterisk))
-                {
-                    item = new Expressions.ExpressionColumn("*", null, 0);
-                }
-                else if (IsNameToken()
-                    && position + 2 < tokens.Count
-                    && tokens[position + 1].TokenType == Token.Dot
-                    && tokens[position + 2].TokenType == Token.Asterisk)
-                {
-                    string itemTable = ReadIdentifier();
-                    Read();
-                    Read();
-                    item = new Expressions.ExpressionColumn("*", itemTable, 0);
-                }
-                else
-                {
-                    // H2 parseSelectExpressions reads every item through readExpression;
-                    // aggregates are terms too, so their postfixes and operators use that
-                    // reader.
-                    item = ReadQueryOr(select);
-                }
-
-                string? alias = null;
-                if (item is not Expressions.ExpressionColumn marker
-                    || marker.GetOriginalColumnName() != "*")
-                {
-                    if (IsWord("AS"))
-                    {
-                        alias = ReadIdentifier();
-                    }
-                    else if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
-                    {
-                        // The reference reads the alias of a select item the same way it reads
-                        // the alias of a table: with the AS or without it, and the two forms
-                        // mean the same thing.
-                        alias = ReadIdentifier();
-                    }
-                }
-
-                if (alias is not null)
-                {
-                    item = new Expressions.Alias(item, alias, aliasColumnName: true);
-                }
-
-                selectItems.Add(item);
+                selectItems.Add(ReadSelectItem());
+            }
+            while (ReadIf(Token.Comma));
+        }
+        else if (ReadIf(Token.Comma))
+        {
+            do
+            {
+                selectItems.Add(ReadSelectItem());
             }
             while (ReadIf(Token.Comma));
         }
@@ -4153,19 +4167,17 @@ public sealed partial class Parser
         {
             ExpandStar(star, exceptColumns);
         }
-        else
+
+        foreach (Expressions.Expression item in selectItems)
         {
-            foreach (Expressions.Expression item in selectItems)
+            if (item is Expressions.ExpressionColumn marker
+                && marker.GetOriginalColumnName() == "*")
             {
-                if (item is Expressions.ExpressionColumn marker
-                    && marker.GetOriginalColumnName() == "*")
-                {
-                    ExpandStar(marker.GetOriginalTableAliasName(), null);
-                }
-                else
-                {
-                    selectList.Add(item);
-                }
+                ExpandStar(marker.GetOriginalTableAliasName(), null);
+            }
+            else
+            {
+                selectList.Add(item);
             }
         }
 

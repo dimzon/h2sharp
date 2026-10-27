@@ -65,7 +65,7 @@ public sealed class H2LocalTempTableTests
         try
         {
             using H2Connection connection = new(
-                "jdbc:h2:" + path);
+                "jdbc:h2:" + path + ";MAX_MEMORY_ROWS=10;IGNORE_UNKNOWN_SETTINGS=true");
             connection.Open();
             using DbCommand first = connection.CreateCommand();
             using DbCommand second = connection.CreateCommand();

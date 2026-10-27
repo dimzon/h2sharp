@@ -2286,7 +2286,11 @@ public abstract class Table
         {
             Constraint constraint = constraints[0];
             constraints.RemoveAt(0);
-            if (!sessionTemporary)
+            if (sessionTemporary)
+            {
+                session.RemoveLocalTempTableConstraint(constraint);
+            }
+            else
             {
                 (GetSchema() ?? throw new TODOException("Table.removeChildrenAndResources: no schema"))
                     .GetDatabase().RemoveSchemaObject(session, constraint);

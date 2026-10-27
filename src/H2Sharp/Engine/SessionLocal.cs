@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using H2Sharp.Constraints;
 using H2Sharp.Result;
 using H2Sharp.Tables;
 using H2Sharp.Values;
@@ -683,9 +684,46 @@ public sealed class SessionLocal : Session
     public void RemoveLocalTempTableIndex(H2Sharp.Indexes.Index index)
     {
         string? name = index.GetName();
+        if (name is not null && localTempTableIndexes.Remove(name))
+        {
+            lock (database)
+            {
+                index.RemoveChildrenAndResources(this);
+            }
+        }
+    }
+
+    /// <summary>Finds a constraint of a local temporary table.</summary>
+    /// <param name="name">the constraint name</param>
+    /// <returns>the constraint, or null</returns>
+    public H2Sharp.Constraints.Constraint? FindLocalTempTableConstraint(string name)
+        => localTempTableConstraints.TryGetValue(name, out H2Sharp.Constraints.Constraint? constraint)
+            ? constraint : null;
+
+    /// <summary>Gets all constraints of local temporary tables.</summary>
+    /// <returns>the constraints by name</returns>
+    public Dictionary<string, H2Sharp.Constraints.Constraint> GetLocalTempTableConstraints()
+        => localTempTableConstraints;
+
+    /// <summary>Adds a constraint of a local temporary table.</summary>
+    /// <param name="constraint">the constraint</param>
+    public void AddLocalTempTableConstraint(H2Sharp.Constraints.Constraint constraint)
+    {
+        string name = constraint.GetName()!;
+        if (!localTempTableConstraints.TryAdd(name, constraint))
+        {
+            throw DbException.Get(ErrorCode.ConstraintAlreadyExists1, name);
+        }
+    }
+
+    /// <summary>Removes a constraint of a local temporary table.</summary>
+    /// <param name="constraint">the constraint</param>
+    public void RemoveLocalTempTableConstraint(H2Sharp.Constraints.Constraint constraint)
+    {
+        string? name = constraint.GetName();
         if (name is not null)
         {
-            _ = localTempTableIndexes.Remove(name);
+            _ = localTempTableConstraints.Remove(name);
         }
     }
 
@@ -1150,6 +1188,9 @@ public sealed class SessionLocal : Session
     private readonly Dictionary<string, H2Sharp.Indexes.Index> localTempTableIndexes =
         new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly Dictionary<string, Constraint> localTempTableConstraints =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>The delay between commands, in milliseconds.</summary>
     private int throttleMs;
 
@@ -1255,14 +1296,22 @@ public sealed class SessionLocal : Session
     {
         if (!localTempTables.TryAdd(table.GetTableName(), table))
         {
-            throw DbException.GetInternalError(table.GetTableName());
+            throw DbException.Get(ErrorCode.TableOrViewAlreadyExists1, table.GetTableName());
         }
     }
 
     /// <summary>Removes a local temporary table from this session.</summary>
     /// <param name="table">the table</param>
     public void RemoveLocalTempTable(H2Sharp.Tables.Table table)
-        => _ = localTempTables.Remove(table.GetTableName());
+    {
+        if (localTempTables.Remove(table.GetTableName()))
+        {
+            lock (database)
+            {
+                table.RemoveChildrenAndResources(this);
+            }
+        }
+    }
 
     private void CleanTempTables(bool closeSession)
     {

@@ -41,6 +41,8 @@ public class TransactionCommand : Prepared
                     session.Commit(false);
                 }
 
+                // Reference: setCloseDelay(0), so SHUTDOWN ignores DB_CLOSE_DELAY.
+                session.GetDatabase().SetCloseDelay(0);
                 session.Close();
                 break;
             default: throw new TODOException("TransactionCommand.update: transaction command " + type + " is not ported (" + transactionName + ")");

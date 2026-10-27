@@ -39,6 +39,9 @@ public sealed class TestMultiThreadedKernel : TestDb
         DeleteDb("multiThreadedKernel");
         string url = GetURL("multiThreadedKernel;DB_CLOSE_DELAY=-1", true);
         string user = GetUser(), password = GetPassword();
+        // Modified (API): DB_CLOSE_DELAY is not applied by the port; a keeper connection
+        // plays the same role by keeping the database open across the worker connections.
+        using DbConnection keeper = GetConnection("multiThreadedKernel");
         int len = 3;
         Thread[] threads = new Thread[len];
         for (int i = 0; i < len; i++)
@@ -91,6 +94,7 @@ public sealed class TestMultiThreadedKernel : TestDb
         shutdownConnection.Open();
         Execute(shutdownConnection.CreateCommand(), "shutdown");
         shutdownConnection.Close();
+        keeper.Close();
         if (exception is not null)
         {
             throw exception;

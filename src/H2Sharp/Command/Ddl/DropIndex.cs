@@ -100,6 +100,10 @@ public sealed class DropIndex : SchemaCommand
             {
                 db.RemoveSchemaObject(GetSession(), pkConstraint);
             }
+            else if (table.IsTemporary() && !table.IsGlobalTemporary())
+            {
+                GetSession().RemoveLocalTempTableIndex(index);
+            }
             else
             {
                 db.RemoveSchemaObject(GetSession(), index);

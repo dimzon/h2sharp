@@ -87,7 +87,7 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 `SCRIPT CIPHER`, `HELP` и `RUNSCRIPT` вынесены из зелёного набора решениями
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
-Проверено: core **1468/1468**, Data **560/560**, conformance полный **880/952**,
+Проверено: core **1468/1468**, Data **564/564**, conformance полный **880/952**,
 зелёный **878/905** (было 805/803). Провайдеры на текущем бинарнике: linq2db
 **76/76** и ModelTests **180/180** на net8/net10; EF Core unit **129/129**, functional
 **5742/5762** на каждом net9/net10, 6 падений — `_LOCAL_AND_GLOBAL_` в
@@ -790,7 +790,7 @@ Java-имена и разрешать их: получился бы файл, к
 Механизм тот же, что у `JavaOracleFactAttribute` в `H2Sharp.Tests/Oracle`. Запуск
 оптом: `H2SHARP_NATIVE_TESTS=1 dotnet test tests/H2Sharp.Native.Tests`.
 
-**Прогон 2026-10-27:** **33 / 99** entry points прошли, 66 падают. Тесты запускаются
+**Прогон 2026-10-27:** **36 / 99** entry points прошли, 63 падают. Тесты запускаются
 последовательно (`AssemblyInfo.cs`), как эталонный `TestAll`: параллельный xUnit
 конфликтовал на общих файловых БД. `TestRecursiveQueries` доведён до зелёного:
 шаблоны CTE больше не оптимизируются по `ShadowTable`, а `_LOCAL_AND_GLOBAL_`

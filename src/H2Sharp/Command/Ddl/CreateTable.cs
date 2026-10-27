@@ -204,7 +204,6 @@ public sealed class CreateTable : CommandWithColumns
                 if (isSessionTemporary)
                 {
                     session.RemoveLocalTempTable(table);
-                    table.RemoveChildrenAndResources(session);
                 }
                 else
                 {

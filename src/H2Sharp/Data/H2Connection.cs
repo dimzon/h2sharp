@@ -451,7 +451,11 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             throw new InvalidOperationException("The connection already has a transaction");
         }
 
-        if (isolationLevel != AdoIsolationLevel.Unspecified)
+        if (isolationLevel == AdoIsolationLevel.Unspecified)
+        {
+            isolationLevel = ToAdoIsolationLevel(current.GetIsolationLevel());
+        }
+        else
         {
             current.SetIsolationLevel(FromAdoIsolationLevel(isolationLevel));
         }
@@ -463,6 +467,22 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         H2Transaction transaction = new(this, isolationLevel);
         currentTransaction = transaction;
         return transaction;
+    }
+
+    /// <summary>Maps the engine's isolation level to ADO.NET's.</summary>
+    /// <param name="isolationLevel">the engine's isolation level</param>
+    /// <returns>the ADO.NET isolation level</returns>
+    private static AdoIsolationLevel ToAdoIsolationLevel(EngineIsolationLevel isolationLevel)
+    {
+        return isolationLevel switch
+        {
+            EngineIsolationLevel.ReadUncommitted => AdoIsolationLevel.ReadUncommitted,
+            EngineIsolationLevel.ReadCommitted => AdoIsolationLevel.ReadCommitted,
+            EngineIsolationLevel.RepeatableRead => AdoIsolationLevel.RepeatableRead,
+            EngineIsolationLevel.Snapshot => AdoIsolationLevel.Snapshot,
+            EngineIsolationLevel.Serializable => AdoIsolationLevel.Serializable,
+            _ => AdoIsolationLevel.Unspecified,
+        };
     }
 
     /// <summary>

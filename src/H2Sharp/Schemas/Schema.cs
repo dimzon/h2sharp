@@ -305,9 +305,8 @@ public sealed class Schema : DbObject
     /// <returns>the index or null</returns>
     public Index? FindIndex(SessionLocal session, string name)
     {
-        _ = session;
         _ = indexes.TryGetValue(name, out Index? index);
-        return index;
+        return index ?? session.FindLocalTempTableIndex(name);
     }
 
     /// <summary>
