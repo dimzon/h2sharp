@@ -97,6 +97,7 @@ public sealed class StatementGrammarTests
 
     /// <summary>docs/grammar.html:2667 — charsetString [, fieldSepString [, fieldDelimString [, escString [, nullString]]]]</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void CsvOptions_PositionalForm_IsAccepted() // GRM-2667
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -112,6 +113,7 @@ public sealed class StatementGrammarTests
 
     /// <summary>docs/grammar.html:2668 — | optionString</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void CsvOptions_OptionStringForm_IsAccepted() // GRM-2668
     {
         using IDbConnection connection = TestDatabase.Open();

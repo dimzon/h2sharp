@@ -24,6 +24,7 @@ using System.Collections.Generic;
 using System.Data.Common;
 using H2Sharp.Data;
 using H2Sharp.Engine;
+using H2Sharp.Crypto;
 using H2Sharp.Hashes;
 using H2Sharp.JavaLegacy;
 using H2Sharp.Store.FileSystem;
@@ -214,6 +215,7 @@ public abstract class TestDb : TestBase
         H2Connection connection = new(connectionString);
         ((IH2Extensions)connection).UseJavaLegacy();
         ((IH2Extensions)connection).UseH2Hashes();
+        ((IH2Extensions)connection).UseCrypto();
         connection.Open();
         return connection;
     }

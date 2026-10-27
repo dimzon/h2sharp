@@ -36,6 +36,9 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
     private string? addBefore;
     private string? addAfter;
     private readonly List<Column> columnsToAdd = [];
+    private readonly List<string> columnNamesToRemove = [];
+    private readonly List<Column> columnsToRemove = [];
+    private bool removeIfExists;
 
     public AlterTableAlterColumn(SessionLocal session, Schema schema) : base(session, schema) { }
     public void SetIfTableExists(bool b) => ifTableExists = b;
@@ -51,6 +54,11 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
     public void SetAddFirst() => addFirst = true;
     public void SetAddBefore(string column) => addBefore = column;
     public void SetAddAfter(string column) => addAfter = column;
+    public void SetColumnsToRemove(IEnumerable<string> columns, bool ifExists)
+    {
+        columnNamesToRemove.AddRange(columns);
+        removeIfExists = ifExists;
+    }
     public override void AddColumn(Column column) => columnsToAdd.Add(column);
 
     public override long Update()
@@ -66,6 +74,23 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
         // D-004: SCHEMA_OWNER rights have no user object to check.
         table.CheckSupportAlter();
         table.Lock(session, Table.ExclusiveLock);
+        if (type == CommandInterface.AlterTableDropColumn)
+        {
+            foreach (string name in columnNamesToRemove)
+            {
+                Column? column = table.GetColumn(name, removeIfExists);
+                if (column is not null)
+                {
+                    columnsToRemove.Add(column);
+                }
+            }
+
+            if (columnsToRemove.Count == 0)
+            {
+                return 0;
+            }
+        }
+
         if (newColumn is not null)
         {
             CheckDefaultReferencesTable(table, newColumn.GetDefaultExpression());
@@ -97,6 +122,15 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
                     CopyData(table, null, true);
                 }
 
+                break;
+            case CommandInterface.AlterTableDropColumn:
+                if (table.GetColumns().Length - columnsToRemove.Count < 1)
+                {
+                    throw DbException.Get(ErrorCode.CannotDropLastColumn, columnsToRemove[0].GetCreateSql());
+                }
+
+                table.DropMultipleColumnsConstraintsAndIndexes(session, columnsToRemove);
+                CopyData(table, null, false);
                 break;
             case CommandInterface.AlterTableAlterColumnNotNull:
                 if (oldColumn is null || oldColumn.IsNullable() == Column.NotNullable) break;
@@ -257,34 +291,50 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
     private Table CloneTableStructure(Table table, Column[] columns, Database db, string tempName, List<Column> newColumns)
     {
         foreach (Column column in columns) newColumns.Add(column.GetClone());
-        if (type == CommandInterface.AlterTableAddColumn)
+        switch (type)
         {
-            int position;
-            if (addFirst)
-            {
-                position = 0;
-            }
-            else if (addBefore is not null)
-            {
-                position = table.GetColumn(addBefore).GetColumnId();
-            }
-            else if (addAfter is not null)
-            {
-                position = table.GetColumn(addAfter).GetColumnId() + 1;
-            }
-            else
-            {
-                position = columns.Length;
-            }
+            case CommandInterface.AlterTableDropColumn:
+                foreach (Column removeColumn in columnsToRemove)
+                {
+                    Column? found = newColumns.Find(c =>
+                        c.GetName().Equals(removeColumn.GetName(), StringComparison.Ordinal));
+                    if (found is null)
+                    {
+                        throw DbException.GetInternalError(removeColumn.GetCreateSql());
+                    }
 
-            foreach (Column column in columnsToAdd)
-            {
-                newColumns.Insert(position++, column);
-            }
-        }
-        else
-        {
-            newColumns[oldColumn!.GetColumnId()] = newColumn!;
+                    newColumns.Remove(found);
+                }
+
+                break;
+            case CommandInterface.AlterTableAddColumn:
+                int position;
+                if (addFirst)
+                {
+                    position = 0;
+                }
+                else if (addBefore is not null)
+                {
+                    position = table.GetColumn(addBefore).GetColumnId();
+                }
+                else if (addAfter is not null)
+                {
+                    position = table.GetColumn(addAfter).GetColumnId() + 1;
+                }
+                else
+                {
+                    position = columns.Length;
+                }
+
+                foreach (Column column in columnsToAdd)
+                {
+                    newColumns.Insert(position++, column);
+                }
+
+                break;
+            default:
+                newColumns[oldColumn!.GetColumnId()] = newColumn!;
+                break;
         }
         CreateTableData data = new()
         {

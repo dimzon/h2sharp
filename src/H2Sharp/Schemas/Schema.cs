@@ -65,6 +65,9 @@ public sealed class Schema : DbObject
     private readonly ConcurrentDictionary<string, Domain> domains =
         new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, Constant> constants =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly bool system;
 
     private readonly HashSet<string> temporaryUniqueNames = new(StringComparer.OrdinalIgnoreCase);
@@ -155,6 +158,11 @@ public sealed class Schema : DbObject
         foreach (Domain domain in GetAllDomains().ToArray())
         {
             database.RemoveSchemaObject(session, domain);
+        }
+
+        foreach (Constant constant in GetAllConstants().ToArray())
+        {
+            database.RemoveSchemaObject(session, constant);
         }
 
         foreach (Index index in GetAllIndexes().ToArray())
@@ -300,6 +308,13 @@ public sealed class Schema : DbObject
     /// <summary>Gets all domains.</summary>
     public List<Domain> GetAllDomains() => [.. domains.Values];
 
+    /// <summary>Finds a constant by name.</summary>
+    public Constant? FindConstant(string name)
+        => constants.TryGetValue(name, out Constant? constant) ? constant : null;
+
+    /// <summary>Gets all constants of this schema.</summary>
+    public List<Constant> GetAllConstants() => [.. constants.Values];
+
     /// <summary>Gets all constraints of this schema.</summary>
     public List<Constraint> GetAllConstraints() => [.. constraints.Values];
 
@@ -436,6 +451,18 @@ public sealed class Schema : DbObject
                     return;
                 }
 
+            case Constant constant:
+                {
+                    string name = constant.GetName()!;
+                    if (!constants.TryAdd(name, constant))
+                    {
+                        throw DbException.GetInternalError("object already exists: " + name);
+                    }
+
+                    FreeUniqueName(name);
+                    return;
+                }
+
             default:
                 throw new TODOException("Schema.add: the object kind is not ported");
         }
@@ -513,6 +540,18 @@ public sealed class Schema : DbObject
                 {
                     string objName = domain.GetName()!;
                     if (!domains.TryRemove(objName, out _))
+                    {
+                        throw DbException.GetInternalError("not found: " + objName);
+                    }
+
+                    FreeUniqueName(objName);
+                    return;
+                }
+
+            case Constant constant:
+                {
+                    string objName = constant.GetName()!;
+                    if (!constants.TryRemove(objName, out _))
                     {
                         throw DbException.GetInternalError("not found: " + objName);
                     }

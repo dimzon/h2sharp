@@ -247,6 +247,7 @@ internal static class H2ValueMapper
                     ((ValueTimestampTimeZone)value).GetTimeNanos()),
                 TimeSpan.FromSeconds(((ValueTimestampTimeZone)value).GetTimeZoneOffsetSeconds())),
             Value.Uuid => ((ValueUuid)value).GetUuid(),
+            Value.Geometry => ((ValueGeometry)value).GetString(),
             Value.Array => ToArrayObject((ValueArray)value),
             Value.Row => ToRowObject((ValueRow)value),
             _ when IsIntervalType(value.GetValueType()) => ToTimeSpan((ValueInterval)value),
@@ -552,16 +553,15 @@ internal static class H2ValueMapper
 
     private static TimeSpan ToTimeSpan(ValueInterval interval)
     {
-        if (interval.GetQualifier() != IntervalQualifier.DayToSecond)
+        if (IntervalQualifiers.IsYearMonth(interval.GetQualifier()))
         {
             throw new TODOException(
-                "H2ValueMapper.ToObject: only DAY TO SECOND intervals read as TimeSpan ("
+                "H2ValueMapper.ToObject: a YEAR TO MONTH interval has no TimeSpan equivalent ("
                 + interval.GetQualifier() + ")");
         }
 
-        BigInteger total = new BigInteger(interval.GetLeading()) * IntervalUtils.NanosPerDayBi
-            + new BigInteger(interval.GetRemaining());
+        BigInteger total = IntervalUtils.IntervalToAbsolute(interval);
         long ticks = (long)(total / 100);
-        return new TimeSpan(interval.IsNegative() ? -ticks : ticks);
+        return new TimeSpan(ticks);
     }
 }

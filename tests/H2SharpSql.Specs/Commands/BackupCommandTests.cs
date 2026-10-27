@@ -2,6 +2,7 @@
 // Licensed under the MPL 2.0 or the EPL 1.0.
 //
 // docs/commands.html — BACKUP command, one test per checklist row.
+using System;
 using System.Data;
 using Dapper;
 using H2SharpSql.Specs.Infrastructure;
@@ -13,12 +14,12 @@ public sealed class BackupCommandTests
 {
     /// <summary>docs/commands.html:815 — BACKUP TO fileNameString</summary>
     [Fact]
-    public void Backup_ToFile_WritesTheDatabaseAndTouchesNoRows() // CMD-0815
+    public void Backup_InMemory_IsRejectedAsNotPersistent() // CMD-0815
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        int affected = connection.Execute("BACKUP TO 'backup.zip'");
+        Exception error = Assert.ThrowsAny<Exception>(() => connection.Execute("BACKUP TO 'backup.zip'"));
 
-        Assert.Equal(0, affected);
+        Assert.Contains("not persistent", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

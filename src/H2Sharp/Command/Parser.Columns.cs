@@ -118,13 +118,19 @@ public sealed partial class Parser
 
         if (IsWord("CONSTRAINT"))
         {
-            _ = ReadIdentifierWithSchema(session!, out Schema constraintSchema);
+            string constraintName = ReadIdentifierWithSchema(session!, out Schema constraintSchema);
             if (!ReferenceEquals(constraintSchema, schema))
             {
                 throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
             }
 
-            throw new TODOException("Parser.parseAlterTableRename: constraint rename is not ported");
+            ExpectWord("TO");
+            AlterTableRenameConstraint rename = new(session!, schema);
+            rename.SetTableName(tableName);
+            rename.SetIfTableExists(ifTableExists);
+            rename.SetConstraintName(constraintName);
+            rename.SetNewConstraintName(ReadIdentifier());
+            return rename;
         }
 
         ExpectWord("TO");

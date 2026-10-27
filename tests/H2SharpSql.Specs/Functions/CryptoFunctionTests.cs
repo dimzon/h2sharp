@@ -29,8 +29,8 @@ public sealed class CryptoFunctionTests
         using IDbConnection connection = TestDatabase.Open();
 
         Assert.Equal("Hello", connection.QuerySingle<string>(
-            "SELECT UTF8TOSTRING(DECRYPT('AES', STRINGTOUTF8('0123456789abcdef'), " +
-            "ENCRYPT('AES', STRINGTOUTF8('0123456789abcdef'), STRINGTOUTF8('Hello'))))"));
+            "SELECT TRIM(CHAR(0) FROM UTF8TOSTRING(DECRYPT('AES', STRINGTOUTF8('0123456789abcdef'), " +
+            "ENCRYPT('AES', STRINGTOUTF8('0123456789abcdef'), STRINGTOUTF8('Hello')))))"));
     }
 
     /// <summary>docs/functions.html:1797 — HASH(algorithmString, expression [, iterationInt])</summary>

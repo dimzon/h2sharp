@@ -28,6 +28,21 @@ public class TransactionCommand : Prepared
             case CommandInterface.PrepareCommit: session.PrepareCommit(transactionName!); break;
             case CommandInterface.CommitTransaction: session.SetPreparedTransaction(transactionName!, true); break;
             case CommandInterface.RollbackTransaction: session.SetPreparedTransaction(transactionName!, false); break;
+            case CommandInterface.Checkpoint:
+            case CommandInterface.CheckpointSync:
+                session.GetDatabase().GetStore().Flush();
+                break;
+            case CommandInterface.Shutdown:
+            case CommandInterface.ShutdownImmediately:
+            case CommandInterface.ShutdownCompact:
+            case CommandInterface.ShutdownDefrag:
+                if (type != CommandInterface.ShutdownImmediately)
+                {
+                    session.Commit(false);
+                }
+
+                session.Close();
+                break;
             default: throw new TODOException("TransactionCommand.update: transaction command " + type + " is not ported (" + transactionName + ")");
         }
         return 0;

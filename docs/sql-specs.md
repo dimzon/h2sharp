@@ -14,49 +14,53 @@
 
     dotnet test tests/H2SharpSql.Specs/H2SharpSql.Specs.csproj
 
-## Прогон 2026-10-26
+## Прогон 2026-10-27
 
-Текущее рабочее дерево после `b4ef56c` и D-004 cleanup.
+Текущее рабочее дерево после разбора тестовых ожиданий, info schema и первой DDL/utility-партии.
 
-* Полный набор: **805 / 952**, 147 падений.
-* Зелёный прогон `--filter "Category!=BlockedByPort"`: **803 / 922**, 119 падений.
-* `BlockedByPort`: **30** тестов; из них 12 прежних (коллатор, `SET PASSWORD`/`SET SALT`,
-  CSV/FILE, memory/DB_OBJECT_SQL, ESTIMATED_ENVELOPE) и 18 D-004:
-  8 user/role-команд и 10 `PrivilegeCommandTests`. `INFORMATION_SCHEMA.USERS/ROLES/
-  RIGHTS/TABLE_PRIVILEGES/COLUMN_PRIVILEGES` не блокируются: на пустой базе они
-  возвращают 0 строк; их тесты пока красные только из-за непортированных
-  `CREATE USER`/`CREATE ROLE`/`GRANT`.
+* Полный набор: **852 / 952**, 100 падений.
+* Зелёный прогон `--filter "Category!=BlockedByPort"`: **850 / 911**, 61 падение.
+* `BlockedByPort`: **41** тест. D-004 users/roles/grants — 25 (включая info-schema
+  Users/Roles/Rights/TablePrivileges/ColumnPrivileges), Java info-schema
+  Routines/Parameters/Triggers — 3, CSV/FILE D-005 — 6, D-002 collation — 2,
+  memory P-003 — 2, DB_OBJECT_SQL/DATA_TYPE_SQL/ESTIMATED_ENVELOPE — 3.
+  Неподдерживаемые info-схемы остаются читаемыми и пустыми.
 
 | Область | Прошло (полный) | Всего | Прошло (без BlockedByPort) | Всего |
 |---|---:|---:|---:|---:|
-| `Commands/` | 166 | 259 | 166 | 237 |
-| `Functions/` | 304 | 325 | 302 | 317 |
-| `Grammar/` | 243 | 263 | 243 | 263 |
-| `Datatypes/` | 65 | 66 | 65 | 66 |
-| `SystemTables/` | 23 | 37 | 23 | 37 |
+| `Commands/` | 194 | 259 | 194 | 237 |
+| `Functions/` | 310 | 325 | 308 | 316 |
+| `Grammar/` | 252 | 263 | 252 | 261 |
+| `Datatypes/` | 66 | 66 | 66 | 66 |
+| `SystemTables/` | 28 | 37 | 28 | 37 |
 | `Dml/` | 2 | 2 | 2 | 2 |
 
-Причины 119 зелёных падений: 69 — синтаксис/непрочитанная конструкция, 29 — явный
-`TODOException` (не портировано), 11 — отсутствующий объект/функция, 5 — расхождение
-значений, остальное — отдельные conversion/parameter/collation-дефекты.
+Последний срез закрыл ещё 9 тестов: `CREATE/DROP CONSTANT` и `INFORMATION_SCHEMA.CONSTANTS`,
+ссылки на поля `ROW`/JSON (`FieldReference`), `UPDATE ... ORDER BY` (H2 его принимает,
+но игнорирует) и `DELETE ... FETCH` (без `ORDER BY`: H2 2.5 отвергает его в DELETE).
+
+Оставшиеся 61 зелёное падение — это в основном непрочитанный синтаксис и команды,
+явные `TODOException` и отдельные function/value gaps. CSV/FILE вынесены в D-005;
+неподдерживаемые info-схемы (users/roles/routines/triggers) теперь читаются пустыми,
+а их тесты переведены в `BlockedByPort`. `ENCRYPT`/`DECRYPT` закрыты отдельным
+пакетом `H2Sharp.Crypto` через `UseCrypto()`.
 
 Крупнейшие оставшиеся классы (без `BlockedByPort`):
 
 | Класс | Падений | Что это |
 |---|---:|---|
-| `InformationSchemaMoreTests` | 10 | `USERS/ROLES/RIGHTS/...` с непортированным D-004 setup, `ROUTINES`, `TRIGGERS`, `SESSIONS` |
-| `ExpressionTests` | 8 | `FIELD`, `WITHIN GROUP`, time zone, прочие выражения |
-| `DropObjectCommandTests` | 7 | `DROP AGGREGATE/ALIAS/CONSTANT/MATERIALIZED VIEW` и др. |
-| `StatementGrammarTests` | 6 | непрочитанные формы DDL/DML |
 | `CreateTriggerCommandTests` | 6 | triggers |
-| `DateTimeFunctionTests` | 6 | `TO_CHAR`, `DAY_OF_WEEK`, `PARSE_DATETIME` |
 | `CreateLinkedTableCommandTests` | 5 | linked tables |
 | `ScriptCommandTests` | 5 | SCRIPT-опции |
+| `DateTimeFunctionTests` | 5 | `TO_CHAR`, `FORMATDATETIME`, `PARSEDATETIME` |
 | `CreateRoutineCommandTests` | 4 | routines/aliases |
-| `MaintenanceCommandTests` | 4 | maintenance |
-| `CreateTableCommandTests` | 4 | CREATE TABLE |
-| `InformationSchemaTests` | 4 | info-schema columns/privileges |
-| остальные | 52 | `RUNSCRIPT`, materialized views, window/table functions, crypto, grammar и др. |
+| `CreateTableCommandTests` | 4 | TEMP/ENGINE/NOT PERSISTENT |
+| `StatementGrammarTests` | 4 | data-change delta/MERGE, INSERT ROW, script cipher/compression |
+| `DropObjectCommandTests` | 4 | `DROP AGGREGATE/ALIAS/MATERIALIZED VIEW/TRIGGER` |
+| `ExpressionTests` | 4 | time zone, script cipher, UDF alias |
+| `RunscriptCommandTests` | 3 | RUNSCRIPT |
+| `CreateMaterializedViewCommandTests` | 3 | materialized views |
+| остальные | 14 | schema options, info `SYNONYMS`, ALTER TYPE/VIEW, ANALYZE/HELP, FOR UPDATE, recursive CTE |
 
 `AggregateMiscTests` теперь **35/35**: перенесены `RANK`, `DENSE_RANK`, `PERCENT_RANK`,
 `CUME_DIST`. Для `CUME_DIST(2)` на `1,2,3` ожидание исправлено на `0.75`: H2 2.5 включает

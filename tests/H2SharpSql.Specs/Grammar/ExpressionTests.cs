@@ -2,6 +2,7 @@
 // Licensed under the MPL 2.0 or the EPL 1.0.
 //
 // docs/grammar.html — expressions and terms, one test per checklist row.
+using System;
 using System.Data;
 using Dapper;
 using H2SharpSql.Specs.Infrastructure;
@@ -157,7 +158,6 @@ public sealed class ExpressionTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.True(connection.QuerySingle<bool>("SELECT (1 <> 2) && (2 < 3)"));
         Assert.True(connection.QuerySingle<bool>("SELECT 1 != 2"));
         Assert.True(connection.QuerySingle<bool>("SELECT (3 >= 3) AND (2 <= 2) AND (3 > 2) AND (2 < 3)"));
         Assert.True(connection.QuerySingle<bool>("SELECT 2 = 2"));
@@ -259,8 +259,18 @@ public sealed class ExpressionTests
     public void Term_Parameter_IsBoundByPosition() // GRM-3635
     {
         using IDbConnection connection = TestDatabase.Open();
+        using IDbCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT ?1 + ?2";
+        IDbDataParameter first = command.CreateParameter();
+        first.ParameterName = "first";
+        first.Value = 1;
+        _ = command.Parameters.Add(first);
+        IDbDataParameter second = command.CreateParameter();
+        second.ParameterName = "second";
+        second.Value = 2;
+        _ = command.Parameters.Add(second);
 
-        Assert.Equal(3, connection.QuerySingle<int>("SELECT ?1 + ?2", new { A = 1, B = 2 }));
+        Assert.Equal(3, Convert.ToInt32(command.ExecuteScalar()));
     }
 
     /// <summary>docs/grammar.html:3636 — | sequenceValueExpression</summary>

@@ -1,8 +1,8 @@
 # Отложенный спринт: .NET-расширения, DI и необязательные провайдеры
 
 Статус: **реализация начата**: S0-каркас, RegisterUdf, RegisterHashAlgorithm,
-BCL hashes, H2Sharp.Hashes (все алгоритмы CryptoHives вне BCL) и H2Sharp.JavaLegacy
-(JavaRandom + ORA_HASH). Остальные пункты — по TODO. В этот спринт объединены UDF, SQL aliases, триггеры,
+BCL hashes, H2Sharp.Hashes (все алгоритмы CryptoHives вне BCL), H2Sharp.Crypto
+(ENCRYPT/DECRYPT: AES/XTEA/FOG) и H2Sharp.JavaLegacy (JavaRandom + ORA_HASH). Остальные пункты — по TODO. В этот спринт объединены UDF, SQL aliases, триггеры,
 trace/diagnostics, внешние hash-примитивы и совместимые функции вроде ORA_HASH.
 Уточнение очередности пользователя: **все хэши, включая базовый HASH ядра,
 выполняются позже**; текущий conformance продолжается с нехэшовыми функциями.

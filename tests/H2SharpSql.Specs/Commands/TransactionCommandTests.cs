@@ -45,6 +45,7 @@ public sealed class TransactionCommandTests
     public void PrepareCommit_PutsTheTransactionInThePreparedState() // CMD-2429
     {
         using IDbConnection connection = TestDatabase.Open();
+        _ = connection.Execute("CREATE TABLE TEST(ID INT)");
         _ = connection.Execute("SET AUTOCOMMIT FALSE");
         _ = connection.Execute("INSERT INTO TEST(ID) VALUES (1)");
 

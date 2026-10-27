@@ -166,6 +166,12 @@ public sealed class AlterTableStatement : Statement
     /// <summary>Whether PRIMARY KEY was written after DROP.</summary>
     public bool DropPrimaryKey { get; set; }
 
+    /// <summary>The columns written after DROP, or null when the statement does not drop columns.</summary>
+    public List<string>? DropColumns { get; set; }
+
+    /// <summary>Whether the column names were written with IF EXISTS.</summary>
+    public bool DropColumnsIfExists { get; set; }
+
     /// <summary>The column that is changed, or null when the statement does not change one.</summary>
     public AlterTableAlterColumnDefinition? AlterColumn { get; set; }
 }
@@ -251,6 +257,9 @@ public sealed class CreateIndexStatement : Statement
 
     /// <summary>Whether UNIQUE was written.</summary>
     public bool Unique { get; set; }
+
+    /// <summary>The number of leading columns that are part of the unique key.</summary>
+    public int UniqueColumnCount { get; set; }
 
     /// <summary>How NULLs compare in a unique index, or null for a non-unique one.</summary>
     public NullsDistinct? NullsDistinct { get; set; }
@@ -630,6 +639,40 @@ public sealed partial class Parser
         {
             prepared = PrepareAlterView(current);
         }
+        else if (IsWord("BACKUP", consume: false))
+        {
+            Read();
+            ExpectWord("TO");
+            Dml.BackupCommand command = new(current);
+            command.SetSql(sql, null);
+            command.SetFileName(ReadExpression());
+            prepared = command;
+        }
+        else if (IsWord("CHECKPOINT", consume: false))
+        {
+            Read();
+            int type = IsWord("SYNC") ? CommandInterface.CheckpointSync : CommandInterface.Checkpoint;
+            prepared = new Dml.TransactionCommand(current, type);
+        }
+        else if (IsWord("SHUTDOWN", consume: false))
+        {
+            Read();
+            int type = CommandInterface.Shutdown;
+            if (IsWord("IMMEDIATELY")) type = CommandInterface.ShutdownImmediately;
+            else if (IsWord("COMPACT")) type = CommandInterface.ShutdownCompact;
+            else if (IsWord("DEFRAG")) type = CommandInterface.ShutdownDefrag;
+            prepared = new Dml.TransactionCommand(current, type);
+        }
+        else if (IsWord("EXECUTE", consume: false) && NextIs("IMMEDIATE"))
+        {
+            Read();
+            Read();
+            prepared = new Dml.ExecuteImmediate(current, ReadExpression());
+        }
+        else if (IsWord("SHOW", consume: false))
+        {
+            prepared = PrepareShow(current);
+        }
         else if (IsWord("SAVEPOINT")) prepared = ParseSavepoint();
         else if (IsWord("RELEASE")) prepared = ParseReleaseSavepoint();
         else if (IsWord("ROLLBACK")) prepared = ParseRollback();
@@ -671,6 +714,14 @@ public sealed partial class Parser
             throw new TODOException(
                 "Parser.parseGrantRevoke: GrantRevoke, users, roles and rights are not ported (D-004)");
         }
+        else if (IsWord("CREATE", consume: false) && NextIs("CONSTANT"))
+        {
+            prepared = PrepareCreateConstant(current);
+        }
+        else if (IsWord("DROP", consume: false) && NextIs("CONSTANT"))
+        {
+            prepared = PrepareDropConstant(current);
+        }
         else if (IsWord("CREATE", consume: false) && NextIs("SEQUENCE"))
         {
             prepared = PrepareCreateSequence(current);
@@ -678,6 +729,14 @@ public sealed partial class Parser
         else if (IsWord("ALTER", consume: false) && NextIs("TABLE"))
         {
             prepared = ParseAlterTable();
+        }
+        else if (IsWord("ALTER", consume: false) && NextIs("INDEX"))
+        {
+            prepared = PrepareAlterIndex(current);
+        }
+        else if (IsWord("ALTER", consume: false) && NextIs("SCHEMA"))
+        {
+            prepared = PrepareAlterSchema(current);
         }
         else if (IsWord("INSERT"))
         {
@@ -871,6 +930,84 @@ public sealed partial class Parser
             command.SetDropAction(Constraints.ConstraintActionType.RESTRICT);
         }
 
+        return command;
+    }
+
+    /// <summary>Parses the MySQL-compatible SHOW forms.</summary>
+    private Prepared PrepareShow(SessionLocal current)
+    {
+        ExpectWord("SHOW");
+        if (IsWord("TABLES"))
+        {
+            string schema = current.GetCurrentSchemaName();
+            if (IsWord("FROM"))
+            {
+                schema = ReadIdentifier();
+            }
+
+            string query = "SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA="
+                + StringUtils.QuoteStringSql(schema) + " ORDER BY TABLE_NAME";
+            return current.PrepareQueryExpression(query);
+        }
+
+        ExpectWord("COLUMNS");
+        ExpectWord("FROM");
+        string table = ReadIdentifierWithSchema(current, out Schemas.Schema tableSchema);
+        string schemaName = tableSchema.GetName();
+        if (IsWord("FROM"))
+        {
+            schemaName = ReadIdentifier();
+        }
+
+        string columns = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA="
+            + StringUtils.QuoteStringSql(schemaName) + " AND TABLE_NAME="
+            + StringUtils.QuoteStringSql(table) + " ORDER BY ORDINAL_POSITION";
+        return current.PrepareQueryExpression(columns);
+    }
+
+    /// <summary>Parses ALTER INDEX RENAME.</summary>
+    private Prepared PrepareAlterIndex(SessionLocal current)
+    {
+        ExpectWord("ALTER");
+        ExpectWord("INDEX");
+        bool ifExists = ReadIfExists(false);
+        string indexName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
+        ExpectWord("RENAME");
+        ExpectWord("TO");
+        Ddl.AlterIndexRename command = new(current);
+        command.SetSql(sql, null);
+        command.SetIfExists(ifExists);
+        command.SetOldSchema(schema);
+        command.SetOldName(indexName);
+        command.SetNewName(ReadIdentifier());
+        return command;
+    }
+
+    /// <summary>Parses ALTER SCHEMA RENAME.</summary>
+    private Prepared PrepareAlterSchema(SessionLocal current)
+    {
+        ExpectWord("ALTER");
+        ExpectWord("SCHEMA");
+        bool ifExists = ReadIfExists(false);
+        string schemaName = ReadIdentifier();
+        ExpectWord("RENAME");
+        ExpectWord("TO");
+        string newName = ReadIdentifier();
+        Schemas.Schema? schema = current.GetDatabase().FindSchema(schemaName);
+        if (schema is null)
+        {
+            if (ifExists)
+            {
+                return new Dml.NoOperation(current);
+            }
+
+            throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schemaName);
+        }
+
+        Ddl.AlterSchemaRename command = new(current);
+        command.SetSql(sql, null);
+        command.SetOldSchema(schema);
+        command.SetNewName(newName);
         return command;
     }
 
@@ -3016,6 +3153,36 @@ public sealed partial class Parser
     /// <summary>
     /// Builds the command of a CREATE DOMAIN statement.
     /// </summary>
+    private Prepared PrepareCreateConstant(SessionLocal session)
+    {
+        ExpectWord("CREATE");
+        ExpectWord("CONSTANT");
+        bool ifNotExists = ReadIfNotExists();
+        string name = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        ExpectWord("VALUE");
+        Expression expression = ReadExpression();
+        Ddl.CreateConstant command = new(session, schema);
+        command.SetSql(sql, null);
+        command.SetConstantName(name);
+        command.SetExpression(expression);
+        command.SetIfNotExists(ifNotExists);
+        return command;
+    }
+
+    private Prepared PrepareDropConstant(SessionLocal session)
+    {
+        ExpectWord("DROP");
+        ExpectWord("CONSTANT");
+        bool ifExists = ReadIfExists(false);
+        string name = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
+        ifExists = ReadIfExists(ifExists);
+        Ddl.DropConstant command = new(session, schema);
+        command.SetSql(sql, null);
+        command.SetConstantName(name);
+        command.SetIfExists(ifExists);
+        return command;
+    }
+
     private Ddl.CreateDomain PrepareCreateDomain(SessionLocal session)
     {
         ExpectWord("CREATE");
@@ -4883,6 +5050,12 @@ public sealed partial class Parser
                 continue;
             }
 
+            if (ReadIf(Token.Dot))
+            {
+                expression = new Expressions.FieldReference(expression, ReadIdentifier());
+                continue;
+            }
+
             if (ReadIf(Token.ColonColon))
             {
                 expression = ReadColonColonAfterTerm(expression);
@@ -5017,6 +5190,12 @@ public sealed partial class Parser
             bool value = CurrentType == ParserUtil.True;
             Read();
             return value ? Expressions.ValueExpression.True : Expressions.ValueExpression.False;
+        }
+
+        if (CurrentType == ParserUtil.Unknown)
+        {
+            Read();
+            return Expressions.TypedValueExpression.Unknown;
         }
 
         if (CurrentType is ParserUtil.CurrentDate or ParserUtil.CurrentTime or ParserUtil.Localtime
@@ -6917,6 +7096,17 @@ public sealed partial class Parser
             return add;
         }
 
+        if (statement.DropColumns is not null)
+        {
+            Ddl.AlterTableAlterColumn dropColumns = new(session, schema);
+            dropColumns.SetSql(statement.Sql, null);
+            dropColumns.SetTableName(statement.Name);
+            dropColumns.SetIfTableExists(statement.IfTableExists);
+            dropColumns.SetType(CommandInterface.AlterTableDropColumn);
+            dropColumns.SetColumnsToRemove(statement.DropColumns, statement.DropColumnsIfExists);
+            return dropColumns;
+        }
+
         Ddl.AlterTableDropConstraint drop = new(
             session, schema, statement.DropConstraintIfExists);
         drop.SetSql(statement.Sql, null);
@@ -7335,13 +7525,13 @@ public sealed partial class Parser
         if (statement.PrimaryKey)
         {
             create.SetPrimaryKey(true);
-            create.SetUnique(null, statement.Columns.Count);
+            create.SetUnique(null, statement.UniqueColumnCount);
         }
 
         create.SetIndexColumns([.. statement.Columns]);
         if (statement.Unique)
         {
-            create.SetUnique(statement.NullsDistinct ?? NullsDistinct.Distinct, statement.Columns.Count);
+            create.SetUnique(statement.NullsDistinct ?? NullsDistinct.Distinct, statement.UniqueColumnCount);
         }
 
         return create;
@@ -8335,9 +8525,24 @@ public sealed partial class Parser
                 return statement;
             }
 
-            // Dropping a column is not ported yet; the port refuses it the way the database
-            // refuses a statement it does not read.
-            throw DbException.GetSyntaxError(sql, Current.Start);
+            _ = IsWord("COLUMN");
+            bool columnsIfExists = ReadIfExists(false);
+            bool openingBracket = ReadIf(Token.OpenParen);
+            List<string> columns = [];
+            do
+            {
+                columns.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+
+            if (openingBracket)
+            {
+                Expect(Token.CloseParen, ")");
+            }
+
+            statement.DropColumns = columns;
+            statement.DropColumnsIfExists = columnsIfExists;
+            return statement;
         }
 
         // The other changes of a table are not ported yet; the port refuses them the way the
@@ -8460,9 +8665,18 @@ public sealed partial class Parser
         while (ReadIf(Token.Comma));
 
         Expect(Token.CloseParen, ")");
-        if (statement.Unique && IsWord("INCLUDE", consume: false))
+        statement.UniqueColumnCount = statement.Columns.Count;
+        if (statement.Unique && IsWord("INCLUDE"))
         {
-            throw new TODOException("Parser.parseCreate: CREATE INDEX INCLUDE is not ported");
+            Expect(Token.OpenParen, "(");
+            do
+            {
+                string columnName = ReadIdentifier();
+                statement.Columns.Add(new IndexColumn(columnName, ReadSortType()));
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
         }
 
         return statement;
@@ -8672,6 +8886,23 @@ public sealed partial class Parser
         while (ReadIf(Token.Comma));
 
         statement.Where = ReadWhere();
+        if (CurrentType == ParserUtil.Order)
+        {
+            Read();
+            ExpectWord("BY");
+            do
+            {
+                _ = ReadExpression();
+                _ = IsWord("ASC") || IsWord("DESC");
+            }
+            while (ReadIf(Token.Comma));
+        }
+
+        if (statement.Fetch is null)
+        {
+            statement.Fetch = ReadFetchOrLimit();
+        }
+
         return statement;
     }
 

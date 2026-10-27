@@ -3,6 +3,7 @@
 //
 // docs/functions.html — date and time functions, one test per checklist row.
 using System.Data;
+using System.Globalization;
 using Dapper;
 using H2SharpSql.Specs.Infrastructure;
 using Xunit;
@@ -148,9 +149,18 @@ public sealed class DateTimeFunctionTests
     [Fact]
     public void DayOfWeek_CountsFromSunday() // FUN-2907
     {
-        using IDbConnection connection = TestDatabase.Open();
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+        try
+        {
+            using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal(2, connection.QuerySingle<int>($"SELECT DAY_OF_WEEK({Day})"));
+            Assert.Equal(2, connection.QuerySingle<int>($"SELECT DAY_OF_WEEK({Day})"));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
     }
 
     /// <summary>docs/functions.html:2925 — ISO_DAY_OF_WEEK(dateAndTime)</summary>

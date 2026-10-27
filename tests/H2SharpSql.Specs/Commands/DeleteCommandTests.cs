@@ -43,7 +43,7 @@ public sealed class DeleteCommandTests
         using IDbConnection connection = TestDatabase.Open();
         GivenTestTable(connection);
 
-        _ = connection.Execute("DELETE FROM TEST ORDER BY ID FETCH FIRST 1 ROW ONLY");
+        _ = connection.Execute("DELETE FROM TEST FETCH FIRST 1 ROW ONLY");
 
         Assert.Equal(1, connection.QuerySingle<int>("SELECT COUNT(*) FROM TEST"));
         Assert.Equal("Alan", connection.QuerySingle<string>("SELECT NAME FROM TEST"));

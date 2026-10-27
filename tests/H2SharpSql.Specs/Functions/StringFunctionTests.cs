@@ -92,7 +92,7 @@ public sealed class StringFunctionTests
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.True(connection.QuerySingle<bool>("SELECT HEXTORAW('41') = X'41'"));
+        Assert.True(connection.QuerySingle<bool>("SELECT HEXTORAW('0041') = 'A'"));
     }
 
     /// <summary>docs/functions.html:2089 — RAWTOHEX({string|bytes})</summary>

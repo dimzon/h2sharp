@@ -130,10 +130,10 @@ public sealed class ConstraintTests
     {
         using IDbConnection connection = TestDatabase.Open();
         _ = connection.Execute(
-            "CREATE TABLE TEST(ID INT NOT NULL, NAME VARCHAR(50) UNIQUE, AGE INT CHECK (AGE >= 0), PID INT REFERENCES TEST(ID))");
+            "CREATE TABLE TEST(ID INT NOT NULL PRIMARY KEY, NAME VARCHAR(50) UNIQUE, AGE INT CHECK (AGE >= 0), PID INT REFERENCES TEST(ID))");
 
         Assert.Equal(3, connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_NAME = 'TEST' AND CONSTRAINT_TYPE IN ('UNIQUE', 'CHECK', 'REFERENTIAL')"));
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_NAME = 'TEST' AND CONSTRAINT_TYPE IN ('UNIQUE', 'CHECK', 'FOREIGN KEY')"));
     }
 
     /// <summary>docs/grammar.html:2605 — NULLS { DISTINCT | NOT DISTINCT | { ALL DISTINCT } }</summary>
@@ -192,7 +192,7 @@ public sealed class ConstraintTests
         _ = connection.Execute("CREATE TABLE C(PID INT, FOREIGN KEY (PID) REFERENCES P(ID))");
 
         Assert.Equal(1, connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_NAME = 'C' AND CONSTRAINT_TYPE = 'REFERENTIAL'"));
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_NAME = 'C' AND CONSTRAINT_TYPE = 'FOREIGN KEY'"));
     }
 
     /// <summary>docs/grammar.html:2627 — | CHECK (condition)</summary>

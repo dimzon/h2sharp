@@ -6,6 +6,7 @@
  */
 using System;
 using System.Data.Common;
+using H2Sharp.Crypto;
 using H2Sharp.Data;
 using H2Sharp.Hashes;
 using H2Sharp.JavaLegacy;
@@ -159,6 +160,22 @@ public sealed class H2ExtensionTests
 
         Assert.Equal(length.ToString(),
             Scalar(connection, $"SELECT OCTET_LENGTH(HASH('{algorithm}', STRINGTOUTF8('abc'), 1))"));
+    }
+
+    [Theory]
+    [InlineData("AES", "20cff95086c35d686e3f3d9914ac9271")]
+    [InlineData("XTEA", "fb760ea9626ba45cce4b0e9a737ba19b")]
+    [InlineData("FOG", "7c505a5bbad9a9b134353637b9a1a9b1")]
+    public void OptionalCryptoMatchesH2(string algorithm, string expected)
+    {
+        using H2Connection connection = NewConnection();
+        ((IH2Extensions)connection).UseCrypto();
+        connection.Open();
+
+        Assert.Equal(expected,
+            Scalar(connection, $"SELECT RAWTOHEX(ENCRYPT('{algorithm}', STRINGTOUTF8('0123456789abcdef'), STRINGTOUTF8('Hello')))"));
+        Assert.Equal("Hello",
+            Scalar(connection, $"SELECT TRIM(CHAR(0) FROM UTF8TOSTRING(DECRYPT('{algorithm}', STRINGTOUTF8('0123456789abcdef'), ENCRYPT('{algorithm}', STRINGTOUTF8('0123456789abcdef'), STRINGTOUTF8('Hello')))))"));
     }
 
     [Fact]

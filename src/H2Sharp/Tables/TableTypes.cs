@@ -1318,6 +1318,91 @@ public abstract class Table
     }
 
     /// <summary>
+    /// Drops the constraints and indexes that are fully covered by the columns being removed.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="columnsToDrop">the columns being removed</param>
+    public void DropMultipleColumnsConstraintsAndIndexes(SessionLocal session, List<Column> columnsToDrop)
+    {
+        HashSet<Column> columnSetToDrop = [.. columnsToDrop];
+        HashSet<Constraint> constraintsToDrop = [];
+        foreach (Constraint constraint in GetConstraints())
+        {
+            bool? partiallyCovered = IsPartiallyCovered(columnSetToDrop, constraint.GetReferencedColumns(this));
+            if (partiallyCovered is null)
+            {
+                constraintsToDrop.Add(constraint);
+            }
+            else if (partiallyCovered.Value)
+            {
+                throw DbException.Get(Api.ErrorCode.ColumnIsReferenced1,
+                    constraint.GetCreateSql() ?? constraint.GetName());
+            }
+        }
+
+        HashSet<Indexes.Index> indexesToDrop = [];
+        foreach (Indexes.Index index in GetIndexes())
+        {
+            if (index.GetCreateSql() is null)
+            {
+                continue;
+            }
+
+            List<Column> indexColumns = [];
+            foreach (IndexColumn indexColumn in index.GetColumns())
+            {
+                indexColumns.Add(indexColumn.GetColumn());
+            }
+
+            bool? partiallyCovered = IsPartiallyCovered(columnSetToDrop, indexColumns);
+            if (partiallyCovered is null)
+            {
+                indexesToDrop.Add(index);
+            }
+            else if (partiallyCovered.Value)
+            {
+                throw DbException.Get(Api.ErrorCode.ColumnIsReferenced1,
+                    index.GetCreateSql() ?? index.GetName());
+            }
+        }
+
+        foreach (Constraint constraint in constraintsToDrop)
+        {
+            if (constraint.IsValid())
+            {
+                session.GetDatabase().RemoveSchemaObject(session, constraint);
+            }
+        }
+
+        foreach (Indexes.Index index in indexesToDrop)
+        {
+            if (Array.IndexOf(GetIndexes(), index) >= 0)
+            {
+                session.GetDatabase().RemoveSchemaObject(session, index);
+            }
+        }
+    }
+
+    private static bool? IsPartiallyCovered<T>(HashSet<T> cover, IEnumerable<T> covered)
+    {
+        bool containsNone = true;
+        bool containsAll = true;
+        foreach (T item in covered)
+        {
+            if (cover.Contains(item))
+            {
+                containsNone = false;
+            }
+            else
+            {
+                containsAll = false;
+            }
+        }
+
+        return containsAll ? null : !containsNone;
+    }
+
+    /// <summary>
     /// If the index is still required by a constraint, transfer the ownership to it.
     /// Otherwise, the index is removed.
     /// </summary>

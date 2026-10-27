@@ -27,6 +27,7 @@ using System.Text;
 using H2Sharp.Api;
 using H2Sharp.Constraints;
 using H2Sharp.Engine;
+using H2Sharp.Expressions;
 using H2Sharp.Indexes;
 using H2Sharp.Message;
 using H2Sharp.Result;
@@ -993,13 +994,15 @@ public sealed class InformationSchemaTable : Table
 
                 break;
             case ElementTypes:
+            case Fields:
                 foreach (Table table in GetAllTables(session))
                 {
                     Column[] columns = table.GetColumns();
                     for (int i = 0; i < columns.Length; i++)
                         ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation,
                             table.GetSchema()?.GetName(), table.GetTableName(), "TABLE",
-                            (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), columns[i].GetTypeInfo());
+                            (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), columns[i].GetTypeInfo(),
+                            type == Fields);
                 }
                 break;
             case TableConstraints:
@@ -1111,19 +1114,23 @@ public sealed class InformationSchemaTable : Table
                 }
 
                 break;
-            case Locks:
-            case InDoubt:
-            case QueryStatistics:
-            case SessionState:
             case Sessions:
-            case Users:
-            case Roles:
-            case Rights:
-            case TablePrivileges:
-            case ColumnPrivileges:
-            case Parameters:
-            case Routines:
+                foreach (SessionLocal other in database.GetSessions())
+                {
+                    AddSession(session, rows, other);
+                }
+
+                break;
             case Constants:
+                foreach (Schema schema in database.GetSchemas())
+                {
+                    foreach (Constant constant in schema.GetAllConstants())
+                    {
+                        AddConstant(rows, catalog, mainSchemaName, collation, constant);
+                    }
+                }
+
+                break;
             case Domains:
                 foreach (Schemas.Schema schema in database.GetSchemas())
                 {
@@ -1133,6 +1140,19 @@ public sealed class InformationSchemaTable : Table
                     }
                 }
 
+                break;
+            case Locks:
+            case InDoubt:
+            case QueryStatistics:
+            case SessionState:
+            case Users:
+            case Roles:
+            case Rights:
+            case TablePrivileges:
+            case ColumnPrivileges:
+            case Parameters:
+            case Routines:
+                // Objects of these views are not ported; the views stay readable and empty.
                 break;
             case DomainConstraints:
                 foreach (Schemas.Schema schema in database.GetSchemas())
@@ -1164,6 +1184,15 @@ public sealed class InformationSchemaTable : Table
 
                 break;
             case CheckConstraints:
+                foreach (Constraint constraint in GetAllConstraints(session))
+                {
+                    if (constraint.GetConstraintType() == Constraint.Type.CHECK)
+                    {
+                        AddCheckConstraint(rows, catalog, constraint);
+                    }
+                }
+
+                break;
             case Triggers:
             case Synonyms:
                 // The objects these views list do not exist in this port yet, so the views
@@ -1197,24 +1226,56 @@ public sealed class InformationSchemaTable : Table
     // objects (domains, routines, constants, local temporary tables) are not present yet.
     private static void ElementTypesFieldsRow(SessionLocal session, List<Value[]> rows, string catalog,
         string mainSchemaName, string collation, string? objectSchema, string objectName, string objectType,
-        string identifier, TypeInfo typeInfo)
+        string identifier, TypeInfo typeInfo, bool fields)
     {
         if (typeInfo.GetValueType() == Value.Array)
         {
             TypeInfo component = (TypeInfo)typeInfo.GetExtTypeInfo()!;
             string dtdIdentifier = identifier + '_';
-            AddElementTypes(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
-                objectType, identifier, dtdIdentifier, component);
+            if (!fields)
+            {
+                AddElementTypes(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
+                    objectType, identifier, dtdIdentifier, component);
+            }
+
             ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
-                objectType, dtdIdentifier, component);
+                objectType, dtdIdentifier, component, fields);
         }
         else if (typeInfo.GetValueType() == Value.Row)
         {
             int ordinal = 0;
             foreach (var field in ((ExtTypeInfoRow)typeInfo.GetExtTypeInfo()!).GetFields())
+            {
+                int position = ++ordinal;
+                string dtdIdentifier = identifier + '_' + position.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
+                if (fields)
+                {
+                    AddField(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
+                        objectType, identifier, field.Key, position, dtdIdentifier, field.Value);
+                }
+
                 ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
-                    objectType, identifier + '_' + (++ordinal).ToString(System.Globalization.CultureInfo.InvariantCulture), field.Value);
+                    objectType, dtdIdentifier, field.Value, fields);
+            }
         }
+    }
+
+    private static void AddField(SessionLocal session, List<Value[]> rows, string catalog, string mainSchemaName,
+        string collation, string? objectSchema, string objectName, string objectType, string rowIdentifier,
+        string fieldName, int ordinalPosition, string dtdIdentifier, TypeInfo typeInfo)
+    {
+        DataTypeInformation dt = DataTypeInformation.ValueOf(typeInfo);
+        string? characterCatalog = dt.HasCharsetAndCollation ? catalog : null;
+        string? characterSchema = dt.HasCharsetAndCollation ? mainSchemaName : null;
+        Add(rows, catalog, objectSchema, objectName, objectType, rowIdentifier, fieldName,
+            ValueInteger.Get(ordinalPosition), dt.DataType, dt.CharacterPrecision, dt.CharacterPrecision,
+            characterCatalog, characterSchema, dt.HasCharsetAndCollation ? CharacterSetName : null,
+            characterCatalog, characterSchema, dt.HasCharsetAndCollation ? collation : null,
+            dt.NumericPrecision, dt.NumericPrecisionRadix, dt.NumericScale, dt.DateTimePrecision,
+            dt.IntervalType, dt.IntervalPrecision, dt.MaximumCardinality, dtdIdentifier,
+            dt.DeclaredDataType, dt.DeclaredNumericPrecision, dt.DeclaredNumericScale,
+            dt.GeometryType, dt.GeometrySrid);
     }
 
     private static void AddElementTypes(SessionLocal session, List<Value[]> rows, string catalog, string mainSchemaName,
@@ -1260,6 +1321,82 @@ public sealed class InformationSchemaTable : Table
         }
 
         return constraints;
+    }
+
+    /// <summary>
+    /// The row of the CONSTANTS view for one constant.
+    /// </summary>
+    /// <param name="rows">the rows</param>
+    /// <param name="catalog">the catalog name</param>
+    /// <param name="mainSchemaName">the main schema name</param>
+    /// <param name="collation">the database collation</param>
+    /// <param name="constant">the constant</param>
+    private static void AddConstant(
+        List<Value[]> rows,
+        string catalog,
+        string mainSchemaName,
+        string collation,
+        Constant constant)
+    {
+        ValueExpression expression = constant.GetValue();
+        DataTypeInformation dt = DataTypeInformation.ValueOf(expression.GetTypeInfo());
+        string? characterCatalog = dt.HasCharsetAndCollation ? catalog : null;
+        string? characterSchema = dt.HasCharsetAndCollation ? mainSchemaName : null;
+        string valueSql = expression.GetUnenclosedSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
+        Add(
+            rows,
+            catalog,
+            constant.GetSchema()?.GetName(),
+            constant.GetName(),
+            valueSql,
+            dt.DataType,
+            dt.CharacterPrecision,
+            dt.CharacterPrecision,
+            characterCatalog,
+            characterSchema,
+            dt.HasCharsetAndCollation ? CharacterSetName : null,
+            characterCatalog,
+            characterSchema,
+            dt.HasCharsetAndCollation ? collation : null,
+            dt.NumericPrecision,
+            dt.NumericPrecisionRadix,
+            dt.NumericScale,
+            dt.DateTimePrecision,
+            dt.IntervalType,
+            dt.IntervalPrecision,
+            dt.MaximumCardinality,
+            "TYPE",
+            dt.DeclaredDataType,
+            dt.DeclaredNumericPrecision,
+            dt.DeclaredNumericScale,
+            dt.GeometryType,
+            dt.GeometrySrid,
+            constant.GetComment());
+    }
+
+    /// <summary>
+    /// The row of the SESSIONS view for one session.
+    /// </summary>
+    /// <param name="session">the session reading the view</param>
+    /// <param name="rows">the rows</param>
+    /// <param name="other">the session to list</param>
+    private static void AddSession(SessionLocal session, List<Value[]> rows, SessionLocal other)
+    {
+        Add(
+            rows,
+            ValueInteger.Get(other.GetId()),
+            other.GetUserName(),
+            null,
+            null,
+            null,
+            other.GetSessionStart(),
+            other.GetIsolationLevel().GetSql(),
+            null,
+            null,
+            ValueBoolean.Get(other.HasPendingTransaction()),
+            ReferenceEquals(session, other) ? "RUN" : "SLEEP",
+            null,
+            null);
     }
 
     /// <summary>
@@ -1636,6 +1773,24 @@ public sealed class InformationSchemaTable : Table
                 // REMARKS
                 c.GetComment());
         }
+    }
+
+    /// <summary>
+    /// The row of the CHECK_CONSTRAINTS view for one check constraint.
+    /// </summary>
+    /// <param name="rows">the rows</param>
+    /// <param name="catalog">the catalog name</param>
+    /// <param name="constraint">the constraint</param>
+    private static void AddCheckConstraint(List<Value[]> rows, string catalog, Constraint constraint)
+    {
+        string expression = constraint.GetExpression()!
+            .GetUnenclosedSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
+        Add(
+            rows,
+            catalog,
+            constraint.GetSchema()?.GetName(),
+            constraint.GetName(),
+            expression);
     }
 
     /// <summary>

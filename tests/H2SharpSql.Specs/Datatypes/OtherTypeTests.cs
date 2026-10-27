@@ -130,7 +130,7 @@ public sealed class OtherTypeTests
         using IDbConnection connection = TestDatabase.Open();
 
         Assert.True(connection.QuerySingle<bool>(
-            "SELECT CAST('POINT(1 2)' AS GEOMETRY(POINT, 4326)) IS NOT NULL"));
+            "SELECT CAST('SRID=4326;POINT(1 2)' AS GEOMETRY(POINT, 4326)) IS NOT NULL"));
     }
 
     /// <summary>docs/datatypes.html:759 — JSON [(lengthInt)]</summary>

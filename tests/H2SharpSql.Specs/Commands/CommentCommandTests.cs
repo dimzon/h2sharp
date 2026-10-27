@@ -48,7 +48,7 @@ public sealed class CommentCommandTests
         _ = connection.Execute("COMMENT ON VIEW V IS 'view comment'");
 
         Assert.Equal("view comment", connection.QuerySingle<string>(
-            "SELECT REMARKS FROM INFORMATION_SCHEMA.VIEWS WHERE VIEW_NAME = 'V'"));
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_NAME = 'V'"));
     }
 
     /// <summary>docs/commands.html:1588 — | SCHEMA | SEQUENCE | TRIGGER | USER | DOMAIN } [schemaName.]objectName } }</summary>

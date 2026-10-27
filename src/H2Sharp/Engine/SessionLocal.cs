@@ -37,15 +37,24 @@ public sealed class SessionLocal : Session
     private readonly string userName;
 
     /// <summary>
-    /// The id of this session, handed out by the database.
+    /// Gets the id of this session, handed out by the database.
     /// </summary>
     private readonly int id;
+
+    /// <summary>The timestamp when this session was opened.</summary>
+    private readonly ValueTimestampTimeZone sessionStart;
 
     /// <summary>
     /// Gets the id of this session.
     /// </summary>
     /// <returns>the id</returns>
     public int GetId() => id;
+
+    /// <summary>
+    /// Gets the timestamp when this session was opened.
+    /// </summary>
+    /// <returns>the session start timestamp</returns>
+    public ValueTimestampTimeZone GetSessionStart() => sessionStart;
 
     /// <summary>
     /// Object ids to release when the transaction ends.
@@ -527,6 +536,7 @@ public sealed class SessionLocal : Session
         this.database = database;
         this.userName = userName;
         this.id = id;
+        sessionStart = DefaultCastDataProvider.Instance.CurrentTimestamp();
         CompareMode = database.GetCompareMode();
         // Reference: this.lockTimeout = database.getLockTimeout();
         lockTimeout = database.GetLockTimeout();

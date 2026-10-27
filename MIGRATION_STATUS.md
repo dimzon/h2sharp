@@ -20,10 +20,58 @@
   SHA-512/224, SHA-512/256, SHAKE, cSHAKE, TurboSHAKE, Keccak, BLAKE2/3, KT,
   ASCON, Kupyna, LSH, Streebog, RIPEMD-160, SM3 и Whirlpool. По умолчанию BCL
   остаётся; `UseH2Hashes(overrideBcl: true)` заменяет и BCL-реализации.
+* `H2Sharp.Crypto` (`UseCrypto()`) регистрирует `ENCRYPT`/`DECRYPT` как raw UDF:
+  AES через BCL (`AES-128`, ECB, zero padding), XTEA и FOG — порты H2. Пакет
+  опционален, ядро криптографии не содержит; векторы совпадают с jar.
 
 TODO следующего среза: полноценный data-driven catalog builtins вместо
 `ReadBuiltinFunctionIf`, schema/FunctionAlias metadata, persistence/reopen,
 `CREATE/DROP ALIAS`, DI/triggers/trace и table-valued UDF.
+
+### Conformance: тестовые ожидания и локальные дефекты info schema
+
+Разобран первый блок падений, где часть тестов была написана не по H2 2.5, а часть
+указывала на реальные дефекты порта.
+
+Тестовые ожидания исправлены: `INFORMATION_SCHEMA.VIEWS` ищется по `TABLE_NAME`, а не
+`VIEW_NAME`; `FIELDS` — по `OBJECT_NAME`; `TABLE_CONSTRAINTS.CONSTRAINT_TYPE` для FK —
+`FOREIGN KEY`, как в jar; `HEXTORAW('0041')` проверяется как строка, а не Oracle-binary;
+`DAY_OF_WEEK` выполняется под `en-US` (H2 берёт `WeekFields.of(Locale.getDefault())`);
+`PREPARE COMMIT` создаёт таблицу; `WITH TIES` сравнивает весь список `ORDER BY` (два
+assert: с `SCORE` и с `SCORE, ID`); геометрия с SRID задаётся как `SRID=4326;POINT`;
+`?N` проверяется через `DbParameter`, потому что Dapper не считает `?1` placeholder'ом.
+
+Порт исправлен: `SESSIONS` больше не пуст и не подменяется domain-строками; `FIELDS`
+строит строки полей ROW; `CHECK_CONSTRAINTS` перечисляет check-ограничения;
+`H2ValueMapper` читает day-time INTERVAL как `TimeSpan` и GEOMETRY как EWKT-строку
+(у H2 без JTS это `String`).
+
+Следующая партия закрыла ещё 20: `EXTRACT(W)` и `DAY_OF_WEEK` (кэш `WeekFields`
+теперь по культуре), `UNKNOWN`, `ALTER TABLE DROP COLUMN` (включая `IF EXISTS` и
+список колонок), `ALTER TABLE RENAME CONSTRAINT`, `ALTER INDEX/SCHEMA RENAME`,
+`CREATE UNIQUE INDEX ... INCLUDE`, `SHOW TABLES/COLUMNS`, `CHECKPOINT`,
+`SHUTDOWN COMPACT`, `EXECUTE IMMEDIATE` и `BACKUP` на in-memory базе (H2 отвергает
+его как non-persistent). `&&` проверен jar: в H2 2.5 это spatial-оператор, а не
+логическое `AND`, поэтому ожидание теста убрано.
+
+Затем закрыты `CREATE/DROP CONSTANT` (вместе с `INFORMATION_SCHEMA.CONSTANTS`),
+`FieldReference` для полей ROW/JSON, `UPDATE ... ORDER BY` (принимается и
+игнорируется, как в H2) и `DELETE ... FETCH` (без `ORDER BY`).
+
+CSV/FILE вынесены в D-005 и `BlockedByPort` по подтверждённому решению
+пользователя: файловый CSV I/O для встраиваемого движка вне scope; EF Core и
+linq2db его не используют. Info-схемы неподдерживаемых объектов
+(users/roles/routines/triggers/…) остаются читаемыми и пустыми; их тесты
+переведены в `BlockedByPort`.
+
+`ENCRYPT`/`DECRYPT` вынесены в `H2Sharp.Crypto`: AES — BCL ECB/zero padding,
+XTEA и FOG — порты H2; векторы сверены с jar.
+
+Проверено: core **1468/1468**, Data **555/555**, conformance полный **852/952**,
+зелёный **850/911** (было 805/803). Провайдеры на текущем бинарнике: linq2db
+**76/76** и ModelTests **180/180** на net8/net10; EF Core unit **129/129**, functional
+**5742/5762** на каждом net9/net10, 6 падений — `_LOCAL_AND_GLOBAL_` в
+`RegularQueryExpressionIndex` и связанные с ним shape-запросы.
 
 ### TestScript: планы, производные таблицы и ранние блокеры
 

@@ -19,6 +19,7 @@ public sealed class InformationSchemaMoreTests
 
     /// <summary>docs/systemtables.html:1187 — PARAMETERS</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void Parameters_ListsTheRoutineParameters() // SYS-1187
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -50,6 +51,7 @@ public sealed class InformationSchemaMoreTests
 
     /// <summary>docs/systemtables.html:1373 — RIGHTS</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void Rights_ListsTheGrants() // SYS-1373
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -63,6 +65,7 @@ public sealed class InformationSchemaMoreTests
 
     /// <summary>docs/systemtables.html:1400 — ROLES</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void Roles_ListsTheRoles() // SYS-1400
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -74,6 +77,7 @@ public sealed class InformationSchemaMoreTests
 
     /// <summary>docs/systemtables.html:1415 — ROUTINES</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void Routines_ListsTheRoutines() // SYS-1415
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -168,6 +172,7 @@ public sealed class InformationSchemaMoreTests
 
     /// <summary>docs/systemtables.html:1852 — TABLE_PRIVILEGES</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void TablePrivileges_ListsTheTableGrants() // SYS-1852
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -181,6 +186,7 @@ public sealed class InformationSchemaMoreTests
 
     /// <summary>docs/systemtables.html:1887 — TRIGGERS</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void Triggers_ListsTheTriggers() // SYS-1887
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -193,6 +199,7 @@ public sealed class InformationSchemaMoreTests
 
     /// <summary>docs/systemtables.html:1938 — USERS</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void Users_ListsTheUsers() // SYS-1938
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -211,7 +218,7 @@ public sealed class InformationSchemaMoreTests
         _ = connection.Execute("CREATE VIEW V AS SELECT ID FROM TEST");
 
         Assert.Equal(1, connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE VIEW_NAME = 'V'"));
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_NAME = 'V'"));
     }
 
     /// <summary>docs/systemtables.html:2003 — Range Table</summary>

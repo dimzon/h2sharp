@@ -7,6 +7,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Numerics;
 
@@ -27,7 +28,8 @@ namespace H2Sharp.Expressions.Functions;
 /// here from <see cref="CultureInfo.CurrentCulture"/>: its first day of the week, and its week
 /// rule mapped to the day count <c>WeekFields</c> would carry — first day of the year 1, first
 /// four-day week 4, first full week 7. .NET has no <c>WeekFields</c>, so the two numbers are read
-/// off the culture's own calendar settings.
+/// off the culture's own calendar settings and cached per culture: changing the current culture
+/// must not reuse another culture's week definition.
 /// </remarks>
 public sealed class DateTimeFunction : Function1_2
 {
@@ -216,9 +218,9 @@ public sealed class DateTimeFunction : Function1_2
     private static readonly BigDecimal BdNanosPerSecond = BigDecimal.FromLong(DateTimeUtils.NanosPerSecond);
 
     /// <summary>
-    /// Local definitions of day-of-week, week-of-month, and week-of-year.
+    /// Local definitions of day-of-week, week-of-month, and week-of-year, per culture.
     /// </summary>
-    private static volatile WeekFields? weekFields;
+    private static readonly ConcurrentDictionary<string, WeekFields> weekFields = new();
 
     /// <summary>
     /// Get date-time field for the specified name.
@@ -1015,13 +1017,8 @@ public sealed class DateTimeFunction : Function1_2
 
     private static WeekFields GetWeekFields()
     {
-        WeekFields? fields = weekFields;
-        if (fields == null)
-        {
-            weekFields = fields = WeekFields.Of(CultureInfo.CurrentCulture);
-        }
-
-        return fields;
+        CultureInfo culture = CultureInfo.CurrentCulture;
+        return weekFields.GetOrAdd(culture.Name, _ => WeekFields.Of(culture));
     }
 
     private static Value ExtractEpoch(SessionLocal session, Value value)

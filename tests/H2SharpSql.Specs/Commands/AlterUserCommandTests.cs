@@ -78,6 +78,6 @@ public sealed class AlterViewCommandTests
         _ = connection.Execute("ALTER VIEW TEST RENAME TO MY_VIEW");
 
         Assert.Equal(1, connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE VIEW_NAME = 'MY_VIEW'"));
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_NAME = 'MY_VIEW'"));
     }
 }

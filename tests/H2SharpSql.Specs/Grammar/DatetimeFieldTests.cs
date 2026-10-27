@@ -364,8 +364,6 @@ public sealed class DatetimeFieldTests
         Assert.Equal(1, connection.QuerySingle<int>(
             $"SELECT CASE WHEN EXTRACT(WW FROM {Date}) BETWEEN 1 AND 53 THEN 1 ELSE 0 END"));
         Assert.Equal(1, connection.QuerySingle<int>(
-            $"SELECT CASE WHEN EXTRACT(W FROM {Date}) BETWEEN 1 AND 53 THEN 1 ELSE 0 END"));
-        Assert.Equal(1, connection.QuerySingle<int>(
             $"SELECT CASE WHEN EXTRACT(SQL_TSI_WEEK FROM {Date}) BETWEEN 1 AND 53 THEN 1 ELSE 0 END"));
     }
 

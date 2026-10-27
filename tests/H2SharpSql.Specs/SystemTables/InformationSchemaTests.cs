@@ -57,6 +57,7 @@ public sealed class InformationSchemaTests
 
     /// <summary>docs/systemtables.html:495 — COLUMN_PRIVILEGES</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void ColumnPrivileges_ListsTheColumnGrants() // SYS-0495
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -142,7 +143,7 @@ public sealed class InformationSchemaTests
         _ = connection.Execute("CREATE TABLE TEST(A ROW(B INT, C VARCHAR(10)))");
 
         Assert.True(connection.QuerySingle<bool>(
-            "SELECT COUNT(*) >= 2 FROM INFORMATION_SCHEMA.FIELDS WHERE TABLE_NAME = 'TEST'"));
+            "SELECT COUNT(*) >= 2 FROM INFORMATION_SCHEMA.FIELDS WHERE OBJECT_NAME = 'TEST'"));
     }
 
     /// <summary>docs/systemtables.html:1016 — INDEXES</summary>

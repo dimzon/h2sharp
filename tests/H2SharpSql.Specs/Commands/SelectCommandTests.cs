@@ -151,11 +151,15 @@ public sealed class SelectCommandTests
         _ = connection.Execute("INSERT INTO RESULT(ID, SCORE) VALUES (2, 10)");
         _ = connection.Execute("INSERT INTO RESULT(ID, SCORE) VALUES (3, 20)");
 
-        List<int> ids = connection
+        List<int> noTies = connection
             .Query<int>("SELECT ID FROM RESULT ORDER BY SCORE, ID FETCH FIRST 1 ROW WITH TIES")
             .AsList();
+        List<int> withTies = connection
+            .Query<int>("SELECT ID FROM RESULT ORDER BY SCORE FETCH FIRST 1 ROW WITH TIES")
+            .AsList();
 
-        Assert.Equal(new[] { 1, 2 }, ids);
+        Assert.Equal(new[] { 1 }, noTies);
+        Assert.Equal(new[] { 1, 2 }, withTies);
     }
 
     /// <summary>docs/commands.html:715 — [ FOR UPDATE [ NOWAIT | WAIT secondsNumeric | SKIP LOCKED ] ]</summary>

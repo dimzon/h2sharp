@@ -64,7 +64,7 @@ public sealed class CreateViewCommandTests
         _ = connection.Execute("CREATE VIEW IF NOT EXISTS TEST_VIEW AS SELECT ID FROM TEST");
 
         Assert.Equal(1, connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE VIEW_NAME = 'TEST_VIEW'"));
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_NAME = 'TEST_VIEW'"));
     }
 
     /// <summary>docs/commands.html:1902 — [ ( columnName [,...] ) ] AS query</summary>

@@ -20,6 +20,7 @@
 using System;
 using System.Data;
 using H2Sharp.Data;
+using H2Sharp.Crypto;
 using H2Sharp.Hashes;
 using H2Sharp.JavaLegacy;
 
@@ -41,6 +42,7 @@ internal static class TestDatabase
         H2Connection connection = new($"jdbc:h2:mem:{Guid.NewGuid():N}");
         ((IH2Extensions)connection).UseJavaLegacy();
         ((IH2Extensions)connection).UseH2Hashes();
+        ((IH2Extensions)connection).UseCrypto();
         connection.Open();
         return connection;
     }

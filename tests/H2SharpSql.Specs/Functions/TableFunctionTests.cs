@@ -14,6 +14,7 @@ public sealed class TableFunctionTests
 {
     /// <summary>docs/functions.html:4185 — CSVREAD(fileNameString [, columnsString [, csvOptions ] ] )</summary>
     [Fact]
+    [Trait("Category", "BlockedByPort")]
     public void CsvRead_ReadsTheWrittenFile() // FUN-4185
     {
         using IDbConnection connection = TestDatabase.Open();

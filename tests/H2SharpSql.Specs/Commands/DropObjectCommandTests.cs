@@ -169,7 +169,7 @@ public sealed class DropObjectCommandTests
         _ = connection.Execute("DROP TABLE TEST CASCADE");
 
         Assert.Equal(0, connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE VIEW_NAME = 'TEST_VIEW'"));
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_NAME = 'TEST_VIEW'"));
     }
 
     /// <summary>docs/commands.html:2176 — DROP VIEW [ IF EXISTS ] [schemaName.]viewName [ RESTRICT | CASCADE ]</summary>
@@ -183,7 +183,7 @@ public sealed class DropObjectCommandTests
         _ = connection.Execute("DROP VIEW TEST_VIEW");
 
         Assert.Equal(0, connection.QuerySingle<int>(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE VIEW_NAME = 'TEST_VIEW'"));
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_NAME = 'TEST_VIEW'"));
     }
 
     /// <summary>docs/commands.html:2195 — DROP MATERIALIZED VIEW [ IF EXISTS ] [schemaName.]viewName</summary>

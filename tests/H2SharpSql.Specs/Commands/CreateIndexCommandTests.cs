@@ -57,7 +57,7 @@ public sealed class CreateIndexCommandTests
         using IDbConnection connection = TestDatabase.Open();
         GivenTestTable(connection);
 
-        _ = connection.Execute("CREATE INDEX IDXINC ON TEST(NAME) INCLUDE (ID)");
+        _ = connection.Execute("CREATE UNIQUE INDEX IDXINC ON TEST(NAME) INCLUDE (ID)");
 
         Assert.Equal(1, connection.QuerySingle<int>(
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'IDXINC'"));

@@ -810,6 +810,29 @@ public sealed partial class Database : CastDataProvider
         }
     }
 
+    /// <summary>Renames a database object whose home is not a schema.</summary>
+    /// <param name="session">the session</param>
+    /// <param name="obj">the object</param>
+    /// <param name="newName">the new name</param>
+    public void RenameDatabaseObject(SessionLocal session, DbObject obj, string newName)
+    {
+        if (obj is not Schemas.Schema schema)
+        {
+            throw new TODOException("Database.renameDatabaseObject: only schemas are ported");
+        }
+
+        CheckWritingAllowed();
+        lock (syncRoot)
+        {
+            _ = schemas.Remove(schema.GetName());
+            schema.Rename(newName);
+            schemas[newName] = schema;
+        }
+
+        UpdateMeta(session, schema);
+        ClearQueryCache(schema.GetId());
+    }
+
     /// <summary>Renames a schema object.</summary>
     /// <param name="session">the session</param>
     /// <param name="obj">the object</param>

@@ -318,8 +318,17 @@ public sealed class ExpressionColumn : Expression
     {
         if (columnResolver is null)
         {
+            Schemas.Schema? schema = session.GetDatabase().FindSchema(
+                tableAlias ?? session.GetCurrentSchemaName());
+            Schemas.Constant? constant = columnAlias is null ? null : schema?.FindConstant(columnAlias);
+            if (constant is not null)
+            {
+                return constant.GetValue();
+            }
+
             throw DbException.Get(Api.ErrorCode.ColumnNotFound1, tableAlias is null ? columnAlias : tableAlias + '.' + columnAlias);
         }
+
         return columnResolver.Optimize(this, column!);
     }
 
