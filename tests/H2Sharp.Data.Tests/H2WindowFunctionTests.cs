@@ -36,6 +36,24 @@ public sealed class H2WindowFunctionTests
         Assert.True(reader.Read()); Assert.Equal(3, reader.GetInt64(0)); Assert.Equal(2, reader.GetInt64(1));
     }
 
+    [Fact]
+    public void Issue69WindowConditionFromOuterQueryIsApplied()
+    {
+        using H2Connection connection = Open();
+        connection.Execute("CREATE TABLE \"Posts\"(\"Id\" INT PRIMARY KEY, \"TopicId\" INT, \"CreatedAt\" TIMESTAMP)");
+        connection.Execute("INSERT INTO \"Posts\" VALUES (1, 1, TIMESTAMP '2024-01-01 10:00:00'), (2, 1, TIMESTAMP '2024-01-02 10:00:00'), (3, 2, TIMESTAMP '2024-01-03 10:00:00')");
+
+        Assert.Equal(new[] { 1, 3 }, connection.Query<int>(
+            """
+            SELECT "p0"."Id" FROM (
+                SELECT "p"."Id", ROW_NUMBER() OVER(PARTITION BY "p"."TopicId" ORDER BY "p"."CreatedAt") AS "P0"
+                FROM "Posts" "p"
+            ) AS "p0"
+            WHERE "p0"."P0" = 1
+            ORDER BY "p0"."Id"
+            """));
+    }
+
     private static H2Connection Open()
     {
         H2Connection connection = new("jdbc:h2:mem:window_functions_" + Guid.NewGuid().ToString("N"));
