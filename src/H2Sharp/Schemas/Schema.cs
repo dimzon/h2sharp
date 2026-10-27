@@ -380,13 +380,23 @@ public sealed class Schema : DbObject
         {
             if (!data.Temporary || data.GlobalTemporary) GetDatabase().LockMeta(data.Session);
             data.Schema = this;
-            if (data.TableEngine is not null || data.TableEngineParams is { Count: > 0 })
-                throw new TODOException("Schema.createTable: external table engines are not ported");
-            if (data.Temporary || data.GlobalTemporary)
-                throw new TODOException("Schema.createTable: temporary table factory is not ported");
+            if (data.TableEngine is not null)
+            {
+                throw new TODOException(
+                    "Schema.createTable: custom table engines are not ported: " + data.TableEngine);
+            }
+
+            if (data.Temporary && !data.GlobalTemporary)
+            {
+                throw new TODOException("Schema.createTable: local temporary tables are not ported");
+            }
+
             // The port's existing default store table factory is the MVTable constructor.
-            return new MvStore.Db.MVTable(GetDatabase(), this, data.Id, data.TableName,
+            MvStore.Db.MVTable table = new(GetDatabase(), this, data.Id, data.TableName,
                 [.. data.Columns], data.PersistIndexes, data.PersistData);
+            table.SetTemporary(data.Temporary);
+            table.SetGlobalTemporary(data.GlobalTemporary);
+            return table;
         }
     }
 

@@ -496,7 +496,33 @@ public sealed partial class Parser
             do { ParseTableColumnDefinition(command, schema, tableName, true); }
             while (ReadIfMore());
         }
-        if (!persistIndexes && ReadIfWords("NOT", "PERSISTENT")) command.SetPersistData(false);
+        if (IsWord("ENGINE"))
+        {
+            command.SetTableEngine(ReadIdentifier());
+        }
+
+        if (IsWord("WITH"))
+        {
+            List<string> parameters = [];
+            do
+            {
+                parameters.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+            command.SetTableEngineParams(parameters);
+        }
+
+        if (IsWord("NOT"))
+        {
+            ExpectWord("PERSISTENT");
+            command.SetPersistData(false);
+        }
+
+        if (IsWord("TRANSACTIONAL"))
+        {
+            command.SetTransactional(true);
+        }
+
         if (IsWord("AS"))
         {
             command.SetQuery(ParseQueryExpression(prepare: false));

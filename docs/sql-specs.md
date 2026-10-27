@@ -18,8 +18,8 @@
 
 Текущее рабочее дерево после разбора тестовых ожиданий, info schema и первой DDL/utility-партии.
 
-* Полный набор: **860 / 952**, 92 падения.
-* Зелёный прогон `--filter "Category!=BlockedByPort"`: **858 / 911**, 53 падения.
+* Полный набор: **864 / 952**, 88 падений.
+* Зелёный прогон `--filter "Category!=BlockedByPort"`: **862 / 911**, 49 падений.
 * `BlockedByPort`: **41** тест. D-004 users/roles/grants — 25 (включая info-schema
   Users/Roles/Rights/TablePrivileges/ColumnPrivileges), Java info-schema
   Routines/Parameters/Triggers — 3, CSV/FILE D-005 — 6, D-002 collation — 2,
@@ -39,7 +39,7 @@
 ссылки на поля `ROW`/JSON (`FieldReference`), `UPDATE ... ORDER BY` (H2 его принимает,
 но игнорирует) и `DELETE ... FETCH` (без `ORDER BY`: H2 2.5 отвергает его в DELETE).
 
-Оставшиеся 53 зелёных падения — это в основном непрочитанный синтаксис и команды,
+Оставшиеся 49 зелёных падений — это в основном непрочитанный синтаксис и команды,
 явные `TODOException` и отдельные function/value gaps. CSV/FILE вынесены в D-005;
 неподдерживаемые info-схемы (users/roles/routines/triggers) теперь читаются пустыми,
 а их тесты переведены в `BlockedByPort`. `ENCRYPT`/`DECRYPT` закрыты отдельным

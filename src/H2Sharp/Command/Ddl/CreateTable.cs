@@ -112,14 +112,15 @@ public sealed class CreateTable : CommandWithColumns
     /// </remarks>
     public override long Update()
     {
-        if (temporary || globalTemporary || onCommitDrop || onCommitTruncate)
+        if (temporary && !globalTemporary || onCommitDrop || onCommitTruncate)
         {
-            throw new TODOException("CreateTable.update: temporary tables are not ported");
+            throw new TODOException("CreateTable.update: local temporary tables are not ported");
         }
 
-        if (tableEngine is not null || tableEngineParams is not null)
+        if (tableEngine is not null)
         {
-            throw new TODOException("CreateTable.update: table engines are not ported");
+            throw Message.DbException.GetUnsupportedException(
+                "custom table engines are not ported: " + tableEngine);
         }
 
         SessionLocal session = GetSession();
@@ -161,6 +162,8 @@ public sealed class CreateTable : CommandWithColumns
         {
             Id = GetObjectId(), TableName = tableName, Columns = columns, Session = session,
             PersistIndexes = db.IsPersistent() && persistIndexes, PersistData = persistData,
+            Temporary = temporary, GlobalTemporary = globalTemporary,
+            TableEngine = tableEngine, TableEngineParams = tableEngineParams,
         };
         Table table = schema.CreateTable(data);
 

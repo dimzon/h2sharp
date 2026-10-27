@@ -219,6 +219,24 @@ public sealed class CreateTableStatement : Statement
 
     /// <summary>Whether the indexes are persisted: false for CREATE MEMORY TABLE.</summary>
     public bool PersistIndexes { get; set; } = true;
+
+    /// <summary>Whether the table is temporary.</summary>
+    public bool Temporary { get; set; }
+
+    /// <summary>Whether the temporary table is global.</summary>
+    public bool GlobalTemporary { get; set; }
+
+    /// <summary>Whether the data is persisted.</summary>
+    public bool PersistData { get; set; } = true;
+
+    /// <summary>Whether the table is transactional.</summary>
+    public bool Transactional { get; set; }
+
+    /// <summary>The table engine, or null.</summary>
+    public string? TableEngine { get; set; }
+
+    /// <summary>The table engine parameters, or null.</summary>
+    public List<string>? TableEngineParams { get; set; }
 }
 
 /// <summary>DROP TABLE.</summary>
@@ -758,14 +776,33 @@ public sealed partial class Parser
         {
             prepared = ParseCall();
         }
-        else if (IsWord("CREATE", consume: false) && (NextIs("TABLE") || NextIs("MEMORY") || NextIs("CACHED")))
+        else if (IsWord("CREATE", consume: false) && NextIsTable())
         {
             Read();
             bool memory = IsWord("MEMORY");
             bool cached = !memory && IsWord("CACHED");
+            bool temporary = false;
+            bool globalTemporary = false;
+            if (IsWord("LOCAL"))
+            {
+                ExpectWord("TEMPORARY");
+                temporary = true;
+            }
+            else if (IsWord("GLOBAL"))
+            {
+                ExpectWord("TEMPORARY");
+                temporary = true;
+                globalTemporary = true;
+            }
+            else if (IsWord("TEMP") || IsWord("TEMPORARY"))
+            {
+                temporary = true;
+                globalTemporary = true;
+            }
+
             bool persistIndexes = cached || !memory && current.GetDatabase().GetDefaultTableType() == Tables.Table.TYPE_CACHED;
             ExpectWord("TABLE");
-            prepared = ParseCreateTable(false, false, persistIndexes);
+            prepared = ParseCreateTable(temporary, globalTemporary, persistIndexes);
         }
         else if (IsWord("CREATE", consume: false) && NextIs("DOMAIN"))
         {
@@ -1364,6 +1401,18 @@ public sealed partial class Parser
     /// </summary>
     /// <param name="word">the word</param>
     /// <returns>true if it is</returns>
+    private bool NextIsTable()
+    {
+        string? name = position + 1 < tokens.Count ? tokens[position + 1].AsIdentifier : null;
+        return name is not null && (name.Equals("TABLE", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("MEMORY", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("CACHED", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("TEMP", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("TEMPORARY", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("GLOBAL", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("LOCAL", StringComparison.OrdinalIgnoreCase));
+    }
+
     private bool NextIs(string word)
     {
         string? name = position + 1 < tokens.Count ? tokens[position + 1].AsIdentifier : null;
@@ -8246,6 +8295,67 @@ public sealed partial class Parser
         while (ReadIf(Token.Comma));
 
         Expect(Token.CloseParen, ")");
+        if (IsWord("ENGINE"))
+        {
+            statement.TableEngine = ReadIdentifier();
+        }
+
+        if (IsWord("WITH"))
+        {
+            List<string> engineParams = [];
+            do
+            {
+                engineParams.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+            statement.TableEngineParams = engineParams;
+        }
+
+        if (statement.Temporary)
+        {
+            if (IsWord("ON") && IsWord("COMMIT"))
+            {
+                throw new TODOException(
+                    "Parser.readCreateTable: ON COMMIT for temporary tables is not ported");
+            }
+
+            if (IsWord("NOT"))
+            {
+                if (IsWord("PERSISTENT"))
+                {
+                    statement.PersistData = false;
+                }
+                else
+                {
+                    ExpectWord("LOGGED");
+                }
+            }
+
+            if (IsWord("TRANSACTIONAL"))
+            {
+                statement.Transactional = true;
+            }
+        }
+        else if (!statement.PersistIndexes && IsWord("NOT"))
+        {
+            ExpectWord("PERSISTENT");
+            statement.PersistData = false;
+            if (IsWord("TRANSACTIONAL"))
+            {
+                statement.Transactional = true;
+            }
+        }
+        else if (IsWord("NOT", consume: false))
+        {
+            Read();
+            ExpectWord("PERSISTENT");
+            statement.PersistData = false;
+            if (IsWord("TRANSACTIONAL"))
+            {
+                statement.Transactional = true;
+            }
+        }
+
         return statement;
     }
 

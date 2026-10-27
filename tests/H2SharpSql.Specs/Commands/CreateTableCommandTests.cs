@@ -2,6 +2,7 @@
 // Licensed under the MPL 2.0 or the EPL 1.0.
 //
 // docs/commands.html — CREATE TABLE command, one test per checklist row.
+using System;
 using System.Data;
 using Dapper;
 using H2SharpSql.Specs.Infrastructure;
@@ -51,25 +52,22 @@ public sealed class CreateTableCommandTests
 
     /// <summary>docs/commands.html:1822 — [ ENGINE tableEngineName ]</summary>
     [Fact]
-    public void CreateTable_Engine_RegistersTheTable() // CMD-1822
+    public void CreateTable_Engine_IsRejectedAsCustomEngine() // CMD-1822
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("CREATE TABLE TEST(ID INT) ENGINE \"org.h2.mvstore.db.MVTableEngine\"");
-
-        Assert.Equal(1, TableCount(connection, "TEST"));
+        _ = Assert.ThrowsAny<Exception>(() =>
+            connection.Execute("CREATE TABLE TEST(ID INT) ENGINE \"org.h2.mvstore.db.MVTableEngine\""));
     }
 
     /// <summary>docs/commands.html:1823 — [ WITH tableEngineParamName [,...] ]</summary>
     [Fact]
-    public void CreateTable_WithEngineParameter_RegistersTheTable() // CMD-1823
+    public void CreateTable_WithEngineParameter_IsRejectedAsCustomEngine() // CMD-1823
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute(
-            "CREATE TABLE TEST(ID INT) ENGINE \"org.h2.mvstore.db.MVTableEngine\" WITH \"compress\"");
-
-        Assert.Equal(1, TableCount(connection, "TEST"));
+        _ = Assert.ThrowsAny<Exception>(() => connection.Execute(
+            "CREATE TABLE TEST(ID INT) ENGINE \"org.h2.mvstore.db.MVTableEngine\" WITH \"compress\""));
     }
 
     /// <summary>docs/commands.html:1824 — [ NOT PERSISTENT ] [ TRANSACTIONAL ]</summary>

@@ -1045,6 +1045,9 @@ public abstract class Table
     /// </remarks>
     private bool temporary;
 
+    /// <summary>Whether this temporary table is global.</summary>
+    private bool globalTemporary;
+
     /// <summary>
     /// Check if this object is temporary (for example, a temporary table).
     /// </summary>
@@ -1091,15 +1094,11 @@ public abstract class Table
     /// <summary>
     /// Whether this is a global temporary table.
     /// </summary>
-    /// <remarks>
-    /// Always false: global temporariness arrives with CreateTableData, which does not exist
-    /// here yet, so no table can be one.
-    /// </remarks>
-    /// <returns>false</returns>
-    public bool IsGlobalTemporary()
-    {
-        return false;
-    }
+    /// <returns>true for a global temporary table</returns>
+    public bool IsGlobalTemporary() => globalTemporary;
+
+    /// <summary>Sets whether this temporary table is global.</summary>
+    public void SetGlobalTemporary(bool value) => globalTemporary = value;
 
     /// <summary>
     /// Read lock: the table may be read but not changed.
