@@ -1722,7 +1722,8 @@ public sealed partial class Parser
                 if (ReadIf(ParserUtil.All)) type = Query.SelectUnion.UnionType.UNION_ALL;
                 else { ReadIf(ParserUtil.Distinct); type = Query.SelectUnion.UnionType.UNION; }
             }
-            else if (ReadIf(ParserUtil.Except)) type = Query.SelectUnion.UnionType.EXCEPT;
+            else if (ReadIf(ParserUtil.Except) || ReadIf(ParserUtil.Minus))
+                type = Query.SelectUnion.UnionType.EXCEPT;
             else return query;
             query = new Query.SelectUnion(session!, type, query, ParseQueryTerm());
         }
@@ -3227,7 +3228,13 @@ public sealed partial class Parser
         }
 
         // The reference reads a WHERE after a matched clause only in the modes whose
-        // mergeWhere flag is set. The port has the regular mode only, where it is not.
+        // mergeWhere flag is set (Legacy and Oracle), and only when the clause has no
+        // AND condition of its own.
+        if (and is null && command.GetSession().GetMode().MergeWhere && ReadIf(ParserUtil.Where))
+        {
+            and = ReadQueryOr();
+        }
+
         when.SetAndCondition(and);
         command.AddWhen(when);
     }

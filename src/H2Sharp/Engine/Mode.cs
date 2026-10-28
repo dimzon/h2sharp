@@ -205,6 +205,12 @@ public sealed class Mode
     /// <summary>Whether a comma may separate a JSON_OBJECT key and value (MySQL/MariaDB).</summary>
     public bool AcceptsCommaAsJsonKeyValueSeparator { get; }
 
+    /// <summary>
+    /// Whether a WHEN MATCHED clause may have a WHERE clause of its own, as it may in Legacy
+    /// and Oracle modes.
+    /// </summary>
+    public bool MergeWhere { get; }
+
     /// <summary>Whether sequences of this mode use NUMERIC instead of BIGINT by default.</summary>
     public bool DecimalSequences { get; }
 
@@ -264,6 +270,7 @@ public sealed class Mode
         bool allowPlusForStringConcat = false,
         bool logIsLogBase10 = false,
         bool acceptsCommaAsJsonKeyValueSeparator = false,
+        bool mergeWhere = false,
         bool decimalSequences = false,
         bool groupByColumnIndex = false,
         bool topInSelect = false,
@@ -290,6 +297,7 @@ public sealed class Mode
         AllowPlusForStringConcat = allowPlusForStringConcat;
         LogIsLogBase10 = logIsLogBase10;
         AcceptsCommaAsJsonKeyValueSeparator = acceptsCommaAsJsonKeyValueSeparator;
+        MergeWhere = mergeWhere;
         DecimalSequences = decimalSequences;
         GroupByColumnIndex = groupByColumnIndex;
         TopInSelect = topInSelect;
@@ -343,7 +351,7 @@ public sealed class Mode
                 identityDataType: true, serialDataTypes: true, autoIncrementClause: true),
             ["STRICT"] = new(ModeEnum.Strict, false, false, false, false, false),
             ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true,
-                greatestLeastIgnoreNulls: true, topInSelect: true, topInDml: true,
+                greatestLeastIgnoreNulls: true, mergeWhere: true, topInSelect: true, topInDml: true,
                 identityDataType: true, serialDataTypes: true, autoIncrementClause: true,
                 identityClause: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true),
@@ -363,7 +371,7 @@ public sealed class Mode
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true,
-                decimalSequences: true),
+                mergeWhere: true, decimalSequences: true),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
                 logIsLogBase10: true, groupByColumnIndex: true, serialDataTypes: true,
