@@ -2147,6 +2147,31 @@ public abstract class Table
         => throw new TODOException("Table.addRow");
 
     /// <summary>
+    /// Adds a row unless a unique key is already present, without throwing for that expected
+    /// outcome.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="row">the row to add</param>
+    /// <param name="conflict">the key already present, or null</param>
+    /// <returns>true when the row was added</returns>
+    public virtual bool TryAddRow(
+        H2Sharp.Engine.SessionLocal session, Row row, out SearchRow? conflict)
+    {
+        _ = AddRow(session, row);
+        conflict = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Gets a row by its key, or null.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="key">the row key</param>
+    /// <returns>the row, or null</returns>
+    public virtual SearchRow? GetRow(H2Sharp.Engine.SessionLocal session, long key)
+        => throw new TODOException("Table.getRow");
+
+    /// <summary>
     /// Replaces the row with the same key.
     /// </summary>
     /// <param name="session">the session</param>

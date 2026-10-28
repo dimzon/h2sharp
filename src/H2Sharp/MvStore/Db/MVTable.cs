@@ -875,6 +875,45 @@ public sealed class MVTable : Table
     }
 
     /// <summary>
+    /// Adds the row only when every unique index still has room for its key.
+    /// </summary>
+    /// <remarks>
+    /// The insert into each index is already a lookup of the leaf the key belongs in. The index
+    /// reports an occupied leaf by returning the key that is there; nothing is thrown for the
+    /// expected duplicate case. The row is written into all indexes or, on a conflict, the
+    /// indexes written before the conflicting one are rolled back through the savepoint.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="row">the row to add</param>
+    /// <param name="conflict">the key already present in the conflicting index, or null</param>
+    /// <returns>true when the row was added to every index</returns>
+    public override bool TryAddRow(SessionLocal session, Row row, out SearchRow? conflict)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        MvStore.Tx.Transaction transaction = session.GetTransaction();
+        long savepoint = transaction.SetSavepoint();
+        try
+        {
+            foreach (Index index in indexes)
+            {
+                if (!index.TryAdd(session, row, out conflict))
+                {
+                    RollbackSavepoint(transaction, savepoint);
+                    return false;
+                }
+            }
+
+            conflict = null;
+            return true;
+        }
+        catch (Exception e)
+        {
+            RollbackSavepoint(transaction, savepoint);
+            throw Message.DbException.Convert(e);
+        }
+    }
+
+    /// <summary>
     /// Removes the row with the given key.
     /// </summary>
     /// <param name="session">the session</param>
@@ -939,7 +978,7 @@ public sealed class MVTable : Table
     /// <param name="session">the session</param>
     /// <param name="key">the key</param>
     /// <returns>the row, or null</returns>
-    public SearchRow? GetRow(SessionLocal session, long key)
+    public override SearchRow? GetRow(SessionLocal session, long key)
         => primaryIndex.GetRowForKey(session.GetTransaction(), key);
 
     /// <summary>

@@ -5896,6 +5896,21 @@ public sealed partial class Parser
             return new Expressions.Rownum(context);
         }
 
+        if (CurrentType == ParserUtil.Values
+            && position + 1 < tokens.Count
+            && tokens[position + 1].TokenType == Token.OpenParen
+            && provider.GetMode().OnDuplicateKeyUpdate
+            && currentPrepared is Dml.Insert insert
+            && insert.GetTable() is Table insertTable)
+        {
+            Read();
+            Expect(Token.OpenParen, "(");
+            Tables.Column column = ReadTableColumn(new Tables.TableFilter(
+                session!, insertTable, alias: null, rightsChecked: true, select: null, 0, indexHints: null));
+            Expect(Token.CloseParen, ")");
+            return new Modes.OnDuplicateKeyValues(column, insert);
+        }
+
         if (Current.AsIdentifier is not null)
         {
             int index = position;

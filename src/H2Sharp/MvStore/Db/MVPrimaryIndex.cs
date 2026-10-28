@@ -154,6 +154,18 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// <inheritdoc/>
     public override void Add(SessionLocal session, Row row)
     {
+        if (TryAdd(session, row, out SearchRow? conflict))
+        {
+            return;
+        }
+
+        throw DbException.Get(
+            ErrorCode.DuplicateKey1,
+            GetDuplicatePrimaryKeyMessage(mainIndexColumn).Append(' ').Append(conflict).ToString());
+    }
+
+    internal override bool TryAdd(SessionLocal session, Row row, out SearchRow? conflict)
+    {
         if (mainIndexColumn == SearchRow.RowidIndex)
         {
             if (row.GetKey() == 0)
@@ -173,14 +185,16 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
             Row? old = (Row?)map.PutIfAbsent(rowKey, row);
             if (old is not null)
             {
-                int errorCode = ErrorCode.ConcurrentUpdate1;
-                if (map.GetImmediate(rowKey) is not null || map.GetFromSnapshot(rowKey) is not null)
+                if (map.GetImmediate(rowKey) is null && map.GetFromSnapshot(rowKey) is null)
                 {
-                    // committed
-                    errorCode = ErrorCode.DuplicateKey1;
+                    // Not committed: another writer is inserting this key right now.
+                    throw DbException.Get(
+                        ErrorCode.ConcurrentUpdate1,
+                        GetDuplicatePrimaryKeyMessage(mainIndexColumn).Append(' ').Append(old).ToString());
                 }
 
-                throw DbException.Get(errorCode, GetDuplicatePrimaryKeyMessage(mainIndexColumn).Append(' ').Append(old).ToString());
+                conflict = old;
+                return false;
             }
         }
         catch (Exception e) when (e is not H2SharpException)
@@ -199,6 +213,9 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
                 break;
             }
         }
+
+        conflict = null;
+        return true;
     }
 
     /// <inheritdoc/>

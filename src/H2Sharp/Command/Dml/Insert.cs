@@ -82,6 +82,14 @@ public sealed class Insert : CommandWithValues, ResultTarget
 
     private long rowNumber;
 
+    private SetClauseList? duplicateKeyAssignments;
+
+    private TableFilter? duplicateKeyFilter;
+
+    private Value?[]? onDuplicateKeyRow;
+
+    private bool ignore;
+
     private Query.Query? query;
     private bool? overridingSystem;
     private bool insertFromSelect;
@@ -102,8 +110,7 @@ public sealed class Insert : CommandWithValues, ResultTarget
     /// Sets whether rows that would duplicate a key are skipped rather than refused.
     /// </summary>
     /// <param name="ignore">true to ignore duplicates</param>
-    public void SetIgnore(bool ignore)
-        => throw new TODOException("Insert.setIgnore: not ported");
+    public void SetIgnore(bool ignore) => this.ignore = ignore;
 
     /// <summary>
     /// Sets the query the rows are read from, for INSERT INTO ... SELECT.
@@ -125,7 +132,13 @@ public sealed class Insert : CommandWithValues, ResultTarget
     /// <param name="column">the column</param>
     /// <param name="expression">what to set it to</param>
     public void AddAssignmentForDuplicate(Column column, Expression expression)
-        => throw new TODOException("Insert.addAssignmentForDuplicate: not ported");
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        ArgumentNullException.ThrowIfNull(expression);
+        duplicateKeyAssignments ??= new SetClauseList(
+            table ?? throw Message.DbException.GetInternalError("ON DUPLICATE KEY UPDATE before table"));
+        duplicateKeyAssignments.AddSingle(column, null, expression);
+    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -175,6 +188,11 @@ public sealed class Insert : CommandWithValues, ResultTarget
             // after-row fires only for the row that was written.
             if (!target.FireBeforeRow(session, null, newRow))
             {
+                if (TryInsertOrUpdate(newRow, session))
+                {
+                    continue;
+                }
+
                 target.Lock(session, Table.WriteLock);
                 target.AddRow(session, newRow);
                 Tables.DataChangeDeltaTable.CollectForInsert(
@@ -225,11 +243,86 @@ public sealed class Insert : CommandWithValues, ResultTarget
             deltaChangeCollector?.AddRow([.. row.GetValueList()]);
         if (!target.FireBeforeRow(GetSession(), null, row))
         {
+            if (TryInsertOrUpdate(row, GetSession()))
+            {
+                return;
+            }
+
             target.AddRow(GetSession(), row);
             Tables.DataChangeDeltaTable.CollectForInsert(GetSession(), target, deltaChangeCollector, deltaChangeCollectionMode, row);
             target.FireAfterRow(GetSession(), null, row, false);
         }
         else Tables.DataChangeDeltaTable.CollectForInsert(GetSession(), target, deltaChangeCollector, deltaChangeCollectionMode, row);
+    }
+
+    /// <summary>
+    /// Inserts the row, or applies IGNORE/UPDATE when a unique key is already present.
+    /// </summary>
+    /// <param name="newRow">the row that was about to be inserted</param>
+    /// <param name="session">the session</param>
+    /// <returns>false when this statement has no duplicate-key handling and the caller should
+    /// insert normally</returns>
+    private bool TryInsertOrUpdate(Row newRow, SessionLocal session)
+    {
+        if (duplicateKeyAssignments is null && !ignore)
+        {
+            return false;
+        }
+
+        Table target = table!;
+        if (target.TryAddRow(session, newRow, out SearchRow? conflict))
+        {
+            Tables.DataChangeDeltaTable.CollectForInsert(
+                session, target, deltaChangeCollector, deltaChangeCollectionMode, newRow);
+            target.FireAfterRow(session, null, newRow, rollback: false);
+            return true;
+        }
+
+        if (duplicateKeyAssignments is null)
+        {
+            // INSERT IGNORE
+            rowNumber--;
+            return true;
+        }
+
+        Row oldRow = conflict as Row
+            ?? target.GetRow(session, conflict!.GetKey()) as Row
+            ?? throw Message.DbException.GetInternalError("ON DUPLICATE KEY UPDATE: conflicting row not found");
+        Column[] targetColumns = columns!;
+        onDuplicateKeyRow = new Value?[target.GetColumns().Length];
+        for (int i = 0; i < targetColumns.Length; i++)
+        {
+            onDuplicateKeyRow[targetColumns[i].GetColumnId()] = newRow.GetValue(targetColumns[i].GetColumnId());
+        }
+
+        Row updated;
+        duplicateKeyFilter?.Set(oldRow);
+        try
+        {
+            updated = duplicateKeyAssignments.PrepareUpdate(session, oldRow);
+        }
+        finally
+        {
+            duplicateKeyFilter?.Set(null);
+        }
+
+        if (oldRow.HasSameValues(updated))
+        {
+            // MySQL counts an update that changed nothing as zero affected rows.
+            onDuplicateKeyRow = null;
+            rowNumber--;
+            return true;
+        }
+
+        if (!target.FireRow() || !target.FireBeforeRow(session, oldRow, updated))
+        {
+            target.UpdateRows(session, [(oldRow, updated)]);
+        }
+
+        target.FireAfterRow(session, oldRow, updated, rollback: false);
+        onDuplicateKeyRow = null;
+        rowNumber++;
+        return true;
     }
 
     /// <inheritdoc/>
@@ -298,8 +391,7 @@ public sealed class Insert : CommandWithValues, ResultTarget
     /// </summary>
     /// <param name="columnIndex">the column index</param>
     /// <returns>the value, or null when there is none</returns>
-    public Value? GetOnDuplicateKeyValue(int columnIndex)
-        => throw new TODOException("Insert.getOnDuplicateKeyValue: not ported");
+    public Value? GetOnDuplicateKeyValue(int columnIndex) => onDuplicateKeyRow?[columnIndex];
 
     /// <inheritdoc/>
     public override void CollectDependencies(HashSet<DbObject> dependencies)
@@ -342,6 +434,13 @@ public sealed class Insert : CommandWithValues, ResultTarget
                 row[i] = expression;
             }
         }
+        if (duplicateKeyAssignments is not null)
+        {
+            duplicateKeyFilter = new(
+                GetSession(), table!, alias: null, rightsChecked: true, select: null, 0, indexHints: null);
+            duplicateKeyAssignments.MapColumns(GetSession(), duplicateKeyFilter);
+        }
+
         if (ValuesExpressionList.Count == 0)
         {
             query!.Prepare();

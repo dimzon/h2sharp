@@ -217,6 +217,11 @@ public sealed class Mode
     /// </summary>
     public bool AllNumericTypesHavePrecision { get; }
 
+    /// <summary>
+    /// Whether INSERT accepts the MySQL <c>ON DUPLICATE KEY UPDATE</c> clause.
+    /// </summary>
+    public bool OnDuplicateKeyUpdate { get; }
+
     /// <summary>Whether sequences of this mode use NUMERIC instead of BIGINT by default.</summary>
     public bool DecimalSequences { get; }
 
@@ -278,6 +283,7 @@ public sealed class Mode
         bool acceptsCommaAsJsonKeyValueSeparator = false,
         bool mergeWhere = false,
         bool allNumericTypesHavePrecision = false,
+        bool onDuplicateKeyUpdate = false,
         bool decimalSequences = false,
         bool groupByColumnIndex = false,
         bool topInSelect = false,
@@ -306,6 +312,7 @@ public sealed class Mode
         AcceptsCommaAsJsonKeyValueSeparator = acceptsCommaAsJsonKeyValueSeparator;
         MergeWhere = mergeWhere;
         AllNumericTypesHavePrecision = allNumericTypesHavePrecision;
+        OnDuplicateKeyUpdate = onDuplicateKeyUpdate;
         DecimalSequences = decimalSequences;
         GroupByColumnIndex = groupByColumnIndex;
         TopInSelect = topInSelect;
@@ -372,10 +379,12 @@ public sealed class Mode
                 identityClause: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
-                groupByColumnIndex: true, allNumericTypesHavePrecision: true, autoIncrementClause: true),
+                groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
+                autoIncrementClause: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
-                groupByColumnIndex: true, allNumericTypesHavePrecision: true, autoIncrementClause: true),
+                groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
+                autoIncrementClause: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true,

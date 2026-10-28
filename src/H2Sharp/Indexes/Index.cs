@@ -1030,6 +1030,27 @@ public abstract class Index : SchemaObject
         => throw new TODOException("Index.add");
 
     /// <summary>
+    /// Adds a row unless its unique key is already present, without throwing on that expected
+    /// outcome.
+    /// </summary>
+    /// <remarks>
+    /// The insertion into a unique index has to find the leaf for the key anyway. The reference
+    /// reports an occupied leaf by throwing; this method hands the conflicting key back instead,
+    /// so INSERT ... ON DUPLICATE KEY UPDATE does not pay for an exception on its normal path.
+    /// The default keeps the reference behaviour for indexes that do not implement it.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="row">the row to add</param>
+    /// <param name="conflict">the key already in the index, or null</param>
+    /// <returns>true when the row was added</returns>
+    internal virtual bool TryAdd(SessionLocal session, Row row, out SearchRow? conflict)
+    {
+        Add(session, row);
+        conflict = null;
+        return true;
+    }
+
+    /// <summary>
     /// Removes a row from the index.
     /// </summary>
     /// <param name="session">the session</param>

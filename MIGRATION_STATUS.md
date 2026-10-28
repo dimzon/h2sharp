@@ -41,6 +41,12 @@ derived table получает только свои параметры, с до
 неё. `MERGE ... USING` с `WHEN MATCHED ... WHERE` (Legacy/Oracle), Oracle `MINUS`
 и alias у `FINAL TABLE (...)` портированы; `TestMergeUsing` зелёный.
 
+MySQL `INSERT ... ON DUPLICATE KEY UPDATE/IGNORE` не копирует эталонный путь
+через исключение: `TryAddRow` возвращает конфликтующий ключ из самой вставки в
+уникальный индекс, откатывает savepoint и применяет заранее подготовленный
+`SetClauseList`. Нет exception и повторного `prepare` на каждую дублирующуюся
+строку; `TestDuplicateKeyUpdate` зелёный.
+
 `MODE` фиксируется при открытии (D-029). `SET MODE` с тем же режимом — no-op,
 с другим — 50100. Второй connection к тому же storage с другим режимом получает
 90020; после закрытия последнего storage можно открыть с другим режимом.
@@ -146,8 +152,9 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
 Проверено: core **1468/1468**, Data **589/589**, conformance полный **880/952**,
-зелёный **878/905** (было 805/803), native **48/104** (после typed connection
-string, parameter scopes и отложенного остатка multi-statement). Провайдеры на текущем бинарнике: linq2db
+зелёный **878/905** (было 805/803), native **49/104** (после typed connection
+string, parameter scopes, отложенного остатка multi-statement и ON DUPLICATE KEY).
+Провайдеры на текущем бинарнике: linq2db
 **76/76** и ModelTests **180/180** на net8/net10; EF Core unit **129/129**, functional
 **5742/5762** на каждом net9/net10, 6 падений — `_LOCAL_AND_GLOBAL_` в
 `RegularQueryExpressionIndex` и связанные с ним shape-запросы.

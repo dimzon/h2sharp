@@ -201,13 +201,27 @@ public sealed class MVSecondaryIndex : MVIndex<SearchRow, Value>
     /// <inheritdoc/>
     public override void Add(SessionLocal session, Row row)
     {
+        if (TryAdd(session, row, out SearchRow? conflict))
+        {
+            return;
+        }
+
+        throw GetDuplicateKeyException(conflict!.ToString());
+    }
+
+    internal override bool TryAdd(SessionLocal session, Row row, out SearchRow? conflict)
+    {
         TransactionMap<SearchRow, Value> map = GetMap(session);
         SearchRow key = ConvertToKey(row, null)!;
         bool checkRequired = NeedsUniqueCheck(row);
         if (checkRequired)
         {
             bool repeatableRead = !session.GetTransaction().AllowNonRepeatableRead();
-            CheckUnique(repeatableRead, map, row, long.MinValue);
+            conflict = FindUniqueConflict(repeatableRead, map, row, long.MinValue);
+            if (conflict is not null)
+            {
+                return false;
+            }
         }
 
         try
@@ -221,11 +235,29 @@ public sealed class MVSecondaryIndex : MVIndex<SearchRow, Value>
 
         if (checkRequired)
         {
-            CheckUnique(false, map, row, row.GetKey());
+            conflict = FindUniqueConflict(false, map, row, row.GetKey());
+            if (conflict is not null)
+            {
+                _ = map.Remove(key);
+                return false;
+            }
         }
+
+        conflict = null;
+        return true;
     }
 
     private void CheckUnique(bool repeatableRead, TransactionMap<SearchRow, Value> map,
+        SearchRow row, long newKey)
+    {
+        SearchRow? conflict = FindUniqueConflict(repeatableRead, map, row, newKey);
+        if (conflict is not null)
+        {
+            throw GetDuplicateKeyException(conflict.ToString());
+        }
+    }
+
+    private SearchRow? FindUniqueConflict(bool repeatableRead, TransactionMap<SearchRow, Value> map,
         SearchRow row, long newKey)
     {
         RowFactory uniqueRowFactory = GetUniqueRowFactory();
@@ -246,7 +278,7 @@ public sealed class MVSecondaryIndex : MVIndex<SearchRow, Value>
             {
                 if (newKey != k.GetKey() && !map.IsDeletedByCurrentTransaction(k))
                 {
-                    throw GetDuplicateKeyException(k.ToString());
+                    return k;
                 }
             }
         }
@@ -259,12 +291,14 @@ public sealed class MVSecondaryIndex : MVIndex<SearchRow, Value>
                 if (map.GetImmediate(k) is not null)
                 {
                     // committed
-                    throw GetDuplicateKeyException(k.ToString());
+                    return k;
                 }
 
                 throw DbException.Get(ErrorCode.ConcurrentUpdate1, mvTable.Name);
             }
         }
+
+        return null;
     }
 
     /// <inheritdoc/>

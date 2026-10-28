@@ -34,6 +34,7 @@ public sealed class TestDuplicateKeyUpdate : TestDb
         TestPrimaryKeyAndUniqueKey(conn);
         TestUpdateCountAndQualifiedNames(conn);
         TestEnum(conn);
+        conn.Close();
         DeleteDb("duplicateKeyUpdate");
     }
 

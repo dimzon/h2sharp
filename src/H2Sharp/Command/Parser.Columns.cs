@@ -647,6 +647,11 @@ public sealed partial class Parser
     {
         Dml.Insert command = new(session!);
         currentPrepared = command;
+        if (provider.GetMode().OnDuplicateKeyUpdate && ReadIfCompat("IGNORE"))
+        {
+            command.SetIgnore(true);
+        }
+
         ExpectWord("INTO");
         string tableName = ReadIdentifierWithSchema(session!, out Schema schema);
         Table table = schema.ResolveTableOrView(session, tableName)
@@ -763,7 +768,50 @@ public sealed partial class Parser
             command.AddRow([.. values]);
         }
         else command.SetQuery(ParseQueryExpression(prepare: false));
+
+        if (provider.GetMode().OnDuplicateKeyUpdate
+            && ReadIfWords("ON", "DUPLICATE", "KEY", "UPDATE"))
+        {
+            do
+            {
+                Column column = ReadDuplicateKeyColumn(table);
+                Expect(Token.Equal, "=");
+                command.AddAssignmentForDuplicate(column, ReadExpressionOrDefault());
+            }
+            while (ReadIf(Token.Comma));
+        }
+
         return command;
+    }
+
+    private Column ReadDuplicateKeyColumn(Table table)
+    {
+        string name = ReadIdentifier();
+        if (ReadIf(Token.Dot))
+        {
+            string schemaOrTable = name;
+            string tableOrColumn = ReadIdentifier();
+            if (ReadIf(Token.Dot))
+            {
+                if (!string.Equals(table.GetSchema()?.GetName(), schemaOrTable, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
+                }
+
+                name = ReadIdentifier();
+            }
+            else
+            {
+                if (!table.GetTableName().Equals(schemaOrTable, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, schemaOrTable);
+                }
+
+                name = tableOrColumn;
+            }
+        }
+
+        return table.GetColumn(name);
     }
 
     private Prepared ParseDrop()
