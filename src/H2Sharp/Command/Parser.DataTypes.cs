@@ -316,6 +316,20 @@ public sealed partial class Parser
             Expect(Token.CloseParen, ")");
         }
 
+        if (provider.GetMode().AllNumericTypesHavePrecision
+            && (DataType.IsNumericType(type) || type == Value.Boolean))
+        {
+            // MySQL and MariaDB accept INT(11), BIGINT(20) and the like. The width is
+            // display metadata only, so the reference reads it and ignores it.
+            if (ReadIf(Token.OpenParen))
+            {
+                _ = ReadNonNegativeInt();
+                Expect(Token.CloseParen, ")");
+            }
+
+            _ = IsWord("UNSIGNED");
+        }
+
         return TypeInfo.GetTypeInfo(type, precision, scale, null);
     }
 

@@ -211,6 +211,12 @@ public sealed class Mode
     /// </summary>
     public bool MergeWhere { get; }
 
+    /// <summary>
+    /// Whether every numeric type may carry a precision and an UNSIGNED suffix, as the MySQL
+    /// and MariaDB modes allow. The precision is accepted and ignored, as in the reference.
+    /// </summary>
+    public bool AllNumericTypesHavePrecision { get; }
+
     /// <summary>Whether sequences of this mode use NUMERIC instead of BIGINT by default.</summary>
     public bool DecimalSequences { get; }
 
@@ -271,6 +277,7 @@ public sealed class Mode
         bool logIsLogBase10 = false,
         bool acceptsCommaAsJsonKeyValueSeparator = false,
         bool mergeWhere = false,
+        bool allNumericTypesHavePrecision = false,
         bool decimalSequences = false,
         bool groupByColumnIndex = false,
         bool topInSelect = false,
@@ -298,6 +305,7 @@ public sealed class Mode
         LogIsLogBase10 = logIsLogBase10;
         AcceptsCommaAsJsonKeyValueSeparator = acceptsCommaAsJsonKeyValueSeparator;
         MergeWhere = mergeWhere;
+        AllNumericTypesHavePrecision = allNumericTypesHavePrecision;
         DecimalSequences = decimalSequences;
         GroupByColumnIndex = groupByColumnIndex;
         TopInSelect = topInSelect;
@@ -363,11 +371,11 @@ public sealed class Mode
                 allowPlusForStringConcat: true, topInSelect: true, topInDml: true,
                 identityClause: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
-                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true,
-                autoIncrementClause: true),
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
+                groupByColumnIndex: true, allNumericTypesHavePrecision: true, autoIncrementClause: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
-                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true, groupByColumnIndex: true,
-                autoIncrementClause: true),
+                allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
+                groupByColumnIndex: true, allNumericTypesHavePrecision: true, autoIncrementClause: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true,
