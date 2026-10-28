@@ -1670,7 +1670,12 @@ public sealed class Select : Query
     }
 
     /// <inheritdoc/>
-    public override bool AllowGlobalConditions() => GetOffset() is null && GetFetch() is null;
+    public override bool AllowGlobalConditions()
+        // Pushdown into a derived query is not correct in this port yet: the outer condition
+        // is added to the query, but the query's filters do not answer it. Keeping every
+        // condition outside preserves the result; this is a performance gap, not a semantic
+        // one. Restore the reference rule when the pushdown is fixed.
+        => false;
 
     private static Expression AddGlobalCondition(Expression? condition, Expression additional)
     {
