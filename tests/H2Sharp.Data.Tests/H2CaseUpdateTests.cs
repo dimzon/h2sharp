@@ -33,6 +33,27 @@ public sealed class H2CaseUpdateTests
         Assert.False(reader.Read());
     }
 
+    [Fact]
+    public void UpdateSwapsValuesAcrossAUniqueIndex()
+    {
+        using H2Connection connection = new("Data Source=ado_case_update_unique;Storage=Memory;Mode=MySQL");
+        connection.Open();
+        Execute(connection, "CREATE TABLE T(ID INT PRIMARY KEY, U INT UNIQUE)");
+        Execute(connection, "INSERT INTO T VALUES (1, 1), (2, 2)");
+        Execute(connection, "UPDATE T SET U = CASE WHEN ID = 1 THEN 2 ELSE 1 END");
+
+        using DbCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT ID, U FROM T ORDER BY ID";
+        using DbDataReader reader = command.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal(1, reader.GetInt32(0));
+        Assert.Equal(2, reader.GetInt32(1));
+        Assert.True(reader.Read());
+        Assert.Equal(2, reader.GetInt32(0));
+        Assert.Equal(1, reader.GetInt32(1));
+        Assert.False(reader.Read());
+    }
+
     private static void Execute(H2Connection connection, string sql)
     {
         using DbCommand command = connection.CreateCommand();
