@@ -975,6 +975,34 @@ public sealed partial class Parser
             prepared = PrepareParsedStatement(current, statement);
         }
 
+        if (ReadIf(Token.OpenBrace))
+        {
+            // The {index: value} form binds a parameter in the statement text itself.
+            do
+            {
+                int index = (int)ReadLong() - 1;
+                if (index < 0 || index >= parameterList.Count)
+                {
+                    throw DbException.GetSyntaxError(sql, Current.Start);
+                }
+
+                Expressions.Parameter parameter = parameterList[index]
+                    ?? throw DbException.GetSyntaxError(sql, Current.Start);
+                Expect(Token.Colon, ":");
+                Expressions.Expression value = ReadExpression().Optimize(current);
+                parameter.SetValue(value.GetValue(current));
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseBrace, "}");
+            foreach (Expressions.Parameter parameter in parameterList)
+            {
+                parameter.CheckSet();
+            }
+
+            prepared.SetWithParamValues(true);
+        }
+
         SetSql(prepared, start);
         prepared.SetPrepareAlways(recompileAlways);
         prepared.SetParameterList(parameterList.Count == 0 ? null : parameterList);
@@ -7431,8 +7459,8 @@ public sealed partial class Parser
     private Expressions.Expression ReadLikePredicate(
         Expressions.Expression left, Expressions.Conditions.CompareLike.LikeType likeType, bool not)
     {
-        Expressions.Expression right = ReadQueryTerm(null);
-        Expressions.Expression? escape = IsWord("ESCAPE") ? ReadQueryTerm(null) : null;
+        Expressions.Expression right = ReadQueryConcat();
+        Expressions.Expression? escape = IsWord("ESCAPE") ? ReadQueryConcat() : null;
         return new Expressions.Conditions.CompareLike(
             session!.GetCompareMode(), left, not, whenOperand: false, right, escape, likeType);
     }
