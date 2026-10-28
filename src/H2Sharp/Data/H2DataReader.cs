@@ -233,7 +233,13 @@ public sealed class H2DataReader : DbDataReader
     /// </remarks>
     public override bool GetBoolean(int ordinal)
     {
-        Value cell = NotNull(ordinal, "Boolean");
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            // H2's JDBC getBoolean answers false for NULL rather than throwing.
+            return false;
+        }
+
         if (cell.GetValueType() == Value.Boolean)
         {
             return cell.GetBoolean();
@@ -244,15 +250,21 @@ public sealed class H2DataReader : DbDataReader
             return Convert.ToBoolean(cell.GetString(), CultureInfo.InvariantCulture);
         }
 
-        throw CastNotSupported(cell, "Boolean");
+        switch (cell.GetValueType())
+        {
+            case Value.Tinyint:
+            case Value.Smallint:
+            case Value.Integer:
+            case Value.Bigint:
+            case Value.Numeric:
+            case Value.Real:
+            case Value.Double:
+            case Value.Decfloat:
+                return cell.GetSignum() != 0;
+            default:
+                throw CastNotSupported(cell, "Boolean");
+        }
     }
-
-    private static readonly Func<int, byte> byteFromInt32 = Convert.ToByte;
-    private static readonly Func<long, byte> byteFromInt64 = Convert.ToByte;
-    private static readonly Func<float, byte> byteFromSingle = Convert.ToByte;
-    private static readonly Func<double, byte> byteFromDouble = Convert.ToByte;
-    private static readonly Func<decimal, byte> byteFromDecimal = Convert.ToByte;
-    private static readonly Func<string, byte> byteFromString = s => Convert.ToByte(s, CultureInfo.InvariantCulture);
 
     private static readonly Func<int, short> shortFromInt32 = Convert.ToInt16;
     private static readonly Func<long, short> shortFromInt64 = Convert.ToInt16;
@@ -298,9 +310,17 @@ public sealed class H2DataReader : DbDataReader
 
     /// <inheritdoc/>
     public override byte GetByte(int ordinal)
-        => ReadNumeric(ordinal, "Byte",
-            byteFromInt32, byteFromInt64, byteFromSingle, byteFromDouble, byteFromDecimal,
-            byteFromString);
+    {
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            return 0;
+        }
+
+        // TINYINT is signed; ADO.NET's GetByte is not. Keeping the two's-complement bits
+        // gives the same value a JDBC caller sees when it casts the byte to a signed type.
+        return unchecked((byte)cell.GetByte());
+    }
 
     /// <inheritdoc/>
     public override char GetChar(int ordinal)
@@ -527,7 +547,14 @@ public sealed class H2DataReader : DbDataReader
         Func<int, T> fromInt32, Func<long, T> fromInt64, Func<float, T> fromSingle,
         Func<double, T> fromDouble, Func<decimal, T> fromDecimal, Func<string, T> fromString)
     {
-        Value cell = NotNull(ordinal, target);
+        Value? cell = Cell(ordinal);
+        if (cell is null or ValueNull)
+        {
+            // H2's JDBC numeric getters answer zero for NULL, and IsDBNull remains the way
+            // to ask whether the cell was NULL.
+            return default!;
+        }
+
         return cell.GetValueType() switch
         {
             Value.Tinyint or Value.Smallint or Value.Integer => fromInt32(cell.GetInt()),

@@ -57,7 +57,6 @@ public sealed class TestResultSetGetters : TestDb
         Execute(stat, "INSERT INTO TEST VALUES(4," + int.MaxValue + ")");
         Execute(stat, "INSERT INTO TEST VALUES(5," + int.MinValue + ")");
         Execute(stat, "INSERT INTO TEST VALUES(6,NULL)");
-        Execute(stat, "INSERT INTO TEST VALUES(7,NULL)");
 
         stat.CommandText = "SELECT *, NULL AS N FROM TEST ORDER BY ID";
         using (DbDataReader rs = stat.ExecuteReader())
@@ -82,7 +81,7 @@ public sealed class TestResultSetGetters : TestDb
             AssertEquals(-1, (int)rs.GetValue(1));
             AssertEquals(-1, rs.GetFieldValue<int>(1));
             AssertTrue(rs.GetBoolean(1));
-            AssertEquals((sbyte)-1, rs.GetByte(1));
+            AssertEquals(unchecked((byte)(sbyte)-1), rs.GetByte(1));
             AssertEquals((short)-1, rs.GetInt16(1));
             AssertEquals(-1L, rs.GetInt64(1));
             AssertEquals(-1.0f, rs.GetFloat(1));
@@ -146,7 +145,7 @@ public sealed class TestResultSetGetters : TestDb
         {
             AssertEquals(3, rs.FieldCount);
             AssertEquals(typeof(int), rs.GetFieldType(0));
-            AssertEquals(typeof(int), rs.GetFieldType(1));
+            AssertEquals(typeof(short), rs.GetFieldType(1));
             AssertEquals(typeof(string), rs.GetFieldType(2));
 
             AssertTrue(rs.Read());
@@ -155,10 +154,10 @@ public sealed class TestResultSetGetters : TestDb
             AssertEquals((short)-1, rs.GetInt16(rs.GetOrdinal("value")));
             AssertEquals((short)-1, rs.GetInt16(rs.GetOrdinal("Value")));
             AssertEquals("-1", rs.GetString(rs.GetOrdinal("Value")));
-            AssertEquals(-1, (int)rs.GetValue(1));
+            AssertEquals((short)-1, (short)rs.GetValue(1));
             AssertEquals((short)-1, rs.GetFieldValue<short>(1));
             AssertTrue(rs.GetBoolean(1));
-            AssertEquals((sbyte)-1, rs.GetByte(1));
+            AssertEquals(unchecked((byte)(sbyte)-1), rs.GetByte(1));
             AssertEquals(-1, rs.GetInt32(1));
             AssertEquals(-1L, rs.GetInt64(1));
             AssertEquals(-1.0f, rs.GetFloat(1));
@@ -167,13 +166,19 @@ public sealed class TestResultSetGetters : TestDb
 
             AssertTrue(rs.Read());
             AssertEquals((short)0, rs.GetInt16(1));
+            AssertEquals((short)0, rs.GetInt16(rs.GetOrdinal("VALUE")));
+
+            AssertTrue(rs.Read());
+            AssertEquals((short)3, rs.GetInt16(rs.GetOrdinal("ID")));
             AssertEquals((short)1, rs.GetInt16(rs.GetOrdinal("VALUE")));
 
             AssertTrue(rs.Read());
-            AssertEquals(short.MaxValue, rs.GetInt16(rs.GetOrdinal("ID")));
+            AssertEquals((short)4, rs.GetInt16(rs.GetOrdinal("ID")));
+            AssertEquals(short.MaxValue, rs.GetInt16(rs.GetOrdinal("VALUE")));
 
             AssertTrue(rs.Read());
             AssertEquals(short.MinValue, rs.GetInt16(1));
+            AssertEquals("5", rs.GetString(0));
 
             AssertTrue(rs.Read());
             AssertEquals(0, rs.GetInt16(1));
@@ -213,7 +218,7 @@ public sealed class TestResultSetGetters : TestDb
             AssertEquals(-1L, (long)rs.GetValue(1));
             AssertEquals(-1L, rs.GetFieldValue<long>(1));
             AssertTrue(rs.GetBoolean(1));
-            AssertEquals((sbyte)-1, rs.GetByte(1));
+            AssertEquals(unchecked((byte)(sbyte)-1), rs.GetByte(1));
             AssertEquals((short)-1, rs.GetInt16(1));
             AssertEquals(-1, rs.GetInt32(1));
             AssertEquals(-1.0f, rs.GetFloat(1));
@@ -412,12 +417,12 @@ public sealed class TestResultSetGetters : TestDb
         stat.CommandText = "SELECT * FROM TEST";
         using (DbDataReader rs = stat.ExecuteReader())
         {
-            AssertEquals(1, rs.GetOrdinal("ID"));
-            AssertEquals(2, rs.GetOrdinal("NAME"));
-            AssertEquals(1, rs.GetOrdinal("id"));
-            AssertEquals(2, rs.GetOrdinal("name"));
-            AssertEquals(1, rs.GetOrdinal("Id"));
-            AssertEquals(2, rs.GetOrdinal("Name"));
+            AssertEquals(0, rs.GetOrdinal("ID"));
+            AssertEquals(1, rs.GetOrdinal("NAME"));
+            AssertEquals(0, rs.GetOrdinal("id"));
+            AssertEquals(1, rs.GetOrdinal("name"));
+            AssertEquals(0, rs.GetOrdinal("Id"));
+            AssertEquals(1, rs.GetOrdinal("Name"));
             // The table-qualified forms ("TEST.ID") are a provider-surface decision; see
             // the file header.
         }
@@ -428,9 +433,9 @@ public sealed class TestResultSetGetters : TestDb
         stat.CommandText = "SELECT * FROM TEST";
         using (DbDataReader rs = stat.ExecuteReader())
         {
-            AssertEquals(3, rs.GetOrdinal("DATA"));
-            AssertEquals(3, rs.GetOrdinal("data"));
-            AssertEquals(3, rs.GetOrdinal("Data"));
+            AssertEquals(2, rs.GetOrdinal("DATA"));
+            AssertEquals(2, rs.GetOrdinal("data"));
+            AssertEquals(2, rs.GetOrdinal("Data"));
         }
 
         Execute(stat, "DROP TABLE TEST");
