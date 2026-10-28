@@ -152,6 +152,9 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     }
 
     /// <inheritdoc/>
+    public override bool IsRowIdIndex() => true;
+
+    /// <inheritdoc/>
     public override void Add(SessionLocal session, Row row)
     {
         if (TryAdd(session, row, out SearchRow? conflict))

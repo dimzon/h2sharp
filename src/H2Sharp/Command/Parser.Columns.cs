@@ -672,7 +672,7 @@ public sealed partial class Parser
             {
                 do
                 {
-                    Column column = table.GetColumn(ReadIdentifier());
+                    Column column = ParseInsertColumn(table);
                     if (columns.Contains(column))
                     {
                         throw Message.DbException.Get(
@@ -758,7 +758,7 @@ public sealed partial class Parser
             List<Expression> values = [];
             do
             {
-                setColumns.Add(table.GetColumn(ReadIdentifier()));
+                setColumns.Add(ParseInsertColumn(table));
                 Expect(Token.Equal, "=");
                 values.Add(ReadExpressionOrDefault());
             }
@@ -782,6 +782,18 @@ public sealed partial class Parser
         }
 
         return command;
+    }
+
+    private Column ParseInsertColumn(Table table)
+    {
+        if (CurrentType == ParserUtil._ROWID_)
+        {
+            Read();
+            return table.GetRowIdColumn()
+                ?? throw DbException.Get(Api.ErrorCode.ColumnNotFound1, Tables.Column.RowId);
+        }
+
+        return table.GetColumn(ReadIdentifier());
     }
 
     private Column ReadDuplicateKeyColumn(Table table)

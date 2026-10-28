@@ -4664,7 +4664,8 @@ public sealed partial class Parser
         {
             tableAlias = first;
             if (!Current.IsQuoted
-                && Current.AsIdentifier?.Equals(Tables.Column.RowId, StringComparison.OrdinalIgnoreCase) == true)
+                && (CurrentType == ParserUtil._ROWID_
+                    || Current.AsIdentifier?.Equals(Tables.Column.RowId, StringComparison.OrdinalIgnoreCase) == true))
             {
                 return Tables.Column.RowId;
             }
@@ -5937,6 +5938,23 @@ public sealed partial class Parser
                 session!, insertTable, alias: null, rightsChecked: true, select: null, 0, indexHints: null));
             Expect(Token.CloseParen, ")");
             return new Modes.OnDuplicateKeyValues(column, insert);
+        }
+
+        if (Current.AsIdentifier is not null
+            && position + 2 < tokens.Count
+            && tokens[position + 1].TokenType == Token.Dot
+            && tokens[position + 2].TokenType == ParserUtil._ROWID_)
+        {
+            string alias = ReadIdentifier();
+            Read();
+            Read();
+            return Expressions.ExpressionColumn.RowId(alias);
+        }
+
+        if (CurrentType == ParserUtil._ROWID_)
+        {
+            Read();
+            return Expressions.ExpressionColumn.RowId(null);
         }
 
         if (Current.AsIdentifier is not null)
