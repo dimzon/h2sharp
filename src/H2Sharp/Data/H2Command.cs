@@ -180,7 +180,7 @@ public sealed class H2Command : DbCommand
     /// </remarks>
     public override int ExecuteNonQuery()
     {
-        List<Command.CommandContainer> containers = PrepareEngines();
+        List<Command.CommandContainer> containers = PrepareEngines(out Command.CommandList? lazyRemaining);
         try
         {
             long first;
@@ -199,11 +199,13 @@ public sealed class H2Command : DbCommand
             }
 
             RunRemaining(containers);
+            lazyRemaining?.ExecuteRemaining();
             return first < 0 ? -1 : Convert.ToInt32(first);
         }
         finally
         {
             CloseContainers(containers);
+            lazyRemaining?.Close();
         }
     }
 
@@ -212,13 +214,14 @@ public sealed class H2Command : DbCommand
     /// </summary>
     public override object? ExecuteScalar()
     {
-        List<Command.CommandContainer> containers = PrepareEngines();
+        List<Command.CommandContainer> containers = PrepareEngines(out Command.CommandList? lazyRemaining);
         try
         {
             if (!containers[0].IsQuery())
             {
                 _ = containers[0].ExecuteUpdate(false);
                 RunRemaining(containers);
+                lazyRemaining?.ExecuteRemaining();
                 return null;
             }
 
@@ -237,11 +240,13 @@ public sealed class H2Command : DbCommand
             }
 
             RunRemaining(containers);
+            lazyRemaining?.ExecuteRemaining();
             return scalar;
         }
         finally
         {
             CloseContainers(containers);
+            lazyRemaining?.Close();
         }
     }
 
@@ -256,12 +261,14 @@ public sealed class H2Command : DbCommand
             throw new InvalidOperationException("The command already has an open reader");
         }
 
-        List<Command.CommandContainer> containers = PrepareEngines();
+        List<Command.CommandContainer> containers = PrepareEngines(out Command.CommandList? lazyRemaining);
         H2DataReader reader;
         if (!containers[0].IsQuery())
         {
             long count = containers[0].ExecuteUpdate(false).GetUpdateCount();
             RunRemaining(containers);
+            lazyRemaining?.ExecuteRemaining();
+            lazyRemaining?.Close();
 
             reader = new H2DataReader(count);
             // An update result has no rows and no result set to close; it must not keep
@@ -273,6 +280,7 @@ public sealed class H2Command : DbCommand
             long maxrows = (behavior & CommandBehavior.SingleRow) != 0 ? 1
                 : (behavior & CommandBehavior.SchemaOnly) != 0 ? 0 : -1;
             Result.ResultInterface result = containers[0].ExecuteQuery(maxrows, 0, false);
+            lazyRemaining?.ExecuteRemaining();
             bool moreSets = ((behavior & (CommandBehavior.SingleRow
                 | CommandBehavior.SingleResult | CommandBehavior.SchemaOnly)) == 0)
                 && containers.Count > 1;
@@ -281,6 +289,7 @@ public sealed class H2Command : DbCommand
             Action onClose = () =>
             {
                 CloseContainers(containers);
+                lazyRemaining?.Close();
                 openReaders--;
                 if ((behavior & CommandBehavior.CloseConnection) != 0)
                 {
@@ -416,7 +425,7 @@ public sealed class H2Command : DbCommand
     /// every statement of it.
     /// </remarks>
     /// <returns>the prepared containers, in order</returns>
-    private List<Command.CommandContainer> PrepareEngines()
+    private List<Command.CommandContainer> PrepareEngines(out Command.CommandList? lazyRemaining)
     {
         SessionLocal current = CheckRunnableState();
         H2Connection owner = connection!;
@@ -439,12 +448,22 @@ public sealed class H2Command : DbCommand
             throw new InvalidOperationException("The transaction belongs to another connection");
         }
 
-        List<Command.CommandContainer> containers = current.PrepareCommand(text) switch
+        H2Sharp.Command.CommandInterface command = current.PrepareCommand(text);
+        List<Command.CommandContainer> containers;
+        if (command is Command.CommandList list)
         {
-            Command.CommandList list => [.. list.GetCommands()],
-            Command.CommandContainer container => [container],
-            _ => throw new InvalidOperationException("The statement is not a runnable command"),
-        };
+            containers = [.. list.GetCommands()];
+            lazyRemaining = list;
+        }
+        else if (command is Command.CommandContainer container)
+        {
+            containers = [container];
+            lazyRemaining = null;
+        }
+        else
+        {
+            throw new InvalidOperationException("The statement is not a runnable command");
+        }
         foreach (Expressions.ParameterInterface engineParameter in containers[0].GetParameters())
         {
             Expressions.Parameter parameter = (Expressions.Parameter)engineParameter;

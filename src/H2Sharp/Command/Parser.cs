@@ -560,6 +560,16 @@ public sealed partial class Parser
     /// <param name="sql">the statement text</param>
     /// <returns>the command</returns>
     public Command PrepareCommand(string sql)
+        => PrepareCommand(sql, suppliedParameters: null);
+
+    /// <summary>
+    /// Parses and prepares a statement text, optionally reusing the parameters of an earlier
+    /// parse. The lazy remainder of a command list is read through this overload.
+    /// </summary>
+    /// <param name="sql">the statement text</param>
+    /// <param name="suppliedParameters">the parameters to reuse, or null</param>
+    /// <returns>the command</returns>
+    internal Command PrepareCommand(string sql, List<Expressions.Parameter>? suppliedParameters)
     {
         ArgumentNullException.ThrowIfNull(sql);
         SessionLocal current = session ?? throw new TODOException("Parser.prepareCommand: this parser has no session");
@@ -568,21 +578,53 @@ public sealed partial class Parser
         List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
         CheckParameterIndex(parameters);
         Parser parser = new(sql, provider, tokens, current);
+        if (suppliedParameters is null)
+        {
+            // The reference creates every parameter the tokenizer saw before it starts parsing.
+            // The list is shared by all statements of the text, including the ones that are
+            // deferred until execution.
+            int count = parameters.Length;
+            parser.parameterList = new List<Expressions.Parameter>(count);
+            for (int i = 0; i < count; i++)
+            {
+                parser.parameterList.Add(new Expressions.Parameter(i));
+            }
+        }
+        else
+        {
+            parser.parameterList = suppliedParameters;
+        }
+
         List<Prepared> prepared = [];
+        string? remaining = null;
         while (!parser.AtEnd())
         {
-            Prepared next = parser.ParseOneStatement();
-
-            // The reference's prepareCommand: a statement ends at a semicolon or at the end of
-            // the input, and anything else is a plain syntax error. The expected-token list is
-            // empty on this path, so the reference's addExpected(SEMICOLON) adds nothing and the
-            // failure is the one-argument form.
-            if (parser.CurrentType != Token.Semicolon && parser.CurrentType != Token.EndOfInput)
+            int statementStart = parser.Current.Start;
+            Prepared next;
+            try
             {
-                throw DbException.GetSyntaxError(sql, parser.Current.Start);
+                next = parser.ParseOneStatement();
+
+                // The reference's prepareCommand: a statement ends at a semicolon or at the end
+                // of the input, and anything else is a plain syntax error. The expected-token
+                // list is empty on this path, so the reference's addExpected(SEMICOLON) adds
+                // nothing and the failure is the one-argument form.
+                if (parser.CurrentType != Token.Semicolon && parser.CurrentType != Token.EndOfInput)
+                {
+                    throw DbException.GetSyntaxError(sql, parser.Current.Start);
+                }
+
+                next.Prepare();
+            }
+            catch (H2SharpException e) when (prepared.Count > 0
+                && e.H2ErrorCode != Api.ErrorCode.CannotMixIndexedAndUnindexedParams)
+            {
+                // A later statement may depend on what an earlier one creates. The reference
+                // defers it, and the rest of the text, until the earlier statements have run.
+                remaining = sql[statementStart..];
+                break;
             }
 
-            next.Prepare();
             prepared.Add(next);
         }
 
@@ -591,12 +633,12 @@ public sealed partial class Parser
             return new CommandContainer(current, sql, new Dml.NoOperation(current));
         }
 
-        if (prepared.Count == 1)
+        if (prepared.Count == 1 && remaining is null)
         {
             return new CommandContainer(current, sql, prepared[0]);
         }
 
-        return new CommandList(current, sql, prepared);
+        return new CommandList(current, sql, prepared, parser.parameterList, remaining);
     }
 
     /// <summary>
@@ -2299,10 +2341,9 @@ public sealed partial class Parser
             {
                 // The data change delta table: FINAL TABLE (INSERT INTO ...). The rows of the
                 // table are the rows the statement changed, and the name in front of it says
-                // which version of them the caller gets. It takes no alias: the reference
-                // leaves the table before it reads one.
+                // which version of them the caller gets. It may still have an alias, which the
+                // normal alias reader below takes when one was written.
                 fromTable = ReadDataChangeDeltaTable(session, schema, tableName);
-                hasAlias = false;
             }
             else
             {

@@ -14,11 +14,12 @@
  * effect twice — once discarded, once read. Query therefore runs only the first statement;
  * the rest run through the containers below, on NextResult or when an update runs them all.
  *
- * Everything from the first DEFINE command on is also parsed up front here, where the
- * reference defers it until execution so that later statements can use what the earlier
- * ones create. A CREATE TABLE followed by an INSERT in one text fails at prepare with the
- * table missing, loudly rather than wrongly, until the lazy remainder lands.
+ * A statement that cannot be prepared yet is deferred, as in the reference: the parser stops
+ * at the first one and keeps the rest of the text, and it is parsed and run once the earlier
+ * statements have had their effect. A CREATE TABLE followed by a DELETE in one text is the
+ * reason: the DELETE cannot name the table before the CREATE has run.
  */
+using System;
 using System.Collections.Generic;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
@@ -33,13 +34,24 @@ public sealed class CommandList : Command
 {
     private readonly List<CommandContainer> commands;
 
+    private readonly List<Parameter> parameters;
+
+    private string? remaining;
+
     /// <summary>
     /// Wraps the prepared statements of one text.
     /// </summary>
     /// <param name="session">the session</param>
     /// <param name="sql">the statement text</param>
     /// <param name="prepared">the prepared statements, in order</param>
-    public CommandList(SessionLocal session, string sql, List<Prepared> prepared)
+    /// <param name="parameters">the parameters of the whole text</param>
+    /// <param name="remaining">the text that was deferred until execution, or null</param>
+    public CommandList(
+        SessionLocal session,
+        string sql,
+        List<Prepared> prepared,
+        List<Parameter> parameters,
+        string? remaining)
         : base(session, sql)
     {
         commands = new List<CommandContainer>(prepared.Count);
@@ -48,6 +60,9 @@ public sealed class CommandList : Command
             CommandContainer container = new(session, p.GetSql(), p);
             commands.Add(container);
         }
+
+        this.parameters = parameters;
+        this.remaining = remaining;
     }
 
     /// <summary>
@@ -66,7 +81,16 @@ public sealed class CommandList : Command
     public override bool IsQuery() => commands[0].IsQuery();
 
     /// <inheritdoc/>
-    public override List<ParameterInterface> GetParameters() => commands[0].GetParameters();
+    public override List<ParameterInterface> GetParameters()
+    {
+        List<ParameterInterface> result = new(parameters.Count);
+        foreach (Parameter parameter in parameters)
+        {
+            result.Add(parameter);
+        }
+
+        return result;
+    }
 
     /// <inheritdoc/>
     public override bool IsReadOnly() => false;
@@ -83,11 +107,67 @@ public sealed class CommandList : Command
             _ = commands[i].UpdateRows(generatedKeysRequest);
         }
 
+        ExecuteRemaining();
         return first;
     }
 
     /// <inheritdoc/>
     public override ResultInterface Query(long maxrows) => commands[0].Query(maxrows);
+
+    /// <summary>
+    /// Parses and runs the statement text that was deferred while the command was prepared.
+    /// </summary>
+    internal void ExecuteRemaining()
+    {
+        string? text = remaining;
+        if (text is null)
+        {
+            return;
+        }
+
+        remaining = null;
+        Command command = new Parser(Session).PrepareCommand(text, parameters);
+        ExecuteForEffect(command);
+    }
+
+    private static void ExecuteForEffect(Command command)
+    {
+        if (command is CommandList list)
+        {
+            foreach (CommandContainer container in list.GetCommands())
+            {
+                ExecuteContainer(container);
+            }
+
+            list.ExecuteRemaining();
+            list.Close();
+            return;
+        }
+
+        if (command is CommandContainer single)
+        {
+            ExecuteContainer(single);
+            single.Close();
+            return;
+        }
+
+        throw new InvalidOperationException("The deferred statement is not a runnable command");
+    }
+
+    private static void ExecuteContainer(CommandContainer container)
+    {
+        if (container.IsQuery())
+        {
+            using ResultInterface result = container.ExecuteQuery(-1, 0, false);
+            while (result.Next())
+            {
+            }
+        }
+        else
+        {
+            _ = container.ExecuteUpdate(false);
+        }
+    }
 
     /// <inheritdoc/>
     /// <remarks>
