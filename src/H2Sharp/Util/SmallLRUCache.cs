@@ -29,6 +29,8 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
 
     private readonly LinkedList<KeyValuePair<TKey, TValue>> order = new();
 
+    private readonly object sync = new();
+
     private int size;
 
     private SmallLRUCache(int size)
@@ -49,7 +51,16 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
     /// <summary>
     /// How many entries the cache holds.
     /// </summary>
-    public int Count => entries.Count;
+    public int Count
+    {
+        get
+        {
+            lock (sync)
+            {
+                return entries.Count;
+            }
+        }
+    }
 
     /// <summary>
     /// Change how many entries the cache holds, dropping what no longer fits.
@@ -57,8 +68,11 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
     /// <param name="newSize">how many</param>
     public void SetMaxSize(int newSize)
     {
-        size = newSize;
-        Trim();
+        lock (sync)
+        {
+            size = newSize;
+            Trim();
+        }
     }
 
     /// <summary>
@@ -69,18 +83,21 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
     /// <returns>true if the key was there</returns>
     public bool TryGetValue(TKey key, out TValue value)
     {
-        if (entries.TryGetValue(key, out LinkedListNode<KeyValuePair<TKey, TValue>>? node))
+        lock (sync)
         {
-            value = node.Value.Value;
+            if (entries.TryGetValue(key, out LinkedListNode<KeyValuePair<TKey, TValue>>? node))
+            {
+                value = node.Value.Value;
 
-            // Used most recently: to the front of the order.
-            order.Remove(node);
-            order.AddFirst(node);
-            return true;
+                // Used most recently: to the front of the order.
+                order.Remove(node);
+                order.AddFirst(node);
+                return true;
+            }
+
+            value = default!;
+            return false;
         }
-
-        value = default!;
-        return false;
     }
 
     /// <summary>
@@ -91,22 +108,25 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
     /// <returns>the value that was there, or what was given</returns>
     public TValue Put(TKey key, TValue value)
     {
-        // One lookup: the slot is written before anything resizes the dictionary, so the
-        // reference stays valid. The order list is touched in between, but it is not the
-        // dictionary.
-        ref LinkedListNode<KeyValuePair<TKey, TValue>>? slot =
-            ref CollectionsMarshal.GetValueRefOrAddDefault(entries, key, out bool exists);
-        TValue previous = default!;
-        if (exists)
+        lock (sync)
         {
-            LinkedListNode<KeyValuePair<TKey, TValue>> node = slot!;
-            previous = node.Value.Value;
-            order.Remove(node);
-        }
+            // One lookup: the slot is written before anything resizes the dictionary, so the
+            // reference stays valid. The order list is touched in between, but it is not the
+            // dictionary.
+            ref LinkedListNode<KeyValuePair<TKey, TValue>>? slot =
+                ref CollectionsMarshal.GetValueRefOrAddDefault(entries, key, out bool exists);
+            TValue previous = default!;
+            if (exists)
+            {
+                LinkedListNode<KeyValuePair<TKey, TValue>> node = slot!;
+                previous = node.Value.Value;
+                order.Remove(node);
+            }
 
-        slot = order.AddFirst(new KeyValuePair<TKey, TValue>(key, value));
-        Trim();
-        return previous;
+            slot = order.AddFirst(new KeyValuePair<TKey, TValue>(key, value));
+            Trim();
+            return previous;
+        }
     }
 
     /// <summary>
@@ -116,13 +136,16 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
     /// <returns>the value, or what an absent key gives</returns>
     public TValue Remove(TKey key)
     {
-        if (!entries.Remove(key, out LinkedListNode<KeyValuePair<TKey, TValue>>? node))
+        lock (sync)
         {
-            return default!;
-        }
+            if (!entries.Remove(key, out LinkedListNode<KeyValuePair<TKey, TValue>>? node))
+            {
+                return default!;
+            }
 
-        order.Remove(node);
-        return node.Value.Value;
+            order.Remove(node);
+            return node.Value.Value;
+        }
     }
 
     /// <summary>
@@ -130,8 +153,11 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
     /// </summary>
     public void Clear()
     {
-        entries.Clear();
-        order.Clear();
+        lock (sync)
+        {
+            entries.Clear();
+            order.Clear();
+        }
     }
 
     /// <inheritdoc/>
@@ -141,12 +167,19 @@ public sealed class SmallLRUCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey,
     /// </remarks>
     public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
     {
-        LinkedListNode<KeyValuePair<TKey, TValue>>? node = order.Last;
-        while (node is not null)
+        List<KeyValuePair<TKey, TValue>> snapshot;
+        lock (sync)
         {
-            yield return node.Value;
-            node = node.Previous;
+            snapshot = new List<KeyValuePair<TKey, TValue>>(order.Count);
+            LinkedListNode<KeyValuePair<TKey, TValue>>? node = order.Last;
+            while (node is not null)
+            {
+                snapshot.Add(node.Value);
+                node = node.Previous;
+            }
         }
+
+        return snapshot.GetEnumerator();
     }
 
     /// <inheritdoc/>
