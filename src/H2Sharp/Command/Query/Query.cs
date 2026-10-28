@@ -381,15 +381,18 @@ public abstract class Query : Prepared
     /// </remarks>
     /// <param name="alias">the name of the table</param>
     /// <param name="columnTemplates">the names the statement gave the columns, or null</param>
+    /// <param name="parameters">the parameters of this table's query</param>
     /// <param name="forCreateView">whether the table is made for a view</param>
     /// <param name="topQuery">the query the table is a part of, or null</param>
     /// <returns>the table</returns>
     public Tables.Table ToTable(
         string alias,
         Tables.Column[]? columnTemplates,
+        List<Parameter> parameters,
         bool forCreateView,
         Query? topQuery)
     {
+        SetParameterList(new List<Parameter>(parameters));
         if (!checkInit)
         {
             Init();

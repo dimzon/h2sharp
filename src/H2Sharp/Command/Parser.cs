@@ -427,6 +427,13 @@ public sealed partial class Parser
     /// </summary>
     private List<Expressions.Parameter> parameterList = [];
 
+    /// <summary>
+    /// The indexes of the parameters used in the current scope, as the reference's
+    /// <c>usedParameters</c>. A derived table can leave gaps in its own parameter list, and
+    /// the values are copied into the query it reparses by index.
+    /// </summary>
+    private BitSet usedParameters = new();
+
     private bool recompileAlways;
 
     /// <summary>
@@ -487,6 +494,42 @@ public sealed partial class Parser
                 parameterList[parameter.GetIndex()] = parameter;
         }
         else parameterList = suppliedParameters;
+    }
+
+    /// <summary>
+    /// Starts a parameter scope, as the reference's <c>openParametersScope</c> does.
+    /// </summary>
+    /// <returns>the used-parameter set of the enclosing scope</returns>
+    private BitSet OpenParametersScope()
+    {
+        BitSet outerUsedParameters = usedParameters;
+        usedParameters = new BitSet();
+        return outerUsedParameters;
+    }
+
+    /// <summary>
+    /// Ends a parameter scope and returns the parameters used in it, as the reference's
+    /// <c>closeParametersScope</c> does.
+    /// </summary>
+    /// <remarks>
+    /// A derived table can have gaps in its parameter list: a statement that uses
+    /// <c>?1</c> and <c>?3</c> but not <c>?2</c> hands its derived query two parameters, and
+    /// the values are copied by their original indexes.
+    /// </remarks>
+    /// <param name="outerUsedParameters">the set returned by <see cref="OpenParametersScope"/></param>
+    /// <returns>the parameters used in the scope, in index order</returns>
+    private List<Expressions.Parameter> CloseParametersScope(BitSet outerUsedParameters)
+    {
+        BitSet innerUsedParameters = usedParameters;
+        List<Expressions.Parameter> parameters = [];
+        for (int i = innerUsedParameters.NextSetBit(0); i >= 0; i = innerUsedParameters.NextSetBit(i + 1))
+        {
+            parameters.Add(parameterList[i]);
+            outerUsedParameters.Set(i);
+        }
+
+        usedParameters = outerUsedParameters;
+        return parameters;
     }
 
     /// <summary>Parses one statement without preparing it, as H2 Parser.parse does.</summary>
@@ -1879,7 +1922,9 @@ public sealed partial class Parser
     /// <returns>the filter of the table</returns>
     private Tables.TableFilter ReadDerivedTable(SessionLocal session, Query.Select? select)
     {
+        BitSet outerUsedParameters = OpenParametersScope();
         Query.Query query = ParseQueryExpression();
+        List<Expressions.Parameter> queryParameters = CloseParametersScope(outerUsedParameters);
         Expect(Token.CloseParen, ")");
         string? alias = ReadFromAlias();
         List<string>? derivedColumnNames = null;
@@ -1902,7 +1947,8 @@ public sealed partial class Parser
             tableAlias = "_DERIVED_TABLE_" + Current.Start;
         }
 
-        Tables.Table table = query.ToTable(tableAlias, columnTemplates, forCreateView: false, topQuery: null);
+        Tables.Table table = query.ToTable(
+            tableAlias, columnTemplates, queryParameters, forCreateView: false, topQuery: select);
         Tables.TableFilter filter = new(
             session, table, tableAlias, rightsChecked: true, select, 0, null);
         if (derivedColumnNames is not null)
@@ -2172,9 +2218,12 @@ public sealed partial class Parser
         if (IsWord("VALUES", consume: false))
         {
             // The table of a table value constructor: the rows a VALUES clause names.
+            BitSet outerUsedParameters = OpenParametersScope();
             Query.Query values = ReadValues();
+            List<Expressions.Parameter> queryParameters = CloseParametersScope(outerUsedParameters);
             tableName = "_VALUES_" + Current.Start.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            fromTable = values.ToTable(tableName, null, forCreateView: false, topQuery: null);
+            fromTable = values.ToTable(
+                tableName, null, queryParameters, forCreateView: false, topQuery: select);
             hasAlias = false;
         }
         else
@@ -3923,9 +3972,12 @@ public sealed partial class Parser
         // Reference parseSelect: currentSelect is the select while its clauses are read.
         Query.Select? oldSelect = currentSelect;
         currentSelect = select;
+        BitSet outerUsedParameters = OpenParametersScope();
         try
         {
-            return ParseQuerySelectBody(select);
+            Query.Query result = ParseQuerySelectBody(select);
+            select.SetParameterList(CloseParametersScope(outerUsedParameters));
+            return result;
         }
         finally
         {
@@ -8270,6 +8322,7 @@ public sealed partial class Parser
     {
         int index = ((Token.ParameterToken)Current).Index - 1;
         Read();
+        usedParameters.Set(index);
         while (parameterList.Count <= index)
             parameterList.Add(new Expressions.Parameter(parameterList.Count));
         return parameterList[index];
