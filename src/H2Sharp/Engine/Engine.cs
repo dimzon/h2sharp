@@ -162,6 +162,7 @@ public static class Engine
             ? DefaultCastDataProvider.Instance
             : new DelegatedCastDataProvider(systemClockProvider, timeZoneProviderProvider);
         session.CastDataProvider = new SessionCastDataProvider(session, inner);
+        session.SetTimeZone(inner.CurrentTimeZone());
         return session;
     }
 
@@ -272,4 +273,5 @@ public static class Engine
         internal bool Removed { get; set; }
     }
 }
+
 

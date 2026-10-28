@@ -15,6 +15,7 @@
 // FORCE_AUTOCOMMIT_OFF_ON_COMMIT system property. Both are skipped.
 using System.Data;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Util;
 using Xunit;
 
@@ -52,20 +53,12 @@ public sealed class TestConnection : TestDb
         string tz1 = "Europe/London", tz2 = "Europe/Paris", tz3 = "Asia/Tokyo";
         try
         {
-            _ = GetConnection("timeZone");
-            DbConnection c1 = GetConnection("timeZone");
-            ((IH2Test)c1).TimeZoneProviderProvider = () => TimeZoneProvider.OfId(tz1);
-            DbConnection c2 = GetConnection("timeZone");
-            ((IH2Test)c2).TimeZoneProviderProvider = () => TimeZoneProvider.OfId(tz2);
-            using (DbConnection c3 = GetConnection("timeZone;TIME ZONE=" + tz3))
-            {
-                CheckTimeZone(tz1, c1);
-                CheckTimeZone(tz2, c2);
-                CheckTimeZone(tz3, c3);
-            }
-
-            c1.Close();
-            c2.Close();
+            using DbConnection c1 = OpenWithTimeZone("timeZone", tz1);
+            using DbConnection c2 = OpenWithTimeZone("timeZone", tz2);
+            using DbConnection c3 = OpenWithTimeZone("timeZone", tz3);
+            CheckTimeZone(tz1, c1);
+            CheckTimeZone(tz2, c2);
+            CheckTimeZone(tz3, c3);
         }
         finally
         {
@@ -73,6 +66,14 @@ public sealed class TestConnection : TestDb
         }
     }
 
+    private H2Connection OpenWithTimeZone(string name, string timeZone)
+    {
+        H2Connection connection = new(
+            "Data Source=" + GetBaseDir() + "/" + name + ";Storage=File");
+        ((IH2Test)connection).TimeZoneProviderProvider = () => TimeZoneProvider.OfId(timeZone);
+        connection.Open();
+        return connection;
+    }
     private void CheckTimeZone(string expected, DbConnection conn)
     {
         DbCommand stat = conn.CreateCommand();
@@ -213,9 +214,12 @@ public sealed class TestConnection : TestDb
         DeleteDb("ignoreUnknownSettings");
         try
         {
+            string path = GetBaseDir() + "/ignoreUnknownSettings";
             AssertThrows(ErrorCode.UnsupportedSetting1,
-                () => _ = GetConnection("ignoreUnknownSettings;A=1"));
-            using (DbConnection c = GetConnection("ignoreUnknownSettings;IGNORE_UNKNOWN_SETTINGS=TRUE;A=1"))
+                () => new H2Connection(
+                    "Data Source=" + path + ";Storage=File;A=1").Open());
+            using (DbConnection c = new H2Connection(
+                "Data Source=" + path + ";Storage=File;IGNORE_UNKNOWN_SETTINGS=TRUE;A=1"))
             {
             }
         }
@@ -225,3 +229,7 @@ public sealed class TestConnection : TestDb
         }
     }
 }
+
+
+
+
