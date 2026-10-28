@@ -521,8 +521,10 @@ public sealed class TestOptimizations : TestDb
     private void TestConstantIn2()
     {
         DeleteDb("optimizations");
-        using DbConnection conn = GetConnection("optimizations;IGNORECASE=TRUE");
+        using DbConnection conn = GetConnection("optimizations");
         DbCommand stat = conn.CreateCommand();
+        // The port applies IGNORECASE through SET; the URL setting is not wired into open yet.
+        Execute(stat, "SET IGNORECASE TRUE");
 
         Execute(stat, "CREATE TABLE testValues (x VARCHAR(50))");
         Execute(stat, "INSERT INTO testValues (x) SELECT 'foo' x");
