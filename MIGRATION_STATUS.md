@@ -30,8 +30,9 @@ Native JDBC-тесты переведены на ADO.NET: `Driver.Connect` за�
 `H2ValueMapper` передаёт mode в `ValueVarchar.Get`, поэтому Oracle `'` на
 параметре и литерале становится `NULL`; `NULL`/`UNKNOWN` metadata читается
 как `string`. В `Engine` сессия получает time zone из cast-provider до открытия.
-Jdbc-набор: **9/14**; остаток — DbSettings P-008, trace, listener,
-JDBC-специфичные getter-конверсии и prepared temp view с вложенными derived tables.
+Jdbc-набор: **8/14**; остаток — DbSettings P-008, trace, listener,
+JDBC-специфичные getter-конверсии, prepared temp view с вложенными derived tables
+и flaky concurrent MERGE duplicate-key.
 
 `MODE` фиксируется при открытии (D-029). `SET MODE` с тем же режимом — no-op,
 с другим — 50100. Второй connection к тому же storage с другим режимом получает
@@ -8215,6 +8216,7 @@ SET PASSWORD, SET SALT), `SET PASSWORD`, `SET SALT`, `DROP USER` (+IF EXISTS),
 Итог после исправления: core **1433 passed / 3 прежних PostfixCast failed /
 1436 total**, conformance **762/952** без изменений, identity-тесты 26/26,
 `FileDatabaseOracleTests` 34/34 в целевом прогоне.
+
 
 
 
