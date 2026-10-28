@@ -163,16 +163,6 @@ public static class Constants
     /// </summary>
     public const string ClusteringEnabled = "TRUE";
 
-    /// <summary>
-    /// The database URL used when calling a function if only the column list
-    /// should be returned.
-    /// </summary>
-    public const string ConnUrlColumnList = "jdbc:columnlist:connection";
-
-    /// <summary>
-    /// The database URL used when calling a function if the data should be returned.
-    /// </summary>
-    public const string ConnUrlInternal = "jdbc:default:connection";
 
     /// <summary>
     /// The cost is calculated on rowcount + this offset, to avoid using the wrong or
@@ -401,10 +391,6 @@ public static class Constants
     /// </summary>
     public const long SlowQueryLimitMs = 100;
 
-    /// <summary>
-    /// The database URL prefix of this database.
-    /// </summary>
-    public const string StartUrl = "jdbc:h2:";
 
     /// <summary>
     /// The file name suffix of file lock files that are used to make sure a
@@ -448,12 +434,6 @@ public static class Constants
     /// </summary>
     public const int ThrottleDelay = 50;
 
-    /// <summary>
-    /// The database URL format in simplified Backus-Naur form.
-    /// </summary>
-    public const string UrlFormat = StartUrl
-        + "{ {.|mem:}[name] | [file:]fileName | "
-        + "{tcp|ssl}:[//]server[:port][,server2[:port]]/name }[;key=value...]";
 
     /// <summary>
     /// The package name of user defined classes.
@@ -515,3 +495,4 @@ public static class Constants
         return version;
     }
 }
+

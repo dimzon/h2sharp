@@ -36,6 +36,8 @@ namespace H2Sharp.Native.Tests;
 /// </summary>
 public abstract class TestDb : TestBase
 {
+    private const string JdbcPrefix = "jdbc:h2:";
+
     /// <summary>
     /// Open a database connection in admin mode. The default user name and
     /// password is used.
@@ -190,7 +192,7 @@ public abstract class TestDb : TestBase
         // See the header: issue #55, the engine does not implement the settings the
         // reference accepts; ignore them until it does.
         url = AddOption(url, "IGNORE_UNKNOWN_SETTINGS", "true");
-        return Constants.StartUrl + url;
+        return JdbcPrefix + url;
     }
 
     private static string AddOption(string url, string option, string value)
@@ -218,12 +220,12 @@ public abstract class TestDb : TestBase
 
     protected static string ToClassicConnectionString(string url)
     {
-        if (!url.StartsWith(Constants.StartUrl, StringComparison.Ordinal))
+        if (!url.StartsWith(JdbcPrefix, StringComparison.Ordinal))
         {
             return url;
         }
 
-        string body = url.Substring(Constants.StartUrl.Length);
+        string body = url.Substring(JdbcPrefix.Length);
         string[] parts = body.Split(';');
         string name = parts[0];
         StorageKind storage;
@@ -375,3 +377,4 @@ public abstract class TestDb : TestBase
         }
     }
 }
+

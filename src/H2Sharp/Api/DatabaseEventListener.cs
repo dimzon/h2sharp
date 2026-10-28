@@ -61,8 +61,8 @@ public static class DatabaseEventListenerStates
 /// <summary>
 /// A class that implements this interface can get notified about exceptions
 /// and other events. A database event listener can be registered when
-/// connecting to a database. Example database URL:
-/// jdbc:h2:./test;DATABASE_EVENT_LISTENER='com.acme.DbListener'
+/// connecting to a database. Example connection string:
+/// Data Source=test;Storage=File;DATABASE_EVENT_LISTENER='com.acme.DbListener'
 /// </summary>
 public interface DatabaseEventListener
 {
@@ -119,3 +119,4 @@ public interface DatabaseEventListener
     {
     }
 }
+

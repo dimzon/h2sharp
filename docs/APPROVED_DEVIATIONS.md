@@ -379,6 +379,8 @@ SQL-скрипта из файла не портируются. Тесты `Runs
 Mode=...`. `jdbc:h2:` в публичном API отвергается. Синтаксис разбирает
 `DbConnectionStringBuilder`; `ConnectionInfo` — typed DTO без разбора строк.
 JDBC URL остаётся только в тестовой инфраструктуре для Java-оракулов.
+`Driver.Connect`/`AcceptsURL` и JDBC URL constants удалены; `Driver` оставлен
+только для регистрации `DbProviderFactory`.
 
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 

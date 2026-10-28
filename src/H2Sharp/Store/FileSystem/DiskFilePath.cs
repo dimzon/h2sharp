@@ -111,8 +111,7 @@ public sealed class DiskFilePath : FilePath
     /// <remarks>
     /// Dropping the prefix is why a disk path's name is a plain path: the scheme says which file
     /// system it is, and the name is what that file system knows. An unknown prefix is left alone,
-    /// which is what makes <c>Data Source=foo.h2.db</c> and <c>jdbc:h2:file:foo.h2.db</c> the same
-    /// file.
+    /// which is what makes a typed disk path and a file-scheme path the same file.
     /// </remarks>
     public static string TranslateFileName(string fileName)
     {
@@ -518,3 +517,4 @@ internal sealed class DiskFileChannel : FileChannel
     public override string ToString()
         => string.Create(CultureInfo.InvariantCulture, $"DiskFileChannel({stream.Length})");
 }
+

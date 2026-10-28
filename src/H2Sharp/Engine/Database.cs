@@ -12,7 +12,7 @@
  * needs a writer thread or the user layer is stubbed and refuses.
  *
  * The close rule is the part worth having first, because it is observable without a single
- * table: two connections to the same "jdbc:h2:mem:x" see one database, and after the second of
+ * table: two connections to the same memory storage see one database, and after the second of
  * them closes, a new connection finds nothing. A port that kept the registry entry forever would
  * still answer every query correctly and would leak a database per name for the life of the
  * process — which is exactly the kind of thing a test that only creates tables never notices.
@@ -1415,4 +1415,5 @@ public sealed partial class Database : CastDataProvider
         }
     }
 }
+
 

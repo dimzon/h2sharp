@@ -150,12 +150,6 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// <param name="text">the connection string</param>
     private static void ValidateConnectionString(string text)
     {
-        if (text.StartsWith(Engine.Constants.StartUrl, StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                "JDBC URLs are not accepted; use Data Source=...;Storage=...", nameof(text));
-        }
-
         try
         {
             _ = new H2ConnectionStringBuilder(text).ToConnectionInfo();

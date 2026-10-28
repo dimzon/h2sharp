@@ -17,7 +17,9 @@ Storage=Memory
 `H2ConnectionStringBuilder.ToConnectionInfo()`/`LoadFrom()` — две точки
 преобразования. Unknown keys и credentials (`USER`/`PASSWORD`/`User ID`/
 `Password`) отвергаются; `IGNORE_UNKNOWN_SETTINGS` сохраняет поведение native
-harness.
+harness. Из `Driver` удалены JDBC-методы `connect`/`acceptsURL` и default
+connection; осталась только регистрация provider factory. `StartUrl`,
+`UrlFormat` и internal JDBC URL constants удалены из engine.
 
 `MODE` фиксируется при открытии (D-029). `SET MODE` с тем же режимом — no-op,
 с другим — 50100. Второй connection к тому же storage с другим режимом получает

@@ -29,7 +29,7 @@ namespace H2Sharp.Store.FileSystem;
 /// <para>
 /// The registry is the reference's: every file system registers under its scheme, the disk one is
 /// the default, and a scheme nobody registered falls back to the disk rather than failing — which is
-/// what makes <c>Data Source=foo.h2.db</c> and <c>jdbc:h2:file:foo.h2.db</c> both work.
+/// what makes the disk and memory schemes both reachable through the typed connection.
 /// </para>
 /// <para>
 /// The Java-only file systems of the reference are not here: <c>niomapped</c>, <c>niomem</c>,
@@ -351,3 +351,4 @@ public abstract class FilePath
     /// <inheritdoc/>
     public override string ToString() => Name;
 }
+

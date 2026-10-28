@@ -4,14 +4,16 @@
 // Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
 //
 // Modified (API): JDBC statements are ADO.NET commands; the JDBC Properties bag is the
-// connection string's options part, so Driver.Connect takes the options as text; the
+// connection string's options part, so the test helper takes the options as text; the
 // class name in DATABASE_EVENT_LISTENER is the CLR type name; the state constants live
 // in DatabaseEventListenerStates (a C# interface cannot declare constants).
 //
 // Blocked by the port: Database.SetEventListenerClass refuses every class name (the
 // listener is never instantiated or called), so the test cannot pass until the listener
 // wiring is ported. The trait keeps it in the suite as the defect's checklist entry.
+using System.Data.Common;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Jdbc;
@@ -22,6 +24,14 @@ namespace H2Sharp.Native.Tests.Jdbc;
 [Trait("Category", "BlockedByPort")]
 public sealed class TestDatabaseEventListener : TestDb
 {
+    private static DbConnection OpenPort(string url, string? properties = null)
+    {
+        H2Connection connection = new(ToClassicConnectionString(
+            properties is null ? url : url + ";" + properties));
+        connection.Open();
+        return connection;
+    }
+
     /// <summary>
     /// A flag to mark that the given method was called.
     /// </summary>
@@ -63,8 +73,7 @@ public sealed class TestDatabaseEventListener : TestDb
         {
             // using DriverManager.getConnection could result in a deadlock when using
             // the server mode, but within the same process
-            using DbConnection conn = Driver.Load().Connect(databaseUrl,
-                "USER=sa;PASSWORD=sa")!;
+            using DbConnection conn = OpenPort(databaseUrl, "USER=sa;PASSWORD=sa");
             DbCommand stat = conn.CreateCommand();
             stat.CommandText = "create table if not exists test(id int)";
             _ = stat.ExecuteNonQuery();
@@ -81,7 +90,7 @@ public sealed class TestDatabaseEventListener : TestDb
         DeleteDb("databaseEventListener");
         string url = GetURL("databaseEventListener", true);
         url += ";DATABASE_EVENT_LISTENER='" + typeof(InitListener).FullName + "'";
-        using DbConnection conn = Driver.Load().Connect(url, "USER=sa;PASSWORD=sa")!;
+        using DbConnection conn = OpenPort(url, "USER=sa;PASSWORD=sa");
         DbCommand stat = conn.CreateCommand();
         Execute(stat, "select * from test");
     }
@@ -96,7 +105,7 @@ public sealed class TestDatabaseEventListener : TestDb
         DeleteDb("databaseEventListener");
         string url = GetURL("databaseEventListener", true);
         string properties = "USER=" + GetUser() + ";PASSWORD=" + GetPassword();
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
             DbCommand stat = conn.CreateCommand();
             // the old.id index head is at position 0
@@ -105,7 +114,7 @@ public sealed class TestDatabaseEventListener : TestDb
             Execute(stat, "create table test(id identity) as select 1");
         }
 
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
             DbCommand stat = conn.CreateCommand();
             // free up space at position 0
@@ -116,14 +125,14 @@ public sealed class TestDatabaseEventListener : TestDb
         }
 
         // now the index should be re-built
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
         }
 
         calledCreateIndex = false;
         properties += ";DATABASE_EVENT_LISTENER='" +
             typeof(MyDatabaseEventListener).FullName + "'";
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
         }
 
@@ -140,7 +149,7 @@ public sealed class TestDatabaseEventListener : TestDb
         DeleteDb("databaseEventListener");
         string url = GetURL("databaseEventListener", true);
         string properties = "USER=" + GetUser() + ";PASSWORD=" + GetPassword();
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
             DbCommand stat = conn.CreateCommand();
             // the old.id index head is at position 0
@@ -149,7 +158,7 @@ public sealed class TestDatabaseEventListener : TestDb
             Execute(stat, "create table test(id identity) as select 1");
         }
 
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
             DbCommand stat = conn.CreateCommand();
             // free up space at position 0
@@ -162,7 +171,7 @@ public sealed class TestDatabaseEventListener : TestDb
         calledCreateIndex = false;
         properties += ";DATABASE_EVENT_LISTENER='" +
             typeof(MyDatabaseEventListener).FullName + "'";
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
         }
 
@@ -179,7 +188,7 @@ public sealed class TestDatabaseEventListener : TestDb
         DeleteDb("databaseEventListener");
         string url = GetURL("databaseEventListener", true);
         string properties = "USER=" + GetUser() + ";PASSWORD=" + GetPassword();
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
             DbCommand stat = conn.CreateCommand();
             Execute(stat, "create table test(id int primary key, name varchar)");
@@ -195,7 +204,7 @@ public sealed class TestDatabaseEventListener : TestDb
         calledScan = false;
         properties += ";DATABASE_EVENT_LISTENER='" +
             typeof(MyDatabaseEventListener).FullName + "'";
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
         }
 
@@ -213,7 +222,7 @@ public sealed class TestDatabaseEventListener : TestDb
         calledClosingDatabase = false;
         _ = Driver.Load();
         string url = "jdbc:h2:mem:databaseEventListener";
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
         }
 
@@ -230,7 +239,7 @@ public sealed class TestDatabaseEventListener : TestDb
         calledStatementProgress = false;
         _ = Driver.Load();
         string url = "jdbc:h2:mem:databaseEventListener";
-        using (DbConnection conn = Driver.Load().Connect(url, properties)!)
+        using (DbConnection conn = OpenPort(url, properties))
         {
             DbCommand stat = conn.CreateCommand();
             Execute(stat, "create table test(id int primary key, name varchar)");
