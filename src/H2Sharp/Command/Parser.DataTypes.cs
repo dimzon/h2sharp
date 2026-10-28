@@ -255,6 +255,15 @@ public sealed partial class Parser
             throw DbException.Get(ErrorCode.UnknownDataType1, original);
         }
 
+        int type = dataType.Type;
+        if (session is not null
+            && session.GetDatabase().IsIgnoreCase()
+            && type == Value.Varchar
+            && !original.Equals("VARCHAR_CASESENSITIVE", StringComparison.OrdinalIgnoreCase))
+        {
+            dataType = DataType.GetDataType(type = Value.VarcharIgnorecase);
+        }
+
         long precision;
         int scale;
         if (dataType.SpecialPrecisionScale)
@@ -268,7 +277,6 @@ public sealed partial class Parser
             scale = -1;
         }
 
-        int type = dataType.Type;
         if ((dataType.SupportsPrecision || dataType.SupportsScale) && ReadIf(Token.OpenParen))
         {
             if (!IsWord("MAX"))
