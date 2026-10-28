@@ -194,6 +194,7 @@ public abstract class Command : CommandInterface
         // partial: only the ArithmeticException family exposed by interval BigDecimal
         // division is converted here (as Java Throwable is).
         bool callStop = true;
+        Session.StartStatementWithinTransaction(this);
         try
         {
             ResultInterface result = Query(maxrows);
@@ -206,6 +207,7 @@ public abstract class Command : CommandInterface
         }
         finally
         {
+            Session.EndStatement();
             if (callStop)
             {
                 Stop(true);
@@ -252,6 +254,7 @@ public abstract class Command : CommandInterface
         CommitIfNonTransactional();
         MvStore.Tx.Transaction transaction = Session.GetTransaction();
         long savepoint = transaction.SetSavepoint();
+        Session.StartStatementWithinTransaction(this);
         try
         {
             return RunWithThreadLocalSession(() => UpdateRows(generatedKeysRequest));
@@ -273,6 +276,7 @@ public abstract class Command : CommandInterface
         }
         finally
         {
+            Session.EndStatement();
             Stop(true);
         }
     }
@@ -397,3 +401,5 @@ public abstract class Command : CommandInterface
         return Session.GetDatabase();
     }
 }
+
+

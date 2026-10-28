@@ -84,7 +84,7 @@ internal static class H2ValueMapper
             double d => ValueDouble.Get(d),
             decimal m => ValueNumeric.Get(FromDecimal(m)),
             char c => ValueChar.Get(c.ToString()),
-            string s => ValueVarchar.Get(s),
+            string s => ValueVarchar.Get(s, provider),
             byte[] bytes => ValueVarbinary.Get(bytes),
             // Approved ADO.NET adaptation: STJ values explicitly mean JSON documents,
             // like JDBC setObject(value, H2Type.JSON), not VARCHAR JSON-string scalars.
@@ -371,7 +371,7 @@ internal static class H2ValueMapper
             Value.Real => typeof(float),
             Value.Double => typeof(double),
             Value.Char or Value.Varchar or Value.VarcharIgnorecase
-                or Value.Clob or Value.Enum => typeof(string),
+                or Value.Clob or Value.Enum or Value.Null or Value.Unknown => typeof(string),
             Value.Binary or Value.Varbinary or Value.Blob or Value.Json => typeof(byte[]),
             Value.Date or Value.Timestamp => typeof(DateTime),
             Value.Time => typeof(TimeSpan),
@@ -565,3 +565,4 @@ internal static class H2ValueMapper
         return new TimeSpan(ticks);
     }
 }
+

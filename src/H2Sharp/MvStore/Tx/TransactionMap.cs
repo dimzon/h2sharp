@@ -9,11 +9,19 @@ using H2Sharp.Values;
 namespace H2Sharp.MvStore.Tx;
 
 /// <summary>
+/// The non-generic statement-snapshot surface of <see cref="TransactionMap{K,V}"/>.
+/// </summary>
+internal interface ITransactionMap
+{
+    void SetStatementSnapshot(Snapshot<object, VersionedValue<object>>? snapshot);
+}
+
+/// <summary>
 /// A map with transactional reads and writes over one <see cref="Transaction"/>.
 /// Keys and values cross the boundary as <c>K</c>/<c>V</c>; inside, everything is an
 /// object holding a <see cref="VersionedValue{T}"/>.
 /// </summary>
-public sealed class TransactionMap<K, V>
+public sealed class TransactionMap<K, V> : ITransactionMap
 {
     /// <summary>
     /// The map used for writing (the latest version).
@@ -473,6 +481,9 @@ public sealed class TransactionMap<K, V>
 
     internal void SetStatementSnapshot(Snapshot<object, VersionedValue<object>>? snapshot)
         => statementSnapshot = snapshot;
+
+    void ITransactionMap.SetStatementSnapshot(Snapshot<object, VersionedValue<object>>? snapshot)
+        => SetStatementSnapshot(snapshot);
 
     internal void PromoteSnapshot()
     {
@@ -1124,3 +1135,6 @@ public sealed class TransactionMap<K, V>
         }
     }
 }
+
+
+

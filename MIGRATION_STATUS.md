@@ -21,6 +21,17 @@ harness. Из `Driver` удалены JDBC-методы `connect`/`acceptsURL` �
 connection; осталась только регистрация provider factory. `StartUrl`,
 `UrlFormat` и internal JDBC URL constants удалены из engine.
 
+Native JDBC-тесты переведены на ADO.NET: `Driver.Connect` заменён `H2Connection`,
+`Command.Transaction`/savepoint/transaction scope приведены к ADO-поведению.
+Портирован statement scope (`startStatementWithinTransaction`/`endStatement`):
+`ReadCommitted` видит commit другой транзакции, `ReadUncommitted` — грязные
+данные, `RepeatableRead` сохраняет snapshot. `SessionCastDataProvider` отдаёт
+режим базы реальной сессии, а тестовый mode-provider сохраняет свой режим.
+`H2ValueMapper` передаёт mode в `ValueVarchar.Get`, поэтому Oracle `'` на
+параметре и литерале становится `NULL`; `NULL`/`UNKNOWN` metadata читается
+как `string`. Jdbc-набор: **7/14**; остаток — DbSettings P-008, trace,
+listener, repeatable-read snapshot и concurrent unique insert.
+
 `MODE` фиксируется при открытии (D-029). `SET MODE` с тем же режимом — no-op,
 с другим — 50100. Второй connection к тому же storage с другим режимом получает
 90020; после закрытия последнего storage можно открыть с другим режимом.
@@ -8203,6 +8214,7 @@ SET PASSWORD, SET SALT), `SET PASSWORD`, `SET SALT`, `DROP USER` (+IF EXISTS),
 Итог после исправления: core **1433 passed / 3 прежних PostfixCast failed /
 1436 total**, conformance **762/952** без изменений, identity-тесты 26/26,
 `FileDatabaseOracleTests` 34/34 в целевом прогоне.
+
 
 
 

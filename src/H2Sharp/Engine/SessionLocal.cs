@@ -244,6 +244,27 @@ public sealed class SessionLocal : Session
     public MvStore.Tx.Transaction GetTransaction()
         => Transaction ??= GetDatabase().GetStore().GetTransactionStore().Begin(lockTimeout, GetId(), isolationLevel);
 
+    /// <summary>
+    /// Marks the beginning of one SQL statement in this transaction.
+    /// </summary>
+    /// <param name="command">the statement, or null for an internal statement</param>
+    /// <remarks>
+    /// Dependencies are not collected yet, so the map set is null. The snapshot rules in
+    /// <c>Transaction.markStatementStart</c> still apply: a read-committed statement drops
+    /// its snapshot at the end, while repeatable read keeps it.
+    /// </remarks>
+    public void StartStatementWithinTransaction(H2Sharp.Command.Command? command)
+    {
+        _ = command;
+        GetTransaction().MarkStatementStart(null);
+    }
+
+    /// <summary>
+    /// Marks the end of the current SQL statement.
+    /// </summary>
+    public void EndStatement()
+        => Transaction?.MarkStatementEnd();
+
     private Dictionary<string, Savepoint>? savepoints;
 
     public class Savepoint
@@ -486,7 +507,7 @@ public sealed class SessionLocal : Session
     /// A test double by default in tests, the real machine here: a session that nobody overrode
     /// answers with the regular mode, the real clock and the system zone.
     /// </remarks>
-    public CastDataProvider CastDataProvider { get; init; } = DefaultCastDataProvider.Instance;
+    public CastDataProvider CastDataProvider { get; set; } = DefaultCastDataProvider.Instance;
 
     /// <summary>
     /// Gets the factory of the random number generator, when a test set one.
@@ -1475,3 +1496,6 @@ public sealed class SessionLocal : Session
         }
     }
 }
+
+
+

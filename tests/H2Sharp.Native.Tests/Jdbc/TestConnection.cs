@@ -190,7 +190,8 @@ public sealed class TestConnection : TestDb
             s2.Transaction = t2;
             Execute(s1, "CREATE TABLE TEST(ID INT PRIMARY KEY, V INT) AS VALUES (1, 2)");
             t1.Commit();
-            s1.Transaction = null;
+            using DbTransaction t1b = conn1.BeginTransaction();
+            s1.Transaction = t1b;
             Execute(s2, "INSERT INTO TEST VALUES (2, 4)");
             Execute(s1, "UPDATE TEST SET V = 3 WHERE ID = 1");
             Execute(s2, "SET LOCK_TIMEOUT 50");

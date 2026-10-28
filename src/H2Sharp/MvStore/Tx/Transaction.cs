@@ -335,7 +335,7 @@ public sealed class Transaction
 
         foreach (object transactionMap in transactionMaps.Values)
         {
-            ((TransactionMap<object, object>)transactionMap).SetStatementSnapshot(null);
+            ((ITransactionMap)transactionMap).SetStatementSnapshot(null);
         }
     }
 

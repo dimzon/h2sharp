@@ -152,15 +152,17 @@ public static class Engine
         }
 
         database.Opened();
-        return new SessionLocal(database, Constants.DefaultUser)
+        SessionLocal session = new(database, Constants.DefaultUser)
         {
-            CastDataProvider = systemClockProvider is null && timeZoneProviderProvider is null
-                ? DefaultCastDataProvider.Instance
-                : new DelegatedCastDataProvider(systemClockProvider, timeZoneProviderProvider),
             RandomGeneratorProvider = randomGeneratorProvider,
             UuidProvider = uuidProvider,
             Extensions = ExtensionRuntime.Create(extensions),
         };
+        CastDataProvider inner = systemClockProvider is null && timeZoneProviderProvider is null
+            ? DefaultCastDataProvider.Instance
+            : new DelegatedCastDataProvider(systemClockProvider, timeZoneProviderProvider);
+        session.CastDataProvider = new SessionCastDataProvider(session, inner);
+        return session;
     }
 
     /// <summary>
@@ -270,3 +272,4 @@ public static class Engine
         internal bool Removed { get; set; }
     }
 }
+
