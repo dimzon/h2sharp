@@ -759,8 +759,8 @@ public sealed class TestOptimizations : TestDb
                 AssertTrue(rs.Read());
                 int min = rs.IsDBNull(0) ? -1 : rs.GetInt32(0);
                 int max = rs.IsDBNull(1) ? -1 : rs.GetInt32(1);
-                AssertEquals(minExpected, min);
-                AssertEquals(maxExpected, max);
+                AssertEquals("i=" + i + " " + sql, minExpected, min);
+                AssertEquals("i=" + i + " " + sql, maxExpected, max);
             }
         }
     }

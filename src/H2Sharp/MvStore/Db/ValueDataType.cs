@@ -170,7 +170,7 @@ public sealed class ValueDataType : BasicDataType<Value>
             return CompareRows(rowOne, rowTwo);
         }
 
-        return CompareValues(one, two, Ascending);
+        return CompareValues(one, two, SortOrder.Ascending);
     }
 
     private int CompareRows(SearchRow a, SearchRow b)
@@ -220,38 +220,34 @@ public sealed class ValueDataType : BasicDataType<Value>
     }
 
     /// <summary>
-    /// Ascending sort type. <c>result.SortOrder</c> is not ported yet, and the two constants are
-    /// plain numbers, so the name is spelled out here rather than guessed at a use site.
-    /// </summary>
-    internal const int Ascending = 0;
-
-    /// <summary>Descending sort type.</summary>
-    internal const int Descending = 1;
-
-    /// <summary>
     /// Compares two values.
     /// </summary>
+    /// <remarks>
+    /// Ported from org.h2.mvstore.db.ValueDataType.compareValues: indexes with nullable
+    /// values carry an explicit NULL ordering, and descending is a bit in the mask, not the
+    /// whole mask.
+    /// </remarks>
     /// <param name="a">the first value</param>
     /// <param name="b">the second value</param>
-    /// <param name="sortType">0 ascending, 1 descending</param>
+    /// <param name="sortType">the sort type mask</param>
     /// <returns>negative, zero or positive</returns>
     public int CompareValues(Value? a, Value? b, int sortType)
     {
-        if (a is null || a is ValueNull)
+        if (ReferenceEquals(a, b))
         {
-            // NULL values are smaller than any other value
-            return b is null || b is ValueNull ? 0 : -1;
+            return 0;
         }
 
-        if (b is null || b is ValueNull)
+        bool aNull = a is null || a is ValueNull;
+        if (aNull || b is null || b is ValueNull)
         {
-            return 1;
+            return DefaultNullOrderingRules.CompareNull(DefaultNullOrdering.LOW, aNull, sortType);
         }
 
         // The provider is null here because a stored value never needs a cast to be compared: both
         // sides come from the same column, so the types already agree.
-        int result = a.CompareTo(b, provider, compareMode);
-        return sortType == Descending ? -result : result;
+        int result = a!.CompareTo(b, provider, compareMode);
+        return (sortType & SortOrder.Descending) != 0 ? -result : result;
     }
 
     /// <inheritdoc/>
