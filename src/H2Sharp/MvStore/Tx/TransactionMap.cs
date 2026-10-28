@@ -474,7 +474,9 @@ public sealed class TransactionMap<K, V> : ITransactionMap
                                 GetFromSnapshotObject(rootReference, committedTransactions, key)));
 
     internal Snapshot<object, VersionedValue<object>> GetSnapshot()
-        => snapshot ?? CreateSnapshot();
+        => transaction.AllowNonRepeatableRead()
+            ? CreateSnapshot()
+            : snapshot ??= CreateSnapshot();
 
     internal Snapshot<object, VersionedValue<object>> GetStatementSnapshot()
         => statementSnapshot ?? CreateSnapshot();
