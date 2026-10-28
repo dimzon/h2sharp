@@ -50,7 +50,6 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
 
     private SessionLocal? session;
 
-    private ConnectionInfo? openedConnectionInfo;
 
     private H2Transaction? currentTransaction;
 
@@ -249,7 +248,6 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         session = H2Sharp.Engine.Engine.OpenSession(
             connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider,
             timeZoneProviderProvider, extensionConfiguration.Clone());
-        openedConnectionInfo = connectionInfo;
         OnStateChange(new StateChangeEventArgs(ConnectionState.Closed, ConnectionState.Open));
     }
 
@@ -369,11 +367,6 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         currentTransaction = null;
         session = null;
         current.Close();
-        if (openedConnectionInfo is not null
-            && H2Sharp.Engine.Engine.RemoveIfClosed(openedConnectionInfo))
-        {
-            openedConnectionInfo = null;
-        }
 
         OnStateChange(new StateChangeEventArgs(ConnectionState.Open, ConnectionState.Closed));
     }

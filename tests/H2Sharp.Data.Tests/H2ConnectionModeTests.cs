@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using H2Sharp.Api;
 using H2Sharp.Data;
 using H2Sharp.Engine;
@@ -49,6 +50,79 @@ public sealed class H2ConnectionModeTests
             "Data Source=no_credentials;Storage=Memory;Password=secret");
         H2SharpException error = Assert.Throws<H2SharpException>(() => connection.Open());
         Assert.Equal(ErrorCode.FeatureNotSupported1, error.H2ErrorCode);
+    }
+
+    [Fact]
+    public void ConcurrentOpenAndCloseLeavesNoStaleHolder()
+    {
+        string name = "concurrent_storage_" + Guid.NewGuid().ToString("N");
+        string connectionString = "Data Source=" + name + ";Storage=Memory";
+
+        Parallel.For(0, 32, _ =>
+        {
+            using H2Connection connection = new(connectionString);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 1";
+            command.ExecuteScalar();
+        });
+
+        using H2Connection final = new(connectionString);
+        final.Open();
+        Assert.NotNull(final.CurrentDatabase);
+    }
+
+    [Fact]
+    public void ShutdownReleasesTheStorageRegistry()
+    {
+        string name = "shutdown_release_" + Guid.NewGuid().ToString("N");
+        string connectionString = "Data Source=" + name + ";Storage=Memory";
+
+        using (H2Connection first = new(connectionString))
+        {
+            first.Open();
+            H2Sharp.Engine.Database? old = first.CurrentDatabase;
+            using var command = first.CreateCommand();
+            command.CommandText = "SHUTDOWN";
+            _ = command.ExecuteNonQuery();
+            first.Close();
+            Assert.NotNull(old);
+            Assert.True(old.IsClosing());
+        }
+
+        using H2Connection second = new(connectionString);
+        second.Open();
+        Assert.NotNull(second.CurrentDatabase);
+    }
+
+    [Fact]
+    public void DbCloseDelayMinusOneKeepsTheSameStorage()
+    {
+        string name = "close_delay_" + Guid.NewGuid().ToString("N");
+        string connectionString = "Data Source=" + name + ";Storage=Memory";
+        H2Sharp.Engine.Database? database;
+
+        using (H2Connection first = new(connectionString))
+        {
+            first.Open();
+            database = first.CurrentDatabase;
+            using var command = first.CreateCommand();
+            command.CommandText = "SET DB_CLOSE_DELAY -1";
+            _ = command.ExecuteNonQuery();
+        }
+
+        using (H2Connection second = new(connectionString))
+        {
+            second.Open();
+            Assert.Same(database, second.CurrentDatabase);
+            using var command = second.CreateCommand();
+            command.CommandText = "SHUTDOWN";
+            _ = command.ExecuteNonQuery();
+        }
+
+        using H2Connection third = new(connectionString);
+        third.Open();
+        Assert.NotSame(database, third.CurrentDatabase);
     }
 
     [Fact]

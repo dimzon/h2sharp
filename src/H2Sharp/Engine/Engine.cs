@@ -28,7 +28,8 @@ namespace H2Sharp.Engine;
 /// </summary>
 public static class Engine
 {
-    private static readonly Dictionary<StorageKey, DatabaseHolder> Databases = [];
+    private static readonly Dictionary<StorageKey, DatabaseHolder> Databases =
+        new(StorageKeyComparer.Instance);
 
     private static readonly object DatabasesLock = new();
 
@@ -94,62 +95,59 @@ public static class Engine
             ThrowNotFound(options.IfExists, options.ForbidCreation, name);
         }
 
-        DatabaseHolder holder;
         StorageKey key = default;
-        if (!connectionInfo.IsUnnamedInMemory)
+        bool named = !connectionInfo.IsUnnamedInMemory;
+        if (named)
         {
             key = GetStorageKey(connectionInfo);
-            lock (DatabasesLock)
-            {
-                if (!Databases.TryGetValue(key, out holder!))
-                {
-                    holder = new DatabaseHolder();
-                    Databases[key] = holder;
-                }
-            }
-        }
-        else
-        {
-            holder = new DatabaseHolder();
         }
 
+        DatabaseHolder holder = named ? GetOrCreateHolder(key) : new DatabaseHolder();
         Database? database;
         for (;;)
         {
             lock (holder)
             {
-                database = holder.Database;
-                if (database is not null && database.IsClosing())
+                if (!holder.Removed)
                 {
-                    database = null;
-                }
-                else
-                {
-                    if (database is null)
+                    database = holder.Database;
+                    if (database is not null && database.IsClosing())
                     {
-                        if (options.OpenNew && holder.Database is not null)
+                        database = null;
+                    }
+                    else
+                    {
+                        if (database is null)
+                        {
+                            if (options.OpenNew && holder.Database is not null)
+                            {
+                                throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
+                            }
+
+                            database = new Database(connectionInfo);
+                            holder.Database = database;
+                        }
+                        else if (options.OpenNew)
+                        {
+                            throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
+                        }
+                        else if (database.GetMode() != connectionInfo.Mode)
                         {
                             throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
                         }
 
-                        database = new Database(connectionInfo);
-                        holder.Database = database;
+                        break;
                     }
-                    else if (options.OpenNew)
-                    {
-                        throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
-                    }
-                    else if (database.GetMode() != connectionInfo.Mode)
-                    {
-                        throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
-                    }
-
-                    break;
                 }
             }
 
-            // A database that is closing is expected to release its registry slot soon.
-            // The reference waits for up to a minute; this loop does the same without a busy spin.
+            // A database that is closing releases its registry slot from Database.Close.
+            // Re-read the holder because close may have removed it from the registry.
+            if (named)
+            {
+                holder = GetOrCreateHolder(key);
+            }
+
             Thread.Sleep(1);
         }
 
@@ -166,28 +164,50 @@ public static class Engine
     }
 
     /// <summary>
-    /// Removes a database from the registry when it closes.
+    /// Removes a closed database from the registry, waking any opener waiting for it.
     /// </summary>
-    /// <param name="connectionInfo">the connection information used to open it</param>
-    /// <returns>whether a database was removed</returns>
-    internal static bool RemoveIfClosed(ConnectionInfo connectionInfo)
+    /// <param name="database">the database that finished closing</param>
+    internal static void RemoveClosed(Database database)
     {
+        ConnectionInfo connectionInfo = database.GetConnectionInfo();
         if (connectionInfo.IsUnnamedInMemory)
         {
-            return false;
+            return;
         }
 
         StorageKey key = GetStorageKey(connectionInfo);
         lock (DatabasesLock)
         {
             if (!Databases.TryGetValue(key, out DatabaseHolder? holder)
-                || holder.Database is null
-                || !holder.Database.IsClosing())
+                || !ReferenceEquals(holder.Database, database))
             {
-                return false;
+                return;
             }
 
-            return Databases.Remove(key);
+            lock (holder)
+            {
+                if (ReferenceEquals(holder.Database, database))
+                {
+                    holder.Database = null;
+                    holder.Removed = true;
+                }
+            }
+
+            _ = Databases.Remove(key);
+        }
+    }
+
+    private static DatabaseHolder GetOrCreateHolder(StorageKey key)
+    {
+        lock (DatabasesLock)
+        {
+            if (!Databases.TryGetValue(key, out DatabaseHolder? holder))
+            {
+                holder = new DatabaseHolder();
+                Databases[key] = holder;
+            }
+
+            return holder;
         }
     }
 
@@ -217,8 +237,36 @@ public static class Engine
 
     private readonly record struct StorageKey(StorageKind Kind, string Name);
 
+    private sealed class StorageKeyComparer : IEqualityComparer<StorageKey>
+    {
+        internal static readonly StorageKeyComparer Instance = new();
+
+        public bool Equals(StorageKey x, StorageKey y)
+        {
+            if (x.Kind != y.Kind)
+            {
+                return false;
+            }
+
+            StringComparison comparison = x.Kind == StorageKind.File && OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            return string.Equals(x.Name, y.Name, comparison);
+        }
+
+        public int GetHashCode(StorageKey obj)
+        {
+            StringComparer comparer = obj.Kind == StorageKind.File && OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
+            return HashCode.Combine(obj.Kind, comparer.GetHashCode(obj.Name));
+        }
+    }
+
     private sealed class DatabaseHolder
     {
         internal Database? Database { get; set; }
+
+        internal bool Removed { get; set; }
     }
 }

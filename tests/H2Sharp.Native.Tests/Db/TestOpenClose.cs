@@ -188,7 +188,9 @@ public sealed class TestOpenClose : TestDb
     private void Test1_1()
     {
         string old = Path.Combine(GetBaseDir(), "db" + Constants.SuffixOldDatabaseFile);
-        _ = File.Create(old);
+        using (File.Create(old))
+        {
+        }
         try
         {
             AssertThrows(ErrorCode.FileVersionError1,

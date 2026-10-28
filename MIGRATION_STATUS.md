@@ -28,6 +28,14 @@ Storage registry использует typed key: memory key или canonical fil
 `SYSTEM_USER`/`USER` возвращают `"sa"`, `CURRENT_ROLE` — `"PUBLIC"`.
 Credentials в connection string отсутствуют (D-004).
 
+Storage lifecycle принадлежит `Engine`: `Database.Close` вызывает
+`Engine.RemoveClosed`, holder очищается и запись удаляется из registry; ждущий
+opener перечитывает holder и создаёт новую базу только после закрытия старой.
+`H2Connection` больше не управляет registry. Session pool сознательно не
+вводится: сессия содержит UDF/aliases, variables, temp-таблицы, schema,
+time zone и transaction state; reset дороже создания нового `SessionLocal`.
+Общей остаётся только `Database`.
+
 ### .NET-расширения: первый срез
 
 Добавлен `IH2Extensions` на `H2Connection` (явная реализация, только
@@ -115,7 +123,7 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 `SCRIPT CIPHER`, `HELP` и `RUNSCRIPT` вынесены из зелёного набора решениями
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
-Проверено: core **1468/1468**, Data **567/567**, conformance полный **880/952**,
+Проверено: core **1468/1468**, Data **570/570**, conformance полный **880/952**,
 зелёный **878/905** (было 805/803), native **42/104** (после typed connection
 string; 5 новых TestConnectionInfo). Провайдеры на текущем бинарнике: linq2db
 **76/76** и ModelTests **180/180** на net8/net10; EF Core unit **129/129**, functional
@@ -8193,4 +8201,6 @@ SET PASSWORD, SET SALT), `SET PASSWORD`, `SET SALT`, `DROP USER` (+IF EXISTS),
 Итог после исправления: core **1433 passed / 3 прежних PostfixCast failed /
 1436 total**, conformance **762/952** без изменений, identity-тесты 26/26,
 `FileDatabaseOracleTests` 34/34 в целевом прогоне.
+
+
 
