@@ -470,8 +470,9 @@ public sealed class H2Command : DbCommand
             int index = parameter.GetIndex();
             if (index < 0 || index >= ordered.Count)
             {
-                throw new InvalidOperationException(
-                    "No value was given for parameter #" + (parameter.GetIndex() + 1));
+                throw Message.DbException.Get(
+                    H2Sharp.Api.ErrorCode.ParameterNotSet1,
+                    "#" + (parameter.GetIndex() + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
 
             object? value = ordered[index].Value;

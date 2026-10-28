@@ -260,7 +260,8 @@ public sealed class TestOptimizations : TestDb
         {
             tasks[i] = Task.Run(() =>
             {
-                using DbCommand prep = conn.CreateCommand();
+                using DbConnection taskConnection = GetConnection("optimizations");
+                using DbCommand prep = taskConnection.CreateCommand();
                 prep.CommandText = "select * from test where id = ?";
                 prep.Parameters.Add(new H2Parameter());
                 while (!stopped.IsCancellationRequested)
