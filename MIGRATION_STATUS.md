@@ -30,8 +30,10 @@ Native JDBC-тесты переведены на ADO.NET: `Driver.Connect` за�
 `H2ValueMapper` передаёт mode в `ValueVarchar.Get`, поэтому Oracle `'` на
 параметре и литерале становится `NULL`; `NULL`/`UNKNOWN` metadata читается
 как `string`. В `Engine` сессия получает time zone из cast-provider до открытия.
-Jdbc-набор: **10/14**; остаток — DbSettings P-008, trace, listener,
-JDBC-специфичные getter-конверсии и flaky concurrent MERGE duplicate-key.
+Jdbc-набор: **11/14**; остаток — DbSettings P-008, trace и listener.
+JDBC-семантика getter-ов (`GetBoolean` по числам, NULL как 0, знаковый TINYINT)
+перенесена в `H2DataReader`; flaky concurrent MERGE duplicate-key закрыт
+потокобезопасным table-lock.
 Портированы scope-ы параметров (`openParametersScope`/`closeParametersScope`):
 derived table получает только свои параметры, с допустимыми пропусками индексов,
 и копирует значения в переразобранный запрос по исходным индексам.
@@ -159,8 +161,9 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
 Проверено: core **1468/1468**, Data **576/576**, conformance полный **880/952**,
-зелёный **878/905** (было 805/803), native **49/104** (после typed connection
-string, parameter scopes, отложенного остатка multi-statement и ON DUPLICATE KEY).
+зелёный **878/905** (было 805/803), native **50/104** (после typed connection
+string, parameter scopes, отложенного остатка multi-statement, ON DUPLICATE KEY
+и JDBC getter-семантики).
 Провайдеры на текущем бинарнике: linq2db
 **76/76** и ModelTests **180/180** на net8/net10; EF Core unit **129/129**, functional
 **5742/5762** на каждом net9/net10, 6 падений — `_LOCAL_AND_GLOBAL_` в
