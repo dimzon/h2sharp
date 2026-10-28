@@ -26,13 +26,21 @@ public sealed class TestResultSetGetters : TestDb
     [H2Fact]
     public override void Test()
     {
+        DeleteDb("resultSetGetters");
         TestInt();
+        DeleteDb("resultSetGetters");
         TestSmallInt();
+        DeleteDb("resultSetGetters");
         TestBigInt();
+        DeleteDb("resultSetGetters");
         TestVarchar();
+        DeleteDb("resultSetGetters");
         TestDecimal();
+        DeleteDb("resultSetGetters");
         TestDoubleFloat();
+        DeleteDb("resultSetGetters");
         TestFindColumn();
+        DeleteDb("resultSetGetters");
         TestColumnLength();
         DeleteDb("resultSetGetters");
     }

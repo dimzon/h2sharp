@@ -62,7 +62,15 @@ public sealed class TestConcurrentConnectionUsage : TestDb
         }
 
         stopped.Cancel();
-        task.Wait();
+        try
+        {
+            task.Wait();
+        }
+        catch (AggregateException e) when (e.InnerException is TaskCanceledException)
+        {
+            // Cancellation is how the loop is stopped.
+        }
+
         conn.Close();
     }
 

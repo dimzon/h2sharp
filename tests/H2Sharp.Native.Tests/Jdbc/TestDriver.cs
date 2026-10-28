@@ -42,6 +42,7 @@ public sealed class TestDriver : TestDb
         // nowhere to ride and is dropped here.
         using DbConnection conn = new H2Connection(ToClassicConnectionString(url
             + ";MAX_COMPACT_TIME=1234"));
+        conn.Open();
         DbCommand command = conn.CreateCommand();
         command.CommandText =
             "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = 'MAX_COMPACT_TIME'";
