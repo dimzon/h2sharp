@@ -175,6 +175,33 @@ public sealed class ValueDataType : BasicDataType<Value>
             return CompareRows(rowOne, rowTwo);
         }
 
+        if (one is ValueCollectionBase c1 && two is ValueCollectionBase c2)
+        {
+            Value[] ax = c1.GetList();
+            Value[] bx = c2.GetList();
+            int al = ax.Length;
+            int bl = bx.Length;
+            int len = Math.Min(al, bl);
+            for (int i = 0; i < len; i++)
+            {
+                int sortType = sortTypes is null ? SortOrder.Ascending : sortTypes[i];
+                Value? v1 = ax[i];
+                Value? v2 = bx[i];
+                if (v1 is null || v2 is null)
+                {
+                    return CompareValues(ax[len - 1], bx[len - 1], SortOrder.Ascending);
+                }
+
+                int comp = CompareValues(v1, v2, sortType);
+                if (comp != 0)
+                {
+                    return comp;
+                }
+            }
+
+            return len < al ? -1 : len < bl ? 1 : 0;
+        }
+
         return CompareValues(one, two, SortOrder.Ascending);
     }
 

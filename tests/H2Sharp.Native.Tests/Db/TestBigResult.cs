@@ -259,7 +259,7 @@ public sealed class TestBigResult : TestDb
         stat.CommandText = sql;
         using (DbDataReader rs = stat.ExecuteReader())
         {
-            BitArray set = new((partCount * 10) + 1);
+            BitArray set = new((partCount * 11) + 2);
             for (int i = 1; i <= 10; i++)
             {
                 for (int j = 1; j <= partCount; j++)
@@ -677,6 +677,7 @@ public sealed class TestBigResult : TestDb
                 }
 
                 transaction.Commit();
+                stat.Transaction = null;
             }
 
             stat.CommandText = "SELECT NAME FROM DATA ORDER BY ID";

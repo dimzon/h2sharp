@@ -77,7 +77,8 @@ internal abstract class MVTempResult : ResultExternal
         SortOrder? sort)
     {
         return distinct || distinctIndexes is not null || sort is not null
-            ? throw new TODOException("MVTempResult.of: MVSortedTempResult is not ported")
+            ? new MVSortedTempResult(database, expressions, distinct, distinctIndexes,
+                visibleColumnCount, resultColumnCount, sort)
             : new MVPlainTempResult(database, expressions, visibleColumnCount, resultColumnCount);
     }
 

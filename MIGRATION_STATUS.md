@@ -58,13 +58,14 @@ MySQL `INSERT ... ON DUPLICATE KEY UPDATE/IGNORE` не копирует этал
 Это single-resource/volatile срез: DTC, durable 2PC и multi-resource recovery не
 поддерживаются. Покрыто `H2TransactionScopeTests`.
 
-Разлив результата на диск начат: `MVTempResult` и `MVPlainTempResult` пишут
-несортированные результаты в отдельный временный MVStore, файл регистрируется в
-`Database.GetTempFileDeleter()` и удаляется вместе с результатом. `MVSortedTempResult`
-(DISTINCT/ORDER BY) пока `TODOException` с явным именем. `ValueDataType` теперь хранит
-`TIME/TIMESTAMP WITH TIME ZONE`, `ARRAY` и `ROW`, а `CompareValues` учитывает полную
-маску сортировки (`DESC` вместе с `NULLS FIRST/LAST`), поэтому MIN/MAX по индексу с
-`DESC NULLS LAST` больше не перепутан.
+Разлив результата на диск портирован: `MVTempResult`, `MVPlainTempResult` и
+`MVSortedTempResult` пишут строки в отдельный временный MVStore, файл регистрируется в
+`Database.GetTempFileDeleter()` и удаляется вместе с результатом; DISTINCT/ORDER BY,
+DISTINCT ON и hidden-колонки идут через отсортированный ключ. `ValueDataType` теперь
+хранит `TIME/TIMESTAMP WITH TIME ZONE`, `ARRAY` и `ROW`, сравнивает коллекции по
+`sortTypes` и учитывает полную маску сортировки (`DESC` вместе с `NULLS FIRST/LAST`),
+поэтому MIN/MAX по индексу с `DESC NULLS LAST` больше не перепутан. `TestBigResult`
+зелёный.
 
 `Query.Run` использует result cache эталона: повторный запрос с теми же параметрами и
 лимитом отдаёт shallow copy, пока не изменился database-wide modification id. DML,
@@ -179,8 +180,8 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
 Проверено: core **1468/1468**, Data **577/577**, MvStore **87/87**, conformance полный **880/952**,
-зелёный **878/905** (было 805/803), native **50/104** (`TestOptimizations` теперь
-зелёный; остальные падения — MVSortedTempResult, DbSettings, trace/listener,
+зелёный **878/905** (было 805/803), native **50/104** (`TestOptimizations` и
+`TestBigResult` теперь зелёные; остальные падения — DbSettings, trace/listener,
 users/rights, linked/alias/trigger, collation и оставшиеся оптимизации).
 Ранее закрыты typed connection string, parameter scopes, отложенный остаток
 multi-statement, ON DUPLICATE KEY и JDBC getter-семантика.
@@ -4196,10 +4197,9 @@ LIMIT; реестр таблиц — не мой словарик, а `Schema`/`
   Строка не должна содержать null: NULL здесь значение, а не его отсутствие, и строка с
   настоящим null сломала бы собственное сравнение и свой хеш.
 
-Что осталось заглушкой и почему: `MVSortedTempResult` (разлив DISTINCT/ORDER BY-результата)
-— нужен отдельный отсортированный MVStore-ключ, сейчас `TODOException`; `ValueLob.CopyToResult`
-— лобы не портированы; `LocalResult.ForTable` — нужен `TableFilter`, а столбец у нас
-привязывается через резолвер.
+Что осталось заглушкой и почему: `ValueLob.CopyToResult` — лобы не портированы;
+`LocalResult.ForTable` — нужен `TableFilter`, а столбец у нас привязывается через
+резолвер.
 
 **А дефект был в тест-харнессе, и он выглядел как «тест висит».** `JavaOracle.RunOnce` читал
 stdout, потом stderr, последовательно. javac с большим числом ошибок пишет их в stderr, а
