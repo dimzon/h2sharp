@@ -243,7 +243,7 @@ public sealed class CreateTablePrimaryKeyTests
 
     private static H2Connection Open(string name)
     {
-        H2Connection connection = new("jdbc:h2:mem:pk_" + name);
+        H2Connection connection = new("Data Source=pk_" + name + ";Storage=Memory");
         connection.Open();
         return connection;
     }
@@ -328,3 +328,4 @@ public sealed class CreateTablePrimaryKeyTests
         }
     }
 }
+

@@ -42,7 +42,7 @@ public sealed class CallAndSequenceLifecycleOracleTests
     [JavaOracleFact]
     public void CallUpdateAndQueryMetadataMatchTheReference()
     {
-        SessionLocal session = new(new Database(new ConnectionInfo("jdbc:h2:mem:call_update_oracle")), "sa")
+        SessionLocal session = new(new Database(ConnectionInfo.Memory("call_update_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = Values.CompareMode.GetInstance(null, 0),
@@ -81,7 +81,7 @@ public sealed class CallAndSequenceLifecycleOracleTests
         string path = Path.Combine(Path.GetTempPath(), "h2_sequence_lifecycle_" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
         try
         {
-            using (H2Connection connection = new("jdbc:h2:file:" + path))
+            using (H2Connection connection = new("Data Source=" + path + ";Storage=File"))
             {
                 connection.Open();
                 Execute(connection, "CREATE SEQUENCE S AS INTEGER START WITH 5 INCREMENT BY 2 CACHE 3");
@@ -93,7 +93,7 @@ public sealed class CallAndSequenceLifecycleOracleTests
                 Assert.Equal(7, command.ExecuteScalar());
                 transaction.Rollback();
             }
-            using (H2Connection connection = new("jdbc:h2:file:" + path))
+            using (H2Connection connection = new("Data Source=" + path + ";Storage=File"))
             {
                 connection.Open();
                 using DbCommand command = connection.CreateCommand();
@@ -143,7 +143,7 @@ public sealed class CallAndSequenceLifecycleOracleTests
     private static void Check(string[] statements)
     {
         List<string> port = [];
-        using H2Connection connection = new("jdbc:h2:mem:call_sequence_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=call_sequence_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         for (int i = 0; i < statements.Length; i++)
         {
@@ -186,3 +186,4 @@ public sealed class CallAndSequenceLifecycleOracleTests
         Assert.True(java.SequenceEqual(port), "java:\n" + string.Join("\n", java) + "\nport:\n" + string.Join("\n", port));
     }
 }
+

@@ -41,8 +41,8 @@ public sealed class H2ConnectionBasicsTests
         H2Connection connection = new("Data Source=/tmp/db");
         connection.ConnectionString = null;
         Assert.Equal(string.Empty, connection.ConnectionString);
-        connection.ConnectionString = "jdbc:h2:mem:test";
-        Assert.Equal("jdbc:h2:mem:test", connection.ConnectionString);
+        connection.ConnectionString = "Data Source=test;Storage=Memory";
+        Assert.Equal("Data Source=test;Storage=Memory", connection.ConnectionString);
 
         // Null through a constructor argument is a mistake, not a setting.
         Assert.Throws<ArgumentNullException>(() => new H2Connection(null!));
@@ -51,7 +51,7 @@ public sealed class H2ConnectionBasicsTests
     [Fact]
     public void ItIsOpenOnlyBetweenOpenAndClose()
     {
-        H2Connection connection = new("jdbc:h2:mem:states");
+        H2Connection connection = new("Data Source=states;Storage=Memory");
         Assert.Equal(ConnectionState.Closed, connection.State);
 
         connection.Open();
@@ -68,14 +68,14 @@ public sealed class H2ConnectionBasicsTests
         // Closing again, or closing one that was never open, does nothing: that is what makes
         // `using` safe.
         connection.Close();
-        new H2Connection("jdbc:h2:mem:never_opened").Close();
+        new H2Connection("Data Source=never_opened;Storage=Memory").Close();
     }
 
     [Fact]
     public void ANamedInMemoryDatabaseIsSharedAndThenForgotten()
     {
-        using H2Connection first = new("jdbc:h2:mem:shared");
-        using H2Connection second = new("jdbc:h2:mem:shared");
+        using H2Connection first = new("Data Source=shared;Storage=Memory");
+        using H2Connection second = new("Data Source=shared;Storage=Memory");
         first.Open();
         second.Open();
 
@@ -87,8 +87,8 @@ public sealed class H2ConnectionBasicsTests
         // An unnamed in-memory database is the other case, and the one a test that always uses a
         // name never reaches: it is not entered into the registry, so two connections to it get
         // two databases.
-        using H2Connection unnamedFirst = new("jdbc:h2:mem:");
-        using H2Connection unnamedSecond = new("jdbc:h2:mem:");
+        using H2Connection unnamedFirst = new("Data Source=;Storage=Memory");
+        using H2Connection unnamedSecond = new("Data Source=;Storage=Memory");
         unnamedFirst.Open();
         unnamedSecond.Open();
         Assert.NotSame(unnamedFirst.CurrentDatabase, unnamedSecond.CurrentDatabase);
@@ -97,13 +97,13 @@ public sealed class H2ConnectionBasicsTests
     [Fact]
     public void TheDatabaseGoesAwayWithItsLastSession()
     {
-        string name = "mem:gone_when_closed";
-        H2Connection first = new("jdbc:h2:" + name);
+        string name = "gone_when_closed";
+        H2Connection first = new("Data Source=" + name + ";Storage=Memory");
         first.Open();
         H2Sharp.Engine.Database? database = first.CurrentDatabase;
         Assert.NotNull(database);
 
-        H2Connection second = new("jdbc:h2:" + name);
+        H2Connection second = new("Data Source=" + name + ";Storage=Memory");
         second.Open();
         Assert.Same(database, second.CurrentDatabase);
         second.Close();
@@ -116,7 +116,7 @@ public sealed class H2ConnectionBasicsTests
         // connection to the same name therefore gets a new, empty database rather than the old
         // one — which for "mem:" is the whole difference between a name and a file.
         Assert.True(database.IsClosing());
-        H2Connection third = new("jdbc:h2:" + name);
+        H2Connection third = new("Data Source=" + name + ";Storage=Memory");
         third.Open();
         try
         {
@@ -131,7 +131,7 @@ public sealed class H2ConnectionBasicsTests
     [Fact]
     public void DatabaseDataSourceAndServerVersionAnswer()
     {
-        using H2Connection connection = new("jdbc:h2:mem:answers");
+        using H2Connection connection = new("Data Source=answers;Storage=Memory");
         Assert.Equal(string.Empty, connection.Database);
         Assert.Equal(string.Empty, connection.DataSource);
         Assert.Throws<InvalidOperationException>(() => _ = connection.ServerVersion);
@@ -152,7 +152,7 @@ public sealed class H2ConnectionBasicsTests
     [Fact]
     public void EverythingThatIsNotPortedYetRefuses()
     {
-        using H2Connection connection = new("jdbc:h2:mem:refusals");
+        using H2Connection connection = new("Data Source=refusals;Storage=Memory");
         connection.Open();
         try
         {
@@ -167,7 +167,7 @@ public sealed class H2ConnectionBasicsTests
     [Fact]
     public void ACommandRunsOnlyOnAnOpenConnection()
     {
-        using H2Connection connection = new("jdbc:h2:mem:commands");
+        using H2Connection connection = new("Data Source=commands;Storage=Memory");
         using DbCommand command = connection.CreateCommand();
         Assert.NotNull(command);
         command.CommandText = "SELECT 1";
@@ -195,3 +195,4 @@ public sealed class H2ConnectionBasicsTests
         Assert.True(typeof(DbConnection).IsAssignableFrom(typeof(H2Connection)));
     }
 }
+

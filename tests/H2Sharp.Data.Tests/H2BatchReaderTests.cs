@@ -67,7 +67,7 @@ public sealed class H2BatchReaderTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:batch_reader_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=batch_reader_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

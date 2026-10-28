@@ -51,7 +51,7 @@ public sealed class UnportedIdentityDdlTests
     public void IdentityDdlNamesTheMissingReferenceClass(string sql, string commandClass, string subsystem)
     {
         using SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:identity_ddl_" + Guid.NewGuid().ToString("N"))), "sa");
+            new Database(ConnectionInfo.Memory("identity_ddl_" + Guid.NewGuid().ToString("N"))), "sa");
         TODOException error = Assert.Throws<TODOException>(() => session.PrepareCommand(sql));
         Assert.StartsWith("Not ported yet:", error.Message, StringComparison.Ordinal);
         Assert.Contains(commandClass, error.Message, StringComparison.Ordinal);
@@ -66,7 +66,7 @@ public sealed class UnportedIdentityDdlTests
     public void CommentOnIdentityReportsTheReferenceNotFoundCode(string sql, int errorCode)
     {
         using SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:identity_comment_" + Guid.NewGuid().ToString("N"))), "sa");
+            new Database(ConnectionInfo.Memory("identity_comment_" + Guid.NewGuid().ToString("N"))), "sa");
         H2SharpException error = Assert.Throws<H2SharpException>(() =>
             Assert.IsType<CommandContainer>(session.PrepareCommand(sql)).GetPreparedCommand().Update());
         Assert.Equal(errorCode, error.H2ErrorCode);

@@ -273,7 +273,7 @@ public sealed class SequenceOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:sequence_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("sequence_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

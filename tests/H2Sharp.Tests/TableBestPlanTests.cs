@@ -32,7 +32,7 @@ public sealed class TableBestPlanTests
 {
     private static SessionLocal NewSession()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:best_plan_tests")), "sa")
+        return new SessionLocal(new Database(ConnectionInfo.Memory("best_plan_tests")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

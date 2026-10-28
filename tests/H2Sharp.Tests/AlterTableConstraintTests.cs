@@ -221,7 +221,7 @@ public sealed class AlterTableConstraintTests
 
     private static H2Connection Open(string name)
     {
-        H2Connection connection = new("jdbc:h2:mem:al_" + name);
+        H2Connection connection = new("Data Source=al_" + name + ";Storage=Memory");
         connection.Open();
         return connection;
     }
@@ -284,3 +284,4 @@ public sealed class AlterTableConstraintTests
         }
     }
 }
+

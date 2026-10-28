@@ -22,7 +22,7 @@ public sealed class H2ManyParametersTests
     [Fact]
     public void TheStatementMayNameManyParameters()
     {
-        using H2Connection connection = new("jdbc:h2:mem:ado_many_parameters");
+        using H2Connection connection = new("Data Source=ado_many_parameters;Storage=Memory");
         connection.Open();
 
         Execute(connection, "CREATE TABLE T(A INT, B INT, C INT, D INT, E INT)");
@@ -47,7 +47,7 @@ public sealed class H2ManyParametersTests
     /// <returns>the connection</returns>
     private static H2Connection Open(string name)
     {
-        H2Connection connection = new($"jdbc:h2:mem:ado_{name}");
+        H2Connection connection = new($"Data Source=ado_{name};Storage=Memory");
         connection.Open();
         return connection;
     }

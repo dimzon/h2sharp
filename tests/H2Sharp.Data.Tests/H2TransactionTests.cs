@@ -27,7 +27,7 @@ public sealed class H2TransactionIsolationTests
     [InlineData(IsolationLevel.Serializable)]
     public void RollbackUndoesDmlInsideATransaction(IsolationLevel level)
     {
-        using H2Connection connection = new("jdbc:h2:mem:tx_rollback");
+        using H2Connection connection = new("Data Source=tx_rollback;Storage=Memory");
         connection.Open();
         using (H2Command setup = new("CREATE TABLE T(ID INT PRIMARY KEY, NAME VARCHAR)", connection))
         {
@@ -52,7 +52,7 @@ public sealed class H2TransactionIsolationTests
     [Fact]
     public void CommitKeepsDmlInsideATransaction()
     {
-        using H2Connection connection = new("jdbc:h2:mem:tx_commit");
+        using H2Connection connection = new("Data Source=tx_commit;Storage=Memory");
         connection.Open();
         using (H2Command setup = new("CREATE TABLE T(ID INT PRIMARY KEY, NAME VARCHAR)", connection))
         {

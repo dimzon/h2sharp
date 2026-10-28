@@ -62,19 +62,19 @@ public sealed class TestOpenClose : TestDb
         DeleteDb("openClose");
         string url = GetURL("openClose;DB_CLOSE_DELAY=1", true);
         string user = GetUser(), password = GetPassword();
-        DbConnection conn = new H2Connection(url + ";USER=" + user + ";PASSWORD=" + password);
+        DbConnection conn = new H2Connection(ToClassicConnectionString(url));
         conn.Open();
         conn.Close();
         Thread.Sleep(950);
         long time = Stopwatch.GetTimestamp();
         while ((Stopwatch.GetTimestamp() - time) * 1000 / Stopwatch.Frequency < 100)
         {
-            conn = new H2Connection(url + ";USER=" + user + ";PASSWORD=" + password);
+            conn = new H2Connection(ToClassicConnectionString(url));
             conn.Open();
             conn.Close();
         }
 
-        conn = new H2Connection(url + ";USER=" + user + ";PASSWORD=" + password);
+        conn = new H2Connection(ToClassicConnectionString(url));
         conn.Open();
         Execute(conn.CreateCommand(), "SHUTDOWN");
         conn.Close();
@@ -91,7 +91,7 @@ public sealed class TestOpenClose : TestDb
         string user = GetUser(), password = GetPassword();
         string url = GetURL("openClose;DATABASE_EVENT_LISTENER='"
             + typeof(MyDatabaseEventListener).FullName + "'", true);
-        DbConnection conn = new H2Connection(url + ";USER=" + user + ";PASSWORD=" + password);
+        DbConnection conn = new H2Connection(ToClassicConnectionString(url));
         conn.Open();
         DbCommand stat = conn.CreateCommand();
         Execute(stat, "CREATE TABLE TEST(ID IDENTITY, NAME VARCHAR)");
@@ -100,7 +100,7 @@ public sealed class TestOpenClose : TestDb
         Execute(stat, "INSERT INTO TEST SELECT X, X || ' Data' "
             + "FROM SYSTEM_RANGE(1, 1000)");
         conn.Close();
-        conn = new H2Connection(url + ";USER=" + user + ";PASSWORD=" + password);
+        conn = new H2Connection(ToClassicConnectionString(url));
         conn.Open();
         stat = conn.CreateCommand();
         stat.CommandText = "SELECT * FROM SYSTEM_RANGE(1, 1)";
@@ -113,7 +113,7 @@ public sealed class TestOpenClose : TestDb
         }
 
         conn.Close();
-        conn = new H2Connection(url + ";USER=" + user + ";PASSWORD=" + password);
+        conn = new H2Connection(ToClassicConnectionString(url));
         conn.Open();
         stat = conn.CreateCommand();
         // stat.execute("SET DB_CLOSE_DELAY 0");
@@ -131,7 +131,7 @@ public sealed class TestOpenClose : TestDb
         DeleteDb("openClose");
         string url = GetURL("openClose;FILE_LOCK=NO", true);
         string user = GetUser(), password = GetPassword();
-        DbConnection conn = new H2Connection(url + ";USER=" + user + ";PASSWORD=" + password);
+        DbConnection conn = new H2Connection(ToClassicConnectionString(url));
         conn.Open();
         Execute(conn.CreateCommand(), "drop table employee if exists");
         Execute(conn.CreateCommand(),
@@ -147,7 +147,7 @@ public sealed class TestOpenClose : TestDb
         {
             tasks[i] = Task.Run(() =>
             {
-                DbConnection c = new H2Connection(url + ";USER=" + user + ";PASSWORD=" + password);
+                DbConnection c = new H2Connection(ToClassicConnectionString(url));
                 c.Open();
                 DbCommand prep = c.CreateCommand();
                 prep.CommandText = "insert into employee values(?, ?, 0)";
@@ -160,7 +160,7 @@ public sealed class TestOpenClose : TestDb
         }
 
         Task.WaitAll(tasks);
-        conn = new H2Connection(url + ";USER=" + user + ";PASSWORD=" + password);
+        conn = new H2Connection(ToClassicConnectionString(url));
         conn.Open();
         DbCommand query = conn.CreateCommand();
         query.CommandText = "select count(*) from employee";
@@ -245,3 +245,4 @@ public sealed class TestOpenClose : TestDb
         }
     }
 }
+

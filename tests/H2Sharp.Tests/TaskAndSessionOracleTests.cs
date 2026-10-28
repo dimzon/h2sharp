@@ -68,7 +68,7 @@ public sealed class TaskAndSessionOracleTests
     [JavaOracleFact]
     public void SessionLockIsReentrantAndOwnedByTheCallingThread()
     {
-        SessionLocal session = new(new Database(new ConnectionInfo("jdbc:h2:mem:session_lock_oracle")), "sa");
+        SessionLocal session = new(new Database(ConnectionInfo.Memory("session_lock_oracle")), "sa");
         List<string> port = ["=" + session.IsLockedByCurrentThread().ToString().ToLowerInvariant()];
         session.Lock();
         try

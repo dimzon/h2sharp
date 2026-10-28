@@ -83,7 +83,7 @@ public sealed class H2FreshIssuesTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:fresh_ado_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=fresh_ado_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

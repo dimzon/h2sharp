@@ -78,7 +78,7 @@ enumerables are consumed once per execution. `string` and `byte[]` remain text a
 parameters. Use jagged arrays for nested SQL arrays.
 
 ```csharp
-using var connection = new H2Sharp.Data.H2Connection("jdbc:h2:mem:arrays");
+using var connection = new H2Sharp.Data.H2Connection("Data Source=arrays;Storage=Memory");
 connection.Open();
 connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY, NUMBERS INTEGER ARRAY)");
 

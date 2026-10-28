@@ -65,7 +65,7 @@ public sealed class SelectTextTests
 
     private static SessionLocal NewDupSession(out TransactionStore store)
     {
-        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_dup")), "sa")
+        SessionLocal session = new SessionLocal(new Database(ConnectionInfo.Memory("select_dup")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -98,7 +98,7 @@ public sealed class SelectTextTests
 
     private static SessionLocal NewLongSession(out TransactionStore store)
     {
-        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_long")), "sa")
+        SessionLocal session = new SessionLocal(new Database(ConnectionInfo.Memory("select_long")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -132,7 +132,7 @@ public sealed class SelectTextTests
     private static SessionLocal NewTripleSession(out TransactionStore store)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:select_triple")), "sa")
+            new Database(ConnectionInfo.Memory("select_triple")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -166,7 +166,7 @@ public sealed class SelectTextTests
 
     private static SessionLocal NewSeededSession(out TransactionStore store, out Schemas.Schema schema, bool seed)
     {
-        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_text")), "sa")
+        SessionLocal session = new SessionLocal(new Database(ConnectionInfo.Memory("select_text")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -315,7 +315,7 @@ public sealed class SelectTextTests
     private static void CompareDual(string dbName, string sql, List<string>? expected = null)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:select_dual")), "sa")
+            new Database(ConnectionInfo.Memory("select_dual")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

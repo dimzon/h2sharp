@@ -16,7 +16,7 @@ public sealed class TopClauseOracleTests
     [JavaOracleFact]
     public void SelectTopInRegularModeAndExplicitDual()
     {
-        Check([
+        Check("Regular", [
             "CREATE TABLE T(ID INT)",
             "INSERT INTO T VALUES(1), (2), (3), (4)",
             "SELECT TOP 2 * FROM T ORDER BY ID",
@@ -33,29 +33,33 @@ public sealed class TopClauseOracleTests
     [JavaOracleFact]
     public void UpdateAndDeleteTopInSqlServerAndLegacyModes()
     {
-        Check([
+        Check("MSSQLServer", [
             "CREATE TABLE T(ID INT, V INT)",
             "INSERT INTO T VALUES(1, 0), (2, 0), (3, 0), (4, 0)",
-            "SET MODE MSSQLServer",
             "UPDATE TOP (2) T SET V = 1",
             "SELECT ID, V FROM T ORDER BY ID",
             "DELETE TOP (1) FROM T",
             "SELECT ID, V FROM T ORDER BY ID",
             "UPDATE TOP (1) T SET ID = 20, V = 2",
             "SELECT ID, V FROM T ORDER BY ID",
-            "SET MODE Legacy",
+        ]);
+
+        Check("Legacy", [
+            "CREATE TABLE T(ID INT, V INT)",
+            "INSERT INTO T VALUES(1, 0), (2, 0), (3, 0), (4, 0)",
             "UPDATE TOP (1) T SET V = 3",
             "DELETE TOP (1) FROM T",
             "SELECT ID, V FROM T ORDER BY ID",
-            "SET MODE Regular",
             "SELECT TOP 1 * FROM T ORDER BY ID",
         ]);
     }
 
-    private static void Check(string[] statements)
+    private static void Check(string mode, string[] statements)
     {
         List<string> port = [];
-        using H2Connection connection = new("jdbc:h2:mem:top_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new(
+            "Data Source=top_" + Guid.NewGuid().ToString("N")
+            + ";Storage=Memory;Mode=" + mode);
         connection.Open();
         for (int i = 0; i < statements.Length; i++)
         {
@@ -82,7 +86,7 @@ public sealed class TopClauseOracleTests
         }
 
         List<string> java = OracleRunner.Run(statements, """
-            try(java.sql.Connection c=java.sql.DriverManager.getConnection("jdbc:h2:mem:top")) {
+            try(java.sql.Connection c=java.sql.DriverManager.getConnection("jdbc:h2:mem:top;MODE=" + System.getProperty("h2sharp.mode"))) {
               java.sql.Statement s=c.createStatement();
               for(int i=0;i<inputs.length;i++) {
                 try {
@@ -104,7 +108,7 @@ public sealed class TopClauseOracleTests
                 }
               }
             }
-            """);
+            """, extraJavaArgs: ["-Dh2sharp.mode=" + mode]);
         Assert.Equal(java, port);
     }
 }

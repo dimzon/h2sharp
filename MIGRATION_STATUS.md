@@ -1,5 +1,33 @@
 # MIGRATION STATUS — рабочая памятка
 
+### Connection string, typed ConnectionInfo и фиксированный MODE
+
+Публичная строка подключения переведена на classic ADO.NET:
+
+```text
+Data Source=file.db;Storage=File;Mode=Regular
+Data Source=mem1;Storage=Memory;Mode=Oracle
+Storage=Memory
+```
+
+`jdbc:h2:` в `H2Connection` отвергается; JDBC URL остаётся только в тестовой
+инфраструктуре для Java-оракулов. `ConnectionInfo` — typed DTO:
+`StorageKind`, `DataSource`, `Mode`, `ConnectionOptions`; разбор classic-строки
+делает `H2ConnectionStringBuilder` через `DbConnectionStringBuilder`.
+`H2ConnectionStringBuilder.ToConnectionInfo()`/`LoadFrom()` — две точки
+преобразования. Unknown keys и credentials (`USER`/`PASSWORD`/`User ID`/
+`Password`) отвергаются; `IGNORE_UNKNOWN_SETTINGS` сохраняет поведение native
+harness.
+
+`MODE` фиксируется при открытии (D-029). `SET MODE` с тем же режимом — no-op,
+с другим — 50100. Второй connection к тому же storage с другим режимом получает
+90020; после закрытия последнего storage можно открыть с другим режимом.
+Storage registry использует typed key: memory key или canonical file path.
+
+Текущий principal — константа `"sa"`; `CURRENT_USER`/`SESSION_USER`/
+`SYSTEM_USER`/`USER` возвращают `"sa"`, `CURRENT_ROLE` — `"PUBLIC"`.
+Credentials в connection string отсутствуют (D-004).
+
 ### .NET-расширения: первый срез
 
 Добавлен `IH2Extensions` на `H2Connection` (явная реализация, только
@@ -87,8 +115,9 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 `SCRIPT CIPHER`, `HELP` и `RUNSCRIPT` вынесены из зелёного набора решениями
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
-Проверено: core **1468/1468**, Data **564/564**, conformance полный **880/952**,
-зелёный **878/905** (было 805/803). Провайдеры на текущем бинарнике: linq2db
+Проверено: core **1468/1468**, Data **567/567**, conformance полный **880/952**,
+зелёный **878/905** (было 805/803), native **42/104** (после typed connection
+string; 5 новых TestConnectionInfo). Провайдеры на текущем бинарнике: linq2db
 **76/76** и ModelTests **180/180** на net8/net10; EF Core unit **129/129**, functional
 **5742/5762** на каждом net9/net10, 6 падений — `_LOCAL_AND_GLOBAL_` в
 `RegularQueryExpressionIndex` и связанные с ним shape-запросы.
@@ -3776,8 +3805,9 @@ reader, transaction, factory. Смысл ровно тот, что у порти
 **Что было нужно, чтобы набор подключился:** `H2ProviderFactory` (`Instance`,
 `CreateConnection`/`CreateCommand`/`CreateParameter`/`CreateConnectionStringBuilder`;
 `CreateDataAdapter` и `CreateCommandBuilder` отказывают, `CanCreate*` отвечают честно) и
-`H2ConnectionStringBuilder`, который принимает и `Data Source=mem:x`, и `jdbc:h2:mem:x` —
-две записи одного и того же, потому что одна пришла из кода на JDBC, другая из кода на ADO.NET.
+`H2ConnectionStringBuilder`, который принимает classic `Data Source=mem:x;Storage=Memory`.
+Публичный `jdbc:h2:` позже удалён (D-031): JDBC URL остался только в тестовой
+инфраструктуре для Java-оракулов.
 
 **Сразу после подключения: 291 тест, 72 зелёных, 219 красных.** Зелёные — всё, что не
 требует SQL: параметры, их коллекция, свойства соединения, фабрика. Красные разложены так:
@@ -7229,8 +7259,8 @@ DEFAULT_TABLE_TYPE '1'); дублирующиеся строки (RETENTION_TIME
 IGNORE_CATALOGS — у эталона тоже по две); настройки без строк в SETTINGS
 (session-only — LOCK_TIMEOUT, THROTTLE и др. — тесты переведены на проверку
 принятия); отказы CATALOG (DATABASE_NOT_FOUND_1) и DATABASE_EVENT_LISTENER
-(90099) — тесты проверяют коды. CURRENT_USER — пустая строка и в эталоне (БД
-без пользователя), тест это фиксирует. CURRENT_ROLE без ролей — NULL, что
+(90099) — тесты проверяют коды. CURRENT_USER — фиксированный principal `sa`
+(D-004, обновлено 2026-10-28), тест это фиксирует. CURRENT_ROLE без ролей — NULL, что
 тест принимает. Два движковых oracle-теста починены: сравнение
 TIMESTAMP/TIMESTAMPTZ сделано машинно-независимым (SET TIME ZONE 'UTC' в
 наборе, оракул форсирует UTC), TODO-тест переменных приведён к новому сообщению
@@ -7295,7 +7325,7 @@ DDL-хуки `AddSchemaObject`/`RemoveSchemaObject`/`AddDatabaseObject`. Все 
   `true`, из-за чего повторный DDL получал тот же объект и падал на втором
   `GetObjectId`).
 
-Настройки URL наконец читаются: `ConnectionInfo` вызывал `ReadSettingsFromUrl` до\nприсваивания `url`, поэтому части после `;` не разбирались вообще (и `FILE_LOCK`, и\n`ACCESS_MODE_DATA`, и `IFEXISTS`, и `DB_CLOSE_DELAY`). Порядок приведён к эталону\n(`url = u` → чтение настроек с обрезкой по `;` → имя). Значения, которых порт не\nумеет, отвергаются, а не подменяются: `FILE_LOCK=FILE|SOCKET` → `TODOException`,\nнеизвестный метод → 90060, `AUTO_SERVER=TRUE` → 50100 (D-003). `FILE_LOCK=NO`\nпринят: проверено jar, что MVStore и при `NO` держит лок данных (90020).\n\nМежпроцессный FS-лок портирован: `SingleFileStore` берёт `FileStream.Lock` на всём
+Исторически здесь разбирался JDBC URL. С 2026-10-28 публичная строка — classic ADO.NET, `ConnectionInfo` — typed DTO, а `jdbc:h2:` остался только в тестовой инфраструктуре (D-031).\n\nМежпроцессный FS-лок портирован: `SingleFileStore` берёт `FileStream.Lock` на всём
 файле данных (как `fileChannel.tryLock` эталона), так что порт и эталон отказывают
 друг другу с `DATABASE_ALREADY_OPEN_1` (проверено оракулом: занятый портом файл
 эталон открывать не даёт, код 90020; `FileLockedByThePortIsRefusedByTheReference`). Read-only у нас тоже эксклюзивен (P-009).
@@ -8163,3 +8193,4 @@ SET PASSWORD, SET SALT), `SET PASSWORD`, `SET SALT`, `DROP USER` (+IF EXISTS),
 Итог после исправления: core **1433 passed / 3 прежних PostfixCast failed /
 1436 total**, conformance **762/952** без изменений, identity-тесты 26/26,
 `FileDatabaseOracleTests` 34/34 в целевом прогоне.
+

@@ -39,7 +39,7 @@ public sealed class TestLargeBlob : TestDb
     {
         DeleteDb("largeBlob");
         string url = GetURL("largeBlob;TRACE_LEVEL_FILE=0", true);
-        using DbConnection conn = new H2Connection(url);
+        using DbConnection conn = new H2Connection(ToClassicConnectionString(url));
         conn.Open();
         long testLength = int.MaxValue + 110L;
         DbCommand stat = conn.CreateCommand();
@@ -157,3 +157,4 @@ public sealed class TestLargeBlob : TestDb
         }
     }
 }
+

@@ -24,7 +24,7 @@ public sealed class XmlFunctionBclTests
 {
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

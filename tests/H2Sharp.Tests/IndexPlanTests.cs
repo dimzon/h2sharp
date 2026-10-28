@@ -22,7 +22,7 @@ public sealed class IndexPlanTests
 {
     private static SessionLocal NewSession()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:index_plan_tests")), "sa")
+        return new SessionLocal(new Database(ConnectionInfo.Memory("index_plan_tests")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = Values.CompareMode.GetInstance(null, 0),

@@ -364,7 +364,11 @@ public sealed partial class Database
 
     public void SetMode(Mode newMode)
     {
-        mode = newMode;
+        if (!ReferenceEquals(mode, newMode))
+        {
+            throw DbException.GetUnsupportedException(
+                "SET MODE: the mode is fixed when the database is opened");
+        }
     }
 
     public Mode GetMode()
@@ -494,3 +498,4 @@ public sealed partial class Database
         store.GetMvStore().PopulateInfo(consumer);
     }
 }
+

@@ -32,7 +32,7 @@ public sealed class AddIndexTests
 {
     private static SessionLocal NewSession()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:add_index_tests")), "sa")
+        return new SessionLocal(new Database(ConnectionInfo.Memory("add_index_tests")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

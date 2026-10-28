@@ -38,7 +38,7 @@ public sealed class SelectInitOrderTests
 {
     private static SessionLocal NewSession()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_init")), "sa")
+        return new SessionLocal(new Database(ConnectionInfo.Memory("select_init")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

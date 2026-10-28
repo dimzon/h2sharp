@@ -81,7 +81,7 @@ public sealed class H2TestSeamsTests
     /// <returns>the connection</returns>
     private static H2Connection Open(string name)
     {
-        return new H2Connection($"jdbc:h2:mem:ado_{name}");
+        return new H2Connection($"Data Source=ado_{name};Storage=Memory");
     }
 
     /// <summary>

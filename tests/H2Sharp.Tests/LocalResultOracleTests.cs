@@ -242,7 +242,7 @@ public sealed class LocalResultOracleTests
 
     private static SessionLocal NewSessionLocal()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:local_result_test")), "sa")
+        return new SessionLocal(new Database(ConnectionInfo.Memory("local_result_test")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = Values.CompareMode.GetInstance(null, 0),

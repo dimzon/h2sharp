@@ -42,7 +42,7 @@ public sealed class H2FactoryFixture : IDbFactoryFixture, ISelectValueFixture, I
     /// </summary>
     public H2FactoryFixture()
     {
-        ConnectionString = "jdbc:h2:mem:spec_" + Guid.NewGuid().ToString("N");
+        ConnectionString = "Data Source=spec_" + Guid.NewGuid().ToString("N") + ";Storage=Memory";
     }
 
     /// <summary>

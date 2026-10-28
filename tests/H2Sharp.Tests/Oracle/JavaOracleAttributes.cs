@@ -91,7 +91,7 @@ public sealed class JavaOracleWithSqlFactAttribute : JavaOracleFactAttribute
     {
         try
         {
-            using H2Sharp.Data.H2Connection connection = new("jdbc:h2:mem:sql_probe");
+            using H2Sharp.Data.H2Connection connection = new("Data Source=sql_probe;Storage=Memory");
             connection.Open();
             using System.Data.Common.DbCommand command = connection.CreateCommand();
             command.CommandText = "SELECT 1";

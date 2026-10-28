@@ -85,7 +85,7 @@ public sealed class UpdateKeyOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:update_key_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("update_key_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

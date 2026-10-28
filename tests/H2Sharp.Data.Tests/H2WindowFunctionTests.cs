@@ -56,7 +56,7 @@ public sealed class H2WindowFunctionTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:window_functions_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=window_functions_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

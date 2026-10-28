@@ -197,7 +197,7 @@ public sealed class CommandRecompileOracleTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:recompile_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=recompile_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

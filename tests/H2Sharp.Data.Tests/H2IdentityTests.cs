@@ -77,7 +77,7 @@ public sealed class H2IdentityTests
     /// <returns>the connection</returns>
     private static H2Connection Open(string name)
     {
-        H2Connection connection = new($"jdbc:h2:mem:ado_{name}");
+        H2Connection connection = new($"Data Source=ado_{name};Storage=Memory");
         connection.Open();
         return connection;
     }

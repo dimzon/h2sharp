@@ -83,7 +83,7 @@ public sealed class SchemaRegistryTests
 
     private static Schema NewSchema()
     {
-        return new Schema(new Database(new ConnectionInfo("jdbc:h2:mem:schema_test")), 1, "PUBLIC", false);
+        return new Schema(new Database(ConnectionInfo.Memory("schema_test")), 1, "PUBLIC", false);
     }
 
     /// <summary>

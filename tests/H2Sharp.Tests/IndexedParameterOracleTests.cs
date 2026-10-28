@@ -66,7 +66,7 @@ public sealed class IndexedParameterOracleTests
 
     private static List<string> RunPort(string sql, int count, int[] values)
     {
-        using H2Connection connection = new("jdbc:h2:mem:indexed_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=indexed_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         CommandContainer command = Assert.IsType<CommandContainer>(
             connection.Session!.PrepareCommand(sql));

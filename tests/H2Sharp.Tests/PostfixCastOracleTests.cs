@@ -178,7 +178,7 @@ public sealed class PostfixCastOracleTests
 
     private static List<string> RunPort(IReadOnlyList<string> statements, string mode)
     {
-        SessionLocal session = new(new Database(new ConnectionInfo("jdbc:h2:mem:postfix_cast_oracle")), "sa")
+        SessionLocal session = new(new Database(ConnectionInfo.Memory("postfix_cast_oracle")), "sa")
         {
             CastDataProvider = new ModeProvider(Mode.GetInstance(mode)!),
             CompareMode = CompareMode.GetInstance(null, 0),

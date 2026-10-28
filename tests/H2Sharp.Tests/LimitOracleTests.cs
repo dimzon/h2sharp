@@ -110,7 +110,7 @@ public sealed class LimitOracleTests
     private static SessionLocal NewSession()
     {
         return new SessionLocal(
-            new Database(new ConnectionInfo("jdbc:h2:mem:limit_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("limit_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

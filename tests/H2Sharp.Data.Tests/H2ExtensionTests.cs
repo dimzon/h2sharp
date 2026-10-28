@@ -202,7 +202,7 @@ public sealed class H2ExtensionTests
     }
 
     private static H2Connection NewConnection()
-        => new($"jdbc:h2:mem:ext_{Guid.NewGuid():N};IGNORE_UNKNOWN_SETTINGS=TRUE");
+        => new($"Data Source=ext_{Guid.NewGuid():N};IGNORE_UNKNOWN_SETTINGS=TRUE;Storage=Memory");
 
     private static string Scalar(H2Connection connection, string sql)
     {

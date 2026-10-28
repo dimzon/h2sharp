@@ -19,9 +19,10 @@ public sealed class RegexpFunctionBclTests
 {
     private static H2Connection Open(string mode = "Regular")
     {
-        H2Connection connection = new("jdbc:h2:mem:regex_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new(
+            "Data Source=regex_" + Guid.NewGuid().ToString("N")
+            + ";Storage=Memory;Mode=" + mode);
         connection.Open();
-        connection.Execute("SET MODE " + mode);
         return connection;
     }
 

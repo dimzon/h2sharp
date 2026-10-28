@@ -85,14 +85,18 @@ public sealed class InMemoryDatabaseOracleTests
         }
     }
 
+    private static string ToClassic(string name)
+        => name == "mem:"
+            ? "Storage=Memory"
+            : "Data Source=" + name.Substring("mem:".Length) + ";Storage=Memory";
     private static List<string> Describe()
     {
         List<string> lines = [];
         foreach (string db in new[] { "mem:shared", "mem:", "mem:gone" })
         {
             lines.Add(db + " both-open");
-            using H2Connection a = new("jdbc:h2:" + db);
-            using H2Connection b = new("jdbc:h2:" + db);
+            using H2Connection a = new(ToClassic(db));
+            using H2Connection b = new(ToClassic(db));
             a.Open();
             b.Open();
 
@@ -103,7 +107,7 @@ public sealed class InMemoryDatabaseOracleTests
             _ = Run(a, "DROP TABLE T");
             a.Close();
 
-            using H2Connection c = new("jdbc:h2:" + db);
+            using H2Connection c = new(ToClassic(db));
             c.Open();
             lines.Add("  after-close " + Count(c, "SELECT COUNT(*) FROM T"));
             c.Close();
@@ -142,3 +146,4 @@ public sealed class InMemoryDatabaseOracleTests
         }
     }
 }
+

@@ -31,7 +31,7 @@ public sealed class H2TransactionSemanticsTests
 
     private static IDbConnection OpenNamed(string name)
     {
-        IDbConnection connection = new H2Connection($"jdbc:h2:mem:{name}");
+        IDbConnection connection = new H2Connection($"Data Source={name};Storage=Memory");
         connection.Open();
         return connection;
     }

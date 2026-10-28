@@ -50,7 +50,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
 
     private SessionLocal? session;
 
-    private string? openedDatabaseName;
+    private ConnectionInfo? openedConnectionInfo;
 
     private H2Transaction? currentTransaction;
 
@@ -120,9 +120,9 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// </summary>
     /// <remarks>
     /// Set on an open connection is refused, and a string neither side reads is refused
-    /// too: the URL form goes through the engine's parser, the key=value form takes Data
-    /// Source, User ID and Password, and anything else is a typo the open would trip on
-    /// far from where it was written.
+    /// too: only the classic key=value form is accepted. `Data Source` names the memory key
+    /// or file path, `Storage` selects Memory or File, and `Mode` fixes the compatibility
+    /// mode. JDBC URLs and credentials are not accepted.
     /// </remarks>
     [AllowNull]
     public override string ConnectionString
@@ -153,36 +153,17 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     {
         if (text.StartsWith(Engine.Constants.StartUrl, StringComparison.Ordinal))
         {
-            try
-            {
-                _ = new ConnectionInfo(text);
-            }
-            catch (H2SharpException e)
-            {
-                throw new ArgumentException("Invalid connection string: " + text, e);
-            }
-
-            return;
+            throw new ArgumentException(
+                "JDBC URLs are not accepted; use Data Source=...;Storage=...", nameof(text));
         }
 
-        DbConnectionStringBuilder builder;
         try
         {
-            builder = new DbConnectionStringBuilder { ConnectionString = text };
+            _ = new H2ConnectionStringBuilder(text).ToConnectionInfo();
         }
-        catch (ArgumentException e)
+        catch (Exception e)
         {
             throw new ArgumentException("Invalid connection string: " + text, e);
-        }
-
-        foreach (string? key in builder.Keys)
-        {
-            if (key is null || (!key.Equals("Data Source", StringComparison.OrdinalIgnoreCase)
-                && !key.Equals("User ID", StringComparison.OrdinalIgnoreCase)
-                && !key.Equals("Password", StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new ArgumentException("Unknown connection string key: " + key);
-            }
         }
     }
 
@@ -264,11 +245,11 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             throw new InvalidOperationException("The connection string is empty");
         }
 
-        ConnectionInfo connectionInfo = new(connectionString);
+        ConnectionInfo connectionInfo = new H2ConnectionStringBuilder(connectionString).ToConnectionInfo();
         session = H2Sharp.Engine.Engine.OpenSession(
             connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider,
             timeZoneProviderProvider, extensionConfiguration.Clone());
-        openedDatabaseName = connectionInfo.GetName();
+        openedConnectionInfo = connectionInfo;
         OnStateChange(new StateChangeEventArgs(ConnectionState.Closed, ConnectionState.Open));
     }
 
@@ -388,9 +369,10 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         currentTransaction = null;
         session = null;
         current.Close();
-        if (openedDatabaseName is not null && H2Sharp.Engine.Engine.RemoveIfClosed(openedDatabaseName))
+        if (openedConnectionInfo is not null
+            && H2Sharp.Engine.Engine.RemoveIfClosed(openedConnectionInfo))
         {
-            openedDatabaseName = null;
+            openedConnectionInfo = null;
         }
 
         OnStateChange(new StateChangeEventArgs(ConnectionState.Open, ConnectionState.Closed));

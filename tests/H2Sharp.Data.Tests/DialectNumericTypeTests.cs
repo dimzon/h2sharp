@@ -33,7 +33,7 @@ public sealed class DialectNumericTypeTests
     public void NumericLiteralsKeepTheirCallerType(string sqlType, object value)
     {
         string literal = Render(value);
-        using H2Connection connection = new("jdbc:h2:mem:dialect_type_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=dialect_type_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "SELECT " + literal;
@@ -71,7 +71,7 @@ public sealed class DialectNumericTypeTests
             case "DOUBLE PRECISION": Dialect.AppendDouble(sql, null); type = typeof(double); break;
             default: Dialect.AppendNumeric(sql, null); type = typeof(decimal); break;
         }
-        using H2Connection connection = new("jdbc:h2:mem:dialect_null_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=dialect_null_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = sql.ToString();
@@ -93,7 +93,7 @@ public sealed class DialectNumericTypeTests
     {
         BigInteger value = BigInteger.Parse(text, CultureInfo.InvariantCulture);
         string literal = Dialect.AppendBigInteger(new StringBuilder(), value).ToString();
-        using H2Connection connection = new("jdbc:h2:mem:dialect_big_integer_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=dialect_big_integer_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "SELECT " + literal;

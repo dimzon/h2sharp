@@ -70,7 +70,7 @@ public sealed class CommonTableExpressionOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:cte_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("cte_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

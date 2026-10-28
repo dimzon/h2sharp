@@ -46,7 +46,7 @@ public sealed class H2CatalogueTests
     [Fact]
     public void TheCatalogueIsReadAfterAStatementThatIsNotAboutIt()
     {
-        using H2Connection connection = new("jdbc:h2:mem:catalogue_ado");
+        using H2Connection connection = new("Data Source=catalogue_ado;Storage=Memory");
         connection.Open();
 
         using (DbCommand create = connection.CreateCommand())
@@ -74,7 +74,7 @@ public sealed class H2CatalogueTests
     [Fact]
     public void EveryColumnOfTheColumnsViewIsRead()
     {
-        using H2Connection connection = new("jdbc:h2:mem:catalogue_ado_all");
+        using H2Connection connection = new("Data Source=catalogue_ado_all;Storage=Memory");
         connection.Open();
 
         using (DbCommand create = connection.CreateCommand())
@@ -111,7 +111,7 @@ public sealed class H2CatalogueTests
     [Fact]
     public void TheTablesViewIsReadWithTheComments()
     {
-        using H2Connection connection = new("jdbc:h2:mem:catalogue_ado_tables");
+        using H2Connection connection = new("Data Source=catalogue_ado_tables;Storage=Memory");
         connection.Open();
 
         using (DbCommand create = connection.CreateCommand())

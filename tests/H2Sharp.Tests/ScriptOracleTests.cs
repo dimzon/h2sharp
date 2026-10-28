@@ -29,7 +29,7 @@ public sealed class ScriptOracleTests
     private static void Check(string[] statements)
     {
         List<string> port = [];
-        using H2Connection portConnection = new("jdbc:h2:mem:script_port_" + Guid.NewGuid().ToString("N"));
+        using H2Connection portConnection = new("Data Source=script_port_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         portConnection.Open();
         for (int i = 0; i < statements.Length; i++)
         {

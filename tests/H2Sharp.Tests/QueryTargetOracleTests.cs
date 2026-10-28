@@ -111,7 +111,7 @@ public sealed class QueryTargetOracleTests
 
     private static void SessionManager(out SessionLocal session, out Database database, string name)
     {
-        database = new Database(new ConnectionInfo("jdbc:h2:mem:" + name));
+        database = new Database(ConnectionInfo.Memory(name));
         session = new SessionLocal(database, "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
@@ -125,7 +125,7 @@ public sealed class QueryTargetOracleTests
     private static void Check(string[] statements, bool allowErrors = false)
     {
         List<string> port = [];
-        using H2Connection connection = new("jdbc:h2:mem:query_target_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=query_target_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         for (int i = 0; i < statements.Length; i++)
         {

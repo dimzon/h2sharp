@@ -52,7 +52,7 @@ public sealed class H2CurrentDateTimeTests
     public void TheCurrentDateAndTimeFunctionsReadTheClockTheTestHolds()
     {
         DateTimeOffset now = FixedLocalTime(2017, 6, 15, 12, 34, 56);
-        using H2Connection connection = new($"jdbc:h2:mem:ado_current_time_seam");
+        using H2Connection connection = new($"Data Source=ado_current_time_seam;Storage=Memory");
 
         // The seam is set before the connection opens: the connection reads it when it opens,
         // and a clock that is set afterwards is a clock the session never learns about.
@@ -144,7 +144,7 @@ public sealed class H2CurrentDateTimeTests
     /// <returns>the connection</returns>
     private static H2Connection Open(string name)
     {
-        H2Connection connection = new($"jdbc:h2:mem:ado_{name}");
+        H2Connection connection = new($"Data Source=ado_{name};Storage=Memory");
         connection.Open();
         return connection;
     }

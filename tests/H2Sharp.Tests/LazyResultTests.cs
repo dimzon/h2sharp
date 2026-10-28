@@ -18,7 +18,7 @@ public sealed class LazyResultTests
 {
     private static SessionLocal NewSession()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:lazy")), "sa");
+        return new SessionLocal(new Database(ConnectionInfo.Memory("lazy")), "sa");
     }
 
     private sealed class ListLazyResult : LazyResult

@@ -57,7 +57,7 @@ public sealed class ViewOracleTests
     private static void Check(string[] statements)
     {
         List<string> port = [];
-        using H2Connection connection = new("jdbc:h2:mem:view_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=view_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         for (int i = 0; i < statements.Length; i++)
         {

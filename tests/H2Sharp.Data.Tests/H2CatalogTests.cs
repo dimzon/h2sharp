@@ -19,7 +19,7 @@ public sealed class H2CatalogTests
     [Fact]
     public void TheCatalogNamesTheDatabaseByItsShortName()
     {
-        using H2Connection connection = new("jdbc:h2:mem:ado_catalog");
+        using H2Connection connection = new("Data Source=ado_catalog;Storage=Memory");
 
         Assert.Equal(string.Empty, connection.Database);
 

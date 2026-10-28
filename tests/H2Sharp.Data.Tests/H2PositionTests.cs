@@ -28,7 +28,7 @@ public sealed class H2PositionTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:position_ado_" + System.Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=position_ado_" + System.Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

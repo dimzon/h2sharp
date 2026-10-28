@@ -63,7 +63,7 @@ public sealed class DropAllObjectsOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:drop_all_objects")), "sa")
+            new Database(ConnectionInfo.Memory("drop_all_objects")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

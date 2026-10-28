@@ -11,7 +11,7 @@ public sealed class H2LocalTempTableTests
     [Fact]
     public void ConcurrentConnectionsCanUseTheSameLocalTempTableName()
     {
-        const string url = "jdbc:h2:mem:local_temp_parallel";
+        const string url = "Data Source=local_temp_parallel;Storage=Memory";
         using H2Connection keeper = new(url);
         keeper.Open();
 
@@ -40,7 +40,7 @@ public sealed class H2LocalTempTableTests
     [Fact]
     public void TwoReadersOverSystemRangeAreIndependent()
     {
-        using H2Connection connection = new("jdbc:h2:mem:local_two_readers");
+        using H2Connection connection = new("Data Source=local_two_readers;Storage=Memory");
         connection.Open();
         using DbCommand first = connection.CreateCommand();
         using DbCommand second = connection.CreateCommand();
@@ -65,7 +65,7 @@ public sealed class H2LocalTempTableTests
         try
         {
             using H2Connection connection = new(
-                "jdbc:h2:" + path + ";MAX_MEMORY_ROWS=10;IGNORE_UNKNOWN_SETTINGS=true");
+                "Data Source=" + path + ";Storage=File;MAX_MEMORY_ROWS=10;IGNORE_UNKNOWN_SETTINGS=true");
             connection.Open();
             using DbCommand first = connection.CreateCommand();
             using DbCommand second = connection.CreateCommand();
@@ -95,7 +95,7 @@ public sealed class H2LocalTempTableTests
     [Fact]
     public void ReopeningAConnectionDoesNotReuseLocalTempRows()
     {
-        const string url = "jdbc:h2:mem:local_temp_reopen";
+        const string url = "Data Source=local_temp_reopen;Storage=Memory";
         using H2Connection keeper = new(url);
         keeper.Open();
         for (int i = 0; i < 3; i++)
@@ -110,3 +110,4 @@ public sealed class H2LocalTempTableTests
         }
     }
 }
+

@@ -157,7 +157,7 @@ public sealed class ExistsOracleTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:exists_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=exists_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

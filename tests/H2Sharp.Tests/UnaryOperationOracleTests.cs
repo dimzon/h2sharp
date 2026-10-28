@@ -60,7 +60,7 @@ public sealed class UnaryOperationOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:unary_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("unary_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

@@ -343,7 +343,8 @@ public sealed partial class Parser
                 throw DbException.GetSyntaxError(sql, Current.Start, "setting name");
             }
 
-            if (ConnectionInfo.IsIgnoredByParser(upperName))
+            int type = Dml.SetTypes.GetType(upperName);
+            if (type < 0 && H2Sharp.Data.H2ConnectionStringBuilder.IsKnownSetting(upperName))
             {
                 Read();
                 ReadIfEqualOrTo();
@@ -351,7 +352,6 @@ public sealed partial class Parser
                 return new Dml.NoOperation(session);
             }
 
-            int type = Dml.SetTypes.GetType(upperName);
             if (type >= 0)
             {
                 Read();

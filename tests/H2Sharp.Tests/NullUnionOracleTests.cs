@@ -63,7 +63,7 @@ public sealed class NullUnionOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:null_union_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("null_union_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

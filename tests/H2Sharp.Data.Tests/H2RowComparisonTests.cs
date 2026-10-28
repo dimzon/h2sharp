@@ -37,7 +37,7 @@ public sealed class H2RowComparisonTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:row_cursor_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=row_cursor_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

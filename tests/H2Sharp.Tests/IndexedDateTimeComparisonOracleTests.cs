@@ -62,7 +62,7 @@ public sealed class IndexedDateTimeComparisonOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:indexed_datetime_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("indexed_datetime_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

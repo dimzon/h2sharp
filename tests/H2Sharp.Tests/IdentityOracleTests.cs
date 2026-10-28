@@ -160,7 +160,7 @@ public sealed class IdentityOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:identity_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("identity_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

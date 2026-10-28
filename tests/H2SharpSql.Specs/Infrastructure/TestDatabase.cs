@@ -37,9 +37,10 @@ internal static class TestDatabase
     /// test independent of every other one: a test that creates a table must not find it
     /// already there, whatever ran before it or whatever runs after it.
     /// </remarks>
-    public static IDbConnection Open()
+    public static IDbConnection Open(string extra = "")
     {
-        H2Connection connection = new($"jdbc:h2:mem:{Guid.NewGuid():N}");
+        H2Connection connection = new(
+            $"Data Source={Guid.NewGuid():N};Storage=Memory{extra}");
         ((IH2Extensions)connection).UseJavaLegacy();
         ((IH2Extensions)connection).UseH2Hashes();
         ((IH2Extensions)connection).UseCrypto();

@@ -38,7 +38,7 @@ public sealed class TestIndex
     [Fact]
     public void OrderIndex()
     {
-        using H2Connection conn = new("jdbc:h2:mem:index");
+        using H2Connection conn = new("Data Source=index;Storage=Memory");
         conn.Open();
         using DbCommand stat = conn.CreateCommand();
         stat.CommandText = "create table test(id int, name varchar)";
@@ -67,7 +67,7 @@ public sealed class TestIndex
     [InlineData("unique hash")]
     public void IndexTypes(string type)
     {
-        using H2Connection conn = new("jdbc:h2:mem:index");
+        using H2Connection conn = new("Data Source=index;Storage=Memory");
         conn.Open();
         using DbCommand stat = conn.CreateCommand();
 
@@ -108,7 +108,7 @@ public sealed class TestIndex
     [Fact]
     public void ErrorMessage()
     {
-        using H2Connection conn = new("jdbc:h2:mem:index");
+        using H2Connection conn = new("Data Source=index;Storage=Memory");
         conn.Open();
         using DbCommand stat = conn.CreateCommand();
         stat.CommandText = "create table test(id int primary key, name varchar)";

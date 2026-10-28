@@ -31,7 +31,7 @@ public sealed class SelectDistinctTests
 {
     private static SessionLocal NewSession()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_distinct")), "sa")
+        return new SessionLocal(new Database(ConnectionInfo.Memory("select_distinct")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

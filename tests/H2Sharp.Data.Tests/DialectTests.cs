@@ -161,7 +161,7 @@ public sealed class DialectTests
         // The typed NULL: the cast keeps the type, and the value stays NULL.
         _ = Dialect.AppendTimestamp(sql, null);
 
-        using H2Connection connection = new("jdbc:h2:mem:dialect_literals");
+        using H2Connection connection = new("Data Source=dialect_literals;Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = sql.ToString();

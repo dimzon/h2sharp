@@ -6,28 +6,18 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * Partially ported: the registry of open databases and the rule for handing out a session.
- *
- * The registry is the whole trick behind "mem:", and it is two steps. A *named* in-memory
- * database goes into a static map, so the second connection to the same name finds the first
- * one's database instead of making its own; an *unnamed* one ("mem:" with nothing after it) is
- * never entered, so it belongs to the connection that asked for it and dies with it. Both cases
- * are in the differential test, because the second is the one a port gets wrong by leaving the
- * map out and every test that uses a name still passes.
- *
- * The holder lock and the map lock are kept apart as in the reference: the map is locked to find
- * or create a holder, and the holder is locked while the database inside it is created. The
- * reference starts the database's threads after releasing the holder lock, with a comment about
- * the writer thread deadlocking against recovery; nothing starts here yet, and the comment is
- * carried so the reason the ordering is what it is survives the port.
+ * The registry of open databases. The storage identity is typed: a memory key or a
+ * canonical file path. A database is shared only when the requested mode matches; a
+ * different mode is an open conflict, not a second database on the same storage.
  */
 using System;
 using System.Collections.Generic;
-using H2Sharp.Extensions;
-using H2Sharp.Store.FileSystem;
-using H2Sharp.Util;
+using System.IO;
+using System.Threading;
 using H2Sharp.Api;
+using H2Sharp.Extensions;
 using H2Sharp.Message;
+using H2Sharp.Store.FileSystem;
 
 namespace H2Sharp.Engine;
 
@@ -38,28 +28,20 @@ namespace H2Sharp.Engine;
 /// </summary>
 public static class Engine
 {
-    private static readonly Dictionary<string, DatabaseHolder> Databases = [];
+    private static readonly Dictionary<StorageKey, DatabaseHolder> Databases = [];
 
     private static readonly object DatabasesLock = new();
 
     /// <summary>
     /// Opens a session for the given connection information.
     /// </summary>
-    /// <remarks>
-    /// The persistent, remote and authenticated branches of the reference are not here yet and
-    /// refuse rather than pretend: opening a file database without the file store would give a
-    /// database that answers every query from an empty in-memory store.
-    /// <para>
-    /// The three delegates are the seams a test needs; the reference has no such a member, and
-    /// a delegate that is not set leaves the session as it is without a test.
-    /// </para>
-    /// </remarks>
     /// <param name="connectionInfo">the connection information</param>
     /// <param name="systemClockProvider">the clock, or null for the machine's clock</param>
     /// <param name="randomGeneratorProvider">the generator of random numbers, or null for the
     /// session's own</param>
     /// <param name="uuidProvider">the generator of UUIDs, or null for the ones the port builds
     /// itself</param>
+    /// <param name="timeZoneProviderProvider">the time zone provider, or null for the default</param>
     /// <returns>the session</returns>
     public static SessionLocal OpenSession(
         ConnectionInfo connectionInfo,
@@ -78,34 +60,24 @@ public static class Engine
         Func<Util.TimeZoneProvider>? timeZoneProviderProvider,
         ExtensionConfiguration? extensions)
     {
-        string name = connectionInfo.GetName();
-        if (connectionInfo.IsRemote())
-        {
-            throw new TODOException("Engine.openSession: remote connections");
-        }
-
-        // Reference openSession(ConnectionInfo): the flags are taken off the connection
-        // information, because each one is used once, at open time.
-        bool ifExists = connectionInfo.RemoveProperty("IFEXISTS", false);
-        bool forbidCreation = connectionInfo.RemoveProperty("FORBID_CREATION", false);
-        string? cipher = connectionInfo.RemoveProperty("CIPHER", null);
-        if (cipher is not null)
+        string name = connectionInfo.Name;
+        ConnectionOptions options = connectionInfo.Options;
+        if (options.Cipher is not null)
         {
             throw new TODOException("Engine.openSession: file encryption (CIPHER) is not ported");
         }
 
-        string? init = connectionInfo.RemoveProperty("INIT", null);
-        if (init is not null)
+        if (options.Init is not null)
         {
             throw new TODOException("Engine.openSession: INIT is not ported");
         }
 
-        if (connectionInfo.IsPersistent())
+        if (connectionInfo.IsPersistent)
         {
             string fileName = name + Constants.SuffixMvFile;
             if (!FileUtils.Exists(fileName))
             {
-                ThrowNotFound(ifExists, forbidCreation, name);
+                ThrowNotFound(options.IfExists, options.ForbidCreation, name);
                 fileName = name + Constants.SuffixOldDatabaseFile;
                 if (FileUtils.Exists(fileName))
                 {
@@ -114,24 +86,25 @@ public static class Engine
             }
             else if (!FileUtils.CanWrite(fileName))
             {
-                connectionInfo.SetProperty("ACCESS_MODE_DATA", "r");
+                options.AccessModeData = "r";
             }
         }
         else
         {
-            ThrowNotFound(ifExists, forbidCreation, name);
+            ThrowNotFound(options.IfExists, options.ForbidCreation, name);
         }
 
-        bool openNew = connectionInfo.GetBooleanProperty("OPEN_NEW", false);
         DatabaseHolder holder;
-        if (!connectionInfo.IsUnnamedInMemory())
+        StorageKey key = default;
+        if (!connectionInfo.IsUnnamedInMemory)
         {
+            key = GetStorageKey(connectionInfo);
             lock (DatabasesLock)
             {
-                if (!Databases.TryGetValue(name, out holder!))
+                if (!Databases.TryGetValue(key, out holder!))
                 {
                     holder = new DatabaseHolder();
-                    Databases[name] = holder;
+                    Databases[key] = holder;
                 }
             }
         }
@@ -141,25 +114,47 @@ public static class Engine
         }
 
         Database? database;
-        lock (holder)
+        for (;;)
         {
-            database = holder.Database;
-            if (database is null || openNew)
+            lock (holder)
             {
-                database = new Database(connectionInfo);
-                holder.Database = database;
+                database = holder.Database;
+                if (database is not null && database.IsClosing())
+                {
+                    database = null;
+                }
+                else
+                {
+                    if (database is null)
+                    {
+                        if (options.OpenNew && holder.Database is not null)
+                        {
+                            throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
+                        }
+
+                        database = new Database(connectionInfo);
+                        holder.Database = database;
+                    }
+                    else if (options.OpenNew)
+                    {
+                        throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
+                    }
+                    else if (database.GetMode() != connectionInfo.Mode)
+                    {
+                        throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
+                    }
+
+                    break;
+                }
             }
+
+            // A database that is closing is expected to release its registry slot soon.
+            // The reference waits for up to a minute; this loop does the same without a busy spin.
+            Thread.Sleep(1);
         }
 
-        if (database.IsClosing())
-        {
-            return null!;
-        }
-
-        // Start the threads while already synchronizing on the holder, so that a database which
-        // starts one cannot deadlock against another database opening here.
         database.Opened();
-        return new SessionLocal(database, connectionInfo.GetUserName())
+        return new SessionLocal(database, Constants.DefaultUser)
         {
             CastDataProvider = systemClockProvider is null && timeZoneProviderProvider is null
                 ? DefaultCastDataProvider.Instance
@@ -173,37 +168,40 @@ public static class Engine
     /// <summary>
     /// Removes a database from the registry when it closes.
     /// </summary>
-    /// <remarks>
-    /// The reference drops the registry entry from Database.close itself, through the holder it
-    /// was created in. That holder is private to this class, so the removal goes through here:
-    /// the caller names the database and this class decides whether it was still the open one,
-    /// which matters because a database that closed and was reopened under the same name must
-    /// not have the new one removed by the old one's late close.
-    /// </remarks>
-    /// <param name="name">the database name</param>
+    /// <param name="connectionInfo">the connection information used to open it</param>
     /// <returns>whether a database was removed</returns>
-    internal static bool RemoveIfClosed(string name)
+    internal static bool RemoveIfClosed(ConnectionInfo connectionInfo)
     {
+        if (connectionInfo.IsUnnamedInMemory)
+        {
+            return false;
+        }
+
+        StorageKey key = GetStorageKey(connectionInfo);
         lock (DatabasesLock)
         {
-            if (!Databases.TryGetValue(name, out DatabaseHolder? holder)
+            if (!Databases.TryGetValue(key, out DatabaseHolder? holder)
                 || holder.Database is null
                 || !holder.Database.IsClosing())
             {
                 return false;
             }
 
-            return Databases.Remove(name);
+            return Databases.Remove(key);
         }
     }
 
-    /// <summary>
-    /// Throws the "not found" error unless creation is allowed, as the reference's
-    /// throwNotFound does.
-    /// </summary>
-    /// <param name="ifExists">whether IFEXISTS was written</param>
-    /// <param name="forbidCreation">whether FORBID_CREATION was written</param>
-    /// <param name="name">the database name</param>
+    private static StorageKey GetStorageKey(ConnectionInfo connectionInfo)
+    {
+        string name = connectionInfo.DataSource ?? string.Empty;
+        if (connectionInfo.Storage == StorageKind.File)
+        {
+            name = Path.GetFullPath(name);
+        }
+
+        return new StorageKey(connectionInfo.Storage, name);
+    }
+
     private static void ThrowNotFound(bool ifExists, bool forbidCreation, string name)
     {
         if (ifExists)
@@ -217,10 +215,8 @@ public static class Engine
         }
     }
 
-    /// <summary>
-    /// A slot in the registry, so that two connections racing for the same name create one
-    /// database rather than two.
-    /// </summary>
+    private readonly record struct StorageKey(StorageKind Kind, string Name);
+
     private sealed class DatabaseHolder
     {
         internal Database? Database { get; set; }

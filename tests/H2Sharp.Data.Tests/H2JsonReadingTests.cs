@@ -197,7 +197,7 @@ public sealed class H2JsonReadingTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:json_reading_ado_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=json_reading_ado_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

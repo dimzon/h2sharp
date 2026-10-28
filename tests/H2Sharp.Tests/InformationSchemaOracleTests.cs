@@ -144,7 +144,7 @@ public sealed class InformationSchemaOracleTests
     private static List<string> RunPort(IReadOnlyList<string> setup, IReadOnlyList<string> queries)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:info_schema_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("info_schema_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

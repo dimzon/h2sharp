@@ -16,7 +16,7 @@ public sealed class H2ValueMapperTests
     [Fact]
     public void DecimalRoundTripsExactly()
     {
-        using H2Connection connection = new("jdbc:h2:mem:decimal_roundtrip");
+        using H2Connection connection = new("Data Source=decimal_roundtrip;Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE T(VAL NUMERIC(10, 2))";
@@ -38,7 +38,7 @@ public sealed class H2ValueMapperTests
     [Fact]
     public void DecimalOverflowThrows()
     {
-        using H2Connection connection = new("jdbc:h2:mem:decimal_overflow");
+        using H2Connection connection = new("Data Source=decimal_overflow;Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "SELECT CAST(1000000000000000000000000000000 AS NUMERIC)";
@@ -50,7 +50,7 @@ public sealed class H2ValueMapperTests
     [Fact]
     public void DecimalWideScaleOfZerosReads()
     {
-        using H2Connection connection = new("jdbc:h2:mem:decimal_widezero");
+        using H2Connection connection = new("Data Source=decimal_widezero;Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "SELECT CAST(1 AS NUMERIC(38, 30))";
@@ -62,7 +62,7 @@ public sealed class H2ValueMapperTests
     [Fact]
     public void DecimalWideScaleNonzeroThrows()
     {
-        using H2Connection connection = new("jdbc:h2:mem:decimal_widescale");
+        using H2Connection connection = new("Data Source=decimal_widescale;Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE T(VAL NUMERIC(38, 28))";

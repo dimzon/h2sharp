@@ -33,7 +33,7 @@ public sealed class DapperSmokeTests
     [Fact]
     public void Connects_CreatesATable_Inserts_Updates_AndSelects()
     {
-        using IDbConnection connection = new H2Connection("jdbc:h2:mem:dapper_smoke");
+        using IDbConnection connection = new H2Connection("Data Source=dapper_smoke;Storage=Memory");
         connection.Open();
 
         _ = connection.Execute("DROP TABLE IF EXISTS PERSON");
@@ -82,7 +82,7 @@ public sealed class DapperSmokeTests
         // Dapper calls a provider. A provider that inlined the value would answer these calls
         // perfectly and be a SQL injection, so the shape is asserted separately from the flow:
         // the text keeps its placeholders whatever the value is.
-        using IDbConnection connection = new H2Connection("jdbc:h2:mem:dapper_parameters");
+        using IDbConnection connection = new H2Connection("Data Source=dapper_parameters;Storage=Memory");
         connection.Open();
 
         _ = connection.Execute("CREATE TABLE T(ID INT, TEXT VARCHAR(50))");

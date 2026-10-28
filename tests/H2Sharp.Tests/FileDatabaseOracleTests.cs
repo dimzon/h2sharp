@@ -121,18 +121,18 @@ public sealed class FileDatabaseOracleTests
         string path = NewPath();
         try
         {
-            using (H2Connection connection = new("jdbc:h2:file:" + path + ";FILE_LOCK=SOCKET"))
+            using (H2Connection connection = new("Data Source=" + path + ";Storage=File;FILE_LOCK=SOCKET"))
             {
                 _ = Assert.Throws<TODOException>(() => connection.Open());
             }
 
-            using (H2Connection connection = new("jdbc:h2:file:" + path + ";AUTO_SERVER=TRUE"))
+            using (H2Connection connection = new("Data Source=" + path + ";Storage=File;AUTO_SERVER=TRUE"))
             {
                 H2SharpException e = Assert.Throws<H2SharpException>(() => connection.Open());
                 Assert.Equal(Api.ErrorCode.FeatureNotSupported1, e.H2ErrorCode);
             }
 
-            using (H2Connection connection = new("jdbc:h2:file:" + path + ";FILE_LOCK=LDAP"))
+            using (H2Connection connection = new("Data Source=" + path + ";Storage=File;FILE_LOCK=LDAP"))
             {
                 H2SharpException e = Assert.Throws<H2SharpException>(() => connection.Open());
                 Assert.Equal(Api.ErrorCode.UnsupportedLockMethod1, e.H2ErrorCode);
@@ -153,13 +153,13 @@ public sealed class FileDatabaseOracleTests
         string path = NewPath();
         try
         {
-            using (H2Connection connection = new("jdbc:h2:file:" + path + ";FILE_LOCK=NO"))
+            using (H2Connection connection = new("Data Source=" + path + ";Storage=File;FILE_LOCK=NO"))
             {
                 connection.Open();
                 Execute(connection, CreateAndFill);
             }
 
-            using H2Connection reopened = new("jdbc:h2:file:" + path + ";FILE_LOCK=NO");
+            using H2Connection reopened = new("Data Source=" + path + ";Storage=File;FILE_LOCK=NO");
             reopened.Open();
             Assert.Equal(["=1:Ada", "=2:Alan"], ReadRows(reopened));
         }
@@ -184,7 +184,7 @@ public sealed class FileDatabaseOracleTests
             }
 
             File.WriteAllText(path + ".lock.db", "id=someone-else");
-            using H2Connection readOnly = new("jdbc:h2:file:" + path + ";ACCESS_MODE_DATA=r");
+            using H2Connection readOnly = new("Data Source=" + path + ";Storage=File;ACCESS_MODE_DATA=r");
             H2SharpException e = Assert.Throws<H2SharpException>(() => readOnly.Open());
             Assert.Equal(Api.ErrorCode.DatabaseAlreadyOpen1, e.H2ErrorCode);
         }
@@ -273,7 +273,7 @@ public sealed class FileDatabaseOracleTests
 
     private static H2Connection OpenPort(string path)
     {
-        H2Connection connection = new("jdbc:h2:file:" + path);
+        H2Connection connection = new("Data Source=" + path + ";Storage=File");
         connection.Open();
         return connection;
     }
@@ -335,3 +335,4 @@ public sealed class FileDatabaseOracleTests
         }
     }
 }
+

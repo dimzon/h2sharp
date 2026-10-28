@@ -143,8 +143,7 @@ public sealed class TestListener : TestDb, DatabaseEventListener
 
         try
         {
-            using DbConnection conn = new H2Connection(databaseUrl
-                + ";USER=" + GetUser() + ";PASSWORD=" + GetPassword());
+            using DbConnection conn = new H2Connection(ToClassicConnectionString(databaseUrl));
             conn.Open();
             DbCommand command = conn.CreateCommand();
             Execute(command, "DROP TABLE TEST2");
@@ -171,8 +170,7 @@ public sealed class TestListener : TestDb, DatabaseEventListener
 
         try
         {
-            using DbConnection conn = new H2Connection(databaseUrl
-                + ";USER=" + GetUser() + ";PASSWORD=" + GetPassword());
+            using DbConnection conn = new H2Connection(ToClassicConnectionString(databaseUrl));
             conn.Open();
             DbCommand command = conn.CreateCommand();
             Execute(command, "CREATE TABLE IF NOT EXISTS TEST2(ID INT)");
@@ -183,3 +181,4 @@ public sealed class TestListener : TestDb, DatabaseEventListener
         }
     }
 }
+

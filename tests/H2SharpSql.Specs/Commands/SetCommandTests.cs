@@ -346,9 +346,8 @@ public sealed class SetCommandTests
     [Fact]
     public void SetMode_Hsqldb_UpdatesTheSetting() // CMD-3045
     {
-        using IDbConnection connection = TestDatabase.Open();
-
-        _ = connection.Execute("SET MODE HSQLDB");
+        using IDbConnection connection = TestDatabase.Open(
+            ";Mode=HSQLDB");
 
         Assert.Equal("HSQLDB", Setting(connection, "MODE"));
     }

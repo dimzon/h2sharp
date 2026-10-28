@@ -35,7 +35,7 @@ public sealed class ConformanceProbeTests
             "INSERT INTO D(ID, NAME) VALUES (1, NULL)",
             "SELECT NAME FROM D",
         ];
-        using H2Connection connection = new("jdbc:h2:mem:conformance_probe_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=conformance_probe_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         List<string> port = [];
         for (int i = 0; i < statements.Length; i++)

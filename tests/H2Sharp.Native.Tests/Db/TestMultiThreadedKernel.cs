@@ -53,8 +53,7 @@ public sealed class TestMultiThreadedKernel : TestDb
                 {
                     for (int j = 0; j < 100 && !stop; j++)
                     {
-                        conn = new H2Sharp.Data.H2Connection(
-                            url + ";USER=" + user + ";PASSWORD=" + password);
+                        conn = new H2Sharp.Data.H2Connection(ToClassicConnectionString(url));
                         conn.Open();
                         Work(conn);
                     }
@@ -89,8 +88,7 @@ public sealed class TestMultiThreadedKernel : TestDb
             threads[i].Join();
         }
 
-        DbConnection shutdownConnection = new H2Sharp.Data.H2Connection(
-            url + ";USER=" + user + ";PASSWORD=" + password);
+        DbConnection shutdownConnection = new H2Sharp.Data.H2Connection(ToClassicConnectionString(url));
         shutdownConnection.Open();
         Execute(shutdownConnection.CreateCommand(), "shutdown");
         shutdownConnection.Close();
@@ -112,8 +110,7 @@ public sealed class TestMultiThreadedKernel : TestDb
         string url = GetURL("multiThreadedKernel;CACHE_SIZE=16", true);
         for (int i = 0; i < size; i++)
         {
-            DbConnection conn = new H2Sharp.Data.H2Connection(
-                url + ";USER=" + GetUser() + ";PASSWORD=" + GetPassword());
+            DbConnection conn = new H2Sharp.Data.H2Connection(ToClassicConnectionString(url));
             conn.Open();
             connections[i] = conn;
             if (i == 0)
@@ -165,8 +162,7 @@ public sealed class TestMultiThreadedKernel : TestDb
         string url = GetURL("multiThreadedKernel;CACHE_SIZE=1", true);
         for (int i = 0; i < size; i++)
         {
-            DbConnection conn = new H2Sharp.Data.H2Connection(
-                url + ";USER=" + GetUser() + ";PASSWORD=" + GetPassword());
+            DbConnection conn = new H2Sharp.Data.H2Connection(ToClassicConnectionString(url));
             conn.Open();
             connections[i] = conn;
             if (i == 0)
@@ -233,3 +229,4 @@ public sealed class TestMultiThreadedKernel : TestDb
         return base.GetURL(name + ";LOCK_TIMEOUT=2000", admin);
     }
 }
+

@@ -48,9 +48,11 @@ RegexOptions отдельно. Отличия движков фиксируют�
 
 ### D-004. Ролей/пользователей нет
 
-Имитируются дефолты эталона, проверенные на пустой in-memory БД (H2 2.5.259):
-`CURRENT_USER`/`SESSION_USER`/`SYSTEM_USER` — имя соединения (по умолчанию ""),
-`CURRENT_ROLE` — константа `'PUBLIC'` (`PublicRoleName`), `checkAdmin` — no-op.
+Пользователей и паролей в connection string нет. Сессия имеет фиксированный
+principal `"sa"`: `CURRENT_USER`/`SESSION_USER`/`SYSTEM_USER`/`USER` возвращают
+`"sa"`, `CURRENT_ROLE` — константа `'PUBLIC'` (`PublicRoleName`), `checkAdmin` —
+no-op; principal имеет полный доступ. Ключи `USER`/`PASSWORD`/`User ID`/
+`Password` в connection string отвергаются, а не игнорируются.
 `SET PASSWORD` / `SET SALT` — отказ `TODOException` (нужны AlterUser и
 пользователи). Пересмотр — только вместе с пользователями.
 
@@ -355,6 +357,28 @@ SQL-скрипта из файла не портируются. Тесты `Runs
 Это не отменяет `SCRIPT TO` и остальные опции `SCRIPT`: генерация SQL-дампа
 и его выполнение — разные команды. Заглушка, которая делает вид, что файл
 выполнен, не вводится.
+
+### D-029. `MODE` фиксируется при открытии
+
+Указание пользователя: режим задаётся до открытия базы и не переключается.
+`SET MODE` с тем же режимом — no-op; с другим — `FEATURE_NOT_SUPPORTED_1`.
+Второй connection к тому же storage с другим `MODE` получает
+`DATABASE_ALREADY_OPEN_1`; после закрытия последнего connection storage можно
+открыть с другим режимом. `MODE` не персистится.
+
+### D-030. Linked tables вне core scope
+
+`CREATE LINKED TABLE` и `LINK_SCHEMA` не портируются в core: это мост к
+внешнему JDBC/ADO.NET provider-у, а не часть встраиваемого storage engine.
+Тесты остаются в наборе как `BlockedByPort`, не удаляются. Пересмотр — только
+отдельным опциональным пакетом.
+
+### D-031. Публичная строка подключения — classic ADO.NET
+
+`H2Connection` принимает только classic `Data Source=...;Storage=File|Memory;
+Mode=...`. `jdbc:h2:` в публичном API отвергается. Синтаксис разбирает
+`DbConnectionStringBuilder`; `ConnectionInfo` — typed DTO без разбора строк.
+JDBC URL остаётся только в тестовой инфраструктуре для Java-оракулов.
 
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 

@@ -42,7 +42,7 @@ public sealed class PrepareCommandTests
 
     private SessionLocal NewSession()
     {
-        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:prepare_tests")), "sa")
+        SessionLocal session = new SessionLocal(new Database(ConnectionInfo.Memory("prepare_tests")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = Values.CompareMode.GetInstance(null, 0),

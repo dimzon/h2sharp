@@ -81,7 +81,7 @@ public sealed class H2OrderParameterTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:order_parameter_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=order_parameter_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

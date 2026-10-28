@@ -22,7 +22,7 @@ public sealed class TestSeamsTests
     {
         DateTimeOffset fixedTime = new(2017, 6, 15, 12, 0, 0, TimeSpan.Zero);
         SessionLocal session = H2Sharp.Engine.Engine.OpenSession(
-            new ConnectionInfo("jdbc:h2:mem:seams_clock"), () => fixedTime);
+            ConnectionInfo.Memory("seams_clock"), () => fixedTime);
 
         ValueTimestampTimeZone now = session.CastDataProvider.CurrentTimestamp();
 
@@ -33,7 +33,7 @@ public sealed class TestSeamsTests
     public void TheRandomGeneratorIsTheOneTheTestHolds()
     {
         SessionLocal session = H2Sharp.Engine.Engine.OpenSession(
-            new ConnectionInfo("jdbc:h2:mem:seams_random"), null, _ => new FixedRandom());
+            ConnectionInfo.Memory("seams_random"), null, _ => new FixedRandom());
 
         Random random = session.GetRandom();
 

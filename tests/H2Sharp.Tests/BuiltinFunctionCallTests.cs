@@ -34,7 +34,7 @@ namespace H2Sharp.Tests;
 public sealed class BuiltinFunctionCallTests
 {
     private static SessionLocal NewDualSession()
-        => new(new Database(new ConnectionInfo("jdbc:h2:mem:select_dual")), "sa")
+        => new(new Database(ConnectionInfo.Memory("select_dual")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -43,7 +43,7 @@ public sealed class BuiltinFunctionCallTests
 
     private static SessionLocal NewSeededSession(out TransactionStore store)
     {
-        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:func_text")), "sa")
+        SessionLocal session = new SessionLocal(new Database(ConnectionInfo.Memory("func_text")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -164,7 +164,7 @@ public sealed class BuiltinFunctionCallTests
 
     private static SessionLocal NewDateTimeSession(out TransactionStore store)
     {
-        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:func_datetime")), "sa")
+        SessionLocal session = new SessionLocal(new Database(ConnectionInfo.Memory("func_datetime")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -239,7 +239,7 @@ public sealed class BuiltinFunctionCallTests
 
     private static SessionLocal NewBinarySession(out TransactionStore store)
     {
-        SessionLocal session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:func_binary")), "sa")
+        SessionLocal session = new SessionLocal(new Database(ConnectionInfo.Memory("func_binary")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

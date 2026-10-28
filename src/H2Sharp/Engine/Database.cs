@@ -425,16 +425,15 @@ public sealed partial class Database : CastDataProvider
     public Database(ConnectionInfo connectionInfo)
     {
         this.connectionInfo = connectionInfo;
-        name = connectionInfo.GetName();
-        memory = !connectionInfo.IsPersistent();
+        name = connectionInfo.Name;
+        memory = connectionInfo.Storage == StorageKind.Memory;
+        mode = connectionInfo.Mode;
 
-        // Reference: this.lockMode = ci.getProperty("LOCK_MODE", Constants.DEFAULT_LOCK_MODE);
-        lockMode = connectionInfo.GetProperty("LOCK_MODE", Constants.DefaultLockMode);
-        // Reference: pageSize = ci.getProperty("PAGE_SIZE", Constants.DEFAULT_PAGE_SIZE);
-        pageSize = connectionInfo.GetProperty("PAGE_SIZE", Constants.DefaultPageSize);
+        ConnectionOptions options = connectionInfo.Options;
+        lockMode = options.LockMode;
+        pageSize = options.PageSize;
 
-        string accessModeData = Util.StringUtils.ToLowerEnglish(
-            connectionInfo.GetProperty("ACCESS_MODE_DATA") ?? "rw");
+        string accessModeData = Util.StringUtils.ToLowerEnglish(options.AccessModeData);
         if (accessModeData == "r")
         {
             readOnly = true;
@@ -443,13 +442,11 @@ public sealed partial class Database : CastDataProvider
         // The reference resolves FILE_LOCK here and defaults to FS, or to FILE when
         // AUTO_SERVER is on. Only FS (and NO, which for the MVStore behaves the same: the
         // data-file lock is still taken) is ported. The rest must be refused, because
-        // silently doing FS for a URL that asked for the .lock.db protocol is a different
+        // silently doing FS for an option that asked for the .lock.db protocol is a different
         // database than the one the caller asked for.
-        bool autoServerMode = connectionInfo.GetBooleanProperty("AUTO_SERVER", false);
-        string? lockMethodName = connectionInfo.GetProperty("FILE_LOCK");
-        H2Sharp.Store.FileLockMethod fileLockMethod = lockMethodName is not null
-            ? H2Sharp.Store.FileLock.GetFileLockMethod(lockMethodName)
-            : autoServerMode ? H2Sharp.Store.FileLockMethod.File : H2Sharp.Store.FileLockMethod.Fs;
+        bool autoServerMode = options.AutoServer;
+        H2Sharp.Store.FileLockMethod fileLockMethod = options.FileLock
+            ?? (autoServerMode ? H2Sharp.Store.FileLockMethod.File : H2Sharp.Store.FileLockMethod.Fs);
 
         if (autoServerMode)
         {
@@ -460,7 +457,7 @@ public sealed partial class Database : CastDataProvider
         if (fileLockMethod is H2Sharp.Store.FileLockMethod.File or H2Sharp.Store.FileLockMethod.Socket)
         {
             throw new TODOException(
-                "FileLock: FILE_LOCK=" + lockMethodName
+                "FileLock: FILE_LOCK=" + options.FileLock
                 + " needs the .lock.db protocol, which is not ported");
         }
 
@@ -1417,3 +1414,4 @@ public sealed partial class Database : CastDataProvider
         }
     }
 }
+

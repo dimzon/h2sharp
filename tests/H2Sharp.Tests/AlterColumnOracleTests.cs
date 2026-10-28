@@ -221,7 +221,7 @@ public sealed class AlterColumnOracleTests
         string path = Path.Combine(Path.GetTempPath(), "h2sharp_alter_column_" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
         try
         {
-            using (H2Connection connection = new("jdbc:h2:file:" + path))
+            using (H2Connection connection = new("Data Source=" + path + ";Storage=File"))
             {
                 connection.Open();
                 foreach (string sql in new[] {
@@ -242,7 +242,7 @@ public sealed class AlterColumnOracleTests
                 }
             }
             List<string> port;
-            using (H2Connection reopened = new("jdbc:h2:file:" + path))
+            using (H2Connection reopened = new("Data Source=" + path + ";Storage=File"))
             {
                 reopened.Open();
                 port = RunPort(reopened, [
@@ -276,7 +276,7 @@ public sealed class AlterColumnOracleTests
 
     private static void Check(string[] statements, bool allowErrors = false)
     {
-        using H2Connection connection = new("jdbc:h2:mem:alter_column_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=alter_column_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         List<string> port = RunPort(connection, statements);
         List<string> java = OracleRunner.Run(statements, """
@@ -330,3 +330,4 @@ public sealed class AlterColumnOracleTests
         return lines;
     }
 }
+

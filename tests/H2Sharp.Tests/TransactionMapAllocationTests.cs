@@ -35,7 +35,7 @@ public sealed class TransactionMapAllocationTests : IDisposable
     {
         transactions = new TransactionStore(store);
         transactions.Init();
-        session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:txmap_alloc")), "sa")
+        session = new SessionLocal(new Database(ConnectionInfo.Memory("txmap_alloc")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

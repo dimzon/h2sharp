@@ -19,7 +19,7 @@ public sealed class DatabaseMetaIdTests
     [Fact]
     public void NextHandsOutTheIdBeforeTheIncrement()
     {
-        Database db = new(new ConnectionInfo("jdbc:h2:mem:meta_id"));
+        Database db = new(ConnectionInfo.Memory("meta_id"));
 
         // Opening the database creates the SYS_ID index, and the reference stamps every
         // index it adds with setModified(), so the counter is already 1 by the time a caller

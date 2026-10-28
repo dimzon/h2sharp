@@ -261,7 +261,7 @@ public sealed class ForeignKeyOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:foreign_key_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("foreign_key_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

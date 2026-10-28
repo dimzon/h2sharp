@@ -23,7 +23,7 @@ public sealed class LongConditionOracleTests
     public void ParserUsesBinaryPairsAndFlatLongChainsLikeTheReference()
     {
         string[] inputs = ["1 AND 1", "1 OR 0", Chain("1", " AND 1", 10000), Chain("0", " OR 0", 10000)];
-        SessionLocal session = new(new Database(new ConnectionInfo("jdbc:h2:mem:long_condition_shape")), "sa")
+        SessionLocal session = new(new Database(ConnectionInfo.Memory("long_condition_shape")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -89,7 +89,7 @@ public sealed class LongConditionOracleTests
     public void EqualCostOperandsKeepTheReferencesStableOrder()
     {
         string sql = string.Join(" AND ", Enumerable.Range(0, 32).Select(i => "@V" + i));
-        SessionLocal session = new(new Database(new ConnectionInfo("jdbc:h2:mem:condition_sort_order")), "sa")
+        SessionLocal session = new(new Database(ConnectionInfo.Memory("condition_sort_order")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -151,7 +151,7 @@ public sealed class LongConditionOracleTests
     private static void Check(string[] statements)
     {
         List<string> port = [];
-        using H2Connection connection = new("jdbc:h2:mem:long_condition_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=long_condition_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         for (int i = 0; i < statements.Length; i++)
         {

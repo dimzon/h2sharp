@@ -943,7 +943,7 @@ public sealed class TestIndex : TestDb
         DeleteDb("index");
         string url = "jdbc:h2:" + GetBaseDir() + "/index;DB_CLOSE_DELAY=0"
             + ";USER=" + GetUser() + ";PASSWORD=" + GetPassword();
-        using DbConnection conn = new H2Connection(url);
+        using DbConnection conn = new H2Connection(ToClassicConnectionString(url));
         conn.Open();
         DbCommand stat = conn.CreateCommand();
 
@@ -951,7 +951,7 @@ public sealed class TestIndex : TestDb
         Execute(stat, "INSERT INTO TEST VALUES (1, 'A'), (2, 'B')");
 
         conn.Close();
-        using DbConnection conn2 = new H2Connection(url);
+        using DbConnection conn2 = new H2Connection(ToClassicConnectionString(url));
         conn2.Open();
         stat = conn2.CreateCommand();
 
@@ -1007,3 +1007,4 @@ public sealed class TestIndex : TestDb
         return rs.Read() ? rs.GetString(0) : null;
     }
 }
+

@@ -66,7 +66,7 @@ public sealed class CreateSchemaOracleTests
     private static List<string> RunPort(IReadOnlyList<string> statements)
     {
         SessionLocal session = new(
-            new Database(new ConnectionInfo("jdbc:h2:mem:create_schema_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("create_schema_oracle")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

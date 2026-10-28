@@ -30,7 +30,7 @@ public sealed class DelegateIndexTests
 {
     private static SessionLocal NewSession()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:delegate_tests")), "sa")
+        return new SessionLocal(new Database(ConnectionInfo.Memory("delegate_tests")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

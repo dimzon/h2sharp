@@ -1,23 +1,20 @@
 /*
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
- * Ported from none (new file, no Java counterpart).
  *
- * A connection string builder.
- *
- * This is the one place where the two spellings of a connection have to meet. H2 accepts
- * "jdbc:h2:mem:test" and "jdbc:h2:~/test" as a single opaque URL, while the ADO.NET world expects
- * "Data Source=mem:test" as key=value pairs — and a caller will use whichever their code base
- * already uses. So this builder keeps both: the keys are ADO.NET's, and Data Source is where the
- * H2 name goes, with or without the "jdbc:h2:" prefix.
- *
- * The prefix is *not* required and not added on output: stripping it is what makes
- * "Data Source=mem:x" and "Data Source=jdbc:h2:mem:x" the same database, which is what a caller
- * who copied a JDBC URL into an ADO.NET connection string expects. Keeping the name otherwise
- * byte for byte matters too, because the name decides which database is opened.
+ * The ADO.NET connection string builder. The syntax and the quoting are handled by
+ * DbConnectionStringBuilder; this type only maps the known keys to typed values.
  */
 using System;
+using System.Collections.Generic;
 using System.Data.Common;
+using System.Globalization;
+using H2Sharp.Api;
+using H2Sharp.Engine;
+using H2Sharp.Message;
+using H2Sharp.Store;
+using H2Sharp.Util;
+using DbException = H2Sharp.Message.DbException;
 
 namespace H2Sharp.Data;
 
@@ -26,6 +23,27 @@ namespace H2Sharp.Data;
 /// </summary>
 public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
 {
+    private static readonly HashSet<string> KnownKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Data Source", "DataSource", "Storage", "Mode",
+        "ACCESS_MODE_DATA", "AUTO_SERVER", "CIPHER", "FILE_LOCK",
+        "FORBID_CREATION", "IFEXISTS", "IGNORE_UNKNOWN_SETTINGS", "INIT",
+        "LOCK_MODE", "OPEN_NEW", "PAGE_SIZE",
+    };
+
+    private static readonly HashSet<string> CredentialKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "User ID", "UserId", "Password", "USER", "PASSWORD",
+    };
+
+    /// <summary>
+    /// Whether a name is a setting understood by this builder.
+    /// </summary>
+    /// <param name="name">the setting name</param>
+    /// <returns>true if it is known</returns>
+    public static bool IsKnownSetting(string name)
+        => KnownKeys.Contains(name) || CredentialKeys.Contains(name);
+
     /// <summary>
     /// Creates a builder with no connection string.
     /// </summary>
@@ -43,70 +61,276 @@ public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
     }
 
     /// <summary>
-    /// Gets or sets the database name.
+    /// Gets or sets the memory key or file path.
     /// </summary>
     public string DataSource
     {
-        get => TryGetString("Data Source", out string value) ? value : string.Empty;
+        get => GetString("Data Source") ?? GetString("DataSource") ?? string.Empty;
         set => this["Data Source"] = value;
     }
 
     /// <summary>
-    /// Gets or sets the user name.
+    /// Gets or sets the storage kind.
     /// </summary>
-    public string UserId
+    public StorageKind Storage
     {
-        get => TryGetString("User ID", out string value) ? value : string.Empty;
-        set => this["User ID"] = value;
+        get => GetStorage();
+        set => this["Storage"] = value.ToString();
     }
 
     /// <summary>
-    /// Gets or sets the password.
+    /// Gets or sets the compatibility mode.
     /// </summary>
-    public string Password
+    public Mode Mode
     {
-        get => TryGetString("Password", out string value) ? value : string.Empty;
-        set => this["Password"] = value;
-    }
-
-    private bool TryGetString(string key, out string value)
-    {
-        if (TryGetValue(key, out object? stored) && stored is string text)
-        {
-            value = text;
-            return true;
-        }
-
-        value = string.Empty;
-        return false;
+        get => GetMode();
+        set => this["Mode"] = value.Name;
     }
 
     /// <summary>
-    /// Turns this builder into a connection string for <see cref="H2Connection"/>.
+    /// Gets or sets whether an existing database is required.
     /// </summary>
-    /// <returns>the connection string</returns>
-    public string ToH2ConnectionString()
+    public bool IfExists
     {
-        string name = DataSource;
-        if (name.Length == 0)
+        get => GetBoolean("IFEXISTS");
+        set => this["IFEXISTS"] = value;
+    }
+
+    /// <summary>
+    /// Gets or sets whether creation is forbidden.
+    /// </summary>
+    public bool ForbidCreation
+    {
+        get => GetBoolean("FORBID_CREATION");
+        set => this["FORBID_CREATION"] = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the cipher name.
+    /// </summary>
+    public string? Cipher
+    {
+        get => GetString("CIPHER");
+        set => SetOptional("CIPHER", value);
+    }
+
+    /// <summary>
+    /// Gets or sets the INIT script.
+    /// </summary>
+    public string? Init
+    {
+        get => GetString("INIT");
+        set => SetOptional("INIT", value);
+    }
+
+    /// <summary>
+    /// Gets or sets whether a new database is requested.
+    /// </summary>
+    public bool OpenNew
+    {
+        get => GetBoolean("OPEN_NEW");
+        set => this["OPEN_NEW"] = value;
+    }
+
+    /// <summary>
+    /// Gets or sets whether unknown settings are ignored.
+    /// </summary>
+    public bool IgnoreUnknownSettings
+    {
+        get => GetBoolean("IGNORE_UNKNOWN_SETTINGS");
+        set => this["IGNORE_UNKNOWN_SETTINGS"] = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the lock mode.
+    /// </summary>
+    public int LockMode
+    {
+        get => GetInt32("LOCK_MODE", Constants.DefaultLockMode);
+        set => this["LOCK_MODE"] = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the page size.
+    /// </summary>
+    public int PageSize
+    {
+        get => GetInt32("PAGE_SIZE", Constants.DefaultPageSize);
+        set => this["PAGE_SIZE"] = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the access mode data value.
+    /// </summary>
+    public string AccessModeData
+    {
+        get => GetString("ACCESS_MODE_DATA") ?? "rw";
+        set => this["ACCESS_MODE_DATA"] = value;
+    }
+
+    /// <summary>
+    /// Gets or sets whether automatic server mode is requested.
+    /// </summary>
+    public bool AutoServer
+    {
+        get => GetBoolean("AUTO_SERVER");
+        set => this["AUTO_SERVER"] = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the requested file lock method.
+    /// </summary>
+    public FileLockMethod? FileLock
+    {
+        get
         {
-            name = "mem:";
+            string? value = GetString("FILE_LOCK");
+            return value is null ? null : H2Sharp.Store.FileLock.GetFileLockMethod(value);
         }
-        else if (!name.StartsWith("jdbc:h2:", StringComparison.OrdinalIgnoreCase))
+        set => SetOptional("FILE_LOCK", value?.ToString());
+    }
+
+    /// <summary>
+    /// Converts this builder into typed connection information.
+    /// </summary>
+    /// <returns>the connection information</returns>
+    public ConnectionInfo ToConnectionInfo()
+    {
+        ValidateKeys();
+        string dataSource = DataSource;
+        StorageKind storage = Storage;
+        if (storage == StorageKind.File && dataSource.Length == 0)
         {
-            name = "jdbc:h2:" + name;
+            throw DbException.GetInvalidValueException("Data Source", dataSource);
         }
 
-        if (UserId.Length > 0)
+        return new ConnectionInfo
         {
-            name += ";USER=" + UserId;
+            Storage = storage,
+            DataSource = dataSource.Length == 0 ? null : dataSource,
+            Mode = Mode,
+            Options = new ConnectionOptions
+            {
+                IfExists = IfExists,
+                ForbidCreation = ForbidCreation,
+                Cipher = Cipher,
+                Init = Init,
+                OpenNew = OpenNew,
+                IgnoreUnknownSettings = IgnoreUnknownSettings,
+                LockMode = LockMode,
+                PageSize = PageSize,
+                AccessModeData = AccessModeData,
+                AutoServer = AutoServer,
+                FileLock = FileLock,
+            },
+        };
+    }
+
+    /// <summary>
+    /// Replaces this builder's values with the given connection information.
+    /// </summary>
+    /// <param name="info">the connection information</param>
+    public void LoadFrom(ConnectionInfo info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        Clear();
+        Storage = info.Storage;
+        if (!string.IsNullOrEmpty(info.DataSource))
+        {
+            DataSource = info.DataSource;
         }
 
-        if (Password.Length > 0)
+        Mode = info.Mode;
+        ConnectionOptions options = info.Options;
+        IfExists = options.IfExists;
+        ForbidCreation = options.ForbidCreation;
+        Cipher = options.Cipher;
+        Init = options.Init;
+        OpenNew = options.OpenNew;
+        IgnoreUnknownSettings = options.IgnoreUnknownSettings;
+        LockMode = options.LockMode;
+        PageSize = options.PageSize;
+        AccessModeData = options.AccessModeData;
+        AutoServer = options.AutoServer;
+        FileLock = options.FileLock;
+    }
+
+    private StorageKind GetStorage()
+    {
+        string? value = GetString("Storage");
+        if (string.IsNullOrEmpty(value))
         {
-            name += ";PASSWORD=" + Password;
+            return StorageKind.File;
         }
 
-        return name;
+        if (Enum.TryParse(value, ignoreCase: true, out StorageKind storage))
+        {
+            return storage;
+        }
+
+        throw DbException.GetInvalidValueException("Storage", value);
+    }
+
+    private Mode GetMode()
+    {
+        string? value = GetString("Mode");
+        if (string.IsNullOrEmpty(value))
+        {
+            return Mode.GetRegular();
+        }
+
+        return Mode.GetInstance(value)
+            ?? throw DbException.Get(ErrorCode.UnknownMode1, value);
+    }
+
+    private string? GetString(string key)
+        => TryGetValue(key, out object? value) ? Convert.ToString(value, CultureInfo.InvariantCulture) : null;
+
+    private bool GetBoolean(string key)
+        => Utils.ParseBoolean(GetString(key), false, false);
+
+    private int GetInt32(string key, int defaultValue)
+    {
+        string? value = GetString(key);
+        if (value is null)
+        {
+            return defaultValue;
+        }
+
+        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int result))
+        {
+            return result;
+        }
+
+        throw DbException.GetInvalidValueException(key, value);
+    }
+
+    private void SetOptional(string key, string? value)
+    {
+        if (value is null)
+        {
+            _ = Remove(key);
+        }
+        else
+        {
+            this[key] = value;
+        }
+    }
+
+    private void ValidateKeys()
+    {
+        bool ignoreUnknown = IgnoreUnknownSettings;
+        foreach (string key in Keys)
+        {
+            if (CredentialKeys.Contains(key))
+            {
+                throw DbException.GetUnsupportedException(key);
+            }
+
+            if (!KnownKeys.Contains(key) && !ignoreUnknown)
+            {
+                throw DbException.Get(ErrorCode.UnsupportedSetting1, key);
+            }
+        }
     }
 }

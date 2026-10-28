@@ -38,7 +38,7 @@ public sealed class SelectAllocationTests : IDisposable
 
     public SelectAllocationTests()
     {
-        session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_alloc")), "sa")
+        session = new SessionLocal(new Database(ConnectionInfo.Memory("select_alloc")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

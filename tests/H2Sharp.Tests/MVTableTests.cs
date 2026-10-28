@@ -45,7 +45,7 @@ public sealed class MVTableTests : IDisposable
     {
         transactions = new TransactionStore(store);
         transactions.Init();
-        session = new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:table_tests")), "sa")
+        session = new SessionLocal(new Database(ConnectionInfo.Memory("table_tests")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

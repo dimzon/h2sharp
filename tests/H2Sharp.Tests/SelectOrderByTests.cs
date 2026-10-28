@@ -38,7 +38,7 @@ public sealed class SelectOrderByTests
 {
     private static SessionLocal NewSession()
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:select_order")), "sa")
+        return new SessionLocal(new Database(ConnectionInfo.Memory("select_order")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

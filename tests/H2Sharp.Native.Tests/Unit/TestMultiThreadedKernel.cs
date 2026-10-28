@@ -43,9 +43,7 @@ public sealed class TestMultiThreadedKernel : TestDb
     private void Run(string url, int id, CancellationToken token)
     {
         _ = Driver.Load();
-        using DbConnection conn = new H2Connection(url
-            + ";LOCK_MODE=3;WRITE_DELAY=0;USER=" + GetUser()
-            + ";PASSWORD=" + GetPassword());
+        using DbConnection conn = new H2Connection(ToClassicConnectionString(url + ";LOCK_MODE=3;WRITE_DELAY=0"));
         conn.Open();
         DbCommand stat = conn.CreateCommand();
         stat.CommandText = "CREATE TABLE TEST" + id
@@ -61,3 +59,4 @@ public sealed class TestMultiThreadedKernel : TestDb
         }
     }
 }
+

@@ -119,7 +119,7 @@ public sealed class FreshIssuesOracleTests
 
     internal static void Compare(string[] statements)
     {
-        using H2Connection connection = new("jdbc:h2:mem:fresh_issues_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=fresh_issues_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         List<string> port = [];
         for (int i = 0; i < statements.Length; i++)

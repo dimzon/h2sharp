@@ -160,7 +160,7 @@ public sealed class BuiltinSprintOracleTests
 
     private static List<string> ReadPort(string[] sql)
     {
-        using H2Connection connection = new("jdbc:h2:mem:batch_a_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=batch_a_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         foreach (string statement in Setup.Split(';'))
         {

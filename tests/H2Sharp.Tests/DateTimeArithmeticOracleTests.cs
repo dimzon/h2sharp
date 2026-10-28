@@ -107,7 +107,7 @@ public sealed class DateTimeArithmeticOracleTests
             + "EXTRACT(EPOCH FROM (CAST(? AS TIMESTAMP(9)) - CAST(? AS TIMESTAMP(9)))) / 3600";
         string[] inputs = ["2024-02-29 01:00:00", "2024-02-28 23:30:00",
             "2024-02-28 23:30:00", "2024-02-29 01:00:00", OracleRunner.NullMarker, "2024-02-29 01:00:00"];
-        using H2Connection connection = new("jdbc:h2:mem:datetime_parameters_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=datetime_parameters_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = Sql;
@@ -156,7 +156,7 @@ public sealed class DateTimeArithmeticOracleTests
     public void BoundDurationMovesTheTimestampLikeJdbc()
     {
         string[] inputs = ["2024-02-28 23:30:00", "0 01:30:00", "2024-02-29 01:00:00", "-0 01:30:00"];
-        using H2Connection connection = new("jdbc:h2:mem:interval_parameters_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=interval_parameters_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         using DbCommand command = connection.CreateCommand();
         command.CommandText = "SELECT CAST(? AS TIMESTAMP) + CAST(? AS INTERVAL DAY TO SECOND)";
@@ -193,7 +193,7 @@ public sealed class DateTimeArithmeticOracleTests
 
     private static void CompareStatements(string[] statements)
     {
-        using H2Connection connection = new("jdbc:h2:mem:datetime_arithmetic_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=datetime_arithmetic_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         List<string> port = [];
         for (int index = 0; index < statements.Length; index++)

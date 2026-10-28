@@ -31,7 +31,7 @@ public sealed class TableFilterScanTests
 {
     private static SessionLocal NewSession(string name)
     {
-        return new SessionLocal(new Database(new ConnectionInfo("jdbc:h2:mem:" + name)), "sa")
+        return new SessionLocal(new Database(ConnectionInfo.Memory(name)), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

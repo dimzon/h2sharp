@@ -97,7 +97,7 @@ public sealed class ColumnTests
     /// never asks it anything.
     /// </summary>
     private static SessionLocal Session()
-        => new(new Database(new ConnectionInfo("jdbc:h2:mem:column_tests")), "sa");
+        => new(new Database(ConnectionInfo.Memory("column_tests")), "sa");
 
     /// <summary>A table that exists only so two columns can share one.</summary>
     private sealed class TableFake : Table

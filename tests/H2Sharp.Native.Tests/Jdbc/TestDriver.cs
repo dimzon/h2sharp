@@ -40,9 +40,8 @@ public sealed class TestDriver : TestDb
         // The reference also passes an "unknown" property, which the JDBC Properties bag
         // silently ignores; a connection string has no such bag, so the unknown key has
         // nowhere to ride and is dropped here.
-        using DbConnection conn = new H2Connection(url
-            + ";MAX_COMPACT_TIME=1234"
-            + ";USER=" + GetUser() + ";PASSWORD=" + GetPassword());
+        using DbConnection conn = new H2Connection(ToClassicConnectionString(url
+            + ";MAX_COMPACT_TIME=1234"));
         DbCommand command = conn.CreateCommand();
         command.CommandText =
             "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = 'MAX_COMPACT_TIME'";

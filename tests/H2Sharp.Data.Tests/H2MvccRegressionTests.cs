@@ -94,7 +94,7 @@ public sealed class H2MvccRegressionTests
 
     private static H2Connection Open(string name)
     {
-        H2Connection connection = new($"jdbc:h2:mem:mvcc_regression_{name}");
+        H2Connection connection = new($"Data Source=mvcc_regression_{name};Storage=Memory");
         connection.Open();
         return connection;
     }

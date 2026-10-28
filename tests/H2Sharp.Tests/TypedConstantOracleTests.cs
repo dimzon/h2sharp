@@ -21,7 +21,7 @@ public sealed class TypedConstantOracleTests
     public void TypedCastsEvaluateOnceAndKeepTheReferenceType()
     {
         string[] types = ["NUMERIC(10,2)", "REAL", "DOUBLE PRECISION", "BIGINT", "SMALLINT", "TINYINT"];
-        SessionLocal session = new(new Database(new ConnectionInfo("jdbc:h2:mem:typed_constant_fold")), "sa")
+        SessionLocal session = new(new Database(ConnectionInfo.Memory("typed_constant_fold")), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),

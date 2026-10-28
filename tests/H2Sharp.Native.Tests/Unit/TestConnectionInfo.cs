@@ -1,109 +1,112 @@
 // Copyright 2004-2026 H2 Group.
 // Copyright 2026 H2Sharp contributors.
-// Ported from org.h2.test.unit.TestConnectionInfo.
 // Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
 //
-// Modified (API): ConnectionInfo is the ported engine class; GetUrl answers the URL the
-// settings were read from, GetProperty(key) answers with null when unset (the default
-// value of the reference is supplied by the test), and DeleteDbFiles.execute is the
-// file walk of this test (the tool is not ported). The canonical path expectation of
-// testName is System.IO.Path.GetFullPath with the separator normalized, which is the
-// same canonical answer the JDK's File.getCanonicalPath gives. The reference's main()
-// entry is the runner; xUnit runs Test() directly.
-using H2Sharp.Api;
+// The port no longer parses JDBC URLs. This test covers the typed connection information
+// produced by H2ConnectionStringBuilder.
+using System;
+using H2Sharp.Data;
 using H2Sharp.Engine;
-using H2Sharp.Store.FileSystem;
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Unit;
 
 /// <summary>
-/// Test the ConnectionInfo class.
+/// Tests the typed connection information and the classic builder.
 /// </summary>
 public sealed class TestConnectionInfo : TestDb
 {
-    /// <summary>
-    /// Run just this test.
-    /// </summary>
+    /// <inheritdoc/>
     [H2Fact]
     public override void Test()
     {
-        TestImplicitRelativePath();
-        TestConnectInitError();
-        TestConnectionInfo_();
-        TestName();
     }
 
-    private void TestImplicitRelativePath()
+    [H2Fact]
+    public void MemoryConnectionIsTyped()
     {
-        AssertThrows(ErrorCode.UrlRelativeToCwd,
-            () => _ = GetConnection("jdbc:h2:" + GetTestName()));
-        AssertThrows(ErrorCode.UrlRelativeToCwd,
-            () => _ = GetConnection("jdbc:h2:data/" + GetTestName()));
+        H2ConnectionStringBuilder builder = new(
+            "Data Source=test;Storage=Memory;Mode=Oracle;IFEXISTS=TRUE");
 
-        using (DbConnection conn = GetConnection("jdbc:h2:./data/" + GetTestName()))
+        ConnectionInfo info = builder.ToConnectionInfo();
+
+        AssertEquals(StorageKind.Memory, info.Storage);
+        AssertEquals("test", info.DataSource);
+        AssertEquals(Mode.GetInstance("Oracle"), info.Mode);
+        AssertTrue(info.Options.IfExists);
+    }
+
+    [H2Fact]
+    public void FileConnectionIsTyped()
+    {
+        ConnectionInfo info = new H2ConnectionStringBuilder(
+            "Data Source=./test;Storage=File").ToConnectionInfo();
+
+        AssertEquals(StorageKind.File, info.Storage);
+        AssertEquals("./test", info.DataSource);
+        AssertEquals(Mode.GetRegular(), info.Mode);
+    }
+
+    [H2Fact]
+    public void BuilderRoundTripsAllTypedValues()
+    {
+        ConnectionInfo info = new()
         {
-        }
-
-        DeleteDataFiles(GetTestName());
-    }
-
-    private void TestConnectInitError()
-    {
-        AssertThrows(ErrorCode.SyntaxError2,
-            () => _ = GetConnection("jdbc:h2:mem:;init=error"));
-        AssertThrows(ErrorCode.IoException2,
-            () => _ = GetConnection("jdbc:h2:mem:;init=runscript from 'wrong.file'"));
-    }
-
-    private void TestConnectionInfo_()
-    {
-        ConnectionInfo connectionInfo = new(
-            "jdbc:h2:mem:" + GetTestName()
-            + ";ACCESS_MODE_DATA=rws"
-            + ";INIT=CREATE this...\\;INSERT that..."
-            + ";IFEXISTS=TRUE");
-
-        AssertEquals("jdbc:h2:mem:" + GetTestName(),
-            connectionInfo.GetUrl());
-
-        AssertEquals("rws",
-            connectionInfo.GetProperty("ACCESS_MODE_DATA") ?? "");
-        AssertEquals("CREATE this...;INSERT that...",
-            connectionInfo.GetProperty("INIT") ?? "");
-        AssertEquals("TRUE",
-            connectionInfo.GetProperty("IFEXISTS") ?? "");
-        AssertEquals("undefined",
-            connectionInfo.GetProperty("CACHE_TYPE") ?? "undefined");
-    }
-
-    private void TestName()
-    {
-        char differentFileSeparator = Path.DirectorySeparatorChar == '/' ? '\\' : '/';
-        ConnectionInfo connectionInfo = new("./test"
-            + differentFileSeparator + "subDir");
-        string expected = Path.GetFullPath(
-            "test" + Path.DirectorySeparatorChar + "subDir")
-            .Replace('\\', '/');
-        AssertEquals(expected, connectionInfo.GetName());
-    }
-
-    /// <summary>
-    /// The reference's DeleteDbFiles.execute(dir, db, true): the database files of the
-    /// given name go, silently. The tool is not ported; the walk is the same one the
-    /// ported TestDb uses.
-    /// </summary>
-    /// <param name="name">the database name</param>
-    private static void DeleteDataFiles(string name)
-    {
-        string start = name + '.';
-        foreach (FilePath path in FilePath.Get("data").NewDirectoryStream())
-        {
-            if (path.GetName().StartsWith(start, StringComparison.Ordinal)
-                && path.ToString().EndsWith(Constants.SuffixMvFile, StringComparison.Ordinal))
+            Storage = StorageKind.Memory,
+            DataSource = "round_trip",
+            Mode = Mode.GetInstance("MySQL")!,
+            Options =
             {
-                path.Delete();
-            }
-        }
+                IfExists = true,
+                ForbidCreation = true,
+                Cipher = "AES",
+                Init = "CREATE TABLE T(ID INT)",
+                OpenNew = true,
+                IgnoreUnknownSettings = true,
+                LockMode = 1,
+                PageSize = 8192,
+                AccessModeData = "r",
+                AutoServer = true,
+                FileLock = H2Sharp.Store.FileLockMethod.No,
+            },
+        };
+
+        H2ConnectionStringBuilder builder = new();
+        builder.LoadFrom(info);
+        ConnectionInfo actual = builder.ToConnectionInfo();
+
+        AssertEquals(StorageKind.Memory, actual.Storage);
+        AssertEquals("round_trip", actual.DataSource);
+        AssertEquals(Mode.GetInstance("MySQL"), actual.Mode);
+        AssertEquals(true, actual.Options.IfExists);
+        AssertEquals(true, actual.Options.ForbidCreation);
+        AssertEquals("AES", actual.Options.Cipher);
+        AssertEquals("CREATE TABLE T(ID INT)", actual.Options.Init);
+        AssertEquals(true, actual.Options.OpenNew);
+        AssertEquals(true, actual.Options.IgnoreUnknownSettings);
+        AssertEquals(1, actual.Options.LockMode);
+        AssertEquals(8192, actual.Options.PageSize);
+        AssertEquals("r", actual.Options.AccessModeData);
+        AssertEquals(true, actual.Options.AutoServer);
+        AssertEquals(H2Sharp.Store.FileLockMethod.No, actual.Options.FileLock);
+    }
+
+    [H2Fact]
+    public void UnnamedMemoryIsRepresentedWithoutStringParsing()
+    {
+        ConnectionInfo info = new H2ConnectionStringBuilder("Storage=Memory").ToConnectionInfo();
+
+        AssertEquals(StorageKind.Memory, info.Storage);
+        AssertEquals((string?)null, info.DataSource);
+        AssertTrue(info.IsUnnamedInMemory);
+        AssertEquals(string.Empty, info.Name);
+    }
+
+    [H2Fact]
+    public void CredentialsAreRejected()
+    {
+        AssertThrows(typeof(H2SharpException), () =>
+            _ = new H2ConnectionStringBuilder("Data Source=x;Storage=Memory;Password=p")
+                .ToConnectionInfo());
     }
 }

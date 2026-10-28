@@ -41,7 +41,7 @@ public sealed class SchemaDropAndUnaryAliasOracleTests
     private static void Check(string[] statements)
     {
         List<string> port = [];
-        using H2Connection connection = new("jdbc:h2:mem:schema_drop_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=schema_drop_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         for (int i = 0; i < statements.Length; i++)
         {
@@ -78,7 +78,7 @@ public sealed class SchemaDropAndUnaryAliasOracleTests
     private static void CheckNames(string[] statements)
     {
         List<string> port = [];
-        using H2Connection connection = new("jdbc:h2:mem:unary_label_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new("Data Source=unary_label_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         for (int i = 0; i < statements.Length; i++)
         {

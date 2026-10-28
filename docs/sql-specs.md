@@ -90,8 +90,9 @@ users/roles/privileges вынесены в `BlockedByPort`; INFORMATION_SCHEMA-�
 | `Dml/` | `docs/commands.html` (SELECT-выражения) | 2 |
 
 `Infrastructure/TestDatabase.cs` — единственная точка подключения к БД: `Open()` открывает
-новую пустую базу `jdbc:h2:mem:<guid>` на каждый вызов, поэтому тесты изолированы друг от
-друга и порядок запуска не важен.
+новую пустую базу `Data Source=<guid>;Storage=Memory` на каждый вызов, поэтому тесты
+изолированы друг от друга и порядок запуска не важен. JDBC URL остаётся только в
+тестовой инфраструктуре для Java-оракулов.
 
 ## Baseline
 

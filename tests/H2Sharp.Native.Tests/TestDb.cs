@@ -206,18 +206,69 @@ public abstract class TestDb : TestBase
     private static DbConnection GetConnectionInternal(string url, string user,
         string password)
     {
-        string connectionString = url;
-        if (user.Length > 0 || password.Length > 0)
-        {
-            connectionString += ";USER=" + user + ";PASSWORD=" + password;
-        }
-
-        H2Connection connection = new(connectionString);
+        _ = user;
+        _ = password;
+        H2Connection connection = new(ToClassicConnectionString(url));
         ((IH2Extensions)connection).UseJavaLegacy();
         ((IH2Extensions)connection).UseH2Hashes();
         ((IH2Extensions)connection).UseCrypto();
         connection.Open();
         return connection;
+    }
+
+    protected static string ToClassicConnectionString(string url)
+    {
+        if (!url.StartsWith(Constants.StartUrl, StringComparison.Ordinal))
+        {
+            return url;
+        }
+
+        string body = url.Substring(Constants.StartUrl.Length);
+        string[] parts = body.Split(';');
+        string name = parts[0];
+        StorageKind storage;
+        string dataSource;
+        if (name.StartsWith("mem:", StringComparison.Ordinal))
+        {
+            storage = StorageKind.Memory;
+            dataSource = name.Substring("mem:".Length);
+        }
+        else if (name.StartsWith("file:", StringComparison.Ordinal))
+        {
+            storage = StorageKind.File;
+            dataSource = name.Substring("file:".Length);
+        }
+        else
+        {
+            storage = StorageKind.File;
+            dataSource = name;
+        }
+
+        H2ConnectionStringBuilder builder = new()
+        {
+            Storage = storage,
+            DataSource = dataSource,
+        };
+        for (int i = 1; i < parts.Length; i++)
+        {
+            int equal = parts[i].IndexOf('=');
+            if (equal <= 0)
+            {
+                continue;
+            }
+
+            string key = parts[i].Substring(0, equal);
+            if (key.Equals("USER", StringComparison.OrdinalIgnoreCase)
+                || key.Equals("PASSWORD", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            builder[key] = parts[i].Substring(equal + 1);
+        }
+
+        builder.IgnoreUnknownSettings = true;
+        return builder.ConnectionString;
     }
 
     /// <summary>

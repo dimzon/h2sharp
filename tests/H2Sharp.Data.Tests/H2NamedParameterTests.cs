@@ -298,7 +298,7 @@ public sealed class H2NamedParameterTests
 
     private static H2Connection Open()
     {
-        H2Connection connection = new("jdbc:h2:mem:named_" + Guid.NewGuid().ToString("N"));
+        H2Connection connection = new("Data Source=named_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
         connection.Open();
         return connection;
     }

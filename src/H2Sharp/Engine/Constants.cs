@@ -197,6 +197,12 @@ public static class Constants
     public const int DefaultLockMode = LockModeReadCommitted;
 
     /// <summary>
+    /// The fixed session principal. The embedded engine has no users; the session still has
+    /// a name for CURRENT_USER and the metadata tables.
+    /// </summary>
+    public const string DefaultUser = "sa";
+
+    /// <summary>
     /// The default maximum length of a LOB that is stored with the record itself,
     /// and not in a separate place.
     /// </summary>

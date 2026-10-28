@@ -1,5 +1,6 @@
 /* Copyright 2026 H2Sharp contributors. MPL 2.0 or EPL 1.0.
- * GROUP BY integer position is mode-dependent in H2 2.5. */
+ * GROUP BY integer position is mode-dependent in H2 2.5. A mode is fixed when the
+ * database is opened, so each case opens its own database with that mode. */
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
@@ -17,29 +18,38 @@ public sealed class GroupByColumnIndexOracleTests
     [JavaOracleFact]
     public void GroupByPositionFollowsTheModeAndErrorRulesOfTheReference()
     {
-        Check([
+        Check("MySQL", [
             "CREATE TABLE MYTAB(X INT, Y INT, Z INT) AS VALUES (1,123,2), (1,456,2), (3,789,4)",
-            "SET MODE MySQL",
             "SELECT SUM(Y) AS S, X + Z FROM MYTAB GROUP BY 2",
             "SELECT SUM(Y) AS S, X + Z FROM MYTAB GROUP BY 3",
-            "SET MODE MariaDB",
+        ]);
+        Check("MariaDB", [
+            "CREATE TABLE MYTAB(X INT, Y INT, Z INT) AS VALUES (1,123,2), (1,456,2), (3,789,4)",
             "SELECT SUM(Y) AS S, X + Z FROM MYTAB GROUP BY 2",
-            "SET MODE PostgreSQL",
+        ]);
+        Check("PostgreSQL", [
+            "CREATE TABLE MYTAB(X INT, Y INT, Z INT) AS VALUES (1,123,2), (1,456,2), (3,789,4)",
             "SELECT SUM(Y) AS S, X + Z FROM MYTAB GROUP BY 2",
-            "SET MODE Oracle",
+        ]);
+        Check("Oracle", [
+            "CREATE TABLE MYTAB(X INT, Y INT, Z INT) AS VALUES (1,123,2), (1,456,2), (3,789,4)",
             "SELECT SUM(Y) AS S, X FROM MYTAB GROUP BY 2",
-            "SET MODE REGULAR",
+        ]);
+        Check("Regular", [
+            "CREATE TABLE MYTAB(X INT, Y INT, Z INT) AS VALUES (1,123,2), (1,456,2), (3,789,4)",
             "SELECT SUM(Y) AS S, X + Z FROM MYTAB GROUP BY 2",
             "SELECT 7 FROM MYTAB GROUP BY 1",
             "SELECT SUM(Y) AS S, X + Z FROM MYTAB GROUP BY 1",
             "SELECT SUM(Y) AS S, X + Z FROM MYTAB GROUP BY 0",
-        ], allowErrors: true);
+        ]);
     }
 
-    private static void Check(string[] statements, bool allowErrors = false)
+    private static void Check(string mode, string[] statements)
     {
         List<string> port = [];
-        using H2Connection connection = new("jdbc:h2:mem:group_by_position_" + Guid.NewGuid().ToString("N"));
+        using H2Connection connection = new(
+            "Data Source=group_by_position_" + Guid.NewGuid().ToString("N")
+            + ";Storage=Memory;Mode=" + mode);
         connection.Open();
         for (int i = 0; i < statements.Length; i++)
         {
@@ -64,8 +74,9 @@ public sealed class GroupByColumnIndexOracleTests
             }
             catch (H2SharpException e) { port.Add($"={i}:E:{e.H2ErrorCode}"); }
         }
+
         List<string> java = OracleRunner.Run(statements, """
-            try(java.sql.Connection c=java.sql.DriverManager.getConnection("jdbc:h2:mem:group_by_position")) {
+            try(java.sql.Connection c=java.sql.DriverManager.getConnection("jdbc:h2:mem:group_by_position;MODE=" + System.getProperty("h2sharp.mode"))) {
               java.sql.Statement s=c.createStatement();
               for(int i=0;i<inputs.length;i++) {
                 try {
@@ -80,8 +91,7 @@ public sealed class GroupByColumnIndexOracleTests
                 } catch(java.sql.SQLException e) { System.out.println("="+i+":E:"+e.getErrorCode()); }
               }
             }
-            """, extraJavaArgs: ["-Duser.language=en"]);
+            """, extraJavaArgs: ["-Duser.language=en", "-Dh2sharp.mode=" + mode]);
         Assert.True(java.SequenceEqual(port), "java:\n" + string.Join("\n", java) + "\nport:\n" + string.Join("\n", port));
-        if (!allowErrors) Assert.DoesNotContain(port, line => line.Contains(":E:", StringComparison.Ordinal));
     }
 }
