@@ -47,6 +47,13 @@ MySQL `INSERT ... ON DUPLICATE KEY UPDATE/IGNORE` не копирует этал
 `SetClauseList`. Нет exception и повторного `prepare` на каждую дублирующуюся
 строку; `TestDuplicateKeyUpdate` зелёный.
 
+`H2Connection` поддерживает enlisted `System.Transactions`: `Open()` внутри
+`TransactionScope` enlистит соединение, `EnlistTransaction` доступен и явно.
+Завершение ambient-транзакции коммитит/откатывает session-транзакцию; соединение
+можно закрыть до завершения scope — сессия остаётся у enlistment до нотификации.
+Это single-resource/volatile срез: DTC, durable 2PC и multi-resource recovery не
+поддерживаются. Покрыто `H2TransactionScopeTests`.
+
 `MODE` фиксируется при открытии (D-029). `SET MODE` с тем же режимом — no-op,
 с другим — 50100. Второй connection к тому же storage с другим режимом получает
 90020; после закрытия последнего storage можно открыть с другим режимом.
@@ -151,7 +158,7 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 `SCRIPT CIPHER`, `HELP` и `RUNSCRIPT` вынесены из зелёного набора решениями
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
-Проверено: core **1468/1468**, Data **589/589**, conformance полный **880/952**,
+Проверено: core **1468/1468**, Data **576/576**, conformance полный **880/952**,
 зелёный **878/905** (было 805/803), native **49/104** (после typed connection
 string, parameter scopes, отложенного остатка multi-statement и ON DUPLICATE KEY).
 Провайдеры на текущем бинарнике: linq2db

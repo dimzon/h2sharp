@@ -25,6 +25,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Transactions;
 using H2Sharp.Engine;
 using H2Sharp.Extensions;
 using H2Sharp.Util;
@@ -52,6 +53,10 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
 
 
     private H2Transaction? currentTransaction;
+
+    private Transaction? enlistedTransaction;
+
+    private SessionLocal? enlistedSession;
 
     private Func<DateTimeOffset>? systemClockProvider;
 
@@ -228,7 +233,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// </remarks>
     public override void Open()
     {
-        if (session is not null)
+        if (session is not null || enlistedSession is not null)
         {
             throw new InvalidOperationException("The connection is already open");
         }
@@ -239,9 +244,24 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         }
 
         ConnectionInfo connectionInfo = new H2ConnectionStringBuilder(connectionString).ToConnectionInfo();
-        session = H2Sharp.Engine.Engine.OpenSession(
+        SessionLocal opened = H2Sharp.Engine.Engine.OpenSession(
             connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider,
             timeZoneProviderProvider, extensionConfiguration.Clone());
+        session = opened;
+        try
+        {
+            if (Transaction.Current is { } ambient)
+            {
+                EnlistTransaction(ambient);
+            }
+        }
+        catch
+        {
+            session = null;
+            opened.Close();
+            throw;
+        }
+
         OnStateChange(new StateChangeEventArgs(ConnectionState.Closed, ConnectionState.Open));
     }
 
@@ -357,6 +377,16 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             return;
         }
 
+        if (enlistedTransaction is not null)
+        {
+            // The ambient transaction owns the session now. Closing the connection detaches it,
+            // but the completion notification still has to commit or roll it back.
+            enlistedSession = current;
+            session = null;
+            OnStateChange(new StateChangeEventArgs(ConnectionState.Open, ConnectionState.Closed));
+            return;
+        }
+
         currentTransaction?.Dispose();
         currentTransaction = null;
         session = null;
@@ -420,6 +450,11 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             throw new InvalidOperationException("The connection already has a transaction");
         }
 
+        if (enlistedTransaction is not null)
+        {
+            throw new InvalidOperationException("The connection is enlisted in an ambient transaction");
+        }
+
         if (isolationLevel == AdoIsolationLevel.Unspecified)
         {
             isolationLevel = ToAdoIsolationLevel(current.GetIsolationLevel());
@@ -436,6 +471,101 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         H2Transaction transaction = new(this, isolationLevel);
         currentTransaction = transaction;
         return transaction;
+    }
+
+    /// <summary>
+    /// Enlists this connection in an ambient transaction.
+    /// </summary>
+    /// <remarks>
+    /// The engine transaction belongs to the session, so enlisting switches the session out
+    /// of auto-commit and lets the transaction's completion notification commit or roll it
+    /// back. The connection may be closed before the ambient transaction completes; the
+    /// session is then kept by the enlistment until the notification arrives.
+    /// </remarks>
+    /// <param name="transaction">the transaction to enlist in, or null</param>
+    public override void EnlistTransaction(Transaction? transaction)
+    {
+        if (disposed)
+        {
+            throw new ObjectDisposedException(nameof(H2Connection));
+        }
+
+        if (transaction is null)
+        {
+            if (enlistedTransaction is not null)
+            {
+                throw new InvalidOperationException("The connection is already enlisted in a transaction");
+            }
+
+            return;
+        }
+
+        if (enlistedTransaction is not null)
+        {
+            if (ReferenceEquals(enlistedTransaction, transaction))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("The connection is already enlisted in another transaction");
+        }
+
+        if (currentTransaction is not null)
+        {
+            throw new InvalidOperationException("The connection already has a transaction");
+        }
+
+        SessionLocal current = session
+            ?? throw new InvalidOperationException("The connection is not open");
+        current.Begin();
+        enlistedSession = current;
+        enlistedTransaction = transaction;
+        try
+        {
+            _ = transaction.EnlistVolatile(new H2Enlistment(this), EnlistmentOptions.None);
+        }
+        catch
+        {
+            enlistedSession = null;
+            enlistedTransaction = null;
+            current.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Completes the ambient transaction this connection was enlisted in.
+    /// </summary>
+    /// <param name="commit">true to commit, false to roll back</param>
+    internal void CompleteEnlisted(bool commit)
+    {
+        SessionLocal? current = enlistedSession;
+        enlistedSession = null;
+        enlistedTransaction = null;
+        if (current is null)
+        {
+            return;
+        }
+
+        bool attached = ReferenceEquals(current, session);
+        try
+        {
+            if (commit)
+            {
+                current.Commit(false);
+            }
+            else
+            {
+                current.Rollback();
+            }
+        }
+        finally
+        {
+            if (!attached)
+            {
+                current.Close();
+            }
+        }
     }
 
     /// <summary>Maps the engine's isolation level to ADO.NET's.</summary>
