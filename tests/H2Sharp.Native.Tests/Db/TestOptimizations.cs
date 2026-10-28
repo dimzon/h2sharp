@@ -173,7 +173,7 @@ public sealed class TestOptimizations : TestDb
             AssertTrue(rs.Read());
             AssertEquals(3, rs.GetInt32(0));
             AssertEquals(1, rs.GetInt32(1));
-            AssertTrue(rs.Read());
+            AssertFalse(rs.Read());
         }
 
         Execute(stat, "drop table t1, t2");
