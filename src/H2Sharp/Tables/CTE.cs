@@ -71,6 +71,9 @@ public sealed class CTE : QueryExpressionTable
     }
 
     /// <inheritdoc/>
+    public override bool IsDeterministic() => !recursive && base.IsDeterministic();
+
+    /// <inheritdoc/>
     public override bool IsQueryComparable() => false;
 
     /// <inheritdoc/>

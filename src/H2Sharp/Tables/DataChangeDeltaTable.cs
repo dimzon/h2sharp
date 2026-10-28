@@ -131,6 +131,9 @@ public sealed class DataChangeDeltaTable : VirtualConstructedTable
     public override int GetTableType() => TABLE;
 
     /// <inheritdoc/>
+    public override bool IsDeterministic() => false;
+
+    /// <inheritdoc/>
     public override int GetColumnCount() => columns.Length;
 
     /// <inheritdoc/>

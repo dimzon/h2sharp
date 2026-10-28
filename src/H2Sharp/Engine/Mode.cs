@@ -143,6 +143,11 @@ public sealed class Mode
     public bool MinusIsExcept { get; }
 
     /// <summary>
+    /// Whether an empty IN predicate is accepted as a constant.
+    /// </summary>
+    public bool AllowEmptyInPredicate { get; }
+
+    /// <summary>
     /// Whether a CHAR value is padded out to its declared length, which decides whether a
     /// conversion to CHAR restores the padding or trims it.
     /// </summary>
@@ -292,6 +297,7 @@ public sealed class Mode
         bool serialDataTypes = false,
         bool autoIncrementClause = false,
         bool identityClause = false,
+        bool allowEmptyInPredicate = false,
         IReadOnlySet<string>? disallowedTypes = null)
     {
         Enum = modeEnum;
@@ -321,6 +327,7 @@ public sealed class Mode
         SerialDataTypes = serialDataTypes;
         AutoIncrementClause = autoIncrementClause;
         IdentityClause = identityClause;
+        AllowEmptyInPredicate = allowEmptyInPredicate;
         DisallowedTypes = disallowedTypes ?? FrozenSet<string>.Empty;
     }
 
@@ -363,12 +370,13 @@ public sealed class Mode
         Dictionary<string, Mode> modes = new(StringComparer.Ordinal)
         {
             ["REGULAR"] = new(ModeEnum.Regular, false, false, false, true, true, topInSelect: true,
-                identityDataType: true, serialDataTypes: true, autoIncrementClause: true),
+                identityDataType: true, serialDataTypes: true, autoIncrementClause: true,
+                allowEmptyInPredicate: true),
             ["STRICT"] = new(ModeEnum.Strict, false, false, false, false, false),
             ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true,
                 greatestLeastIgnoreNulls: true, mergeWhere: true, topInSelect: true, topInDml: true,
                 identityDataType: true, serialDataTypes: true, autoIncrementClause: true,
-                identityClause: true),
+                identityClause: true, allowEmptyInPredicate: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true,

@@ -70,6 +70,7 @@ public sealed class ValueDataType : BasicDataType<Value>
     private const byte Uuid = 20;
     private const byte Char = 21;
     private const byte Geometry = 22;
+    private const byte TimestampTzOld = 24;
     private const byte Enum = 25;
     private const byte Interval = 26;
     private const byte Row = 27;
@@ -78,6 +79,10 @@ public sealed class ValueDataType : BasicDataType<Value>
     /// number is 137, and a byte would not hold it — which is why the type here is int and not
     /// byte like the tags above.
     /// </summary>
+    private const int TimestampTz = 135;
+
+    private const int TimeTz = 136;
+
     private const int Binary = 137;
 
     private const byte Int0To15 = 32;
@@ -411,11 +416,31 @@ public sealed class ValueDataType : BasicDataType<Value>
                 WriteTimestampTime(buff.Put(Time), ((ValueTime)v).GetNanos());
                 break;
 
+            case Value.TimeTz:
+                {
+                    ValueTimeTimeZone t = (ValueTimeTimeZone)v;
+                    long nanos = t.GetNanos();
+                    buff.Put((byte)TimeTz)
+                        .PutVarInt((int)(nanos / DateTimeUtils.NanosPerSecond))
+                        .PutVarInt((int)(nanos % DateTimeUtils.NanosPerSecond));
+                    WriteTimeZone(buff, t.GetTimeZoneOffsetSeconds());
+                    break;
+                }
+
             case Value.Timestamp:
                 {
                     ValueTimestamp ts = (ValueTimestamp)v;
                     WriteTimestampTime(buff.Put(Timestamp), DateTimeUtils.GetEpochSeconds(ts.GetDateValue(), ts.GetTimeNanos(), 0)
                         * 1_000_000_000L + (ts.GetTimeNanos() % 1_000_000_000L));
+                    break;
+                }
+
+            case Value.TimestampTz:
+                {
+                    ValueTimestampTimeZone ts = (ValueTimestampTimeZone)v;
+                    buff.Put((byte)TimestampTz).PutVarLong(ts.GetDateValue());
+                    WriteTimestampTime(buff, ts.GetTimeNanos());
+                    WriteTimeZone(buff, ts.GetTimeZoneOffsetSeconds());
                     break;
                 }
 
@@ -470,10 +495,17 @@ public sealed class ValueDataType : BasicDataType<Value>
                 }
 
             case Value.Array:
-                throw new TODOException("ValueDataType.write: ARRAY");
-
             case Value.Row:
-                throw new TODOException("ValueDataType.write: ROW");
+                {
+                    Value[] list = ((ValueCollectionBase)v).GetList();
+                    buff.Put((byte)(type == Value.Array ? Array : Row)).PutVarInt(list.Length);
+                    foreach (Value x in list)
+                    {
+                        Write(buff, x);
+                    }
+
+                    break;
+                }
 
             case Value.IntervalMinuteToSecond:
                 throw new TODOException("ValueDataType.write: INTERVAL");
@@ -571,6 +603,24 @@ public sealed class ValueDataType : BasicDataType<Value>
     {
         long millis = nanos / 1_000_000L;
         buff.PutVarLong(millis).PutVarInt((int)(nanos - millis * 1_000_000L));
+    }
+
+    private static void WriteTimeZone(WriteBuffer buff, int timeZoneOffset)
+    {
+        // Valid JSR-310 offsets are -64,800..64,800. Common offsets, including +8:45, fit
+        // into one byte; the rest get a var int after the sentinel.
+        if (timeZoneOffset % 900 == 0)
+        {
+            buff.Put((byte)(timeZoneOffset / 900));
+        }
+        else if (timeZoneOffset > 0)
+        {
+            buff.Put((byte)sbyte.MaxValue).PutVarInt(timeZoneOffset);
+        }
+        else
+        {
+            buff.Put(unchecked((byte)sbyte.MinValue)).PutVarInt(-timeZoneOffset);
+        }
     }
 
     /// <inheritdoc/>
@@ -680,6 +730,12 @@ public sealed class ValueDataType : BasicDataType<Value>
             case Time:
                 return ValueTime.FromNanos(ReadTimestampTime(buff, ref position));
 
+            case TimeTz:
+                return ValueTimeTimeZone.FromNanos(
+                    DataUtils.ReadVarInt(buff, ref position) * DateTimeUtils.NanosPerSecond
+                        + DataUtils.ReadVarInt(buff, ref position),
+                    ReadTimeZone(buff, ref position));
+
             case Timestamp:
                 {
                     long nanos = ReadTimestampTime(buff, ref position);
@@ -688,16 +744,35 @@ public sealed class ValueDataType : BasicDataType<Value>
                         DateTimeUtils.DateValueFromLocalSeconds(seconds), (int)(nanos % 1_000_000_000L));
                 }
 
+            case TimestampTzOld:
+                return ValueTimestampTimeZone.FromDateValueAndNanos(
+                    DataUtils.ReadVarLong(buff, ref position),
+                    ReadTimestampTime(buff, ref position),
+                    DataUtils.ReadVarInt(buff, ref position) * 60);
+
+            case TimestampTz:
+                return ValueTimestampTimeZone.FromDateValueAndNanos(
+                    DataUtils.ReadVarLong(buff, ref position),
+                    ReadTimestampTime(buff, ref position),
+                    ReadTimeZone(buff, ref position));
+
             case Uuid:
                 return ValueUuid.Get(
                     DataUtils.ReadFixedLong(buff, ref position),
                     DataUtils.ReadFixedLong(buff, ref position));
 
             case Array:
-                throw new TODOException("ValueDataType.read: ARRAY");
-
             case Row:
-                throw new TODOException("ValueDataType.read: ROW");
+                {
+                    int len = DataUtils.ReadVarInt(buff, ref position);
+                    Value[] list = new Value[len];
+                    for (int i = 0; i < len; i++)
+                    {
+                        list[i] = Read(buff, ref position);
+                    }
+
+                    return type == Array ? ValueArray.Get(list, provider) : ValueRow.Get(list);
+                }
 
             case Interval:
                 throw new TODOException("ValueDataType.read: INTERVAL");
@@ -837,6 +912,22 @@ public sealed class ValueDataType : BasicDataType<Value>
         long millis = DataUtils.ReadVarLong(buff, ref position);
         int nanos = DataUtils.ReadVarInt(buff, ref position);
         return millis * 1_000_000L + nanos;
+    }
+
+    private static int ReadTimeZone(Span<byte> buff, ref int position)
+    {
+        byte b = buff[position++];
+        if (b == sbyte.MaxValue)
+        {
+            return DataUtils.ReadVarInt(buff, ref position);
+        }
+
+        if (b == unchecked((byte)sbyte.MinValue))
+        {
+            return -DataUtils.ReadVarInt(buff, ref position);
+        }
+
+        return (sbyte)b * 900;
     }
 
     /// <inheritdoc/>

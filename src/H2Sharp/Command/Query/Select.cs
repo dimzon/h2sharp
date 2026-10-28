@@ -512,6 +512,20 @@ public sealed class Select : Query
             case ExpressionVisitor.GetColumns2:
                 break;
             case ExpressionVisitor.Deterministic:
+                if (forUpdate is not null)
+                {
+                    return false;
+                }
+
+                foreach (TableFilter filter in filters)
+                {
+                    if (!filter.GetTable().IsDeterministic())
+                    {
+                        return false;
+                    }
+                }
+
+                break;
             case ExpressionVisitor.SetMaxDataModificationId:
                 throw new TODOException("Select.isEverything: this visitor needs unported table metadata");
             case ExpressionVisitor.GetDependencies:

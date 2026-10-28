@@ -103,6 +103,11 @@ public sealed partial class Database : CastDataProvider
     private Result.RowFactory rowFactory = Result.RowFactory.GetDefaultRowFactory();
 
     /// <summary>
+    /// The temporary files this database created and still owns.
+    /// </summary>
+    private readonly TempFileDeleter tempFileDeleter = TempFileDeleter.GetInstance();
+
+    /// <summary>
     /// The schemas of this database, by name.
     /// </summary>
     /// <remarks>
@@ -928,6 +933,12 @@ public sealed partial class Database : CastDataProvider
     public MvStore.MVStore GetMvStore() => store.GetMvStore();
 
     /// <summary>
+    /// Gets the deleter for this database's temporary files.
+    /// </summary>
+    /// <returns>the deleter</returns>
+    public TempFileDeleter GetTempFileDeleter() => tempFileDeleter;
+
+    /// <summary>
     /// The page size of the store, from the PAGE_SIZE setting.
     /// </summary>
     private readonly int pageSize;
@@ -1397,6 +1408,7 @@ public sealed partial class Database : CastDataProvider
                     foreach (Schemas.Sequence sequence in schema.GetAllSequences()) sequence.Close();
                 systemSession.Commit(true);
             }
+            tempFileDeleter.DeleteAll();
             // Reference: store.close(allowedCompactionTime). Nothing in the port asks for
             // compaction on close, so the store is closed immediately.
             store.Close(0);

@@ -36,6 +36,7 @@ using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Message;
+using H2Sharp.MvStore.Db;
 using H2Sharp.Result;
 using H2Sharp.Tables;
 using H2Sharp.Util;
@@ -496,13 +497,21 @@ public class LocalResult : ResultInterface, ResultTarget
     /// Moves the rows into the temporary store.
     /// </summary>
     /// <remarks>
-    /// The store itself is not ported: it is an MVStore over a temporary file, and writing a
-    /// result to disk needs that file's lifecycle (where it lives, when it is deleted, what
-    /// happens when the database dies first). A port that wrote results to a file of its own
-    /// choosing would leave files behind on every crash, which is worse than refusing.
+    /// Ported from org.h2.result.LocalResult.createExternalResult. The temporary store owns
+    /// its file and registers it with the database's TempFileDeleter, so an unclosed result
+    /// still leaves no file behind.
     /// </remarks>
     private void CreateExternalResult()
-        => throw new TODOException("LocalResult.createExternalResult: MVTempResult is not ported");
+    {
+        external = MVTempResult.Of(
+            RequireSession().GetDatabase(),
+            expressions,
+            distinct,
+            distinctIndexes,
+            visibleColumnCount,
+            resultColumnCount,
+            sort);
+    }
 
     /// <summary>
     /// Add a row for a table.

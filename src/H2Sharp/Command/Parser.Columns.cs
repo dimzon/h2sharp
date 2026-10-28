@@ -600,7 +600,7 @@ public sealed partial class Parser
                 ReadReferences(tableName, out string? refSchema, out string refTable, out List<string>? refColumns,
                     out string? refIndexSchema, out string? refIndexName,
                     out Constraints.ConstraintActionType updateAction, out Constraints.ConstraintActionType deleteAction);
-                TableConstraintDefinition definition = new(constraintName, false, [column.GetName()], false,
+                TableConstraintDefinition definition = new(constraintName, false, [new IndexColumn(column.GetName())], false,
                     CommandInterface.AlterTableAddConstraintReferential, RefTableSchema: refSchema, RefTable: refTable,
                     RefColumns: refColumns, UpdateAction: updateAction, DeleteAction: deleteAction,
                     RefIndexSchema: refIndexSchema, RefIndexName: refIndexName);
@@ -609,7 +609,7 @@ public sealed partial class Parser
             else if (IsWord("UNIQUE"))
             {
                 NullsDistinct nullsDistinct = ReadNullsDistinct(NullsDistinct.Distinct);
-                TableConstraintDefinition definition = new(constraintName, false, [column.GetName()], false,
+                TableConstraintDefinition definition = new(constraintName, false, [new IndexColumn(column.GetName())], false,
                     CommandInterface.AlterTableAddConstraintUnique, NullsDistinct: nullsDistinct);
                 command.AddConstraintCommand(CreateAddConstraintCommand(session!, schema, tableName, false, definition));
             }

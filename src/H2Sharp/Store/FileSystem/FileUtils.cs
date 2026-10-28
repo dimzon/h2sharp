@@ -117,6 +117,20 @@ public static class FileUtils
     public static string TempDirectory => Path.GetTempPath();
 
     /// <summary>
+    /// Creates a temporary file and returns its name.
+    /// </summary>
+    /// <remarks>
+    /// Ported from org.h2.store.fs.FileUtils.createTempFile: the path decides where the
+    /// file goes, and the prefix is that path's last element.
+    /// </remarks>
+    /// <param name="prefix">the prefix</param>
+    /// <param name="suffix">the suffix</param>
+    /// <param name="inTempDir">whether the file should be stored in the temporary directory</param>
+    /// <returns>the name of the created file</returns>
+    public static string CreateTempFile(string prefix, string suffix, bool inTempDir)
+        => FilePath.Get(prefix).CreateTempFile(suffix, inTempDir).ToString();
+
+    /// <summary>
     /// Open a file for random access.
     /// </summary>
     /// <param name="fileName">the file</param>

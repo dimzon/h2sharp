@@ -101,7 +101,7 @@ public sealed record ColumnDefinition(
 /// <summary>One table-level constraint of a CREATE TABLE.</summary>
 /// <param name="Name">the name written after CONSTRAINT, or null</param>
 /// <param name="IfNotExists">whether IF NOT EXISTS was written</param>
-/// <param name="Columns">the covered columns, by name</param>
+/// <param name="Columns">the covered index columns, with their ordering</param>
 /// <param name="Hash">whether HASH was written</param>
 /// <param name="Type">the kind of constraint, one of the ALTER TABLE ADD CONSTRAINT types</param>
 /// <param name="Comment">the comment written after the name, or null</param>
@@ -116,7 +116,7 @@ public sealed record ColumnDefinition(
 public sealed record TableConstraintDefinition(
     string? Name,
     bool IfNotExists,
-    List<string> Columns,
+    List<IndexColumn> Columns,
     bool Hash,
     int Type = CommandInterface.AlterTableAddConstraintPrimaryKey,
     string? Comment = null,
@@ -5466,6 +5466,12 @@ public sealed partial class Parser
                 bool not = ReadIf(ParserUtil.Not);
                 Expect(ParserUtil.In, "IN");
                 Expect(Token.OpenParen, "(");
+                if (session!.GetMode().AllowEmptyInPredicate && ReadIf(Token.CloseParen))
+                {
+                    left = not ? Expressions.ValueExpression.True : Expressions.ValueExpression.False;
+                    continue;
+                }
+
                 if (IsDerivedQuery())
                 {
                     Query.Query query = ParseQueryExpression(prepare: false);
@@ -7629,7 +7635,7 @@ public sealed partial class Parser
                 // the table when it runs.
                 create.AddConstraintCommand(CreateAddConstraintCommand(session, schema, statement.Name,
                     false, new TableConstraintDefinition(column.ConstraintName, false,
-                        [tableColumn.GetName()], column.PrimaryKeyHash)));
+                        [new IndexColumn(tableColumn.GetName())], column.PrimaryKeyHash)));
             }
 
             if (column.RefTable is not null)
@@ -7638,7 +7644,7 @@ public sealed partial class Parser
                 // reference's readColumnConstraints.
                 create.AddConstraintCommand(CreateAddConstraintCommand(session, schema, statement.Name,
                     false, new TableConstraintDefinition(column.ConstraintName, false,
-                        [tableColumn.GetName()], Hash: false,
+                        [new IndexColumn(tableColumn.GetName())], Hash: false,
                         CommandInterface.AlterTableAddConstraintReferential, Comment: null,
                         column.RefTableSchema, column.RefTable, column.RefColumns,
                         column.RefUpdateAction, column.RefDeleteAction, CheckExisting: true)));
@@ -7982,23 +7988,11 @@ public sealed partial class Parser
             }
 
             key.SetPrimaryKeyHash(constraint.Hash);
-            List<Tables.IndexColumn> keyColumns = [];
-            foreach (string columnName in constraint.Columns)
-            {
-                keyColumns.Add(new Tables.IndexColumn(columnName));
-            }
-
-            key.SetIndexColumns([.. keyColumns]);
+            key.SetIndexColumns([.. constraint.Columns]);
             return key;
         }
 
-        List<Tables.IndexColumn> refColumns = [];
-        foreach (string columnName in constraint.Columns)
-        {
-            refColumns.Add(new Tables.IndexColumn(columnName));
-        }
-
-        key.SetIndexColumns([.. refColumns]);
+        key.SetIndexColumns([.. constraint.Columns]);
         Schemas.Schema refSchema = constraint.RefTableSchema is null
             ? CurrentSchema(session)
             : session.GetDatabase().GetSchema(constraint.RefTableSchema);
@@ -8891,10 +8885,10 @@ public sealed partial class Parser
             Read();
             ExpectWord("KEY");
             Expect(Token.OpenParen, "(");
-            List<string> columns = [];
+            List<IndexColumn> columns = [];
             do
             {
-                columns.Add(ReadIdentifier());
+                columns.Add(new IndexColumn(ReadIdentifier(), ReadSortType()));
             }
             while (ReadIf(Token.Comma));
 
@@ -8935,10 +8929,10 @@ public sealed partial class Parser
             }
 
             Expect(Token.OpenParen, "(");
-            List<string> uniqueColumns = [];
+            List<IndexColumn> uniqueColumns = [];
             do
             {
-                uniqueColumns.Add(ReadIdentifier());
+                uniqueColumns.Add(new IndexColumn(ReadIdentifier(), ReadSortType()));
             }
             while (ReadIf(Token.Comma));
 
@@ -8988,10 +8982,10 @@ public sealed partial class Parser
         Expect(ParserUtil.Key, "KEY");
         bool hash = IsWord("HASH");
         Expect(Token.OpenParen, "(");
-        List<string> keyColumns = [];
+        List<IndexColumn> keyColumns = [];
         do
         {
-            keyColumns.Add(ReadIdentifier());
+            keyColumns.Add(new IndexColumn(ReadIdentifier(), ReadSortType()));
         }
         while (ReadIf(Token.Comma));
 

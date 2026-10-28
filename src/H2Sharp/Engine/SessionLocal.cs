@@ -333,6 +333,7 @@ public sealed class SessionLocal : Session
     public void Commit(bool ddl)
     {
         MvStore.Tx.Transaction? transaction = Transaction;
+        bool hasChanges = transaction?.HasChanges() == true;
         if (transaction is not null)
         {
             try
@@ -343,6 +344,14 @@ public sealed class SessionLocal : Session
             {
                 Transaction = null;
             }
+        }
+
+        if (hasChanges)
+        {
+            // Readers in other sessions cache results by the database-wide id. A commit is
+            // the moment their view changes, even though the data change itself happened
+            // earlier in this transaction.
+            GetDatabase().GetNextModificationDataId();
         }
 
         if (!ddl)

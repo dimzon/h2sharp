@@ -90,6 +90,18 @@ public abstract class Query : Prepared
     /// <summary>Whether preparation has completed.</summary>
     protected bool isPrepared;
 
+    private ResultInterface? lastResult;
+
+    private Value?[]? lastParameters;
+
+    private int[]? lastInPredicateSortTypes;
+
+    private long lastEvaluated;
+
+    private long lastLimit;
+
+    private bool? noCache;
+
     /// <summary>Requires a materialized result. This port currently materializes all queries.</summary>
     public void SetNeverLazy(bool value) => neverLazy = value;
 
@@ -284,12 +296,118 @@ public abstract class Query : Prepared
     /// Named Run rather than the reference's query, because C# forbids a member with the same
     /// name as its enclosing type and this class is called Query. The overload with a target is
     /// the reference's <c>query(limit, target)</c>: rows go to the target and null is returned.
-    /// Result caching and SELECT triggers are not ported yet, so this always takes the
-    /// no-cache path.
+    /// The result cache follows the reference's query(limit, target), with the database-wide
+    /// modification id standing in for the unported per-table modification ids; a data change
+    /// therefore invalidates more results than on the JVM, never fewer.
     /// </remarks>
     /// <param name="limit">the limit</param>
     /// <returns>the rows</returns>
-    public sealed override ResultInterface Run(long limit) => Run(limit, null)!;
+    public sealed override ResultInterface Run(long limit)
+    {
+        Database database = GetSession().GetDatabase();
+        if (!database.IsOptimizeReuseResults() || GetNoCache()
+            || (GetSession().IsLazyQueryExecution() && !neverLazy))
+        {
+            return Run(limit, null)!;
+        }
+
+        Value?[] parameters = GetParameterValues();
+        long now = database.GetModificationDataId();
+        if (lastResult is not null && !lastResult.IsClosed()
+            && now == lastEvaluated
+            && limit == lastLimit
+            && SameParameters(parameters, lastParameters)
+            && SameSortTypes(inPredicateSortTypes, lastInPredicateSortTypes))
+        {
+            ResultInterface? copy = lastResult.CreateShallowCopy(GetSession());
+            if (copy is not null)
+            {
+                copy.Reset();
+                return copy;
+            }
+        }
+
+        CloseLastResult();
+        ResultInterface result = Run(limit, null)!;
+        lastParameters = parameters;
+        lastResult = result;
+        lastInPredicateSortTypes = inPredicateSortTypes;
+        lastEvaluated = now;
+        lastLimit = limit;
+        return result;
+    }
+
+    private bool GetNoCache()
+    {
+        // Non-deterministic expressions (CURRENT_TIMESTAMP, RAND, ...) and expressions that
+        // depend on an outer row or an unset parameter must not be reused.
+        return noCache ??= !IsEverything(ExpressionVisitor.DeterministicVisitor)
+            || !IsEverything(ExpressionVisitor.IndependentVisitor);
+    }
+
+    private Value?[] GetParameterValues()
+    {
+        List<Parameter>? list = GetParameters();
+        if (list is null)
+        {
+            return [];
+        }
+
+        Value?[] parameters = new Value?[list.Count];
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            parameters[i] = list[i].GetParamValue();
+        }
+
+        return parameters;
+    }
+
+    private static bool SameParameters(Value?[] parameters, Value?[]? lastParameters)
+    {
+        if (lastParameters is null || lastParameters.Length != parameters.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            if (!Equals(lastParameters[i], parameters[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool SameSortTypes(int[]? a, int[]? b)
+    {
+        if (ReferenceEquals(a, b))
+        {
+            return true;
+        }
+
+        if (a is null || b is null || a.Length != b.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (a[i] != b[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void CloseLastResult()
+    {
+        lastResult?.Close();
+        lastResult = null;
+    }
 
     /// <summary>Runs the query, writing rows to the target when one is given.</summary>
     /// <param name="limit">the limit</param>

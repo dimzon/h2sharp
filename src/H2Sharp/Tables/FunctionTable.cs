@@ -45,7 +45,7 @@ public class FunctionTable : VirtualConstructedTable
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags) => function.GetSql(builder, sqlFlags);
     /// <summary>Whether this table's function is deterministic.</summary>
-    public bool IsDeterministic() => function.IsDeterministic();
+    public override bool IsDeterministic() => function.IsDeterministic();
     /// <inheritdoc/>
     public override Column[] GetColumns() => columns;
     /// <inheritdoc/>

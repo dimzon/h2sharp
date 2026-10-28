@@ -58,6 +58,22 @@ MySQL `INSERT ... ON DUPLICATE KEY UPDATE/IGNORE` не копирует этал
 Это single-resource/volatile срез: DTC, durable 2PC и multi-resource recovery не
 поддерживаются. Покрыто `H2TransactionScopeTests`.
 
+Разлив результата на диск начат: `MVTempResult` и `MVPlainTempResult` пишут
+несортированные результаты в отдельный временный MVStore, файл регистрируется в
+`Database.GetTempFileDeleter()` и удаляется вместе с результатом. `MVSortedTempResult`
+(DISTINCT/ORDER BY) пока `TODOException` с явным именем. `ValueDataType` теперь хранит
+`TIME/TIMESTAMP WITH TIME ZONE`, `ARRAY` и `ROW`, а `CompareValues` учитывает полную
+маску сортировки (`DESC` вместе с `NULLS FIRST/LAST`), поэтому MIN/MAX по индексу с
+`DESC NULLS LAST` больше не перепутан.
+
+`Query.Run` использует result cache эталона: повторный запрос с теми же параметрами и
+лимитом отдаёт shallow copy, пока не изменился database-wide modification id. DML,
+DDL и commit транзакции с изменениями инвалидируют кэш; недетерминированные
+(`CURRENT_TIMESTAMP`, `RAND`) и коррелированные запросы не кэшируются. Это
+консервативнее эталонных per-table id (лишние промахи, не устаревшие строки).
+`TestOptimizations` зелёный, включая min/max, покрывающий индекс, IN, query-cache
+speed и timestamp-no-cache.
+
 `MODE` фиксируется при открытии (D-029). `SET MODE` с тем же режимом — no-op,
 с другим — 50100. Второй connection к тому же storage с другим режимом получает
 90020; после закрытия последнего storage можно открыть с другим режимом.
@@ -162,10 +178,12 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 `SCRIPT CIPHER`, `HELP` и `RUNSCRIPT` вынесены из зелёного набора решениями
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
-Проверено: core **1468/1468**, Data **577/577**, conformance полный **880/952**,
-зелёный **878/905** (было 805/803), native **50/104** (после typed connection
-string, parameter scopes, отложенного остатка multi-statement, ON DUPLICATE KEY
-и JDBC getter-семантики).
+Проверено: core **1468/1468**, Data **577/577**, MvStore **87/87**, conformance полный **880/952**,
+зелёный **878/905** (было 805/803), native **50/104** (`TestOptimizations` теперь
+зелёный; остальные падения — MVSortedTempResult, DbSettings, trace/listener,
+users/rights, linked/alias/trigger, collation и оставшиеся оптимизации).
+Ранее закрыты typed connection string, parameter scopes, отложенный остаток
+multi-statement, ON DUPLICATE KEY и JDBC getter-семантика.
 Провайдеры на текущем бинарнике: linq2db
 **76/76** и ModelTests **180/180** на net8/net10; EF Core unit **129/129**, functional
 **5742/5762** на каждом net9/net10, 6 падений — `_LOCAL_AND_GLOBAL_` в
@@ -4178,10 +4196,10 @@ LIMIT; реестр таблиц — не мой словарик, а `Schema`/`
   Строка не должна содержать null: NULL здесь значение, а не его отсутствие, и строка с
   настоящим null сломала бы собственное сравнение и свой хеш.
 
-Что осталось заглушкой и почему: `MVTempResult` (разлив результата на диск) — нужна жизнь
-временного файла, а порт, писавший результаты в свой собственный файл, оставлял бы мусор при
-cada crash; `ValueLob.CopyToResult` — лобы не портированы; `LocalResult.ForTable` — нужен
-`TableFilter`, а столбец у нас привязывается через резолвер.
+Что осталось заглушкой и почему: `MVSortedTempResult` (разлив DISTINCT/ORDER BY-результата)
+— нужен отдельный отсортированный MVStore-ключ, сейчас `TODOException`; `ValueLob.CopyToResult`
+— лобы не портированы; `LocalResult.ForTable` — нужен `TableFilter`, а столбец у нас
+привязывается через резолвер.
 
 **А дефект был в тест-харнессе, и он выглядел как «тест висит».** `JavaOracle.RunOnce` читал
 stdout, потом stderr, последовательно. javac с большим числом ошибок пишет их в stderr, а

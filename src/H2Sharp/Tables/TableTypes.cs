@@ -1585,6 +1585,12 @@ public abstract class Table
     public bool GetCheckForeignKeyConstraints() => checkForeignKeyConstraints;
 
     /// <summary>
+    /// Whether the rows of this table are deterministic for the same database state.
+    /// </summary>
+    /// <returns>true when they are</returns>
+    public virtual bool IsDeterministic() => true;
+
+    /// <summary>
     /// Gets the table type.
     /// </summary>
     public abstract int GetTableType();

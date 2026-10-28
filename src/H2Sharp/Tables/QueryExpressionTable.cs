@@ -172,6 +172,10 @@ public abstract class QueryExpressionTable : Table
     public override int GetTableType() => TABLE;
 
     /// <inheritdoc/>
+    public override bool IsDeterministic()
+        => viewQuery.IsEverything(ExpressionVisitor.DeterministicVisitor);
+
+    /// <inheritdoc/>
     public override int GetColumnCount() => columns.Length;
 
     /// <inheritdoc/>

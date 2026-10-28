@@ -1016,9 +1016,8 @@ public sealed class TestOptimizations : TestDb
                     {
                         for (int j = random.Next(i), k = 0; k < 10; k++, j++)
                         {
-                            if (map.ContainsKey(j))
+                            if (map.Remove(j, out int? x))
                             {
-                                int? x = map.Remove(j) ? map.GetValueOrDefault(j) : null;
                                 if (x is not null)
                                 {
                                     set.Remove(x.Value);
