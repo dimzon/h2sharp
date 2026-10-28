@@ -26,6 +26,7 @@
  * condition, and the many column types beyond what the statements below need.
  */
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
@@ -54,11 +55,13 @@ public sealed class MVTable : Table
 
     private readonly object tableLock = new();
 
-    private readonly HashSet<SessionLocal> lockSharedSessions = [];
+    // The reference uses a ConcurrentHashMap as a set, because this is read
+    // outside the table lock while another session may add or remove itself.
+    private readonly ConcurrentDictionary<SessionLocal, byte> lockSharedSessions = [];
 
     private readonly LinkedList<SessionLocal> waitingSessions = [];
 
-    private SessionLocal? lockExclusiveSession;
+    private volatile SessionLocal? lockExclusiveSession;
 
     /// <summary>
     /// Every index of this table, the primary first.
@@ -286,14 +289,14 @@ public sealed class MVTable : Table
             return true;
         }
 
-        if (lockType != Table.ExclusiveLock && lockSharedSessions.Contains(session))
+        if (lockType != Table.ExclusiveLock && lockSharedSessions.ContainsKey(session))
         {
             return true;
         }
 
         lock (tableLock)
         {
-            if (lockType != Table.ExclusiveLock && lockSharedSessions.Contains(session))
+            if (lockType != Table.ExclusiveLock && lockSharedSessions.ContainsKey(session))
             {
                 return true;
             }
@@ -336,7 +339,7 @@ public sealed class MVTable : Table
             {
                 session.RegisterTableAsLocked(this);
             }
-            else if (size == 1 && lockSharedSessions.Contains(session))
+            else if (size == 1 && lockSharedSessions.ContainsKey(session))
             {
                 session.RegisterTableAsLocked(this);
             }
@@ -347,7 +350,7 @@ public sealed class MVTable : Table
 
             lockExclusiveSession = session;
         }
-        else if (lockSharedSessions.Add(session))
+        else if (lockSharedSessions.TryAdd(session, 0))
         {
             session.RegisterTableAsLocked(this);
         }
@@ -362,12 +365,12 @@ public sealed class MVTable : Table
         {
             if (ReferenceEquals(lockExclusiveSession, session))
             {
-                _ = lockSharedSessions.Remove(session);
+                _ = lockSharedSessions.TryRemove(session, out _);
                 lockExclusiveSession = null;
             }
             else
             {
-                _ = lockSharedSessions.Remove(session);
+                _ = lockSharedSessions.TryRemove(session, out _);
             }
 
             Monitor.PulseAll(tableLock);
