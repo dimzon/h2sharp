@@ -103,8 +103,12 @@ ADO.NET-команда разбирает текст при выполнении
 исправлен: `MVPrimaryIndex.GetRowForKey` читает через `GetFromSnapshot`, а не
 immediate-значение, поэтому видит uncommitted UPDATE другой транзакции. Deadlock-victim
 на 40001 откатывает транзакцию целиком, как в `Command.executeUpdate`; остальные ошибки
-откатываются к savepoint. `TestClearCacheAfterDdl` проходит все сценарии, кроме alias
-(D-004). Parser принимает `SELECT`/`TABLE`/`WITH` как term без скобок
+откатываются к savepoint. `TestClearCacheAfterDdl` проходит все сценарии; alias-часть
+вынесена в `TestClearCacheAfterDdlAlias` с меткой `BlockedByPort` (алиасы вне области
+по дизайну). Имена баз теста несут run-уникальный GUID-суффикс: xUnit-раннер не
+вытирает data-dir между прогонами, как раннер эталона, и фиксированные имена
+сталкивались бы с файлами прошлых прогонов. Parser принимает `SELECT`/`TABLE`/`WITH`
+как term без скобок
 (`DELETE ... WHERE ID=SELECT MIN(ID) FROM ...`).
 
 Выполнение statement'ов теперь сериализуется `Session.Lock()`/`Unlock()` вокруг

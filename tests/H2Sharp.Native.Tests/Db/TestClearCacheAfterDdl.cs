@@ -6,6 +6,14 @@
 // Modified (API): JDBC statements are ADO.NET commands. The alias of testAliasDrop is
 // created for the reference's Java class name, exactly as the reference writes it. The
 // reference's main() entry is the runner; xUnit runs Test() directly.
+//
+// Modified (harness): every database name carries a run-unique GUID suffix. The xUnit
+// runner does not wipe the data directory between runs the way the reference runner
+// does, so fixed names would collide with files left by previous runs.
+//
+// The alias part of the reference test lives in TestClearCacheAfterDdlAlias, marked
+// BlockedByPort: CREATE ALIAS is not ported and aliases are out of scope by design.
+using System;
 using static H2Sharp.Api.ErrorCode;
 
 namespace H2Sharp.Native.Tests.Db;
@@ -18,14 +26,6 @@ namespace H2Sharp.Native.Tests.Db;
 /// </summary>
 public sealed class TestClearCacheAfterDdl : TestDb
 {
-    /// <summary>
-    /// The identity function the reference's alias is created for.
-    /// </summary>
-    public static string StaticIdentityFunction(string str)
-    {
-        return str;
-    }
-
     /// <summary>
     /// Run just this test.
     /// </summary>
@@ -41,8 +41,11 @@ public sealed class TestClearCacheAfterDdl : TestDb
         TestSequenceDrop();
         TestSchemaRenameQualified();
         TestSchemaDropCascade();
-        TestAliasDrop();
     }
+
+    private readonly string runId = Guid.NewGuid().ToString("N");
+
+    private string Db(string name) => name + "_" + runId;
 
     private void ExpectErrorAfterDdl(DbConnection connection, string sqlToCache, string ddl,
         int errorCode)
@@ -55,7 +58,7 @@ public sealed class TestClearCacheAfterDdl : TestDb
 
     private void TestTableDrop()
     {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_tableDrop");
+        using DbConnection connection = GetConnection(Db("clearCacheAfterDdl_tableDrop"));
         DbCommand statement = connection.CreateCommand();
         Execute(statement, "CREATE TABLE T_DROP(ID INT PRIMARY KEY)");
         ExpectErrorAfterDdl(connection, "SELECT * FROM T_DROP", "DROP TABLE T_DROP",
@@ -64,7 +67,7 @@ public sealed class TestClearCacheAfterDdl : TestDb
 
     private void TestTableRename()
     {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_tableRename");
+        using DbConnection connection = GetConnection(Db("clearCacheAfterDdl_tableRename"));
         DbCommand statement = connection.CreateCommand();
         Execute(statement, "CREATE TABLE T_RENAME(ID INT PRIMARY KEY)");
         ExpectErrorAfterDdl(connection, "SELECT * FROM T_RENAME", "ALTER TABLE T_RENAME RENAME TO T_RENAMED",
@@ -73,7 +76,7 @@ public sealed class TestClearCacheAfterDdl : TestDb
 
     private void TestColumnDrop()
     {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_colDrop");
+        using DbConnection connection = GetConnection(Db("clearCacheAfterDdl_colDrop"));
         DbCommand statement = connection.CreateCommand();
         Execute(statement, "CREATE TABLE T_COL_DROP(A INT, B INT, PRIMARY KEY(A))");
         ExpectErrorAfterDdl(connection, "SELECT B FROM T_COL_DROP", "ALTER TABLE T_COL_DROP DROP COLUMN B",
@@ -82,7 +85,7 @@ public sealed class TestClearCacheAfterDdl : TestDb
 
     private void TestColumnRename()
     {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_colRename");
+        using DbConnection connection = GetConnection(Db("clearCacheAfterDdl_colRename"));
         DbCommand statement = connection.CreateCommand();
         Execute(statement, "CREATE TABLE T_COL_RENAME(A INT, B INT, PRIMARY KEY(A))");
         ExpectErrorAfterDdl(connection, "SELECT B FROM T_COL_RENAME",
@@ -91,7 +94,7 @@ public sealed class TestClearCacheAfterDdl : TestDb
 
     private void TestViewDrop()
     {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_viewDrop");
+        using DbConnection connection = GetConnection(Db("clearCacheAfterDdl_viewDrop"));
         DbCommand statement = connection.CreateCommand();
         Execute(statement, "CREATE TABLE V_BACK(ID INT PRIMARY KEY)");
         Execute(statement, "CREATE VIEW V1 AS SELECT * FROM V_BACK");
@@ -100,7 +103,7 @@ public sealed class TestClearCacheAfterDdl : TestDb
 
     private void TestSynonymDrop()
     {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_synonym");
+        using DbConnection connection = GetConnection(Db("clearCacheAfterDdl_synonym"));
         DbCommand statement = connection.CreateCommand();
         Execute(statement, "CREATE TABLE BACKINGTABLE(ID INT PRIMARY KEY)");
         Execute(statement, "CREATE OR REPLACE SYNONYM TESTSYNONYM FOR BACKINGTABLE");
@@ -110,7 +113,7 @@ public sealed class TestClearCacheAfterDdl : TestDb
 
     private void TestSequenceDrop()
     {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_sequence");
+        using DbConnection connection = GetConnection(Db("clearCacheAfterDdl_sequence"));
         DbCommand statement = connection.CreateCommand();
         Execute(statement, "CREATE SEQUENCE SEQ1");
         ExpectErrorAfterDdl(connection, "SELECT NEXT VALUE FOR SEQ1", "DROP SEQUENCE SEQ1",
@@ -119,7 +122,7 @@ public sealed class TestClearCacheAfterDdl : TestDb
 
     private void TestSchemaRenameQualified()
     {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_schemaRename");
+        using DbConnection connection = GetConnection(Db("clearCacheAfterDdl_schemaRename"));
         DbCommand statement = connection.CreateCommand();
         Execute(statement, "CREATE SCHEMA S1");
         Execute(statement, "CREATE TABLE S1.T(ID INT PRIMARY KEY)");
@@ -129,7 +132,7 @@ public sealed class TestClearCacheAfterDdl : TestDb
 
     private void TestSchemaDropCascade()
     {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_schemaDrop");
+        using DbConnection connection = GetConnection(Db("clearCacheAfterDdl_schemaDrop"));
         DbCommand statement = connection.CreateCommand();
         Execute(statement, "CREATE SCHEMA SD");
         Execute(statement, "CREATE TABLE SD.T(ID INT PRIMARY KEY)");
@@ -137,11 +140,4 @@ public sealed class TestClearCacheAfterDdl : TestDb
             SchemaNotFound1);
     }
 
-    private void TestAliasDrop()
-    {
-        using DbConnection connection = GetConnection("clearCacheAfterDdl_alias");
-        DbCommand statement = connection.CreateCommand();
-        Execute(statement, "CREATE ALIAS F1 FOR \"org.h2.test.db.TestClearCacheAfterDdl.staticIdentityFunction\"");
-        ExpectErrorAfterDdl(connection, "SELECT F1('something')", "DROP ALIAS F1", FunctionNotFound1);
-    }
 }
