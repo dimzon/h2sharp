@@ -148,6 +148,12 @@ public sealed class Mode
     public bool AllowEmptyInPredicate { get; }
 
     /// <summary>
+    /// Whether an empty schema name between dots is read as the current schema, as in SQL
+    /// Server's catalog.schema.table and catalog..table forms.
+    /// </summary>
+    public bool AllowEmptySchemaValuesAsDefaultSchema { get; }
+
+    /// <summary>
     /// Whether a CHAR value is padded out to its declared length, which decides whether a
     /// conversion to CHAR restores the padding or trims it.
     /// </summary>
@@ -298,6 +304,7 @@ public sealed class Mode
         bool autoIncrementClause = false,
         bool identityClause = false,
         bool allowEmptyInPredicate = false,
+        bool allowEmptySchemaValuesAsDefaultSchema = false,
         IReadOnlySet<string>? disallowedTypes = null)
     {
         Enum = modeEnum;
@@ -328,6 +335,7 @@ public sealed class Mode
         AutoIncrementClause = autoIncrementClause;
         IdentityClause = identityClause;
         AllowEmptyInPredicate = allowEmptyInPredicate;
+        AllowEmptySchemaValuesAsDefaultSchema = allowEmptySchemaValuesAsDefaultSchema;
         DisallowedTypes = disallowedTypes ?? FrozenSet<string>.Empty;
     }
 
@@ -384,7 +392,7 @@ public sealed class Mode
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
                 greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true,
                 allowPlusForStringConcat: true, topInSelect: true, topInDml: true,
-                identityClause: true),
+                identityClause: true, allowEmptySchemaValuesAsDefaultSchema: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,

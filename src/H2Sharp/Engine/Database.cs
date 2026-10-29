@@ -459,6 +459,7 @@ public sealed partial class Database : CastDataProvider
         mode = connectionInfo.Mode;
 
         ConnectionOptions options = connectionInfo.Options;
+        SetIgnoreCatalogs(options.IgnoreCatalogs);
         caseInsensitiveIdentifiers = options.CaseInsensitiveIdentifiers;
         identifierComparer = caseInsensitiveIdentifiers
             ? CaseInsensitiveIdentifierComparer.Instance

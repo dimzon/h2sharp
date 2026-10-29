@@ -2706,37 +2706,55 @@ public sealed partial class Parser
     /// <param name="schemaName">the name of the schema, or null</param>
     /// <returns>the name</returns>
     private string ReadIdentifierWithSchemaName(out string? schemaName)
-    {
-        string name = ReadIdentifier();
-        schemaName = null;
-        if (ReadIf(Token.Dot))
-        {
-            schemaName = name;
-            name = ReadIdentifier();
-        }
-
-        return name;
-    }
+        => ReadIdentifierWithSchemaName(session, out schemaName);
 
     private string ReadIdentifierWithSchemaName(SessionLocal? session, out string? schemaName)
     {
         string name = ReadIdentifier();
         schemaName = null;
-        if (ReadIf(Token.Dot))
+        if (!ReadIf(Token.Dot))
         {
-            string first = name;
-            name = ReadIdentifier();
-            if (CurrentType == Token.Dot && session is not null
-                && first.Equals(session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
+            return name;
+        }
+
+        string first = name;
+        if (session is not null)
+        {
+            Database database = session.GetDatabase();
+            if (database.GetMode().AllowEmptySchemaValuesAsDefaultSchema && ReadIf(Token.Dot))
             {
-                Read();
-                schemaName = name;
-                name = ReadIdentifier();
+                if (first.Equals(database.GetShortName(), StringComparison.OrdinalIgnoreCase)
+                    || database.IsIgnoreCatalogs())
+                {
+                    name = ReadIdentifier();
+                }
             }
             else
             {
-                schemaName = first;
+                if (CurrentType == Token.Dot)
+                {
+                    throw DbException.GetSyntaxError(sql, Current.Start, "identifier");
+                }
+
+                name = ReadIdentifier();
+                if (CurrentType == Token.Dot
+                    && (first.Equals(database.GetShortName(), StringComparison.OrdinalIgnoreCase)
+                        || database.IsIgnoreCatalogs()))
+                {
+                    Read();
+                    schemaName = name;
+                    name = ReadIdentifier();
+                }
+                else
+                {
+                    schemaName = first;
+                }
             }
+        }
+        else
+        {
+            name = ReadIdentifier();
+            schemaName = first;
         }
 
         return name;
@@ -2757,24 +2775,60 @@ public sealed partial class Parser
     {
         string name = ReadIdentifier();
         schema = CurrentSchema(session);
-        if (ReadIf(Token.Dot))
+        if (!ReadIf(Token.Dot))
         {
-            string first = name;
-            name = ReadIdentifier();
-            if (CurrentType == Token.Dot
-                && first.Equals(session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
+            return name;
+        }
+
+        Database database = session.GetDatabase();
+        string first = name;
+            if (database.GetMode().AllowEmptySchemaValuesAsDefaultSchema && ReadIf(Token.Dot))
             {
-                Read();
-                schema = session.GetDatabase().GetSchema(name);
-                name = ReadIdentifier();
+                // catalog..table: the empty schema is the current schema.
+                if (first.Equals(database.GetShortName(), StringComparison.OrdinalIgnoreCase)
+                    || database.IsIgnoreCatalogs())
+                {
+                    schema = CurrentSchema(session);
+                    name = ReadIdentifier();
+                }
+                else
+                {
+                    schema = database.GetSchema(first);
+                }
             }
             else
             {
-                schema = session.GetDatabase().GetSchema(first);
+                if (CurrentType == Token.Dot)
+                {
+                    throw DbException.GetSyntaxError(sql, Current.Start, "identifier");
+                }
+
+                name = ReadIdentifier();
+                if (CurrentType == Token.Dot
+                    && (first.Equals(database.GetShortName(), StringComparison.OrdinalIgnoreCase)
+                        || database.IsIgnoreCatalogs()))
+                {
+                    Read();
+                    schema = database.GetSchema(name);
+                    name = ReadIdentifier();
+                }
+                else
+                {
+                    schema = database.GetSchema(first);
+                }
             }
-        }
 
         return name;
+    }
+
+    private void CheckDatabaseName(SessionLocal session, string databaseName)
+    {
+        if (!session.GetDatabase().IsIgnoreCatalogs()
+            && !databaseName.Equals(
+                session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
+        {
+            throw DbException.Get(Api.ErrorCode.DatabaseNotFound1, databaseName);
+        }
     }
 
     /// <summary>
@@ -3106,27 +3160,48 @@ public sealed partial class Parser
         Ddl.SetComment command = new(session);
         if (column)
         {
+            if (CurrentType == Token.Dot)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start, "identifier");
+            }
+
             string objectName = ReadIdentifier();
             string? tmpSchemaName = null;
             Expect(Token.Dot, ".");
-            string columnName = ReadIdentifier();
+            bool allowEmpty = session.GetDatabase().GetMode().AllowEmptySchemaValuesAsDefaultSchema;
+            string? ReadColumnAfterDot()
+            {
+                if (CurrentType == Token.Dot)
+                {
+                    if (!allowEmpty)
+                    {
+                        throw DbException.GetSyntaxError(sql, Current.Start, "identifier");
+                    }
+
+                    return null;
+                }
+
+                return ReadIdentifier();
+            }
+
+            string? columnName = ReadColumnAfterDot();
             if (ReadIf(Token.Dot))
             {
                 tmpSchemaName = objectName;
-                objectName = columnName;
-                columnName = ReadIdentifier();
+                objectName = columnName!;
+                columnName = ReadColumnAfterDot();
                 if (ReadIf(Token.Dot))
                 {
-                    if (!tmpSchemaName.Equals(
-                        session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
-                    {
-                        throw DbException.Get(Api.ErrorCode.DatabaseNotFound1, tmpSchemaName);
-                    }
-
+                    CheckDatabaseName(session, tmpSchemaName);
                     tmpSchemaName = objectName;
-                    objectName = columnName;
+                    objectName = columnName!;
                     columnName = ReadIdentifier();
                 }
+            }
+
+            if (columnName is null || objectName is null)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start, "table.column");
             }
 
             command.SetSchemaName(tmpSchemaName ?? session.GetCurrentSchema().GetName());

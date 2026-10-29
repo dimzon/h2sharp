@@ -28,7 +28,7 @@ public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
         "Data Source", "DataSource", "Storage", "Mode",
         "ACCESS_MODE_DATA", "AUTO_SERVER", "CASE_INSENSITIVE_IDENTIFIERS", "CIPHER",
         "DATABASE_TO_LOWER", "DATABASE_TO_UPPER", "FILE_LOCK",
-        "FORBID_CREATION", "IFEXISTS", "IGNORE_UNKNOWN_SETTINGS", "INIT",
+        "FORBID_CREATION", "IFEXISTS", "IGNORE_CATALOGS", "IGNORE_UNKNOWN_SETTINGS", "INIT",
         "LOCK_MODE", "OPEN_NEW", "PAGE_SIZE",
     };
 
@@ -143,6 +143,15 @@ public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
     }
 
     /// <summary>
+    /// Gets or sets whether catalog names in three-part names are ignored.
+    /// </summary>
+    public bool IgnoreCatalogs
+    {
+        get => GetBoolean("IGNORE_CATALOGS");
+        set => this["IGNORE_CATALOGS"] = value;
+    }
+
+    /// <summary>
     /// Gets or sets whether identifiers compare without case.
     /// </summary>
     public bool CaseInsensitiveIdentifiers
@@ -227,6 +236,7 @@ public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
                 Init = Init,
                 OpenNew = OpenNew,
                 IgnoreUnknownSettings = IgnoreUnknownSettings,
+                IgnoreCatalogs = IgnoreCatalogs,
                 CaseInsensitiveIdentifiers = CaseInsensitiveIdentifiers,
                 LockMode = LockMode,
                 PageSize = PageSize,
@@ -259,6 +269,7 @@ public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
         Init = options.Init;
         OpenNew = options.OpenNew;
         IgnoreUnknownSettings = options.IgnoreUnknownSettings;
+        IgnoreCatalogs = options.IgnoreCatalogs;
         CaseInsensitiveIdentifiers = options.CaseInsensitiveIdentifiers;
         LockMode = options.LockMode;
         PageSize = options.PageSize;

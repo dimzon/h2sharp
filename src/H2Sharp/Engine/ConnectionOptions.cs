@@ -45,6 +45,11 @@ public sealed class ConnectionOptions
     public bool IgnoreUnknownSettings { get; set; }
 
     /// <summary>
+    /// Gets or sets whether catalog names in three-part names are ignored.
+    /// </summary>
+    public bool IgnoreCatalogs { get; set; }
+
+    /// <summary>
     /// Gets or sets whether identifiers compare without case.
     /// </summary>
     public bool CaseInsensitiveIdentifiers { get; set; }

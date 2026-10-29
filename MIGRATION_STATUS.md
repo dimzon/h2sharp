@@ -123,13 +123,17 @@ case-sensitive, а `CASE_INSENSITIVE_IDENTIFIERS=TRUE` использует Java
 `H2Connection` самодостаточен. `TestSelectTableNotFound` и
 `TestAlterTableNotFound` переписаны под upper-only семантику; новый
 `TestIdentifierCaseSettings` закрепляет ignore upper/lower, case-sensitive
-default, CI-режим и раздельное владение raw/DataSource. Native — **69/113**
-(44 прежних `BlockedByPort`/дефектов порта).
+default, CI-режим и раздельное владение raw/DataSource. Native — **70/113**
+(43 прежних `BlockedByPort`/дефектов порта).
 `TestDateTimeTemplate`, `TestDateIso8601`, `TestInterval` и `TestPattern`
 переведены на ответы Java-эталона: часть ожиданий в исходных тестах H2
 противоречит jar (RR-разбор, ISO-недели, отрицательные годы), а `CompareMode`
 для именованной collation теперь создаётся (как в эталоне) и отказывает при
 использовании (D-002), а не при создании.
+`TestIgnoreCatalogs` открыт: `IGNORE_CATALOGS` приходит из URL, MSSQL-режим
+получил `AllowEmptySchemaValuesAsDefaultSchema` (каталог..таблица), и парсер
+имён (`readIdentifierWithSchema`) читает каталог.схема.таблица / каталог..таблица
+по эталону в `CREATE`, `COMMENT`, `ALTER`, `INDEX` и `DROP`.
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
