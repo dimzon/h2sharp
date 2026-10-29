@@ -20,6 +20,7 @@
 // suite can open databases; the still-ignored settings are visible in issue #55 and in
 // TestDriver.TestSettingsAsProperties.
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data.Common;
 using H2Sharp.Data;
@@ -37,6 +38,8 @@ namespace H2Sharp.Native.Tests;
 public abstract class TestDb : TestBase
 {
     private const string JdbcPrefix = "jdbc:h2:";
+
+    private readonly ConcurrentDictionary<string, H2DataSource> dataSources = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Open a database connection in admin mode. The default user name and
@@ -205,17 +208,65 @@ public abstract class TestDb : TestBase
         return url;
     }
 
-    private static DbConnection GetConnectionInternal(string url, string user,
+    private DbConnection GetConnectionInternal(string url, string user,
         string password)
     {
         _ = user;
         _ = password;
-        H2Connection connection = new(ToClassicConnectionString(url));
-        ((IH2Extensions)connection).UseJavaLegacy();
-        ((IH2Extensions)connection).UseH2Hashes();
-        ((IH2Extensions)connection).UseCrypto();
+        string classic = ToClassicConnectionString(url);
+        if (classic.IndexOf("OPEN_NEW=TRUE", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            H2Connection raw = new(classic);
+            raw.Open();
+            return raw;
+        }
+
+        H2Connection connection = CreateSharedConnection(classic);
         connection.Open();
         return connection;
+    }
+
+    /// <summary>
+    /// Create a closed connection to the data source that owns this database. Tests that
+    /// need several sessions on one database use this instead of a raw <see cref="H2Connection"/>.
+    /// </summary>
+    protected H2Connection CreateSharedConnection(string url)
+    {
+        string classic = ToClassicConnectionString(url);
+        H2ConnectionStringBuilder builder = new(classic);
+        string key = builder.Storage + ":" + builder.DataSource;
+        H2DataSource dataSource = dataSources.GetOrAdd(key, _ =>
+            new H2DataSourceBuilder(classic)
+                .ConfigureExtensions(extensions =>
+                {
+                    extensions.UseJavaLegacy();
+                    extensions.UseH2Hashes();
+                    extensions.UseCrypto();
+                })
+                .Build());
+        return dataSource.CreateConnection(classic);
+    }
+
+    private void DisposeDataSources(string name)
+    {
+        List<string> remove = [];
+        foreach ((string key, H2DataSource dataSource) in dataSources)
+        {
+            string databaseName = dataSource.DatabaseName;
+            if (databaseName.Equals(name, StringComparison.Ordinal)
+                || databaseName.EndsWith("/" + name, StringComparison.Ordinal)
+                || databaseName.EndsWith("\\" + name, StringComparison.Ordinal)
+                || databaseName.EndsWith(":" + name, StringComparison.Ordinal))
+            {
+                dataSource.Dispose();
+                remove.Add(key);
+            }
+        }
+
+        foreach (string key in remove)
+        {
+            _ = dataSources.TryRemove(key, out _);
+        }
     }
 
     protected static string ToClassicConnectionString(string url)
@@ -297,6 +348,7 @@ public abstract class TestDb : TestBase
     /// </remarks>
     protected void DeleteDb(string dir, string name)
     {
+        DisposeDataSources(name);
         string start = name + '.';
         foreach (FilePath path in FilePath.Get(dir).NewDirectoryStream())
         {

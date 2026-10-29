@@ -362,11 +362,13 @@ SQL-скрипта из файла не портируются. Тесты `Runs
 
 Указание пользователя: режим задаётся до открытия базы и не переключается.
 `SET MODE` с тем же режимом — no-op; с другим — `FEATURE_NOT_SUPPORTED_1`.
-`MODE` входит в ключ экземпляра базы: connections с одинаковыми storage, name
-и mode делят один `Database`; с разным mode получают разные экземпляры. Для
-`Storage=Memory` это независимые базы; для файла второй экземпляр упирается в
-файловую блокировку. После закрытия последнего connection storage можно
-открыть с другим режимом. `MODE` не персистится.
+`MODE` фиксируется при открытии базы. Общий `Database` создаёт и держит
+`H2DataSource`; raw `H2Connection` самодостаточен и создаёт собственную базу.
+Две raw connections к одному файлу упираются в файловую блокировку, к одному
+`mem:` имени — независимы. Через один `H2DataSource` connections с одинаковым
+storage и name делят базу; второй data source к тому же файлу упирается в
+блокировку. После закрытия data source (или последней raw connection) storage
+можно открыть с другим режимом. `MODE` не персистится.
 
 ### D-030. Linked tables вне core scope
 
@@ -413,11 +415,11 @@ savepoint, если не все уникальные индексы принял
 Java-совместимую нечувствительность (`StringUtils.ToUpperEnglish`), а не
 `OrdinalIgnoreCase`.
 
-`CASE_INSENSITIVE_IDENTIFIERS` — статическая настройка экземпляра базы. Ключ
-реестра `Engine` включает storage, name, mode и этот флаг; connections с
-одинаковыми параметрами делят один `Database`, с разными — получают разные
-экземпляры (для файла второй упрётся в файловую блокировку). Второе
-соединение не переключает режим уже открытой базы. `TestSelectTableNotFound`
+`CASE_INSENSITIVE_IDENTIFIERS` — статическая настройка экземпляра базы.
+`H2DataSource` владеет одним `Database` и передаёт его всем своим connections;
+raw `H2Connection` самодостаточен и не делит базу. Два data source к одному
+файлу конфликтуют по файловой блокировке; к одному `mem:` имени — независимы.
+Второе соединение не переключает режим уже открытой базы. `TestSelectTableNotFound`
 и `TestAlterTableNotFound` переписаны под upper-only семантику; отдельный
 `TestIdentifierCaseSettings` закрепляет игнорирование `DATABASE_TO_UPPER`/
 `DATABASE_TO_LOWER`, default case-sensitive и CI-режим. Остальные тесты,

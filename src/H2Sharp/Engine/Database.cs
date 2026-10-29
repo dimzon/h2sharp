@@ -1441,7 +1441,6 @@ public sealed partial class Database : CastDataProvider
             // Reference: store.close(allowedCompactionTime). Nothing in the port asks for
             // compaction on close, so the store is closed immediately.
             store.Close(0);
-            Engine.RemoveClosed(this);
         }
     }
 

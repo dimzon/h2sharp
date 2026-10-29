@@ -30,11 +30,7 @@ public sealed class H2TransactionSemanticsTests
     private static IDbConnection Open() => OpenNamed(NewName());
 
     private static IDbConnection OpenNamed(string name)
-    {
-        IDbConnection connection = new H2Connection($"Data Source={name};Storage=Memory");
-        connection.Open();
-        return connection;
-    }
+        => H2TestDataSource.Open($"Data Source={name};Storage=Memory");
 
     private static string NewName() => "txn_" + Guid.NewGuid().ToString("N");
 

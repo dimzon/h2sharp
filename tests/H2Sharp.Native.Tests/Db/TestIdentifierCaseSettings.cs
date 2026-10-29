@@ -2,9 +2,9 @@
 // Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
 //
 // The port always folds unquoted identifiers to upper case and ignores DATABASE_TO_UPPER /
-// DATABASE_TO_LOWER. CASE_INSENSITIVE_IDENTIFIERS is the only identifier-case switch. The
-// database registry keys an instance by storage, name, mode and that switch, so only
-// connections with the same conflicting parameters share one Database instance.
+// DATABASE_TO_LOWER. CASE_INSENSITIVE_IDENTIFIERS is the only identifier-case switch. A data
+// source owns one Database; raw connections are self-contained, so two raw connections with
+// the same memory name do not share storage.
 using H2Sharp.Api;
 using H2Sharp.Data;
 using Xunit;
@@ -20,11 +20,14 @@ public sealed class TestIdentifierCaseSettings
         => new("Data Source=" + name + ";Storage=Memory;" + options);
 
     [Fact]
-    public void SameParametersShareOneDatabase()
+    public void DataSourceSharesOneDatabase()
     {
         string name = MemoryName("share");
-        using H2Connection first = Open(name, "Mode=Oracle;CASE_INSENSITIVE_IDENTIFIERS=TRUE");
-        using H2Connection second = Open(name, "Mode=Oracle;CASE_INSENSITIVE_IDENTIFIERS=TRUE");
+        using H2DataSource dataSource = new H2DataSourceBuilder(
+            "Data Source=" + name + ";Storage=Memory;Mode=Oracle;CASE_INSENSITIVE_IDENTIFIERS=TRUE")
+            .Build();
+        using H2Connection first = (H2Connection)dataSource.CreateConnection();
+        using H2Connection second = (H2Connection)dataSource.CreateConnection();
         first.Open();
         second.Open();
 
@@ -32,9 +35,9 @@ public sealed class TestIdentifierCaseSettings
     }
 
     [Fact]
-    public void DifferentCaseSettingGetsAnotherDatabase()
+    public void RawConnectionsDoNotShareOneMemoryDatabase()
     {
-        string name = MemoryName("case");
+        string name = MemoryName("raw");
         using H2Connection first = Open(name, "Mode=Regular");
         using H2Connection second = Open(name, "Mode=Regular;CASE_INSENSITIVE_IDENTIFIERS=TRUE");
         first.Open();
@@ -44,7 +47,7 @@ public sealed class TestIdentifierCaseSettings
     }
 
     [Fact]
-    public void DifferentModeGetsAnotherDatabase()
+    public void RawConnectionsWithDifferentModesDoNotShareEither()
     {
         string name = MemoryName("mode");
         using H2Connection first = Open(name, "Mode=Regular");

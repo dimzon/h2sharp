@@ -71,9 +71,7 @@ public sealed class H2TransactionScopeTests
 
     private static H2Connection Open(string name)
     {
-        H2Connection connection = new("Data Source=" + name + ";Storage=Memory");
-        connection.Open();
-        return connection;
+        return H2TestDataSource.Open("Data Source=" + name + ";Storage=Memory");
     }
 
     private static void Execute(H2Connection connection, string sql)

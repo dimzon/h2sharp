@@ -49,6 +49,10 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
 {
     private string connectionString = string.Empty;
 
+    private readonly H2DataSource? dataSource;
+
+    private readonly bool connectionStringLocked;
+
     private SessionLocal? session;
 
 
@@ -114,6 +118,13 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         this.connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
     }
 
+    internal H2Connection(H2DataSource dataSource, string connectionString)
+    {
+        this.dataSource = dataSource;
+        this.connectionString = connectionString;
+        connectionStringLocked = true;
+    }
+
     /// <summary>
     /// Gets or sets the connection string. Setting it to null or empty is the ADO.NET
     /// spelling of "no connection string", so it is stored rather than refused: the base
@@ -134,6 +145,12 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         get => connectionString;
         set
         {
+            if (connectionStringLocked)
+            {
+                throw new InvalidOperationException(
+                    "The connection string is owned by the data source and cannot be changed");
+            }
+
             if (session is not null)
             {
                 throw new InvalidOperationException("The connection string cannot be changed while open");
@@ -244,9 +261,13 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         }
 
         ConnectionInfo connectionInfo = new H2ConnectionStringBuilder(connectionString).ToConnectionInfo();
-        SessionLocal opened = H2Sharp.Engine.Engine.OpenSession(
-            connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider,
-            timeZoneProviderProvider, extensionConfiguration.Clone());
+        SessionLocal opened = dataSource is null
+            ? H2Sharp.Engine.Engine.OpenSession(
+                connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider,
+                timeZoneProviderProvider, extensionConfiguration.Clone())
+            : dataSource.OpenSession(
+                connectionInfo, systemClockProvider, randomGeneratorProvider, uuidProvider,
+                timeZoneProviderProvider, extensionConfiguration.Clone());
         session = opened;
         try
         {

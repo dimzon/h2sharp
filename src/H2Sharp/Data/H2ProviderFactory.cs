@@ -44,6 +44,14 @@ public sealed class H2ProviderFactory : DbProviderFactory
     }
 
     /// <summary>
+    /// Creates a configured data source.
+    /// </summary>
+    /// <param name="connectionString">the classic ADO.NET connection string</param>
+    /// <returns>the data source</returns>
+    public override DbDataSource CreateDataSource(string connectionString)
+        => new H2DataSourceBuilder(connectionString).Build();
+
+    /// <summary>
     /// Creates a new command.
     /// </summary>
     public override DbCommand CreateCommand()

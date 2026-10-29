@@ -118,12 +118,13 @@ immediate-значение, поэтому видит uncommitted UPDATE дру�
 Идентификаторы переведены на утверждённое D-033 поведение: unquoted всегда upper,
 `DATABASE_TO_UPPER`/`DATABASE_TO_LOWER` из URL игнорируются, default-сравнение
 case-sensitive, а `CASE_INSENSITIVE_IDENTIFIERS=TRUE` использует Java-совместимую
-свёртку. Схемные реестры и parser берут comparer у `Database`. `Engine` ключует
-экземпляр по storage + name + mode + `CaseInsensitiveIdentifiers`, поэтому connections
-с одинаковыми конфликтующими параметрами делят одну базу, а с разными — разные.
-`TestSelectTableNotFound` и `TestAlterTableNotFound` переписаны под upper-only
-семантику; новый `TestIdentifierCaseSettings` закрепляет ignore upper/lower,
-case-sensitive default и CI-режим. Native с новыми тестами — **65/113**.
+свёртку. Схемные реестры и parser берут comparer у `Database`. Экземпляром
+базы владеет `H2DataSource`: его connections делят один `Database`, raw
+`H2Connection` самодостаточен. `TestSelectTableNotFound` и
+`TestAlterTableNotFound` переписаны под upper-only семантику; новый
+`TestIdentifierCaseSettings` закрепляет ignore upper/lower, case-sensitive
+default, CI-режим и раздельное владение raw/DataSource. Native — **65/113**
+(48 прежних `BlockedByPort`/дефектов порта).
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
@@ -145,21 +146,24 @@ Statement dependency maps в SessionLocal пока не собираются: с
 MarkStatementStart(null) сохранён; statement data id фиксируется перед этим вызовом.
 
 `MODE` фиксируется при открытии (D-029). `SET MODE` с тем же режимом — no-op,
-с другим — 50100. Второй connection к тому же storage с другим режимом получает
-90020; после закрытия последнего storage можно открыть с другим режимом.
-Storage registry использует typed key: memory key или canonical file path.
+с другим — 50100. Второй владелец того же файла с другим режимом упирается в
+файловую блокировку; после закрытия последнего владельца storage можно открыть
+с другим режимом. Владелец — `H2DataSource`; raw `H2Connection` создаёт и
+закрывает собственный `Database`.
 
 Текущий principal — константа `"sa"`; `CURRENT_USER`/`SESSION_USER`/
 `SYSTEM_USER`/`USER` возвращают `"sa"`, `CURRENT_ROLE` — `"PUBLIC"`.
 Credentials в connection string отсутствуют (D-004).
 
-Storage lifecycle принадлежит `Engine`: `Database.Close` вызывает
-`Engine.RemoveClosed`, holder очищается и запись удаляется из registry; ждущий
-opener перечитывает holder и создаёт новую базу только после закрытия старой.
-`H2Connection` больше не управляет registry. Session pool сознательно не
-вводится: сессия содержит UDF/aliases, variables, temp-таблицы, schema,
-time zone и transaction state; reset дороже создания нового `SessionLocal`.
-Общей остаётся только `Database`.
+Storage lifecycle принадлежит владельцу. `H2DataSource` создаёт `Database`
+при первом `Open`, держит его при закрытии отдельных connections
+(`DB_CLOSE_DELAY=-1`) и закрывает в `Dispose`; raw `H2Connection` закрывает
+свою базу при `Close`. Глобального реестра в `Engine` нет (D-029/D-033).
+`H2DataSource.CreateConnection` и внутренняя перегрузка с connection string
+дают connections с собственными session-настройками, но одним `Database`.
+Session pool сознательно не вводится: сессия содержит UDF/aliases, variables,
+temp-таблицы, schema, time zone и transaction state; reset дороже создания
+нового `SessionLocal`. Общей остаётся только `Database`.
 
 ### .NET-расширения: первый срез
 

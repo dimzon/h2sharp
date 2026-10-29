@@ -94,9 +94,7 @@ public sealed class H2MvccRegressionTests
 
     private static H2Connection Open(string name)
     {
-        H2Connection connection = new($"Data Source=mvcc_regression_{name};Storage=Memory");
-        connection.Open();
-        return connection;
+        return H2TestDataSource.Open($"Data Source=mvcc_regression_{name};Storage=Memory");
     }
 
     private static DbCommand Command(H2Connection connection, DbTransaction? transaction, string sql)

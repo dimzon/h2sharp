@@ -68,7 +68,7 @@ public sealed class TestConnection : TestDb
 
     private H2Connection OpenWithTimeZone(string name, string timeZone)
     {
-        H2Connection connection = new(
+        H2Connection connection = CreateSharedConnection(
             "Data Source=" + GetBaseDir() + "/" + name + ";Storage=File");
         ((IH2Test)connection).TimeZoneProviderProvider = () => TimeZoneProvider.OfId(timeZone);
         connection.Open();

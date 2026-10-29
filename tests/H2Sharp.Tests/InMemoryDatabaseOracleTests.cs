@@ -95,8 +95,17 @@ public sealed class InMemoryDatabaseOracleTests
         foreach (string db in new[] { "mem:shared", "mem:", "mem:gone" })
         {
             lines.Add(db + " both-open");
-            using H2Connection a = new(ToClassic(db));
-            using H2Connection b = new(ToClassic(db));
+            // A named memory database is shared through a data source. An unnamed
+            // one remains private to each raw connection, as it is in the reference.
+            using H2DataSource? dataSource = db == "mem:"
+                ? null
+                : new H2DataSourceBuilder(ToClassic(db)).Build();
+            using H2Connection a = dataSource is null
+                ? new H2Connection(ToClassic(db))
+                : (H2Connection)dataSource.CreateConnection();
+            using H2Connection b = dataSource is null
+                ? new H2Connection(ToClassic(db))
+                : (H2Connection)dataSource.CreateConnection();
             a.Open();
             b.Open();
 
@@ -106,6 +115,7 @@ public sealed class InMemoryDatabaseOracleTests
             // Cleanup, not compared: the reference prints no drop line.
             _ = Run(a, "DROP TABLE T");
             a.Close();
+            dataSource?.Dispose();
 
             using H2Connection c = new(ToClassic(db));
             c.Open();

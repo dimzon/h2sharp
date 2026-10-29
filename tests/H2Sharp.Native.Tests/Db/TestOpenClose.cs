@@ -147,7 +147,7 @@ public sealed class TestOpenClose : TestDb
         {
             tasks[i] = Task.Run(() =>
             {
-                DbConnection c = new H2Connection(ToClassicConnectionString(url));
+                DbConnection c = CreateSharedConnection(url);
                 c.Open();
                 DbCommand prep = c.CreateCommand();
                 prep.CommandText = "insert into employee values(?, ?, 0)";
@@ -160,7 +160,7 @@ public sealed class TestOpenClose : TestDb
         }
 
         Task.WaitAll(tasks);
-        conn = new H2Connection(ToClassicConnectionString(url));
+        conn = CreateSharedConnection(url);
         conn.Open();
         DbCommand query = conn.CreateCommand();
         query.CommandText = "select count(*) from employee";

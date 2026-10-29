@@ -97,33 +97,24 @@ public sealed class H2ConnectionModeTests
     }
 
     [Fact]
-    public void DbCloseDelayMinusOneKeepsTheSameStorage()
+    public void DataSourceKeepsItsDatabaseBetweenConnections()
     {
         string name = "close_delay_" + Guid.NewGuid().ToString("N");
-        string connectionString = "Data Source=" + name + ";Storage=Memory";
+        using H2DataSource dataSource = new H2DataSourceBuilder(
+            "Data Source=" + name + ";Storage=Memory").Build();
         H2Sharp.Engine.Database? database;
 
-        using (H2Connection first = new(connectionString))
+        using (H2Connection first = (H2Connection)dataSource.CreateConnection())
         {
             first.Open();
             database = first.CurrentDatabase;
-            using var command = first.CreateCommand();
-            command.CommandText = "SET DB_CLOSE_DELAY -1";
-            _ = command.ExecuteNonQuery();
         }
 
-        using (H2Connection second = new(connectionString))
+        using (H2Connection second = (H2Connection)dataSource.CreateConnection())
         {
             second.Open();
             Assert.Same(database, second.CurrentDatabase);
-            using var command = second.CreateCommand();
-            command.CommandText = "SHUTDOWN";
-            _ = command.ExecuteNonQuery();
         }
-
-        using H2Connection third = new(connectionString);
-        third.Open();
-        Assert.NotSame(database, third.CurrentDatabase);
     }
 
     [Fact]

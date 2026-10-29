@@ -1,6 +1,7 @@
 /* Copyright 2026 H2Sharp contributors. MPL 2.0 or EPL 1.0.
  * Query result reuse across dirty reads, savepoints, commits and snapshot changes. */
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -13,6 +14,9 @@ namespace H2Sharp.Tests;
 [Collection(OracleCollection.Name)]
 public sealed class QueryResultCacheOracleTests
 {
+    private static readonly ConcurrentDictionary<string, H2DataSource> DataSources =
+        new(StringComparer.Ordinal);
+
     [JavaOracleFact]
     public void DirtyRowsAreNotReusedAfterAnotherTransactionRollsBack()
     {
@@ -182,7 +186,8 @@ public sealed class QueryResultCacheOracleTests
 
     private static H2Connection Open(string connectionString)
     {
-        H2Connection connection = new(connectionString);
+        H2Connection connection = (H2Connection)DataSources.GetOrAdd(connectionString,
+            static cs => new H2DataSourceBuilder(cs).Build()).CreateConnection();
         connection.Open();
         return connection;
     }

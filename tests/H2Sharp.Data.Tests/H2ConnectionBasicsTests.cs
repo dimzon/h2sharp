@@ -72,50 +72,34 @@ public sealed class H2ConnectionBasicsTests
     }
 
     [Fact]
-    public void ANamedInMemoryDatabaseIsSharedAndThenForgotten()
+    public void DataSourceSharesOneNamedInMemoryDatabase()
     {
-        using H2Connection first = new("Data Source=shared;Storage=Memory");
-        using H2Connection second = new("Data Source=shared;Storage=Memory");
+        using H2DataSource dataSource = new H2DataSourceBuilder(
+            "Data Source=shared;Storage=Memory").Build();
+        using H2Connection first = (H2Connection)dataSource.CreateConnection();
+        using H2Connection second = (H2Connection)dataSource.CreateConnection();
         first.Open();
         second.Open();
 
-        // The same database, not two with the same name: the reference keys open databases by
-        // name, and a port that forgot the registry would answer the same to every query and
-        // leak a database per name.
         Assert.Same(first.CurrentDatabase, second.CurrentDatabase);
 
-        // An unnamed in-memory database is the other case, and the one a test that always uses a
-        // name never reaches: it is not entered into the registry, so two connections to it get
-        // two databases.
-        using H2Connection unnamedFirst = new("Data Source=;Storage=Memory");
-        using H2Connection unnamedSecond = new("Data Source=;Storage=Memory");
-        unnamedFirst.Open();
-        unnamedSecond.Open();
-        Assert.NotSame(unnamedFirst.CurrentDatabase, unnamedSecond.CurrentDatabase);
+        // A raw connection is self-contained even when its memory name is the same.
+        using H2Connection raw = new("Data Source=shared;Storage=Memory");
+        raw.Open();
+        Assert.NotSame(first.CurrentDatabase, raw.CurrentDatabase);
     }
 
     [Fact]
-    public void TheDatabaseGoesAwayWithItsLastSession()
+    public void TheRawDatabaseGoesAwayWhenItsConnectionCloses()
     {
         string name = "gone_when_closed";
         H2Connection first = new("Data Source=" + name + ";Storage=Memory");
         first.Open();
         H2Sharp.Engine.Database? database = first.CurrentDatabase;
         Assert.NotNull(database);
-
-        H2Connection second = new("Data Source=" + name + ";Storage=Memory");
-        second.Open();
-        Assert.Same(database, second.CurrentDatabase);
-        second.Close();
-
-        // One session still uses it.
-        Assert.Equal(1, database.GetSessionCount());
         first.Close();
-
-        // The last one went, so the database is closed and the name is free again. A new
-        // connection to the same name therefore gets a new, empty database rather than the old
-        // one — which for "mem:" is the whole difference between a name and a file.
         Assert.True(database.IsClosing());
+
         H2Connection third = new("Data Source=" + name + ";Storage=Memory");
         third.Open();
         try
