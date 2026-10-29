@@ -513,8 +513,9 @@ public sealed partial class Database : CastDataProvider
         // session opening against a database with no schema would have nothing to create its
         // first object in, and the reference names PUBLIC here rather than making the first
         // statement do it. Its id is the constant zero, shared with the metadata table, so
-        // neither is ever written to SYS.
-        Schemas.Schema main = new(this, Constants.MainSchemaId, Constants.SchemaMain, system: false);
+        // neither is ever written to SYS. It is a system schema, as in the reference: PUBLIC
+        // cannot be dropped or renamed.
+        Schemas.Schema main = new(this, Constants.MainSchemaId, Constants.SchemaMain, system: true);
         AddSchema(main);
         SetMainSchema(main);
 

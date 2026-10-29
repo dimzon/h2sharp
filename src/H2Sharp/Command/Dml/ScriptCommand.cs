@@ -139,12 +139,16 @@ public sealed class ScriptCommand : Prepared
         List<Schema> schemas = [];
         foreach (Schema schema in db.GetSchemas())
         {
-            if (schema.IsSystem()) continue;
-            schemas.Add(schema);
-            if (!ReferenceEquals(schema, db.GetMainSchema()))
+            // PUBLIC is a system schema in the reference, but its user objects are scripted;
+            // the other system schema (INFORMATION_SCHEMA) is skipped. System schemas answer
+            // null from GetCreateSql, so no CREATE SCHEMA line is emitted for PUBLIC.
+            if (schema.IsSystem() && !ReferenceEquals(schema, db.GetMainSchema()))
             {
-                Add(schema.GetCreateSql());
+                continue;
             }
+
+            schemas.Add(schema);
+            Add(schema.GetCreateSql());
         }
 
         foreach (Schema schema in schemas)

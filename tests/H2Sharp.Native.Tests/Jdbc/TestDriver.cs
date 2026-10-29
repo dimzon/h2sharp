@@ -13,8 +13,12 @@
 // H2Sharp.Driver as its client, but getDriver-by-URL has no registry analog and the
 // "not registered" answer differs (JDBC SQLException against .NET's own exception), so
 // the two parts are skipped and put on the discussion list. The class itself is ported
-// (H2Sharp/Driver.cs); testSettingsAsProperties, which is plain ADO.NET, is ported
-// below.
+// (H2Sharp/Driver.cs).
+//
+// testSettingsAsProperties is blocked: it only checks that MAX_COMPACT_TIME from the
+// connection string appears in INFORMATION_SCHEMA.SETTINGS, which needs the reference's
+// DbSettings/SettingsBase. That knob is irrelevant for an embedded engine, so the test
+// is marked BlockedByPort rather than ported.
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Jdbc;
@@ -28,6 +32,7 @@ public sealed class TestDriver : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         TestSettingsAsProperties();

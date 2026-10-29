@@ -134,6 +134,14 @@ default, CI-режим и раздельное владение raw/DataSource. 
 получил `AllowEmptySchemaValuesAsDefaultSchema` (каталог..таблица), и парсер
 имён (`readIdentifierWithSchema`) читает каталог.схема.таблица / каталог..таблица
 по эталону в `CREATE`, `COMMENT`, `ALTER`, `INDEX` и `DROP`.
+`Jdbc.TestDriver` помечен `BlockedByPort`: оставшаяся часть проверяет только
+`MAX_COMPACT_TIME` из connection string в `INFORMATION_SCHEMA.SETTINGS`, что
+требует `DbSettings`/`SettingsBase` эталона; встроенному движку это не нужно.
+`PUBLIC` теперь системная схема, как в эталоне: её нельзя переименовать/дропнуть.
+`SCRIPT` пишет её пользовательские объекты (домены, таблицы), но не `CREATE SCHEMA`.
+`TestAlterSchemaRename` проходит переименование схем; alias-часть вынесена в
+`TestAlterSchemaRenameAlias` с меткой `BlockedByPort` (`CREATE ALIAS` не портируется,
+алиасы вне области по дизайну).
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает

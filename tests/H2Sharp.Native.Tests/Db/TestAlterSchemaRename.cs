@@ -5,8 +5,10 @@
 //
 // Modified (API): JDBC statements are ADO.NET commands, and the proxy form of
 // assertThrows becomes the lambda form, because a sealed class cannot be proxied. The
-// alias source of testAlias is the reference's Java source, exactly as the reference
-// writes it. The reference's main() entry is the runner; xUnit runs Test() directly.
+// reference's main() entry is the runner; xUnit runs Test() directly.
+//
+// The alias part of the reference test lives in TestAlterSchemaRenameAlias, marked
+// BlockedByPort: CREATE ALIAS is not ported and aliases are out of scope by design.
 using H2Sharp.Api;
 using Xunit;
 
@@ -34,7 +36,6 @@ public sealed class TestAlterSchemaRename : TestDb
         TestSimpleRename();
         TestRenameToExistingSchema();
         TestCrossSchemaViews();
-        TestAlias();
         conn.Close();
         DeleteDb(GetTestName());
     }
@@ -119,39 +120,5 @@ public sealed class TestAlterSchemaRename : TestDb
 
         Execute(stat!, "drop schema s1 cascade");
         Execute(stat!, "drop schema s2_new cascade");
-    }
-
-    /// <summary>
-    /// Check that aliases in the schema got moved.
-    /// </summary>
-    private void TestAlias()
-    {
-        Execute(stat!, "create schema s1");
-        Execute(stat!, "CREATE ALIAS S1.REVERSE AS $$ "
-            + "String reverse(String s) {"
-            + "   return new StringBuilder(s).reverse().toString();"
-            + "} $$;");
-        Execute(stat!, "alter schema s1 rename to s2");
-        stat!.CommandText = "CALL S2.REVERSE('1234')";
-        using (DbDataReader rs = stat.ExecuteReader())
-        {
-            AssertTrue(rs.Read());
-            AssertEquals("4321", rs.GetString(0));
-        }
-
-        if (!Config.Memory)
-        {
-            conn!.Close();
-            conn = GetConnection(GetTestName());
-            stat = conn.CreateCommand();
-            stat.CommandText = "CALL S2.REVERSE('1234')";
-            using DbDataReader rs = stat.ExecuteReader();
-            while (rs.Read())
-            {
-                // just loop
-            }
-        }
-
-        Execute(stat!, "drop schema s2 cascade");
     }
 }
