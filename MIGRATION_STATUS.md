@@ -100,9 +100,13 @@ transaction-shape переписаны под ADO.NET. `SessionLocal.startStatem
 теперь собирает зависимости команды и передаёт типизированные transaction maps в
 `Transaction.markStatementStart`; read committed/repeatable read/snapshot/serializable
 снимают snapshot на картах таблиц и их FK-связей, как эталон. `TestIsolationLevels`
-зелёный. Следующий дефект — read-uncommitted dirty read: ожидается 2, читается 1.
-`TestClearCacheAfterDdl` проходит все сценарии, кроме alias (D-004). Parser принимает
-`SELECT`/`TABLE`/`WITH` как term без скобок (`DELETE ... WHERE ID=SELECT MIN(ID) FROM ...`).
+зелёный. Read-uncommitted dirty read исправлен: `MVPrimaryIndex.GetRowForKey` читает
+через `GetFromSnapshot`, а не immediate-значение, поэтому видит uncommitted UPDATE
+другой транзакции. Следующий дефект — `TestIsolationLevels2` ожидает 40001 (deadlock)
+на repeatable-read `FOR UPDATE` после commit чужого UPDATE; порт пока не выбирает
+deadlock-victim в этом сценарии. `TestClearCacheAfterDdl` проходит все сценарии,
+кроме alias (D-004). Parser принимает `SELECT`/`TABLE`/`WITH` как term без скобок
+(`DELETE ... WHERE ID=SELECT MIN(ID) FROM ...`).
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает

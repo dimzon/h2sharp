@@ -357,7 +357,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// <returns>the row, or null when there is none</returns>
     public SearchRow? GetRowForKey(Transaction? transaction, long key)
     {
-        return SetRowKey((Row?)GetMap(transaction).Get(key), key);
+        return SetRowKey((Row?)GetMap(transaction).GetFromSnapshot(key), key);
     }
 
     /// <summary>
