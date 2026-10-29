@@ -1028,7 +1028,11 @@ public sealed class InformationSchemaTable : Table
 
                 break;
             case KeyColumnUsage:
-                foreach (Constraint constraint in GetAllConstraints(session))
+                List<Constraint> keyConstraints = GetAllConstraints(session);
+                // ORDINAL_POSITION alone leaves rows of different constraints tied; the
+                // reference's map order is not an API, so name order is the stable one.
+                keyConstraints.Sort((a, b) => string.CompareOrdinal(a.GetName(), b.GetName()));
+                foreach (Constraint constraint in keyConstraints)
                 {
                     AddKeyColumnUsage(session, rows, catalog, constraint);
                 }

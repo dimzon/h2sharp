@@ -45,6 +45,11 @@ public sealed class ConnectionOptions
     public bool IgnoreUnknownSettings { get; set; }
 
     /// <summary>
+    /// Gets or sets whether identifiers compare without case.
+    /// </summary>
+    public bool CaseInsensitiveIdentifiers { get; set; }
+
+    /// <summary>
     /// Gets or sets the lock mode.
     /// </summary>
     public int LockMode { get; set; } = Constants.DefaultLockMode;

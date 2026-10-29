@@ -15,14 +15,14 @@
  * and rights — refuses, because each of those is a class of its own that has not been ported,
  * and a schema that could hold them without them would be a second kind of schema.
  *
- * The map is case-insensitive, and that is not a detail: H2 stores object names folded to upper
- * case and the fold is the *database's* fold, not the current culture's, or a Turkish locale
- * would give a table two names. So the comparer is OrdinalIgnoreCase rather than
- * CurrentCultureIgnoreCase, for the same reason Util/CaseFolding exists.
+ * The map uses the database's identifier comparer: ordinal by default, so quoted names stay
+ * case-sensitive, and Java's English case fold only when CASE_INSENSITIVE_IDENTIFIERS is on.
+ * The fold is the database's, not the current culture's, for the same reason Util/CaseFolding
+ * exists.
  *
  * Concurrency is kept where it matters and is not invented where it does not. The reference uses
  * a concurrent map because tables are looked up while other sessions create them; here the
- * lookup path is a ConcurrentDictionary with the ordinal-ignoring comparer, which gives both.
+ * lookup path is a ConcurrentDictionary with that comparer, which gives both.
  */
 using System;
 using System.Collections.Concurrent;
@@ -50,32 +50,25 @@ namespace H2Sharp.Schemas;
 /// </remarks>
 public sealed class Schema : DbObject
 {
-    private readonly ConcurrentDictionary<string, Table> tablesAndViews =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Table> tablesAndViews;
 
-    private readonly ConcurrentDictionary<string, Index> indexes =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Index> indexes;
 
-    private readonly ConcurrentDictionary<string, Constraint> constraints =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Constraint> constraints;
 
-    private readonly ConcurrentDictionary<string, Sequence> sequences =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Sequence> sequences;
 
-    private readonly ConcurrentDictionary<string, Domain> domains =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Domain> domains;
 
-    private readonly ConcurrentDictionary<string, Constant> constants =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Constant> constants;
 
-    private readonly ConcurrentDictionary<string, TableSynonym> synonyms =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, TableSynonym> synonyms;
 
     private readonly bool system;
 
     private readonly string ownerName;
 
-    private readonly HashSet<string> temporaryUniqueNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> temporaryUniqueNames;
 
     /// <summary>
     /// Creates a schema.
@@ -88,6 +81,15 @@ public sealed class Schema : DbObject
     public Schema(Database database, int id, string schemaName, bool system, string? ownerName = null)
         : base(database, id, schemaName, Trace.Schema)
     {
+        IEqualityComparer<string> comparer = database.IdentifierComparer;
+        tablesAndViews = new(comparer);
+        indexes = new(comparer);
+        constraints = new(comparer);
+        sequences = new(comparer);
+        domains = new(comparer);
+        constants = new(comparer);
+        synonyms = new(comparer);
+        temporaryUniqueNames = new(comparer);
         this.system = system;
         this.ownerName = ownerName ?? "SA";
     }
@@ -736,7 +738,7 @@ public sealed class Schema : DbObject
     {
         if (table.IsTemporary() && !table.IsGlobalTemporary())
         {
-            Dictionary<string, object?> names = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, object?> names = new(GetDatabase()!.IdentifierComparer);
             foreach (Table temp in session.GetLocalTempTables())
             {
                 foreach (Index tempIndex in temp.GetIndexes())
@@ -773,7 +775,7 @@ public sealed class Schema : DbObject
     {
         if (table.IsTemporary() && !table.IsGlobalTemporary())
         {
-            Dictionary<string, object?> names = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, object?> names = new(GetDatabase()!.IdentifierComparer);
             foreach (Table temp in session.GetLocalTempTables())
             {
                 foreach (Constraint tempConstraint in temp.GetConstraints())

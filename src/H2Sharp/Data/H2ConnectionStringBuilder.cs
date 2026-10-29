@@ -26,7 +26,8 @@ public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
     private static readonly HashSet<string> KnownKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "Data Source", "DataSource", "Storage", "Mode",
-        "ACCESS_MODE_DATA", "AUTO_SERVER", "CIPHER", "FILE_LOCK",
+        "ACCESS_MODE_DATA", "AUTO_SERVER", "CASE_INSENSITIVE_IDENTIFIERS", "CIPHER",
+        "DATABASE_TO_LOWER", "DATABASE_TO_UPPER", "FILE_LOCK",
         "FORBID_CREATION", "IFEXISTS", "IGNORE_UNKNOWN_SETTINGS", "INIT",
         "LOCK_MODE", "OPEN_NEW", "PAGE_SIZE",
     };
@@ -142,6 +143,15 @@ public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
     }
 
     /// <summary>
+    /// Gets or sets whether identifiers compare without case.
+    /// </summary>
+    public bool CaseInsensitiveIdentifiers
+    {
+        get => GetBoolean("CASE_INSENSITIVE_IDENTIFIERS");
+        set => this["CASE_INSENSITIVE_IDENTIFIERS"] = value;
+    }
+
+    /// <summary>
     /// Gets or sets the lock mode.
     /// </summary>
     public int LockMode
@@ -217,6 +227,7 @@ public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
                 Init = Init,
                 OpenNew = OpenNew,
                 IgnoreUnknownSettings = IgnoreUnknownSettings,
+                CaseInsensitiveIdentifiers = CaseInsensitiveIdentifiers,
                 LockMode = LockMode,
                 PageSize = PageSize,
                 AccessModeData = AccessModeData,
@@ -248,6 +259,7 @@ public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
         Init = options.Init;
         OpenNew = options.OpenNew;
         IgnoreUnknownSettings = options.IgnoreUnknownSettings;
+        CaseInsensitiveIdentifiers = options.CaseInsensitiveIdentifiers;
         LockMode = options.LockMode;
         PageSize = options.PageSize;
         AccessModeData = options.AccessModeData;

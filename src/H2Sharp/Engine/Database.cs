@@ -111,12 +111,13 @@ public sealed partial class Database : CastDataProvider
     /// The schemas of this database, by name.
     /// </summary>
     /// <remarks>
-    /// Case-insensitive, as every name in H2 is: the fold is the database's, not the current
-    /// culture's. It is a plain dictionary under the lock rather than a concurrent one, because
-    /// the reference locks the database around schema changes and a lookup that raced a CREATE
-    /// SCHEMA would be a lookup that answered differently on two threads at the same moment.
+    /// The comparer is the database's identifier comparer: ordinal by default, or the
+    /// Java-compatible case-insensitive fold when CASE_INSENSITIVE_IDENTIFIERS is on. It is a
+    /// plain dictionary under the lock rather than a concurrent one, because the reference
+    /// locks the database around schema changes and a lookup that raced a CREATE SCHEMA would be
+    /// a lookup that answered differently on two threads at the same moment.
     /// </remarks>
-    private readonly Dictionary<string, Schemas.Schema> schemas = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Schemas.Schema> schemas;
 
     /// <summary>
     /// The name of the schema of the metadata views.
@@ -233,11 +234,34 @@ public sealed partial class Database : CastDataProvider
     }
 
     /// <summary>
-    /// Whether identifiers compare without case. False, as in the reference, where it comes
-    /// from the database settings: the settings object is not ported, so the default is
-    /// written here and EqualsIdentifiers reads it.
+    /// The comparer for identifier-keyed maps.
     /// </summary>
-    private readonly bool caseInsensitiveIdentifiers = false;
+    public IEqualityComparer<string> IdentifierComparer => identifierComparer;
+
+    /// <summary>
+    /// Whether identifiers compare without case.
+    /// </summary>
+    public bool IsCaseInsensitiveIdentifiers() => caseInsensitiveIdentifiers;
+
+    /// <summary>
+    /// Whether identifiers compare without case.
+    /// </summary>
+    private readonly bool caseInsensitiveIdentifiers;
+
+    private readonly IEqualityComparer<string> identifierComparer;
+
+    private sealed class CaseInsensitiveIdentifierComparer : IEqualityComparer<string>
+    {
+        internal static readonly CaseInsensitiveIdentifierComparer Instance = new();
+
+        public bool Equals(string? x, string? y)
+            => ReferenceEquals(x, y) || (x is not null && y is not null
+                && Util.StringUtils.ToUpperEnglish(x).Equals(
+                    Util.StringUtils.ToUpperEnglish(y), StringComparison.Ordinal));
+
+        public int GetHashCode(string obj)
+            => Util.StringUtils.ToUpperEnglish(obj).GetHashCode(StringComparison.Ordinal);
+    }
 
     /// <summary>
     /// Gets the schemas of this database.
@@ -435,6 +459,11 @@ public sealed partial class Database : CastDataProvider
         mode = connectionInfo.Mode;
 
         ConnectionOptions options = connectionInfo.Options;
+        caseInsensitiveIdentifiers = options.CaseInsensitiveIdentifiers;
+        identifierComparer = caseInsensitiveIdentifiers
+            ? CaseInsensitiveIdentifierComparer.Instance
+            : StringComparer.Ordinal;
+        schemas = new(identifierComparer);
         lockMode = options.LockMode;
         pageSize = options.PageSize;
 

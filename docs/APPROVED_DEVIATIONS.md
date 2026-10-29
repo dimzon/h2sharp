@@ -362,8 +362,10 @@ SQL-скрипта из файла не портируются. Тесты `Runs
 
 Указание пользователя: режим задаётся до открытия базы и не переключается.
 `SET MODE` с тем же режимом — no-op; с другим — `FEATURE_NOT_SUPPORTED_1`.
-Второй connection к тому же storage с другим `MODE` получает
-`DATABASE_ALREADY_OPEN_1`; после закрытия последнего connection storage можно
+`MODE` входит в ключ экземпляра базы: connections с одинаковыми storage, name
+и mode делят один `Database`; с разным mode получают разные экземпляры. Для
+`Storage=Memory` это независимые базы; для файла второй экземпляр упирается в
+файловую блокировку. После закрытия последнего connection storage можно
 открыть с другим режимом. `MODE` не персистится.
 
 ### D-030. Linked tables вне core scope
@@ -400,6 +402,26 @@ savepoint, если не все уникальные индексы принял
 
 Поведение MySQL-режима (`INSERT IGNORE`, `ON DUPLICATE KEY UPDATE`,
 `VALUES(col)`, счётчик затронутых строк) проверяется `TestDuplicateKeyUpdate`.
+
+### D-033. Идентификаторы: всегда upper, только CASE_INSENSITIVE_IDENTIFIERS
+
+Указание пользователя: `DATABASE_TO_UPPER`/`DATABASE_TO_LOWER` не
+поддерживаются, всегда считаем `DATABASE_TO_UPPER=TRUE`; эти ключи в URL
+принимаются и молча игнорируются. Некавыченные имена сворачиваются в верхний
+регистр, кавыченные сохраняют написание. По умолчанию идентификаторы
+сравниваются с учётом регистра; `CASE_INSENSITIVE_IDENTIFIERS=TRUE` включает
+Java-совместимую нечувствительность (`StringUtils.ToUpperEnglish`), а не
+`OrdinalIgnoreCase`.
+
+`CASE_INSENSITIVE_IDENTIFIERS` — статическая настройка экземпляра базы. Ключ
+реестра `Engine` включает storage, name, mode и этот флаг; connections с
+одинаковыми параметрами делят один `Database`, с разными — получают разные
+экземпляры (для файла второй упрётся в файловую блокировку). Второе
+соединение не переключает режим уже открытой базы. `TestSelectTableNotFound`
+и `TestAlterTableNotFound` переписаны под upper-only семантику; отдельный
+`TestIdentifierCaseSettings` закрепляет игнорирование `DATABASE_TO_UPPER`/
+`DATABASE_TO_LOWER`, default case-sensitive и CI-режим. Остальные тесты,
+помеченные `BlockedByPort`, сохраняют старые ветки до своей разблокировки.
 
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 

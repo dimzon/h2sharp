@@ -28,8 +28,8 @@ namespace H2Sharp.Engine;
 /// </summary>
 public static class Engine
 {
-    private static readonly Dictionary<StorageKey, DatabaseHolder> Databases =
-        new(StorageKeyComparer.Instance);
+    private static readonly Dictionary<DatabaseKey, DatabaseHolder> Databases =
+        new(DatabaseKeyComparer.Instance);
 
     private static readonly object DatabasesLock = new();
 
@@ -95,11 +95,11 @@ public static class Engine
             ThrowNotFound(options.IfExists, options.ForbidCreation, name);
         }
 
-        StorageKey key = default;
+        DatabaseKey key = default;
         bool named = !connectionInfo.IsUnnamedInMemory;
         if (named)
         {
-            key = GetStorageKey(connectionInfo);
+            key = GetDatabaseKey(connectionInfo);
         }
 
         DatabaseHolder holder = named ? GetOrCreateHolder(key) : new DatabaseHolder();
@@ -128,10 +128,6 @@ public static class Engine
                             holder.Database = database;
                         }
                         else if (options.OpenNew)
-                        {
-                            throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
-                        }
-                        else if (database.GetMode() != connectionInfo.Mode)
                         {
                             throw DbException.Get(ErrorCode.DatabaseAlreadyOpen1, name);
                         }
@@ -178,7 +174,7 @@ public static class Engine
             return;
         }
 
-        StorageKey key = GetStorageKey(connectionInfo);
+        DatabaseKey key = GetDatabaseKey(connectionInfo);
         lock (DatabasesLock)
         {
             if (!Databases.TryGetValue(key, out DatabaseHolder? holder)
@@ -200,7 +196,7 @@ public static class Engine
         }
     }
 
-    private static DatabaseHolder GetOrCreateHolder(StorageKey key)
+    private static DatabaseHolder GetOrCreateHolder(DatabaseKey key)
     {
         lock (DatabasesLock)
         {
@@ -214,7 +210,7 @@ public static class Engine
         }
     }
 
-    private static StorageKey GetStorageKey(ConnectionInfo connectionInfo)
+    private static DatabaseKey GetDatabaseKey(ConnectionInfo connectionInfo)
     {
         string name = connectionInfo.DataSource ?? string.Empty;
         if (connectionInfo.Storage == StorageKind.File)
@@ -222,7 +218,9 @@ public static class Engine
             name = Path.GetFullPath(name);
         }
 
-        return new StorageKey(connectionInfo.Storage, name);
+        return new DatabaseKey(
+            connectionInfo.Storage, name, connectionInfo.Mode,
+            connectionInfo.Options.CaseInsensitiveIdentifiers);
     }
 
     private static void ThrowNotFound(bool ifExists, bool forbidCreation, string name)
@@ -238,15 +236,18 @@ public static class Engine
         }
     }
 
-    private readonly record struct StorageKey(StorageKind Kind, string Name);
+    private readonly record struct DatabaseKey(
+        StorageKind Kind, string Name, Mode Mode, bool CaseInsensitiveIdentifiers);
 
-    private sealed class StorageKeyComparer : IEqualityComparer<StorageKey>
+    private sealed class DatabaseKeyComparer : IEqualityComparer<DatabaseKey>
     {
-        internal static readonly StorageKeyComparer Instance = new();
+        internal static readonly DatabaseKeyComparer Instance = new();
 
-        public bool Equals(StorageKey x, StorageKey y)
+        public bool Equals(DatabaseKey x, DatabaseKey y)
         {
-            if (x.Kind != y.Kind)
+            if (x.Kind != y.Kind
+                || x.CaseInsensitiveIdentifiers != y.CaseInsensitiveIdentifiers
+                || !string.Equals(x.Mode.Name, y.Mode.Name, StringComparison.Ordinal))
             {
                 return false;
             }
@@ -257,12 +258,14 @@ public static class Engine
             return string.Equals(x.Name, y.Name, comparison);
         }
 
-        public int GetHashCode(StorageKey obj)
+        public int GetHashCode(DatabaseKey obj)
         {
             StringComparer comparer = obj.Kind == StorageKind.File && OperatingSystem.IsWindows()
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal;
-            return HashCode.Combine(obj.Kind, comparer.GetHashCode(obj.Name));
+            return HashCode.Combine(
+                obj.Kind, comparer.GetHashCode(obj.Name), obj.Mode.Name,
+                obj.CaseInsensitiveIdentifiers);
         }
     }
 

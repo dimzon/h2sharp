@@ -136,7 +136,7 @@ public sealed partial class Parser
         ExpectWord("TO");
         string newName = ReadIdentifierWithSchemaName(out string? newSchemaName);
         if (newSchemaName is not null
-            && !newSchemaName.Equals(schema.GetName(), StringComparison.Ordinal))
+            && !IdentifierEquals(newSchemaName, schema.GetName()))
         {
             throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
         }
@@ -805,7 +805,7 @@ public sealed partial class Parser
             string tableOrColumn = ReadIdentifier();
             if (ReadIf(Token.Dot))
             {
-                if (!string.Equals(table.GetSchema()?.GetName(), schemaOrTable, StringComparison.Ordinal))
+                if (!IdentifierEquals(table.GetSchema()?.GetName(), schemaOrTable))
                 {
                     throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
                 }
@@ -814,7 +814,7 @@ public sealed partial class Parser
             }
             else
             {
-                if (!table.GetTableName().Equals(schemaOrTable, StringComparison.Ordinal))
+                if (!IdentifierEquals(table.GetTableName(), schemaOrTable))
                 {
                     throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, schemaOrTable);
                 }

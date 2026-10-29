@@ -2440,7 +2440,7 @@ public sealed partial class Parser
                 foreach (Indexes.Index index in table.GetIndexes())
                 {
                     if (index.GetName() is string name
-                        && name.Equals(indexName, StringComparison.Ordinal))
+                        && IdentifierEquals(name, indexName))
                     {
                         canonical = name;
                         break;
@@ -2625,11 +2625,11 @@ public sealed partial class Parser
     /// <param name="filter">the filter of the table</param>
     /// <param name="name">the name of the column</param>
     /// <returns>the column, or null when the table has no such column</returns>
-    private static Tables.Column? FindColumn(Tables.TableFilter filter, string name)
+    private Tables.Column? FindColumn(Tables.TableFilter filter, string name)
     {
         foreach (Tables.Column column in filter.GetColumns())
         {
-            if (column.GetName().Equals(name, StringComparison.Ordinal))
+            if (IdentifierEquals(column.GetName(), name))
             {
                 return column;
             }
@@ -3453,15 +3453,13 @@ public sealed partial class Parser
             }
 
             string? schemaName = filter.GetTable()!.GetSchema()?.GetName();
-            if (!schema.Equals(schemaName, StringComparison.Ordinal))
+            if (!IdentifierEquals(schema, schemaName))
             {
                 throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schema);
             }
         }
 
-        // Identifiers arrive folded to upper case, as in the reference, so the alias
-        // comparison is exact rather than case-insensitive.
-        if (!tableAlias.Equals(filter.GetTableAlias(), StringComparison.Ordinal))
+        if (!IdentifierEquals(tableAlias, filter.GetTableAlias()))
         {
             throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableAlias);
         }
@@ -4260,7 +4258,7 @@ public sealed partial class Parser
             foreach (Tables.TableFilter f in fromFilters)
             {
                 if (starAlias is { Length: > 0 }
-                    && !f.GetTableAlias().Equals(starAlias, StringComparison.Ordinal))
+                    && !IdentifierEquals(f.GetTableAlias(), starAlias))
                 {
                     continue;
                 }
@@ -4273,7 +4271,7 @@ public sealed partial class Parser
                         bool excluded = false;
                         foreach (string c in except)
                         {
-                            if (c.Equals(column.GetName(), StringComparison.Ordinal))
+                            if (IdentifierEquals(c, column.GetName()))
                             {
                                 excluded = true;
                                 break;
@@ -7695,7 +7693,7 @@ public sealed partial class Parser
             Tables.Column? column = null;
             foreach (Tables.Column candidate in table.GetColumns())
             {
-                if (candidate.GetName().Equals(statement.AlterColumn.ColumnName, StringComparison.Ordinal))
+                if (IdentifierEquals(candidate.GetName(), statement.AlterColumn.ColumnName))
                 {
                     column = candidate;
                     break;
@@ -8091,7 +8089,7 @@ public sealed partial class Parser
                 Tables.Column? match = null;
                 foreach (Tables.Column candidate in tableColumns)
                 {
-                    if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+                    if (IdentifierEquals(candidate.GetName(), name))
                     {
                         match = candidate;
                         break;
@@ -8244,7 +8242,7 @@ public sealed partial class Parser
                 Tables.Column? match = null;
                 foreach (Tables.Column candidate in table.GetColumns())
                 {
-                    if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+                    if (IdentifierEquals(candidate.GetName(), name))
                     {
                         match = candidate;
                         break;
@@ -8360,7 +8358,7 @@ public sealed partial class Parser
             foreach (Tables.Table candidate in candidateSchema.GetAllTablesAndViews(session))
             {
                 string candidateName = candidate.GetTableName();
-                if (candidateName.Equals(tableName, StringComparison.Ordinal))
+                if (IdentifierEquals(candidateName, tableName))
                 {
                     _ = candidates.Add(candidateName);
                 }
@@ -9514,7 +9512,7 @@ public sealed partial class Parser
             {
                 string column = ReadIdentifier();
                 if (statement.Columns.Exists(
-                    name => name.Equals(column, StringComparison.Ordinal)))
+                    name => IdentifierEquals(name, column)))
                 {
                     throw DbException.Get(Api.ErrorCode.DuplicateColumnName1, column);
                 }
@@ -9819,6 +9817,11 @@ public sealed partial class Parser
         Read();
         return name;
     }
+
+    private bool IdentifierEquals(string? a, string? b)
+        => session is null
+            ? string.Equals(a, b, StringComparison.Ordinal)
+            : session.GetDatabase().EqualsIdentifiers(a ?? string.Empty, b ?? string.Empty);
 
     /// <summary>
     /// Reads a type as the name it was written with, keeping the precision and scale that follow.

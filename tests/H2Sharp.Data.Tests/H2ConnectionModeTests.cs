@@ -10,7 +10,7 @@ namespace H2Sharp.Data.Tests;
 public sealed class H2ConnectionModeTests
 {
     [Fact]
-    public void ModeIsFixedWhenTheDatabaseIsOpened()
+    public void ModeIsPartOfTheDatabaseIdentity()
     {
         string name = "mode_fixed_" + Guid.NewGuid().ToString("N");
         string oracle = "Data Source=" + name + ";Storage=Memory;Mode=Oracle";
@@ -32,8 +32,9 @@ public sealed class H2ConnectionModeTests
 
         using H2Connection conflicting = new(
             "Data Source=" + name + ";Storage=Memory;Mode=Regular");
-        H2SharpException conflict = Assert.Throws<H2SharpException>(() => conflicting.Open());
-        Assert.Equal(ErrorCode.DatabaseAlreadyOpen1, conflict.H2ErrorCode);
+        conflicting.Open();
+        Assert.NotSame(first.CurrentDatabase, conflicting.CurrentDatabase);
+        Assert.Equal(Mode.GetInstance("Regular"), conflicting.CurrentDatabase!.GetMode());
 
         first.Close();
 

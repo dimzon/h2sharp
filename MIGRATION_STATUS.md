@@ -112,9 +112,18 @@ immediate-значение, поэтому видит uncommitted UPDATE дру�
 соединения берут тот же lock. Это убрало гонку `TransactionStore`/`currentTxCounter` при
 одновременном использовании одного соединения. В `TestMvcc2` и
 `TestConcurrentConnectionUsage` исправлено расписание задач и лишний cancellation token:
-это были гонки тестового порта, а не дефекты движка. Parser-only сравнение идентификаторов
-переведено на `Ordinal`; настройки идентификаторов ещё не подключены. Native full после
-этих правок — **54/104**, новых падений нет.
+это были гонки тестового порта, а не дефекты движка. Native full после этих правок —
+**54/104**, новых падений нет.
+
+Идентификаторы переведены на утверждённое D-033 поведение: unquoted всегда upper,
+`DATABASE_TO_UPPER`/`DATABASE_TO_LOWER` из URL игнорируются, default-сравнение
+case-sensitive, а `CASE_INSENSITIVE_IDENTIFIERS=TRUE` использует Java-совместимую
+свёртку. Схемные реестры и parser берут comparer у `Database`. `Engine` ключует
+экземпляр по storage + name + mode + `CaseInsensitiveIdentifiers`, поэтому connections
+с одинаковыми конфликтующими параметрами делят одну базу, а с разными — разные.
+`TestSelectTableNotFound` и `TestAlterTableNotFound` переписаны под upper-only
+семантику; новый `TestIdentifierCaseSettings` закрепляет ignore upper/lower,
+case-sensitive default и CI-режим. Native с новыми тестами — **65/113**.
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
@@ -240,10 +249,12 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
 Проверено: core **1471/1471**, Data **577/577**, MvStore **87/87**, conformance предыдущий полный **880/952**,
-зелёный **878/905** (было 805/803), native полный **53–54/104** (`TestOptimizations`,
+зелёный **878/905** (было 805/803), native полный **65/113** (`TestOptimizations`,
 `TestBigResult`, `TestCachedQueryResults`, `TestMultiThread`, `TestMvcc1`,
-`TestTransaction`, `TestQueryCache` зелёные; `TestMvcc2`/`TestConcurrentConnectionUsage`
-могут падать только при определённом порядке полного прогона и проходят изолированно).
+`TestTransaction`, `TestQueryCache`, `TestSelectTableNotFound`,
+`TestAlterTableNotFound`, `TestIdentifierCaseSettings` зелёные;
+`TestMvcc2`/`TestConcurrentConnectionUsage` проходят изолированно и стабильны в
+полном прогоне).
 Остальные падения — DbSettings, trace/listener, users/rights, linked/alias/trigger,
 collation и оставшиеся оптимизации.
 Ранее закрыты typed connection string, parameter scopes, отложенный остаток

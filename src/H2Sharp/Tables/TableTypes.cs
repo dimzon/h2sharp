@@ -158,20 +158,11 @@ public class IndexColumn
     /// <returns>the mapped columns</returns>
     public static IndexColumn[] MapColumns(IndexColumn[] indexColumns, Table table)
     {
-        Column[] tableColumns = table.GetColumns();
         IndexColumn[] mapped = new IndexColumn[indexColumns.Length];
         for (int i = 0; i < indexColumns.Length; i++)
         {
             string name = indexColumns[i].GetName();
-            Column? match = null;
-            foreach (Column candidate in tableColumns)
-            {
-                if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
-                {
-                    match = candidate;
-                    break;
-                }
-            }
+            Column? match = table.GetColumn(name, ifExists: true);
 
             if (match is null)
             {
@@ -1249,9 +1240,13 @@ public abstract class Table
     /// <summary>Renames a column after checking for a duplicate name.</summary>
     public void RenameColumn(Column column, string newName)
     {
+        Engine.Database? database = GetSchema()?.GetDatabase();
         foreach (Column c in GetColumns())
         {
-            if (!ReferenceEquals(c, column) && c.GetName().Equals(newName, StringComparison.Ordinal))
+            bool same = database is null
+                ? c.GetName().Equals(newName, StringComparison.Ordinal)
+                : database.EqualsIdentifiers(c.GetName(), newName);
+            if (!ReferenceEquals(c, column) && same)
                 throw DbException.Get(Api.ErrorCode.DuplicateColumnName1, newName);
         }
         // This table hierarchy resolves columns from the array; no separate name map exists.
@@ -1831,9 +1826,13 @@ public abstract class Table
     /// <returns>the column</returns>
     public Column GetColumn(string columnName)
     {
+        Engine.Database? database = GetSchema()?.GetDatabase();
         foreach (Column column in GetColumns())
         {
-            if (column.GetName().Equals(columnName, StringComparison.Ordinal))
+            bool same = database is null
+                ? column.GetName().Equals(columnName, StringComparison.Ordinal)
+                : database.EqualsIdentifiers(column.GetName(), columnName);
+            if (same)
             {
                 return column;
             }
