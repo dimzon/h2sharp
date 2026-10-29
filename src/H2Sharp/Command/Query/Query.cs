@@ -92,6 +92,10 @@ public abstract class Query : Prepared
 
     private ResultInterface? lastResult;
 
+    // A view's Query can be shared by several connections. Its cached result belongs to the
+    // session that produced it and must not be handed to another session.
+    private SessionLocal? lastResultSession;
+
     private Value?[]? lastParameters;
 
     private int[]? lastInPredicateSortTypes;
@@ -105,6 +109,8 @@ public abstract class Query : Prepared
     private bool cacheableChecked;
 
     private bool? lastExists;
+
+    private SessionLocal? lastExistsSession;
 
     /// <summary>Requires a materialized result. This port currently materializes all queries.</summary>
     public void SetNeverLazy(bool value) => neverLazy = value;
@@ -319,7 +325,7 @@ public abstract class Query : Prepared
         Value?[] parameters = GetParameterValues();
         long now = GetSession().GetStatementModificationDataId();
         long maxDataModificationId = GetMaxDataModificationId();
-        if (lastResult is not null && !lastResult.IsClosed()
+        if (lastResult is not null && ReferenceEquals(lastResultSession, GetSession()) && !lastResult.IsClosed()
             && isStable && maxDataModificationId <= lastEvaluated
             && limit == lastLimit
             && SameParameters(parameters, lastParameters)
@@ -339,6 +345,7 @@ public abstract class Query : Prepared
         {
             lastParameters = parameters;
             lastResult = result;
+            lastResultSession = GetSession();
             lastInPredicateSortTypes = inPredicateSortTypes;
             lastEvaluated = now;
             lastLimit = limit;
@@ -348,6 +355,7 @@ public abstract class Query : Prepared
             ResetLastResult();
         }
         lastExists = null;
+        lastExistsSession = null;
         return result;
     }
 
@@ -405,10 +413,12 @@ public abstract class Query : Prepared
     {
         lastParameters = null;
         lastResult = null;
+        lastResultSession = null;
         lastInPredicateSortTypes = null;
         lastLimit = 0L;
         lastEvaluated = 0L;
         lastExists = null;
+        lastExistsSession = null;
     }
 
     private Value?[] GetParameterValues()
@@ -472,6 +482,7 @@ public abstract class Query : Prepared
     private void CloseLastResult()
     {
         lastResult?.Close();
+        lastResultSession = null;
     }
 
     /// <summary>Runs the query, writing rows to the target when one is given.</summary>
@@ -505,17 +516,20 @@ public abstract class Query : Prepared
         Value?[] parameters = GetParameterValues();
         long now = GetSession().GetStatementModificationDataId();
         long maxDataModificationId = GetMaxDataModificationId();
-        if (lastExists is not null && isStable && maxDataModificationId <= lastEvaluated
+        if (lastExists is not null && ReferenceEquals(lastExistsSession, GetSession())
+            && isStable && maxDataModificationId <= lastEvaluated
             && SameParameters(parameters, lastParameters)) return lastExists.Value;
         bool exists = ExecuteExists();
         if (isStable && maxDataModificationId <= now)
         {
             lastParameters = parameters;
             lastExists = exists;
+            lastExistsSession = GetSession();
             lastEvaluated = now;
         }
         else ResetLastResult();
         lastResult = null;
+        lastResultSession = null;
         return exists;
     }
 

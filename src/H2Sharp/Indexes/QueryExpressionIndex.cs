@@ -71,6 +71,9 @@ public abstract class QueryExpressionIndex : Index
     /// <inheritdoc/>
     public override bool NeedRebuild() => false;
 
+    /// <summary>Whether this cached index has expired.</summary>
+    public virtual bool IsExpired() => false;
+
     /// <inheritdoc/>
     public override long GetRowCount(SessionLocal session) => 0L;
 

@@ -31,8 +31,6 @@ public sealed class TableView : QueryExpressionTable
 
     private H2SharpException? createException;
 
-    private RegularQueryExpressionIndex? index;
-
     /// <summary>
     /// Creates a view.
     /// </summary>
@@ -63,6 +61,7 @@ public sealed class TableView : QueryExpressionTable
         querySQL = querySql;
         columnTemplates = newColumnTemplates;
         InitColumnsAndTables(session);
+        ClearIndexCaches(GetSchema()!.GetDatabase());
         if (createException is not null && !force)
         {
             querySQL = oldQuerySql;
@@ -100,6 +99,14 @@ public sealed class TableView : QueryExpressionTable
                 createException.Message);
         }
 
+        object cacheKey = this;
+        SmallLRUCache<object, QueryExpressionIndex> cache = session.GetViewIndexCache();
+        if (!cache.TryGetValue(cacheKey, out QueryExpressionIndex? index) || index.IsExpired())
+        {
+            index = new RegularQueryExpressionIndex(this, querySQL, null, session, null);
+            cache.Put(cacheKey, index);
+        }
+
         return index;
     }
 
@@ -108,7 +115,8 @@ public sealed class TableView : QueryExpressionTable
         => GetScanIndex(session);
 
     /// <inheritdoc/>
-    public override Index[] GetIndexes() => index is null ? [] : [index];
+    /// <remarks>QueryExpressionTable.getIndexes is empty: the session cache owns the index.</remarks>
+    public override Index[] GetIndexes() => [];
 
     /// <inheritdoc/>
     public override Query? GetTopQuery() => null;
@@ -192,7 +200,6 @@ public sealed class TableView : QueryExpressionTable
             columns = InitColumns(session, columnTemplates, compiled, false, false);
             createException = null;
             viewQuery = compiled;
-            index = new RegularQueryExpressionIndex(this, compiled);
         }
         catch (H2SharpException e)
         {
@@ -204,7 +211,6 @@ public sealed class TableView : QueryExpressionTable
             createException = e;
             tables = [];
             columns = [];
-            index = null;
         }
 
         if (id != 0)
@@ -250,8 +256,13 @@ public sealed class TableView : QueryExpressionTable
         RemoveCurrentViewFromOtherTables();
         base.RemoveChildrenAndResources(session);
         CreateException = null;
-        index = null;
+        ClearIndexCaches(GetSchema()!.GetDatabase());
         querySQL = string.Empty;
+    }
+
+    private static void ClearIndexCaches(Database database)
+    {
+        foreach (SessionLocal session in database.GetSessions()) session.ClearViewIndexCache();
     }
 
     private H2SharpException? CreateException

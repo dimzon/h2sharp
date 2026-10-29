@@ -25,6 +25,7 @@ using H2Sharp.Api;
 using H2Sharp.Command;
 using H2Sharp.Message;
 using H2Sharp.Extensions;
+using H2Sharp.Indexes;
 using H2Sharp.Util;
 
 namespace H2Sharp.Engine;
@@ -961,8 +962,24 @@ public sealed class SessionLocal : Session
     /// </remarks>
     private SmallLRUCache<string, H2Sharp.Command.Command>? queryCache;
 
+    private SmallLRUCache<object, QueryExpressionIndex>? viewIndexCache;
+
+    private Dictionary<object, QueryExpressionIndex>? derivedTableIndexCache;
+
     /// <summary>Clears the cached commands of this session.</summary>
     public void ClearQueryCache() => queryCache?.Clear();
+
+    /// <summary>Gets the per-session index cache used by views.</summary>
+    public SmallLRUCache<object, QueryExpressionIndex> GetViewIndexCache()
+        => viewIndexCache ??= SmallLRUCache<object, QueryExpressionIndex>.NewInstance(
+            Constants.ViewIndexCacheSize);
+
+    /// <summary>Gets the per-session index cache used by derived tables.</summary>
+    public Dictionary<object, QueryExpressionIndex> GetDerivedTableIndexCache()
+        => derivedTableIndexCache ??= [];
+
+    /// <summary>Clears the per-session view index cache.</summary>
+    public void ClearViewIndexCache() => viewIndexCache = null;
 
     private long modificationMetaId;
 
