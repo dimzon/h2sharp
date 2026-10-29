@@ -1396,9 +1396,6 @@ public sealed class TestTransaction : TestDb
                 }
 
                 Execute(stat2, "UPDATE TEST SET \"VALUE\" = \"VALUE\" + 1");
-                ta.Commit();
-                ta = conn1.BeginTransaction(isolationLevel);
-                stat1.Transaction = ta;
                 stat1.CommandText = "SELECT * FROM TEST WHERE ID = '1'";
                 using (DbDataReader rs = stat1.ExecuteReader())
                 {
@@ -1410,9 +1407,6 @@ public sealed class TestTransaction : TestDb
                 AssertThrows(ErrorCode.LockTimeout1, stat1,
                     "SELECT * FROM TEST WHERE ID = '1' FOR UPDATE");
                 t2.Commit();
-                ta.Commit();
-                ta = conn1.BeginTransaction(isolationLevel);
-                stat1.Transaction = ta;
                 if (isolationLevel >= IsolationLevel.RepeatableRead)
                 {
                     AssertThrows(ErrorCode.Deadlock1, stat1,
@@ -1523,9 +1517,6 @@ public sealed class TestTransaction : TestDb
 
                 Execute(stat2, "UPDATE TEST SET \"VALUE\" = 6 WHERE ID2 = 3");
                 t2.Commit();
-                ta.Commit();
-                ta = conn1.BeginTransaction(isolationLevel);
-                stat1.Transaction = ta;
                 if (isolationLevel == IsolationLevel.ReadUncommitted
                     || isolationLevel == IsolationLevel.ReadCommitted)
                 {
@@ -1667,6 +1658,8 @@ public sealed class TestTransaction : TestDb
                         }
 
                         tb.Commit();
+                        tb = conn2.BeginTransaction(isolationLevel);
+                        stat2.Transaction = tb;
                     }
                     else
                     {

@@ -95,17 +95,18 @@ per-session индекс view. `TestQueryCache` удерживает откры�
 ADO.NET-команда разбирает текст при выполнении, а не в no-op `Prepare`; это
 воспроизводит захват cache entry незакрытым `prepareStatement` эталона.
 
-`TestTransaction` дошёл до `TestIsolationLevels2`: FOR UPDATE, rollback и several
+`TestTransaction` дошёл до конца `TestIsolationLevels4`: FOR UPDATE, rollback и several
 transaction-shape переписаны под ADO.NET. `SessionLocal.startStatementWithinTransaction`
 теперь собирает зависимости команды и передаёт типизированные transaction maps в
 `Transaction.markStatementStart`; read committed/repeatable read/snapshot/serializable
 снимают snapshot на картах таблиц и их FK-связей, как эталон. `TestIsolationLevels`
 зелёный. Read-uncommitted dirty read исправлен: `MVPrimaryIndex.GetRowForKey` читает
 через `GetFromSnapshot`, а не immediate-значение, поэтому видит uncommitted UPDATE
-другой транзакции. Следующий дефект — `TestIsolationLevels2` ожидает 40001 (deadlock)
-на repeatable-read `FOR UPDATE` после commit чужого UPDATE; порт пока не выбирает
-deadlock-victim в этом сценарии. `TestClearCacheAfterDdl` проходит все сценарии,
-кроме alias (D-004). Parser принимает `SELECT`/`TABLE`/`WITH` как term без скобок
+другой транзакции. Deadlock-victim на 40001 откатывает транзакцию целиком, как в
+`Command.executeUpdate`; остальные ошибки откатываются к savepoint. Следующий дефект —
+последний `INSERT` в `TestIsolationLevels4` после чужого `DELETE` не даёт ожидаемый
+23505. `TestClearCacheAfterDdl` проходит все сценарии, кроме alias (D-004). Parser
+принимает `SELECT`/`TABLE`/`WITH` как term без скобок
 (`DELETE ... WHERE ID=SELECT MIN(ID) FROM ...`).
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:

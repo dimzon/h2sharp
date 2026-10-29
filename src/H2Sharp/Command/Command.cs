@@ -259,11 +259,25 @@ public abstract class Command : CommandInterface
         {
             return RunWithThreadLocalSession(() => UpdateRows(generatedKeysRequest));
         }
-        catch
+        catch (H2SharpException e)
         {
             try
             {
-                transaction.RollbackToSavepoint(savepoint);
+                // A deadlock victim is rolled back as a whole; another failed statement only
+                // loses its own savepoint.
+                if (e.H2ErrorCode == H2Sharp.Api.ErrorCode.Deadlock1)
+                {
+                    bool autoCommit = Session.GetAutoCommit();
+                    Session.Rollback();
+                    if (!autoCommit)
+                    {
+                        Session.Begin();
+                    }
+                }
+                else
+                {
+                    transaction.RollbackToSavepoint(savepoint);
+                }
             }
             catch
             {
