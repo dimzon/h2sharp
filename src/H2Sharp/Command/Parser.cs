@@ -2629,7 +2629,7 @@ public sealed partial class Parser
     {
         foreach (Tables.Column column in filter.GetColumns())
         {
-            if (column.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+            if (column.GetName().Equals(name, StringComparison.Ordinal))
             {
                 return column;
             }
@@ -4260,7 +4260,7 @@ public sealed partial class Parser
             foreach (Tables.TableFilter f in fromFilters)
             {
                 if (starAlias is { Length: > 0 }
-                    && !f.GetTableAlias().Equals(starAlias, StringComparison.OrdinalIgnoreCase))
+                    && !f.GetTableAlias().Equals(starAlias, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -4273,7 +4273,7 @@ public sealed partial class Parser
                         bool excluded = false;
                         foreach (string c in except)
                         {
-                            if (c.Equals(column.GetName(), StringComparison.OrdinalIgnoreCase))
+                            if (c.Equals(column.GetName(), StringComparison.Ordinal))
                             {
                                 excluded = true;
                                 break;
@@ -7695,7 +7695,7 @@ public sealed partial class Parser
             Tables.Column? column = null;
             foreach (Tables.Column candidate in table.GetColumns())
             {
-                if (candidate.GetName().Equals(statement.AlterColumn.ColumnName, StringComparison.OrdinalIgnoreCase))
+                if (candidate.GetName().Equals(statement.AlterColumn.ColumnName, StringComparison.Ordinal))
                 {
                     column = candidate;
                     break;
@@ -8221,7 +8221,7 @@ public sealed partial class Parser
             Tables.Column? match = null;
             foreach (Tables.Column candidate in table.GetColumns())
             {
-                if (candidate.GetName().Equals(name, StringComparison.OrdinalIgnoreCase))
+                if (candidate.GetName().Equals(name, StringComparison.Ordinal))
                 {
                     match = candidate;
                     break;
@@ -8360,7 +8360,7 @@ public sealed partial class Parser
             foreach (Tables.Table candidate in candidateSchema.GetAllTablesAndViews(session))
             {
                 string candidateName = candidate.GetTableName();
-                if (candidateName.Equals(tableName, StringComparison.OrdinalIgnoreCase))
+                if (candidateName.Equals(tableName, StringComparison.Ordinal))
                 {
                     _ = candidates.Add(candidateName);
                 }
@@ -9514,7 +9514,7 @@ public sealed partial class Parser
             {
                 string column = ReadIdentifier();
                 if (statement.Columns.Exists(
-                    name => name.Equals(column, StringComparison.OrdinalIgnoreCase)))
+                    name => name.Equals(column, StringComparison.Ordinal)))
                 {
                     throw DbException.Get(Api.ErrorCode.DuplicateColumnName1, column);
                 }

@@ -805,7 +805,7 @@ public sealed partial class Parser
             string tableOrColumn = ReadIdentifier();
             if (ReadIf(Token.Dot))
             {
-                if (!string.Equals(table.GetSchema()?.GetName(), schemaOrTable, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(table.GetSchema()?.GetName(), schemaOrTable, StringComparison.Ordinal))
                 {
                     throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
                 }
@@ -814,7 +814,7 @@ public sealed partial class Parser
             }
             else
             {
-                if (!table.GetTableName().Equals(schemaOrTable, StringComparison.OrdinalIgnoreCase))
+                if (!table.GetTableName().Equals(schemaOrTable, StringComparison.Ordinal))
                 {
                     throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, schemaOrTable);
                 }
