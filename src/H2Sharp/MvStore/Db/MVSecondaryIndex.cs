@@ -479,6 +479,9 @@ public sealed class MVSecondaryIndex : MVIndex<SearchRow, Value>
     public override MVMap<SearchRow, VersionedValue<Value>> GetMVMap()
         => throw new TODOException("MVSecondaryIndex.getMVMap: the transactional map is object-typed");
 
+    internal ITransactionMap GetTransactionMap(Transaction transaction)
+        => dataMap.GetInstance(transaction);
+
     /// <inheritdoc/>
     /// <remarks>
     /// Reads the inner map's root page directly, for the same reason as in

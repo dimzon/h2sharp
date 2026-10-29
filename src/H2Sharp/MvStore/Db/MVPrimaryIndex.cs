@@ -691,6 +691,9 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
         return column.GetColumnId() == Result.SearchRow.RowidIndex && column.GetTable() == table;
     }
 
+    internal ITransactionMap GetTransactionMap(Transaction transaction)
+        => GetMap(transaction);
+
     private TransactionMap<long, SearchRow> GetMap(Transaction? transaction)
     {
         if (transaction is null)

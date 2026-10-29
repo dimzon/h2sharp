@@ -13,6 +13,7 @@ using H2Sharp.Engine;
 using H2Sharp.Indexes;
 using H2Sharp.Message;
 using H2Sharp.MvStore;
+using H2Sharp.MvStore.Tx;
 using H2Sharp.Result;
 using H2Sharp.Tables;
 using H2Sharp.Values;
@@ -87,6 +88,9 @@ public sealed class MVDelegateIndex : MVIndex<long, SearchRow>
     {
         return mainIndex.GetMVMap();
     }
+
+    internal ITransactionMap GetTransactionMap(Transaction transaction)
+        => mainIndex.GetTransactionMap(transaction);
 
     /// <inheritdoc/>
     public override void Add(SessionLocal session, Row row)

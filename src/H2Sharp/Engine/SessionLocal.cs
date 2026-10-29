@@ -256,16 +256,100 @@ public sealed class SessionLocal : Session
     /// </summary>
     /// <param name="command">the statement, or null for an internal statement</param>
     /// <remarks>
-    /// Dependencies are not collected yet, so the map set is null. The snapshot rules in
-    /// <c>Transaction.markStatementStart</c> still apply: a read-committed statement drops
-    /// its snapshot at the end, while repeatable read keeps it.
+    /// The maps are the tables and indexes the statement and its isolation level require:
+    /// read committed uses the statement dependencies, repeatable read also follows their
+    /// constraints, and snapshot/serializable open every table on the first statement. This
+    /// is the reference's dependency collection; the port passes typed transaction maps
+    /// because its MVMap keys are object-typed at the transaction boundary.
     /// </remarks>
     public void StartStatementWithinTransaction(H2Sharp.Command.Command? command)
     {
-        _ = command;
         MvStore.Tx.Transaction transaction = GetTransaction();
+        HashSet<MvStore.Tx.ITransactionMap> maps = [];
+        if (command is not null)
+        {
+            HashSet<object> dependencies = [];
+            CollectDependencies(command, dependencies);
+            switch (transaction.GetIsolationLevel() ?? IsolationLevel.ReadCommitted)
+            {
+                case IsolationLevel.Snapshot:
+                case IsolationLevel.Serializable:
+                    if (!transaction.HasStatementDependencies())
+                    {
+                        foreach (Schemas.Schema schema in database.GetSchemas())
+                        {
+                            foreach (Table table in schema.GetAllTablesAndViews(this))
+                            {
+                                if (table is MvStore.Db.MVTable mvTable)
+                                {
+                                    mvTable.AddTransactionMaps(transaction, maps);
+                                }
+                            }
+                        }
+
+                        break;
+                    }
+
+                    goto case IsolationLevel.ReadCommitted;
+                case IsolationLevel.ReadCommitted:
+                case IsolationLevel.ReadUncommitted:
+                    foreach (object dependency in dependencies)
+                    {
+                        if (dependency is MvStore.Db.MVTable mvTable)
+                        {
+                            mvTable.AddTransactionMaps(transaction, maps);
+                        }
+                    }
+
+                    break;
+                case IsolationLevel.RepeatableRead:
+                    HashSet<MvStore.Db.MVTable> processed = [];
+                    foreach (object dependency in dependencies)
+                    {
+                        if (dependency is MvStore.Db.MVTable mvTable)
+                        {
+                            AddTableToDependencies(mvTable, transaction, maps, processed);
+                        }
+                    }
+
+                    break;
+            }
+        }
+
         statementModificationDataId = database.GetModificationDataId();
-        transaction.MarkStatementStart(null);
+        transaction.MarkStatementStartTyped(maps);
+    }
+
+    private static void CollectDependencies(H2Sharp.Command.Command command, HashSet<object> dependencies)
+    {
+        if (command is H2Sharp.Command.CommandContainer container
+            && container.GetPreparedCommand() is H2Sharp.Command.Query.Query query)
+        {
+            query.CollectDependencies(dependencies);
+            return;
+        }
+
+        // The port's non-query CollectDependencies methods are still stubs; their maps are
+        // opened by the statement itself, and the transaction snapshot is promoted there.
+    }
+
+    private static void AddTableToDependencies(MvStore.Db.MVTable table,
+        MvStore.Tx.Transaction transaction, HashSet<MvStore.Tx.ITransactionMap> maps,
+        HashSet<MvStore.Db.MVTable> processed)
+    {
+        if (!processed.Add(table))
+        {
+            return;
+        }
+
+        table.AddTransactionMaps(transaction, maps);
+        foreach (Constraints.Constraint constraint in table.GetConstraints())
+        {
+            if (constraint.GetTable() is MvStore.Db.MVTable referenced && !ReferenceEquals(referenced, table))
+            {
+                AddTableToDependencies(referenced, transaction, maps, processed);
+            }
+        }
     }
 
     /// <summary>

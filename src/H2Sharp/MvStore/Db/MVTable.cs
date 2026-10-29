@@ -438,6 +438,28 @@ public sealed class MVTable : Table
         return indexCache ??= [.. indexes];
     }
 
+    /// <summary>
+    /// Adds the typed transaction maps of this table's indexes to the given set.
+    /// </summary>
+    internal void AddTransactionMaps(Transaction transaction, HashSet<ITransactionMap> maps)
+    {
+        foreach (Index index in GetIndexes())
+        {
+            switch (index)
+            {
+                case MVPrimaryIndex primary:
+                    _ = maps.Add(primary.GetTransactionMap(transaction));
+                    break;
+                case MVSecondaryIndex secondary:
+                    _ = maps.Add(secondary.GetTransactionMap(transaction));
+                    break;
+                case MVDelegateIndex delegated:
+                    _ = maps.Add(delegated.GetTransactionMap(transaction));
+                    break;
+            }
+        }
+    }
+
     /// <inheritdoc/>
     public override long GetDiskSpaceUsed(bool total, bool approximate)
     {

@@ -13,7 +13,13 @@ namespace H2Sharp.MvStore.Tx;
 /// </summary>
 internal interface ITransactionMap
 {
+    int GetMapId();
+
+    RootReference<object, VersionedValue<object>> FlushAndGetRoot();
+
     void SetStatementSnapshot(Snapshot<object, VersionedValue<object>>? snapshot);
+
+    void PromoteSnapshot();
 }
 
 /// <summary>
@@ -484,6 +490,11 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     internal void SetStatementSnapshot(Snapshot<object, VersionedValue<object>>? snapshot)
         => statementSnapshot = snapshot;
 
+    int ITransactionMap.GetMapId() => map.GetId();
+
+    RootReference<object, VersionedValue<object>> ITransactionMap.FlushAndGetRoot()
+        => map.FlushAndGetRoot();
+
     void ITransactionMap.SetStatementSnapshot(Snapshot<object, VersionedValue<object>>? snapshot)
         => SetStatementSnapshot(snapshot);
 
@@ -491,6 +502,8 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     {
         snapshot ??= statementSnapshot;
     }
+
+    void ITransactionMap.PromoteSnapshot() => PromoteSnapshot();
 
     /// <summary>
     /// A new snapshot of this map.

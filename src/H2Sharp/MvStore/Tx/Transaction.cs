@@ -324,6 +324,56 @@ public sealed class Transaction
     }
 
     /// <summary>
+    /// Marks the start of a statement for already typed transaction maps.
+    /// </summary>
+    /// <remarks>
+    /// The reference can hand raw MVMap instances to markStatementStart because its
+    /// TransactionMap has the same key type as the map. This port keeps transaction maps
+    /// generic and object-keyed internally, so the caller supplies the typed maps it opened;
+    /// creating one here with the wrong type would make the later typed OpenMapX cast fail.
+    /// </remarks>
+    internal void MarkStatementStartTyped(HashSet<ITransactionMap> maps)
+    {
+        MarkStatementEnd();
+        if (txCounter is null && Store!.Store.IsVersioningRequired())
+        {
+            txCounter = Store.Store.RegisterVersionUsage();
+        }
+
+        if (maps.Count != 0)
+        {
+            // MarkStatementEnd released the maps for read committed; put the caller's typed
+            // maps back so the statement's snapshot and the map opening by the query are one
+            // and the same TransactionMap instance.
+            foreach (ITransactionMap map in maps)
+            {
+                transactionMaps[map.GetMapId()] = map;
+            }
+
+            VersionedBitSet committingTransactions;
+            do
+            {
+                committingTransactions = Store.CommittingTransactions;
+                foreach (ITransactionMap map in maps)
+                {
+                    map.SetStatementSnapshot(new Snapshot<object, VersionedValue<object>>(
+                        map.FlushAndGetRoot(), committingTransactions.Bits));
+                }
+
+                if (IsReadCommitted())
+                {
+                    undoLogRootReferences = Store.CollectUndoLogRootReferences();
+                }
+            } while (!ReferenceEquals(committingTransactions, Store.CommittingTransactions));
+
+            foreach (ITransactionMap map in maps)
+            {
+                map.PromoteSnapshot();
+            }
+        }
+    }
+
+    /// <summary>
     /// Marks the end of a statement.
     /// </summary>
     public void MarkStatementEnd()

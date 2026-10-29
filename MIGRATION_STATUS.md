@@ -95,12 +95,14 @@ per-session индекс view. `TestQueryCache` удерживает откры�
 ADO.NET-команда разбирает текст при выполнении, а не в no-op `Prepare`; это
 воспроизводит захват cache entry незакрытым `prepareStatement` эталона.
 
-`TestTransaction` дошёл до `TestIsolationLevels`: FOR UPDATE, rollback и several transaction-shape
-переписаны под ADO.NET, но repeatable-read snapshot по-прежнему создаётся лениво на каждый
-map, поэтому таблица, впервые прочитанная после чужого INSERT, видит новую строку. Это
-следующий дефект транзакционного слоя. `TestClearCacheAfterDdl` проходит все сценарии,
-кроме alias (D-004). Parser принимает `SELECT`/`TABLE`/`WITH` как term без скобок
-(`DELETE ... WHERE ID=SELECT MIN(ID) FROM ...`).
+`TestTransaction` дошёл до `TestIsolationLevels2`: FOR UPDATE, rollback и several
+transaction-shape переписаны под ADO.NET. `SessionLocal.startStatementWithinTransaction`
+теперь собирает зависимости команды и передаёт типизированные transaction maps в
+`Transaction.markStatementStart`; read committed/repeatable read/snapshot/serializable
+снимают snapshot на картах таблиц и их FK-связей, как эталон. `TestIsolationLevels`
+зелёный. Следующий дефект — read-uncommitted dirty read: ожидается 2, читается 1.
+`TestClearCacheAfterDdl` проходит все сценарии, кроме alias (D-004). Parser принимает
+`SELECT`/`TABLE`/`WITH` как term без скобок (`DELETE ... WHERE ID=SELECT MIN(ID) FROM ...`).
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
