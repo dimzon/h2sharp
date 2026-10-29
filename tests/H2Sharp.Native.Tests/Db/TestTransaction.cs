@@ -205,13 +205,11 @@ public sealed class TestTransaction : TestDb
             using (_ = prep.ExecuteReader())
             {
             }
-        }
 
-        using (DbConnection conn2 = GetConnection("transaction"))
-        {
-            using DbTransaction transaction = conn2.BeginTransaction();
+            using DbConnection conn2 = GetConnection("transaction");
+            using DbTransaction transaction2 = conn2.BeginTransaction();
             DbCommand stat2 = conn2.CreateCommand();
-            stat2.Transaction = transaction;
+            stat2.Transaction = transaction2;
             Execute(stat2, "update test set name = 'Welt' where id = 2");
             AssertThrows(ErrorCode.LockTimeout1, stat2,
                 "update test set name = 'Hallo' where id = 1");
@@ -231,35 +229,39 @@ public sealed class TestTransaction : TestDb
         using DbConnection conn2 = GetConnection("transaction");
         DbCommand stat1 = conn1.CreateCommand();
         Execute(stat1, "CREATE TABLE TEST (ID INT PRIMARY KEY, V INT)");
-        DbTransaction transaction1 = conn1.BeginTransaction();
-        stat1.Transaction = transaction1;
         DbCommand setup2 = conn2.CreateCommand();
         Execute(setup2, "SET LOCK_TIMEOUT 2000");
-        TestForUpdate2(conn1, stat1, transaction1, conn2, false);
-        TestForUpdate2(conn1, stat1, transaction1, conn2, true);
+        TestForUpdate2(conn1, stat1, conn2, false);
+        TestForUpdate2(conn1, stat1, conn2, true);
     }
 
     private void TestForUpdate2(DbConnection conn1, DbCommand stat1,
-        DbTransaction transaction1, DbConnection conn2, bool forUpdate)
+        DbConnection conn2, bool forUpdate)
     {
-        TestForUpdate2(conn1, stat1, transaction1, conn2, forUpdate, false);
-        TestForUpdate2(conn1, stat1, transaction1, conn2, forUpdate, true);
+        TestForUpdate2(conn1, stat1, conn2, forUpdate, false);
+        TestForUpdate2(conn1, stat1, conn2, forUpdate, true);
     }
 
     private void TestForUpdate2(DbConnection conn1, DbCommand stat1,
-        DbTransaction transaction1, DbConnection conn2, bool forUpdate, bool window)
+        DbConnection conn2, bool forUpdate, bool window)
     {
-        TestForUpdate2(conn1, stat1, transaction1, conn2, forUpdate, window, false, false);
-        TestForUpdate2(conn1, stat1, transaction1, conn2, forUpdate, window, false, true);
-        TestForUpdate2(conn1, stat1, transaction1, conn2, forUpdate, window, true, false);
+        TestForUpdate2(conn1, stat1, conn2, forUpdate, window, false, false);
+        TestForUpdate2(conn1, stat1, conn2, forUpdate, window, false, true);
+        TestForUpdate2(conn1, stat1, conn2, forUpdate, window, true, false);
     }
 
     private void TestForUpdate2(DbConnection conn1, DbCommand stat1,
-        DbTransaction transaction1, DbConnection conn2, bool forUpdate, bool window,
+        DbConnection conn2, bool forUpdate, bool window,
         bool deleted, bool excluded)
     {
+        // The reference keeps conn1 out of auto-commit; each call commits the setup,
+        // then holds the following transaction open until the waiting thread is done.
+        DbTransaction transaction1 = conn1.BeginTransaction();
+        stat1.Transaction = transaction1;
         Execute(stat1, "MERGE INTO TEST KEY(ID) VALUES (1, 1)");
         transaction1.Commit();
+        transaction1 = conn1.BeginTransaction();
+        stat1.Transaction = transaction1;
         Execute(stat1, deleted ? "DELETE FROM TEST WHERE ID = 1" : "UPDATE TEST SET V = 2 WHERE ID = 1");
         StringBuilder builder = new("SELECT V");
         if (window)
@@ -311,9 +313,6 @@ public sealed class TestTransaction : TestDb
         }
 
         AssertEquals(forUpdate ? deleted || excluded ? -1 : 2 : 1, res[0]);
-        transaction1.Commit();
-        transaction1 = conn1.BeginTransaction();
-        stat1.Transaction = transaction1;
     }
 
     private void TestForUpdate3()
@@ -335,6 +334,8 @@ public sealed class TestTransaction : TestDb
         Execute(setup2, "SET LOCK_TIMEOUT 2000");
         Execute(stat1, "MERGE INTO TEST KEY(ID) VALUES (1, 1), (2, 2), (3, 3), (4, 4)");
         transaction1.Commit();
+        transaction1 = conn1.BeginTransaction();
+        stat1.Transaction = transaction1;
         Execute(stat1, "UPDATE TEST SET V = 10 - V");
         Exception?[] ex = [null];
         Thread t = new(() =>
@@ -406,6 +407,8 @@ public sealed class TestTransaction : TestDb
         }
 
         transaction1.Commit();
+        transaction1 = conn1.BeginTransaction();
+        stat1.Transaction = transaction1;
         n1 = Environment.TickCount64;
         AssertThrows(ErrorCode.LockTimeout1, stat1, "SELECT * FROM TEST FOR UPDATE NOWAIT");
         n2 = Environment.TickCount64;
@@ -455,9 +458,10 @@ public sealed class TestTransaction : TestDb
             int sum = 0;
             try
             {
-                using DbTransaction transaction = conn1.BeginTransaction();
+                // The reference shares conn1's open transaction with this thread; ADO.NET
+                // cannot begin a second one on the same connection.
                 using DbCommand prep = conn1.CreateCommand();
-                prep.Transaction = transaction;
+                prep.Transaction = transaction1;
                 prep.CommandText = "UPDATE TEST SET \"VALUE\" = TRUE WHERE ID = ? AND NOT \"VALUE\"";
                 prep.Parameters.Add(new H2Parameter());
                 for (int i = 1; i <= count; i++)
@@ -466,7 +470,7 @@ public sealed class TestTransaction : TestDb
                     sum += prep.ExecuteNonQuery();
                 }
 
-                transaction.Commit();
+                transaction1.Commit();
             }
             catch (DbException)
             {
@@ -530,9 +534,10 @@ public sealed class TestTransaction : TestDb
             int sum = 0;
             try
             {
-                using DbTransaction transaction = conn1.BeginTransaction();
+                // Same connection and transaction as the reference: ADO.NET cannot begin
+                // another transaction on conn1 while transaction1 is open.
                 using DbCommand prep = conn1.CreateCommand();
-                prep.Transaction = transaction;
+                prep.Transaction = transaction1;
                 prep.CommandText = mergeSql;
                 prep.Parameters.Add(new H2Parameter());
                 for (int i = 1; i <= count; i++)
@@ -541,7 +546,7 @@ public sealed class TestTransaction : TestDb
                     sum += prep.ExecuteNonQuery();
                 }
 
-                transaction.Commit();
+                transaction1.Commit();
             }
             catch (DbException)
             {
@@ -610,9 +615,9 @@ public sealed class TestTransaction : TestDb
             int sum = 0;
             try
             {
-                using DbTransaction transaction = conn1.BeginTransaction();
+                // The reference reuses conn1's open transaction in the worker thread.
                 using DbCommand prep = conn1.CreateCommand();
-                prep.Transaction = transaction;
+                prep.Transaction = transaction1;
                 prep.CommandText = sql1;
                 prep.Parameters.Add(new H2Parameter());
                 for (int i = 1; i <= count; i++)
@@ -621,7 +626,7 @@ public sealed class TestTransaction : TestDb
                     sum += prep.ExecuteNonQuery();
                 }
 
-                transaction.Commit();
+                transaction1.Commit();
             }
             catch (DbException)
             {
@@ -709,6 +714,9 @@ public sealed class TestTransaction : TestDb
             AssertThrows(ErrorCode.ReferentialIntegrityViolatedChildExists1, stat,
                 "delete from master");
             transaction.Rollback();
+            // ADO.NET commands cannot keep the transaction object after it completes;
+            // JDBC statements only know their connection, whose auto-commit is off.
+            stat.Transaction = null;
             stat.CommandText = "select * from master where id=1";
             using (DbDataReader rs = stat.ExecuteReader())
             {
@@ -811,6 +819,9 @@ public sealed class TestTransaction : TestDb
         Execute(stat, "insert into test values(1)");
         Execute(stat, "set @x = 1");
         transaction.Commit();
+        // JDBC statements stay on the connection after commit; the ADO command cannot
+        // keep referring to the completed DbTransaction object.
+        stat.Transaction = null;
         AssertSingleValue(stat, "select id from test", 1);
         AssertSingleValue(stat, "call @x", 1);
 

@@ -385,7 +385,7 @@ public abstract class Index : SchemaObject
     /// <param name="rowOne">the first row</param>
     /// <param name="rowTwo">the second row</param>
     /// <returns>true if the index cannot tell them apart</returns>
-    public bool AreRowsEquivalent(SearchRow rowOne, SearchRow rowTwo)
+    public virtual bool AreRowsEquivalent(SearchRow rowOne, SearchRow rowTwo)
     {
         if (ReferenceEquals(rowOne, rowTwo))
         {

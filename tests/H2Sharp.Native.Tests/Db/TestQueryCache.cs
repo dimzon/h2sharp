@@ -51,10 +51,13 @@ public sealed class TestQueryCache : TestDb
         }
 
         string query = queryBuilder.ToString();
-        // The first prepare of the query, never closed, exactly as the reference leaves
-        // it; `keep` stays the unclosed prepare of iteration 1000 from then on.
+        // The reference prepares the query and never closes the statement, so the cached
+        // command stays in use. ADO.NET's Prepare has no server round trip here and the text
+        // is parsed on execution, so an open reader is what keeps the container in use.
+        List<DbDataReader> heldReaders = [];
         DbCommand? keep = conn.CreateCommand();
         keep.CommandText = query;
+        heldReaders.Add(keep.ExecuteReader());
         try
         {
             int firstGreater = 0;
@@ -88,6 +91,7 @@ public sealed class TestQueryCache : TestDb
                     // so that next iteration will have a cache miss
                     keep = conn.CreateCommand();
                     keep.CommandText = query;
+                    heldReaders.Add(keep.ExecuteReader());
                 }
                 else if (i == 1001)
                 {
@@ -114,6 +118,10 @@ public sealed class TestQueryCache : TestDb
         }
         finally
         {
+            foreach (DbDataReader reader in heldReaders)
+            {
+                reader.Dispose();
+            }
             keep?.Dispose();
         }
     }

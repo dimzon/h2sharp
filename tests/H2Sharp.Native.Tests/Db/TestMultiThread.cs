@@ -577,6 +577,10 @@ public sealed class TestMultiThread : TestDb
         }
 
         previous.Wait();
+        // The reference's try-with-resources closes both connections before deleting the
+        // database; using declarations would keep them open until this method returns.
+        c1.Close();
+        c2.Close();
         DeleteDb("testOptimizeReuseResults");
     }
 

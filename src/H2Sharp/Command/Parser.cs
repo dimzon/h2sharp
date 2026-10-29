@@ -5706,6 +5706,14 @@ public sealed partial class Parser
             return new Expressions.ExpressionList([.. elements], isArray: true);
         }
 
+        // H2 readTermWithoutIdentifier: SELECT, TABLE and WITH start a subquery even
+        // without parentheses, as in DELETE ... WHERE ID=SELECT MIN(ID) FROM ... .
+        if (IsWord("SELECT", consume: false) || IsWord("TABLE", consume: false)
+            || IsWord("WITH", consume: false))
+        {
+            return new Expressions.Subquery(ParseQueryExpression(prepare: false));
+        }
+
         if (ReadIf(Token.OpenParen))
         {
             // H2 readTermWithoutIdentifier: an empty parenthesized value is an empty ROW.

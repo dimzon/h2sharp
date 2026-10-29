@@ -1017,7 +1017,6 @@ public sealed class MVTable : Table
         {
             foreach ((Row oldRow, Row newRow) in rows)
             {
-                newRow.SetKey(oldRow.GetKey());
                 foreach (Index index in indexes)
                 {
                     if (!index.AreRowsEquivalent(oldRow, newRow))

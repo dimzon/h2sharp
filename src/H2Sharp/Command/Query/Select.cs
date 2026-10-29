@@ -1081,7 +1081,7 @@ public sealed class Select : Query
         while (topTableFilter!.Next())
         {
             SetCurrentRowNumber(rowNumber + 1);
-            if (IsConditionMet())
+            if (forUpdate is not null ? IsConditionMetForUpdate() : IsConditionMet())
             {
                 rowNumber++;
                 groupData!.NextSource();

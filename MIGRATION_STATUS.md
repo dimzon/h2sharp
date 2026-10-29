@@ -82,7 +82,25 @@ Data ids таблиц обновляются до и после commit/rollback,
 `TestCachedQueryResults` зелёный: 100 000 уникальных значений под row lock.
 `QueryResultCacheOracleTests` сверяет на JVM dirty rollback, savepoints, rebinding,
 commit и смену RepeatableRead snapshot при cache OFF/ON. `TestOptimizations`,
-`TestBigResult`, `TestQueryCache` и `TestRecursiveQueries` остаются зелёными.
+`TestBigResult`, `TestQueryCache`, `TestRecursiveQueries`, `TestMultiThread`,
+`TestMvcc1` и `TestConcurrentConnectionUsage` остаются зелёными.
+
+`MVTable.UpdateRows` больше не перезаписывает ключ новой строки старым: ключ уже
+выставлен `SetClauseList.PrepareUpdate` по main index column, и подмена скрывала
+смену PRIMARY KEY, из-за чего `UPDATE test SET id=2 WHERE id=1` не давал 23505.
+Это вернуло `TestMvcc1`. `MVPrimaryIndex.GetRowForKey` восстанавливает row key
+через `setRowKey`, а `AreRowsEquivalent` сравнивает только ключ row-id индекса;
+это закрыло `TestConcurrentUpdate2` в `TestMultiThread`. `TestViews` использует
+per-session индекс view. `TestQueryCache` удерживает открытый reader, потому что
+ADO.NET-команда разбирает текст при выполнении, а не в no-op `Prepare`; это
+воспроизводит захват cache entry незакрытым `prepareStatement` эталона.
+
+`TestTransaction` дошёл до `TestIsolationLevels`: FOR UPDATE, rollback и several transaction-shape
+переписаны под ADO.NET, но repeatable-read snapshot по-прежнему создаётся лениво на каждый
+map, поэтому таблица, впервые прочитанная после чужого INSERT, видит новую строку. Это
+следующий дефект транзакционного слоя. `TestClearCacheAfterDdl` проходит все сценарии,
+кроме alias (D-004). Parser принимает `SELECT`/`TABLE`/`WITH` как term без скобок
+(`DELETE ... WHERE ID=SELECT MIN(ID) FROM ...`).
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
@@ -208,9 +226,11 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
 Проверено: core **1471/1471**, Data **577/577**, MvStore **87/87**, conformance предыдущий полный **880/952**,
-зелёный **878/905** (было 805/803), native полный **52/104** (`TestOptimizations`,
-`TestBigResult` и `TestCachedQueryResults` зелёные; остальные падения — DbSettings, trace/listener,
-users/rights, linked/alias/trigger, collation и оставшиеся оптимизации).
+зелёный **878/905** (было 805/803), native полный **53/104** (`TestOptimizations`,
+`TestBigResult`, `TestCachedQueryResults`, `TestMultiThread`, `TestMvcc1`,
+`TestQueryCache` и `TestConcurrentConnectionUsage` зелёные; остальные 51 падение —
+DbSettings, trace/listener, users/rights, linked/alias/trigger, collation и оставшиеся
+оптимизации).
 Ранее закрыты typed connection string, parameter scopes, отложенный остаток
 multi-statement, ON DUPLICATE KEY и JDBC getter-семантика.
 Провайдеры на текущем бинарнике: linq2db

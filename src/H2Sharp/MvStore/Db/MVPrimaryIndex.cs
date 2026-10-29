@@ -155,6 +155,15 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     public override bool IsRowIdIndex() => true;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Ported from MVPrimaryIndex.areRowsEquivalent: the primary row-id index identifies a row
+    /// by its key alone, so a value-only update must update it in place rather than remove and
+    /// reinsert it.
+    /// </remarks>
+    public override bool AreRowsEquivalent(SearchRow rowOne, SearchRow rowTwo)
+        => ReferenceEquals(rowOne, rowTwo) || rowOne.GetKey() == rowTwo.GetKey();
+
+    /// <inheritdoc/>
     public override void Add(SessionLocal session, Row row)
     {
         if (TryAdd(session, row, out SearchRow? conflict))
@@ -348,7 +357,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// <returns>the row, or null when there is none</returns>
     public SearchRow? GetRowForKey(Transaction? transaction, long key)
     {
-        return GetMap(transaction).Get(key);
+        return SetRowKey((Row?)GetMap(transaction).Get(key), key);
     }
 
     /// <summary>
