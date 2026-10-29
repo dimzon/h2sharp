@@ -872,6 +872,11 @@ public sealed class InformationSchemaTable : Table
     public override int GetTableType() => SYSTEM_TABLE;
 
     /// <inheritdoc/>
+    public override long GetMaxDataModificationId()
+        => type is Settings or Sequences or InDoubt or Sessions or Locks or SessionState
+            ? long.MaxValue : GetSchema()!.GetDatabase().GetModificationDataId();
+
+    /// <inheritdoc/>
     public override int GetColumnCount() => columns.Length;
 
     /// <inheritdoc/>

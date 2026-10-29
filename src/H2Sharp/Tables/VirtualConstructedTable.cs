@@ -34,4 +34,7 @@ public abstract class VirtualConstructedTable : Table
 
     /// <inheritdoc/>
     public override Index? GetScanIndex(SessionLocal session) => new VirtualConstructedTableIndex(this);
+
+    /// <inheritdoc/>
+    public override long GetMaxDataModificationId() => long.MaxValue;
 }

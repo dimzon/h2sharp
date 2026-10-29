@@ -152,6 +152,8 @@ public sealed class ExpressionVisitor
     // D-011: table objects and DbObject share this dependency set through object.
     private HashSet<object>? dependencies;
 
+    private long[]? maxDataModificationId;
+
     // Typed CLR counterpart of the reference visitor's set for this visitor kind.
     private HashSet<ColumnResolver>? columnResolvers;
 
@@ -306,6 +308,10 @@ public sealed class ExpressionVisitor
     public static ExpressionVisitor GetDependenciesVisitor(HashSet<object> dependencies)
         => new(GetDependencies) { dependencies = dependencies };
 
+    /// <summary>Gets the dependency set (D-011: tables are not DbObject in the port).</summary>
+    /// <remarks>getDependencies is renamed: C# cannot share a name with the GetDependencies constant.</remarks>
+    public HashSet<object> GetDependencySet() => dependencies!;
+
     /// <summary>Adds a schema dependency.</summary>
     public void AddDependency(object? dependency)
     {
@@ -368,7 +374,16 @@ public sealed class ExpressionVisitor
     /// Create a visitor that tracks the newest data modification id seen.
     /// </summary>
     public static ExpressionVisitor GetMaxModificationIdVisitor()
-        => throw new TODOException("ExpressionVisitor.GetMaxModificationIdVisitor");
+        => new(SetMaxDataModificationId) { maxDataModificationId = new long[1] };
+
+    /// <summary>Records the largest data modification id encountered.</summary>
+    public void AddDataModificationId(long value)
+    {
+        if (value > maxDataModificationId![0]) maxDataModificationId[0] = value;
+    }
+
+    /// <summary>Gets the largest data modification id encountered.</summary>
+    public long GetMaxDataModificationId() => maxDataModificationId![0];
 
     /// <summary>
     /// Create a new visitor to decrement query level in columns with the

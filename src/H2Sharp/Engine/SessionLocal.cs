@@ -221,6 +221,12 @@ public sealed class SessionLocal : Session
 
     private IsolationLevel isolationLevel = IsolationLevel.ReadCommitted;
 
+    private readonly HashSet<Table> updates = [];
+
+    private long snapshotDataModificationId;
+
+    private long statementModificationDataId;
+
     /// <summary>
     /// Gets the transaction this session is working on, or null when it has none.
     /// </summary>
@@ -256,14 +262,67 @@ public sealed class SessionLocal : Session
     public void StartStatementWithinTransaction(H2Sharp.Command.Command? command)
     {
         _ = command;
-        GetTransaction().MarkStatementStart(null);
+        MvStore.Tx.Transaction transaction = GetTransaction();
+        statementModificationDataId = database.GetModificationDataId();
+        transaction.MarkStatementStart(null);
     }
 
     /// <summary>
     /// Marks the end of the current SQL statement.
     /// </summary>
     public void EndStatement()
-        => Transaction?.MarkStatementEnd();
+    {
+        Transaction?.MarkStatementEnd();
+        statementModificationDataId = 0L;
+    }
+
+    /// <summary>Gets the database data modification id at the start of this statement.</summary>
+    public long GetStatementModificationDataId()
+        => statementModificationDataId != 0L ? statementModificationDataId : database.GetModificationDataId();
+
+    /// <summary>Gets the modification id of the transaction snapshot.</summary>
+    public long GetSnapshotDataModificationId() => snapshotDataModificationId;
+
+    /// <summary>Registers a table as updated, invalidating dependent session query results.</summary>
+    public void RegisterTableAsUpdated(Table table)
+    {
+        if (updates.Add(table)) InvalidateCachedResults(table);
+    }
+
+    /// <summary>Checks if this transaction updated or locked a row of the table.</summary>
+    public bool IsUpdatedInCurrentTransaction(Table table) => updates.Contains(table);
+
+    /// <summary>Invalidates the cached results of commands depending on the table.</summary>
+    public void InvalidateCachedResults(Table table)
+    {
+        if (queryCache is not null)
+        {
+            foreach (var entry in queryCache) entry.Value.InvalidateCachedResult(table);
+        }
+    }
+
+    private void MarkUsedTablesAsUpdated()
+    {
+        if (updates.Count != 0)
+        {
+            long nextModificationDataId = database.GetNextModificationDataId();
+            foreach (Table table in updates.ToArray())
+            {
+                if (table is MvStore.Db.MVTable mvTable) mvTable.SetModificationDataId(nextModificationDataId);
+            }
+        }
+    }
+
+    private void EndTransaction()
+    {
+        updates.Clear();
+        UnlockAllTables();
+        ReleaseScheduledObjectIds();
+        if (Transaction is not null && !Transaction.AllowNonRepeatableRead())
+        {
+            snapshotDataModificationId = database.GetNextModificationDataId();
+        }
+    }
 
     private Dictionary<string, Savepoint>? savepoints;
 
@@ -289,8 +348,10 @@ public sealed class SessionLocal : Session
         int index = savepoint?.logIndex ?? 0;
         if (Transaction is not null)
         {
+            MarkUsedTablesAsUpdated();
             if (savepoint is null) { Transaction.Rollback(); Transaction = null; }
             else Transaction.RollbackToSavepoint(savepoint.transactionSavepoint);
+            MarkUsedTablesAsUpdated();
         }
         if (savepoints is not null)
         {
@@ -333,25 +394,19 @@ public sealed class SessionLocal : Session
     public void Commit(bool ddl)
     {
         MvStore.Tx.Transaction? transaction = Transaction;
-        bool hasChanges = transaction?.HasChanges() == true;
         if (transaction is not null)
         {
             try
             {
+                MarkUsedTablesAsUpdated();
                 transaction.Commit();
+                MarkUsedTablesAsUpdated();
+                EndTransaction();
             }
             finally
             {
                 Transaction = null;
             }
-        }
-
-        if (hasChanges)
-        {
-            // Readers in other sessions cache results by the database-wide id. A commit is
-            // the moment their view changes, even though the data change itself happened
-            // earlier in this transaction.
-            GetDatabase().GetNextModificationDataId();
         }
 
         if (!ddl)
@@ -422,18 +477,8 @@ public sealed class SessionLocal : Session
     /// </summary>
     public void Rollback()
     {
-        MvStore.Tx.Transaction? transaction = Transaction;
-        if (transaction is not null)
-        {
-            try
-            {
-                transaction.Rollback();
-            }
-            finally
-            {
-                Transaction = null;
-            }
-        }
+        RollbackTo(null);
+        idsToRelease = null;
 
         if (autoCommitAtTransactionEnd)
         {
@@ -442,7 +487,7 @@ public sealed class SessionLocal : Session
         }
         savepoints = null;
         queryCache?.Clear();
-        UnlockAllTables();
+        EndTransaction();
         CleanTempTables(false);
     }
 

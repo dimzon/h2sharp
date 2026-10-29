@@ -139,6 +139,9 @@ public sealed class RangeTable : Table
     public override long GetRowCountApproximation(SessionLocal session) => 100;
 
     /// <inheritdoc/>
+    public override long GetMaxDataModificationId() => 0L;
+
+    /// <inheritdoc/>
     public override string? GetCreateSql() => null;
 
     /// <inheritdoc/>

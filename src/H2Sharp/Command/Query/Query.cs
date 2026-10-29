@@ -100,7 +100,11 @@ public abstract class Query : Prepared
 
     private long lastLimit;
 
-    private bool? noCache;
+    private bool noCache;
+
+    private bool cacheableChecked;
+
+    private bool? lastExists;
 
     /// <summary>Requires a materialized result. This port currently materializes all queries.</summary>
     public void SetNeverLazy(bool value) => neverLazy = value;
@@ -296,53 +300,115 @@ public abstract class Query : Prepared
     /// Named Run rather than the reference's query, because C# forbids a member with the same
     /// name as its enclosing type and this class is called Query. The overload with a target is
     /// the reference's <c>query(limit, target)</c>: rows go to the target and null is returned.
-    /// The result cache follows the reference's query(limit, target), with the database-wide
-    /// modification id standing in for the unported per-table modification ids; a data change
-    /// therefore invalidates more results than on the JVM, never fewer.
+    /// Result reuse follows Query.query: transaction stability, statement/snapshot and
+    /// per-table modification ids, parameters, limit and IN-predicate ordering.
     /// </remarks>
     /// <param name="limit">the limit</param>
     /// <returns>the rows</returns>
     public sealed override ResultInterface Run(long limit)
     {
         Database database = GetSession().GetDatabase();
-        if (!database.IsOptimizeReuseResults() || GetNoCache()
+        if (IsUnion() || GetNoCache() || !database.IsOptimizeReuseResults()
             || (GetSession().IsLazyQueryExecution() && !neverLazy))
         {
-            return Run(limit, null)!;
+            return QueryWithoutCacheLazyCheck(limit, null)!;
         }
 
+        bool isStable = GetSession().GetTransaction().GetIsolationLevel() != IsolationLevel.ReadUncommitted
+            && !IsUpdatedInCurrentTransaction();
         Value?[] parameters = GetParameterValues();
-        long now = database.GetModificationDataId();
+        long now = GetSession().GetStatementModificationDataId();
+        long maxDataModificationId = GetMaxDataModificationId();
         if (lastResult is not null && !lastResult.IsClosed()
-            && now == lastEvaluated
+            && isStable && maxDataModificationId <= lastEvaluated
             && limit == lastLimit
             && SameParameters(parameters, lastParameters)
             && SameSortTypes(inPredicateSortTypes, lastInPredicateSortTypes))
         {
-            ResultInterface? copy = lastResult.CreateShallowCopy(GetSession());
-            if (copy is not null)
+            lastResult = lastResult.CreateShallowCopy(GetSession());
+            if (lastResult is not null)
             {
-                copy.Reset();
-                return copy;
+                lastResult.Reset();
+                return lastResult;
             }
         }
 
         CloseLastResult();
-        ResultInterface result = Run(limit, null)!;
-        lastParameters = parameters;
-        lastResult = result;
-        lastInPredicateSortTypes = inPredicateSortTypes;
-        lastEvaluated = now;
-        lastLimit = limit;
+        ResultInterface result = QueryWithoutCacheLazyCheck(limit, null)!;
+        if (isStable && maxDataModificationId <= now)
+        {
+            lastParameters = parameters;
+            lastResult = result;
+            lastInPredicateSortTypes = inPredicateSortTypes;
+            lastEvaluated = now;
+            lastLimit = limit;
+        }
+        else
+        {
+            ResetLastResult();
+        }
+        lastExists = null;
         return result;
     }
+
+    /// <summary>Disables result-set caching.</summary>
+    public void DisableCache() => noCache = true;
 
     private bool GetNoCache()
     {
         // Non-deterministic expressions (CURRENT_TIMESTAMP, RAND, ...) and expressions that
         // depend on an outer row or an unset parameter must not be reused.
-        return noCache ??= !IsEverything(ExpressionVisitor.DeterministicVisitor)
-            || !IsEverything(ExpressionVisitor.IndependentVisitor);
+        if (!cacheableChecked)
+        {
+            // Determinism first avoids traversing the port's recursive CTE table graph;
+            // recursive CTEs are non-deterministic, so the reference's cache decision is unchanged.
+            if (!IsEverything(ExpressionVisitor.DeterministicVisitor)
+                || !IsEverything(ExpressionVisitor.IndependentVisitor)
+                || GetMaxDataModificationId() == long.MaxValue) noCache = true;
+            cacheableChecked = true;
+        }
+        return noCache;
+    }
+
+    /// <summary>Gets the maximum table/expression and snapshot data modification id.</summary>
+    public long GetMaxDataModificationId()
+    {
+        ExpressionVisitor visitor = ExpressionVisitor.GetMaxModificationIdVisitor();
+        IsEverything(visitor);
+        return Math.Max(visitor.GetMaxDataModificationId(), GetSession().GetSnapshotDataModificationId());
+    }
+
+    // D-011: Table is not DbObject; the existing expression visitor uses HashSet<object>.
+    public void CollectDependencies(HashSet<object> dependencies)
+        => IsEverything(ExpressionVisitor.GetDependenciesVisitor(dependencies));
+
+    private bool IsUpdatedInCurrentTransaction()
+    {
+        HashSet<object> dependencies = [];
+        CollectDependencies(dependencies);
+        foreach (object dependency in dependencies)
+        {
+            if (dependency is Table table && GetSession().IsUpdatedInCurrentTransaction(table)) return true;
+        }
+        return false;
+    }
+
+    /// <inheritdoc/>
+    public override void InvalidateCachedResult(Table reason)
+    {
+        HashSet<object> dependencies = [];
+        CollectDependencies(dependencies);
+        if (dependencies.Contains(reason)) ResetLastResult();
+    }
+
+    private void ResetLastResult()
+    {
+        lastParameters = null;
+        lastResult = null;
+        lastInPredicateSortTypes = null;
+        lastLimit = 0L;
+        lastEvaluated = 0L;
+        lastExists = null;
     }
 
     private Value?[] GetParameterValues()
@@ -356,7 +422,7 @@ public abstract class Query : Prepared
         Value?[] parameters = new Value?[list.Count];
         for (int i = 0; i < parameters.Length; i++)
         {
-            parameters[i] = list[i].GetParamValue();
+            parameters[i] = list[i]?.GetParamValue();
         }
 
         return parameters;
@@ -371,7 +437,7 @@ public abstract class Query : Prepared
 
         for (int i = 0; i < parameters.Length; i++)
         {
-            if (!Equals(lastParameters[i], parameters[i]))
+            if (lastParameters[i] is Value value && !value.Equals(parameters[i]))
             {
                 return false;
             }
@@ -406,7 +472,6 @@ public abstract class Query : Prepared
     private void CloseLastResult()
     {
         lastResult?.Close();
-        lastResult = null;
     }
 
     /// <summary>Runs the query, writing rows to the target when one is given.</summary>
@@ -416,20 +481,49 @@ public abstract class Query : Prepared
     public virtual ResultInterface? Run(long limit, ResultTarget? target)
         => throw new TODOException("Query.Run(limit,target): this query kind is not ported");
 
+    private ResultInterface? QueryWithoutCacheLazyCheck(long limit, ResultTarget? target)
+    {
+        bool disableLazy = neverLazy && GetSession().IsLazyQueryExecution();
+        if (disableLazy) GetSession().SetLazyQueryExecution(false);
+        try
+        {
+            return Run(limit, target);
+        }
+        finally
+        {
+            if (disableLazy) GetSession().SetLazyQueryExecution(true);
+        }
+    }
+
     /// <summary>Execute the EXISTS predicate over the query.</summary>
     public bool Exists()
     {
-        // H2 Query.exists's no-cache path. Result caching and SELECT triggers have not
-        // been ported for Query.Run either; this uses the same execution path, never
-        // caching a possibly correlated result. See MIGRATION_STATUS.md.
-        return ExecuteExists();
+        if (IsUnion() || GetNoCache() || !GetSession().GetDatabase().IsOptimizeReuseResults())
+            return ExecuteExists();
+        bool isStable = GetSession().GetTransaction().GetIsolationLevel() != IsolationLevel.ReadUncommitted
+            && !IsUpdatedInCurrentTransaction();
+        Value?[] parameters = GetParameterValues();
+        long now = GetSession().GetStatementModificationDataId();
+        long maxDataModificationId = GetMaxDataModificationId();
+        if (lastExists is not null && isStable && maxDataModificationId <= lastEvaluated
+            && SameParameters(parameters, lastParameters)) return lastExists.Value;
+        bool exists = ExecuteExists();
+        if (isStable && maxDataModificationId <= now)
+        {
+            lastParameters = parameters;
+            lastExists = exists;
+            lastEvaluated = now;
+        }
+        else ResetLastResult();
+        lastResult = null;
+        return exists;
     }
 
     private bool ExecuteExists()
     {
         // H2 executeExists: queryWithoutCacheLazyCheck(1, null), hasNext, close.
         // Run is the current port of the materialized queryWithoutCache path.
-        ResultInterface result = Run(1L);
+        ResultInterface result = QueryWithoutCacheLazyCheck(1L, null)!;
         bool exists = result.HasNext();
         result.Close();
         return exists;

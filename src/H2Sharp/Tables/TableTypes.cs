@@ -1590,6 +1590,21 @@ public abstract class Table
     /// <returns>true when they are</returns>
     public virtual bool IsDeterministic() => true;
 
+    /// <summary>Gets the newest data modification id of this table.</summary>
+    public virtual long GetMaxDataModificationId()
+        => throw new TODOException("Table.getMaxDataModificationId: this table kind is not ported");
+
+    /// <summary>Collects dependencies using the existing D-011 object-based visitor set.</summary>
+    public virtual void AddDependencies(HashSet<object> dependencies)
+    {
+        if (dependencies.Contains(this)) return;
+        if (sequences is not null) foreach (var sequence in sequences) dependencies.Add(sequence);
+        Expressions.ExpressionVisitor visitor = Expressions.ExpressionVisitor.GetDependenciesVisitor(dependencies);
+        foreach (Column column in GetColumns()) column.IsEverything(visitor);
+        foreach (Constraint constraint in GetConstraints()) constraint.IsEverything(visitor);
+        dependencies.Add(this);
+    }
+
     /// <summary>
     /// Gets the table type.
     /// </summary>

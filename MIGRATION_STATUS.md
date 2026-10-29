@@ -67,13 +67,41 @@ DISTINCT ON и hidden-колонки идут через отсортирова�
 поэтому MIN/MAX по индексу с `DESC NULLS LAST` больше не перепутан. `TestBigResult`
 зелёный.
 
-`Query.Run` использует result cache эталона: повторный запрос с теми же параметрами и
-лимитом отдаёт shallow copy, пока не изменился database-wide modification id. DML,
-DDL и commit транзакции с изменениями инвалидируют кэш; недетерминированные
-(`CURRENT_TIMESTAMP`, `RAND`) и коррелированные запросы не кэшируются. Это
-консервативнее эталонных per-table id (лишние промахи, не устаревшие строки).
-`TestOptimizations` зелёный, включая min/max, покрывающий индекс, IN, query-cache
-speed и timestamp-no-cache.
+`Query.Run`/`Exists` используют result cache эталона: transaction stability,
+statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
+`READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,
+недетерминированные и коррелированные запросы не переиспользуют результат.
+`MVTable` регистрирует успешные Add/TryAdd/Remove/Update и row lock в
+`SessionLocal.updates`; первая регистрация инвалидирует зависимые session-команды.
+Data ids таблиц обновляются до и после commit/rollback, после snapshot-транзакции
+меняется snapshot id. `ExpressionVisitor` переносит максимум data id; metadata,
+виртуальные таблицы, views и derived tables отвечают по своему эталонному типу.
+Прежняя подмена per-table ids общим счётчиком удалена: она возвращала грязное
+значение после чужого rollback, поэтому утверждение о её консервативности было неверным.
+
+`TestCachedQueryResults` зелёный: 100 000 уникальных значений под row lock.
+`QueryResultCacheOracleTests` сверяет на JVM dirty rollback, savepoints, rebinding,
+commit и смену RepeatableRead snapshot при cache OFF/ON. `TestOptimizations`,
+`TestBigResult`, `TestQueryCache` и `TestRecursiveQueries` остаются зелёными.
+
+Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
+внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
+session lazy-режим с восстановлением в finally. DerivedTable сохраняет эталонную
+классификацию (null на JVM, TABLE в существующей иерархии порта), не притворяется VIEW.
+`TestSubqueryPerformanceOnLazyExecutionMode` остаётся красным, но на том же
+`testSubqueryInJoin` падает и зафиксированный JVM-класс H2 2.5: 810 мс lazy / 9 мс
+non-lazy; port full run — 6122 / 65 мс. Это воспроизводимое падение native-теста
+в эталоне; проверка и её пороги сохранены.
+
+Языковые адаптации: `ExpressionVisitor.getDependencies()` назван `GetDependencySet()`
+(C# не допускает совпадение с константой GetDependencies). Коллектор Query использует
+существующий D-011 `HashSet<object>`, поскольку Table не DbObject. Java-лямбда
+TableFilterVisitor представлена CLR delegate-адаптером `TableFilterVisitorAdapter`;
+`Visit(Action<TableFilter>)` вызывает существующий эталонный обход Visit(visitor).
+GetNoCache сначала проверяет determinism/independence, чтобы не заходить в рекурсивный
+CTE data-id граф существующей иерархии; cache decision совпадает с эталоном.
+Statement dependency maps в SessionLocal пока не собираются: существующий
+MarkStatementStart(null) сохранён; statement data id фиксируется перед этим вызовом.
 
 `MODE` фиксируется при открытии (D-029). `SET MODE` с тем же режимом — no-op,
 с другим — 50100. Второй connection к тому же storage с другим режимом получает
@@ -179,9 +207,9 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 `SCRIPT CIPHER`, `HELP` и `RUNSCRIPT` вынесены из зелёного набора решениями
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
-Проверено: core **1468/1468**, Data **577/577**, MvStore **87/87**, conformance полный **880/952**,
-зелёный **878/905** (было 805/803), native **50/104** (`TestOptimizations` и
-`TestBigResult` теперь зелёные; остальные падения — DbSettings, trace/listener,
+Проверено: core **1471/1471**, Data **577/577**, MvStore **87/87**, conformance предыдущий полный **880/952**,
+зелёный **878/905** (было 805/803), native полный **52/104** (`TestOptimizations`,
+`TestBigResult` и `TestCachedQueryResults` зелёные; остальные падения — DbSettings, trace/listener,
 users/rights, linked/alias/trigger, collation и оставшиеся оптимизации).
 Ранее закрыты typed connection string, parameter scopes, отложенный остаток
 multi-statement, ON DUPLICATE KEY и JDBC getter-семантика.

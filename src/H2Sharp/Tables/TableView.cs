@@ -79,6 +79,10 @@ public sealed class TableView : QueryExpressionTable
     public override bool IsView() => true;
 
     /// <inheritdoc/>
+    public override long GetMaxDataModificationId()
+        => createException is not null || viewQuery is null ? long.MaxValue : base.GetMaxDataModificationId();
+
+    /// <inheritdoc/>
     /// <remarks>A view keeps no data of its own; the query text is updated by the command.</remarks>
     public override void SetModified()
     {

@@ -105,12 +105,7 @@ public class CommandContainer : Command
     public override ResultWithGeneratedKeys UpdateRows(object generatedKeysRequest)
     {
         RecompileIfRequired();
-        ResultWithGeneratedKeys result = ResultWithGeneratedKeys.Of(command.Update());
-        // The reference gives every data change its own modification id. The port keeps one
-        // database-wide id and invalidates every cached query after an update, which is
-        // conservative: it can miss a reusable result, but it cannot return stale rows.
-        Session.GetDatabase().GetNextModificationDataId();
-        return result;
+        return ResultWithGeneratedKeys.Of(command.Update());
     }
 
     /// <inheritdoc/>

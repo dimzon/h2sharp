@@ -83,6 +83,27 @@ public sealed class MVTable : Table
     /// </remarks>
     private long modificationId;
 
+    // MVTable.lastModificationId: metadata changes and data changes have different ids.
+    private readonly AtomicLong lastModificationId = new();
+
+    /// <inheritdoc/>
+    public override long GetMaxDataModificationId() => lastModificationId.Get();
+
+    /// <summary>Advances the data modification id without allowing it to move backwards.</summary>
+    public void SetModificationDataId(long nextModificationDataId)
+    {
+        long currentId;
+        do
+        {
+            currentId = lastModificationId.Get();
+        }
+        while (nextModificationDataId > currentId
+            && !lastModificationId.CompareAndSet(currentId, nextModificationDataId));
+    }
+
+    private void SyncLastModificationIdWithDatabase()
+        => SetModificationDataId(database!.GetNextModificationDataId());
+
     /// <summary>
     /// The row id pseudo column, created the first time it is asked for.
     /// </summary>
@@ -279,6 +300,11 @@ public sealed class MVTable : Table
     /// <inheritdoc/>
     public override bool Lock(SessionLocal session, int lockType)
     {
+        if (database!.GetLockMode() == Constants.LockModeOff)
+        {
+            session.RegisterTableAsUpdated(this);
+            return false;
+        }
         if (lockType == Table.ReadLock && lockExclusiveSession is null)
         {
             return false;
@@ -382,7 +408,11 @@ public sealed class MVTable : Table
 
     /// <inheritdoc/>
     public override Row? LockRow(SessionLocal session, Row row, int timeoutMillis)
-        => primaryIndex.LockRow(session, row, timeoutMillis);
+    {
+        Row? lockedRow = primaryIndex.LockRow(session, row, timeoutMillis);
+        if (lockedRow is not null) session.RegisterTableAsUpdated(this);
+        return lockedRow;
+    }
 
     /// <inheritdoc/>
     public override int GetMainIndexColumn()
@@ -865,13 +895,14 @@ public sealed class MVTable : Table
                 index.Add(session, row);
             }
 
-            return row.GetKey();
         }
         catch (Exception e)
         {
             RollbackSavepoint(transaction, savepoint);
             throw Message.DbException.Convert(e);
         }
+        session.RegisterTableAsUpdated(this);
+        return row.GetKey();
     }
 
     /// <summary>
@@ -904,6 +935,8 @@ public sealed class MVTable : Table
             }
 
             conflict = null;
+            // D-032: successful TryAddRow has the same transaction lifecycle as AddRow.
+            session.RegisterTableAsUpdated(this);
             return true;
         }
         catch (Exception e)
@@ -940,6 +973,7 @@ public sealed class MVTable : Table
             RollbackSavepoint(transaction, savepoint);
             throw Message.DbException.Convert(e);
         }
+        session.RegisterTableAsUpdated(this);
     }
 
     /// <summary>
@@ -965,6 +999,7 @@ public sealed class MVTable : Table
             RollbackSavepoint(transaction, savepoint);
             throw Message.DbException.Convert(e);
         }
+        session.RegisterTableAsUpdated(this);
     }
 
     /// <summary>
@@ -1091,6 +1126,7 @@ public sealed class MVTable : Table
         {
             indexes[i].Truncate(session);
         }
+        SyncLastModificationIdWithDatabase();
     }
 
     /// <inheritdoc/>

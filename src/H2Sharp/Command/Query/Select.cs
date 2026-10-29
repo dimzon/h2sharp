@@ -497,12 +497,8 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The column-collecting visitors walk the select list, the join conditions, the condition
-    /// and the HAVING clause, which is what the planner needs to price an index. The other
-    /// visitor kinds answer with machinery that is not ported (table determinism, modification
-    /// ids, dependency sets, evaluatable-subquery setting), so they still refuse by name rather
-    /// than answering a question they cannot answer. The reference's QUALIFY clause is not
-    /// ported, so its expression has nowhere to be walked from.
+    /// Follows Select.isEverything: table determinism, data modification ids and dependencies
+    /// are collected before walking the select list, join conditions, WHERE, HAVING and QUALIFY.
     /// </remarks>
     public override bool IsEverything(ExpressionVisitor visitor)
     {
@@ -527,9 +523,15 @@ public sealed class Select : Query
 
                 break;
             case ExpressionVisitor.SetMaxDataModificationId:
-                throw new TODOException("Select.isEverything: this visitor needs unported table metadata");
+                foreach (TableFilter filter in filters)
+                    visitor.AddDataModificationId(filter.GetTable().GetMaxDataModificationId());
+                break;
             case ExpressionVisitor.GetDependencies:
-                foreach (TableFilter filter in filters) visitor.AddDependency(filter.GetTable());
+                foreach (TableFilter filter in filters)
+                {
+                    visitor.AddDependency(filter.GetTable());
+                    filter.GetTable().AddDependencies(visitor.GetDependencySet());
+                }
                 break;
             default:
                 // The reference's optimizeEvaluatableSubqueries setting defaults to true;
@@ -564,6 +566,8 @@ public sealed class Select : Query
         {
             return false;
         }
+
+        if (qualify is not null && !qualify.IsEverything(v2)) return false;
 
         return true;
     }
@@ -864,6 +868,7 @@ public sealed class Select : Query
     /// </remarks>
     public override ResultInterface? Run(long limit, ResultTarget? target)
     {
+        DisableLazyForJoinSubqueries(topTableFilter!);
         if (windows is not null || isDistinct)
         {
             throw new TODOException("Select.query: windowed and distinct on queries are not ported");
@@ -939,6 +944,21 @@ public sealed class Select : Query
         }
 
         return result is null ? null : FinishResult(result, offset, fetch, fetchPercent, target);
+    }
+
+    private void DisableLazyForJoinSubqueries(TableFilter top)
+    {
+        if (session.IsLazyQueryExecution())
+        {
+            top.Visit(f =>
+            {
+                if (f != top && f.GetTable().GetTableType() == Table.VIEW)
+                {
+                    if (f.GetIndex() is Indexes.QueryExpressionIndex index)
+                        index.GetQuery().SetNeverLazy(true);
+                }
+            });
+        }
     }
 
     /// <summary>

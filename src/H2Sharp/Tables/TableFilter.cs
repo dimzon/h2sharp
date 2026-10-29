@@ -1299,6 +1299,15 @@ public class TableFilter : ColumnResolver
         while (f is not null);
     }
 
+    /// <summary>CLR delegate adaptation of Java's functional TableFilterVisitor interface.</summary>
+    public void Visit(Action<TableFilter> visitor) => Visit(new TableFilterVisitorAdapter(visitor));
+
+    // Java accepts a lambda as TableFilterVisitor; C# needs this adapter to use the same traversal.
+    private sealed class TableFilterVisitorAdapter(Action<TableFilter> visitor) : TableFilterVisitor
+    {
+        public void Accept(TableFilter filter) => visitor(filter);
+    }
+
     private TableFilter? join;
 
     private bool joinOuter;

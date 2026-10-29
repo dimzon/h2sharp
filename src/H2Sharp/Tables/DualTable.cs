@@ -72,6 +72,9 @@ public sealed class DualTable : Table
     public override long GetRowCountApproximation(SessionLocal session) => 1L;
 
     /// <inheritdoc/>
+    public override long GetMaxDataModificationId() => 0L;
+
+    /// <inheritdoc/>
     public override bool CanGetRowCount(SessionLocal session) => true;
 
     /// <inheritdoc/>

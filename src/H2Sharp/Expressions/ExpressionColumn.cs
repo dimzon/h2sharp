@@ -409,6 +409,9 @@ public sealed class ExpressionColumn : Expression
             case ExpressionVisitor.GetDependencies:
                 if (column is not null) visitor.AddDependency(column.GetTable());
                 return true;
+            case ExpressionVisitor.SetMaxDataModificationId:
+                if (column is not null) visitor.AddDataModificationId(column.GetTable()!.GetMaxDataModificationId());
+                return true;
             case ExpressionVisitor.GetColumns2:
                 if (column is null)
                 {

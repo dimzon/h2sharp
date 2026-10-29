@@ -857,6 +857,17 @@ public class Column : Typed
     /// <returns>the SQL</returns>
     public string GetCreateSql() => GetCreateSql(false);
 
+    /// <summary>Visits the column's default and ON UPDATE expressions.</summary>
+    internal bool IsEverything(ExpressionVisitor visitor)
+    {
+        if (visitor.GetVisitorType() == ExpressionVisitor.GetDependencies && sequence is not null)
+            visitor.GetDependencySet().Add(sequence);
+        Expression? e = GetEffectiveDefaultExpression();
+        if (e is not null && !e.IsEverything(visitor)) return false;
+        e = GetEffectiveOnUpdateExpression();
+        return e is null || e.IsEverything(visitor);
+    }
+
     /// <summary>Gets the column definition, with sequence names for metadata replay.</summary>
     public string GetCreateSql(bool forMeta)
     {

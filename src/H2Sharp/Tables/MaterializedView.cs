@@ -91,6 +91,12 @@ public sealed class MaterializedView : Table
     public override bool IsView() => true;
 
     /// <inheritdoc/>
+    public override long GetMaxDataModificationId() => table.GetMaxDataModificationId();
+
+    /// <inheritdoc/>
+    public override void AddDependencies(HashSet<object> dependencies) => table.AddDependencies(dependencies);
+
+    /// <inheritdoc/>
     public override int GetColumnCount() => columns.Length;
 
     /// <inheritdoc/>

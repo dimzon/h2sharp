@@ -34,6 +34,10 @@ public abstract class QueryExpressionTable : Table
 {
     private const long RowCountApproximation = 100;
 
+    private long lastModificationCheck;
+
+    private long maxDataModificationId;
+
     /// <summary>
     /// The query the rows come from.
     /// </summary>
@@ -174,6 +178,30 @@ public abstract class QueryExpressionTable : Table
     /// <inheritdoc/>
     public override bool IsDeterministic()
         => viewQuery.IsEverything(ExpressionVisitor.DeterministicVisitor);
+
+    /// <inheritdoc/>
+    public override long GetMaxDataModificationId()
+    {
+        long dbMod = viewQuery.GetSession().GetDatabase().GetModificationDataId();
+        if (dbMod > lastModificationCheck && maxDataModificationId <= dbMod)
+        {
+            maxDataModificationId = viewQuery.GetMaxDataModificationId();
+            lastModificationCheck = dbMod;
+        }
+        return maxDataModificationId;
+    }
+
+    /// <inheritdoc/>
+    public override void AddDependencies(HashSet<object> dependencies)
+    {
+        base.AddDependencies(dependencies);
+        foreach (Table table in tables)
+        {
+            // QueryExpressionTable is the view classification of derived tables in D-011;
+            // their GetTableType currently returns TABLE instead of the reference's null.
+            if (table is not QueryExpressionTable) table.AddDependencies(dependencies);
+        }
+    }
 
     /// <inheritdoc/>
     public override int GetColumnCount() => columns.Length;
