@@ -1002,6 +1002,54 @@ public sealed class MVTable : Table
         session.RegisterTableAsUpdated(this);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Ported from MVTable.updateRows: unchanged index entries stay in place, and the primary
+    /// row-id index updates the row in place. A secondary index is touched only when one of its
+    /// key columns changed. Removing and re-adding every row, as the base implementation does,
+    /// makes concurrent scans observe transient gaps and is not the reference's semantics.
+    /// </remarks>
+    public override void UpdateRows(SessionLocal session, List<(Row OldRow, Row NewRow)> rows)
+    {
+        MvStore.Tx.Transaction transaction = session.GetTransaction();
+        long savepoint = transaction.SetSavepoint();
+        try
+        {
+            foreach ((Row oldRow, Row newRow) in rows)
+            {
+                newRow.SetKey(oldRow.GetKey());
+                foreach (Index index in indexes)
+                {
+                    if (!index.AreRowsEquivalent(oldRow, newRow))
+                    {
+                        index.Remove(session, oldRow);
+                    }
+                    else if (index.IsRowIdIndex())
+                    {
+                        index.Update(session, oldRow, newRow);
+                    }
+                }
+            }
+
+            foreach ((Row oldRow, Row newRow) in rows)
+            {
+                foreach (Index index in indexes)
+                {
+                    if (!index.AreRowsEquivalent(oldRow, newRow))
+                    {
+                        index.Add(session, newRow);
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            RollbackSavepoint(transaction, savepoint);
+            throw Message.DbException.Convert(e);
+        }
+        if (rows.Count > 0) session.RegisterTableAsUpdated(this);
+    }
+
     /// <summary>
     /// Reads the row with the given key.
     /// </summary>
