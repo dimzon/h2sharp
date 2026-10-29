@@ -95,18 +95,16 @@ per-session индекс view. `TestQueryCache` удерживает откры�
 ADO.NET-команда разбирает текст при выполнении, а не в no-op `Prepare`; это
 воспроизводит захват cache entry незакрытым `prepareStatement` эталона.
 
-`TestTransaction` дошёл до конца `TestIsolationLevels4`: FOR UPDATE, rollback и several
-transaction-shape переписаны под ADO.NET. `SessionLocal.startStatementWithinTransaction`
-теперь собирает зависимости команды и передаёт типизированные transaction maps в
+`TestTransaction` зелёный целиком: FOR UPDATE, rollback и several transaction-shape
+переписаны под ADO.NET. `SessionLocal.startStatementWithinTransaction` теперь собирает
+зависимости команды и передаёт типизированные transaction maps в
 `Transaction.markStatementStart`; read committed/repeatable read/snapshot/serializable
-снимают snapshot на картах таблиц и их FK-связей, как эталон. `TestIsolationLevels`
-зелёный. Read-uncommitted dirty read исправлен: `MVPrimaryIndex.GetRowForKey` читает
-через `GetFromSnapshot`, а не immediate-значение, поэтому видит uncommitted UPDATE
-другой транзакции. Deadlock-victim на 40001 откатывает транзакцию целиком, как в
-`Command.executeUpdate`; остальные ошибки откатываются к savepoint. Следующий дефект —
-последний `INSERT` в `TestIsolationLevels4` после чужого `DELETE` не даёт ожидаемый
-23505. `TestClearCacheAfterDdl` проходит все сценарии, кроме alias (D-004). Parser
-принимает `SELECT`/`TABLE`/`WITH` как term без скобок
+снимают snapshot на картах таблиц и их FK-связей, как эталон. Read-uncommitted dirty read
+исправлен: `MVPrimaryIndex.GetRowForKey` читает через `GetFromSnapshot`, а не
+immediate-значение, поэтому видит uncommitted UPDATE другой транзакции. Deadlock-victim
+на 40001 откатывает транзакцию целиком, как в `Command.executeUpdate`; остальные ошибки
+откатываются к savepoint. `TestClearCacheAfterDdl` проходит все сценарии, кроме alias
+(D-004). Parser принимает `SELECT`/`TABLE`/`WITH` как term без скобок
 (`DELETE ... WHERE ID=SELECT MIN(ID) FROM ...`).
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
@@ -233,11 +231,12 @@ VALUE`, `CREATE/DROP SYNONYM` с `INFORMATION_SCHEMA.SYNONYMS`, `AT TIME ZONE`/
 D-026/D-027/D-028 (соответствующие тесты остаются `BlockedByPort`, не удалены).
 
 Проверено: core **1471/1471**, Data **577/577**, MvStore **87/87**, conformance предыдущий полный **880/952**,
-зелёный **878/905** (было 805/803), native полный **53/104** (`TestOptimizations`,
+зелёный **878/905** (было 805/803), native полный **53–54/104** (`TestOptimizations`,
 `TestBigResult`, `TestCachedQueryResults`, `TestMultiThread`, `TestMvcc1`,
-`TestQueryCache` и `TestConcurrentConnectionUsage` зелёные; остальные 51 падение —
-DbSettings, trace/listener, users/rights, linked/alias/trigger, collation и оставшиеся
-оптимизации).
+`TestTransaction`, `TestQueryCache` зелёные; `TestMvcc2`/`TestConcurrentConnectionUsage`
+могут падать только при определённом порядке полного прогона и проходят изолированно).
+Остальные падения — DbSettings, trace/listener, users/rights, linked/alias/trigger,
+collation и оставшиеся оптимизации.
 Ранее закрыты typed connection string, parameter scopes, отложенный остаток
 multi-statement, ON DUPLICATE KEY и JDBC getter-семантика.
 Провайдеры на текущем бинарнике: linq2db

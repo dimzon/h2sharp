@@ -1657,9 +1657,6 @@ public sealed class TestTransaction : TestDb
                             AssertFalse(rs.Read());
                         }
 
-                        tb.Commit();
-                        tb = conn2.BeginTransaction(isolationLevel);
-                        stat2.Transaction = tb;
                     }
                     else
                     {
@@ -1834,16 +1831,14 @@ public sealed class TestTransaction : TestDb
             {
                 stat2.Transaction = t2;
                 Execute(stat2, "INSERT INTO TEST VALUES (104, 2)");
-                t2.Commit();
+                ta.Commit();
+                ta = conn1.BeginTransaction(isolationLevel);
+                prep.Transaction = ta;
+                // Transaction was started with concurrent uncommitted change
+                TestIsolationLevelCountAggregate2(prep,
+                    isolationLevel == IsolationLevel.ReadUncommitted ? 98L : 97L);
+                ta.Commit();
             }
-
-            ta.Commit();
-            ta = conn1.BeginTransaction(isolationLevel);
-            prep.Transaction = ta;
-            // Transaction was started with concurrent uncommitted change
-            TestIsolationLevelCountAggregate2(prep,
-                isolationLevel == IsolationLevel.ReadUncommitted ? 98L : 97L);
-            ta.Commit();
         }
     }
 
@@ -1876,6 +1871,7 @@ public sealed class TestTransaction : TestDb
             {
                 using (DbTransaction t2 = conn2.BeginTransaction(isolationLevel))
                 {
+                    prep2.Transaction = t2;
                     string level = isolationLevel switch
                     {
                         IsolationLevel.ReadUncommitted => "READ UNCOMMITTED",
