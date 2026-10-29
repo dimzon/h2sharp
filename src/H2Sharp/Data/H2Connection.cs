@@ -387,10 +387,18 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             return;
         }
 
-        currentTransaction?.Dispose();
-        currentTransaction = null;
-        session = null;
-        current.Close();
+        current.Lock();
+        try
+        {
+            currentTransaction?.Dispose();
+            currentTransaction = null;
+            session = null;
+            current.Close();
+        }
+        finally
+        {
+            current.Unlock();
+        }
 
         OnStateChange(new StateChangeEventArgs(ConnectionState.Open, ConnectionState.Closed));
     }

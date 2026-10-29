@@ -60,6 +60,9 @@ public sealed class TestMvcc2 : TestDb
         using (DbTransaction transaction = conn.BeginTransaction())
         {
             stat.Transaction = transaction;
+            // The reference inserts on conn before it starts the competing task. Starting
+            // the task first is a race: the task can win, leaving this insert to fail.
+            Execute(stat, "insert into test values(0, 'Hello')");
             Task t = Task.Run(() =>
             {
                 try
@@ -76,7 +79,6 @@ public sealed class TestMvcc2 : TestDb
                         || code == ErrorCode.ConcurrentUpdate1);
                 }
             });
-            Execute(stat, "insert into test values(0, 'Hello')");
             transaction.Commit();
             t.Wait();
         }

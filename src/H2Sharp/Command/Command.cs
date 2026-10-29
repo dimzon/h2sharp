@@ -189,29 +189,37 @@ public abstract class Command : CommandInterface
     public virtual ResultInterface ExecuteQuery(long maxrows, int fetchSize, bool scrollable)
     {
         // Port of executeQuery's query call, arithmetic-exception conversion and the stop
-        // that commits an auto-commit SELECT. Statement locking, concurrent-update retries
-        // and transaction scope are still not ported. Exception conversion is deliberately
-        // partial: only the ArithmeticException family exposed by interval BigDecimal
-        // division is converted here (as Java Throwable is).
-        bool callStop = true;
-        Session.StartStatementWithinTransaction(this);
+        // that commits an auto-commit SELECT. Concurrent-update retries and transaction
+        // scope are still not ported. Exception conversion is deliberately partial: only
+        // the ArithmeticException family exposed by interval BigDecimal division is
+        // converted here (as Java Throwable is).
+        Session.Lock();
         try
         {
-            ResultInterface result = Query(maxrows);
-            callStop = !result.IsLazy();
-            return result;
-        }
-        catch (ArithmeticException error)
-        {
-            throw DbException.AddSql(DbException.Convert(error), sql);
+            bool callStop = true;
+            Session.StartStatementWithinTransaction(this);
+            try
+            {
+                ResultInterface result = Query(maxrows);
+                callStop = !result.IsLazy();
+                return result;
+            }
+            catch (ArithmeticException error)
+            {
+                throw DbException.AddSql(DbException.Convert(error), sql);
+            }
+            finally
+            {
+                Session.EndStatement();
+                if (callStop)
+                {
+                    Stop(true);
+                }
+            }
         }
         finally
         {
-            Session.EndStatement();
-            if (callStop)
-            {
-                Stop(true);
-            }
+            Session.Unlock();
         }
     }
 
@@ -251,47 +259,55 @@ public abstract class Command : CommandInterface
     /// </remarks>
     public virtual ResultWithGeneratedKeys ExecuteUpdate(object generatedKeysRequest)
     {
-        CommitIfNonTransactional();
-        MvStore.Tx.Transaction transaction = Session.GetTransaction();
-        long savepoint = transaction.SetSavepoint();
-        Session.StartStatementWithinTransaction(this);
+        Session.Lock();
         try
         {
-            return RunWithThreadLocalSession(() => UpdateRows(generatedKeysRequest));
-        }
-        catch (H2SharpException e)
-        {
+            CommitIfNonTransactional();
+            MvStore.Tx.Transaction transaction = Session.GetTransaction();
+            long savepoint = transaction.SetSavepoint();
+            Session.StartStatementWithinTransaction(this);
             try
             {
-                // A deadlock victim is rolled back as a whole; another failed statement only
-                // loses its own savepoint.
-                if (e.H2ErrorCode == H2Sharp.Api.ErrorCode.Deadlock1)
+                return RunWithThreadLocalSession(() => UpdateRows(generatedKeysRequest));
+            }
+            catch (H2SharpException e)
+            {
+                try
                 {
-                    bool autoCommit = Session.GetAutoCommit();
-                    Session.Rollback();
-                    if (!autoCommit)
+                    // A deadlock victim is rolled back as a whole; another failed statement only
+                    // loses its own savepoint.
+                    if (e.H2ErrorCode == H2Sharp.Api.ErrorCode.Deadlock1)
                     {
-                        Session.Begin();
+                        bool autoCommit = Session.GetAutoCommit();
+                        Session.Rollback();
+                        if (!autoCommit)
+                        {
+                            Session.Begin();
+                        }
+                    }
+                    else
+                    {
+                        transaction.RollbackToSavepoint(savepoint);
                     }
                 }
-                else
+                catch
                 {
-                    transaction.RollbackToSavepoint(savepoint);
+                    // The reference records the rollback failure as suppressed; a plain .NET
+                    // exception carries none, and the statement's own failure is what the caller
+                    // sees.
                 }
-            }
-            catch
-            {
-                // The reference records the rollback failure as suppressed; a plain .NET
-                // exception carries none, and the statement's own failure is what the caller
-                // sees.
-            }
 
-            throw;
+                throw;
+            }
+            finally
+            {
+                Session.EndStatement();
+                Stop(true);
+            }
         }
         finally
         {
-            Session.EndStatement();
-            Stop(true);
+            Session.Unlock();
         }
     }
 

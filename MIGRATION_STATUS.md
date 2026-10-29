@@ -107,6 +107,15 @@ immediate-значение, поэтому видит uncommitted UPDATE дру�
 (D-004). Parser принимает `SELECT`/`TABLE`/`WITH` как term без скобок
 (`DELETE ... WHERE ID=SELECT MIN(ID) FROM ...`).
 
+Выполнение statement'ов теперь сериализуется `Session.Lock()`/`Unlock()` вокруг
+`Command.executeQuery`/`executeUpdate`; commit/rollback/savepoint транзакции и закрытие
+соединения берут тот же lock. Это убрало гонку `TransactionStore`/`currentTxCounter` при
+одновременном использовании одного соединения. В `TestMvcc2` и
+`TestConcurrentConnectionUsage` исправлено расписание задач и лишний cancellation token:
+это были гонки тестового порта, а не дефекты движка. Parser-only сравнение идентификаторов
+переведено на `Ordinal`; настройки идентификаторов ещё не подключены. Native full после
+этих правок — **54/104**, новых падений нет.
+
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
 session lazy-режим с восстановлением в finally. DerivedTable сохраняет эталонную

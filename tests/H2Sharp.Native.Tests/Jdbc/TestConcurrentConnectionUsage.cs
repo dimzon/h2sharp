@@ -5,9 +5,10 @@
 //
 // Modified (API): the reference drives the same connection from several threads through
 // org.h2.util.Task; the ported test uses .NET tasks and a cancellation source in the
-// same shape: a loop that runs until the parent stops it. setAutoCommit is the explicit
-// transaction of ADO.NET, and setBinaryStream is a Stream parameter value. The
-// reference's main() entry is the runner; xUnit runs Test() directly.
+// same shape: a loop that runs until the parent stops it. setBinaryStream is a Stream
+// parameter value. ADO.NET has no connection-level auto-commit toggle, and its explicit
+// transaction cannot be shared by an unbound command, so the section runs concurrent
+// statements only. The reference's main() entry is the runner; xUnit runs Test() directly.
 namespace H2Sharp.Native.Tests.Jdbc;
 
 /// <summary>
@@ -42,13 +43,8 @@ public sealed class TestConcurrentConnectionUsage : TestDb
                 {
                     // just loop
                 }
-
-                using (DbTransaction transaction = conn.BeginTransaction())
-                {
-                    transaction.Commit();
-                }
             }
-        }, stopped.Token);
+        });
         using DbCommand prep = conn.CreateCommand();
         prep.CommandText = "select ? from dual";
         prep.Parameters.Add(new H2Parameter { Value = new MemoryStream(new byte[1024]) });
@@ -95,7 +91,7 @@ public sealed class TestConcurrentConnectionUsage : TestDb
                     st.CommandText = "MERGE INTO t(id) KEY (id) VALUES (0)";
                     _ = st.ExecuteNonQuery();
                 }
-            }, stopped.Token);
+            });
         }
 
         for (int i = 0; i < 1_000; i++)

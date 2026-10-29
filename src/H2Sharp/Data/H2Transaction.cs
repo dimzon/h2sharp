@@ -60,12 +60,12 @@ public sealed class H2Transaction : DbTransaction
     public override void Save(string savepointName)
     {
         CheckActive();
-        connection!.Session!.AddSavepoint(savepointName);
+        WithSession(session => session.AddSavepoint(savepointName));
     }
     public override void Rollback(string savepointName)
     {
         CheckActive();
-        connection!.Session!.RollbackToSavepoint(savepointName);
+        WithSession(session => session.RollbackToSavepoint(savepointName));
     }
     public override void Release(string savepointName)
     {
@@ -92,7 +92,7 @@ public sealed class H2Transaction : DbTransaction
         }
 
         completed = true;
-        connection?.Session?.Commit(false);
+        WithSession(session => session.Commit(false));
         Detach();
     }
 
@@ -110,7 +110,7 @@ public sealed class H2Transaction : DbTransaction
         }
 
         completed = true;
-        connection?.Session?.Rollback();
+        WithSession(session => session.Rollback());
         Detach();
     }
 
@@ -123,13 +123,34 @@ public sealed class H2Transaction : DbTransaction
             if (!completed)
             {
                 completed = true;
-                connection?.Session?.Rollback();
+                WithSession(session => session.Rollback());
             }
 
             Detach();
         }
 
         base.Dispose(disposing);
+    }
+
+    private void WithSession(Action<SessionLocal> action)
+    {
+        SessionLocal? session = connection?.Session;
+        if (session is null)
+        {
+            return;
+        }
+
+        // JdbcConnection serializes connection-level transaction operations with statement
+        // execution; the session lock is that serialization point here.
+        session.Lock();
+        try
+        {
+            action(session);
+        }
+        finally
+        {
+            session.Unlock();
+        }
     }
 
     private void Detach()
