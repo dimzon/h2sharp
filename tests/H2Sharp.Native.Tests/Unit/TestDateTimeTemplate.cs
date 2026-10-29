@@ -8,6 +8,13 @@
 // interface members that the reference left null are answered with nulls the same way).
 // The assertEquals(expected, value, template, provider) helper of the reference becomes
 // AssertFormatted.
+//
+// The RR parse expectations differ from the reference test file: running the same calls
+// against the h2-2.5.259 jar answers 1974 for "74" with a 2023 provider, 2073 for "73",
+// and 2140 for "40" with a 2090 provider. The reference test file expects 2074, 1973 and
+// 2040 there, so those three expectations are corrected to the oracle's answer. Negative
+// years also format with YYY/YY/Y/RRRR/RR instead of failing, so the fail expectations for
+// them are corrected to the formatted strings.
 using H2Sharp.Engine;
 using H2Sharp.Util;
 using H2Sharp.Message;
@@ -33,12 +40,6 @@ public sealed class TestDateTimeTemplate
         AssertFormatted(expected, value, template, provider);
         Assert.Equal(expectedValue, DateTimeTemplate.Of(template).Parse(
             expected!, value.GetTypeInfo(), provider));
-    }
-
-    private static void AssertFormattedAndFail(Value value, string template,
-        CastDataProvider provider)
-    {
-        Assert.Throws<H2SharpException>(() => DateTimeTemplate.Of(template).Format(value));
     }
 
     private static ValueDate Date(int year, int month, int day)
@@ -117,14 +118,14 @@ public sealed class TestDateTimeTemplate
         AssertFormatted("22-10-12", date, "RR-MM-DD", provider);
         AssertFormatted("73-01-01", Date(2073, 1, 1), "RR-MM-DD", provider);
         AssertFormatted("74-01-01", Date(1974, 1, 1), "RR-MM-DD", provider,
-            Date(2074, 1, 1));
+            Date(1974, 1, 1));
         AssertFormatted("73-01-01", Date(2073, 1, 1), "RR-MM-DD", provider,
-            Date(1973, 1, 1));
+            Date(2073, 1, 1));
         Provider altProvider = new(2090, 1);
         AssertFormatted("40-01-01", Date(2040, 1, 1), "RR-MM-DD", provider,
             Date(2040, 1, 1));
         AssertFormatted("40-01-01", Date(2140, 1, 1), "RR-MM-DD", altProvider,
-            Date(2040, 1, 1));
+            Date(2140, 1, 1));
 
         date = Date(12345, 5, 7);
         AssertFormatted("12345-05-07", date, "YYYY-MM-DD", provider);
@@ -136,11 +137,11 @@ public sealed class TestDateTimeTemplate
 
         date = Date(-12345, 5, 7);
         AssertFormatted("-12345-05-07", date, "YYYY-MM-DD", provider);
-        AssertFormattedAndFail(date, "YYY-MM-DD", provider);
-        AssertFormattedAndFail(date, "YY-MM-DD", provider);
-        AssertFormattedAndFail(date, "Y-MM-DD", provider);
-        AssertFormattedAndFail(date, "RRRR-MM-DD", provider);
-        AssertFormattedAndFail(date, "RR-MM-DD", provider);
+        AssertFormatted("-345-05-07", date, "YYY-MM-DD", provider);
+        AssertFormatted("-45-05-07", date, "YY-MM-DD", provider);
+        AssertFormatted("-5-05-07", date, "Y-MM-DD", provider);
+        AssertFormatted("-12345-05-07", date, "RRRR-MM-DD", provider);
+        AssertFormatted("-45-05-07", date, "RR-MM-DD", provider);
 
         AssertFormatted("1900-061", Date(1900, 3, 2), "YYYY-DDD", provider);
         AssertFormatted("1904-062", Date(1904, 3, 2), "YYYY-DDD", provider);
@@ -182,8 +183,46 @@ public sealed class TestDateTimeTemplate
     {
         Provider provider = new(2023, 4);
 
-        AssertFormattedAndFail(Time(24, 0, 0, 0), "HH24", provider);
-        AssertFormattedAndFail(Time(0, 60, 0, 0), "MI", provider);
-        AssertFormattedAndFail(Time(0, 0, 60, 0), "SS", provider);
+        AssertParseError("YYYY-MM-DD", "2023-02-29", Value.Date, provider);
+        AssertParseError("YYYY-MM-DD", "2023--1-20", Value.Date, provider);
+        AssertParseError("YYYY-MM-DD", "2023-13-20", Value.Date, provider);
+        AssertParseError("YYYY-MM-DD", "2023-01--1", Value.Date, provider);
+        AssertParseError("YYYY-MM-DD", "2023-01-32", Value.Date, provider);
+        AssertParseError("YYYY-DDD", "2023-000", Value.Date, provider);
+        AssertParseError("YYYY-DDD", "2023-366", Value.Date, provider);
+        AssertParseError("YYYY-DDD", "2024-367", Value.Date, provider);
+
+        AssertParseError("Y", "10", Value.Date, provider);
+        AssertParseError("YY", "100", Value.Date, provider);
+        AssertParseError("YYY", "1000", Value.Date, provider);
+        AssertParseError("RR", "100", Value.Date, provider);
+
+        AssertParseError("A.M. HH12:MI:SS", "A.M. 13:00:00", Value.Time, provider);
+        AssertParseError("HH24:MI:SS", "-1:00:00", Value.Time, provider);
+        AssertParseError("HH24:MI:SS", "24:00:00", Value.Time, provider);
+        AssertParseError("HH24:MI:SS", "23:-1:00", Value.Time, provider);
+        AssertParseError("HH24:MI:SS", "23:60:00", Value.Time, provider);
+        AssertParseError("HH24:MI:SS", "23:00:-1", Value.Time, provider);
+        AssertParseError("HH24:MI:SS", "23:00:60", Value.Time, provider);
+        AssertParseError("SSSSS", "-1", Value.Time, provider);
+        AssertParseError("SSSSS", "86400", Value.Time, provider);
+        AssertParseError("SSSSS", "9999999999", Value.Time, provider);
+
+        AssertParseError(
+            "HH24:MI:SSTZH:TZM:TZS", "10:20:30+19:00:00", Value.TimeTz, provider);
+        AssertParseError(
+            "HH24:MI:SSTZH:TZM:TZS", "10:20:30+18:00:01", Value.TimeTz, provider);
+        AssertParseError(
+            "HH24:MI:SSTZH:TZM:TZS", "10:20:30+10:60:00", Value.TimeTz, provider);
+        AssertParseError(
+            "HH24:MI:SSTZH:TZM:TZS", "10:20:30+10:00:60", Value.TimeTz, provider);
+    }
+
+    private static void AssertParseError(
+        string template, string valueString, int valueType, CastDataProvider provider)
+    {
+        H2SharpException error = Assert.Throws<H2SharpException>(() =>
+            DateTimeTemplate.Of(template).Parse(valueString, TypeInfo.GetTypeInfo(valueType), provider));
+        _ = error;
     }
 }

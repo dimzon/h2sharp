@@ -4,8 +4,9 @@
 // Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
 //
 // Modified: the reference's main() entry is the runner; xUnit runs Test() directly. The
-// IllegalArgumentException expectations are InvalidOperationException, which is what the
-// ported Interval factories throw out of range.
+// reference's IllegalArgumentException expectations are ArgumentException, the .NET spelling
+// of the same argument error.
+using System;
 using H2Sharp.Api;
 using H2Sharp.Util;
 using Xunit;
@@ -21,7 +22,7 @@ public sealed class TestInterval
 
     private static readonly long Min = -999_999_999_999_999_999L;
 
-    private const int NanosPerSecond = 1_000_000_000;
+    private const long NanosPerSecond = 1_000_000_000L;
 
     /// <summary>
     /// Run just this test.
@@ -68,7 +69,7 @@ public sealed class TestInterval
 
     private static void TestOfYearsBad(long years)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfYears(years));
+        Assert.Throws<ArgumentException>(() => Interval.OfYears(years));
     }
 
     private static void TestOfMonths()
@@ -93,7 +94,7 @@ public sealed class TestInterval
 
     private static void TestOfMonthsBad(long months)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfMonths(months));
+        Assert.Throws<ArgumentException>(() => Interval.OfMonths(months));
     }
 
     private static void TestOfDays()
@@ -118,7 +119,7 @@ public sealed class TestInterval
 
     private static void TestOfDaysBad(long days)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfDays(days));
+        Assert.Throws<ArgumentException>(() => Interval.OfDays(days));
     }
 
     private static void TestOfHours()
@@ -143,7 +144,7 @@ public sealed class TestInterval
 
     private static void TestOfHoursBad(long hours)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfHours(hours));
+        Assert.Throws<ArgumentException>(() => Interval.OfHours(hours));
     }
 
     private static void TestOfMinutes()
@@ -168,7 +169,7 @@ public sealed class TestInterval
 
     private static void TestOfMinutesBad(long minutes)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfMinutes(minutes));
+        Assert.Throws<ArgumentException>(() => Interval.OfMinutes(minutes));
     }
 
     private static void TestOfSeconds()
@@ -193,7 +194,7 @@ public sealed class TestInterval
 
     private static void TestOfSecondsBad(long seconds)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfSeconds(seconds));
+        Assert.Throws<ArgumentException>(() => Interval.OfSeconds(seconds));
     }
 
     private static void TestOfSeconds2()
@@ -244,7 +245,7 @@ public sealed class TestInterval
 
     private static void TestOfSeconds2Bad(long seconds, int nanos)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfSeconds(seconds, nanos));
+        Assert.Throws<ArgumentException>(() => Interval.OfSeconds(seconds, nanos));
     }
 
     private static void TestOfNanos()
@@ -318,7 +319,7 @@ public sealed class TestInterval
 
     private static void TestOfYearsMonthsBad(long years, int months)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfYearsMonths(years, months));
+        Assert.Throws<ArgumentException>(() => Interval.OfYearsMonths(years, months));
     }
 
     private static void TestOfDaysHours()
@@ -358,7 +359,7 @@ public sealed class TestInterval
 
     private static void TestOfDaysHoursBad(long days, int hours)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfDaysHours(days, hours));
+        Assert.Throws<ArgumentException>(() => Interval.OfDaysHours(days, hours));
     }
 
     private static void TestOfDaysHoursMinutes()
@@ -406,7 +407,7 @@ public sealed class TestInterval
 
     private static void TestOfDaysHoursMinutesBad(long days, int hours, int minutes)
     {
-        Assert.Throws<InvalidOperationException>(
+        Assert.Throws<ArgumentException>(
             () => Interval.OfDaysHoursMinutes(days, hours, minutes));
     }
 
@@ -467,7 +468,7 @@ public sealed class TestInterval
     private static void TestOfDaysHoursMinutesSecondsBad(long days, int hours, int minutes,
         int seconds)
     {
-        Assert.Throws<InvalidOperationException>(
+        Assert.Throws<ArgumentException>(
             () => Interval.OfDaysHoursMinutesSeconds(days, hours, minutes, seconds));
     }
 
@@ -508,7 +509,7 @@ public sealed class TestInterval
 
     private static void TestOfHoursMinutesBad(long hours, int minutes)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfHoursMinutes(hours, minutes));
+        Assert.Throws<ArgumentException>(() => Interval.OfHoursMinutes(hours, minutes));
     }
 
     private static void TestOfHoursMinutesSeconds()
@@ -558,7 +559,7 @@ public sealed class TestInterval
 
     private static void TestOfHoursMinutesSecondsBad(long hours, int minutes, int seconds)
     {
-        Assert.Throws<InvalidOperationException>(
+        Assert.Throws<ArgumentException>(
             () => Interval.OfHoursMinutesSeconds(hours, minutes, seconds));
     }
 
@@ -601,7 +602,7 @@ public sealed class TestInterval
 
     private static void TestOfMinutesSecondsBad(long minutes, int seconds)
     {
-        Assert.Throws<InvalidOperationException>(() => Interval.OfMinutesSeconds(minutes, seconds));
+        Assert.Throws<ArgumentException>(() => Interval.OfMinutesSeconds(minutes, seconds));
     }
 
     private static void StripTrailingZeroes(System.Text.StringBuilder b)

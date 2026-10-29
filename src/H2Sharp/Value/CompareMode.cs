@@ -17,8 +17,9 @@
  * What is here is exact and complete for the default: a compare mode is a name and a
  * strength, two are equal when those match, and with COLLATION OFF, which is the default,
  * the comparison is String.compareTo, which StringUtils.CompareJava reproduces. A mode that asks
- * for a real collator fails with that reason rather than quietly comparing ordinally, since
- * quietly comparing ordinally would produce a plausible wrong answer.
+ * for a real collator is created (the reference answers the same instance for equal
+ * arguments) but fails with that reason the moment it is used, rather than quietly comparing
+ * ordinally, since quietly comparing ordinally would produce a plausible wrong answer.
  *
  * CharsetCollator is carried as its own class, and GetInstance wires the
  * CHARSET_ branch through CompareModeDefault: a charset collator compares
@@ -132,13 +133,10 @@ public class CompareMode
         }
         else
         {
-            throw new NotSupportedException(
-            $"The collation '{name}' needs a collator, which is not ported: the platform's "
-            + "collation weights disagree with the reference's on 31 per cent of a measured "
-            + "grid, including the order of upper and lower case. With COLLATION OFF, which "
-            + "is the default, comparison is exact. See MIGRATION_STATUS.md.")
-            {
-            };
+            // The collator itself is still not ported (D-002): creating a mode must not
+            // fail, because the reference answers the same instance for equal arguments, but
+            // using it to compare must, rather than quietly comparing ordinally.
+            last = new UnsupportedCollation(name, strength);
         }
 
         lastUsed = last;
@@ -209,6 +207,33 @@ public class CompareMode
         }
 
         return StringUtils.CompareJava(a, b);
+    }
+
+    /// <summary>
+    /// A named collation that exists but cannot compare: the platform's collation weights
+    /// disagree with the reference's (D-002), so using it fails with the measured reason
+    /// instead of producing a plausible wrong answer.
+    /// </summary>
+    private sealed class UnsupportedCollation : CompareMode
+    {
+        internal UnsupportedCollation(string name, int strength)
+            : base(name, strength)
+        {
+        }
+
+        /// <inheritdoc/>
+        public override int CompareString(string a, string b, bool ignoreCase)
+            => throw NotSupported();
+
+        /// <inheritdoc/>
+        public override bool EqualsChars(string a, int ai, string b, int bi, bool ignoreCase)
+            => throw NotSupported();
+
+        private static NotSupportedException NotSupported()
+            => new("The collation needs a collator, which is not ported: the platform's "
+                + "collation weights disagree with the reference's on 31 per cent of a measured "
+                + "grid, including the order of upper and lower case. With COLLATION OFF, which "
+                + "is the default, comparison is exact. See MIGRATION_STATUS.md.");
     }
 
     /// <inheritdoc/>

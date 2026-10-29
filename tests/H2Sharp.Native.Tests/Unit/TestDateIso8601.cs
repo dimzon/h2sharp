@@ -6,6 +6,12 @@
 // Modified: the reference's main() entry is the runner; xUnit runs Test() directly. The
 // Java enum-with-static-field trick (the type drives the shared parse helper) becomes a
 // delegate field.
+//
+// Some week/year expectations differ from the reference test file: the same calls against
+// the h2-2.5.259 jar answer week 1 for 2004-01-01 and week 53 for 2010-01-01, week 53
+// for 2005-01-01 and week 52 for 2005-12-31, week 53 for 2005-01-02, year 2008 for
+// 2007-12-31 and year 2003 for 2002-12-31. The reference test file has the opposite
+// numbers for those dates, so they are corrected to the oracle's answer.
 using H2Sharp.Util;
 using H2Sharp.Values;
 using Xunit;
@@ -139,7 +145,7 @@ public sealed class TestDateIso8601
     private static void TestIsoWeekJanuary1thThursday()
     {
         Assert.Equal(1, DateTimeUtils.GetIsoWeekOfYear(Parse("2003-01-01")));
-        Assert.Equal(1, DateTimeUtils.GetIsoWeekOfYear(Parse("2005-01-02")));
+        Assert.Equal(53, DateTimeUtils.GetIsoWeekOfYear(Parse("2005-01-02")));
     }
 
     /// <summary>
@@ -147,8 +153,8 @@ public sealed class TestDateIso8601
     /// </summary>
     private static void TestIsoWeekJanuary1thFriday()
     {
-        Assert.Equal(53, DateTimeUtils.GetIsoWeekOfYear(Parse("2004-01-01")));
-        Assert.Equal(1, DateTimeUtils.GetIsoWeekOfYear(Parse("2010-01-01")));
+        Assert.Equal(1, DateTimeUtils.GetIsoWeekOfYear(Parse("2004-01-01")));
+        Assert.Equal(53, DateTimeUtils.GetIsoWeekOfYear(Parse("2010-01-01")));
     }
 
     /// <summary>
@@ -157,8 +163,8 @@ public sealed class TestDateIso8601
     /// </summary>
     private static void TestIsoWeekJanuary1thSaturday()
     {
-        Assert.Equal(52, DateTimeUtils.GetIsoWeekOfYear(Parse("2005-01-01")));
-        Assert.Equal(53, DateTimeUtils.GetIsoWeekOfYear(Parse("2005-12-31")));
+        Assert.Equal(53, DateTimeUtils.GetIsoWeekOfYear(Parse("2005-01-01")));
+        Assert.Equal(52, DateTimeUtils.GetIsoWeekOfYear(Parse("2005-12-31")));
         Assert.Equal(1, DateTimeUtils.GetIsoWeekOfYear(Parse("2007-01-01")));
     }
 
@@ -176,7 +182,7 @@ public sealed class TestDateIso8601
     /// </summary>
     private static void TestIsoYearJanuary1thMonday()
     {
-        Assert.Equal(2007, DateTimeUtils.GetIsoWeekYear(Parse("2007-12-31")));
+        Assert.Equal(2008, DateTimeUtils.GetIsoWeekYear(Parse("2007-12-31")));
         Assert.Equal(2008, DateTimeUtils.GetIsoWeekYear(Parse("2008-01-01")));
     }
 
@@ -194,7 +200,7 @@ public sealed class TestDateIso8601
     /// </summary>
     private static void TestIsoYearJanuary1thWednesday()
     {
-        Assert.Equal(2002, DateTimeUtils.GetIsoWeekYear(Parse("2002-12-31")));
+        Assert.Equal(2003, DateTimeUtils.GetIsoWeekYear(Parse("2002-12-31")));
         Assert.Equal(2003, DateTimeUtils.GetIsoWeekYear(Parse("2003-01-01")));
     }
 
@@ -211,7 +217,7 @@ public sealed class TestDateIso8601
     /// </summary>
     private static void TestIsoYearJanuary1thFriday()
     {
-        Assert.Equal(2003, DateTimeUtils.GetIsoWeekYear(Parse("2004-01-01")));
+        Assert.Equal(2004, DateTimeUtils.GetIsoWeekYear(Parse("2004-01-01")));
     }
 
     /// <summary>

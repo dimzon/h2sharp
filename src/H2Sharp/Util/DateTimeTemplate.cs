@@ -57,7 +57,7 @@ public sealed class DateTimeTemplate
     /// What one fractional second digit is worth.
     /// </summary>
     private static readonly int[] FractionalSecondsTable =
-        [1_000_000_000, 100_000_000, 10_000_000, 1_000_000, 100_000, 10_000, 1_000, 100, 10];
+        [1_000_000_000, 100_000_000, 10_000_000, 1_000_000, 100_000, 10_000, 1_000, 100, 10, 1];
 
     private static readonly SmallLRUCache<string, DateTimeTemplate> Cache =
         SmallLRUCache<string, DateTimeTemplate>.NewInstance(100);

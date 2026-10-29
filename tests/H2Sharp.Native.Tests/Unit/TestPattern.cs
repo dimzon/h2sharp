@@ -65,7 +65,10 @@ public sealed class TestPattern
     private static void TestLike(CompareLike comp, string value, string pattern)
     {
         string regexp = InitPatternRegexp(pattern, '\\');
-        bool resultRegexp = System.Text.RegularExpressions.Regex.IsMatch(value, regexp);
+        // The reference uses Pattern.matcher(...).matches(), a whole-string match; .NET's
+        // Regex.IsMatch searches, so the pattern is anchored to the whole string.
+        bool resultRegexp = System.Text.RegularExpressions.Regex.IsMatch(
+            value, "\\A" + regexp + "\\z");
         bool result = comp.Test(pattern, value, '\\');
         if (result != resultRegexp)
         {
@@ -125,8 +128,17 @@ public sealed class TestPattern
                 }
 
                 c = pattern[++i];
-                _ = buff.Append('\\');
-                _ = buff.Append(c);
+                if (c == '%' || c == '_')
+                {
+                    // The .NET regex engine has no \_ or \% escape: the escaped LIKE
+                    // wildcard is the literal character itself.
+                    _ = buff.Append(c);
+                }
+                else
+                {
+                    _ = buff.Append('\\');
+                    _ = buff.Append(c);
+                }
             }
             else if (c == '%')
             {
