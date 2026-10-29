@@ -35,7 +35,7 @@ namespace H2Sharp.Native.Tests;
 /// <summary>
 /// The base class for tests that use connections to database.
 /// </summary>
-public abstract class TestDb : TestBase
+public abstract class TestDb : TestBase, IDisposable
 {
     private const string JdbcPrefix = "jdbc:h2:";
 
@@ -267,6 +267,20 @@ public abstract class TestDb : TestBase
         {
             _ = dataSources.TryRemove(key, out _);
         }
+    }
+
+    /// <summary>
+    /// Dispose the data sources this test opened, also when the test failed before its own
+    /// cleanup ran. Without this a failed test would keep its file lock for the next test.
+    /// </summary>
+    public void Dispose()
+    {
+        foreach (H2DataSource dataSource in dataSources.Values)
+        {
+            dataSource.Dispose();
+        }
+
+        dataSources.Clear();
     }
 
     protected static string ToClassicConnectionString(string url)
