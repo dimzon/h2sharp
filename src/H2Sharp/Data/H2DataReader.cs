@@ -459,6 +459,12 @@ public sealed class H2DataReader : DbDataReader
             throw NullValueException("Stream");
         }
 
+        if (cell is Values.ValueLob lob)
+        {
+            // A BLOB/CLOB may be larger than memory; its stream is its own.
+            return lob.GetInputStream();
+        }
+
         if (H2ValueMapper.ToObject(cell) is byte[] bytes)
         {
             return new MemoryStream(bytes, writable: false);

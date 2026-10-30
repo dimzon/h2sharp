@@ -177,6 +177,10 @@ Alias- и collation-подсценарии вынесены в отдельны�
 возвращает ошибку при их поломке (`TableView.Replace`/`Recompile`), `DROP ALL OBJECTS`
 не удаляет дважды зависимые представления, `SetModified` бампает модификацию метаданных.
 `TestViewDropView` проходит: `DROP_RESTRICT` показывается в `SETTINGS` и используется.
+`TestLargeBlob` проходит: параметр-поток >2ГБ больше не копируется в память — `LobDataFile`
+держит байты во временном файле, `ValueLob` отвечает на `OctetLength()` без чтения, а
+`H2DataReader.GetStream` отдаёт собственный поток LOB (сериализация значения в MVStore
+хранит ссылку на файл).
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает

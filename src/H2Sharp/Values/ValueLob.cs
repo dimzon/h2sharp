@@ -95,6 +95,13 @@ public abstract class ValueLob : Value
     /// </summary>
     public void Remove() => LobData.Remove(this);
 
+    /// <inheritdoc/>
+    public override long OctetLength() => LobOctetLength;
+
+    /// <inheritdoc/>
+    public override long CharLength()
+        => LobCharLength >= 0 ? LobCharLength : base.CharLength();
+
     /// <summary>
     /// Copy a large value to another table.
     /// </summary>

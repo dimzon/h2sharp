@@ -204,9 +204,52 @@ internal static class H2ValueMapper
 
     private static Value ReadStream(System.IO.Stream stream)
     {
-        using System.IO.MemoryStream copy = new();
-        stream.CopyTo(copy);
-        return ValueVarbinary.Get(copy.ToArray());
+        long length = -1;
+        if (stream.CanSeek)
+        {
+            try
+            {
+                length = stream.Length;
+            }
+            catch (NotSupportedException)
+            {
+            }
+        }
+
+        // The reference maps a binary parameter stream to a BLOB, not to a VARBINARY.
+        // A stream that fits in memory is kept as a small BLOB; a stream beyond that
+        // goes to a temporary file so the value never has to be a single byte array.
+        if (length >= 0 && length <= Engine.Constants.MaxStringLength)
+        {
+            using System.IO.MemoryStream copy = new();
+            stream.CopyTo(copy);
+            return Values.ValueBlob.CreateSmall(copy.ToArray());
+        }
+
+        string fileName = Store.FileSystem.FileUtils.CreateTempFile(
+            "h2lob", Engine.Constants.SuffixTempFile, true);
+        long written = 0;
+        try
+        {
+            using (System.IO.FileStream output = new(fileName, System.IO.FileMode.Create))
+            {
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    output.Write(buffer, 0, read);
+                    written += read;
+                }
+            }
+
+            return new Values.ValueBlob(
+                new Values.Lobs.LobDataFile(fileName, written), written);
+        }
+        catch
+        {
+            System.IO.File.Delete(fileName);
+            throw;
+        }
     }
 
     /// <summary>

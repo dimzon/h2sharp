@@ -547,6 +547,11 @@ public sealed class ValueDataType : BasicDataType<Value>
                         byte[] small = memory.GetSmall()!;
                         buff.PutVarInt(small.Length).Put(small, 0, small.Length);
                     }
+                    else if (lobData is LobDataFile file)
+                    {
+                        buff.PutVarInt(-1).PutVarLong(file.OctetLength);
+                        WriteString(buff, file.FileName);
+                    }
                     else
                     {
                         // A lob that lives in the database is written as a reference to it, and
@@ -567,6 +572,11 @@ public sealed class ValueDataType : BasicDataType<Value>
                         byte[] small = memory.GetSmall()!;
                         buff.PutVarInt(small.Length).Put(small, 0, small.Length)
                             .PutVarLong(lob.CharLength());
+                    }
+                    else if (lobData is LobDataFile file)
+                    {
+                        buff.PutVarInt(-1).PutVarLong(file.OctetLength);
+                        WriteString(buff, file.FileName);
                     }
                     else
                     {
@@ -814,7 +824,9 @@ public sealed class ValueDataType : BasicDataType<Value>
                         return ValueBlob.CreateSmall(small);
                     }
 
-                    throw new TODOException("ValueDataType.read: LOB in the database");
+                    long octetLength = DataUtils.ReadVarLong(buff, ref position);
+                    string fileName = ReadString(buff, ref position);
+                    return new ValueBlob(new LobDataFile(fileName, octetLength), octetLength);
                 }
 
             case Clob:
@@ -828,7 +840,9 @@ public sealed class ValueDataType : BasicDataType<Value>
                         return ValueClob.CreateSmall(small, charLength);
                     }
 
-                    throw new TODOException("ValueDataType.read: LOB in the database");
+                    long octetLength = DataUtils.ReadVarLong(buff, ref position);
+                    string fileName = ReadString(buff, ref position);
+                    return new ValueClob(new LobDataFile(fileName, octetLength), octetLength, -1L);
                 }
 
             case Geometry:
