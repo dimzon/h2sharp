@@ -408,6 +408,10 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             return;
         }
 
+        // The reference cancels the session before locking it: a statement running on
+        // another thread aborts at its next cancellation checkpoint and releases the
+        // lock, instead of the close waiting behind a query that never ends.
+        current.Cancel();
         current.Lock();
         try
         {

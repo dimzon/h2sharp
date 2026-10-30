@@ -343,8 +343,13 @@ public sealed class H2Command : DbCommand
     /// <summary>
     /// Cancels the command.
     /// </summary>
+    /// <remarks>
+    /// Forwards to the session, as the reference's statement cancel reaches the
+    /// session's deadline: the running statement aborts at its next checkpoint.
+    /// </remarks>
     public override void Cancel()
     {
+        connection?.Session?.Cancel();
     }
 
     /// <summary>
@@ -448,6 +453,14 @@ public sealed class H2Command : DbCommand
             throw new InvalidOperationException("The transaction belongs to another connection");
         }
 
+        // The reference executes an empty statement as a no-op (false, update count 0)
+        // rather than refusing it: whitespace and bare semicolons hold no statement.
+        if (text.Trim().Trim(';').Length == 0)
+        {
+            lazyRemaining = null;
+            return [new Command.CommandContainer(current, text, new Command.Dml.NoOperation(current))];
+        }
+
         H2Sharp.Command.CommandInterface command = current.PrepareCommand(text);
         List<Command.CommandContainer> containers;
         if (command is Command.CommandList list)
@@ -470,9 +483,10 @@ public sealed class H2Command : DbCommand
             int index = parameter.GetIndex();
             if (index < 0 || index >= ordered.Count)
             {
-                throw Message.DbException.Get(
-                    H2Sharp.Api.ErrorCode.ParameterNotSet1,
-                    "#" + (parameter.GetIndex() + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                // No value was supplied for this parameter at all: leave it unset, as
+                // the reference does. Reading it fails with ParameterNotSet1, unless
+                // the statement never reads it (a plain EXPLAIN, a stored view query).
+                continue;
             }
 
             object? value = ordered[index].Value;

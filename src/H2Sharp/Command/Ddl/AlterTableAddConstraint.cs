@@ -299,6 +299,13 @@ public class AlterTableAddConstraint : AlterTable
                         }
                     }
 
+                    if (!refTable.CanReference())
+                    {
+                        // A view cannot be the target of a foreign key.
+                        throw DbException.GetUnsupportedException(
+                            "Reference " + refTable.GetSql(new StringBuilder(), Util.HasSql.TraceSqlFlags));
+                    }
+
                     ConstraintUnique? unique = GetUniqueConstraint(refTable, refKeyColumns);
                     if (unique is null)
                     {

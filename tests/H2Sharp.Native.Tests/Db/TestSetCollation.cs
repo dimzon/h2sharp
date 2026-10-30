@@ -23,8 +23,12 @@ public sealed class TestSetCollation : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
+        // BlockedByPort: the named collations it exercises (DE, CHARSET_CP500) are
+        // not ported (D-002); the platform's collation weights disagree with the
+        // reference's.
         TestDefaultCollator();
         TestCp500Collator();
         TestDeCollator();

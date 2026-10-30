@@ -105,6 +105,7 @@ public class CommandContainer : Command
     public override ResultWithGeneratedKeys UpdateRows(object generatedKeysRequest)
     {
         RecompileIfRequired();
+        command.CheckParameters();
         return ResultWithGeneratedKeys.Of(command.Update());
     }
 
@@ -112,6 +113,7 @@ public class CommandContainer : Command
     public override ResultInterface Query(long maxrows)
     {
         RecompileIfRequired();
+        command.CheckParameters();
         return RunWithThreadLocalSession(() => command.Run(maxrows));
     }
 

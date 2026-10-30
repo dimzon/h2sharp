@@ -780,6 +780,13 @@ public sealed class Select : Query
     public override int GetColumnCount() => visibleColumnCount;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The snapshotted width from init, taken after the ORDER BY expressions join and
+    /// before GROUP BY and HAVING do: the expression list keeps growing after that.
+    /// </remarks>
+    public override int GetResultColumnCount() => resultColumnCount;
+
+    /// <inheritdoc/>
     public override long GetRowCount(SessionLocal session, List<TableFilter> filters, long limit)
         => throw new TODOException("Select.getRowCount: the plan is not built");
 

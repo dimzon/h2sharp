@@ -73,6 +73,16 @@ public static class Engine
 
         if (connectionInfo.IsPersistent)
         {
+            // The reference refuses a name with no file stem (such as a path ending
+            // in a separator) in ConnectionInfo.getName: the file name must be longer
+            // than the bare ".mv.db" suffix.
+            string stem = System.IO.Path.GetFileName(
+                Store.FileSystem.FileUtils.ToRealPath(name + Constants.SuffixMvFile));
+            if (stem.Length < Constants.SuffixMvFile.Length + 1)
+            {
+                throw Message.DbException.Get(Api.ErrorCode.InvalidDatabaseName1, name);
+            }
+
             string fileName = name + Constants.SuffixMvFile;
             if (!FileUtils.Exists(fileName))
             {

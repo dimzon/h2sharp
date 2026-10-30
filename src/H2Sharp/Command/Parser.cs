@@ -1402,10 +1402,32 @@ public sealed partial class Parser
         command.SetDrop(drop);
         command.SetSimple(simple);
         command.SetWithColumns(withColumns);
-        if (IsWord("TO") || IsWord("SCHEMA") || IsWord("TABLE"))
+        if (IsWord("TO"))
+        {
+            command.SetFileNameExpression(ReadExpression());
+            if (IsWord("COMPRESSION"))
+            {
+                throw new TODOException(
+                    "Parser.parseScript: SCRIPT ... COMPRESSION is not ported");
+            }
+
+            if (IsWord("CIPHER"))
+            {
+                throw new TODOException(
+                    "Parser.parseScript: SCRIPT ... CIPHER is not ported (D-026)");
+            }
+
+            if (IsWord("CHARSET"))
+            {
+                throw new TODOException(
+                    "Parser.parseScript: SCRIPT ... CHARSET is not ported");
+            }
+        }
+
+        if (IsWord("SCHEMA") || IsWord("TABLE"))
         {
             throw new TODOException(
-                "Parser.parseScript: SCRIPT TO/SCHEMA/TABLE filters are not ported");
+                "Parser.parseScript: SCRIPT SCHEMA/TABLE filters are not ported");
         }
 
         return command;
@@ -2095,42 +2117,34 @@ public sealed partial class Parser
         bool query = IsDirectQuery(offset);
         if (query && level > 0)
         {
-            offset = ScanToCloseParen(offset + 1);
-            if (offset < 0)
+            offset++;
+            do
             {
-                return false;
-            }
+                offset = ScanToCloseParen(offset);
+                if (offset < 0)
+                {
+                    return false;
+                }
 
-            while (true)
-            {
                 switch (tokens[offset].TokenType)
                 {
-                    case Token.Semicolon:
-                    case Token.EndOfInput:
-                        return false;
-                    case Token.OpenParen:
-                        offset = ScanToCloseParen(offset + 1);
-                        if (offset < 0)
-                        {
-                            return false;
-                        }
-
-                        break;
-                    case Token.CloseParen:
-                        if (--level == 0)
-                        {
-                            return true;
-                        }
-
-                        offset++;
-                        break;
-                    case ParserUtil.Join:
-                        return false;
                     default:
-                        offset++;
+                        return false;
+                    case Token.EndOfInput:
+                    case Token.Semicolon:
+                    case Token.CloseParen:
+                    case ParserUtil.Order:
+                    case ParserUtil.Offset:
+                    case ParserUtil.Fetch:
+                    case ParserUtil.Limit:
+                    case ParserUtil.Union:
+                    case ParserUtil.Except:
+                    case ParserUtil.Minus:
+                    case ParserUtil.Intersect:
                         break;
                 }
             }
+            while (--level > 0);
         }
 
         return query;
@@ -4066,8 +4080,7 @@ public sealed partial class Parser
     {
         ExpectWord("TRUNCATE");
         ExpectWord("TABLE");
-        string tableName = ReadIdentifier();
-        Schemas.Schema schema = CurrentSchema(session);
+        string tableName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
         Tables.Table table = ReadTableOrView(session, schema, tableName);
         bool restart = false;
         if (IsWord("CONTINUE") && IsWord("IDENTITY"))
@@ -8521,6 +8534,36 @@ public sealed partial class Parser
         if (position < tokens.Count - 1)
         {
             position++;
+            CheckLiterals();
+        }
+    }
+
+    /// <summary>
+    /// Refuses a literal the current ALLOW_LITERALS mode does not permit, as the reference's
+    /// ParserBase.checkLiterals does on every token advance.
+    /// </summary>
+    /// <remarks>
+    /// The session flag gates the check: the engine sets it while applying connection
+    /// settings and clears it after, so bootstrap and internal SQL parse untouched.
+    /// </remarks>
+    private void CheckLiterals()
+    {
+        if (session is null || session.GetAllowLiterals())
+        {
+            return;
+        }
+
+        if (Current is not Token.LiteralToken)
+        {
+            return;
+        }
+
+        int allowed = session.GetDatabase().GetAllowLiterals();
+        if (allowed == Engine.Constants.AllowLiteralsNone
+            || (Current is Token.CharacterStringToken or Token.BinaryStringToken
+                && allowed != Engine.Constants.AllowLiteralsAll))
+        {
+            throw Message.DbException.Get(Api.ErrorCode.LiteralsAreNotAllowed);
         }
     }
 
@@ -9307,7 +9350,8 @@ public sealed partial class Parser
 
         if (IsWord("ADD"))
         {
-            if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary or ParserUtil.Foreign)
+            if (CurrentType is ParserUtil.Constraint or ParserUtil.Primary or ParserUtil.Foreign
+                or ParserUtil.Unique or ParserUtil.Check)
             {
                 statement.AddConstraint = ReadTableConstraint(statement.Name);
                 return statement;

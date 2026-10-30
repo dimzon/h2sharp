@@ -22,6 +22,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Schemas;
@@ -194,6 +195,28 @@ public sealed class CreateTable : CommandWithColumns
             }
 
             CreateConstraints();
+            HashSet<object> dependencies = [];
+            table.AddDependencies(dependencies);
+            foreach (object obj in dependencies)
+            {
+                if (ReferenceEquals(obj, table))
+                {
+                    continue;
+                }
+
+                // The reference refuses a table that depends on a table with a higher
+                // id: on reopen the tables come back in id order, and the dependency
+                // would point at a table that is not there yet.
+                if (obj is Tables.Table other && other.GetId() > table.GetId())
+                {
+                    throw Message.DbException.Get(
+                        Api.ErrorCode.FeatureNotSupported1,
+                        "Table depends on another table with a higher ID: "
+                        + other.GetSql(new StringBuilder(), Util.HasSql.TraceSqlFlags)
+                        + ", this is currently not supported, as it would prevent the database from being re-opened");
+                }
+            }
+
             if (select is not null && !withNoData) InsertAsData(table);
         }
         catch (H2SharpException)

@@ -32,6 +32,9 @@ namespace H2Sharp.Tables;
 /// </remarks>
 public abstract class QueryExpressionTable : Table
 {
+    /// <inheritdoc/>
+    public override bool CanReference() => false;
+
     private const long RowCountApproximation = 100;
 
     private long lastModificationCheck;

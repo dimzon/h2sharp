@@ -75,7 +75,14 @@ public sealed class DropDatabase : DefineCommand
                     continue;
                 }
 
-                db.RemoveSchemaObject(current, table);
+                // Removing a table also removes the views that depend on it, so a
+                // view that was collected first may already be gone by the time the
+                // loop reaches it; resolve it again rather than removing it twice.
+                Table? alive = schema.FindTableOrView(current, table.GetTableName());
+                if (alive is not null)
+                {
+                    db.RemoveSchemaObject(current, alive);
+                }
             }
 
             foreach (Sequence sequence in schema.GetAllSequences())

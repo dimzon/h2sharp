@@ -56,6 +56,17 @@ public sealed class Explain : Prepared
     public override void Prepare() => command.Prepare();
 
     /// <inheritdoc/>
+    public override void CheckParameters()
+    {
+        // The reference checks parameters only for EXPLAIN ANALYZE: a plain EXPLAIN only
+        // plans, and planning never reads a parameter value.
+        if (executeCommand)
+        {
+            base.CheckParameters();
+        }
+    }
+
+    /// <inheritdoc/>
     public override bool IsQuery() => true;
 
     /// <inheritdoc/>

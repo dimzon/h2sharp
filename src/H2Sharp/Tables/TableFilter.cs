@@ -314,14 +314,11 @@ public class TableFilter : ColumnResolver
     /// Throws when the statement running this scan was canceled.
     /// </summary>
     /// <remarks>
-    /// Empty, because there is nothing to cancel yet: the reference checks a deadline the
-    /// cancel call sets, and neither the deadline nor the throttling around it is ported. A
-    /// check that threw here would end every scan at its 4096th row, which is not what
-    /// "not ported" means — it would be a scan that fails for being long.
+    /// The reference's checkTimeout: every 4096th scanned row asks the session, which
+    /// throws only after a cancel. The throttle sleep around the reference's check is
+    /// not ported (no THROTTLE setting is read here), so this is a pure abort check.
     /// </remarks>
-    private void CheckTimeout()
-    {
-    }
+    private void CheckTimeout() => session.CheckCanceled();
 
     /// <summary>
     /// Whether the cursor is on the null row of an outer join.

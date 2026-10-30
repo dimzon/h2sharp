@@ -8,8 +8,8 @@
  *
  * SCRIPT.
  *
- * Generates the SQL that recreates the database. The reference can also write to a file,
- * encrypt, compress, and filter schemas/tables; only the in-memory result is ported here.
+ * Generates the SQL that recreates the database. The reference can also encrypt,
+ * compress, and filter schemas/tables; of that, only plain TO-file output is ported here.
  * Settings and users/roles are not emitted: D-004 has no users or roles and settings are not
  * ported. Asking for either through the options still builds the same script, because the
  * default switches are read from the grammar exactly as in the reference.
@@ -17,6 +17,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using H2Sharp.Api;
 using H2Sharp.Command.Query;
@@ -53,6 +54,8 @@ public sealed class ScriptCommand : Prepared
 
     private int lobBlockSize = Constants.IoBufferSize;
 
+    private Expressions.Expression? fileNameExpression;
+
     private bool tempLobTableCreated;
 
     private int nextLobId;
@@ -88,6 +91,11 @@ public sealed class ScriptCommand : Prepared
     public void SetLobBlockSize(long value)
         => lobBlockSize = (int)Math.Min(int.MaxValue, value);
 
+    /// <summary>Sets the expression the TO file name is read from.</summary>
+    /// <param name="expression">the file name expression</param>
+    public void SetFileNameExpression(Expressions.Expression expression)
+        => fileNameExpression = expression;
+
     /// <inheritdoc/>
     public override bool IsQuery() => true;
 
@@ -116,12 +124,12 @@ public sealed class ScriptCommand : Prepared
     public override ResultInterface Run(long maxrows)
     {
         LocalResult result = CreateResult();
-        List<string> lines = [];
-        void Add(string? sql)
+        List<(string Line, bool Insert)> lines = [];
+        void Add(string? sql, bool insert = false)
         {
             if (!string.IsNullOrEmpty(sql))
             {
-                lines.Add(sql + ";");
+                lines.Add((sql + ";", insert));
             }
         }
 
@@ -195,7 +203,7 @@ public sealed class ScriptCommand : Prepared
 
                 if (data)
                 {
-                    GenerateInsertValues(table, Add);
+                    GenerateInsertValues(table, sql => Add(sql, true));
                 }
             }
 
@@ -219,9 +227,20 @@ public sealed class ScriptCommand : Prepared
             }
         }
 
-        foreach (string line in lines)
+        // The reference streams every line to the TO file when one is named, while the
+        // result keeps only the non-data lines; without TO everything lands in the result.
+        string? fileName = fileNameExpression?.GetValue(GetSession())?.GetString();
+        if (fileName is not null)
         {
-            result.AddRow(ValueVarchar.Get(line));
+            File.WriteAllLines(fileName, lines.Select(line => line.Line), Encoding.UTF8);
+        }
+
+        foreach ((string line, bool insert) in lines)
+        {
+            if (fileName is null || !insert)
+            {
+                result.AddRow(ValueVarchar.Get(line));
+            }
         }
 
         result.Done();

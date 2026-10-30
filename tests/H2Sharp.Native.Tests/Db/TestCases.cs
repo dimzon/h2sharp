@@ -67,6 +67,7 @@ public sealed class TestCases : TestDb
         TestInvalidDatabaseName();
         TestReuseSpace();
         TestDeleteGroup();
+        // TestCheckConstraintWithFunction lives in TestCheckConstraintWithFunctionAlias.
         TestDisconnect();
         // testExecuteTrace: deferred, see the header.
         TestExplain();
@@ -79,7 +80,7 @@ public sealed class TestCases : TestDb
             return;
         }
 
-        TestCheckConstraintWithFunction();
+        // TestCheckConstraintWithFunction lives in TestCheckConstraintWithFunctionAlias.
         TestDeleteAndDropTableWithLobs(true);
         TestDeleteAndDropTableWithLobs(false);
         TestEmptyBtreeIndex();
@@ -89,7 +90,7 @@ public sealed class TestCases : TestDb
         TestManualCommitSet();
         TestSchemaIdentityReconnect();
         TestAlterTableReconnect();
-        TestPersistentSettings();
+        // TestPersistentSettings lives in TestPersistentSettingsCollation.
         TestInsertSelectUnion();
         TestViewReconnect();
         TestDefaultQueryReconnect();
@@ -102,7 +103,7 @@ public sealed class TestCases : TestDb
         TestSelectForUpdate();
         // testDoubleRecovery: deferred, see the header (power-off seam).
         TestConstraintReconnect();
-        TestCollation();
+        // TestCollation lives in TestCollationEnglish.
         DeleteDb("cases");
     }
 
@@ -151,20 +152,26 @@ public sealed class TestCases : TestDb
         using DbConnection conn = GetConnection("cases");
         DbCommand stat = conn.CreateCommand();
         Execute(stat, "/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;");
-        Execute(stat, "");
+        // The reference also executes the empty string itself; an ADO.NET command with
+        // an empty CommandText is refused by the provider before execution, so only the
+        // semicolon forms are exercised here.
         Execute(stat, ";");
         Execute(stat, " ;");
     }
 
     private void TestViewParameters()
     {
+        // The reference test has no parameters in the view itself: parameters in views
+        // are refused on both sides ("parameters in views"). The parameters live on the
+        // outer query instead.
         DeleteDb("cases");
         using DbConnection conn = GetConnection("cases");
         DbCommand stat = conn.CreateCommand();
-        Execute(stat, "create table test(id int, name varchar)");
-        Execute(stat, "create view test_v as select * from test where id = ?");
+        Execute(stat, "create view test as select 0 v, 'x' name from dual");
         using DbCommand prep = conn.CreateCommand();
-        prep.CommandText = "select * from test_v";
+        prep.CommandText = "select 1 from test where name=? and v=? and v<=?";
+        prep.Parameters.Add(new H2Parameter { Value = "x" });
+        prep.Parameters.Add(new H2Parameter { Value = 0 });
         prep.Parameters.Add(new H2Parameter { Value = 1 });
         using (DbDataReader reader = prep.ExecuteReader())
         {
@@ -250,13 +257,8 @@ public sealed class TestCases : TestDb
         Execute(stat, "drop table b");
         Execute(stat, "drop table test");
 
-        // ensure the dependency is detected
-        Execute(stat, "create alias is_positive as "
-            + "'boolean isPositive(int x) { return x > 0; }'");
-        Execute(stat, "create table a(a integer, constraint test check is_positive(a))");
-        AssertThrows(ErrorCode.CannotDrop2, stat, "drop alias is_positive");
-        Execute(stat, "drop table a");
-        Execute(stat, "drop alias is_positive");
+        // The alias half of this scenario lives in TestDependenciesAlias, marked
+        // BlockedByPort: CREATE ALIAS is not ported and aliases are out of scope by design.
 
         // ensure trying to reference the table fails
         // (otherwise re-opening the database is not possible)
@@ -360,7 +362,9 @@ public sealed class TestCases : TestDb
         using (DbDataReader rs = stat.ExecuteReader())
         {
             AssertTrue(rs.Read());
-            AssertEquals(1, rs.GetDecimal(0));
+            // The reference compares BigDecimal.ONE: the C# spelling is a decimal
+            // literal, since AssertEquals is type-strict and int 1 != decimal 1.
+            AssertEquals(1m, rs.GetDecimal(0));
             AssertEquals("\ud835\udca9", rs.GetName(0));
         }
     }
@@ -523,7 +527,11 @@ public sealed class TestCases : TestDb
         }
         else
         {
-            stat.CommandText = "select * from test where id > " + x;
+            // The reference concatenates a Java double, whose text form is locale-free;
+            // double.ToString() follows the machine locale (0,1 instead of 0.1 here),
+            // so the number is formatted invariantly.
+            stat.CommandText = "select * from test where id > "
+                + x.ToString(System.Globalization.CultureInfo.InvariantCulture);
             using (DbDataReader rs = stat.ExecuteReader())
             {
                 AssertTrue(rs.Read());
@@ -1108,73 +1116,21 @@ public sealed class TestCases : TestDb
         conn.Close();
     }
 
-    private void TestCollation()
-    {
-        DeleteDb("cases");
-        using DbConnection conn = GetConnection("cases");
-        DbCommand stat = conn.CreateCommand();
-        Execute(stat, "SET COLLATION ENGLISH STRENGTH PRIMARY");
-        Execute(stat, "CREATE TABLE TEST(ID INT PRIMARY KEY, "
-            + "NAME VARCHAR(255))");
-        Execute(stat, "INSERT INTO TEST VALUES(1, 'Hello'), "
-            + "(2, 'World'), (3, 'WORLD'), (4, 'HELLO')");
-        Execute(stat, "create index idxname on test(name)");
-        stat.CommandText = "select name from test order by name";
-        using (DbDataReader rs = stat.ExecuteReader())
-        {
-            AssertTrue(rs.Read());
-            AssertEquals("Hello", rs.GetString(0));
-            AssertTrue(rs.Read());
-            AssertEquals("HELLO", rs.GetString(0));
-            AssertTrue(rs.Read());
-            AssertEquals("World", rs.GetString(0));
-            AssertTrue(rs.Read());
-            AssertEquals("WORLD", rs.GetString(0));
-        }
+    // TestCollation lives in TestCollationEnglish, marked BlockedByPort: it needs a
+    // real English collator, which is not ported (D-002).
 
-        stat.CommandText = "select name from test where name like 'He%'";
-        using (DbDataReader rs = stat.ExecuteReader())
-        {
-            AssertTrue(rs.Read());
-            AssertEquals("Hello", rs.GetString(0));
-            AssertTrue(rs.Read());
-            AssertEquals("HELLO", rs.GetString(0));
-        }
-    }
-
-    private void TestPersistentSettings()
-    {
-        DeleteDb("cases");
-        DbConnection conn = GetConnection("cases");
-        DbCommand stat = conn.CreateCommand();
-        Execute(stat, "SET COLLATION de_DE");
-        Execute(stat, "CREATE TABLE TEST(ID INT PRIMARY KEY, "
-            + "NAME VARCHAR)");
-        Execute(stat, "CREATE INDEX IDXNAME ON TEST(NAME)");
-        // \u00f6 = oe
-        Execute(stat, "INSERT INTO TEST VALUES(1, 'B\u00f6hlen'), "
-            + "(2, 'Bach'), (3, 'Bucher')");
-        conn.Close();
-        conn = GetConnection("cases");
-        DbCommand query = conn.CreateCommand();
-        query.CommandText = "SELECT NAME FROM TEST ORDER BY NAME";
-        using (DbDataReader rs = query.ExecuteReader())
-        {
-            AssertTrue(rs.Read());
-            AssertEquals("Bach", rs.GetString(0));
-            AssertTrue(rs.Read());
-            AssertEquals("B\u00f6hlen", rs.GetString(0));
-            AssertTrue(rs.Read());
-            AssertEquals("Bucher", rs.GetString(0));
-        }
-
-        conn.Close();
-    }
+    // TestPersistentSettings lives in TestPersistentSettingsCollation, marked
+    // BlockedByPort: it needs a real German collator, which is not ported (D-002).
 
     private void TestInsertSelectUnion()
     {
         DeleteDb("cases");
         using DbConnection conn = GetConnection("cases");
+        DbCommand stat = conn.CreateCommand();
+        Execute(stat, "CREATE TABLE TEST(ORDER_ID INT PRIMARY KEY, "
+            + "ORDER_DATE TIMESTAMP, "
+            + "USER_ID INT, DESCRIPTION VARCHAR, STATE VARCHAR, "
+            + "TRACKING_ID VARCHAR)");
         using DbCommand ps = conn.CreateCommand();
         ps.CommandText = "insert into TEST (ORDER_ID,ORDER_DATE,"
             + "USER_ID,DESCRIPTION,STATE,TRACKING_ID) "
@@ -1488,8 +1444,8 @@ public sealed class TestCases : TestDb
                 _ = p65.ExecuteNonQuery();
             }
 
-            transaction.Commit();
-            transaction.Commit();
+            // The reference issues a single COMMIT here; committing an already
+            // completed ADO.NET transaction throws, so the statement is not repeated.
             transaction.Commit();
         }
 
@@ -1689,19 +1645,8 @@ public sealed class TestCases : TestDb
         }
     }
 
-    private void TestCheckConstraintWithFunction()
-    {
-        DeleteDb("cases");
-        DbConnection conn = GetConnection("cases");
-        DbCommand stat = conn.CreateCommand();
-        Execute(stat, "create alias is_email as "
-            + "'boolean isEmail(String x) { return x != null && x.indexOf(''@'') > 0; }'");
-        Execute(stat, "create domain email as varchar check is_email(value)");
-        Execute(stat, "create table test(e email)");
-        conn.Close();
-        conn = GetConnection("cases");
-        conn.Close();
-    }
+    // TestCheckConstraintWithFunction lives in TestCheckConstraintWithFunctionAlias,
+    // marked BlockedByPort: it is built entirely on CREATE ALIAS.
 
     private void TestSpecialSQL()
     {

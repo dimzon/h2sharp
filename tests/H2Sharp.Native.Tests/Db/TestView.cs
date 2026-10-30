@@ -22,8 +22,6 @@ namespace H2Sharp.Native.Tests.Db;
 /// </summary>
 public sealed class TestView : TestDb
 {
-    private static int x;
-
     /// <summary>
     /// Run just this test.
     /// </summary>
@@ -39,8 +37,8 @@ public sealed class TestView : TestDb
         TestChangeSchemaSearchPath();
         TestParameterizedView();
         TestCache();
-        TestCacheFunction(true);
-        TestCacheFunction(false);
+        // TestCacheFunction lives in TestViewCacheFunctionAlias, marked BlockedByPort:
+        // it is built on CREATE ALIAS.
         TestInSelect();
         TestUnionReconnect();
         TestManyViews();
@@ -133,9 +131,10 @@ public sealed class TestView : TestDb
         DeleteDb("view");
         using DbConnection conn = GetConnection("view");
         DbCommand stat = conn.CreateCommand();
-        Execute(stat, "CREATE ALIAS X AS $$ int x() { return 1; } $$;");
+        // The alias half of this scenario lives in TestViewChangeSchemaSearchPathAlias,
+        // marked BlockedByPort.
         Execute(stat, "CREATE SCHEMA S");
-        Execute(stat, "CREATE VIEW S.TEST AS SELECT X() FROM DUAL");
+        Execute(stat, "CREATE VIEW S.TEST AS SELECT 1 FROM DUAL");
         Execute(stat, "SET SCHEMA=S");
         Execute(stat, "SET SCHEMA_SEARCH_PATH=S");
         Execute(stat, "SELECT * FROM TEST");
@@ -155,41 +154,6 @@ public sealed class TestView : TestDb
         ps.Parameters.Add(new H2Parameter { Value = "value1" });
         AssertThrows(ErrorCode.FeatureNotSupported1,
             () => _ = ps.ExecuteNonQuery());
-    }
-
-    private void TestCacheFunction(bool deterministic)
-    {
-        DeleteDb("view");
-        using DbConnection conn = GetConnection("view");
-        DbCommand stat = conn.CreateCommand();
-        x = 8;
-        Execute(stat, "CREATE ALIAS GET_X "
-            + (deterministic ? "DETERMINISTIC" : "")
-            + " FOR '" + GetType().FullName + ".getX'");
-        Execute(stat, "CREATE VIEW V AS SELECT * FROM (SELECT GET_X())");
-        stat.CommandText = "SELECT * FROM V";
-        using (DbDataReader rs = stat.ExecuteReader())
-        {
-            AssertTrue(rs.Read());
-            AssertEquals(8, rs.GetInt32(0));
-        }
-
-        x = 5;
-        stat.CommandText = "SELECT * FROM V";
-        using (DbDataReader rs = stat.ExecuteReader())
-        {
-            AssertTrue(rs.Read());
-            AssertEquals(deterministic ? 8 : 5, rs.GetInt32(0));
-        }
-    }
-
-    /// <summary>
-    /// This method is called via reflection from the database.
-    /// </summary>
-    /// <returns>the static value x</returns>
-    public static int GetX()
-    {
-        return x;
     }
 
     private void TestCache()

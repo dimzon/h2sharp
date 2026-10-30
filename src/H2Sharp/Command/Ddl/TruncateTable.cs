@@ -45,6 +45,11 @@ public sealed class TruncateTable : DefineCommand
     {
         Table target = table ?? throw new TODOException("TruncateTable.update: no table");
         SessionLocal session = GetSession();
+        if (!target.CanTruncate())
+        {
+            throw Message.DbException.Get(Api.ErrorCode.CannotTruncate1, target.GetTraceSql());
+        }
+
         target.Truncate(session);
         long result = 0;
         if (restart)

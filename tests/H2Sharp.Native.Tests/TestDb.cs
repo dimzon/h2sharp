@@ -234,7 +234,7 @@ public abstract class TestDb : TestBase, IDisposable
     {
         string classic = ToClassicConnectionString(url);
         H2ConnectionStringBuilder builder = new(classic);
-        string key = builder.Storage + ":" + builder.DataSource;
+        string key = DataSourceKey(builder);
         H2DataSource dataSource = dataSources.GetOrAdd(key, _ =>
             new H2DataSourceBuilder(classic)
                 .ConfigureExtensions(extensions =>
@@ -247,16 +247,33 @@ public abstract class TestDb : TestBase, IDisposable
         return dataSource.CreateConnection(classic);
     }
 
+    private static string DataSourceKey(H2ConnectionStringBuilder builder)
+    {
+        // The file system on Windows is case-insensitive: "cases" and "CaSeS" name the
+        // same file, so they must share one data source, as the reference's name
+        // normalization (real path) does. The engine itself keeps no registry.
+        string dataSource = builder.DataSource;
+        if (builder.Storage == StorageKind.File && OperatingSystem.IsWindows())
+        {
+            dataSource = dataSource.ToUpperInvariant();
+        }
+
+        return builder.Storage + ":" + dataSource;
+    }
+
     private void DisposeDataSources(string name)
     {
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
         List<string> remove = [];
         foreach ((string key, H2DataSource dataSource) in dataSources)
         {
             string databaseName = dataSource.DatabaseName;
-            if (databaseName.Equals(name, StringComparison.Ordinal)
-                || databaseName.EndsWith("/" + name, StringComparison.Ordinal)
-                || databaseName.EndsWith("\\" + name, StringComparison.Ordinal)
-                || databaseName.EndsWith(":" + name, StringComparison.Ordinal))
+            if (databaseName.Equals(name, comparison)
+                || databaseName.EndsWith("/" + name, comparison)
+                || databaseName.EndsWith("\\" + name, comparison)
+                || databaseName.EndsWith(":" + name, comparison))
             {
                 dataSource.Dispose();
                 remove.Add(key);

@@ -1147,8 +1147,15 @@ public sealed class SessionLocal : Session
     /// <summary>
     /// Cancels the statement being run.
     /// </summary>
+    /// <remarks>
+    /// Sets the cancellation deadline to now; the running statement aborts at its next
+    /// checkpoint with StatementWasCanceled. The timestamp is written lock-free on
+    /// purpose: cancellation races the statement it stops by design, and taking the
+    /// session lock here would deadlock against the very execution this is meant to
+    /// interrupt.
+    /// </remarks>
     public override void Cancel()
-        => throw new TODOException("SessionLocal.cancel");
+        => System.Threading.Volatile.Write(ref cancelAtTicks, System.Diagnostics.Stopwatch.GetTimestamp());
 
     /// <summary>
     /// Sets whether each statement commits by itself.
@@ -1376,6 +1383,10 @@ public sealed class SessionLocal : Session
 
     private bool truncateLargeLength;
 
+    private bool allowLiterals;
+
+    private long cancelAtTicks;
+
     private System.Collections.BitArray? nonKeywords;
 
     private string[]? schemaSearchPath;
@@ -1454,6 +1465,41 @@ public sealed class SessionLocal : Session
     public int GetLockTimeout()
     {
         return lockTimeout;
+    }
+
+    /// <summary>
+    /// Whether literals may be parsed on this session at all.
+    /// </summary>
+    /// <remarks>
+    /// The reference's session flag: the engine sets it while applying the connection
+    /// settings, then clears it, so the check below only bites on user SQL. The port
+    /// has no settings-application phase yet, so the flag starts cleared, which is the
+    /// state every reference session is in once it is open.
+    /// </remarks>
+    /// <returns>true when literals are allowed</returns>
+    public bool GetAllowLiterals() => allowLiterals;
+
+    /// <summary>
+    /// Sets whether literals may be parsed on this session at all.
+    /// </summary>
+    /// <param name="allow">true to allow literals</param>
+    public void SetAllowLiterals(bool allow) => allowLiterals = allow;
+
+    /// <summary>
+    /// Aborts with StatementWasCanceled when the session was canceled.
+    /// </summary>
+    /// <remarks>
+    /// The reference's checkCanceled, minus its throttling, which is not ported: the
+    /// throttle sleep only applies with a THROTTLE setting nobody sets here.
+    /// </remarks>
+    public void CheckCanceled()
+    {
+        long cancel = System.Threading.Volatile.Read(ref cancelAtTicks);
+        if (cancel != 0 && System.Diagnostics.Stopwatch.GetTimestamp() >= cancel)
+        {
+            System.Threading.Volatile.Write(ref cancelAtTicks, 0);
+            throw Message.DbException.Get(Api.ErrorCode.StatementWasCanceled);
+        }
     }
 
     /// <summary>Finds a local temporary table of this session.</summary>

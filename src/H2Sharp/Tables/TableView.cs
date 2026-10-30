@@ -54,20 +54,23 @@ public sealed class TableView : QueryExpressionTable
     public override int GetId() => id;
 
     /// <summary>Replaces the query of this view and recompiles it.</summary>
+    /// <remarks>
+    /// A replace that breaks a dependent view is refused as a whole: the old query is
+    /// restored and the old views recompiled, as the reference does.
+    /// </remarks>
     public void Replace(string querySql, Column[]? newColumnTemplates, SessionLocal session, bool force)
     {
         string oldQuerySql = querySQL;
         Column[]? oldTemplates = columnTemplates;
         querySQL = querySql;
         columnTemplates = newColumnTemplates;
-        InitColumnsAndTables(session);
-        ClearIndexCaches(GetSchema()!.GetDatabase());
-        if (createException is not null && !force)
+        H2SharpException? e = Recompile(session, force, true);
+        if (e is not null)
         {
             querySQL = oldQuerySql;
             columnTemplates = oldTemplates;
-            InitColumnsAndTables(session);
-            throw createException;
+            Recompile(session, true, false);
+            throw e;
         }
     }
 
@@ -82,10 +85,13 @@ public sealed class TableView : QueryExpressionTable
         => createException is not null || viewQuery is null ? long.MaxValue : base.GetMaxDataModificationId();
 
     /// <inheritdoc/>
-    /// <remarks>A view keeps no data of its own; the query text is updated by the command.</remarks>
+    /// <remarks>
+    /// A view keeps no data of its own, but it is still a database object:
+    /// bumping the modification meta id is what invalidates the session command
+    /// cache after a CREATE OR REPLACE VIEW.
+    /// </remarks>
     public override void SetModified()
-    {
-    }
+        => GetSchema()!.GetDatabase().GetNextModificationMetaId();
 
     /// <inheritdoc/>
     public override void Rename(string newName) => name = newName;
@@ -171,6 +177,10 @@ public sealed class TableView : QueryExpressionTable
     public string GetQuerySql() => querySQL;
 
     /// <summary>Recompiles this view and its dependent views.</summary>
+    /// <remarks>
+    /// The first dependent view whose recompilation fails answers that failure, unless
+    /// force is set, which keeps every view invalid in place.
+    /// </remarks>
     public H2SharpException? Recompile(SessionLocal session, bool force, bool clearIndexCache)
     {
         try
@@ -186,6 +196,20 @@ public sealed class TableView : QueryExpressionTable
         }
 
         InitColumnsAndTables(session);
+        foreach (TableView dependent in GetDependentViews())
+        {
+            H2SharpException? e = dependent.Recompile(session, force, false);
+            if (e is not null && !force)
+            {
+                return e;
+            }
+        }
+
+        if (clearIndexCache)
+        {
+            ClearIndexCaches(GetSchema()!.GetDatabase());
+        }
+
         return force ? null : createException;
     }
 

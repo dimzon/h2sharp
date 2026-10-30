@@ -29,8 +29,11 @@ public sealed class TestFunctionOverload : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
+        // BlockedByPort: the entire test is built on CREATE ALIAS, which is not
+        // ported; aliases are out of scope by design.
         DeleteDb("functionOverload");
         conn = GetConnection("functionOverload");
         TestControl();

@@ -291,6 +291,17 @@ public abstract class Query : Prepared
     public abstract int GetColumnCount();
 
     /// <summary>
+    /// Gets the row width of this query's results: the visible columns plus the hidden
+    /// ORDER BY ones, but not the GROUP BY or HAVING expressions appended later.
+    /// </summary>
+    /// <remarks>
+    /// The reference snapshots this count before appending group and having expressions;
+    /// <c>GetExpressions().Length</c> keeps growing after that point and is wider.
+    /// </remarks>
+    /// <returns>the result width</returns>
+    public virtual int GetResultColumnCount() => GetColumnCount();
+
+    /// <summary>
     /// Gets the number of rows without running the query twice.
     /// </summary>
     /// <param name="session">the session</param>
@@ -1227,9 +1238,11 @@ public abstract class Query : Prepared
     {
         int count = GetColumnCount();
         // H2 uses expressionArray and resultColumnCount: the row width includes hidden
-        // ORDER BY expressions, while only visible columns are exposed.
+        // ORDER BY expressions, while only visible columns are exposed. It is the
+        // snapshotted width, not the expression list, which keeps growing with the
+        // GROUP BY and HAVING expressions appended after it.
         Expression[] expressions = GetExpressions();
-        LocalResult distinctResult = new(GetSession(), expressions, count, expressions.Length);
+        LocalResult distinctResult = new(GetSession(), expressions, count, GetResultColumnCount());
         distinctResult.SetInPredicateValueListResult(inPredicateSortTypes!);
         result.Reset();
         while (result.Next())

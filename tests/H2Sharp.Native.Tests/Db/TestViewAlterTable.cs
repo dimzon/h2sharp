@@ -25,8 +25,10 @@ public sealed class TestViewAlterTable : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
+        // BlockedByPort: CreateTestData uses CREATE USER, which is not ported (D-004).
         DeleteDb(GetTestName());
         conn = GetConnection(GetTestName());
         stat = conn.CreateCommand();

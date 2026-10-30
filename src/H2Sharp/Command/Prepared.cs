@@ -127,6 +127,24 @@ public abstract class Prepared
     public bool IsWithParamValues() => withParamValues;
 
     /// <summary>
+    /// Fails when any parameter has no value, as the reference's checkParameters does.
+    /// </summary>
+    /// <remarks>
+    /// Called by the container right before the statement runs — not while binding — so
+    /// a statement that never reads its parameters, like a plain EXPLAIN, does not fail.
+    /// </remarks>
+    public virtual void CheckParameters()
+    {
+        if (parameters is not null)
+        {
+            foreach (Expressions.Parameter parameter in parameters)
+            {
+                parameter.CheckSet();
+            }
+        }
+    }
+
+    /// <summary>
     /// Set the parameter values.
     /// </summary>
     /// <param name="withParamValues">whether the parameter values are set</param>

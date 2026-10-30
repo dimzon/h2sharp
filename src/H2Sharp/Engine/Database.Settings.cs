@@ -53,6 +53,8 @@ public sealed partial class Database
 
     private bool referentialIntegrity = true;
 
+    private bool dropRestrict = true;
+
     private Mode mode = Mode.GetRegular();
 
     private int maxOperationMemory = Constants.DefaultMaxOperationMemory;
@@ -314,6 +316,15 @@ public sealed partial class Database
 
     public bool IsReferentialIntegrity() => referentialIntegrity;
 
+    /// <summary>
+    /// Whether the default action for DROP TABLE, DROP VIEW, DROP SCHEMA, DROP DOMAIN
+    /// and DROP CONSTRAINT is RESTRICT, as the reference's DROP_RESTRICT database setting
+    /// says. The rest of DbSettings is not ported; this flag is carried on its own because
+    /// INFORMATION_SCHEMA.SETTINGS shows it and DROP uses it.
+    /// </summary>
+    /// <returns>true when drops restrict by default</returns>
+    public bool IsDropRestrict() => dropRestrict;
+
     public void SetQueryStatistics(bool b)
     {
         queryStatistics = b;
@@ -492,6 +503,7 @@ public sealed partial class Database
         consumer("MODE", GetMode().Name);
         consumer("RETENTION_TIME", GetRetentionTime().ToString(System.Globalization.CultureInfo.InvariantCulture));
         consumer("WRITE_DELAY", GetWriteDelay().ToString(System.Globalization.CultureInfo.InvariantCulture));
+        consumer("DROP_RESTRICT", IsDropRestrict() ? "TRUE" : "FALSE");
 
         // The reference adds the DbSettings table and the MVStore's own rows here; DbSettings
         // is not ported, and the MVStore's rows are filled by its PopulateInfo below.

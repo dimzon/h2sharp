@@ -127,9 +127,8 @@ case-sensitive, а `CASE_INSENSITIVE_IDENTIFIERS=TRUE` использует Java
 `H2Connection` самодостаточен. `TestSelectTableNotFound` и
 `TestAlterTableNotFound` переписаны под upper-only семантику; новый
 `TestIdentifierCaseSettings` закрепляет ignore upper/lower, case-sensitive
-default, CI-режим и раздельное владение raw/DataSource. Native — **74/115**
-(41 failure, из них 3 помеченных `BlockedByPort`: `Jdbc.TestDriver`,
-`TestAlterSchemaRenameAlias`, `TestClearCacheAfterDdlAlias`).
+default, CI-режим и раздельное владение raw/DataSource. Native — **79/121**
+(42 failure, из них 8 помеченных `BlockedByPort`; реальных красных — 34).
 `TestDateTimeTemplate`, `TestDateIso8601`, `TestInterval` и `TestPattern`
 переведены на ответы Java-эталона: часть ожиданий в исходных тестах H2
 противоречит jar (RR-разбор, ISO-недели, отрицательные годы), а `CompareMode`
@@ -158,6 +157,26 @@ default, CI-режим и раздельное владение raw/DataSource. 
 реестр схемы, как эталон, а не INFORMATION_SCHEMA (см. комментарий в тесте).
 `TestClearCacheAfterDdl` проходит (имена баз с run-GUID против stale-файлов); alias-часть
 вынесена в `TestClearCacheAfterDdlAlias` с меткой `BlockedByPort`.
+`TestSQLInjection` проходит: `ALLOW_LITERALS` теперь проверяется на каждом токене
+(`Parser.CheckLiterals`, как `ParserBase.checkLiterals`), `SET ALLOW_LITERALS` работает.
+`TestSynonymForTable` проходит: metadata-ожидания исправлены под оракул
+(JDBC-метаданные синтезируют SYNONYM-строки, `INFORMATION_SCHEMA` — нет), закрытый
+statement в тесте отвечает ADO.NET `InvalidOperationException`; `TRUNCATE TABLE` читает
+схему (`readIdentifierWithSchema`).
+`TestCases` проходит: FK на view даёт 50100 (`CanReference`), зависимость от таблицы с
+большим id при CREATE TABLE даёт 50100, `IGNORE_CATALOGS`/пустые `;`-операторы/`SCRIPT TO`
+работают, `EXPLAIN` не требует значений параметров (checkParameters перенесён в контейнер,
+как в эталоне), `DEFAULT ON NULL`/identity работают, `TestDisconnect` не виснет
+(отмена сессии, как `JdbcConnection.close`), `StringReader`-параметр мапится в CLOB.
+Alias- и collation-подсценарии вынесены в отдельные `BlockedByPort`: `TestDependenciesAlias`,
+`TestCheckConstraintWithFunctionAlias`, `TestViewCacheFunctionAlias`,
+`TestViewChangeSchemaSearchPathAlias`, `TestPersistentSettingsCollation`,
+`TestCollationEnglish`; `TestFunctionOverload`, `TestViewAlterTable` (CREATE USER, D-004)
+и `TestSetCollation` помечены целиком.
+`TestView` проходит: `CREATE OR REPLACE VIEW` перекомпилирует зависимые представления и
+возвращает ошибку при их поломке (`TableView.Replace`/`Recompile`), `DROP ALL OBJECTS`
+не удаляет дважды зависимые представления, `SetModified` бампает модификацию метаданных.
+`TestViewDropView` проходит: `DROP_RESTRICT` показывается в `SETTINGS` и используется.
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает

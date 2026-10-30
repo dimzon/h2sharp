@@ -1200,6 +1200,30 @@ public sealed class MVTable : Table
 
     /// <inheritdoc/>
     /// <remarks>
+    /// The reference's rule: a table another table's foreign key points at cannot be
+    /// truncated while both that check and the database's referential integrity are on.
+    /// </remarks>
+    public override bool CanTruncate()
+    {
+        if (GetCheckForeignKeyConstraints()
+            && (GetSchema()?.GetDatabase()?.IsReferentialIntegrity() ?? false))
+        {
+            foreach (Constraints.Constraint constraint in GetConstraints())
+            {
+                if (constraint.GetConstraintType() == Constraints.Constraint.Type.REFERENTIAL
+                    && constraint is Constraints.ConstraintReferential referential
+                    && ReferenceEquals(referential.GetRefTable(), this))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// The reference body starts with the table's LOB storage — none here — and then calls the
     /// base, which removes the children the table knows about, constraints among them; the
     /// constraint removal goes first because an index removed before its owning constraint

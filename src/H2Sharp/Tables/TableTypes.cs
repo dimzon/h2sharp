@@ -2298,6 +2298,22 @@ public abstract class Table
     public abstract void Truncate(H2Sharp.Engine.SessionLocal session);
 
     /// <summary>
+    /// Whether this table can be the target of a foreign key, as the reference's
+    /// Table.canReference does: ordinary tables answer yes, views answer no.
+    /// </summary>
+    /// <returns>true when a foreign key may reference this table</returns>
+    public virtual bool CanReference() => true;
+
+    /// <summary>
+    /// Whether this table may be truncated, as the reference's Table.canTruncate does.
+    /// </summary>
+    /// <remarks>
+    /// The base answer is no; the MVStore table refines it to the foreign-key rule.
+    /// </remarks>
+    /// <returns>true when TRUNCATE TABLE is allowed</returns>
+    public virtual bool CanTruncate() => false;
+
+    /// <summary>
     /// Removes all dependent objects and resources.
     /// </summary>
     /// <remarks>

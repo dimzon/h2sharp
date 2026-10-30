@@ -104,6 +104,9 @@ internal static class H2ValueMapper
                 (int)dto.Offset.TotalSeconds),
             Guid g => ValueUuid.Get(g),
             System.IO.Stream stream => ReadStream(stream),
+            // The ADO.NET spelling of the reference's setCharacterStream: a character
+            // stream parameter is a CLOB, converted to the column type on assignment.
+            System.IO.TextReader reader => Values.ValueClob.CreateSmall(reader.ReadToEnd()),
             IEnumerable enumerable => ToArrayValue(enumerable, dbType, provider),
             _ => throw new InvalidOperationException(
                 "H2ValueMapper.ToValue: no engine value for " + value.GetType().Name),
