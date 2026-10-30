@@ -92,6 +92,8 @@ public sealed class SessionLocal : Session
 
     private bool closed;
 
+    private bool aborted;
+
     /// <summary>
     /// Whether commands are executed in quirks mode to support scripts from older versions
     /// of H2.
@@ -792,6 +794,27 @@ public sealed class SessionLocal : Session
             return;
         }
 
+        CloseCore();
+    }
+
+    /// <summary>
+    /// Aborts the session, as ABORT_SESSION does: the session is closed, and any
+    /// later use answers DatabaseCalledAtShutdown instead of a plain closed-session
+    /// error.
+    /// </summary>
+    public void Abort()
+    {
+        aborted = true;
+        CloseCore();
+    }
+
+    private void CloseCore()
+    {
+        if (closed)
+        {
+            return;
+        }
+
         if (HasPreparedTransaction())
         {
             UnlockAllTables();
@@ -984,6 +1007,11 @@ public sealed class SessionLocal : Session
         // could not run and leave the failure somewhere further along.
         if (IsClosed())
         {
+            if (aborted)
+            {
+                throw DbException.Get(Api.ErrorCode.DatabaseCalledAtShutdown);
+            }
+
             throw DbException.Get(Api.ErrorCode.ConnectionBroken1, "session closed");
         }
 
@@ -1566,6 +1594,19 @@ public sealed class SessionLocal : Session
         lock (lockedTables)
         {
             _ = lockedTables.Add(table);
+        }
+    }
+
+    /// <summary>
+    /// Gets the tables the current transaction holds locks on, as the reference's
+    /// getLocks does.
+    /// </summary>
+    /// <returns>a snapshot of the locked tables</returns>
+    public H2Sharp.Tables.Table[] GetLockedTables()
+    {
+        lock (lockedTables)
+        {
+            return [.. lockedTables];
         }
     }
 

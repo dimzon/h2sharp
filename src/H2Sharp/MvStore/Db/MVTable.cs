@@ -384,6 +384,20 @@ public sealed class MVTable : Table
         return true;
     }
 
+    /// <summary>
+    /// Whether the given session holds the exclusive lock on this table, as the
+    /// reference's isLockedExclusivelyBy does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>true when it does</returns>
+    public override bool IsLockedExclusivelyBy(SessionLocal session)
+    {
+        lock (tableLock)
+        {
+            return ReferenceEquals(lockExclusiveSession, session);
+        }
+    }
+
     /// <inheritdoc/>
     public override void Unlock(SessionLocal session)
     {

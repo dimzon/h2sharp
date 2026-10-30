@@ -345,6 +345,13 @@ public sealed class H2DataReader : DbDataReader
             return dateTime;
         }
 
+        if (value is DateTimeOffset dateTimeOffset)
+        {
+            // The ADO.NET DateTime of a TIMESTAMP WITH TIME ZONE value: the instant
+            // in the offset's local time, with the offset dropped.
+            return dateTimeOffset.DateTime;
+        }
+
         if (value is string text)
         {
             return Convert.ToDateTime(text, CultureInfo.InvariantCulture);

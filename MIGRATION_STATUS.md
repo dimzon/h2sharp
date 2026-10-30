@@ -181,6 +181,10 @@ Alias- и collation-подсценарии вынесены в отдельны�
 держит байты во временном файле, `ValueLob` отвечает на `OctetLength()` без чтения, а
 `H2DataReader.GetStream` отдаёт собственный поток LOB (сериализация значения в MVStore
 хранит ссылку на файл).
+`TestSessionsLocks` проходит: `INFORMATION_SCHEMA.LOCKS` показывает активные блокировки
+(`getLocks`, `isLockedExclusivelyBy`, READ/WRITE), `GetDateTime` читает TIMESTAMP WITH
+TIME ZONE, а `ABORT_SESSION` помечает сессию aborted — последующие операторы дают
+`DatabaseCalledAtShutdown`, как в эталоне.
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает

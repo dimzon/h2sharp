@@ -67,9 +67,9 @@ public sealed class SessionControlFunction : Function1
                 {
                     case AbortSession:
                         // The reference also cancels the command the target is running; a
-                        // synchronous port has none to cancel, and closing the session is
+                        // synchronous port has none to cancel, and aborting the session is
                         // the rest of what ABORT_SESSION does.
-                        s.Close();
+                        s.Abort();
                         return ValueBoolean.True;
                     case CancelSession:
                         // The reference cancels the command the session is running. This

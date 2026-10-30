@@ -1151,6 +1151,24 @@ public sealed class InformationSchemaTable : Table
 
                 break;
             case Locks:
+                foreach (SessionLocal s in database.GetSessions())
+                {
+                    foreach (Table table in s.GetLockedTables())
+                    {
+                        string lockType = table is MvStore.Db.MVTable mv
+                                && mv.IsLockedExclusivelyBy(s)
+                            ? "WRITE"
+                            : "READ";
+                        Add(
+                            rows,
+                            table.GetSchema()?.GetName() ?? string.Empty,
+                            table.GetTableName(),
+                            ValueInteger.Get(s.GetId()),
+                            lockType);
+                    }
+                }
+
+                break;
             case InDoubt:
             case QueryStatistics:
             case SessionState:

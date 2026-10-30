@@ -106,7 +106,10 @@ public sealed class TestSessionsLocks : TestDb
             sessionId = rs.GetInt32(rs.GetOrdinal("SESSION_ID"));
             _ = rs.GetString(rs.GetOrdinal("USER_NAME"));
             _ = rs.GetDateTime(rs.GetOrdinal("SESSION_START"));
-            _ = rs.GetString(rs.GetOrdinal("EXECUTING_STATEMENT"));
+            // The reference's getString answers null for NULL; ADO.NET's GetString
+            // throws, so the NULL case is read with IsDBNull.
+            _ = rs.IsDBNull(rs.GetOrdinal("EXECUTING_STATEMENT"))
+                ? null : rs.GetString(rs.GetOrdinal("EXECUTING_STATEMENT"));
             _ = rs.IsDBNull(rs.GetOrdinal("EXECUTING_STATEMENT_START"))
                 ? default : rs.GetDateTime(rs.GetOrdinal("EXECUTING_STATEMENT_START"));
             AssertFalse(rs.Read());
@@ -201,55 +204,45 @@ public sealed class TestSessionsLocks : TestDb
             transaction.Commit();
         }
 
-        using (DbTransaction transaction = conn2.BeginTransaction())
+        // The reference keeps this transaction open, holding the table lock, until
+        // ABORT_SESSION kills the session below.
+        DbTransaction abortTransaction = conn2.BeginTransaction();
+        stat2.Transaction = abortTransaction;
+        Execute(stat2, "update test set name = 'Again' where id = 1");
+
+        stat2.CommandText = "select session_id() as ID";
+        int otherId;
+        using (DbDataReader rs = stat2.ExecuteReader())
         {
-            stat2.Transaction = transaction;
-            // grab a lock
-            Execute(stat2, "update test set name = 'Again' where id = 1");
+            AssertTrue(rs.Read());
+            otherId = rs.GetInt32(rs.GetOrdinal("ID"));
+            AssertTrue(otherId != sessionId);
+            AssertFalse(rs.Read());
         }
 
-        using (DbTransaction transaction = conn2.BeginTransaction())
+        // expect one lock
+        AssertEquals(1, GetLockCountForSession(stat, otherId));
+        stat.CommandText = "CALL ABORT_SESSION(" + otherId + ")";
+        using (DbDataReader rs = stat.ExecuteReader())
         {
-            stat2.Transaction = transaction;
-            stat2.CommandText = "select session_id() as ID";
-            using (DbDataReader rs = stat2.ExecuteReader())
-            {
-                AssertTrue(rs.Read());
-            }
-
-            int otherId;
-            stat.CommandText = "select session_id() as ID";
-            using (DbDataReader rs = stat.ExecuteReader())
-            {
-                AssertTrue(rs.Read());
-                otherId = rs.GetInt32(rs.GetOrdinal("ID"));
-                AssertTrue(otherId != sessionId);
-                AssertFalse(rs.Read());
-            }
-
-            // expect one lock
-            AssertEquals(1, GetLockCountForSession(stat, otherId));
-            stat.CommandText = "CALL ABORT_SESSION(" + otherId + ")";
-            using (DbDataReader rs = stat.ExecuteReader())
-            {
-                AssertTrue(rs.Read());
-                AssertTrue(rs.GetBoolean(0));
-            }
-
-            // expect the lock to be released along with its session
-            AssertEquals(0, GetLockCountForSession(stat, otherId));
-            stat.CommandText = "CALL ABORT_SESSION(" + otherId + ")";
-            using (DbDataReader rs = stat.ExecuteReader())
-            {
-                AssertTrue(rs.Read());
-                AssertFalse("Session is expected to be already aborted", rs.GetBoolean(0));
-            }
-
-            // using the connection for the aborted session is expected to throw an
-            // exception
-            AssertThrows(ErrorCode.DatabaseCalledAtShutdown,
-                () => Query(stat2, "select count(*) from test"));
+            AssertTrue(rs.Read());
+            AssertTrue(rs.GetBoolean(0));
         }
+
+        // expect the lock to be released along with its session
+        AssertEquals(0, GetLockCountForSession(stat, otherId));
+        stat.CommandText = "CALL ABORT_SESSION(" + otherId + ")";
+        using (DbDataReader rs = stat.ExecuteReader())
+        {
+            AssertTrue(rs.Read());
+            AssertFalse("Session is expected to be already aborted", rs.GetBoolean(0));
+        }
+
+        // using the connection for the aborted session is expected to throw an
+        // exception
+        AssertThrows(ErrorCode.DatabaseCalledAtShutdown,
+            () => Query(stat2, "select count(*) from test"));
+        abortTransaction.Dispose();
 
         conn2.Close();
         conn.Close();
