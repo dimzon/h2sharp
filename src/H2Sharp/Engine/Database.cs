@@ -1230,6 +1230,56 @@ public sealed partial class Database : CastDataProvider
     }
 
     /// <summary>
+    /// Finds a table that depends on the given object, as the reference's getDependentTable
+    /// does: views never own anything, and the table being removed does not count.
+    /// </summary>
+    /// <remarks>
+    /// This is what keeps ALTER TABLE ... ADD COLUMN working: the rebuilt table's columns
+    /// still name the sequences generated for the added columns, so dropping the old table
+    /// must not take those sequences with it.
+    /// </remarks>
+    /// <param name="obj">the object</param>
+    /// <param name="except">the table to exclude, or null</param>
+    /// <returns>the first dependent table, or null</returns>
+    public Tables.Table? GetDependentTable(Schemas.SchemaObject obj, Tables.Table? except)
+    {
+        switch (obj.GetTypeId())
+        {
+            case DbObject.Comment:
+            case DbObject.Constraint:
+            case DbObject.Index:
+            case DbObject.Right:
+            case DbObject.Trigger:
+            case DbObject.User:
+                return null;
+        }
+
+        HashSet<object> dependencies = [];
+        lock (syncRoot)
+        {
+            foreach (Schemas.Schema schema in schemas.Values)
+            {
+                foreach (Tables.Table table in schema.GetAllTablesAndViews(null!))
+                {
+                    if (ReferenceEquals(except, table) || Tables.Table.VIEW == table.GetTableType())
+                    {
+                        continue;
+                    }
+
+                    dependencies.Clear();
+                    table.AddDependencies(dependencies);
+                    if (dependencies.Contains(obj))
+                    {
+                        return table;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Allocates a new object id.
     /// </summary>
     /// <remarks>

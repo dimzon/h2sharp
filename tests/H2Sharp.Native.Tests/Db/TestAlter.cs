@@ -6,10 +6,12 @@
 // Modified (API): JDBC statements are ADO.NET commands, and the proxy form of
 // assertThrows becomes the lambda form. getMetaData().getColumns is the
 // INFORMATION_SCHEMA.COLUMNS query through the ADO layer; the sequence count of
-// testAlterTableDropIdentityColumn is INFORMATION_SCHEMA.SEQUENCES, the same answer the
-// reference reads from the session. The reference's main() entry is the runner; xUnit
-// runs Test() directly.
+// testAlterTableDropIdentityColumn is the schema's sequence registry, the same answer
+// the reference reads from the session (identity sequences belong to their table and
+// never appear in INFORMATION_SCHEMA.SEQUENCES). The reference's main() entry is the
+// runner; xUnit runs Test() directly.
 using H2Sharp.Api;
+using H2Sharp.Data;
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Db;
@@ -138,13 +140,24 @@ public sealed class TestAlter : TestDb
     /// INFORMATION_SCHEMA.SEQUENCES row count.
     /// </summary>
     /// <returns>the number of sequences</returns>
+    /// <summary>
+    /// The sequence count of testAlterTableDropIdentityColumn, read the way the reference
+    /// reads it: from the schema's sequence registry, not from INFORMATION_SCHEMA.
+    /// </summary>
+    /// <remarks>
+    /// The reference test (TestAlter.java) counts
+    /// <c>getDatabase().getMainSchema().getAllSequences()</c>. INFORMATION_SCHEMA.SEQUENCES
+    /// would always answer 0 here, in both implementations: the reference's own
+    /// <c>InformationSchemaTable.sequences()</c> skips every sequence with
+    /// <c>belongsToTable</c> set, which identity sequences always have. Verified against
+    /// the h2-2.5.259 jar: SELECT from INFORMATION_SCHEMA.SEQUENCES right after
+    /// CREATE TABLE ... IDENTITY returns no rows there either.
+    /// </remarks>
+    /// <returns>the number of sequences</returns>
     private long CountSequences()
     {
-        DbCommand command = conn!.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SEQUENCES";
-        using DbDataReader rs = command.ExecuteReader();
-        AssertTrue(rs.Read());
-        return rs.GetInt64(0);
+        H2Connection connection = (H2Connection)conn!;
+        return connection.CurrentDatabase!.GetMainSchema()!.GetAllSequences().Count;
     }
 
     private void TestAlterTableAddColumnIdentity()

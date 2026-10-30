@@ -119,7 +119,12 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
 
                 if (!exists)
                 {
-                    CopyData(table, null, true);
+                    // The reference generates the sequences of added identity columns
+                    // before copying the table, so the rebuilt table's CREATE SQL names
+                    // them and the re-parsed columns come back with working sequences.
+                    List<Sequence> sequences = GenerateSequences(columnsToAdd, table.IsTemporary());
+                    ChangePrimaryKeysToNotNull(columnsToAdd);
+                    CopyData(table, sequences, true);
                 }
 
                 break;

@@ -2342,13 +2342,20 @@ public abstract class Table
             }
         }
 
-        // The sequences of the identity columns belong to the table and go with it.
+        // The sequences of the identity columns belong to the table and go with it —
+        // unless another table still depends on the sequence, as when ALTER TABLE copies a
+        // table: the rebuilt table's columns name the same sequences, so dropping the old
+        // table must leave them alone.
         while (sequences is not null && sequences.Count > 0)
         {
             Schemas.Sequence sequence = sequences[0];
             sequences.RemoveAt(0);
-            (GetSchema() ?? throw new TODOException("Table.removeChildrenAndResources: no schema"))
-                .GetDatabase().RemoveSchemaObject(session, sequence);
+            H2Sharp.Engine.Database database = (GetSchema()
+                ?? throw new TODOException("Table.removeChildrenAndResources: no schema")).GetDatabase();
+            if (database.GetDependentTable(sequence, this) is null)
+            {
+                database.RemoveSchemaObject(session, sequence);
+            }
         }
     }
 

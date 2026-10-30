@@ -127,8 +127,9 @@ case-sensitive, а `CASE_INSENSITIVE_IDENTIFIERS=TRUE` использует Java
 `H2Connection` самодостаточен. `TestSelectTableNotFound` и
 `TestAlterTableNotFound` переписаны под upper-only семантику; новый
 `TestIdentifierCaseSettings` закрепляет ignore upper/lower, case-sensitive
-default, CI-режим и раздельное владение raw/DataSource. Native — **70/113**
-(43 прежних `BlockedByPort`/дефектов порта).
+default, CI-режим и раздельное владение raw/DataSource. Native — **74/115**
+(41 failure, из них 3 помеченных `BlockedByPort`: `Jdbc.TestDriver`,
+`TestAlterSchemaRenameAlias`, `TestClearCacheAfterDdlAlias`).
 `TestDateTimeTemplate`, `TestDateIso8601`, `TestInterval` и `TestPattern`
 переведены на ответы Java-эталона: часть ожиданий в исходных тестах H2
 противоречит jar (RR-разбор, ISO-недели, отрицательные годы), а `CompareMode`
@@ -146,6 +147,17 @@ default, CI-режим и раздельное владение raw/DataSource. 
 `TestAlterSchemaRename` проходит переименование схем; alias-часть вынесена в
 `TestAlterSchemaRenameAlias` с меткой `BlockedByPort` (`CREATE ALIAS` не портируется,
 алиасы вне области по дизайну).
+`TestConcurrentJdbc` проходит: тест открывал JDBC-URL вместо classic-строки, worker
+перевыполнял CREATE TABLE вместо своих SELECT/DELETE (у ADO.NET-команды нет SQL-аргумента
+— текст ставится в CommandText), а гонка close/worker терпит закрытые коды эталона,
+включая CONNECTION_BROKEN_1 из prepareLocal.
+`TestAlter` проходит: `ALTER TABLE ADD` с identity теперь генерирует sequences до
+копирования таблицы (как эталон), а удаление таблицы не сносит sequence, пока на него
+ссылается другая таблица (`Database.GetDependentTable`, как эталон); `DEFAULT ON NULL`
+при явном NULL генерит identity-значение, как jar. Подсчёт sequences в тесте читает
+реестр схемы, как эталон, а не INFORMATION_SCHEMA (см. комментарий в тесте).
+`TestClearCacheAfterDdl` проходит (имена баз с run-GUID против stale-файлов); alias-часть
+вынесена в `TestClearCacheAfterDdlAlias` с меткой `BlockedByPort`.
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
