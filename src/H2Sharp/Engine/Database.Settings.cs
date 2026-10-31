@@ -487,7 +487,18 @@ public sealed partial class Database
     {
         lock (syncRoot)
         {
-            return exclusiveSession is null || exclusiveSession == session;
+            if (exclusiveSession is null)
+            {
+                return true;
+            }
+
+            if (exclusiveSession != session)
+            {
+                return false;
+            }
+
+            exclusiveSession = null;
+            return true;
         }
     }
 

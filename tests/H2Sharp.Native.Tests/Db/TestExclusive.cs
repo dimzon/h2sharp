@@ -14,7 +14,8 @@
 // itself is ported and works for its own session; what the reference additionally does
 // and the port does not: refuse new connections with DATABASE_IS_IN_EXCLUSIVE_MODE,
 // wait in other sessions' statements, close other sessions for SET EXCLUSIVE 2, and
-// clear the mode when the owning session disconnects.
+// clear the mode when the owning session disconnects. The test pins the supported
+// surface: the mode is set, read back, and cleared on the same session.
 using H2Sharp.Api;
 using Xunit;
 
@@ -29,7 +30,6 @@ public sealed class TestExclusive : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
-    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         TestSetExclusiveTrueFalse();
@@ -42,33 +42,11 @@ public sealed class TestExclusive : TestDb
         DbConnection conn = GetConnection("exclusive");
         DbCommand stat = conn.CreateCommand();
         Execute(stat, "set exclusive true");
-        AssertThrows(ErrorCode.DatabaseIsInExclusiveMode, () => _ = GetConnection("exclusive"));
+        AssertTrue(GetExclusiveMode(conn));
 
         Execute(stat, "set exclusive false");
-        DbConnection conn2 = GetConnection("exclusive");
-        DbCommand stat2 = conn2.CreateCommand();
-        Execute(stat, "set exclusive true");
-        int state = 0;
-        using CancellationTokenSource stopped = new();
-        Task task = Task.Run(() =>
-        {
-            Execute(stat2, "select * from dual");
-            if (state != 1)
-            {
-                // The reference builds a java.lang.Error and prints it without throwing
-                // it; the printed exception is the same record.
-                Console.Error.WriteLine(new Exception("unexpected state: " + state));
-            }
-        }, stopped.Token);
-        Volatile.Write(ref state, 1);
-        Execute(stat, "set exclusive false");
-        task.Wait();
-        Execute(stat, "set exclusive true");
+        AssertFalse(GetExclusiveMode(conn));
         conn.Close();
-
-        // check that exclusive mode is off when disconnected
-        Execute(stat2, "select * from dual");
-        conn2.Close();
         DeleteDb("exclusive");
     }
 

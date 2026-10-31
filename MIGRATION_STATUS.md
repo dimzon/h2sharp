@@ -291,7 +291,9 @@ EXCLUSIVE и READ ONLY решены по указанию пользовател
 `APPROVED_DEVIATIONS.md` (команда остаётся и работает для своего сеанса;
 отказ новому подключению, ожидание чужих сеансов, closeAllOthers и снятие
 режима при закрытии владельца не портируются до пересмотра);
-`TestExclusive` помечен `BlockedByPort` с пояснением. READ ONLY перенесён:
+`TestExclusive` закрепляет поддержаную поверхность (установка, чтение,
+снятие режима) и зелёный; исправлен `UnsetExclusiveSession`, не снимавший
+режим. READ ONLY перенесён:
 `Table.CheckWritingAllowed` (эталонный `Table.checkWritingAllowed`) зовётся в
 точках DML, где эталон проводит `checkTableRight` с правом записи — Delete,
 Update, Insert, все WHEN-ветки MergeUsing (SELECT-ветка не проверяется); DDL
