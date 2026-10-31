@@ -318,6 +318,11 @@ case-чувствительных идентификаторов требует 
 `DATE` как `TIMESTAMP` (сохраняет время), порт держит `DATE` как date-only
 (`Parser.DataTypes` → `TypeInfo.TypeDate`). Маппинг не внедряется; тест остаётся
 красным как фиксация расхождения.
+
+`TestDriver.TestSettingsAsProperties` — вне scope по решению пользователя:
+публикация `MAX_COMPACT_TIME` в SETTINGS требует класса настроек эталона
+(DbSettings/SettingsBase), которого у порта нет; параметр не влияет на
+поведение встроенного движка. Тест остаётся `BlockedByPort`.
 `SchemaRegistryTests` переписаны под D-033 (два красных теста утверждали
 case-insensitive реестр по умолчанию — семантику до D-033): case-корпус
 гоняется на базе с `CASE_INSENSITIVE_IDENTIFIERS=TRUE` (там три написания
