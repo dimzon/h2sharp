@@ -114,21 +114,35 @@ public sealed class TestIndex
         stat.CommandText = "create table test(id int primary key, name varchar)";
         _ = stat.ExecuteNonQuery();
 
-        TestErrorMessage(conn, "PRIMARY", "KEY", " ON PUBLIC.TEST(ID)");
+        TestErrorMessage(stat, "PRIMARY", "KEY", " ON PUBLIC.TEST(ID)");
 
         stat.CommandText = "create table test(id int, name varchar primary key)";
         _ = stat.ExecuteNonQuery();
 
-        TestErrorMessage(conn, "PRIMARY", "KEY", " ON PUBLIC.TEST(NAME)");
+        TestErrorMessage(stat, "PRIMARY_KEY_2 ON PUBLIC.TEST(NAME)");
     }
 
-    private static void TestErrorMessage(H2Connection conn, string head, string tail, string suffix)
+    /// <summary>
+    /// The reference's testErrorMessage(String...): insert the same row twice, the second one
+    /// has to fail, and the text between the quotes names the violated index; the table is
+    /// dropped afterwards so the next create starts clean.
+    /// </summary>
+    private static void TestErrorMessage(DbCommand stat, params string[] expected)
     {
-        using DbCommand stat = conn.CreateCommand();
-        stat.CommandText = "insert into test values(1, 'a'), (2, 'a')";
+        stat.CommandText = "INSERT INTO TEST VALUES(1, 1)";
+        _ = stat.ExecuteNonQuery();
+        stat.CommandText = "INSERT INTO TEST VALUES(1, 1)";
         H2SharpException ex = Assert.Throws<H2SharpException>(() => _ = stat.ExecuteNonQuery());
-        Assert.Equal(
-            "Unique index or primary key violation: " + head + tail + suffix,
-            ex.Message.Split('"')[0]);
+        string m = ex.Message;
+        int start = m.IndexOf('"');
+        int end = m.LastIndexOf('"');
+        string s = m[(start + 1)..end];
+        foreach (string t in expected)
+        {
+            Assert.Contains(t, s);
+        }
+
+        stat.CommandText = "drop table test";
+        _ = stat.ExecuteNonQuery();
     }
 }

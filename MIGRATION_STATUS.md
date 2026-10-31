@@ -186,6 +186,24 @@ Alias- и collation-подсценарии вынесены в отдельны�
 TIME ZONE, а `ABORT_SESSION` помечает сессию aborted — последующие операторы дают
 `DatabaseCalledAtShutdown`, как в эталоне.
 
+`TestIndex` (native) проходит, трейт снят; Engine `TestIndex` зелёный целиком, включая
+`IndexTypes("hash")`/`("unique hash")` и починенный по эталону `testErrorMessage`
+(хелпер вставляет `(1,1)` дважды и дропает таблицу — прежняя запись порта вставляла
+не-дубли и не дропала, поэтому краснела независимо от индексов). HASH-индекс
+перенесён 1:1: в H2 2.5 это не отдельная структура — флаг на `IndexType`, хранение
+то же (`MVSecondaryIndex`), флаг меняет метку (`HASH INDEX` в
+`INFORMATION_SCHEMA.INDEXES`), SQL индекса и исключает его из двух оптимизаций
+(индексная сортировка уже исключала). Парсер читает `HASH` после `UNIQUE`
+(`readIfCompat` — необязательное чтение без пополнения ожиданий, не compat-режим),
+`SPATIAL` только без `UNIQUE` и ровно по одному столбцу, quirks-форма
+`CREATE PRIMARY KEY [HASH]`, PostgreSQL-ветка `USING BTREE|HASH|RTREE` перед
+скобкой колонок (`USING` после колонок — хвостовой мусор, эталон отказывает);
+`hash`/`spatial` с `USING` отказываются с эталонным списком ожиданий `., COMMENT, (`.
+SPATIAL-индекс парсится и честно отказывает в `MVTable.AddIndex` (MVSpatialIndex не
+перенесён), `&&`-оператор — отдельная незакрытая поверхность. Поверх —
+`HashIndexOracleTests`: шесть дифференциальных тестов против JVM (формы индекса,
+23505 на дубле, два NULL, метка в info schema, USING-формы, план с именем индекса).
+
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
 session lazy-режим с восстановлением в finally. DerivedTable сохраняет эталонную

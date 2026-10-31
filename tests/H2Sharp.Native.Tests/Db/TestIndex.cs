@@ -14,8 +14,8 @@
 // org.h2.tools.SimpleResultSet and the org.h2.command.query.Select stack probe; the
 // port has neither, so the method and its alias are absent.
 //
-// Blocked by the port: on a file database CREATE INDEX goes through the unported
-// MVTable.rebuildIndexBlockMerge (issue #62), which the first case already hits.
+// The file-database rebuild (MVTable.rebuildIndexBlockMerge) is ported; the first
+// case used to hit its TODO, which is what blocked this class.
 using H2Sharp.Api;
 using Xunit;
 
@@ -36,7 +36,6 @@ public sealed class TestIndex : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
-    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         DeleteDb("index");

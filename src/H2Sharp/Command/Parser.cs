@@ -288,6 +288,12 @@ public sealed class CreateIndexStatement : Statement
     /// <summary>How NULLs compare in a unique index, or null for a non-unique one.</summary>
     public NullsDistinct? NullsDistinct { get; set; }
 
+    /// <summary>Whether HASH was written: the index is a hash index.</summary>
+    public bool Hash { get; set; }
+
+    /// <summary>Whether SPATIAL was written: the index is a spatial index.</summary>
+    public bool Spatial { get; set; }
+
     /// <summary>Whether IF NOT EXISTS was written.</summary>
     public bool IfNotExists { get; set; }
 
@@ -8261,6 +8267,8 @@ public sealed partial class Parser
         }
 
         create.SetIndexColumns([.. statement.Columns]);
+        create.SetHash(statement.Hash);
+        create.SetSpatial(statement.Spatial);
         if (statement.Unique)
         {
             create.SetUnique(statement.NullsDistinct ?? NullsDistinct.Distinct, statement.UniqueColumnCount);
@@ -8645,7 +8653,8 @@ public sealed partial class Parser
                 return ReadCreateTable(!memory);
             }
 
-            if (IsWord("UNIQUE", consume: false) || IsWord("INDEX", consume: false))
+            if (IsWord("UNIQUE", consume: false) || IsWord("INDEX", consume: false)
+                || IsWord("HASH", consume: false) || IsWord("SPATIAL", consume: false))
             {
                 return ReadCreateIndex(primaryKey: false);
             }
@@ -8658,12 +8667,6 @@ public sealed partial class Parser
                 Read();
                 ExpectWord("KEY");
                 return ReadCreateIndex(primaryKey: true);
-            }
-
-            if (IsWord("HASH", consume: false) || IsWord("SPATIAL", consume: false))
-            {
-                throw new TODOException(
-                    "Parser.parseCreate: HASH and SPATIAL indexes are not ported");
             }
 
             throw DbException.GetSyntaxError(sql, Current.Start, "TABLE");
@@ -9457,25 +9460,40 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Reads CREATE [UNIQUE] INDEX.
+    /// Reads CREATE [UNIQUE] [HASH|SPATIAL] INDEX.
     /// </summary>
     /// <remarks>
     /// The name is optional: without one the reference generates it when the index is created.
-    /// HASH and SPATIAL are only keywords in compatibility modes and are refused by name. The
-    /// reference reads them with <c>readIfCompat</c>, which this parser does not have. The
-    /// INCLUDE clause and the PostgreSQL <c>USING</c> keywords other than BTREE are valid
-    /// statements whose commands are not ported.
+    /// HASH is read with the reference's <c>readIfCompat</c> semantics — an optional read that
+    /// adds nothing to the expected-token list — and so is part of plain SQL, not a
+    /// compatibility mode. SPATIAL is refused after UNIQUE, as in the reference, and takes
+    /// exactly one column. The INCLUDE clause and the PostgreSQL <c>USING</c> keywords other
+    /// than BTREE are valid statements whose commands are not ported.
     /// </remarks>
     /// <returns>the statement</returns>
     private CreateIndexStatement ReadCreateIndex(bool primaryKey)
     {
         CreateIndexStatement statement = new() { PrimaryKey = primaryKey };
+        if (primaryKey && IsWord("HASH"))
+        {
+            statement.Hash = true;
+        }
+
         if (!primaryKey)
         {
             if (IsWord("UNIQUE"))
             {
                 statement.Unique = true;
                 statement.NullsDistinct = ReadNullsDistinct(NullsDistinct.Distinct);
+            }
+
+            if (IsWord("HASH"))
+            {
+                statement.Hash = true;
+            }
+            else if (statement.NullsDistinct is null && IsWord("SPATIAL"))
+            {
+                statement.Spatial = true;
             }
 
             ExpectWord("INDEX");
@@ -9505,14 +9523,41 @@ public sealed partial class Parser
 
         if (!ReadIf(Token.OpenParen))
         {
-            ExpectWord("USING");
-            if (!IsWord("BTREE"))
+            // The PostgreSQL USING spelling stands between the table and the column list, and
+            // the reference reads it with readCompat, which consumes the keyword in any mode.
+            // A hash or spatial index refuses the spelling outright, and the expected list the
+            // reference answers with at this point — the identifier dot, the optional COMMENT
+            // and the column list — is what every refusal here names.
+            if (statement.Hash || statement.Spatial)
             {
-                throw new TODOException(
-                    "Parser.parseCreate: CREATE INDEX USING other than BTREE is not ported");
+                throw DbException.GetSyntaxError(sql, Current.Start, "., COMMENT, (");
+            }
+
+            ExpectWord("USING");
+            if (IsWord("BTREE"))
+            {
+                // The default index type; nothing to remember.
+            }
+            else if (IsWord("HASH"))
+            {
+                statement.Hash = true;
+            }
+            else
+            {
+                ExpectWord("RTREE");
+                statement.Spatial = true;
             }
 
             Expect(Token.OpenParen, "(");
+        }
+
+        if (statement.Spatial)
+        {
+            // A spatial index is over exactly one column with no sort type: the reference
+            // reads one identifier and the closing parenthesis.
+            statement.Columns.Add(new IndexColumn(ReadIdentifier()));
+            Expect(Token.CloseParen, ")");
+            return statement;
         }
 
         do
