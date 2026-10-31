@@ -69,13 +69,15 @@ public sealed class JsonBytesSource : JsonTextSource
     /// <summary>
     /// UTF-32 in either order. .NET has no named instances for the two orders, and its
     /// <see cref="Encoding.GetEncoding(int)"/> codes for them are the other way round from what the
-    /// names say, so both are built explicitly rather than looked up by number.
+    /// names say, so both are built explicitly rather than looked up by number. The byte order
+    /// mark is part of the decoder, as it is for the reference's UTF-32LE/UTF-32BE: a leading
+    /// BOM is stripped, and without one nothing is.
     /// </summary>
-    private static readonly Encoding Utf32LittleEndian = new UnicodeEncoding(
-        bigEndian: false, byteOrderMark: true, throwOnInvalidBytes: false);
+    private static readonly Encoding Utf32LittleEndian = new UTF32Encoding(
+        bigEndian: false, byteOrderMark: true);
 
-    private static readonly Encoding Utf32BigEndian = new UnicodeEncoding(
-        bigEndian: true, byteOrderMark: true, throwOnInvalidBytes: false);
+    private static readonly Encoding Utf32BigEndian = new UTF32Encoding(
+        bigEndian: true, byteOrderMark: true);
 
     /// <summary>
     /// The encoding the first bytes suggest, or null when they suggest UTF-8, which is read and

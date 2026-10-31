@@ -204,6 +204,19 @@ SPATIAL-индекс парсится и честно отказывает в `M
 `HashIndexOracleTests`: шесть дифференциальных тестов против JVM (формы индекса,
 23505 на дубле, два NULL, метка в info schema, USING-формы, план с именем индекса).
 
+`TestJsonUtils` проходит — в перенесённом коде были два дефекта и одна ошибка
+портирования теста. Главное: декодер UTF-32 в `JsonBytesSource.DetectCharset`
+строился классом `UnicodeEncoding` — это UTF-16, и документ в UTF-32
+превращался в строку с NUL-символами, которые парсер отказывал (в эталоне
+`Charset.forName("UTF-32LE"/"UTF-32BE")`); декодер срезает BOM, как Java,
+поэтому `byteOrderMark: true` сохранено. Второе: `JsonStringTarget.GetTypedResult`
+не переносил проверку эталонного `getResult` (`!stack.isEmpty() ||
+builder.length() == 0` → отказ) — обрезанный документ вида `[1,` отдавался как
+валидальный JSON; в остальных целях проверка уже была. Третье: ожидание
+`testEncodeString` в тесте писало `\u007f` литералом, где эталон (и jar,
+проверено пробником) отдаёт сырой DEL. Правило: смок-вводы против jar —
+пробником, зафиксированное поведение — тестом из набора.
+
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
 session lazy-режим с восстановлением в finally. DerivedTable сохраняет эталонную

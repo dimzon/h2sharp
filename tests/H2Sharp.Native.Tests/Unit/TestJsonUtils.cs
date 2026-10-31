@@ -361,7 +361,7 @@ public sealed class TestJsonUtils : TestBase
     {
         TestEncodeString("abc \"\u0001\u007f\u0080\u1000\uabcd\n'\t",
             "\"abc \\\"\\u0001\u007f\u0080\u1000\uabcd\\n'\\t\"",
-            "\"abc \\\"\\u0001\\u007f\\u0080\\u1000\\uabcd\\n\\u0027\\t\"");
+            "\"abc \\\"\\u0001\u007f\\u0080\\u1000\\uabcd\\n\\u0027\\t\"");
         // A string with a surrogate pair can be encoded
         using (MemoryStream stream = new())
         {

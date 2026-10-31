@@ -291,5 +291,18 @@ public sealed class JsonStringTarget : JsonTarget<string>
     public override bool IsValueSeparatorExpected() => needSeparator;
 
     /// <inheritdoc/>
-    protected override string? GetTypedResult() => builder.ToString();
+    /// <remarks>
+    /// The reference's getResult refuses an unfinished document: a container that was never
+    /// closed leaves the stack non-empty, and nothing parsed leaves the builder empty. A
+    /// string target that answered for either would make truncated input look like JSON.
+    /// </remarks>
+    protected override string? GetTypedResult()
+    {
+        if (!stack.IsEmpty() || builder.Length == 0)
+        {
+            throw new InvalidOperationException();
+        }
+
+        return builder.ToString();
+    }
 }
