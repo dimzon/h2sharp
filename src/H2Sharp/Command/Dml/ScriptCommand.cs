@@ -134,11 +134,6 @@ public sealed class ScriptCommand : Prepared
         }
 
         Database db = GetSession().GetDatabase();
-        if (drop)
-        {
-            throw new TODOException("ScriptCommand: the DROP option is not ported");
-        }
-
         if (version)
         {
             Add("-- H2 " + Constants.Version);
@@ -159,6 +154,25 @@ public sealed class ScriptCommand : Prepared
             Add(schema.GetCreateSql());
         }
 
+        // The DROP lines come first, as a pass of their own: the reference drops the
+        // objects in this order (tables before sequences) and then scripts their creations.
+        if (drop)
+        {
+            foreach (Table table in BuildTables(schemas))
+            {
+                StringBuilder builder = new("DROP TABLE IF EXISTS ");
+                _ = table.GetSql(builder, HasSql.DefaultSqlFlags);
+                Add(builder.Append(" CASCADE").ToString());
+            }
+
+            foreach (Sequence sequence in BuildSequences(schemas))
+            {
+                StringBuilder builder = new("DROP SEQUENCE IF EXISTS ");
+                _ = sequence.GetSql(builder, 0);
+                Add(builder.ToString());
+            }
+        }
+
         foreach (Schema schema in schemas)
         {
             List<Domain> domains = schema.GetAllDomains();
@@ -169,35 +183,12 @@ public sealed class ScriptCommand : Prepared
             }
         }
 
-        List<Sequence> sequences = [];
-        foreach (Schema schema in schemas)
-        {
-            foreach (Sequence sequence in schema.GetAllSequences())
-            {
-                // The sequence of an identity column belongs to its table and is scripted
-                // with it, as in the reference.
-                if (!sequence.GetBelongsToTable())
-                {
-                    sequences.Add(sequence);
-                }
-            }
-        }
-
-        sequences.Sort(static (a, b) => string.CompareOrdinal(a.GetName(), b.GetName()));
-        foreach (Sequence sequence in sequences)
+        foreach (Sequence sequence in BuildSequences(schemas))
         {
             Add(sequence.GetCreateSql());
         }
 
-        List<Table> tables = [];
-        foreach (Schema schema in schemas)
-        {
-            tables.AddRange(schema.GetAllTablesAndViews(GetSession()));
-        }
-
-        tables.Sort(static (a, b) => a.GetId().CompareTo(b.GetId()));
-
-        foreach (Table table in tables)
+        foreach (Table table in BuildTables(schemas))
         {
             string? createSql = table.GetCreateSql();
             if (createSql is null) continue;
@@ -265,6 +256,43 @@ public sealed class ScriptCommand : Prepared
 
         result.Done();
         return result;
+    }
+
+    /// <summary>
+    /// The tables of the schemas, in id order.
+    /// /// </summary>
+    private static List<Table> BuildTables(List<Schema> schemas)
+    {
+        List<Table> tables = [];
+        foreach (Schema schema in schemas)
+        {
+            tables.AddRange(schema.GetAllTablesAndViews(null!));
+        }
+
+        tables.Sort(static (a, b) => a.GetId().CompareTo(b.GetId()));
+        return tables;
+    }
+
+    /// <summary>
+    /// The sequence of the schemas, ordered by name; identity-column sequences are scripted
+    /// with their tables and are not here.
+    /// /// </summary>
+    private static List<Sequence> BuildSequences(List<Schema> schemas)
+    {
+        List<Sequence> sequences = [];
+        foreach (Schema schema in schemas)
+        {
+            foreach (Sequence sequence in schema.GetAllSequences())
+            {
+                if (!sequence.GetBelongsToTable())
+                {
+                    sequences.Add(sequence);
+                }
+            }
+        }
+
+        sequences.Sort(static (a, b) => string.CompareOrdinal(a.GetName(), b.GetName()));
+        return sequences;
     }
 
     private void GenerateInsertValues(Table table, Action<string> add)

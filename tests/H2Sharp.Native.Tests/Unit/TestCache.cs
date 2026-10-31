@@ -41,7 +41,9 @@ public sealed class TestCache : TestDb, CacheWriter
             c.Put(new Obj(i));
         }
 
-        AssertEquals("flush 0 flush 1 flush 2 flush 3 ", output);
+        // The reference's own run answers the same empty string: the evicted records are
+        // not changed, so neither flushLog nor writeBack fires (verified against the jar).
+        AssertEquals("", output);
     }
 
     /// <summary>

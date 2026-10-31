@@ -2176,10 +2176,11 @@ public abstract class Table
     /// <remarks>
     /// In the reference this is DbObject's, and every schema object answers it; a table here
     /// does not share that base, so the member stands on the table and the state lives with
-    /// the implementation.
+    /// the implementation. Bumping the modification meta id is what invalidates the session
+    /// command cache; the implementations that keep more state override this.
     /// </remarks>
     public virtual void SetModified()
-        => throw new TODOException("Table.setModified");
+        => GetSchema()?.GetDatabase().GetNextModificationMetaId();
 
     /// <summary>
     /// Gets the index at the given position.

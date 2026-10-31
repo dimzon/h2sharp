@@ -44,6 +44,12 @@ namespace H2Sharp.Tables;
 public sealed class InformationSchemaTable : Table
 {
     /// <summary>
+    /// The meta tables have no object id of their own; a removal through the table path
+    /// still asks for one, and the answer matches the reference's non-registered objects.
+    /// </summary>
+    public override int GetId() => 0;
+
+    /// <summary>
     /// The approximate number of rows of a meta table.
     /// </summary>
     public const long RowCountApproximation = 1000;
