@@ -70,11 +70,6 @@ public static class Engine
                 "Database file encryption (CIPHER) is not supported");
         }
 
-        if (options.Init is not null)
-        {
-            throw new TODOException("Engine.openSession: INIT is not ported");
-        }
-
         if (connectionInfo.IsPersistent)
         {
             // The reference refuses a name with no file stem (such as a path ending
@@ -135,7 +130,42 @@ public static class Engine
             : new DelegatedCastDataProvider(systemClockProvider, timeZoneProviderProvider);
         session.CastDataProvider = new SessionCastDataProvider(session, inner);
         session.SetTimeZone(inner.CurrentTimeZone());
+        RunInit(session, connectionInfo);
         return session;
+    }
+
+    /// <summary>
+    /// Runs the INIT script of the connection string on the opening session, as the
+    /// reference does: its statements run before the connection is handed out, and a
+    /// failure refuses the open unless unknown settings are ignored.
+    /// </summary>
+    private static void RunInit(SessionLocal session, ConnectionInfo connectionInfo)
+    {
+        string? init = connectionInfo.Options.Init;
+        if (init is null)
+        {
+            return;
+        }
+
+        try
+        {
+            H2Sharp.Command.CommandInterface command = session.PrepareCommand(init);
+            try
+            {
+                _ = command.ExecuteUpdate(null!);
+            }
+            finally
+            {
+                command.Close();
+            }
+        }
+        catch (H2SharpException)
+        {
+            if (!connectionInfo.Options.IgnoreUnknownSettings)
+            {
+                throw;
+            }
+        }
     }
 
     private static void ThrowNotFound(bool ifExists, bool forbidCreation, string name)
