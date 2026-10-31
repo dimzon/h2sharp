@@ -70,6 +70,9 @@ public sealed class Update : FilteredDataChangeStatement
         SessionLocal session = GetSession();
         Tables.TableFilter filter = GetTableFilter();
         Tables.Table table = filter.GetTable();
+        // The reference's checkTableRight(table, UPDATE): the read-only check on the table
+        // comes before the admin bypass, see Delete.
+        table.CheckWritingAllowed();
         _ = table.Lock(session, Tables.Table.WriteLock);
         SetClauseList assignments = setClauseList
             ?? throw Message.DbException.GetInternalError("UPDATE without assignments");

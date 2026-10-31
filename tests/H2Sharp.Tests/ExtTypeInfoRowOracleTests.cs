@@ -337,7 +337,7 @@ public sealed class ExtTypeInfoRowOracleTests
         }
         catch (H2SharpException ex)
         {
-            return $"EX {ex.H2ErrorCode} {ex.Message}";
+            return $"EX {ex.H2ErrorCode} {TraceSuffix.Replace(ex.Message, string.Empty)}";
         }
     }
 

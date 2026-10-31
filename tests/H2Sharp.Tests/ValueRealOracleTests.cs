@@ -136,12 +136,12 @@ public sealed class ValueRealOracleTests
         H2SharpException divide = Assert.Throws<H2SharpException>(
             () => dividend.Divide(ValueReal.Get(0f), TypeInfo.TypeReal));
         Assert.Equal((int)ErrorCode.DivisionByZero1, divide.H2ErrorCode);
-        Assert.Contains(dividend.GetTraceSql(), divide.Message, StringComparison.Ordinal);
+        Assert.Contains(dividend.GetTraceSql(), TraceSuffix.Replace(divide.Message, string.Empty), StringComparison.Ordinal);
 
         H2SharpException modulus = Assert.Throws<H2SharpException>(
             () => dividend.Modulus(ValueReal.Get(0f)));
         Assert.Equal((int)ErrorCode.DivisionByZero1, modulus.H2ErrorCode);
-        Assert.Contains(dividend.GetTraceSql(), modulus.Message, StringComparison.Ordinal);
+        Assert.Contains(dividend.GetTraceSql(), TraceSuffix.Replace(modulus.Message, string.Empty), StringComparison.Ordinal);
     }
 
     private static string Compare(Value v, float other)
@@ -156,7 +156,7 @@ public sealed class ValueRealOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
     }
 

@@ -178,7 +178,7 @@ public sealed class ValueNullOracleTests
         }
         catch (Exception e)
         {
-            return $"{op} {e.Message}";
+            return $"{op} {TraceSuffix.Replace(e.Message, string.Empty)}";
         }
     }
 

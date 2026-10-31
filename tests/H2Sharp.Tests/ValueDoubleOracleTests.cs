@@ -229,7 +229,7 @@ public sealed class ValueDoubleOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
     }
 

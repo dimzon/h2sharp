@@ -128,7 +128,7 @@ public sealed class TestMVStoreTool : StoreTestBase
                 MVRTreeMap<string> ma = a.OpenMap("rtree", new MVRTreeMap<string>.Builder<string>());
                 MVRTreeMap<string> mb = b.OpenMap("rtree", new MVRTreeMap<string>.Builder<string>());
                 Assert.Equal(ma.SizeAsLong(), mb.SizeAsLong());
-                foreach (KeyValuePair<Spatial, string> e in ma.EntrySet())
+                foreach (KeyValuePair<object, string> e in ma.EntrySet())
                 {
                     object? x = mb.Get(e.Key);
                     Assert.Equal(e.Value, x!.ToString());

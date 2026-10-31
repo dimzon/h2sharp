@@ -106,11 +106,11 @@ public sealed class SmallNumericTypesOracleTests
         TypeInfo quotient = TypeInfo.GetTypeInfo(dividend.GetValueType(), 10, 0, null);
         H2SharpException divide = Assert.Throws<H2SharpException>(() => dividend.Divide(zero, quotient));
         Assert.Equal((int)ErrorCode.DivisionByZero1, divide.H2ErrorCode);
-        Assert.Contains(dividend.GetTraceSql(), divide.Message, StringComparison.Ordinal);
+        Assert.Contains(dividend.GetTraceSql(), TraceSuffix.Replace(divide.Message, string.Empty), StringComparison.Ordinal);
 
         H2SharpException modulus = Assert.Throws<H2SharpException>(() => dividend.Modulus(zero));
         Assert.Equal((int)ErrorCode.DivisionByZero1, modulus.H2ErrorCode);
-        Assert.Contains(dividend.GetTraceSql(), modulus.Message, StringComparison.Ordinal);
+        Assert.Contains(dividend.GetTraceSql(), TraceSuffix.Replace(modulus.Message, string.Empty), StringComparison.Ordinal);
     }
 
     private static List<string> RunOracle(IReadOnlyList<string> inputs, string program)
@@ -223,7 +223,7 @@ public sealed class SmallNumericTypesOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
     }
 

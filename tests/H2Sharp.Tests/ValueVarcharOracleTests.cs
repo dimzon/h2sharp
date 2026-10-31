@@ -152,7 +152,7 @@ public sealed class ValueVarcharOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
     }
 

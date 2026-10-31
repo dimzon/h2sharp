@@ -184,7 +184,7 @@ public sealed class ValueIntegerOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
     }
 
@@ -206,7 +206,7 @@ public sealed class ValueIntegerOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
     }
 
@@ -218,7 +218,7 @@ public sealed class ValueIntegerOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
     }
 
@@ -230,7 +230,7 @@ public sealed class ValueIntegerOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
     }
 

@@ -189,7 +189,7 @@ public sealed class ValueBigintOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
     }
 
@@ -255,7 +255,7 @@ public sealed class ValueBigintOracleTests
         }
         catch (H2SharpException e)
         {
-            return "EX " + e.Message;
+            return "EX " + TraceSuffix.Replace(e.Message, string.Empty);
         }
         catch (OverflowException)
         {

@@ -88,12 +88,19 @@ public sealed class MergeUsing : DataChangeStatement
         long countUpdatedRows = 0;
         targetRowidsRemembered.Clear();
 
-        // The reference checks rights here and fires the statement-level triggers. The port has
-        // no users and no triggers; the calls that would make are named in the file header.
+        // The reference checks rights here (checkRights: every WHEN clause's own right plus
+        // SELECT on both filters) and fires the statement-level triggers. The port has no
+        // users and no triggers; the rights that refuse a read-only database are the ones
+        // that survive D-004 and are checked below and in the DML entry points.
         SetCurrentRowNumber(0);
         sourceTableFilter.StartQuery(GetSession());
         sourceTableFilter.Reset();
         Table table = targetTableFilter.GetTable()!;
+        foreach (When w in when)
+        {
+            w.CheckWritingAllowed();
+        }
+
         _ = table.Lock(GetSession(), Table.WriteLock);
         SetCurrentRowNumber(0);
         long count = 0;
@@ -352,6 +359,14 @@ public sealed class MergeUsing : DataChangeStatement
         /// </summary>
         /// <param name="owner">the statement the clause belongs to</param>
         protected When(MergeUsing owner) => Owner = owner;
+
+        /// <summary>
+        /// Refuses a read-only database: every WHEN clause of a MERGE USING writes the target
+        /// table, and the reference's checkRights asks each clause's own table right, whose
+        /// non-SELECT path runs the write check before the admin bypass.
+        /// </summary>
+        internal void CheckWritingAllowed()
+            => Owner.targetTableFilter.GetTable()!.CheckWritingAllowed();
 
         /// <summary>
         /// Sets the AND condition.

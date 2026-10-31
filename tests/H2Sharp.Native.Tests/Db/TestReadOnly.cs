@@ -10,6 +10,11 @@
 // counterparts, and FileLister.getDatabaseFiles, which the port does not have, is the
 // database's .mv.db file, which is the one the walk would set.
 //
+// Out of scope by decision: the TestReadOnlyDbCreate sub-case creates a local temporary
+// LINKED table (D-030 in docs/APPROVED_DEVIATIONS.md) over a jdbc:mem URL (D-003). The
+// read-only refusal itself is ported: a write against a read-only database answers
+// DATABASE_IS_READ_ONLY from Table.CheckWritingAllowed, called at the DML entry points.
+//
 // Modified (port gaps, named): testReadOnlyInZip needs the Backup tool, the TCP server
 // and the zip file system, none of which are ported, so it is skipped here until they
 // are. The reference's main() entry is the runner; xUnit runs Test() directly.
@@ -42,6 +47,7 @@ public sealed class TestReadOnly : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         // testReadOnlyInZip: skipped, see the header (Backup tool, TCP server, zip file

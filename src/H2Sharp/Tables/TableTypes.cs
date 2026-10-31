@@ -1212,6 +1212,13 @@ public abstract class Table
     public virtual bool IsView() => false;
 
     /// <summary>
+    /// Refuses writes when the database is read only, the reference's
+    /// Table.checkWritingAllowed. Some tables overwrite the default behaviour.
+    /// </summary>
+    public virtual void CheckWritingAllowed()
+        => GetSchema()!.GetDatabase()!.CheckWritingAllowed();
+
+    /// <summary>
     /// Gets the table name.
     /// </summary>
     public abstract string GetTableName();

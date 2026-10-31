@@ -23,6 +23,10 @@ namespace H2Sharp.Tests;
 [Collection(OracleCollection.Name)]
 public sealed class ValueJsonOracleTests
 {
+    private static readonly System.Text.RegularExpressions.Regex TraceSuffix =
+        new(@"\s\[\d+-\d+\]$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+
     /// <summary>
     /// Documents as text, plus the ways of making a value that do not go through text at all. The
     /// name is what the answer is about.
@@ -173,7 +177,7 @@ public sealed class ValueJsonOracleTests
             // offending document so a user can find the row. The trailing "[code-build]" is how
             // the engine decorates an exception message when it is shown, and the reference shows
             // it here too, so it is built the same way rather than compared away.
-            StringBuilder message = new(e.Message);
+            StringBuilder message = new(TraceSuffix.Replace(e.Message, string.Empty));
             _ = message.Append(" [").Append(e.H2ErrorCode.ToString(CultureInfo.InvariantCulture))
                 .Append('-').Append(Constants.BuildId.ToString(CultureInfo.InvariantCulture)).Append(']');
             return e.H2ErrorCode + ":" + message;

@@ -286,6 +286,26 @@ H2 гоняет его только локально. Красный — не д
 ленивого выполнения (возврат `LazyResultSelect` из `Select.queryWithoutCache`,
 commit-on-close) — issue #76.
 
+EXCLUSIVE и READ ONLY решены по указанию пользователя. `SET EXCLUSIVE`:
+перекрёстно-сеансовая часть объявлена вне scope — D-034 в
+`APPROVED_DEVIATIONS.md` (команда остаётся и работает для своего сеанса;
+отказ новому подключению, ожидание чужих сеансов, closeAllOthers и снятие
+режима при закрытии владельца не портируются до пересмотра);
+`TestExclusive` помечен `BlockedByPort` с пояснением. READ ONLY перенесён:
+`Table.CheckWritingAllowed` (эталонный `Table.checkWritingAllowed`) зовётся в
+точках DML, где эталон проводит `checkTableRight` с правом записи — Delete,
+Update, Insert, все WHEN-ветки MergeUsing (SELECT-ветка не проверяется); DDL
+уже отказывал через `Database.CheckWritingAllowed`. Пробник: DELETE и CREATE
+в `ACCESS_MODE_DATA=r` дают 90097. `TestReadOnly` остаётся красным по одной
+под-кейсу — `TestReadOnlyDbCreate` создаёт `LOCAL TEMPORARY LINKED TABLE`
+(D-030, linked tables вне scope; плюс jdbc: URL, D-003) — помечен
+`BlockedByPort` с этим основанием; снимается вместе с D-030. Попутно:
+`TestMVStoreTool` чинен под object-ключи R-tree (полная сборка solution его
+вскрыла — ранние прогоны MvStore шли по устаревшим DLL), и оракул-сравнения
+сообщений нормализованы с обеих сторон: `H2SharpException.Message` теперь
+несёт суффикс ` [code-build]`, как `JdbcException.getMessage()`, поэтому
+`TraceSuffix`-регекс применяется и к порт-строкам (13 файлов).
+
 Языковые адаптации: `ExpressionVisitor.getDependencies()` назван `GetDependencySet()`
 (C# не допускает совпадение с константой GetDependencies). Коллектор Query использует
 существующий D-011 `HashSet<object>`, поскольку Table не DbObject. Java-лямбда

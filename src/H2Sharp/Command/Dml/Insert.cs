@@ -163,6 +163,9 @@ public sealed class Insert : CommandWithValues, ResultTarget
     {
         SessionLocal session = GetSession();
         Table target = table ?? throw Message.DbException.GetInternalError("INSERT without a table");
+        // The reference's checkTableRight(table, INSERT): the read-only check on the table
+        // comes before the admin bypass, see Delete.
+        target.CheckWritingAllowed();
         _ = target.Lock(session, Table.WriteLock);
         Column[] targetColumns = columns
             ?? throw Message.DbException.GetInternalError("INSERT without columns");

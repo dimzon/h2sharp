@@ -50,6 +50,10 @@ public sealed class Delete : FilteredDataChangeStatement
         SessionLocal session = GetSession();
         Tables.TableFilter filter = GetTableFilter();
         Tables.Table table = filter.GetTable();
+        // The reference's checkTableRight(table, DELETE) refuses a read-only database before
+        // the lock: the fixed principal of D-004 has every right, but the write check on the
+        // table comes before the admin bypass there, and so it does here.
+        table.CheckWritingAllowed();
         _ = table.Lock(session, Tables.Table.WriteLock);
         filter.StartQuery(session);
         filter.Reset();

@@ -8,6 +8,13 @@
 // it), and the proxy form of assertThrows becomes the lambda form, because a sealed
 // class cannot be proxied. The reference's main() entry is the runner; xUnit runs
 // Test() directly.
+//
+// Out of scope by decision (D-034 in docs/APPROVED_DEVIATIONS.md): for an embedded
+// engine the cross-session enforcement of SET EXCLUSIVE has no consumer. The command
+// itself is ported and works for its own session; what the reference additionally does
+// and the port does not: refuse new connections with DATABASE_IS_IN_EXCLUSIVE_MODE,
+// wait in other sessions' statements, close other sessions for SET EXCLUSIVE 2, and
+// clear the mode when the owning session disconnects.
 using H2Sharp.Api;
 using Xunit;
 
@@ -22,6 +29,7 @@ public sealed class TestExclusive : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         TestSetExclusiveTrueFalse();
