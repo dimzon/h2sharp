@@ -614,8 +614,9 @@ public sealed class Select : Query
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
     {
-        // Ported getPlanSQL over this port's existing fields. Explicit TABLE, DISTINCT ON,
-        // QUALIFY, and WITH-list fields are not present in this Select representation yet.
+        // Ported getPlanSQL over this port's existing fields. Explicit TABLE, DISTINCT ON and
+        // QUALIFY fields are not present in this Select representation yet.
+        WriteWithList(builder, sqlFlags);
         Expression[] exprList = GetExpressions();
         builder.Append("SELECT");
         if (IsAnyDistinct()) builder.Append(" DISTINCT");

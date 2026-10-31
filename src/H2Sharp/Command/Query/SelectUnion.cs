@@ -151,6 +151,7 @@ public sealed class SelectUnion : Query
     public override bool IsEverything(ExpressionVisitor visitor) => left.IsEverything(visitor) && right.IsEverything(visitor);
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
     {
+        WriteWithList(builder, sqlFlags);
         left.GetPlanSql(builder.Append('('), sqlFlags).Append(')');
         builder.Append(unionType switch
         {

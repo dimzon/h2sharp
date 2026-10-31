@@ -29,6 +29,8 @@ public sealed class CTE : QueryExpressionTable
 
     private bool recursive;
 
+    private string querySQL = string.Empty;
+
     private ResultInterface? recursiveResult;
 
     /// <summary>
@@ -40,17 +42,18 @@ public sealed class CTE : QueryExpressionTable
     /// <param name="query">the query the rows come from</param>
     /// <param name="session">the session</param>
     public CTE(Schema? schema, string name, Column[]? columnTemplates, Query query, SessionLocal session,
-        bool recursive = false)
+        bool recursive = false, string? querySQL = null)
         : base(schema, name)
-        => Initialize(session, columnTemplates, query, recursive);
+        => Initialize(session, columnTemplates, query, recursive, querySQL);
 
     internal void Initialize(
-        SessionLocal session, Column[]? columnTemplates, Query query, bool recursive)
+        SessionLocal session, Column[]? columnTemplates, Query query, bool recursive, string? querySQL = null)
     {
         SetTemporary(true);
         tables = [.. query.GetTables()];
         columns = InitColumns(session, columnTemplates, query, false, true);
         viewQuery = query;
+        this.querySQL = querySQL ?? string.Empty;
         this.recursive = recursive;
         index = recursive ? new RecursiveIndex(this, query) : new RegularQueryExpressionIndex(this, query);
     }
@@ -59,6 +62,13 @@ public sealed class CTE : QueryExpressionTable
 
     /// <summary>Whether this expression is recursive.</summary>
     public bool IsRecursive() => recursive;
+
+    /// <summary>
+    /// The plan SQL of the body query, the reference's getQuerySQL: a plan that prints the
+    /// WITH clause prints this for every table it declares.
+    /// </summary>
+    /// <returns>the SQL of the query</returns>
+    public string GetQuerySQL() => querySQL;
 
     /// <summary>The result of the previous iteration of a recursive expression.</summary>
     public ResultInterface? GetRecursiveResult() => recursiveResult;

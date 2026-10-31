@@ -255,9 +255,13 @@ geometry-колонку вовсе), оператор `&&` в инфиксном
 `Command.ExecuteQuery/ExecuteUpdate`); фильтр CTE наследует алиас от имени таблицы
 (`buildTableFilter` эталона), отчего план печатает `FROM BB BB`; форматтер строк
 в CTE-тестах пишет `null` для DBNull, как Java `append((String) null)`.
-Остаток: `DROP ALL OBJECTS` с представлением над рекурсивным CTE — при
-перекомпиляции представления порт теряет область WITH и не находит CTE-таблицу;
-разбирается отдельно.
+Остаток закрыт: запрос с WITH теперь несёт свои CTE-таблицы
+(`Query.SetWithClause` + `Query.WriteWithList` — эталонный `setWithClause`/
+`writeWithList`), и его plan-SQL печатает весь WITH — план CTE-запроса
+самоповторяем, определение представления над CTE перекомпилируется. `CTE`
+получил `querySQL` (эталонный `getQuerySQL` — plan-SQL тела), а `WITH`
+печатается и в `SelectUnion`, и в `TableValueConstructor`, как в эталоне.
+Все четыре под-кейса `TestPersistentCommonTableExpressions` зелёные.
 
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает

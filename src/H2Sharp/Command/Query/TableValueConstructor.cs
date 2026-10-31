@@ -337,6 +337,7 @@ public sealed class TableValueConstructor : Query
     /// <inheritdoc/>
     public override System.Text.StringBuilder GetPlanSql(System.Text.StringBuilder builder, int sqlFlags)
     {
+        WriteWithList(builder, sqlFlags);
         // H2 getPlanSQL -> getSQL -> appendEndOfQueryToSQL.
         builder.Append("VALUES ");
         for (int i = 0; i < rows.Count; i++)

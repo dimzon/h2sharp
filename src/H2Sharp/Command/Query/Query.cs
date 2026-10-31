@@ -554,6 +554,66 @@ public abstract class Query : Prepared
         return exists;
     }
 
+    private Util.OrderedStringMap<Tables.Table>? withClause;
+
+    /// <summary>
+    /// Sets the WITH clause of this query, the reference's setWithClause.
+    /// </summary>
+    /// <param name="withClause">the WITH's tables, in declaration order</param>
+    public void SetWithClause(Util.OrderedStringMap<Tables.Table> withClause)
+        => this.withClause = withClause;
+
+    /// <summary>
+    /// Appends the WITH clause of this query to the plan, the reference's writeWithList: the
+    /// plan of a query over common table expressions is re-parseable, which is what lets a
+    /// view store its plan and compile again.
+    /// </summary>
+    /// <param name="builder">the plan builder</param>
+    /// <param name="sqlFlags">formatting flags</param>
+    protected void WriteWithList(StringBuilder builder, int sqlFlags)
+    {
+        if (withClause is null)
+        {
+            return;
+        }
+
+        bool recursive = false;
+        foreach (KeyValuePair<string, Tables.Table> entry in withClause.Entries)
+        {
+            if (((Tables.CTE)entry.Value).IsRecursive())
+            {
+                recursive = true;
+                break;
+            }
+        }
+
+        _ = builder.Append("WITH ");
+        if (recursive)
+        {
+            _ = builder.Append(" RECURSIVE ");
+        }
+
+        bool f = false;
+        foreach (KeyValuePair<string, Tables.Table> entry in withClause.Entries)
+        {
+            if (!f)
+            {
+                f = true;
+            }
+            else
+            {
+                _ = builder.Append(",\n");
+            }
+
+            Tables.Table table = entry.Value;
+            _ = table.GetSql(builder, sqlFlags).Append('(');
+            _ = Column.WriteColumns(builder, table.GetColumns(), sqlFlags).Append(") AS (\n");
+            _ = StringUtils.Indent(builder, ((Tables.CTE)table).GetQuerySQL(), 4, true).Append(')');
+        }
+
+        _ = builder.Append('\n');
+    }
+
     /// <summary>
     /// Initializes this query.
     /// </summary>

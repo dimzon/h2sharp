@@ -1805,8 +1805,26 @@ public sealed partial class Parser
 
     private Query.Query ParseQueryExpression(bool prepare = true)
     {
-        if (IsWord("WITH", consume: false)) ReadWith();
+        bool hasWith = IsWord("WITH", consume: false);
+        if (hasWith)
+        {
+            ReadWith();
+        }
+
         Query.Query query = ParseQueryExpressionBody();
+        if (hasWith)
+        {
+            // The reference attaches the WITH's tables to the query: the plan prints them, and
+            // a view compiled from the plan keeps its common table expressions re-parseable.
+            Util.OrderedStringMap<Tables.Table> withClause = new();
+            foreach (KeyValuePair<string, Tables.Table> cte in ctes)
+            {
+                withClause.Put(cte.Key, cte.Value);
+            }
+
+            query.SetWithClause(withClause);
+        }
+
         ParseEndOfQuery(query);
         query.Init();
         if (prepare) query.Prepare();
@@ -1957,7 +1975,8 @@ public sealed partial class Parser
                 Query.Query query = ParseQueryExpression();
                 bool selfReferenced = query.GetTables().Contains(cte);
                 Tables.Column[]? finalTemplates = CreateQueryColumnTemplateList(columnNames, query, cte: true);
-                cte.Initialize(current, finalTemplates, query, selfReferenced);
+                cte.Initialize(current, finalTemplates, query, selfReferenced,
+                    query.GetPlanSql(HasSql.DefaultSqlFlags));
             }
             else
             {
@@ -1966,7 +1985,8 @@ public sealed partial class Parser
                     ? null
                     : CreateQueryColumnTemplateList(columnNames, query, cte: true);
                 ctes[name] = new Tables.CTE(
-                    current.GetDatabase().GetMainSchema(), name, columnTemplates, query, current);
+                    current.GetDatabase().GetMainSchema(), name, columnTemplates, query, current,
+                    querySQL: query.GetPlanSql(HasSql.DefaultSqlFlags));
             }
 
             Expect(Token.CloseParen, ")");
