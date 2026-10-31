@@ -98,7 +98,7 @@ public sealed class MetaRecord : IComparable<MetaRecord>
     /// <param name="listener">the database event listener, or null</param>
     /// <param name="throwIt">whether to throw instead of reporting</param>
     internal void PrepareAndExecute(
-        Database db, SessionLocal systemSession, DatabaseEventListener? listener, bool throwIt)
+        Database db, SessionLocal systemSession, Data.IH2DatabaseEventListener? listener, bool throwIt)
     {
         Prepared? command = Prepare(db, systemSession, listener, throwIt);
         if (command is not null)
@@ -116,7 +116,7 @@ public sealed class MetaRecord : IComparable<MetaRecord>
     /// <param name="throwIt">whether to throw instead of reporting</param>
     /// <returns>the prepared command, or null when the failure was reported</returns>
     internal Prepared? Prepare(
-        Database db, SessionLocal systemSession, DatabaseEventListener? listener, bool throwIt)
+        Database db, SessionLocal systemSession, Data.IH2DatabaseEventListener? listener, bool throwIt)
     {
         try
         {
@@ -145,7 +145,7 @@ public sealed class MetaRecord : IComparable<MetaRecord>
     /// <param name="sql">SQL</param>
     /// <param name="throwIt">whether to throw instead of reporting</param>
     internal static void Execute(
-        Database db, Prepared command, DatabaseEventListener? listener, string sql, bool throwIt)
+        Database db, Prepared command, Data.IH2DatabaseEventListener? listener, string sql, bool throwIt)
     {
         try
         {
@@ -172,7 +172,7 @@ public sealed class MetaRecord : IComparable<MetaRecord>
     /// caller asked for that and otherwise left alone, as the reference leaves it.
     /// </remarks>
     private static void ProcessException(
-        DatabaseEventListener? listener, H2SharpException e, string sql, bool throwIt)
+        Data.IH2DatabaseEventListener? listener, H2SharpException e, string sql, bool throwIt)
     {
         if (listener is not null)
         {

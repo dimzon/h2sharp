@@ -1410,7 +1410,7 @@ public sealed partial class Database : CastDataProvider
         }
     }
 
-    private Api.DatabaseEventListener? eventListener;
+    private Data.IH2DatabaseEventListener? eventListener;
 
     /// <summary>
     /// Sets the database event listener, the reference's setEventListener. The embedder
@@ -1418,7 +1418,7 @@ public sealed partial class Database : CastDataProvider
     /// class in the connection string.
     /// </summary>
     /// <param name="listener">the listener, or null</param>
-    internal void SetDatabaseEventListener(Api.DatabaseEventListener? listener)
+    internal void SetDatabaseEventListener(Data.IH2DatabaseEventListener? listener)
     {
         eventListener = listener;
     }
@@ -1439,7 +1439,7 @@ public sealed partial class Database : CastDataProvider
     /// <param name="name">the object name</param>
     /// <param name="x">the current position</param>
     /// <param name="max">the highest possible value or 0 if unknown</param>
-    public void SetProgress(int state, string name, long x, long max)
+    public void SetProgress(Data.H2DatabaseEventState state, string name, long x, long max)
     {
         if (eventListener is not null)
         {
@@ -1578,7 +1578,7 @@ public sealed partial class Database : CastDataProvider
         {
             // The reference clears the listener before calling closingDatabase so the event
             // fires exactly once, and lets the listener run before the store closes.
-            Api.DatabaseEventListener? closing = eventListener;
+            Data.IH2DatabaseEventListener? closing = eventListener;
             eventListener = null;
             if (closing is not null)
             {

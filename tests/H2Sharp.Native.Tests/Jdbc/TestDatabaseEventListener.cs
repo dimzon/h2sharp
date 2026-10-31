@@ -21,7 +21,7 @@ namespace H2Sharp.Native.Tests.Jdbc;
 /// </summary>
 public sealed class TestDatabaseEventListener : TestDb
 {
-    private sealed class RecordingEventListener : H2Sharp.Api.DatabaseEventListener
+    private sealed class RecordingEventListener : IH2DatabaseEventListener
     {
         internal readonly List<string> Calls = [];
 
@@ -36,19 +36,22 @@ public sealed class TestDatabaseEventListener : TestDb
         internal bool ExceptionThrownCalled => Calls.Contains("exceptionThrown");
 
         /// <inheritdoc/>
+        public void Init(string url) => Calls.Add("init");
+
+        /// <inheritdoc/>
         public void Opened() => Calls.Add("opened");
 
         /// <inheritdoc/>
         public void ClosingDatabase() => Calls.Add("closingDatabase");
 
         /// <inheritdoc/>
-        public void SetProgress(int state, string name, long x, long max)
+        public void SetProgress(H2DatabaseEventState state, string name, long x, long max)
         {
-            if (state == H2Sharp.Api.DatabaseEventListenerStates.StateStatementStart)
+            if (state == H2DatabaseEventState.StatementStart)
             {
                 StatementStartCount++;
             }
-            else if (state == H2Sharp.Api.DatabaseEventListenerStates.StateStatementEnd)
+            else if (state == H2DatabaseEventState.StatementEnd)
             {
                 StatementEndCount++;
             }

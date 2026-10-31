@@ -33,7 +33,7 @@ public sealed class H2DataSource : DbDataSource
 
     private IH2DatabaseTraceListener? traceListener;
 
-    private Api.DatabaseEventListener? databaseEventListener;
+    private IH2DatabaseEventListener? databaseEventListener;
 
     /// <summary>
     /// Sets the database event listener, the reference's event listener supplied as an
@@ -45,7 +45,7 @@ public sealed class H2DataSource : DbDataSource
     /// listener's class from the URL; the embedder hands the instance over here.
     /// </remarks>
     /// <param name="listener">the listener, or null</param>
-    public void SetDatabaseEventListener(Api.DatabaseEventListener? listener)
+    public void SetDatabaseEventListener(IH2DatabaseEventListener? listener)
     {
         lock (sync)
         {

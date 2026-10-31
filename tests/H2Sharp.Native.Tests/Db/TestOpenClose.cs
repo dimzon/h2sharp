@@ -205,21 +205,21 @@ public sealed class TestOpenClose : TestDb
     /// <summary>
     /// A database event listener used in this test.
     /// </summary>
-    public sealed class MyDatabaseEventListener : H2Sharp.Api.DatabaseEventListener
+    public sealed class MyDatabaseEventListener : H2Sharp.Data.IH2DatabaseEventListener
     {
         /// <inheritdoc/>
-        void H2Sharp.Api.DatabaseEventListener.ExceptionThrown(DbException e, string sql)
+        void H2Sharp.Data.IH2DatabaseEventListener.ExceptionThrown(DbException e, string sql)
         {
             throw new AssertionError("unexpected: " + e + " sql: " + sql);
         }
 
         /// <inheritdoc/>
-        void H2Sharp.Api.DatabaseEventListener.SetProgress(int state, string name, long current, long max)
+        void H2Sharp.Data.IH2DatabaseEventListener.SetProgress(H2Sharp.Data.H2DatabaseEventState state, string name, long current, long max)
         {
             string stateName;
             switch (state)
             {
-                case DatabaseEventListenerStates.StateScanFile:
+                case H2Sharp.Data.H2DatabaseEventState.ScanFile:
                     stateName = "Scan " + name + " " + current + "/" + max;
                     if (current > 0)
                     {
@@ -227,9 +227,9 @@ public sealed class TestOpenClose : TestDb
                     }
 
                     break;
-                case DatabaseEventListenerStates.StateStatementStart:
+                case H2Sharp.Data.H2DatabaseEventState.StatementStart:
                     break;
-                case DatabaseEventListenerStates.StateCreateIndex:
+                case H2Sharp.Data.H2DatabaseEventState.CreateIndex:
                     stateName = "Create Index " + name + " " + current + "/" + max;
                     if (!"SYS:SYS_ID".Equals(name, StringComparison.Ordinal))
                     {
@@ -237,7 +237,7 @@ public sealed class TestOpenClose : TestDb
                     }
 
                     break;
-                case DatabaseEventListenerStates.StateRecover:
+                case H2Sharp.Data.H2DatabaseEventState.Recover:
                     stateName = "Recover " + current + "/" + max;
                     break;
                 default:

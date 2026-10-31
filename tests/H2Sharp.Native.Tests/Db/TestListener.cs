@@ -6,14 +6,14 @@
 // Modified (API): JDBC statements are ADO.NET commands, setBinaryStream is a Stream
 // parameter value, and the listener registers itself under this class's own full name,
 // which is what getClass().getName() answers in the reference. The listener interface
-// is the ported H2Sharp.Api.DatabaseEventListener.
+// is the ADO-level IH2DatabaseEventListener.
 //
 // Modified (port gap, named): the engine does not read the database_event_listener URL
 // option yet, and crash(conn) is the power-off seam of TestBase, which refuses; the
 // test stops there until both are ported. The reference's main() entry is the runner;
 // xUnit runs Test() directly.
 using System.Diagnostics;
-using H2Sharp.Api;
+using H2Sharp.Data;
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Db;
@@ -21,11 +21,11 @@ namespace H2Sharp.Native.Tests.Db;
 /// <summary>
 /// Tests the DatabaseEventListener.
 /// </summary>
-public sealed class TestListener : TestDb, DatabaseEventListener
+public sealed class TestListener : TestDb, IH2DatabaseEventListener
 {
     private long last;
 
-    private int lastState = -1;
+    private H2DatabaseEventState? lastState;
 
     private string? databaseUrl;
 
@@ -82,13 +82,13 @@ public sealed class TestListener : TestDb, DatabaseEventListener
     }
 
     /// <inheritdoc/>
-    void DatabaseEventListener.ExceptionThrown(DbException e, string sql)
+    void IH2DatabaseEventListener.ExceptionThrown(DbException e, string sql)
     {
         LogError("exceptionThrown sql=" + sql, e);
     }
 
     /// <inheritdoc/>
-    void DatabaseEventListener.SetProgress(int state, string name, long current, long max)
+    void IH2DatabaseEventListener.SetProgress(H2DatabaseEventState state, string name, long current, long max)
     {
         long time = Stopwatch.GetTimestamp();
         if (state == lastState && time < last + Stopwatch.Frequency)
@@ -96,9 +96,9 @@ public sealed class TestListener : TestDb, DatabaseEventListener
             return;
         }
 
-        if (state == DatabaseEventListenerStates.StateStatementStart
-            || state == DatabaseEventListenerStates.StateStatementEnd
-            || state == DatabaseEventListenerStates.StateStatementProgress)
+        if (state == H2DatabaseEventState.StatementStart
+            || state == H2DatabaseEventState.StatementEnd
+            || state == H2DatabaseEventState.StatementProgress)
         {
             return;
         }
@@ -113,13 +113,13 @@ public sealed class TestListener : TestDb, DatabaseEventListener
         string stateName;
         switch (state)
         {
-            case DatabaseEventListenerStates.StateScanFile:
+            case H2DatabaseEventState.ScanFile:
                 stateName = "Scan " + name;
                 break;
-            case DatabaseEventListenerStates.StateCreateIndex:
+            case H2DatabaseEventState.CreateIndex:
                 stateName = "Create Index " + name;
                 break;
-            case DatabaseEventListenerStates.StateRecover:
+            case H2DatabaseEventState.Recover:
                 stateName = "Recover";
                 break;
             default:
@@ -134,7 +134,7 @@ public sealed class TestListener : TestDb, DatabaseEventListener
     }
 
     /// <inheritdoc/>
-    void DatabaseEventListener.ClosingDatabase()
+    void IH2DatabaseEventListener.ClosingDatabase()
     {
         if (databaseUrl!.ToUpperInvariant().Contains("CIPHER", StringComparison.Ordinal))
         {
@@ -155,13 +155,13 @@ public sealed class TestListener : TestDb, DatabaseEventListener
     }
 
     /// <inheritdoc/>
-    void DatabaseEventListener.Init(string url)
+    void IH2DatabaseEventListener.Init(string url)
     {
         databaseUrl = url;
     }
 
     /// <inheritdoc/>
-    void DatabaseEventListener.Opened()
+    void IH2DatabaseEventListener.Opened()
     {
         if (databaseUrl!.ToUpperInvariant().Contains("CIPHER", StringComparison.Ordinal))
         {

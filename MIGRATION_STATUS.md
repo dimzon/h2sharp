@@ -337,10 +337,15 @@ TraceSystem завершён по решению пользователя: вм�
 файла сохранён). Без слушателя trace молчит, движок не падает на trace-путях.
 
 `DatabaseEventListener` реализован аналогично trace: вместо загрузки класса по имени
-из URL — объект-слушатель через `H2DataSource.SetDatabaseEventListener` (интерфейс
-`H2Sharp.Api.DatabaseEventListener`, как в эталоне). `Database` хранит слушателя;
+из URL — объект-слушатель через `H2DataSource.SetDatabaseEventListener`. Интерфейс —
+`IH2DatabaseEventListener` в `H2Sharp.Data` (ADO-слой) с default-реализациями,
+состояния `SetProgress` — enum `H2DatabaseEventState`. Эталонный
+`H2Sharp.Api.DatabaseEventListener`/`DatabaseEventListenerStates` **удалены** — по
+указанию пользователя публичный API не должен содержать внутренности движка; всё
+идёт через ADO-слой. Нативные `TestMultiConn`/`TestOpenClose`/`TestListener`
+переведены на новый интерфейс. `Database` хранит слушателя;
 события: `Opened` при открытии базы (в `H2DataSource` при её создании), `ClosingDatabase`
-один раз перед закрытием базы, `SetProgress` для STATE_STATEMENT_START/END при каждом
+один раз перед закрытием базы, `SetProgress` для StatementStart/End при каждом
 выполнении и `ExceptionThrown` при runtime-ошибке в `Command.ExecuteQuery/ExecuteUpdate`
 (с глотанием пользовательских исключений, как эталон). `TestDatabaseEventListener`
 переписан на записывающий слушатель: opened, progress на SELECT, exceptionThrown на

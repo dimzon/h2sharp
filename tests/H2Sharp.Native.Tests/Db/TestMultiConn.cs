@@ -248,10 +248,10 @@ public sealed class TestMultiConn : TestDb
     /// <summary>
     /// A database event listener used in this test.
     /// </summary>
-    public sealed class MyDatabaseEventListener : H2Sharp.Api.DatabaseEventListener
+    public sealed class MyDatabaseEventListener : H2Sharp.Data.IH2DatabaseEventListener
     {
         /// <inheritdoc/>
-        void H2Sharp.Api.DatabaseEventListener.SetProgress(int state, string name, long x, long max)
+        void H2Sharp.Data.IH2DatabaseEventListener.SetProgress(H2Sharp.Data.H2DatabaseEventState state, string name, long x, long max)
         {
             if (Wait > 0)
             {

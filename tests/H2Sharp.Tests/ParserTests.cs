@@ -202,7 +202,7 @@ public sealed class ParserTests
         DropTableStatement statement = Assert.IsType<DropTableStatement>(Parse("DROP TABLE IF EXISTS PERSON"));
 
         Assert.Equal(CommandInterface.DropTable, statement.GetCommandType());
-        Assert.Equal("PERSON", statement.Name);
+        Assert.Equal("PERSON", statement.Tables[0].Name);
         Assert.True(statement.IfExists);
     }
 

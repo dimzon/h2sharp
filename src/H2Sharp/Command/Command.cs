@@ -153,7 +153,7 @@ public abstract class Command : CommandInterface
     /// </summary>
     /// <param name="database">the database</param>
     /// <param name="state">the state</param>
-    protected void SetProgress(Database database, int state)
+    protected void SetProgress(Database database, Data.H2DatabaseEventState state)
         => database.SetProgress(state, sql, 0, 0);
 
     /// <summary>
@@ -219,7 +219,7 @@ public abstract class Command : CommandInterface
             bool callStop = true;
             Session.StartStatementWithinTransaction(this);
             Start();
-            SetProgress(Session.GetDatabase(), Api.DatabaseEventListenerStates.StateStatementStart);
+            SetProgress(Session.GetDatabase(), Data.H2DatabaseEventState.StatementStart);
             try
             {
                 ResultInterface result = Query(maxrows);
@@ -238,7 +238,7 @@ public abstract class Command : CommandInterface
                     Stop(true);
                 }
 
-                SetProgress(Session.GetDatabase(), Api.DatabaseEventListenerStates.StateStatementEnd);
+                SetProgress(Session.GetDatabase(), Data.H2DatabaseEventState.StatementEnd);
             }
         }
         catch (H2SharpException e)
@@ -296,7 +296,7 @@ public abstract class Command : CommandInterface
             long savepoint = transaction.SetSavepoint();
             Session.StartStatementWithinTransaction(this);
             Start();
-            SetProgress(Session.GetDatabase(), Api.DatabaseEventListenerStates.StateStatementStart);
+            SetProgress(Session.GetDatabase(), Data.H2DatabaseEventState.StatementStart);
             try
             {
                 return RunWithThreadLocalSession(() => UpdateRows(generatedKeysRequest));
@@ -335,7 +335,7 @@ public abstract class Command : CommandInterface
             {
                 Session.EndStatement();
                 Stop(true);
-                SetProgress(Session.GetDatabase(), Api.DatabaseEventListenerStates.StateStatementEnd);
+                SetProgress(Session.GetDatabase(), Data.H2DatabaseEventState.StatementEnd);
             }
         }
         catch (H2SharpException e)
