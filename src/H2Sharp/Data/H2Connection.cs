@@ -490,8 +490,14 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// <summary>
     /// Changes the current database for this connection.
     /// </summary>
+    /// <remarks>
+    /// Not supported by decision: the provider is embedded, and the database is named by
+    /// the connection string at open, not switched later.
+    /// </remarks>
     /// <param name="databaseName">the database name</param>
-    public override void ChangeDatabase(string databaseName) => throw new TODOException("H2Connection.ChangeDatabase");
+    public override void ChangeDatabase(string databaseName)
+        => throw new NotSupportedException(
+            "ChangeDatabase is not supported: the database is named by the connection string at open");
 
     /// <summary>
     /// Begins a database transaction.
