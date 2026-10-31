@@ -8,8 +8,10 @@
 // reference's main() entry is the runner; xUnit runs Test() directly.
 //
 // Out of scope by decision (D-035 in docs/APPROVED_DEVIATIONS.md): database file
-// encryption is not planned. The CIPHER URL key is refused at open with a named error
-// and an encrypted .mv.db file is not read; USER/PASSWORD keys are refused per D-004.
+// encryption is not planned. The CIPHER URL key is refused at open with
+// FEATURE_NOT_SUPPORTED_1, and an encrypted .mv.db file is not read; USER/PASSWORD
+// keys are refused per D-004. The test below pins that refusal instead of exercising
+// encryption, so it runs in the opt-in native run.
 using H2Sharp.Api;
 using Xunit;
 
@@ -38,36 +40,15 @@ public sealed class TestEncryptedDb : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
-    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         DeleteDb("encrypted");
+        // Every CIPHER open refuses with FEATURE_NOT_SUPPORTED_1, whatever the password or
+        // page size: no encrypted file is ever created or read.
         AssertThrows(ErrorCode.FeatureNotSupported1,
             () => _ = GetConnection("encrypted;CIPHER=AES;PAGE_SIZE=2048", "sa", "1234 1234"));
-        using (DbConnection conn = GetConnection("encrypted;CIPHER=AES", "sa", "123 123"))
-        {
-            DbCommand stat = conn.CreateCommand();
-            Execute(stat, "CREATE TABLE TEST(ID INT)");
-            Execute(stat, "CHECKPOINT");
-            Execute(stat, "SET WRITE_DELAY 0");
-            Execute(stat, "INSERT INTO TEST VALUES(1)");
-            Execute(stat, "SHUTDOWN IMMEDIATELY");
-        }
-
-        AssertThrows(ErrorCode.FileEncryptionError1,
-            () => _ = GetConnection("encrypted;CIPHER=AES", "sa", "1234 1234"));
-
-        using (DbConnection conn = GetConnection("encrypted;CIPHER=AES", "sa", "123 123"))
-        {
-            DbCommand stat = conn.CreateCommand();
-            stat.CommandText = "SELECT * FROM TEST";
-            using (DbDataReader rs = stat.ExecuteReader())
-            {
-                AssertTrue(rs.Read());
-                AssertEquals(1, rs.GetInt32(0));
-                AssertFalse(rs.Read());
-            }
-        }
+        AssertThrows(ErrorCode.FeatureNotSupported1,
+            () => _ = GetConnection("encrypted;CIPHER=AES", "sa", "123 123"));
 
         DeleteDb("encrypted");
     }

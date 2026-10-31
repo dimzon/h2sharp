@@ -300,9 +300,10 @@ Update, Insert, все WHEN-ветки MergeUsing (SELECT-ветка не про
 под-кейсу — `TestReadOnlyDbCreate` создаёт `LOCAL TEMPORARY LINKED TABLE`
 (D-030, linked tables вне scope; плюс jdbc: URL, D-003) — помечен
 `BlockedByPort` с этим основанием; снимается вместе с D-030.
-Шифрование файла базы — вне scope по указанию пользователя: D-035 в
-`APPROVED_DEVIATIONS.md`; ключ `CIPHER` отвергается при открытии именованной
-ошибкой (как и было), `TestEncryptedDb` помечен `BlockedByPort`.
+	Шифрование файла базы — вне scope по указанию пользователя: D-035 в
+	`APPROVED_DEVIATIONS.md`; ключ `CIPHER` отвергается при открытии ошибкой
+	`FEATURE_NOT_SUPPORTED_1` (вместо TODO). `TestEncryptedDb` закрепляет отказ
+	и выполняется в Native-наборе, `BlockedByPort` снят.
 `SchemaRegistryTests` переписаны под D-033 (два красных теста утверждали
 case-insensitive реестр по умолчанию — семантику до D-033): case-корпус
 гоняется на базе с `CASE_INSENSITIVE_IDENTIFIERS=TRUE` (там три написания

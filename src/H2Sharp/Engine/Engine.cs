@@ -63,7 +63,11 @@ public static class Engine
         ConnectionOptions options = connectionInfo.Options;
         if (options.Cipher is not null)
         {
-            throw new TODOException("Engine.openSession: file encryption (CIPHER) is not ported");
+            // D-035: file encryption is out of scope, and every CIPHER open refuses with
+            // a named error instead of a TODO.
+            throw Message.DbException.Get(
+                Api.ErrorCode.FeatureNotSupported1,
+                "Database file encryption (CIPHER) is not supported");
         }
 
         if (options.Init is not null)
