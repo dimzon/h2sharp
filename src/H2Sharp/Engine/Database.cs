@@ -1410,11 +1410,68 @@ public sealed partial class Database : CastDataProvider
         }
     }
 
+    private Api.DatabaseEventListener? eventListener;
+
+    /// <summary>
+    /// Sets the database event listener, the reference's setEventListener. The embedder
+    /// supplies it through <c>H2DataSource.SetDatabaseEventListener</c> instead of naming a
+    /// class in the connection string.
+    /// </summary>
+    /// <param name="listener">the listener, or null</param>
+    internal void SetDatabaseEventListener(Api.DatabaseEventListener? listener)
+    {
+        eventListener = listener;
+    }
+
     /// <summary>
     /// Called when the database has been opened, to start whatever it runs in the background.
     /// </summary>
     public void Opened()
     {
+        eventListener?.Opened();
+    }
+
+    /// <summary>
+    /// Reports progress of a long-running operation to the event listener, the reference's
+    /// setProgress: a listener's own failure is ignored, not propagated into the operation.
+    /// </summary>
+    /// <param name="state">the state</param>
+    /// <param name="name">the object name</param>
+    /// <param name="x">the current position</param>
+    /// <param name="max">the highest possible value or 0 if unknown</param>
+    public void SetProgress(int state, string name, long x, long max)
+    {
+        if (eventListener is not null)
+        {
+            try
+            {
+                eventListener.SetProgress(state, name, x, max);
+            }
+            catch
+            {
+                // ignore this (user made) exception
+            }
+        }
+    }
+
+    /// <summary>
+    /// Informs the event listener that an exception occurred, the reference's exceptionThrown.
+    /// </summary>
+    /// <param name="e">the exception</param>
+    /// <param name="sql">the SQL statement</param>
+    public void ExceptionThrown(System.Data.Common.DbException e, string sql)
+    {
+        if (eventListener is not null)
+        {
+            try
+            {
+                eventListener.ExceptionThrown(e, sql);
+            }
+            catch
+            {
+                // ignore this (user made) exception
+            }
+        }
     }
 
     /// <summary>
@@ -1519,6 +1576,22 @@ public sealed partial class Database : CastDataProvider
 
         if (!alreadyClosed)
         {
+            // The reference clears the listener before calling closingDatabase so the event
+            // fires exactly once, and lets the listener run before the store closes.
+            Api.DatabaseEventListener? closing = eventListener;
+            eventListener = null;
+            if (closing is not null)
+            {
+                try
+                {
+                    closing.ClosingDatabase();
+                }
+                catch
+                {
+                    // ignore this (user made) exception
+                }
+            }
+
             // Database.close: sequences flush their exact next value before the store closes.
             if (systemSession is not null && !readOnly)
             {

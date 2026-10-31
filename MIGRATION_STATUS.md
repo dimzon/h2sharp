@@ -336,6 +336,18 @@ TraceSystem завершён по решению пользователя: вм�
 две линии, успешный SELECT — ни одной (Intент исходного сравнения размеров
 файла сохранён). Без слушателя trace молчит, движок не падает на trace-путях.
 
+`DatabaseEventListener` реализован аналогично trace: вместо загрузки класса по имени
+из URL — объект-слушатель через `H2DataSource.SetDatabaseEventListener` (интерфейс
+`H2Sharp.Api.DatabaseEventListener`, как в эталоне). `Database` хранит слушателя;
+события: `Opened` при открытии базы (в `H2DataSource` при её создании), `ClosingDatabase`
+один раз перед закрытием базы, `SetProgress` для STATE_STATEMENT_START/END при каждом
+выполнении и `ExceptionThrown` при runtime-ошибке в `Command.ExecuteQuery/ExecuteUpdate`
+(с глотанием пользовательских исключений, как эталон). `TestDatabaseEventListener`
+переписан на записывающий слушатель: opened, progress на SELECT, exceptionThrown на
+дубле ключа, closing при dispose data source; трейт `BlockedByPort` снят.
+URL-ключ `DATABASE_EVENT_LISTENER` по-прежнему отказывает — эквивалент программной
+регистрации.
+
 `TestMaterializedView` проходит. Не хватало зависимостей materialized view:
 `Table` получил список `dependentMaterializedViews` (эталонные
 `addDependentMaterializedView`/`remove`/`get`), `CreateMaterializedView`

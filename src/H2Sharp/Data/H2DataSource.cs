@@ -33,6 +33,27 @@ public sealed class H2DataSource : DbDataSource
 
     private IH2DatabaseTraceListener? traceListener;
 
+    private Api.DatabaseEventListener? databaseEventListener;
+
+    /// <summary>
+    /// Sets the database event listener, the reference's event listener supplied as an
+    /// object instead of a class name in the connection string.
+    /// </summary>
+    /// <remarks>
+    /// The listener is database-wide: it applies to the database this data source owns, now
+    /// and after it is opened, and is cleared by passing null. The reference loads the
+    /// listener's class from the URL; the embedder hands the instance over here.
+    /// </remarks>
+    /// <param name="listener">the listener, or null</param>
+    public void SetDatabaseEventListener(Api.DatabaseEventListener? listener)
+    {
+        lock (sync)
+        {
+            databaseEventListener = listener;
+            database?.SetDatabaseEventListener(listener);
+        }
+    }
+
     /// <summary>
     /// Sets the listener the whole database reports its trace lines to.
     /// </summary>
@@ -121,6 +142,7 @@ public sealed class H2DataSource : DbDataSource
                 // DB_CLOSE_DELAY=-1 expresses the same rule for a database without sessions.
                 database.SetCloseDelay(-1);
                 database.SetTraceListener(traceListener);
+                database.SetDatabaseEventListener(databaseEventListener);
             }
 
             current = database;

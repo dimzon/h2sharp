@@ -420,10 +420,10 @@ public sealed partial class Database
 
         try
         {
-            // The reference loads a Java class and casts it to DatabaseEventListener; the port
-            // has no listener interface, so the load itself is what stands: a class nobody can
-            // provide fails here exactly as it does in the reference without the class on the
-            // classpath.
+            // The reference loads a Java class and casts it to DatabaseEventListener. The
+            // embedder supplies the listener as an object instead: H2DataSource
+            // .SetDatabaseEventListener. A class name from the connection string still fails,
+            // exactly as it does in the reference without the class on the classpath.
             throw new InvalidOperationException("Class \"" + className + "\" not found");
         }
         catch (Exception e)

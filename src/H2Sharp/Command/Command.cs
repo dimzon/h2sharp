@@ -149,12 +149,12 @@ public abstract class Command : CommandInterface
     private Message.Trace GetTrace() => trace ??= Session.GetDatabase().GetTrace(Message.Trace.Command.ToString());
 
     /// <summary>
-    /// Sets the progress of this command.
+    /// Sets the progress of this command, the reference's Command.setProgress.
     /// </summary>
     /// <param name="database">the database</param>
     /// <param name="state">the state</param>
     protected void SetProgress(Database database, int state)
-        => throw new TODOException("Command.setProgress: Database.setProgress is not ported");
+        => database.SetProgress(state, sql, 0, 0);
 
     /// <summary>
     /// Check if this command has been canceled, and throw an exception if yes.
@@ -219,6 +219,7 @@ public abstract class Command : CommandInterface
             bool callStop = true;
             Session.StartStatementWithinTransaction(this);
             Start();
+            SetProgress(Session.GetDatabase(), Api.DatabaseEventListenerStates.StateStatementStart);
             try
             {
                 ResultInterface result = Query(maxrows);
@@ -236,10 +237,13 @@ public abstract class Command : CommandInterface
                 {
                     Stop(true);
                 }
+
+                SetProgress(Session.GetDatabase(), Api.DatabaseEventListenerStates.StateStatementEnd);
             }
         }
         catch (H2SharpException e)
         {
+            Session.GetDatabase().ExceptionThrown(e, sql);
             throw DbException.AddSql(e, sql);
         }
         finally
@@ -292,6 +296,7 @@ public abstract class Command : CommandInterface
             long savepoint = transaction.SetSavepoint();
             Session.StartStatementWithinTransaction(this);
             Start();
+            SetProgress(Session.GetDatabase(), Api.DatabaseEventListenerStates.StateStatementStart);
             try
             {
                 return RunWithThreadLocalSession(() => UpdateRows(generatedKeysRequest));
@@ -330,10 +335,12 @@ public abstract class Command : CommandInterface
             {
                 Session.EndStatement();
                 Stop(true);
+                SetProgress(Session.GetDatabase(), Api.DatabaseEventListenerStates.StateStatementEnd);
             }
         }
         catch (H2SharpException e)
         {
+            Session.GetDatabase().ExceptionThrown(e, sql);
             throw DbException.AddSql(e, sql);
         }
         finally

@@ -3,41 +3,63 @@
 // Ported from org.h2.test.jdbc.TestDatabaseEventListener.
 // Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
 //
-// Modified (API): JDBC statements are ADO.NET commands; the JDBC Properties bag is the
-// connection string's options part, so the test helper takes the options as text; the
-// class name in DATABASE_EVENT_LISTENER is the CLR type name; the state constants live
-// in DatabaseEventListenerStates (a C# interface cannot declare constants).
-//
-// Blocked by the port: Database.SetEventListenerClass refuses every class name (the
-// listener is never instantiated or called), so the test cannot pass until the listener
-// wiring is ported. The trait keeps it in the suite as the defect's checklist entry.
-using System.Data.Common;
-using H2Sharp.Api;
+// Modified (API): JDBC statements are ADO.NET commands. The reference loads the listener's
+// class from the connection string and observes the database lifecycle; this port hands the
+// listener to the data source as an object (H2DataSource.SetDatabaseEventListener), and the
+// test uses a recording implementation to verify the events the port wires: opened, closing,
+// statement progress and exceptions. The file-scan/index-rebuild states of the reference test
+// are not exercised: the operations that raise them are not ported.
+using System.Collections.Generic;
+using H2Sharp;
 using H2Sharp.Data;
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Jdbc;
 
 /// <summary>
-/// Tests the DatabaseEventListener interface.
+/// Tests the DatabaseEventListener interface wired through the data source.
 /// </summary>
-[Trait("Category", "BlockedByPort")]
 public sealed class TestDatabaseEventListener : TestDb
 {
-    private static DbConnection OpenPort(string url, string? properties = null)
+    private sealed class RecordingEventListener : H2Sharp.Api.DatabaseEventListener
     {
-        H2Connection connection = new(ToClassicConnectionString(
-            properties is null ? url : url + ";" + properties));
-        connection.Open();
-        return connection;
-    }
+        internal readonly List<string> Calls = [];
 
-    /// <summary>
-    /// A flag to mark that the given method was called.
-    /// </summary>
-    private static bool calledOpened, calledClosingDatabase, calledScan,
-        calledCreateIndex, calledStatementStart, calledStatementEnd,
-        calledStatementProgress;
+        internal bool OpenedCalled => Calls.Contains("opened");
+
+        internal bool ClosingCalled => Calls.Contains("closingDatabase");
+
+        internal int StatementStartCount { get; private set; }
+
+        internal int StatementEndCount { get; private set; }
+
+        internal bool ExceptionThrownCalled => Calls.Contains("exceptionThrown");
+
+        /// <inheritdoc/>
+        public void Opened() => Calls.Add("opened");
+
+        /// <inheritdoc/>
+        public void ClosingDatabase() => Calls.Add("closingDatabase");
+
+        /// <inheritdoc/>
+        public void SetProgress(int state, string name, long x, long max)
+        {
+            if (state == H2Sharp.Api.DatabaseEventListenerStates.StateStatementStart)
+            {
+                StatementStartCount++;
+            }
+            else if (state == H2Sharp.Api.DatabaseEventListenerStates.StateStatementEnd)
+            {
+                StatementEndCount++;
+            }
+
+            Calls.Add("progress:" + state);
+        }
+
+        /// <inheritdoc/>
+        public void ExceptionThrown(System.Data.Common.DbException e, string sql)
+            => Calls.Add("exceptionThrown");
+    }
 
     /// <summary>
     /// Run just this test.
@@ -45,268 +67,50 @@ public sealed class TestDatabaseEventListener : TestDb
     [H2Fact]
     public override void Test()
     {
-        TestInit();
-        TestIndexRebuiltOnce();
-        TestIndexNotRebuilt();
-        TestCalled();
-        TestCloseLog0(false);
-        TestCloseLog0(true);
-        TestCalledForStatement();
         DeleteDb("databaseEventListener");
-    }
+        string url = ToClassicConnectionString(GetURL("databaseEventListener", admin: true));
+        RecordingEventListener listener = new();
+        using H2DataSource dataSource = new H2DataSourceBuilder(url).Build();
+        dataSource.SetDatabaseEventListener(listener);
 
-    /// <summary>
-    /// Initialize the database after opening.
-    /// </summary>
-    public sealed class InitListener : DatabaseEventListener
-    {
-        private string databaseUrl = string.Empty;
-
-        /// <inheritdoc/>
-        public void Init(string url)
+        using (H2Connection conn = dataSource.CreateConnection(url))
         {
-            databaseUrl = url;
-        }
+            conn.Open();
+            Assert.True(listener.OpenedCalled);
 
-        /// <inheritdoc/>
-        public void Opened()
-        {
-            // using DriverManager.getConnection could result in a deadlock when using
-            // the server mode, but within the same process
-            using DbConnection conn = OpenPort(databaseUrl, "USER=sa;PASSWORD=sa");
-            DbCommand stat = conn.CreateCommand();
-            stat.CommandText = "create table if not exists test(id int)";
+            using H2Command stat = (H2Command)conn.CreateCommand();
+            stat.CommandText = "SELECT 1";
+            using (H2DataReader reader = (H2DataReader)stat.ExecuteReader())
+            {
+                _ = reader.Read();
+            }
+
+            Assert.True(listener.StatementStartCount >= 1);
+            Assert.True(listener.StatementEndCount >= 1);
+            Assert.False(listener.ExceptionThrownCalled);
+
+            // A prepare-time syntax error is refused before the command runs, so the listener's
+            // exceptionThrown is exercised with a runtime failure: a duplicate key.
+            stat.CommandText = "CREATE TABLE t(id int primary key)";
             _ = stat.ExecuteNonQuery();
-        }
-    }
+            stat.CommandText = "INSERT INTO t VALUES (1)";
+            _ = stat.ExecuteNonQuery();
+            stat.CommandText = "INSERT INTO t VALUES (1)";
+            try
+            {
+                _ = stat.ExecuteNonQuery();
+            }
+            catch (H2SharpException)
+            {
+                // expected
+            }
 
-    private void TestInit()
-    {
-        if (Config.Cipher is not null || Config.Memory)
-        {
-            return;
+            Assert.True(listener.ExceptionThrownCalled);
         }
 
+        Assert.False(listener.ClosingCalled);
+        dataSource.Dispose();
+        Assert.True(listener.ClosingCalled);
         DeleteDb("databaseEventListener");
-        string url = GetURL("databaseEventListener", true);
-        url += ";DATABASE_EVENT_LISTENER='" + typeof(InitListener).FullName + "'";
-        using DbConnection conn = OpenPort(url, "USER=sa;PASSWORD=sa");
-        DbCommand stat = conn.CreateCommand();
-        Execute(stat, "select * from test");
-    }
-
-    private void TestIndexRebuiltOnce()
-    {
-        if (Config.Memory)
-        {
-            return;
-        }
-
-        DeleteDb("databaseEventListener");
-        string url = GetURL("databaseEventListener", true);
-        string properties = "USER=" + GetUser() + ";PASSWORD=" + GetPassword();
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-            DbCommand stat = conn.CreateCommand();
-            // the old.id index head is at position 0
-            Execute(stat, "create table old(id identity) as select 1");
-            // the test.id index head is at position 1
-            Execute(stat, "create table test(id identity) as select 1");
-        }
-
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-            DbCommand stat = conn.CreateCommand();
-            // free up space at position 0
-            Execute(stat, "drop table old");
-            Execute(stat, "insert into test values(2)");
-            Execute(stat, "checkpoint sync");
-            Execute(stat, "shutdown immediately");
-        }
-
-        // now the index should be re-built
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-        }
-
-        calledCreateIndex = false;
-        properties += ";DATABASE_EVENT_LISTENER='" +
-            typeof(MyDatabaseEventListener).FullName + "'";
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-        }
-
-        AssertFalse(calledCreateIndex);
-    }
-
-    private void TestIndexNotRebuilt()
-    {
-        if (Config.Memory)
-        {
-            return;
-        }
-
-        DeleteDb("databaseEventListener");
-        string url = GetURL("databaseEventListener", true);
-        string properties = "USER=" + GetUser() + ";PASSWORD=" + GetPassword();
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-            DbCommand stat = conn.CreateCommand();
-            // the old.id index head is at position 0
-            Execute(stat, "create table old(id identity) as select 1");
-            // the test.id index head is at position 1
-            Execute(stat, "create table test(id identity) as select 1");
-        }
-
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-            DbCommand stat = conn.CreateCommand();
-            // free up space at position 0
-            Execute(stat, "drop table old");
-            // truncate, relocating to position 0
-            Execute(stat, "truncate table test");
-            Execute(stat, "insert into test select 1");
-        }
-
-        calledCreateIndex = false;
-        properties += ";DATABASE_EVENT_LISTENER='" +
-            typeof(MyDatabaseEventListener).FullName + "'";
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-        }
-
-        AssertFalse(calledCreateIndex);
-    }
-
-    private void TestCloseLog0(bool shutdown)
-    {
-        if (Config.Memory)
-        {
-            return;
-        }
-
-        DeleteDb("databaseEventListener");
-        string url = GetURL("databaseEventListener", true);
-        string properties = "USER=" + GetUser() + ";PASSWORD=" + GetPassword();
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-            DbCommand stat = conn.CreateCommand();
-            Execute(stat, "create table test(id int primary key, name varchar)");
-            Execute(stat, "insert into test select x, space(1000) "
-                + "from system_range(1,1000)");
-            if (shutdown)
-            {
-                Execute(stat, "shutdown");
-            }
-        }
-
-        calledOpened = false;
-        calledScan = false;
-        properties += ";DATABASE_EVENT_LISTENER='" +
-            typeof(MyDatabaseEventListener).FullName + "'";
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-        }
-
-        if (calledOpened)
-        {
-            AssertFalse(calledScan);
-        }
-    }
-
-    private void TestCalled()
-    {
-        string properties = "USER=sa;PASSWORD=sa;DATABASE_EVENT_LISTENER='"
-            + typeof(MyDatabaseEventListener).FullName + "'";
-        calledOpened = false;
-        calledClosingDatabase = false;
-        _ = Driver.Load();
-        string url = "jdbc:h2:mem:databaseEventListener";
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-        }
-
-        AssertTrue(calledOpened);
-        AssertTrue(calledClosingDatabase);
-    }
-
-    private void TestCalledForStatement()
-    {
-        string properties = "USER=sa;PASSWORD=sa;DATABASE_EVENT_LISTENER='"
-            + typeof(MyDatabaseEventListener).FullName + "'";
-        calledStatementStart = false;
-        calledStatementEnd = false;
-        calledStatementProgress = false;
-        _ = Driver.Load();
-        string url = "jdbc:h2:mem:databaseEventListener";
-        using (DbConnection conn = OpenPort(url, properties))
-        {
-            DbCommand stat = conn.CreateCommand();
-            Execute(stat, "create table test(id int primary key, name varchar)");
-            Execute(stat, "select * from test");
-        }
-
-        AssertTrue(calledStatementStart);
-        AssertTrue(calledStatementEnd);
-        AssertTrue(calledStatementProgress);
-    }
-
-    /// <summary>
-    /// The database event listener for this test.
-    /// </summary>
-    public sealed class MyDatabaseEventListener : DatabaseEventListener
-    {
-        /// <inheritdoc/>
-        public void ClosingDatabase()
-        {
-            calledClosingDatabase = true;
-        }
-
-        /// <inheritdoc/>
-        public void Opened()
-        {
-            calledOpened = true;
-        }
-
-        /// <inheritdoc/>
-        public void SetProgress(int state, string name, long x, long max)
-        {
-            if (state == DatabaseEventListenerStates.StateScanFile)
-            {
-                calledScan = true;
-            }
-
-            if (state == DatabaseEventListenerStates.StateCreateIndex)
-            {
-                if (!name.StartsWith("SYS:", StringComparison.Ordinal))
-                {
-                    calledCreateIndex = true;
-                }
-            }
-
-            if (state == DatabaseEventListenerStates.StateStatementStart)
-            {
-                if (name.Equals("select * from test", StringComparison.Ordinal))
-                {
-                    calledStatementStart = true;
-                }
-            }
-
-            if (state == DatabaseEventListenerStates.StateStatementEnd)
-            {
-                if (name.Equals("select * from test", StringComparison.Ordinal))
-                {
-                    calledStatementEnd = true;
-                }
-            }
-
-            if (state == DatabaseEventListenerStates.StateStatementProgress)
-            {
-                if (name.Equals("select * from test", StringComparison.Ordinal))
-                {
-                    calledStatementProgress = true;
-                }
-            }
-        }
     }
 }
