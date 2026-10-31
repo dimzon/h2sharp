@@ -258,10 +258,21 @@ public abstract class TestDb : TestBase, IDisposable
             dataSource = dataSource.ToUpperInvariant();
         }
 
-        return builder.Storage + ":" + dataSource;
+        // The access mode is a property of the opened database, not of the session: a
+        // read-only reopen must get its own data source, or it would join the writable
+        // database the first open left open (the native tests reopen by options).
+        bool readOnly = string.Equals(builder.AccessModeData, "r", StringComparison.OrdinalIgnoreCase);
+        return builder.Storage + ":" + dataSource + ":mode=" + (readOnly ? "r" : "rw");
     }
 
-    private void DisposeDataSources(string name)
+    /// <summary>
+    /// Disposes the data sources of the named database, closing its engine-side database.
+    /// A test that must reopen the same file with different open-time options (such as the
+    /// read-only access mode) disposes the previous source first: the data source owns the
+    /// database, and the file stays locked until it is disposed.
+    /// </summary>
+    /// <param name="name">the database name</param>
+    protected void DisposeDataSources(string name)
     {
         StringComparison comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase

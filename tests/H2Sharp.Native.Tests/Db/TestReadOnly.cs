@@ -10,10 +10,11 @@
 // counterparts, and FileLister.getDatabaseFiles, which the port does not have, is the
 // database's .mv.db file, which is the one the walk would set.
 //
-// Out of scope by decision: the TestReadOnlyDbCreate sub-case creates a local temporary
-// LINKED table (D-030 in docs/APPROVED_DEVIATIONS.md) over a jdbc:mem URL (D-003). The
-// read-only refusal itself is ported: a write against a read-only database answers
-// DATABASE_IS_READ_ONLY from Table.CheckWritingAllowed, called at the DML entry points.
+// The read-only refusal is ported: a write against a read-only database answers
+// DATABASE_IS_READ_ONLY from Database.CheckWritingAllowed, called at the DML entry
+// points and by the schema object add. The TestReadOnlyDbCreate sub-case checks the
+// DDL refusal on an ordinary table; the reference's local temporary LINKED table bit
+// is out of scope (D-030) and is not reproduced.
 //
 // Modified (port gaps, named): testReadOnlyInZip needs the Backup tool, the TCP server
 // and the zip file system, none of which are ported, so it is skipped here until they
@@ -47,7 +48,6 @@ public sealed class TestReadOnly : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
-    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         // testReadOnlyInZip: skipped, see the header (Backup tool, TCP server, zip file
@@ -67,6 +67,7 @@ public sealed class TestReadOnly : TestDb
         Execute(stat, "CREATE TABLE TEST(ID INT) AS "
             + "SELECT X FROM SYSTEM_RANGE(1, 20)");
         conn.Close();
+        DisposeDataSources("readonlyTemp");
         conn = GetConnection(
             "readonlyTemp;ACCESS_MODE_DATA=r;"
             + "MAX_MEMORY_ROWS=10");
@@ -84,20 +85,14 @@ public sealed class TestReadOnly : TestDb
         Execute(stat, "create table a(id int)");
         Execute(stat, "create index ai on a(id)");
         conn.Close();
+        DisposeDataSources("readonlyDbCreate");
         conn = GetConnection("readonlyDbCreate;ACCESS_MODE_DATA=r");
         stat = conn.CreateCommand();
         Execute(stat, "create table if not exists a(id int)");
         Execute(stat, "create index if not exists ai on a(id)");
         AssertThrows(ErrorCode.DatabaseIsReadOnly, () => Execute(stat, "CREATE TABLE TEST(ID INT)"));
         AssertThrows(ErrorCode.TableOrViewNotFound1, () => Execute(stat, "SELECT * FROM TEST"));
-        Execute(stat, "create local temporary linked table test("
-            + "null, 'jdbc:h2:mem:test3', 'sa', 'sa', 'INFORMATION_SCHEMA.TABLES')");
-        stat.CommandText = "select * from test";
-        using (DbDataReader rs = stat.ExecuteReader())
-        {
-            AssertTrue(rs.Read());
-        }
-
+        Execute(stat, "select * from a");
         conn.Close();
     }
 
@@ -111,6 +106,8 @@ public sealed class TestReadOnly : TestDb
         AssertTrue((new FileInfo(tempFile).Attributes & FileAttributes.ReadOnly) == 0);
         File.SetAttributes(tempFile, FileAttributes.ReadOnly);
         AssertFalse((new FileInfo(tempFile).Attributes & FileAttributes.ReadOnly) == 0);
+        // Windows refuses to delete a read-only file.
+        File.SetAttributes(tempFile, FileAttributes.Normal);
         File.Delete(tempFile);
 
         DeleteDb("readonlyFiles");
@@ -121,6 +118,7 @@ public sealed class TestReadOnly : TestDb
         Execute(stat, "INSERT INTO TEST VALUES(2, 'World')");
         AssertFalse(IsReadOnly(conn));
         conn.Close();
+        DisposeDataSources("readonlyFiles");
 
         if (setReadOnly)
         {
@@ -154,6 +152,11 @@ public sealed class TestReadOnly : TestDb
         AssertThrows(ErrorCode.DatabaseIsReadOnly, () => Execute(stat, "DELETE FROM TEST"));
         Execute(stat, "SET DB_CLOSE_DELAY=0");
         conn.Close();
+        if (setReadOnly)
+        {
+            // Windows refuses to delete or reopen a file that is still read-only.
+            File.SetAttributes(GetBaseDir() + "/readonlyFiles" + Constants.SuffixMvFile, FileAttributes.Normal);
+        }
     }
 
     /// <summary>

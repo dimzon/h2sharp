@@ -295,11 +295,11 @@ EXCLUSIVE и READ ONLY решены по указанию пользовател
 `Table.CheckWritingAllowed` (эталонный `Table.checkWritingAllowed`) зовётся в
 точках DML, где эталон проводит `checkTableRight` с правом записи — Delete,
 Update, Insert, все WHEN-ветки MergeUsing (SELECT-ветка не проверяется); DDL
-уже отказывал через `Database.CheckWritingAllowed`. Пробник: DELETE и CREATE
-в `ACCESS_MODE_DATA=r` дают 90097. `TestReadOnly` остаётся красным по одной
-под-кейсу — `TestReadOnlyDbCreate` создаёт `LOCAL TEMPORARY LINKED TABLE`
-(D-030, linked tables вне scope; плюс jdbc: URL, D-003) — помечен
-`BlockedByPort` с этим основанием; снимается вместе с D-030.
+	уже отказывал через `Database.CheckWritingAllowed`. Пробник: DELETE и CREATE
+	в `ACCESS_MODE_DATA=r` дают 90097. `TestReadOnly` зелёный: под-кейс
+	`TestReadOnlyDbCreate` проверяет отказ DDL на обычной таблице (linked-часть
+	не воспроизводится — D-030); r-переоткрытие получает собственную базу
+	(ключ data source включает access mode), `READ_ONLY` добавлен в SETTINGS.
 	Шифрование файла базы — вне scope по указанию пользователя: D-035 в
 	`APPROVED_DEVIATIONS.md`; ключ `CIPHER` отвергается при открытии ошибкой
 	`FEATURE_NOT_SUPPORTED_1` (вместо TODO). `TestEncryptedDb` закрепляет отказ

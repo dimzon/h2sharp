@@ -228,6 +228,16 @@ public sealed class DiskFilePath : FilePath
 
                 return;
             }
+            catch (UnauthorizedAccessException)
+            {
+                // Windows refuses to delete a read-only file; the read-only flag is a
+                // management attribute, and deleting the database file clears it first.
+                string name = SystemName;
+                if (File.Exists(name))
+                {
+                    File.SetAttributes(name, FileAttributes.Normal);
+                }
+            }
             catch (IOException e)
             {
                 cause = e;

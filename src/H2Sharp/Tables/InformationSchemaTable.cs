@@ -2177,6 +2177,10 @@ public sealed class InformationSchemaTable : Table
         // The reference adds the property.* rows for an admin here; the port has no users and
         // no admin to ask, so there is nobody they are for.
 
+        // The reference answers Connection.isReadOnly from the connection, which has no
+        // SETTINGS row; the ADO.NET surface has no isReadOnly either, and the native suite
+        // reads it here, so the row exists with the reference's spelling.
+        Add(rows, "READ_ONLY", database.IsReadOnly() ? "1" : "0");
         Add(rows, "QUERY_TIMEOUT",
             session.GetQueryTimeout().ToString(System.Globalization.CultureInfo.InvariantCulture));
         Add(rows, "TIME ZONE", session.CurrentTimeZone().GetId());
