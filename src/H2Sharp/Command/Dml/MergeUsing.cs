@@ -27,6 +27,7 @@
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Api;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Message;
@@ -101,6 +102,7 @@ public sealed class MergeUsing : DataChangeStatement
             w.CheckWritingAllowed();
         }
 
+        table.Fire(GetSession(), EvaluateTriggerMasks(), beforeAction: true);
         _ = table.Lock(GetSession(), Table.WriteLock);
         SetCurrentRowNumber(0);
         long count = 0;
@@ -170,7 +172,23 @@ public sealed class MergeUsing : DataChangeStatement
         }
 
         targetRowidsRemembered.Clear();
+        table.Fire(GetSession(), EvaluateTriggerMasks(), beforeAction: false);
         return countUpdatedRows;
+    }
+
+    /// <summary>
+    /// The trigger mask of the whole statement: the union of the clauses' masks, as the
+    /// reference's evaluateTriggerMasks.
+    /// </summary>
+    private int EvaluateTriggerMasks()
+    {
+        int masks = 0;
+        foreach (When w in when)
+        {
+            masks |= w.EvaluateTriggerMasks();
+        }
+
+        return masks;
     }
 
     /// <summary>
@@ -386,6 +404,11 @@ public sealed class MergeUsing : DataChangeStatement
             Tables.DataChangeDeltaTable.ResultOption? deltaChangeCollectionMode);
 
         /// <summary>
+        /// The trigger mask this clause contributes, as the reference's evaluateTriggerMasks.
+        /// </summary>
+        internal abstract int EvaluateTriggerMasks();
+
+        /// <summary>
         /// Prepares the clause.
         /// </summary>
         /// <param name="session">the session</param>
@@ -459,6 +482,8 @@ public sealed class MergeUsing : DataChangeStatement
         {
         }
 
+        internal override int EvaluateTriggerMasks() => (int)H2TriggerEvent.Delete;
+
         internal override void Merge(
             SessionLocal session,
             ResultTarget? deltaChangeCollector,
@@ -498,6 +523,8 @@ public sealed class MergeUsing : DataChangeStatement
             : base(owner)
         {
         }
+
+        internal override int EvaluateTriggerMasks() => (int)H2TriggerEvent.Update;
 
         /// <summary>
         /// Sets the assignments.
@@ -597,6 +624,8 @@ public sealed class MergeUsing : DataChangeStatement
             this.overridingSystem = overridingSystem;
             this.values = values;
         }
+
+        internal override int EvaluateTriggerMasks() => (int)H2TriggerEvent.Insert;
 
         internal override void Merge(
             SessionLocal session,

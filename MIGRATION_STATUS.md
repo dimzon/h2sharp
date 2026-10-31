@@ -7863,6 +7863,26 @@ DI/builders — отдельные надстройки. Обычный IntelliS
 не содержит регистрационных методов.
 ADR/AGENTS/спринт обновлены; существующий IH2Test служит примером pre-Open
 настроек, но production registration не переносится в тестовый интерфейс.
+
+### Триггеры: первый этап (.NET API)
+
+Реализован первый этап принятой ADR-001 границы: .NET-триггеры как интерфейс-
+контракт (IH2Trigger, IH2TriggerContext, IH2TriggerRow, H2TriggerEvent) в
+H2Sharp.Data; регистрация через H2DataSource.RegisterTrigger по предикату
+применимости (сырые имена схемы/таблицы, без D-033-свёрток — маппинг имён
+колонок полностью на стороне триггера); H2DataSource.UnregisterTrigger; внутренний
+TriggerObject по эталонному org.h2.schema.TriggerObject; проводка row/statement fire
+в TableTypes и Insert/Update/Delete/Merge/MergeUsing с эталонным порядком
+относительно constraints; ошибка отменяет операцию; внутри Fire доступна текущая
+транзакция (GetCurrentTransaction), commit/rollback из триггера запрещены.
+Тесты: H2Sharp.Data.Tests/H2TriggerTests (15) и оракул
+H2Sharp.Tests/TriggerOracleTests против jar.
+
+Явно не портировано в первом этапе (фиксируется): SQL CREATE/DROP TRIGGER
+(Specs CreateTriggerCommandTests остаются красными), SELECT/ROLLBACK-события,
+INSTEAD OF, QUEUE/NOWAIT, наполнение TRIGGERS info-schema, safeguard'ы
+setCommitOrRollbackDisabled/lastIdentity эталона (частично заменены отключением
+авто-коммита вокруг Fire).
 RegisterUdf проектируется на стандартных BCL Func<TResult>, Func<TArgument,
 TResult> и дальнейших перегрузках; они используют единый registration path.
 DI-фабрика обработчика и вызываемая SQL-реализация различаются явно. Требование

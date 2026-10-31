@@ -167,6 +167,7 @@ public sealed class Insert : CommandWithValues, ResultTarget
         // comes before the admin bypass, see Delete.
         target.CheckWritingAllowed();
         _ = target.Lock(session, Table.WriteLock);
+        target.Fire(session, (int)H2Sharp.Data.H2TriggerEvent.Insert, beforeAction: true);
         Column[] targetColumns = columns
             ?? throw Message.DbException.GetInternalError("INSERT without columns");
         rowNumber = 0;
@@ -228,6 +229,7 @@ public sealed class Insert : CommandWithValues, ResultTarget
             }
         }
 
+        target.Fire(session, (int)H2Sharp.Data.H2TriggerEvent.Insert, beforeAction: false);
         return rowNumber;
     }
 

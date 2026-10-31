@@ -74,6 +74,12 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
 
     private bool disposed;
 
+    /// <summary>
+    /// Whether this connection is a borrowed view over someone else's session, created by
+    /// <see cref="BorrowSession"/> for triggers to run queries on the firing session.
+    /// </summary>
+    private bool borrowedSession;
+
     /// <inheritdoc/>
     Func<DateTimeOffset>? IH2Test.SystemClockProvider
     {
@@ -123,6 +129,22 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         this.dataSource = dataSource;
         this.connectionString = connectionString;
         connectionStringLocked = true;
+    }
+
+    /// <summary>
+    /// Creates a connection that borrows an existing session: statements on it run on the
+    /// same session and transaction as the firing statement. The borrowed connection does
+    /// not own the session — closing or disposing it leaves the session alive.
+    /// </summary>
+    /// <param name="session">the session to borrow</param>
+    /// <returns>the borrowed connection</returns>
+    internal static H2Connection BorrowSession(SessionLocal session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        H2Connection connection = new();
+        connection.session = session;
+        connection.borrowedSession = true;
+        return connection;
     }
 
     /// <summary>
@@ -250,6 +272,11 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// </remarks>
     public override void Open()
     {
+        if (borrowedSession)
+        {
+            throw new InvalidOperationException("The borrowed connection is already open");
+        }
+
         if (session is not null || enlistedSession is not null)
         {
             throw new InvalidOperationException("The connection is already open");
@@ -392,6 +419,13 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// </remarks>
     public override void Close()
     {
+        if (borrowedSession)
+        {
+            // The borrowed session belongs to the connection that owns it.
+            session = null;
+            return;
+        }
+
         SessionLocal? current = session;
         if (current is null)
         {
@@ -604,7 +638,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// <summary>Maps the engine's isolation level to ADO.NET's.</summary>
     /// <param name="isolationLevel">the engine's isolation level</param>
     /// <returns>the ADO.NET isolation level</returns>
-    private static AdoIsolationLevel ToAdoIsolationLevel(EngineIsolationLevel isolationLevel)
+    internal static AdoIsolationLevel ToAdoIsolationLevel(EngineIsolationLevel isolationLevel)
     {
         return isolationLevel switch
         {

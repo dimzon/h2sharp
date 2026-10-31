@@ -1329,6 +1329,17 @@ public abstract class Table
     private List<Constraint>? constraints;
 
     /// <summary>
+    /// The triggers attached to this table, in the order they were attached.
+    /// </summary>
+    private List<TriggerObject>? triggers;
+
+    /// <summary>
+    /// Whether the pending trigger registrations of the database were already consulted for
+    /// this table, so the fire path pays one volatile read when there is nothing to attach.
+    /// </summary>
+    internal volatile bool TriggersResolved;
+
+    /// <summary>
     /// The sequences that belong to this table: the sequences of its identity columns.
     /// </summary>
     private List<Schemas.Sequence>? sequences;
@@ -1377,6 +1388,46 @@ public abstract class Table
     public void RemoveConstraint(Constraint constraint)
     {
         _ = constraints?.Remove(constraint);
+    }
+
+    /// <summary>
+    /// Add a trigger to this table, mirroring the reference's Table.addTrigger.
+    /// </summary>
+    /// <param name="trigger">the trigger to add</param>
+    internal void AddTrigger(TriggerObject trigger)
+    {
+        if (triggers is null)
+        {
+            triggers = [trigger];
+        }
+        else if (!triggers.Contains(trigger))
+        {
+            triggers.Add(trigger);
+        }
+    }
+
+    /// <summary>
+    /// Remove the given trigger from the list.
+    /// </summary>
+    /// <param name="trigger">the trigger to remove</param>
+    internal void RemoveTrigger(TriggerObject trigger)
+    {
+        _ = triggers?.Remove(trigger);
+    }
+
+    /// <summary>
+    /// Consults the pending trigger registrations of the database once: a registration
+    /// whose predicate accepts this table attaches its trigger here. The resolved flag
+    /// makes this a single cheap read on every fire after the first.
+    /// </summary>
+    internal void EnsureTriggersAttached()
+    {
+        if (TriggersResolved)
+        {
+            return;
+        }
+
+        GetSchema()?.GetDatabase().ApplyPendingTriggers(this);
     }
 
     /// <summary>
@@ -1508,21 +1559,26 @@ public abstract class Table
     /// Whether any constraint or trigger of this table can fire.
     /// </summary>
     /// <remarks>
-    /// The reference also asks the triggers, and there are none here, so the answer is the
-    /// constraints. The statements ask this before they ask <see cref="FireBeforeRow"/>: when
-    /// nothing can fire, the row goes in without a call, as it does on the JVM.
+    /// The statements ask this before they ask <see cref="FireBeforeRow"/>: when nothing can
+    /// fire, the row goes in without a call, as it does on the JVM.
     /// </remarks>
-    /// <returns>true when a constraint could fire</returns>
-    public bool FireRow() => constraints is not null && constraints.Count > 0;
+    /// <returns>true when a constraint or trigger could fire</returns>
+    public bool FireRow()
+    {
+        EnsureTriggersAttached();
+        return constraints is not null && constraints.Count > 0
+            || triggers is not null && triggers.Count > 0;
+    }
 
     /// <summary>
-    /// Fires the constraints that run before the row is written.
+    /// Fires the before-action triggers and the before-constraints, in the reference's order.
     /// </summary>
     /// <remarks>
     /// The reference fires the before-action triggers first and answers whether one of them
-    /// handled the row instead; there are no triggers here, so the answer is always false and
-    /// the row is always written by the caller. The constraints fire either way: the caller
-    /// asks <see cref="FireRow"/> first, and a table with none never gets here.
+    /// handled the row instead; there are no INSTEAD OF triggers here, so the answer is
+    /// always false and the row is always written by the caller. The constraints fire either
+    /// way: the caller asks <see cref="FireRow"/> first, and a table with none never gets
+    /// here.
     /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="oldRow">the row as it was, or null for an insert</param>
@@ -1530,12 +1586,14 @@ public abstract class Table
     /// <returns>false, always: no trigger handled the row instead</returns>
     public bool FireBeforeRow(Engine.SessionLocal session, Row? oldRow, Row? newRow)
     {
+        EnsureTriggersAttached();
+        bool done = FireRow(session, oldRow, newRow, beforeAction: true, rollback: false);
         FireConstraints(session, oldRow, newRow, before: true);
-        return false;
+        return done;
     }
 
     /// <summary>
-    /// Fires the constraints that run after the row was written.
+    /// Fires the after-action triggers and the after-constraints, in the reference's order.
     /// </summary>
     /// <remarks>
     /// Referential constraints are after-constraints, so this is where a row that points at
@@ -1548,10 +1606,56 @@ public abstract class Table
     /// <param name="rollback">whether the write is being rolled back</param>
     public void FireAfterRow(Engine.SessionLocal session, Row? oldRow, Row? newRow, bool rollback)
     {
+        EnsureTriggersAttached();
+        FireRow(session, oldRow, newRow, beforeAction: false, rollback);
         if (!rollback)
         {
             FireConstraints(session, oldRow, newRow, before: false);
         }
+    }
+
+    /// <summary>
+    /// Fires the statement triggers of the given type, mirroring the reference's Table.fire:
+    /// once per statement, before and after the whole operation.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="type">the trigger type mask</param>
+    /// <param name="beforeAction">whether the before-statement triggers fire</param>
+    public void Fire(Engine.SessionLocal session, int type, bool beforeAction)
+    {
+        EnsureTriggersAttached();
+        if (triggers is not null)
+        {
+            foreach (TriggerObject trigger in triggers)
+            {
+                trigger.Fire(session, type, beforeAction);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fires the row triggers of this table, mirroring the reference's Table.fireRow.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="oldRow">the row as it was, or null for an insert</param>
+    /// <param name="newRow">the row as it becomes, or null for a delete</param>
+    /// <param name="beforeAction">whether the before-row triggers fire</param>
+    /// <param name="rollback">whether the write is being rolled back</param>
+    /// <returns>true if no further action is required (for 'instead of' triggers)</returns>
+    private bool FireRow(Engine.SessionLocal session, Row? oldRow, Row? newRow, bool beforeAction, bool rollback)
+    {
+        if (triggers is not null)
+        {
+            foreach (TriggerObject trigger in triggers)
+            {
+                if (trigger.FireRow(session, this, oldRow, newRow, beforeAction, rollback))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

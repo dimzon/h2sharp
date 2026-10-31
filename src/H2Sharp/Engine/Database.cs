@@ -1413,6 +1413,16 @@ public sealed partial class Database : CastDataProvider
     private Data.IH2DatabaseEventListener? eventListener;
 
     /// <summary>
+    /// The pending trigger registrations and the triggers they attached. One lock guards
+    /// both, so a lazy attach on first fire cannot race an apply at open or a remove.
+    /// </summary>
+    private readonly object triggerSync = new();
+
+    private readonly List<Tables.TriggerRegistration> pendingTriggerRegistrations = [];
+
+    private readonly List<Tables.TriggerObject> appliedTriggers = [];
+
+    /// <summary>
     /// Sets the database event listener, the reference's setEventListener. The embedder
     /// supplies it through <c>H2DataSource.SetDatabaseEventListener</c> instead of naming a
     /// class in the connection string.
@@ -1421,6 +1431,121 @@ public sealed partial class Database : CastDataProvider
     internal void SetDatabaseEventListener(Data.IH2DatabaseEventListener? listener)
     {
         eventListener = listener;
+    }
+
+    /// <summary>
+    /// Registers a trigger configuration and attaches it to every existing table its
+    /// predicate accepts. Tables created later are picked up lazily on their first fire
+    /// through <see cref="ApplyPendingTriggers"/>.
+    /// </summary>
+    internal void AddTriggerRegistration(Tables.TriggerRegistration registration)
+    {
+        lock (triggerSync)
+        {
+            pendingTriggerRegistrations.Add(registration);
+            ApplyRegistrationLocked(registration);
+        }
+    }
+
+    /// <summary>
+    /// Unregisters a trigger by its exact name, detaching it from every table and calling
+    /// its Remove.
+    /// </summary>
+    /// <param name="name">the trigger name</param>
+    /// <returns>true if a trigger with that name was registered</returns>
+    internal bool RemoveTriggerRegistration(string name)
+    {
+        lock (triggerSync)
+        {
+            Tables.TriggerRegistration? registration = null;
+            foreach (Tables.TriggerRegistration candidate in pendingTriggerRegistrations)
+            {
+                if (string.Equals(candidate.Name, name, StringComparison.Ordinal))
+                {
+                    registration = candidate;
+                    break;
+                }
+            }
+
+            if (registration is null)
+            {
+                return false;
+            }
+
+            _ = pendingTriggerRegistrations.Remove(registration);
+            foreach (Tables.TriggerObject trigger in registration.Objects)
+            {
+                trigger.GetTable().RemoveTrigger(trigger);
+                _ = appliedTriggers.Remove(trigger);
+                trigger.Remove();
+            }
+
+            registration.Objects.Clear();
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Attaches the pending registrations whose predicate accepts the given table, once.
+    /// Called from the table's fire path, so a registration made before a table existed
+    /// still reaches it.
+    /// </summary>
+    internal void ApplyPendingTriggers(Tables.Table table)
+    {
+        lock (triggerSync)
+        {
+            if (table.TriggersResolved)
+            {
+                return;
+            }
+
+            Schemas.Schema? schema = table.GetSchema();
+            if (schema is not null)
+            {
+                string schemaName = schema.GetName();
+                string tableName = table.GetTableName();
+                foreach (Tables.TriggerRegistration registration in pendingTriggerRegistrations)
+                {
+                    if (registration.AppliesTo(schemaName, tableName))
+                    {
+                        AttachTrigger(registration, table);
+                    }
+                }
+            }
+
+            table.TriggersResolved = true;
+        }
+    }
+
+    private void ApplyRegistrationLocked(Tables.TriggerRegistration registration)
+    {
+        foreach (Schemas.Schema schema in GetSchemas())
+        {
+            foreach (Tables.Table table in schema.GetAllTablesAndViews(null!))
+            {
+                if (registration.AppliesTo(schema.GetName(), table.GetTableName()))
+                {
+                    AttachTrigger(registration, table);
+                }
+            }
+        }
+    }
+
+    private void AttachTrigger(Tables.TriggerRegistration registration, Tables.Table table)
+    {
+        // An eager attach and a lazy attach can meet on the same table: attach once.
+        foreach (Tables.TriggerObject existing in registration.Objects)
+        {
+            if (ReferenceEquals(existing.GetTable(), table))
+            {
+                return;
+            }
+        }
+
+        Tables.TriggerObject trigger = Tables.TriggerObject.Create(table, registration);
+        registration.Objects.Add(trigger);
+        appliedTriggers.Add(trigger);
+        table.AddTrigger(trigger);
     }
 
     /// <summary>
@@ -1590,6 +1715,19 @@ public sealed partial class Database : CastDataProvider
                 {
                     // ignore this (user made) exception
                 }
+            }
+
+            // Database.close: every trigger's Close runs before the store closes, as the
+            // reference closes its triggers during close. Exceptions are ignored inside.
+            lock (triggerSync)
+            {
+                foreach (Tables.TriggerObject trigger in appliedTriggers)
+                {
+                    trigger.Close();
+                }
+
+                appliedTriggers.Clear();
+                pendingTriggerRegistrations.Clear();
             }
 
             // Database.close: sequences flush their exact next value before the store closes.

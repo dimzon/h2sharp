@@ -131,6 +131,7 @@ public sealed class Merge : CommandWithValues
         Column[] targetColumns = columns ?? throw DbException.GetInternalError("MERGE without columns");
         long count = 0;
         SetCurrentRowNumber(0);
+        target.Fire(session, (int)H2Sharp.Data.H2TriggerEvent.Update | (int)H2Sharp.Data.H2TriggerEvent.Insert, beforeAction: true);
         if (ValuesExpressionList.Count != 0)
         {
             // process values in list
@@ -176,6 +177,7 @@ public sealed class Merge : CommandWithValues
             rows.Close();
         }
 
+        target.Fire(session, (int)H2Sharp.Data.H2TriggerEvent.Update | (int)H2Sharp.Data.H2TriggerEvent.Insert, beforeAction: false);
         return count;
     }
 

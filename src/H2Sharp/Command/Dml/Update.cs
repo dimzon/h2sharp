@@ -78,6 +78,7 @@ public sealed class Update : FilteredDataChangeStatement
             ?? throw Message.DbException.GetInternalError("UPDATE without assignments");
         filter.StartQuery(session);
         filter.Reset();
+        table.Fire(session, (int)H2Sharp.Data.H2TriggerEvent.Update, beforeAction: true);
         List<(Result.Row OldRow, Result.Row NewRow)> staged = [];
         Expressions.Expression? condition = GetCondition();
         long limitRows = -1;
@@ -147,6 +148,7 @@ public sealed class Update : FilteredDataChangeStatement
             table.FireAfterRow(session, oldRow, newRow, rollback: false);
         }
 
+        table.Fire(session, (int)H2Sharp.Data.H2TriggerEvent.Update, beforeAction: false);
         session.SetCurrentRow(null);
         return count;
     }

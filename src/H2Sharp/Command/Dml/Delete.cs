@@ -57,6 +57,7 @@ public sealed class Delete : FilteredDataChangeStatement
         _ = table.Lock(session, Tables.Table.WriteLock);
         filter.StartQuery(session);
         filter.Reset();
+        table.Fire(session, (int)H2Sharp.Data.H2TriggerEvent.Delete, beforeAction: true);
         List<Result.Row> matched = [];
         Expressions.Expression? condition = GetCondition();
         long limitRows = -1;
@@ -106,6 +107,7 @@ public sealed class Delete : FilteredDataChangeStatement
             }
         }
 
+        table.Fire(session, (int)H2Sharp.Data.H2TriggerEvent.Delete, beforeAction: false);
         return matched.Count;
     }
 

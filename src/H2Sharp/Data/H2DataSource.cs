@@ -36,6 +36,12 @@ public sealed class H2DataSource : DbDataSource
     private IH2DatabaseEventListener? databaseEventListener;
 
     /// <summary>
+    /// The trigger registrations of this data source, by exact trigger name: they apply to
+    /// the database it owns, now and after it is opened.
+    /// </summary>
+    private readonly Dictionary<string, H2Sharp.Tables.TriggerRegistration> triggerRegistrations = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Sets the database event listener, the reference's event listener supplied as an
     /// object instead of a class name in the connection string.
     /// </summary>
@@ -51,6 +57,73 @@ public sealed class H2DataSource : DbDataSource
         {
             databaseEventListener = listener;
             database?.SetDatabaseEventListener(listener);
+        }
+    }
+
+    /// <summary>
+    /// Registers a trigger for the tables the predicate accepts.
+    /// </summary>
+    /// <remarks>
+    /// The trigger is database-wide: it applies to the database this data source owns, now
+    /// and after it is opened. The predicate receives the raw stored schema and table names
+    /// and decides applicability itself — the engine folds nothing, and the trigger maps
+    /// column names by its own policy. One registration may attach to several tables, and a
+    /// table created after the registration is picked up on its first fire.
+    /// </remarks>
+    /// <param name="name">the trigger name, the exact registration key</param>
+    /// <param name="appliesTo">whether the trigger applies to the given schema and table</param>
+    /// <param name="events">the statement types the trigger listens to</param>
+    /// <param name="before">whether the trigger fires before rather than after the operation</param>
+    /// <param name="rowBased">whether the trigger is row-based rather than statement-based</param>
+    /// <param name="factory">creates the trigger instance</param>
+    public void RegisterTrigger(
+        string name,
+        Func<string, string, bool> appliesTo,
+        H2TriggerEvent events,
+        bool before,
+        bool rowBased,
+        Func<IH2Trigger> factory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(appliesTo);
+        ArgumentNullException.ThrowIfNull(factory);
+        lock (sync)
+        {
+            if (disposed)
+            {
+                throw new ObjectDisposedException(nameof(H2DataSource));
+            }
+
+            if (triggerRegistrations.ContainsKey(name))
+            {
+                throw new InvalidOperationException($"A trigger named '{name}' is already registered");
+            }
+
+            H2Sharp.Tables.TriggerRegistration registration = new(
+                name, appliesTo, events, before, rowBased, factory);
+            triggerRegistrations.Add(name, registration);
+            database?.AddTriggerRegistration(registration);
+        }
+    }
+
+    /// <summary>
+    /// Unregisters a trigger by its exact name: detaches it from every table it was
+    /// attached to and calls the trigger's Remove.
+    /// </summary>
+    /// <param name="name">the trigger name</param>
+    /// <returns>true if a trigger with that name was registered</returns>
+    public bool UnregisterTrigger(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        lock (sync)
+        {
+            if (!triggerRegistrations.Remove(name))
+            {
+                return false;
+            }
+
+            database?.RemoveTriggerRegistration(name);
+            return true;
         }
     }
 
@@ -143,6 +216,10 @@ public sealed class H2DataSource : DbDataSource
                 database.SetCloseDelay(-1);
                 database.SetTraceListener(traceListener);
                 database.SetDatabaseEventListener(databaseEventListener);
+                foreach (H2Sharp.Tables.TriggerRegistration registration in triggerRegistrations.Values)
+                {
+                    database.AddTriggerRegistration(registration);
+                }
             }
 
             current = database;

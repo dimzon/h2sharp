@@ -34,18 +34,33 @@ public sealed class H2Transaction : DbTransaction
     private bool disposed;
 
     /// <summary>
+    /// Whether completing this transaction is refused: a trigger must not commit or roll
+    /// back the transaction of the statement it runs inside, the way the reference
+    /// disables commit/rollback within a fire.
+    /// </summary>
+    private readonly bool blockCompletion;
+
+    /// <summary>
     /// Begins a transaction on the given connection.
     /// </summary>
     /// <param name="connection">the connection</param>
     /// <param name="isolationLevel">the isolation level</param>
-    internal H2Transaction(H2Connection connection, AdoIsolationLevel isolationLevel)
+    /// <param name="blockCompletion">whether commit and rollback are refused</param>
+    internal H2Transaction(H2Connection connection, AdoIsolationLevel isolationLevel, bool blockCompletion = false)
     {
         this.connection = connection;
         IsolationLevel = isolationLevel;
+        this.blockCompletion = blockCompletion;
     }
 
     /// <inheritdoc/>
     protected override DbConnection? DbConnection => connection;
+
+    /// <summary>
+    /// Gets the connection this transaction belongs to, while it belongs to one. The
+    /// connection is what a trigger uses to run queries on the transaction's session.
+    /// </summary>
+    public new H2Connection? Connection => connection;
 
     /// <summary>
     /// Gets the connection this transaction belongs to, while it belongs to one.
@@ -91,6 +106,12 @@ public sealed class H2Transaction : DbTransaction
             throw new InvalidOperationException("The transaction is already completed");
         }
 
+        if (blockCompletion)
+        {
+            throw new InvalidOperationException(
+                "The trigger cannot commit the transaction of the statement it runs in");
+        }
+
         completed = true;
         WithSession(session => session.Commit(false));
         Detach();
@@ -109,6 +130,12 @@ public sealed class H2Transaction : DbTransaction
             throw new InvalidOperationException("The transaction is already completed");
         }
 
+        if (blockCompletion)
+        {
+            throw new InvalidOperationException(
+                "The trigger cannot roll back the transaction of the statement it runs in");
+        }
+
         completed = true;
         WithSession(session => session.Rollback());
         Detach();
@@ -123,7 +150,10 @@ public sealed class H2Transaction : DbTransaction
             if (!completed)
             {
                 completed = true;
-                WithSession(session => session.Rollback());
+                if (!blockCompletion)
+                {
+                    WithSession(session => session.Rollback());
+                }
             }
 
             Detach();

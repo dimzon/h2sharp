@@ -173,14 +173,23 @@ one-shot API и в `HashAlgorithm`-registry не входит. Регистра�
 
 ## 8. S6 — DI-триггеры
 
-- [ ] Перенести интерфейс Trigger и schema.TriggerObject из H2 2.5; DI создаёт
-  реализацию по регистрационному имени.
-- [ ] CREATE/DROP TRIGGER связывают обработчик со Schema/Table metadata.
-- [ ] Init/Fire/Close/Remove вызываются в эталонном порядке.
-- [ ] BEFORE/AFTER и row/statement trigger, INSERT/UPDATE/DELETE/SELECT,
-  oldRow/newRow и изменение newRow определяются H2, а не callback поверх SQL-текста.
-- [ ] Ошибка отменяет операцию, работа с базой внутри Fire использует ту же
-  транзакцию; rollback и закрытие проверяются отдельно.
+Первый этап (интерфейс-контракт, без SQL-поверхности) реализован: публичные
+IH2Trigger / IH2TriggerContext / IH2TriggerRow и H2TriggerEvent в H2Sharp.Data;
+регистрация по предикату применимости через H2DataSource.RegisterTrigger; внутренний
+TriggerObject по эталону org.h2.schema.TriggerObject; BEFORE/AFTER row/statement fire
+в эталонном порядке; oldRow/newRow и изменение newRow; ошибка отменяет операцию;
+GetCurrentTransaction даёт ту же транзакцию внутри Fire. Тесты: H2TriggerTests
+(Data-набор) и оракул TriggerOracleTests против jar.
+
+- [x] Публичный интерфейс-контракт триггеров (.NET аналог org.h2.api.Trigger)
+  и внутренний TriggerObject; Init/Fire/Close/Remove вызываются в эталонном порядке.
+- [x] BEFORE/AFTER и row/statement trigger для INSERT/UPDATE/DELETE,
+  oldRow/newRow и изменение newRow определяются H2.
+- [x] Ошибка отменяет операцию; работа с базой внутри Fire использует ту же
+  транзакцию (GetCurrentTransaction); закрытие проверяется отдельно.
+- [ ] CREATE/DROP TRIGGER (SQL-поверхность) связывают обработчик со Schema/Table
+  metadata; SELECT/ROLLBACK-события, INSTEAD OF, QUEUE/NOWAIT и наполнение
+  TRIGGERS info-schema — второй этап.
 
 ## 9. S7 — trace/diagnostics через DI
 
