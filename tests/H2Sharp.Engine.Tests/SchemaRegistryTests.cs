@@ -18,7 +18,10 @@
  *
  * The case corpus includes lower case forms of the same names deliberately: object names are
  * folded with the database's fold, not the current culture's, so a registry that used the
- * current culture would look up "t" differently on a Turkish machine.
+ * current culture would look up "t" differently on a Turkish machine. Per D-033 the fold of
+ * unquoted names belongs to the parser (upper before the registry sees them), so the registry
+ * itself is exact under the default comparer; the case-insensitive corpus runs against a
+ * CASE_INSENSITIVE_IDENTIFIERS=TRUE database, the one setting that makes the comparer fold.
  */
 using System;
 using H2Sharp;
@@ -32,22 +35,36 @@ namespace H2Sharp.Engine.Tests;
 
 public sealed class SchemaRegistryTests
 {
+    /// <remarks>
+    /// The registry is exact under the default comparer: D-033 folds unquoted identifiers to
+    /// upper at parse, so a lower-case spelling that reached the registry anyway is a different
+    /// identifier and must not find the table. The case-insensitive branch of the comparer is
+    /// what CASE_INSENSITIVE_IDENTIFIERS=TRUE buys, and that is the database these tests run.
+    /// </remarks>
     [Fact]
     public void ANameIsFoundWhateverCaseItIsWrittenIn()
     {
-        Schema schema = NewSchema();
+        Schema schema = NewSchema(caseInsensitiveIdentifiers: true);
         Table table = new TestTable("PERSON");
         schema.Add(table);
 
         Assert.Same(table, schema.FindTableOrView(null, "PERSON"));
         Assert.Same(table, schema.FindTableOrView(null, "person"));
         Assert.Same(table, schema.FindTableOrView(null, "Person"));
+
+        // Under the default comparer the registry is exact: the same spellings are the same
+        // identifier, a different one is simply not there.
+        Schema exact = NewSchema();
+        Table exactTable = new TestTable("PERSON");
+        exact.Add(exactTable);
+        Assert.Same(exactTable, exact.FindTableOrView(null, "PERSON"));
+        Assert.Null(exact.FindTableOrView(null, "person"));
     }
 
     [Fact]
     public void ANameInUseCannotBeTakenAgain()
     {
-        Schema schema = NewSchema();
+        Schema schema = NewSchema(caseInsensitiveIdentifiers: true);
         schema.Add(new TestTable("PERSON"));
 
         H2SharpException ex = Assert.Throws<H2SharpException>(
@@ -81,9 +98,11 @@ public sealed class SchemaRegistryTests
         Assert.False(schema.IsEmpty());
     }
 
-    private static Schema NewSchema()
+    private static Schema NewSchema(bool caseInsensitiveIdentifiers = false)
     {
-        return new Schema(new Database(ConnectionInfo.Memory("schema_test")), 1, "PUBLIC", false);
+        ConnectionInfo info = ConnectionInfo.Memory("schema_test");
+        info.Options.CaseInsensitiveIdentifiers = caseInsensitiveIdentifiers;
+        return new Schema(new Database(info), 1, "PUBLIC", false);
     }
 
     /// <summary>
