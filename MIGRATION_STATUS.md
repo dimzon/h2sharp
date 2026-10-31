@@ -304,10 +304,20 @@ Update, Insert, все WHEN-ветки MergeUsing (SELECT-ветка не про
 `APPROVED_DEVIATIONS.md`; ключ `CIPHER` отвергается при открытии именованной
 ошибкой (как и было), `TestEncryptedDb` помечен `BlockedByPort`.
 `TestIndexHints` проходит: `H2Command.CommandText` больше не бросает при
-открытом читателе — присвоение текста легально (как в SqlClient), конфликт с
-открытым читателем ловится при выполнении, где и стоит второй-читатель-гард
-`ExecuteDbDataReader`; JDBC-эталон в этой точке к тому же неявно закрывает
-предыдущий результат при следующем выполнении. Попутно:
+открытом читателе — присвоение текста легально, конфликт с открытым читателем
+ловится при выполнении, где и стоит второй-читатель-гард
+`ExecuteDbDataReader`. Первоисточник семантики — SqlClient: его сеттер
+`CommandText` просто присваивает (отказ на выполнении), тогда как Sqlite и
+MySqlConnector бросают в сеттере. Унаследованный
+`CommandTestBase.CommandText_throws_when_set_when_open_reader` кодифицирует
+вкусы Sqlite/MySqlConnector — переопределён в `H2CommandTests` под
+SqlClient-контракт, авторам пакета заведён
+[AdoNetApiTest#365](https://github.com/mysql-net/AdoNetApiTest/issues/365).
+Жизненный цикл команда/читатели закреплен новыми
+`H2CommandReaderLifecycleTests` (10 тестов Data-набора): присвоение при
+открытом читателе, отказ второму читателю, повторное выполнение после
+dispose, чужая команда на том же соединении, non-reader-выполнение,
+`CommandBehavior.CloseConnection`, null-текст. Попутно:
 `TestMVStoreTool` чинен под object-ключи R-tree (полная сборка solution его
 вскрыла — ранние прогоны MvStore шли по устаревшим DLL), и оракул-сравнения
 сообщений нормализованы с обеих сторон: `H2SharpException.Message` теперь

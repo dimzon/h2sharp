@@ -215,6 +215,25 @@ public sealed class H2CommandTests : CommandTestBase<H2FactoryFixture>
     {
     }
 
+    /// <remarks>
+    /// The base test codifies the Sqlite/MySqlConnector contract, where assigning
+    /// <c>CommandText</c> with an open reader throws. This provider follows SqlClient, the
+    /// primary source of ADO.NET semantics: the assignment is legal and the conflict with an
+    /// open reader surfaces at execution, where the second-reader guard lives.
+    /// </remarks>
+    public override void CommandText_throws_when_set_when_open_reader()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1;";
+
+        using var reader = command.ExecuteReader();
+        reader.Read();
+
+        command.CommandText = "SELECT 2;";
+        Assert.Equal("SELECT 2;", command.CommandText);
+    }
+
     public override void ExecuteReader_binds_parameters()
     {
         using var connection = CreateOpenConnection();
