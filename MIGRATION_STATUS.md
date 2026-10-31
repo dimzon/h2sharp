@@ -313,8 +313,11 @@ Update, Insert, все WHEN-ветки MergeUsing (SELECT-ветка не про
 и `ALTER TABLE ... MODIFY` разбираются; `CAST (строки со временем AS DATE)`
 принимается как в эталоне. `TestCompatibility` остаётся красным: под-кейс
 case-чувствительных идентификаторов требует `DATABASE_TO_UPPER=FALSE`, который
-не портируется (D-033). `TestCompatibilityOracle.TestDate` — расхождение чтения
-DATE (часовой пояс) — отдельный вопрос времени.
+не портируется (D-033). `TestCompatibilityOracle.TestDate` — задокументированное
+расхождение по решению пользователя: эталон в Oracle-режиме создаёт колонку
+`DATE` как `TIMESTAMP` (сохраняет время), порт держит `DATE` как date-only
+(`Parser.DataTypes` → `TypeInfo.TypeDate`). Маппинг не внедряется; тест остаётся
+красным как фиксация расхождения.
 `SchemaRegistryTests` переписаны под D-033 (два красных теста утверждали
 case-insensitive реестр по умолчанию — семантику до D-033): case-корпус
 гоняется на базе с `CASE_INSENSITIVE_IDENTIFIERS=TRUE` (там три написания
