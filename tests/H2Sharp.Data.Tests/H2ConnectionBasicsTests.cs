@@ -140,7 +140,7 @@ public sealed class H2ConnectionBasicsTests
         connection.Open();
         try
         {
-            Assert.Throws<TODOException>(() => connection.ChangeDatabase("other"));
+            Assert.Throws<NotSupportedException>(() => connection.ChangeDatabase("other"));
         }
         finally
         {
