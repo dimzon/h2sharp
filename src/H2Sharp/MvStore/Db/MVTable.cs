@@ -608,7 +608,8 @@ public sealed class MVTable : Table
         }
         else if (indexType.IsSpatial())
         {
-            throw new TODOException("MVTable.addIndex: spatial indexes need the spatial key type");
+            index = new MVSpatialIndex(session.GetDatabase(), this, indexId, indexName, cols,
+                uniqueColumnCount, indexType);
         }
         else
         {
@@ -714,10 +715,9 @@ public sealed class MVTable : Table
     {
         try
         {
-            if (!session.GetDatabase().IsPersistent())
+            if (!session.GetDatabase().IsPersistent() || index is MVSpatialIndex)
             {
-                // in-memory; the reference also rebuilds a spatial index this way, and spatial
-                // indexes are not ported
+                // in-memory; the reference also rebuilds a spatial index this way
                 RebuildIndexBuffered(session, index);
             }
             else

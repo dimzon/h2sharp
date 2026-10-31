@@ -1820,6 +1820,17 @@ public abstract partial class Value
             + ((long)(localOffset - ts.GetTimeZoneOffsetSeconds()) * DateTimeUtils.NanosPerSecond));
     }
 
+    /// <summary>
+    /// Converts this value to a GEOMETRY value, the reference's convertToGeometry.
+    /// </summary>
+    /// <param name="extTypeInfo">
+    /// the extended data type information, or null
+    /// </param>
+    /// <returns>the GEOMETRY value</returns>
+    public ValueGeometry ConvertToGeometry(ExtTypeInfoGeometry? extTypeInfo)
+        => (ValueGeometry)ConvertToGeometryType(
+            TypeInfo.GetTypeInfo(Geometry, -1L, -1, extTypeInfo));
+
     private Value ConvertToGeometryType(TypeInfo targetType)
     {
         if (GetValueType() == Geometry)

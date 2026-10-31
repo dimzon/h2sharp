@@ -217,6 +217,26 @@ builder.length() == 0` → отказ) — обрезанный документ
 проверено пробником) отдаёт сырой DEL. Правило: смок-вводы против jar —
 пробником, зафиксированное поведение — тестом из набора.
 
+SPATIAL-индекс перенесён. `MVSpatialIndex` — R-tree над конвертом geometry-колонки,
+1:1 из `org.h2.mvstore.db.MVSpatialIndex`: добавление с проверкой дублей по
+`equalsIgnoringId` (unique), `findByGeometry` через `findIntersectingKeys`, стоимость
+только при `SPATIAL_INTERSECTS`-условии, `getBounds`/`getEstimatedBounds`,
+rebuild через buffered-путь даже на файле. Архитектурное решение утверждено
+пользователем: порт сузил транзакционные карты до object-ключей
+(`ObjectMapDataType`), а эталонный `TransactionMap<K,V>` генеричен по ключу карты —
+R-tree в Tx-слой порта иначе не вставить. `MVRTreeMap` переписан с
+`MVMap<Spatial, V>` на `MVMap<object, V>` с кастами внутри (ключи — классы
+`DefaultSpatial`, бокса нет), публичный Spatial-API сохранён; `RebuildIndex` направляет
+spatial в buffered-путь, как эталон. Дотянуты незакрытые поверхности:
+`Value.ConvertToGeometry` (эталонный `convertToGeometry`), GEOMETRY-сериализация строки
+в `ValueDataType` (writeBinary/readVarBytes, до этого файловая БД отказывалась писать
+geometry-колонку вовсе), оператор `&&` в инфиксном чтении условий
+(`getCompareType` эталона содержит SPATIAL_INTERSECTS) и `IndexCursor.getSpatialSearchRow`
+(два intersect-байнда объединяются в конверт-union). Поверх — `SpatialIndexOracleTests`:
+пять дифференциальных тестов против JVM (попадания и непопадания `&&`, NULL, метка
+`SPATIAL INDEX`, отказы, `USING RTREE`, план). Файловая БД переоткрывается с живым
+индексом (пробник).
+
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
 session lazy-режим с восстановлением в finally. DerivedTable сохраняет эталонную

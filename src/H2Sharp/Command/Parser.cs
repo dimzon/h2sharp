@@ -5477,7 +5477,7 @@ public sealed partial class Parser
         while (true)
         {
             if (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
-                or Token.SmallerEqual or Token.BiggerEqual)
+                or Token.SmallerEqual or Token.BiggerEqual or Token.SpatialIntersects)
             {
                 int compareType = ReadQueryComparisonType();
                 left = ReadComparison(left, compareType, aggregateSelect);
@@ -5637,6 +5637,7 @@ public sealed partial class Parser
             Token.Bigger => Expressions.Conditions.Comparison.Bigger,
             Token.SmallerEqual => Expressions.Conditions.Comparison.SmallerEqual,
             Token.BiggerEqual => Expressions.Conditions.Comparison.BiggerEqual,
+            Token.SpatialIntersects => Expressions.Conditions.Comparison.SpatialIntersects,
             _ => throw DbException.GetInternalError("comparison type " + type),
         };
     }

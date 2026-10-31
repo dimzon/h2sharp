@@ -850,16 +850,36 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
     /// Builds a search row for a spatial bound.
     /// </summary>
     /// <remarks>
-    /// Not ported. An object that must overlap two others must overlap their union, not their
-    /// intersection — which needs the geometry envelope, and there is no geometry here to take
-    /// one from.
+    /// An object that must overlap two others must overlap their union, not their
+    /// intersection — which is why two intersect bounds merge into the envelope union.
     /// </remarks>
     /// <param name="row">the row so far, or null</param>
     /// <param name="columnId">which column the bound is on</param>
     /// <param name="v">the bound</param>
     /// <returns>the row</returns>
     private Result.SearchRow? GetSpatialSearchRow(Result.SearchRow? row, int columnId, Values.Value? v)
-        => throw new TODOException("IndexCursor.getSpatialSearchRow: geometry is not ported");
+    {
+        if (row is null)
+        {
+            row = table?.GetTemplateRow() ?? throw new TODOException("IndexCursor.getSpatialSearchRow: no table to template from");
+        }
+        else if (row.GetValue(columnId) is Value existing)
+        {
+            ValueGeometry vg = existing.ConvertToGeometry(null);
+            v = v!.ConvertToGeometry(null).GetEnvelopeUnion(vg);
+        }
+
+        if (columnId == SearchRow.RowidIndex)
+        {
+            row.SetKey(v == ValueNull.Instance ? long.MinValue : v!.GetLong());
+        }
+        else
+        {
+            row.SetValue(columnId, v!);
+        }
+
+        return row;
+    }
 
     /// <remarks>
     /// Only when the index keeps exactly these columns in exactly this order. An IN over two

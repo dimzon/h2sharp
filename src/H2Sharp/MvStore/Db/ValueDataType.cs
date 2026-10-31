@@ -428,6 +428,14 @@ public sealed class ValueDataType : BasicDataType<Value>
                     break;
                 }
 
+            case Value.Geometry:
+                {
+                    // A geometry is its EWKB, as the reference's writeBinary(GEOMETRY) writes it.
+                    byte[] bytes = ((ValueGeometry)v).GetBytesNoCopy()!;
+                    buff.Put(Geometry).PutVarInt(bytes.Length).Put(bytes, 0, bytes.Length);
+                    break;
+                }
+
             case Value.Char:
                 {
                     buff.Put(Char);
@@ -585,9 +593,6 @@ public sealed class ValueDataType : BasicDataType<Value>
 
                     break;
                 }
-
-            case Value.Geometry:
-                throw new TODOException("ValueDataType.write: GEOMETRY");
 
             case Value.JavaObject:
                 throw new TODOException("ValueDataType.write: JAVA_OBJECT");
@@ -846,7 +851,7 @@ public sealed class ValueDataType : BasicDataType<Value>
                 }
 
             case Geometry:
-                throw new TODOException("ValueDataType.read: GEOMETRY");
+                return ValueGeometry.Get(ReadBytes(buff, ref position));
 
             case JavaObject:
                 throw new TODOException("ValueDataType.read: JAVA_OBJECT");
