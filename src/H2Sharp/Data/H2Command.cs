@@ -85,11 +85,10 @@ public sealed class H2Command : DbCommand
         get => commandText;
         set
         {
-            if (openReaders > 0)
-            {
-                throw new InvalidOperationException("The command has an open reader");
-            }
-
+            // Assigning new text while a reader is open is legal: the conflict with an open
+            // reader surfaces at execution, where the second-reader guard lives — the same
+            // split SqlClient makes. The reference's JDBC statement goes further and closes
+            // its previous result on the next execute implicitly.
             commandText = value ?? string.Empty;
         }
     }
