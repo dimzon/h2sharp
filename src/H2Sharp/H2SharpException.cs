@@ -168,6 +168,13 @@ public sealed class H2SharpException : System.Data.Common.DbException
         => ErrorFactory.BuildMessageForException(this);
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The reference's JdbcException.getMessage answers the full form — the message, the SQL
+    /// statement, and the error code with the build id — and so does this one.
+    /// </remarks>
+    public override string Message => BuildMessageForException();
+
+    /// <inheritdoc/>
     public override string ToString()
         => BuildMessageForException();
 }

@@ -217,6 +217,10 @@ public abstract class Command : CommandInterface
                 }
             }
         }
+        catch (H2SharpException e)
+        {
+            throw DbException.AddSql(e, sql);
+        }
         finally
         {
             Session.Unlock();
@@ -304,6 +308,10 @@ public abstract class Command : CommandInterface
                 Session.EndStatement();
                 Stop(true);
             }
+        }
+        catch (H2SharpException e)
+        {
+            throw DbException.AddSql(e, sql);
         }
         finally
         {

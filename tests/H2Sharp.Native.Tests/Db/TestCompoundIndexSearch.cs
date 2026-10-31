@@ -74,9 +74,10 @@ public sealed class TestCompoundIndexSearch : TestDb
         stat.CommandText = "EXPLAIN ANALYZE SELECT b, c FROM test WHERE (a) IN (1, 4)";
         using DbDataReader rs = stat.ExecuteReader();
         AssertTrue(rs.Read());
-        AssertEquals(Plan(rs.GetString(0)),
+        AssertEquals(
             "SELECT \"B\", \"C\" FROM \"PUBLIC\".\"TEST\" /* PUBLIC.IDX_A: A IN(1, 4) */ "
-            + "/* scanCount: 5 */ WHERE \"A\" IN(1, 4)");
+            + "/* scanCount: 5 */ WHERE \"A\" IN(1, 4)",
+            Plan(rs.GetString(0)));
     }
 
     /// <summary>
@@ -91,9 +92,10 @@ public sealed class TestCompoundIndexSearch : TestDb
         stat.CommandText = "EXPLAIN ANALYZE SELECT b, c FROM test WHERE b IN (1, 2)";
         using DbDataReader rs = stat.ExecuteReader();
         AssertTrue(rs.Read());
-        AssertEquals(Plan(rs.GetString(0)),
+        AssertEquals(
             "SELECT \"B\", \"C\" FROM \"PUBLIC\".\"TEST\" /* PUBLIC.IDX_B_C: B IN(1, 2) */ "
-            + "/* scanCount: 7 */ WHERE \"B\" IN(1, 2)");
+            + "/* scanCount: 7 */ WHERE \"B\" IN(1, 2)",
+            Plan(rs.GetString(0)));
     }
 
     /// <summary>
@@ -107,9 +109,10 @@ public sealed class TestCompoundIndexSearch : TestDb
         stat.CommandText = "EXPLAIN ANALYZE SELECT b, c FROM test WHERE c IN ('1', '2')";
         using DbDataReader rs = stat.ExecuteReader();
         AssertTrue(rs.Read());
-        AssertEquals(Plan(rs.GetString(0)),
+        AssertEquals(
             "SELECT \"B\", \"C\" FROM \"PUBLIC\".\"TEST\" /* PUBLIC.IDX_B_C */ "
-            + "/* scanCount: 11 */ WHERE \"C\" IN('1', '2')");
+            + "/* scanCount: 11 */ WHERE \"C\" IN('1', '2')",
+            Plan(rs.GetString(0)));
     }
 
     /// <summary>
@@ -123,10 +126,11 @@ public sealed class TestCompoundIndexSearch : TestDb
             + "WHERE (b, c) IN ((2, '1'), (3, '2'))";
         using DbDataReader rs = stat.ExecuteReader();
         AssertTrue(rs.Read());
-        AssertEquals(Plan(rs.GetString(0)),
+        AssertEquals(
             "SELECT \"B\", \"C\" FROM \"PUBLIC\".\"TEST\" "
             + "/* PUBLIC.IDX_B_C: IN(ROW (2, '1'), ROW (3, '2')) */ "
-            + "/* scanCount: 4 */ WHERE ROW (\"B\", \"C\") IN(ROW (2, '1'), ROW (3, '2'))");
+            + "/* scanCount: 4 */ WHERE ROW (\"B\", \"C\") IN(ROW (2, '1'), ROW (3, '2'))",
+            Plan(rs.GetString(0)));
     }
 
     /// <summary>
@@ -142,10 +146,11 @@ public sealed class TestCompoundIndexSearch : TestDb
             + "WHERE (c, b) IN (('1', 2), ('2', 3))";
         using DbDataReader rs = stat.ExecuteReader();
         AssertTrue(rs.Read());
-        AssertEquals(Plan(rs.GetString(0)),
+        AssertEquals(
             "SELECT \"B\", \"C\" FROM \"PUBLIC\".\"TEST\" "
             + "/* PUBLIC.IDX_B_C: IN(ROW (2, '1'), ROW (3, '2')) */ "
-            + "/* scanCount: 4 */ WHERE ROW (\"C\", \"B\") IN(ROW ('1', 2), ROW ('2', 3))");
+            + "/* scanCount: 4 */ WHERE ROW (\"C\", \"B\") IN(ROW ('1', 2), ROW ('2', 3))",
+            Plan(rs.GetString(0)));
     }
 
     /// <summary>
@@ -163,11 +168,12 @@ public sealed class TestCompoundIndexSearch : TestDb
         using (DbDataReader rs = stat.ExecuteReader())
         {
             AssertTrue(rs.Read());
-            AssertEquals(Plan(rs.GetString(0)),
+            AssertEquals(
                 "SELECT \"PUBLIC\".\"TEST_NULL\".\"A\", \"PUBLIC\".\"TEST_NULL\".\"B\" "
                 + "FROM \"PUBLIC\".\"TEST_NULL\" /* PUBLIC.TEST_NULL.tableScan */ "
                 + "/* scanCount: 5 */ WHERE ROW (\"A\", \"B\") "
-                + "IN(ROW (1, 1), ROW (2, 1), ROW (2, 2), ROW (2, NULL))");
+                + "IN(ROW (1, 1), ROW (2, 1), ROW (2, 2), ROW (2, NULL))",
+                Plan(rs.GetString(0)));
         }
 
         Execute(stat, "DROP TABLE TEST_NULL;");
@@ -184,10 +190,11 @@ public sealed class TestCompoundIndexSearch : TestDb
             + "WHERE (a, d) IN ((1, 3), (2, 4))";
         using DbDataReader rs = stat.ExecuteReader();
         AssertTrue(rs.Read());
-        AssertEquals(Plan(rs.GetString(0)),
+        AssertEquals(
             "SELECT \"A\", \"D\" FROM \"PUBLIC\".\"TEST\" "
             + "/* PUBLIC.IDX_A: A IN(1, 2) */ "
-            + "/* scanCount: 7 */ WHERE ROW (\"A\", \"D\") IN(ROW (1, 3), ROW (2, 4))");
+            + "/* scanCount: 7 */ WHERE ROW (\"A\", \"D\") IN(ROW (1, 3), ROW (2, 4))",
+            Plan(rs.GetString(0)));
     }
 
     /// <summary>
@@ -200,9 +207,10 @@ public sealed class TestCompoundIndexSearch : TestDb
         stat.CommandText = "EXPLAIN ANALYZE SELECT b, c FROM test WHERE (b, c) = (1, '1')";
         using DbDataReader rs = stat.ExecuteReader();
         AssertTrue(rs.Read());
-        AssertEquals(Plan(rs.GetString(0)),
+        AssertEquals(
             "SELECT \"B\", \"C\" FROM \"PUBLIC\".\"TEST\" /* PUBLIC.IDX_B_C: B = 1 AND C = '1' */ "
-            + "/* scanCount: 3 */ WHERE ROW (\"B\", \"C\") = ROW (1, '1')");
+            + "/* scanCount: 3 */ WHERE ROW (\"B\", \"C\") = ROW (1, '1')",
+            Plan(rs.GetString(0)));
     }
 
     /// <summary>
@@ -215,9 +223,10 @@ public sealed class TestCompoundIndexSearch : TestDb
         stat.CommandText = "EXPLAIN ANALYZE SELECT b, c FROM test WHERE b=1 AND c='1'";
         using DbDataReader rs = stat.ExecuteReader();
         AssertTrue(rs.Read());
-        AssertEquals(Plan(rs.GetString(0)),
+        AssertEquals(
             "SELECT \"B\", \"C\" FROM \"PUBLIC\".\"TEST\" /* PUBLIC.IDX_B_C: B = 1 AND C = '1' */ "
-            + "/* scanCount: 3 */ WHERE (\"B\" = 1) AND (\"C\" = '1')");
+            + "/* scanCount: 3 */ WHERE (\"B\" = 1) AND (\"C\" = '1')",
+            Plan(rs.GetString(0)));
     }
 
     /// <summary>

@@ -84,8 +84,10 @@ public abstract class AbstractBaseForCommonTableExpressions : TestDb
                     buf.Clear();
                     for (int columnIndex = 0; columnIndex < rs.FieldCount; columnIndex++)
                     {
+                        // Java's StringBuilder.append((String) null) writes the word "null";
+                        // the expected row data counts on it, and so does this port.
                         _ = buf.Append('|').Append(rs.IsDBNull(columnIndex)
-                            ? null : rs.GetString(columnIndex));
+                            ? "null" : rs.GetString(columnIndex));
                     }
 
                     rowData.Add(buf.ToString());

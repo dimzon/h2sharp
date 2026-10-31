@@ -215,12 +215,14 @@ public class IndexCondition
         IComparer<Value> comparator;
         if (compoundColumns)
         {
-            // The row-IN path needs the multi-column convert, which is not ported; a scalar IN
-            // list never takes this branch.
-            throw new TODOException("IndexCondition.getCurrentValueList: compound columns are not ported");
+            SortOrder sortOrder = SortOrder.OfSortTypes(session, sortTypes);
+            comparator = Comparer<Value>.Create((o1, o2) =>
+                sortOrder.Compare(((ValueRow)o1!).GetList(), ((ValueRow)o2!).GetList()));
         }
-
-        comparator = session.GetValueComparer();
+        else
+        {
+            comparator = session.GetValueComparer();
+        }
         if ((sortTypes[0] & Result.SortOrder.Descending) != 0)
         {
             IComparer<Value> forward = comparator;
@@ -230,12 +232,25 @@ public class IndexCondition
         SortedSet<Value> valueSet = new(comparator);
         if (compareType == Comparison.InList)
         {
-            Column col = column!;
-            foreach (Expression e in expressionList!)
+            if (compoundColumns)
             {
-                Value v = e.GetValue(session);
-                v = col.Convert(session, v);
-                _ = valueSet.Add(v);
+                Column[] columns = GetColumns()!;
+                foreach (Expression e in expressionList!)
+                {
+                    ValueRow v = (ValueRow)e.GetValue(session);
+                    v = Column.Convert(session, columns, v);
+                    _ = valueSet.Add(v);
+                }
+            }
+            else
+            {
+                Column col = column!;
+                foreach (Expression e in expressionList!)
+                {
+                    Value v = e.GetValue(session);
+                    v = col.Convert(session, v);
+                    _ = valueSet.Add(v);
+                }
             }
         }
         else if (compareType == Comparison.InArray)
@@ -531,15 +546,78 @@ public class IndexCondition
     /// Clones this condition with the columns of the given index.
     /// </summary>
     /// <remarks>
-    /// Not ported. It reorders a compound condition's columns to the order the index keeps
-    /// them in, which needs ValueRow.cloneWithOrder and ExpressionList.cloneWithOrder -- and
-    /// neither reordering exists here. Until they do, a compound condition whose columns are
-    /// out of order cannot be fixed, only dropped.
+    /// It reorders a compound condition's columns to the order the index keeps them in, so a
+    /// condition written as (c, b) serves an index on (b, c).
     /// </remarks>
     /// <param name="index">the index</param>
-    /// <returns>the fixed condition, or null when it cannot be fixed</returns>
+    /// <returns>the fixed condition, or null when the index does not match this condition</returns>
     public IndexCondition? CloneWithIndexColumns(Index index)
-        => throw new TODOException("IndexCondition.cloneWithIndexColumns: reordering rows is not ported");
+    {
+        if (!IsCompoundColumns())
+        {
+            throw Message.DbException.GetInternalError("The cloneWithColumns() method cannot be with a single column.");
+        }
+
+        IndexColumn[] indexColumns = index.GetIndexColumns();
+        int length = indexColumns.Length;
+        if (length != columns!.Length)
+        {
+            return null;
+        }
+
+        int[] newOrder = new int[length];
+        int found = 0;
+        for (int i = 0; i < length; i++)
+        {
+            if (indexColumns[i] is null || indexColumns[i].GetColumn() is null)
+            {
+                return null;
+            }
+
+            for (int j = 0; j < columns.Length; j++)
+            {
+                if (ReferenceEquals(columns[j], indexColumns[i].GetColumn()))
+                {
+                    newOrder[j] = i;
+                    found++;
+                }
+            }
+        }
+
+        if (found != length)
+        {
+            return null;
+        }
+
+        Column[] newColumns = new Column[length];
+        for (int i = 0; i < length; i++)
+        {
+            newColumns[i] = columns[newOrder[i]];
+        }
+
+        List<Expression> newList = new(length);
+        foreach (Expression expression in expressionList!)
+        {
+            if (expression is ValueExpression valueExpression)
+            {
+                ValueRow currentRow = (ValueRow)valueExpression.GetValue(null!);
+                ValueRow newRow = currentRow.CloneWithOrder(newOrder);
+                newList.Add(ValueExpression.Get(newRow));
+            }
+            else if (expression is ExpressionList currentRow)
+            {
+                ExpressionList newRow = currentRow.CloneWithOrder(newOrder);
+                newList.Add(newRow);
+            }
+            else
+            {
+                throw Message.DbException.GetInternalError(
+                    "Unexpected expression type: " + expression.GetType().Name);
+            }
+        }
+
+        return new IndexCondition(Comparison.InList, null, newColumns, null, newList, null);
+    }
 
 
 }

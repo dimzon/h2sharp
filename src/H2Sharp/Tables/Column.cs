@@ -313,17 +313,42 @@ public class Column : Typed
     /// Converts a row's values to the types of the given columns.
     /// </summary>
     /// <remarks>
-    /// Not ported. It copies the row and converts each value to its column's type, so that a
-    /// compound IN list read from storage compares against values of the right types. Until it
-    /// is here, a compound IN over columns of different types would compare unconverted values
-    /// and match rows it should not.
+    /// It copies the row and converts each value to its column's type, so that a compound IN
+    /// list read from storage compares against values of the right types.
     /// </remarks>
     /// <param name="provider">where casts come from</param>
     /// <param name="columns">the columns</param>
     /// <param name="valueRow">the row</param>
     /// <returns>the converted row</returns>
     public static Values.ValueRow Convert(Engine.CastDataProvider? provider, Column[] columns, Values.ValueRow valueRow)
-        => throw new TODOException("Column.convert: compound IN conversion is not ported");
+    {
+        Value[]? copy = null;
+        Value[] values = valueRow.GetList();
+        for (int i = values.Length; --i >= 0;)
+        {
+            Value v = values[i];
+            Value nv = columns[i].Convert(provider, v);
+            if (v != nv)
+            {
+                copy ??= (Value[])values.Clone();
+                copy[i] = nv;
+            }
+        }
+
+        if (copy is null)
+        {
+            return valueRow;
+        }
+
+        TypeInfo[] fields = new TypeInfo[columns.Length];
+        for (int i = 0; i < columns.Length; i++)
+        {
+            fields[i] = columns[i].GetTypeInfo();
+        }
+
+        TypeInfo typeInfo = TypeInfo.GetTypeInfo(Value.Row, 0, 0, new ExtTypeInfoRow(fields));
+        return Values.ValueRow.Get(typeInfo, copy);
+    }
     /// <returns>the value type</returns>
     public int GetValueType()
     {
@@ -448,7 +473,7 @@ public class Column : Typed
     /// Returns whether this column is an identity column.
     /// </summary>
     /// <returns>whether this column is an identity column</returns>
-    public bool IsIdentity()
+public bool IsIdentity()
     {
         // The reference's isIdentity: a column is an identity one when it has a sequence or
         // when it is waiting for one.

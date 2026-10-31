@@ -66,6 +66,12 @@ public abstract class Index : SchemaObject
     protected IndexColumn[] indexColumns = [];
 
     /// <summary>
+    /// Gets the index columns, the reference's getIndexColumns.
+    /// </summary>
+    /// <returns>the index columns</returns>
+    public IndexColumn[] GetIndexColumns() => indexColumns;
+
+    /// <summary>
     /// Table columns used in this index.
     /// </summary>
     protected Column[] columns = [];

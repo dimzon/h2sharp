@@ -630,6 +630,10 @@ public sealed partial class Parser
                 remaining = sql[statementStart..];
                 break;
             }
+            catch (H2SharpException e)
+            {
+                throw DbException.AddSql(e, sql);
+            }
 
             prepared.Add(next);
         }
@@ -2415,6 +2419,13 @@ public sealed partial class Parser
                 indexHints = ParseIndexHints(fromTable);
             }
         }
+        // The reference inherits the alias for CTE as views from the table name: a filter
+        // over a common table expression is aliased with its own name.
+        if (filterAlias is null && fromTable is Tables.CTE)
+        {
+            filterAlias = fromTable.GetTableName();
+        }
+
         return new(
             session, fromTable, filterAlias ?? (hasAlias ? null : tableName),
             rightsChecked: true, select, 0, indexHints);

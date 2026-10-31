@@ -90,7 +90,68 @@ public abstract class ConditionIn : Condition
         {
             CreateIndexConditions(filter, l, valueList);
         }
+        else if (left is ExpressionList list)
+        {
+            if (!list.IsArray())
+            {
+                // First we create a compound index condition.
+                CreateCompoundIndexCondition(filter, list);
+                // If there is no compound index, then the TableFilter#prepare()
+                // method will drop this condition.
+                // Then we create a unique index condition for each column.
+                CreateUniqueIndexConditions(filter, list);
+                // If there are two or more index conditions, IndexCursor will
+                // only use the first one.
+                // See: IndexCursor#canUseIndexForIn(Column)
+            }
+        }
     }
+
+    /// <summary>
+    /// Creates a compound index condition containing every item in the expression list.
+    /// </summary>
+    /// <param name="filter">the table filter</param>
+    /// <param name="list">the list of expressions</param>
+    private void CreateCompoundIndexCondition(TableFilter filter, ExpressionList list)
+    {
+        int c = list.GetSubexpressionCount();
+        Column[] columns = new Column[c];
+        for (int i = 0; i < c; i++)
+        {
+            Expression e = list.GetSubexpression(i);
+            if (e is not ExpressionColumn ec)
+            {
+                return;
+            }
+
+            if (filter != ec.GetTableFilter())
+            {
+                return;
+            }
+
+            columns[i] = ec.GetColumn()!;
+        }
+
+        TypeInfo colType = left.GetTypeInfo();
+        ExpressionVisitor visitor = ExpressionVisitor.GetNotFromResolverVisitor(filter);
+        foreach (Expression e in valueList)
+        {
+            TypeInfo higherType = TypeInfo.GetHigherType(colType, e.GetTypeInfo());
+            if (!e.IsEverything(visitor) || !Comparison.IsSafeIndexCondition(colType, higherType))
+            {
+                return;
+            }
+        }
+
+        filter.AddIndexCondition(IndexCondition.GetCompoundInList(columns, valueList));
+    }
+
+    /// <summary>
+    /// Creates a unique index condition for every column of the expression list.
+    /// </summary>
+    /// <param name="filter">the table filter</param>
+    /// <param name="list">the list of expressions</param>
+    protected abstract void CreateUniqueIndexConditions(TableFilter filter, ExpressionList list);
 
     /// <summary>
     /// Creates a unique index condition for the column.

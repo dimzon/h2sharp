@@ -112,7 +112,65 @@ public sealed class ConditionInConstantSet : ConditionIn
     }
 
     /// <inheritdoc/>
+    protected override void CreateUniqueIndexConditions(TableFilter filter, ExpressionList list)
+    {
+        int c = list.GetSubexpressionCount();
+        for (int i = 0; i < c; i++)
+        {
+            Expression e = list.GetSubexpression(i);
+            if (e is ExpressionColumn l && filter == l.GetTableFilter())
+            {
+                List<Expression> subList = new(valueList.Count);
+                foreach (Expression row in valueList)
+                {
+                    if (row is ExpressionList r)
+                    {
+                        if (r.IsArray() || r.GetSubexpressionCount() != c)
+                        {
+                            return;
+                        }
+
+                        subList.Add(r.GetSubexpression(i));
+                    }
+                    else if (row is ValueExpression ve)
+                    {
+                        Value v = ve.GetValue(null!);
+                        if (v.GetValueType() != Value.Row)
+                        {
+                            return;
+                        }
+
+                        Value[] values = ((ValueRow)v).GetList();
+                        if (c != values.Length)
+                        {
+                            return;
+                        }
+
+                        subList.Add(ValueExpression.Get(values[i]));
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+
+                TypeInfo rowType = l.GetTypeInfo();
+                foreach (Expression expression in subList)
+                {
+                    rowType = TypeInfo.GetHigherType(rowType, expression.GetTypeInfo());
+                }
+
+                CreateIndexConditions(filter, l, subList, rowType);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     protected override void CreateIndexConditions(TableFilter filter, ExpressionColumn l, List<Expression> valueList)
+        => CreateIndexConditions(filter, l, valueList, type);
+
+    private void CreateIndexConditions(TableFilter filter, ExpressionColumn l, List<Expression> valueList,
+        TypeInfo type)
     {
         TypeInfo colType = l.GetTypeInfo();
         TypeInfo higherType = TypeInfo.GetHigherType(colType, type);

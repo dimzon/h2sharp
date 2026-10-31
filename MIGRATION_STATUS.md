@@ -237,6 +237,28 @@ geometry-колонку вовсе), оператор `&&` в инфиксном
 `SPATIAL INDEX`, отказы, `USING RTREE`, план). Файловая БД переоткрывается с живым
 индексом (пробник).
 
+Планы оптимизатора: `TestCompoundIndexSearch` и `TestGeneralCommonTableQueries`
+проходят, `TestPersistentCommonTableExpressions` — три из четырёх под-кейсов.
+Составной `IN` по ROW-конструктору теперь проталкивается в составной индекс:
+`ConditionIn.CreateIndexConditions` получил ветку `left is ExpressionList`
+(эталон создаёт compound-условие плюс по одному уникальному на колонку),
+`IndexCondition.GetCurrentValueList` научился сортировать и приводить ValueRow-списки
+(`SortOrder.OfSortTypes` + `Column.Convert(provider, columns, valueRow)` — заглушка
+заменена телом эталона), `CloneWithIndexColumns` переносит условие под порядок
+колонок индекса (случай `(c, b)` против `(b, c)`; для этого у `Index` появился
+публичный `GetIndexColumns`, как в эталоне), а `IndexCursor.GetSpatialSearchRow`
+уже был закрыт spatial-работой. Попутно, по требованиям тех же тестов:
+`H2SharpException.Message` отвечает полной формой эталона
+(`{message}; SQL statement:
+{sql} [{code}-{build}]`), а SQL прикрепляется к
+исключению в эталонных точках (catch в `Parser.PrepareCommand`,
+`Command.ExecuteQuery/ExecuteUpdate`); фильтр CTE наследует алиас от имени таблицы
+(`buildTableFilter` эталона), отчего план печатает `FROM BB BB`; форматтер строк
+в CTE-тестах пишет `null` для DBNull, как Java `append((String) null)`.
+Остаток: `DROP ALL OBJECTS` с представлением над рекурсивным CTE — при
+перекомпиляции представления порт теряет область WITH и не находит CTE-таблицу;
+разбирается отдельно.
+
 Перенесены `Select.disableLazyForJoinSubqueries()` и `Query.queryWithoutCacheLazyCheck()`:
 внутренние VIEW-фильтры JOIN получают neverLazy, а его выполнение временно отключает
 session lazy-режим с восстановлением в finally. DerivedTable сохраняет эталонную
