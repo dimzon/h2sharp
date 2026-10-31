@@ -299,7 +299,10 @@ Update, Insert, все WHEN-ветки MergeUsing (SELECT-ветка не про
 в `ACCESS_MODE_DATA=r` дают 90097. `TestReadOnly` остаётся красным по одной
 под-кейсу — `TestReadOnlyDbCreate` создаёт `LOCAL TEMPORARY LINKED TABLE`
 (D-030, linked tables вне scope; плюс jdbc: URL, D-003) — помечен
-`BlockedByPort` с этим основанием; снимается вместе с D-030. Попутно:
+`BlockedByPort` с этим основанием; снимается вместе с D-030.
+Шифрование файла базы — вне scope по указанию пользователя: D-035 в
+`APPROVED_DEVIATIONS.md`; ключ `CIPHER` отвергается при открытии именованной
+ошибкой (как и было), `TestEncryptedDb` помечен `BlockedByPort`. Попутно:
 `TestMVStoreTool` чинен под object-ключи R-tree (полная сборка solution его
 вскрыла — ранние прогоны MvStore шли по устаревшим DLL), и оракул-сравнения
 сообщений нормализованы с обеих сторон: `H2SharpException.Message` теперь

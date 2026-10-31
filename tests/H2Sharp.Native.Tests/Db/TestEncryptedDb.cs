@@ -6,6 +6,10 @@
 // Modified (API): JDBC statements are ADO.NET commands, and the proxy form of
 // assertThrows becomes the lambda form, because a sealed class cannot be proxied. The
 // reference's main() entry is the runner; xUnit runs Test() directly.
+//
+// Out of scope by decision (D-035 in docs/APPROVED_DEVIATIONS.md): database file
+// encryption is not planned. The CIPHER URL key is refused at open with a named error
+// and an encrypted .mv.db file is not read; USER/PASSWORD keys are refused per D-004.
 using H2Sharp.Api;
 using Xunit;
 
@@ -34,6 +38,7 @@ public sealed class TestEncryptedDb : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
+    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         DeleteDb("encrypted");
