@@ -251,11 +251,20 @@ public sealed class DropTableStatement : Statement
     /// <inheritdoc/>
     public override int GetCommandType() => CommandInterface.DropTable;
 
-    /// <summary>The table name.</summary>
-    public string Name { get; set; } = string.Empty;
+    /// <summary>The tables to drop, in the order they were written.</summary>
+    public List<(string Name, string? Schema)> Tables { get; } = [];
 
     /// <summary>Whether IF EXISTS was written.</summary>
     public bool IfExists { get; set; }
+
+    /// <summary>Whether CASCADE was written after the list.</summary>
+    public bool Cascade { get; set; }
+
+    /// <summary>Whether RESTRICT was written after the list.</summary>
+    public bool Restrict { get; set; }
+
+    /// <summary>Whether IGNORE was written after the list.</summary>
+    public bool SetDefault { get; set; }
 }
 
 /// <summary>CREATE [UNIQUE] INDEX.</summary>
@@ -8262,7 +8271,27 @@ public sealed partial class Parser
         Ddl.DropTable drop = new(session);
         drop.SetSql(statement.Sql, null);
         drop.SetIfExists(statement.IfExists);
-        drop.AddTable(CurrentSchema(session), statement.Name);
+        foreach ((string name, string? schemaName) in statement.Tables)
+        {
+            Schemas.Schema schema = schemaName is null
+                ? CurrentSchema(session)
+                : session.GetDatabase().GetSchema(schemaName);
+            drop.AddTable(schema, name);
+        }
+
+        if (statement.Cascade)
+        {
+            drop.SetDropAction(Constraints.ConstraintActionType.CASCADE);
+        }
+        else if (statement.Restrict)
+        {
+            drop.SetDropAction(Constraints.ConstraintActionType.RESTRICT);
+        }
+        else if (statement.SetDefault)
+        {
+            drop.SetDropAction(Constraints.ConstraintActionType.SET_DEFAULT);
+        }
+
         return drop;
     }
 
@@ -9488,7 +9517,43 @@ public sealed partial class Parser
             ifExists = true;
         }
 
-        return new DropTableStatement { Name = ReadIdentifier(), IfExists = ifExists };
+        // The reference reads a comma-separated list: DROP TABLE a, b drops both in one
+        // statement, which is also what makes its RESTRICT dependency check pass when the
+        // dropped tables reference each other.
+        DropTableStatement statement = new();
+        do
+        {
+            string name = ReadIdentifierWithSchemaName(session, out string? schemaName);
+            statement.Tables.Add((name, schemaName));
+        }
+        while (ReadIf(Token.Comma));
+
+        if (!ifExists && CurrentType == ParserUtil.If)
+        {
+            Read();
+            Expect(ParserUtil.Exists, "EXISTS");
+            ifExists = true;
+        }
+
+        statement.IfExists = ifExists;
+
+        // CASCADE | RESTRICT | IGNORE after the list, as the reference reads it.
+        if (IsWord("CASCADE"))
+        {
+            statement.Cascade = true;
+            _ = IsWord("CONSTRAINTS");
+        }
+        else if (IsWord("RESTRICT"))
+        {
+            statement.Restrict = true;
+        }
+        else if (IsWord("IGNORE"))
+        {
+            // TODO SET_DEFAULT works in the same way as CASCADE (the reference's own note).
+            statement.SetDefault = true;
+        }
+
+        return statement;
     }
 
     /// <summary>

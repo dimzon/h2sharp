@@ -317,7 +317,23 @@ SqlClient-контракт, авторам пакета заведён
 `H2CommandReaderLifecycleTests` (10 тестов Data-набора): присвоение при
 открытом читателе, отказ второму читателю, повторное выполнение после
 dispose, чужая команда на том же соединении, non-reader-выполнение,
-`CommandBehavior.CloseConnection`, null-текст. Попутно:
+`CommandBehavior.CloseConnection`, null-текст.
+
+`TestMaterializedView` проходит. Не хватало зависимостей materialized view:
+`Table` получил список `dependentMaterializedViews` (эталонные
+`addDependentMaterializedView`/`remove`/`get`), `CreateMaterializedView`
+регистрирует view в таблицах запроса (эталонный цикл после create/replace),
+`DropMaterializedView` снимает регистрацию; `DropTable` в RESTRICT собирает
+**все** зависимые объекты — обычные view, materialized view и ограничения
+(чужие таблицы пропускаются, как в эталоне) — и называет их все через
+`", "` с дедупликацией, вместо прежнего первого попавшегося view. Пробник:
+`DROP TABLE` при живой MV даёт 90107 с именем `TEST_VIEW`, после
+`DROP MATERIALIZED VIEW` таблица удаляется. Заодно закрыт кусок #61:
+`DROP TABLE a, b` — список через запятую + `CASCADE|RESTRICT|IGNORE` после
+списка (парсер читал одно имя и не читал акцию; jar-пробник подтвердил, что
+эталон отказывает `drop table a` при FK `b→a` тем же 90107, а `drop table a, b`
+проходит — оба в одном drop-множестве); `TestMvcc1` возвращён к тексту эталона
+`drop table a, b` вместо двух отдельных операторов. Попутно:
 `TestMVStoreTool` чинен под object-ключи R-tree (полная сборка solution его
 вскрыла — ранние прогоны MvStore шли по устаревшим DLL), и оракул-сравнения
 сообщений нормализованы с обеих сторон: `H2SharpException.Message` теперь

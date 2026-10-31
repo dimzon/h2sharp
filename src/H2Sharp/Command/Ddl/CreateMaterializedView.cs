@@ -126,6 +126,11 @@ public sealed class CreateMaterializedView : SchemaCommand
             db.UpdateMeta(GetSession(), view);
         }
 
+        foreach (Tables.Table table in select!.GetTables())
+        {
+            table.AddDependentMaterializedView(view);
+        }
+
         return 0;
     }
 

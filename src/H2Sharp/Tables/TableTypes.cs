@@ -2443,6 +2443,29 @@ public abstract class Table
     /// <returns>the views; empty when there are none</returns>
     public List<TableView> GetDependentViews() => dependentViews is null ? [] : [.. dependentViews];
 
+    private List<MaterializedView>? dependentMaterializedViews;
+
+    /// <summary>Adds a materialized view that reads this table.</summary>
+    /// <param name="view">the view</param>
+    public void AddDependentMaterializedView(MaterializedView view)
+    {
+        dependentMaterializedViews ??= [];
+        if (!dependentMaterializedViews.Contains(view))
+        {
+            dependentMaterializedViews.Add(view);
+        }
+    }
+
+    /// <summary>Removes a materialized view that no longer reads this table.</summary>
+    /// <param name="view">the view</param>
+    public void RemoveDependentMaterializedView(MaterializedView view)
+        => dependentMaterializedViews?.Remove(view);
+
+    /// <summary>Gets the materialized views that read this table.</summary>
+    /// <returns>the views; empty when there are none</returns>
+    public List<MaterializedView> GetDependentMaterializedViews()
+        => dependentMaterializedViews is null ? [] : [.. dependentMaterializedViews];
+
     /// <summary>Adds a synonym of this table.</summary>
     /// <param name="synonym">the synonym</param>
     public void AddSynonym(TableSynonym synonym)

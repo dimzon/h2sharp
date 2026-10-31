@@ -14,6 +14,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using H2Sharp.Constraints;
 using H2Sharp.Engine;
 using H2Sharp.Schemas;
@@ -109,11 +110,34 @@ public sealed class DropTable : DefineCommand
 
             if (dropAction == ConstraintActionType.RESTRICT)
             {
-                List<Tables.TableView> views = table.GetDependentViews();
-                if (views.Count > 0)
+                // The reference collects every object that would dangle — dependent views,
+                // dependent materialized views and constraints — and names them all.
+                List<string> dependencies = [];
+                foreach (Tables.TableView v in table.GetDependentViews())
+                {
+                    dependencies.Add(v.GetTableName());
+                }
+
+                foreach (Tables.MaterializedView v in table.GetDependentMaterializedViews())
+                {
+                    dependencies.Add(v.GetTableName());
+                }
+
+                foreach (Constraints.Constraint c in table.GetConstraints())
+                {
+                    // The reference checks the table against the set of tables being dropped:
+                    // a constraint inside the dropped group does not dangle.
+                    Tables.Table constraintTable = c.GetTable();
+                    if (!drops.Any(d => ReferenceEquals(d.Table, constraintTable)))
+                    {
+                        dependencies.Add(c.GetName()!);
+                    }
+                }
+
+                if (dependencies.Count > 0)
                 {
                     throw Message.DbException.Get(Api.ErrorCode.CannotDrop2, table.GetTableName(),
-                        views[0].GetTableName());
+                        string.Join(", ", new HashSet<string>(dependencies)));
                 }
             }
 

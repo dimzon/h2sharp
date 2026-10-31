@@ -86,8 +86,10 @@ public sealed class TestMvcc1 : TestDb
                 "insert into b values('un B', 1)");
             Commit2();
             Rollback1();
-            Execute(s1, "drop table a");
-            Execute(s1, "drop table b");
+            // The reference drops both in one statement: the FK on b references a, so a
+            // separate `drop table a` would be refused with CANNOT_DROP_2 — both tables in
+            // one DROP TABLE are in the same drop set, and the constraint does not dangle.
+            Execute(s1, "drop table a, b");
             Commit2();
 
             // it should not be possible to drop a table

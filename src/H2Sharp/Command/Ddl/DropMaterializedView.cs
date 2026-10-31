@@ -49,6 +49,12 @@ public sealed class DropMaterializedView : SchemaCommand
                 throw DbException.Get(ErrorCode.ViewNotFound1, viewName);
             }
 
+            MaterializedView materializedView = (MaterializedView)view;
+            foreach (Tables.Table table in materializedView.GetSelect().GetTables())
+            {
+                table.RemoveDependentMaterializedView(materializedView);
+            }
+
             GetSession().GetDatabase().RemoveSchemaObject(GetSession(), view);
         }
 
