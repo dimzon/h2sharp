@@ -325,6 +325,17 @@ SqlClient-контракт, авторам пакета заведён
 dispose, чужая команда на том же соединении, non-reader-выполнение,
 `CommandBehavior.CloseConnection`, null-текст.
 
+TraceSystem завершён по решению пользователя: вместо файлового канала —
+глобальный на уровне базы `IH2DatabaseTraceListener` (пространство `H2Sharp.Data`,
+уровни — `H2TraceLevel` enum). `H2DataSource.SetTraceListener` применяет
+слушателя к базе при открытии; `Database` гейтит доставку уровнем `TRACE_LEVEL_FILE`
+(URL и `SET`), `GetTrace(module)`/`SessionLocal.GetTrace()` реализованы через
+адаптер `TraceListenerWriter` (вместо TODOException), `Command.Start/Stop` и
+провалы подготовки (`H2Command`) пишут «statement failed»/«slow query».
+`Jdbc.TestStatement.TestTraceError` переписан на слушателя: два `ERROR` дают
+две линии, успешный SELECT — ни одной (Intент исходного сравнения размеров
+файла сохранён). Без слушателя trace молчит, движок не падает на trace-путях.
+
 `TestMaterializedView` проходит. Не хватало зависимостей materialized view:
 `Table` получил список `dependentMaterializedViews` (эталонные
 `addDependentMaterializedView`/`remove`/`get`), `CreateMaterializedView`

@@ -137,7 +137,16 @@ public abstract class Command : CommandInterface
     /// Start the stopwatch.
     /// </summary>
     protected void Start()
-        => throw new TODOException("Command.start: the trace system has no writer yet");
+    {
+        if (GetTrace().IsInfoEnabled())
+        {
+            StartTimeNanos = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+    }
+
+    private Message.Trace? trace;
+
+    private Message.Trace GetTrace() => trace ??= Session.GetDatabase().GetTrace(Message.Trace.Command.ToString());
 
     /// <summary>
     /// Sets the progress of this command.
@@ -176,6 +185,17 @@ public abstract class Command : CommandInterface
                 Session.Commit(false);
             }
         }
+
+        if (StartTimeNanos != 0 && GetTrace().IsInfoEnabled())
+        {
+            long timeMillis = (System.Diagnostics.Stopwatch.GetTimestamp() - StartTimeNanos)
+                * 1000 / System.Diagnostics.Stopwatch.Frequency;
+            StartTimeNanos = 0;
+            if (timeMillis > Constants.SlowQueryLimitMs)
+            {
+                GetTrace().Info("slow query: {0} ms", timeMillis);
+            }
+        }
     }
 
     /// <summary>
@@ -198,6 +218,7 @@ public abstract class Command : CommandInterface
         {
             bool callStop = true;
             Session.StartStatementWithinTransaction(this);
+            Start();
             try
             {
                 ResultInterface result = Query(maxrows);
@@ -270,12 +291,14 @@ public abstract class Command : CommandInterface
             MvStore.Tx.Transaction transaction = Session.GetTransaction();
             long savepoint = transaction.SetSavepoint();
             Session.StartStatementWithinTransaction(this);
+            Start();
             try
             {
                 return RunWithThreadLocalSession(() => UpdateRows(generatedKeysRequest));
             }
             catch (H2SharpException e)
             {
+                GetTrace().Error(e, "statement failed");
                 try
                 {
                     // A deadlock victim is rolled back as a whole; another failed statement only

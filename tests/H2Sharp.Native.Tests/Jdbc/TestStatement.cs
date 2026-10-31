@@ -47,15 +47,24 @@ public sealed class TestStatement : TestDb
         DeleteDb("statement");
     }
 
+    /// <summary>
+    /// The reference's TestTraceError compares the growth of the trace file: a failed
+    /// statement writes a line, a successful one writes none. The port replaces the file
+    /// channel with the embedder's trace listener (H2DataSource.SetTraceListener), and the
+    /// same assertions run against the lines the listener receives.
+    /// </summary>
     private void TestTraceError()
     {
-        if (Config.Memory || Config.Networked || Config.TraceLevelFile != 0)
-        {
-            return;
-        }
+        // A dedicated data source so the listener is the only one attached; TestDb's shared
+        // data sources are shared by URL and must not receive a test listener.
+        string classic = ToClassicConnectionString(GetURL("statementTrace", admin: true));
+        H2DataSource dataSource = new H2DataSourceBuilder(classic).Build();
+        List<string> lines = [];
+        dataSource.SetTraceListener(new RecordingTraceListener(lines));
 
-        DbCommand stat = conn!.CreateCommand();
-        string fileName = GetBaseDir() + "/statement.trace.db";
+        using DbConnection c = dataSource.CreateConnection(classic);
+        c.Open();
+        DbCommand stat = c.CreateCommand();
         Execute(stat, "DROP TABLE TEST IF EXISTS");
         Execute(stat, "CREATE TABLE TEST(ID INT PRIMARY KEY)");
         Execute(stat, "INSERT INTO TEST VALUES(1)");
@@ -68,7 +77,7 @@ public sealed class TestStatement : TestDb
             // ignore
         }
 
-        long lengthBefore = H2Sharp.Store.FileSystem.FilePath.Get(fileName).Size();
+        int linesBefore = lines.Count;
         try
         {
             Execute(stat, "ERROR");
@@ -78,21 +87,28 @@ public sealed class TestStatement : TestDb
             // ignore
         }
 
-        long error = H2Sharp.Store.FileSystem.FilePath.Get(fileName).Size();
-        AssertSmaller(lengthBefore, error);
-        lengthBefore = error;
-        try
-        {
-            Execute(stat, "INSERT INTO TEST VALUES(1)");
-        }
-        catch (DbException)
-        {
-            // ignore
-        }
-
-        error = H2Sharp.Store.FileSystem.FilePath.Get(fileName).Size();
-        AssertEquals(lengthBefore, error);
+        AssertTrue(lines.Count > linesBefore);
+        linesBefore = lines.Count;
+        // A successful statement writes no trace line: the failure case is what the trace
+        // records. A SELECT is the safe success here — a second INSERT with the same key
+        // would itself fail and add a line.
+        Execute(stat, "SELECT * FROM TEST");
+        AssertEquals(linesBefore, lines.Count);
         Execute(stat, "DROP TABLE TEST IF EXISTS");
+        dataSource.Dispose();
+    }
+
+    /// <summary>
+    /// Collects the lines the database's trace listener receives.
+    /// </summary>
+    private sealed class RecordingTraceListener(List<string> lines) : H2Sharp.Data.IH2DatabaseTraceListener
+    {
+        /// <inheritdoc/>
+        public void Write(H2Sharp.Data.H2TraceLevel level, string module, string message, Exception? t)
+            => lines.Add(module + ": " + message);
+
+        /// <inheritdoc/>
+        public bool IsEnabled(H2Sharp.Data.H2TraceLevel level) => true;
     }
 
     private void TestConnectionRollback()

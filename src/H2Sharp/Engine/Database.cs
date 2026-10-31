@@ -1334,20 +1334,57 @@ public sealed partial class Database : CastDataProvider
         return Interlocked.Increment(ref modificationMetaId) - 1;
     }
 
+    private volatile Data.IH2DatabaseTraceListener? traceListener;
+
+    private volatile int traceLevelFile = TraceLevels.DefaultTraceLevelFile;
+
+    /// <summary>
+    /// Sets the listener the whole database reports its trace lines to, or null to trace
+    /// nowhere.
+    /// </summary>
+    /// <remarks>
+    /// The listener replaces the reference's file channel: the embedder takes the lines
+    /// instead of a <c>.trace.db</c> file collecting them. The database's file level gates the
+    /// delivery, which is what keeps <c>TRACE_LEVEL_FILE</c> and <c>SET TRACE_LEVEL_FILE</c>
+    /// meaningful.
+    /// </remarks>
+    /// <param name="listener">the listener, or null</param>
+    internal void SetTraceListener(Data.IH2DatabaseTraceListener? listener)
+    {
+        traceListener = listener;
+    }
+
+    /// <summary>
+    /// Sets the trace level that gates delivery to the listener.
+    /// </summary>
+    /// <param name="level">the level</param>
+    internal void SetTraceLevelFile(int level) => traceLevelFile = level;
+
     /// <summary>
     /// Gets the trace object for the given module.
     /// </summary>
     /// <remarks>
-    /// Refuses for now, because the reference's trace is a module id plus a writer and this
-    /// assembly has the interface but no writer yet (the reference's TraceSystem is not ported).
-    /// Returning a trace that writes nowhere would be a working trace that tells nobody
-    /// anything, which is worse than refusing: a caller that debugs with it would find silence
-    /// where the reference writes lines.
+    /// Every module trace of this database shares one writer, which forwards to the
+    /// embedder's listener when one is set. Without a listener nothing is delivered, and the
+    /// writer answers the default file level so that a caller asking whether a line would go
+    /// anywhere still gets the level's own answer.
     /// </remarks>
     /// <param name="module">the module name</param>
     /// <returns>the trace</returns>
     public Trace GetTrace(string module)
-        => throw new TODOException("Database.getTrace: no TraceWriter is ported yet");
+        => new(new TraceListenerWriter(new DeliveringTraceListener(this)), module);
+
+    /// <summary>
+    /// Delivers lines to the current listener, through the current file level.
+    /// </summary>
+    private sealed class DeliveringTraceListener(Database database) : Data.IH2DatabaseTraceListener
+    {
+        public void Write(Data.H2TraceLevel level, string module, string message, Exception? t)
+            => database.traceListener?.Write(level, module, message, t);
+
+        public bool IsEnabled(Data.H2TraceLevel level)
+            => database.traceListener is not null && (int)level <= database.traceLevelFile;
+    }
 
     /// <summary>
     /// Adds a session, so the database knows it is in use.

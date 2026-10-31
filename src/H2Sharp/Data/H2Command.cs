@@ -460,7 +460,21 @@ public sealed class H2Command : DbCommand
             return [new Command.CommandContainer(current, text, new Command.Dml.NoOperation(current))];
         }
 
-        H2Sharp.Command.CommandInterface command = current.PrepareCommand(text);
+        H2Sharp.Command.CommandInterface command;
+        try
+        {
+            command = current.PrepareCommand(text);
+        }
+        catch (H2SharpException e)
+        {
+            // The embedder's trace listener is the replacement for the reference's trace
+            // file: a statement that fails to prepare is the case the file would have
+            // recorded. The session and database exist here, so the trace is reachable.
+            current.GetDatabase().GetTrace(H2Sharp.Message.Trace.Command.ToString())
+                .Error(e, "statement failed");
+            throw;
+        }
+
         List<Command.CommandContainer> containers;
         if (command is Command.CommandList list)
         {

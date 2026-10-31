@@ -1163,8 +1163,12 @@ public sealed class SessionLocal : Session
         => throw new TODOException("SessionLocal.getClusterServers");
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The session's lines report to the database's listener, under the JDBC module the
+    /// reference's per-session trace uses.
+    /// </remarks>
     public override H2Sharp.Message.Trace GetTrace()
-        => throw new TODOException("SessionLocal.getTrace: the trace system has no writer yet");
+        => database.GetTrace(H2Sharp.Message.Trace.ModuleNames[H2Sharp.Message.Trace.Jdbc]);
 
     /// <summary>
     /// Whether this session has a pending transaction.

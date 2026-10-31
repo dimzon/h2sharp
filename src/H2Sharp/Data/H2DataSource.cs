@@ -31,6 +31,27 @@ public sealed class H2DataSource : DbDataSource
 
     private bool disposed;
 
+    private IH2DatabaseTraceListener? traceListener;
+
+    /// <summary>
+    /// Sets the listener the whole database reports its trace lines to.
+    /// </summary>
+    /// <remarks>
+    /// The listener is database-wide: it applies to the database this data source owns, now
+    /// and after it is opened, and is cleared by passing null. An embedder that wants the
+    /// engine's lines (errors, statements, cache reports) supplies one here instead of
+    /// collecting a trace file.
+    /// </remarks>
+    /// <param name="listener">the listener, or null</param>
+    public void SetTraceListener(IH2DatabaseTraceListener? listener)
+    {
+        lock (sync)
+        {
+            traceListener = listener;
+            database?.SetTraceListener(listener);
+        }
+    }
+
     internal H2DataSource(
         ConnectionInfo connectionInfo,
         string connectionString,
@@ -99,6 +120,7 @@ public sealed class H2DataSource : DbDataSource
                 // The data source, not the last connection, owns the database. H2's
                 // DB_CLOSE_DELAY=-1 expresses the same rule for a database without sessions.
                 database.SetCloseDelay(-1);
+                database.SetTraceListener(traceListener);
             }
 
             current = database;
