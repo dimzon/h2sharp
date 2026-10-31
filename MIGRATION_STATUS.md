@@ -272,6 +272,20 @@ session lazy-режим с восстановлением в finally. DerivedTab
 non-lazy; port full run — 6122 / 65 мс. Это воспроизводимое падение native-теста
 в эталоне; проверка и её пороги сохранены.
 
+Разбор 2026-10-31 (пробники против порта и jar): в lazy-режиме обе реализации
+перематериализуют derived-таблицу на каждую строку внешнего фильтра — замер
+счётчиками: 5000 подзапросов за одно выполнение и в порту, и в эталоне
+(у эталона 778–884 мс lazy против 15 мс прогретого non-lazy — порог
+`tNotLazy*2 > tLazy` не выполняется; порт — ~5 с против ~54 мс, та же форма).
+Причина в обеих сторонах: lazy отключает кэш результата верхнего запроса
+(`Query.query`: `isLazyQueryExecution() && !neverLazy`), а `disableLazyForJoinSubqueries`
+эталона помечает только фильтры с `TableType.VIEW` — derived-таблица
+(`DerivedTable.getTableType() == null`) не помечается и гоняется по кругу через
+`query.query(0)`. Тест в эталоне исключён из CI (`isEnabled() -> !config.ci`),
+H2 гоняет его только локально. Красный — не дефект порта; сам перенос
+ленивого выполнения (возврат `LazyResultSelect` из `Select.queryWithoutCache`,
+commit-on-close) — issue #76.
+
 Языковые адаптации: `ExpressionVisitor.getDependencies()` назван `GetDependencySet()`
 (C# не допускает совпадение с константой GetDependencies). Коллектор Query использует
 существующий D-011 `HashSet<object>`, поскольку Table не DbObject. Java-лямбда
