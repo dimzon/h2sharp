@@ -169,6 +169,26 @@ public sealed class ScriptCommand : Prepared
             }
         }
 
+        List<Sequence> sequences = [];
+        foreach (Schema schema in schemas)
+        {
+            foreach (Sequence sequence in schema.GetAllSequences())
+            {
+                // The sequence of an identity column belongs to its table and is scripted
+                // with it, as in the reference.
+                if (!sequence.GetBelongsToTable())
+                {
+                    sequences.Add(sequence);
+                }
+            }
+        }
+
+        sequences.Sort(static (a, b) => string.CompareOrdinal(a.GetName(), b.GetName()));
+        foreach (Sequence sequence in sequences)
+        {
+            Add(sequence.GetCreateSql());
+        }
+
         List<Table> tables = [];
         foreach (Schema schema in schemas)
         {

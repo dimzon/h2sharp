@@ -289,6 +289,13 @@ public sealed class Sequence : SchemaObject
             }
         }
 
+        // The reference divides and lets the wrap happen; the CLR div instruction throws on
+        // long.MinValue / -1 even unchecked, so the wrapped answer is spelled out.
+        if (increment == -1 && range == long.MinValue)
+        {
+            return long.MinValue;
+        }
+
         return range / increment;
     }
 
@@ -327,7 +334,7 @@ public sealed class Sequence : SchemaObject
     {
         ArgumentNullException.ThrowIfNull(bounds);
         long v = increment >= 0 ? bounds[1] : -1;
-        if (startValue is not null && increment >= 0 && startValue.Value > v)
+        if (startValue is not null && increment < 0 && startValue.Value > v)
         {
             v = startValue.Value;
         }
