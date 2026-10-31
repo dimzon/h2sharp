@@ -306,6 +306,15 @@ Update, Insert, все WHEN-ветки MergeUsing (SELECT-ветка не про
 	`APPROVED_DEVIATIONS.md`; ключ `CIPHER` отвергается при открытии ошибкой
 	`FEATURE_NOT_SUPPORTED_1` (вместо TODO). `TestEncryptedDb` закрепляет отказ
 	и выполняется в Native-наборе, `BlockedByPort` снят.
+
+Режимы совместимости. `TestCompatibilitySQLServer` зелёный: `WITH(...)`-хинты
+(читаются и отбрасываются, флаг `discardWithTableHints`) и `PRIMARY KEY IDENTITY`
+(`identityClause` после констрейнтов). Oracle: `ENABLE/DISABLE [VALIDATE|NOVALIDATE]`
+и `ALTER TABLE ... MODIFY` разбираются; `CAST (строки со временем AS DATE)`
+принимается как в эталоне. `TestCompatibility` остаётся красным: под-кейс
+case-чувствительных идентификаторов требует `DATABASE_TO_UPPER=FALSE`, который
+не портируется (D-033). `TestCompatibilityOracle.TestDate` — расхождение чтения
+DATE (часовой пояс) — отдельный вопрос времени.
 `SchemaRegistryTests` переписаны под D-033 (два красных теста утверждали
 case-insensitive реестр по умолчанию — семантику до D-033): case-корпус
 гоняется на базе с `CASE_INSENSITIVE_IDENTIFIERS=TRUE` (там три написания

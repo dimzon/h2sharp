@@ -2455,9 +2455,58 @@ public sealed partial class Parser
             filterAlias = fromTable.GetTableName();
         }
 
+        // SQL Server mode reads WITH(...) table hints and discards them, as the
+        // reference's buildTableFilter does.
+        if (session.GetMode().DiscardWithTableHints)
+        {
+            DiscardWithTableHints();
+        }
+
         return new(
             session, fromTable, filterAlias ?? (hasAlias ? null : tableName),
             rightsChecked: true, select, 0, indexHints);
+    }
+
+    /// <summary>
+    /// Reads and discards a WITH(...) table-hint list, as the reference's
+    /// discardWithTableHints: SQL Server mode accepts hints, H2 ignores them.
+    /// </summary>
+    private void DiscardWithTableHints()
+    {
+        if (ReadIfCompat("WITH"))
+        {
+            Expect(Token.OpenParen, "(");
+            do
+            {
+                DiscardTableHint();
+            } while (ReadIfMore());
+        }
+    }
+
+    /// <summary>
+    /// Discards one table hint: INDEX = expr, INDEX(expr, ...), or any other expression.
+    /// </summary>
+    private void DiscardTableHint()
+    {
+        if (ReadIfCompat("INDEX"))
+        {
+            if (ReadIf(Token.OpenParen))
+            {
+                do
+                {
+                    ReadExpression();
+                } while (ReadIfMore());
+            }
+            else
+            {
+                Expect(Token.Equal, "=");
+                ReadExpression();
+            }
+        }
+        else
+        {
+            ReadExpression();
+        }
     }
 
     /// <summary>

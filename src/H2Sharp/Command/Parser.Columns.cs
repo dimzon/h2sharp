@@ -25,6 +25,11 @@ public sealed partial class Parser
         string tableName = ReadIdentifierWithSchema(session!, out Schema schema);
         if (IsWord("ALTER")) return ParseAlterTableAlter(schema, tableName, ifTableExists);
         if (IsWord("SET")) return ParseAlterTableSet(schema, tableName, ifTableExists);
+        if ((session?.GetMode() ?? provider.GetMode()).AlterTableModifyColumn
+            && ReadIfCompat("MODIFY"))
+        {
+            return ParseAlterTableModify(schema, tableName, ifTableExists);
+        }
         if (IsWord("RENAME")) return ParseAlterTableRename(schema, tableName, ifTableExists);
         if (IsWord("ADD", consume: false)
             && !NextIs("CONSTRAINT") && !NextIs("PRIMARY") && !NextIs("FOREIGN")
@@ -38,6 +43,45 @@ public sealed partial class Parser
         AlterTableStatement statement = (AlterTableStatement)ReadStatement();
         statement.Sql = sql;
         return PrepareAlterTable(session!, statement);
+    }
+
+    /// <summary>
+    /// Parses ALTER TABLE ... MODIFY [COLUMN] [ ( ] column ( null | type ) [ ) ], as the
+    /// reference's parseAlterTableModifyColumn: MySQL/MariaDB/Oracle compatibility.
+    /// </summary>
+    private Prepared ParseAlterTableModify(Schema schema, string tableName, bool ifTableExists)
+    {
+        IsWord("COLUMN");
+        bool hasOpeningBracket = ReadIf(Token.OpenParen);
+        string columnName = ReadIdentifier();
+        Column? column = ColumnIfTableExists(schema, tableName, columnName, ifTableExists, false);
+        NullConstraintType nullConstraint = ParseNotNullConstraint();
+        Prepared command;
+        switch (nullConstraint)
+        {
+            case NullConstraintType.NullIsAllowed:
+            case NullConstraintType.NullIsNotAllowed:
+                AlterTableAlterColumn alter = new(session!, schema);
+                alter.SetTableName(tableName);
+                alter.SetIfTableExists(ifTableExists);
+                alter.SetOldColumn(column);
+                alter.SetType(nullConstraint == NullConstraintType.NullIsAllowed
+                    ? CommandInterface.AlterTableAlterColumnDropNotNull
+                    : CommandInterface.AlterTableAlterColumnNotNull);
+                command = alter;
+                break;
+            default:
+                command = ParseAlterTableAlterColumnType(schema, tableName, columnName,
+                    ifTableExists, false, false);
+                break;
+        }
+
+        if (hasOpeningBracket)
+        {
+            Expect(Token.CloseParen, ")");
+        }
+
+        return command;
     }
 
     private Prepared ParseAlterTableAdd(Schema schema, string tableName, bool ifTableExists)
@@ -360,9 +404,41 @@ public sealed partial class Parser
 
     private NullConstraintType ParseNotNullConstraint()
     {
-        if (ReadIfWords("NOT", "NULL")) return NullConstraintType.NullIsNotAllowed;
-        if (IsWord("NULL")) return NullConstraintType.NullIsAllowed;
-        return NullConstraintType.NoNullConstraintFound;
+        NullConstraintType nullConstraint;
+        if (ReadIfWords("NOT", "NULL")) nullConstraint = NullConstraintType.NullIsNotAllowed;
+        else if (ReadIfCompat("NULL")) nullConstraint = NullConstraintType.NullIsAllowed;
+        else return NullConstraintType.NoNullConstraintFound;
+
+        // The reference's Oracle compatibility words ride on the same parse.
+        if ((session?.GetMode() ?? provider.GetMode()).Enum == Mode.ModeEnum.Oracle)
+        {
+            nullConstraint = ParseNotNullCompatibility(nullConstraint);
+        }
+
+        return nullConstraint;
+    }
+
+    private NullConstraintType ParseNotNullCompatibility(NullConstraintType nullConstraint)
+    {
+        if (ReadIfCompat("ENABLE"))
+        {
+            if (!ReadIfWords("VALIDATE") && ReadIfWords("NOVALIDATE"))
+            {
+                // Turn off constraint, allow NULLs
+                nullConstraint = NullConstraintType.NullIsAllowed;
+            }
+        }
+        else if (ReadIfCompat("DISABLE"))
+        {
+            // Turn off constraint, allow NULLs
+            nullConstraint = NullConstraintType.NullIsAllowed;
+            if (!ReadIfWords("VALIDATE"))
+            {
+                ReadIfWords("NOVALIDATE");
+            }
+        }
+
+        return nullConstraint;
     }
 
     private NullConstraintType ParseNotNullConstraint(NullConstraintType constraint)
@@ -378,6 +454,28 @@ public sealed partial class Parser
         column.SetDomain(domain);
         column.SetComment(domain.GetComment());
         return column;
+    }
+
+    /// <summary>
+    /// Whether the IDENTITY or AUTO_INCREMENT compatibility clause declares an identity
+    /// column, as the reference's parseCompatibilityIdentity. It is read after the column
+    /// constraints, so "id int primary key identity" parses.
+    /// </summary>
+    private bool ParseCompatibilityIdentity(Column column, Mode mode)
+    {
+        if (mode.AutoIncrementClause && ReadIfCompat("AUTO_INCREMENT"))
+        {
+            ParseCompatibilityIdentityOptions(column);
+            return true;
+        }
+
+        if (mode.IdentityClause && ReadIfCompat("IDENTITY"))
+        {
+            ParseCompatibilityIdentityOptions(column);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>Reads the optional (start[, increment]) after the IDENTITY type.</summary>
@@ -454,6 +552,10 @@ public sealed partial class Parser
         if (!column.IsIdentity() && !column.IsGenerated() && ReadIfWords("ON", "UPDATE"))
             column.SetOnUpdateExpression(session!, ReadExpression());
         if (!column.IsIdentity())
+        {
+            nullConstraint = ParseNotNullConstraint(nullConstraint);
+        }
+        if (ParseCompatibilityIdentity(column, mode))
         {
             nullConstraint = ParseNotNullConstraint(nullConstraint);
         }

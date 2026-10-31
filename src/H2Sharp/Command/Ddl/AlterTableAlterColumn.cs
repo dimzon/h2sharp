@@ -105,14 +105,27 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
         {
             case CommandInterface.AlterTableAddColumn:
                 bool exists = false;
-                if (ifNotExists && columnsToAdd.Count == 1)
+                foreach (Column added in columnsToAdd)
                 {
+                    bool found = false;
                     foreach (Column c in table.GetColumns())
                     {
-                        if (c.GetName().Equals(columnsToAdd[0].GetName(), StringComparison.OrdinalIgnoreCase))
+                        if (session.GetDatabase().IdentifierComparer.Equals(c.GetName(), added.GetName()))
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (found)
+                    {
+                        if (ifNotExists && columnsToAdd.Count == 1)
                         {
                             exists = true;
-                            break;
+                        }
+                        else
+                        {
+                            throw DbException.Get(ErrorCode.DuplicateColumnName1, added.GetName());
                         }
                     }
                 }

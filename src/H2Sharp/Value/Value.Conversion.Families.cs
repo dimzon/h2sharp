@@ -1207,7 +1207,21 @@ public abstract partial class Value
             case Varchar:
             case VarcharIgnorecase:
             case Char:
-                return ValueDate.Parse((GetString() ?? string.Empty).Trim());
+                {
+                    string text = (GetString() ?? string.Empty).Trim();
+                    try
+                    {
+                        return ValueDate.Parse(text);
+                    }
+                    catch (H2SharpException) when (
+                        RequireProvider(provider).GetMode().Enum == Mode.ModeEnum.Oracle)
+                    {
+                        // Oracle accepts a timestamp string where a DATE is asked for, and
+                        // keeps the date part.
+                        return ValueDate.FromDateValue(
+                            ((ValueTimestamp)ValueTimestamp.Parse(text, provider)).GetDateValue());
+                    }
+                }
 
             case Null:
                 throw DbException.GetInternalError();

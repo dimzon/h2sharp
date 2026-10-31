@@ -262,6 +262,17 @@ public sealed class Mode
     public bool IdentityClause { get; }
 
     /// <summary>
+    /// Whether WITH(...) table hints are read and discarded, as in SQL Server mode.
+    /// </summary>
+    public bool DiscardWithTableHints { get; }
+
+    /// <summary>Whether ALTER TABLE ... MODIFY COLUMN is read, as in MySQL/MariaDB/Oracle.</summary>
+    public bool AlterTableModifyColumn { get; }
+
+    /// <summary>Whether MODIFY keeps the old nullability when the type changes.</summary>
+    public bool AlterTableModifyColumnPreserveNullability { get; }
+
+    /// <summary>
     /// The type names this mode does not allow, as in the reference's disallowedTypes.
     /// </summary>
     public IReadOnlySet<string> DisallowedTypes { get; }
@@ -305,6 +316,9 @@ public sealed class Mode
         bool identityClause = false,
         bool allowEmptyInPredicate = false,
         bool allowEmptySchemaValuesAsDefaultSchema = false,
+        bool discardWithTableHints = false,
+        bool alterTableModifyColumn = false,
+        bool alterTableModifyColumnPreserveNullability = false,
         IReadOnlySet<string>? disallowedTypes = null)
     {
         Enum = modeEnum;
@@ -336,6 +350,9 @@ public sealed class Mode
         IdentityClause = identityClause;
         AllowEmptyInPredicate = allowEmptyInPredicate;
         AllowEmptySchemaValuesAsDefaultSchema = allowEmptySchemaValuesAsDefaultSchema;
+        DiscardWithTableHints = discardWithTableHints;
+        AlterTableModifyColumn = alterTableModifyColumn;
+        AlterTableModifyColumnPreserveNullability = alterTableModifyColumnPreserveNullability;
         DisallowedTypes = disallowedTypes ?? FrozenSet<string>.Empty;
     }
 
@@ -392,19 +409,21 @@ public sealed class Mode
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
                 greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true,
                 allowPlusForStringConcat: true, topInSelect: true, topInDml: true,
-                identityClause: true, allowEmptySchemaValuesAsDefaultSchema: true),
+                identityClause: true, allowEmptySchemaValuesAsDefaultSchema: true,
+                discardWithTableHints: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
-                autoIncrementClause: true),
+                autoIncrementClause: true, alterTableModifyColumn: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
-                autoIncrementClause: true),
+                autoIncrementClause: true, alterTableModifyColumn: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true,
-                mergeWhere: true, decimalSequences: true),
+                mergeWhere: true, decimalSequences: true,
+                alterTableModifyColumn: true, alterTableModifyColumnPreserveNullability: true),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
                 logIsLogBase10: true, groupByColumnIndex: true, serialDataTypes: true,
