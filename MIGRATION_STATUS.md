@@ -324,6 +324,15 @@ case-чувствительных идентификаторов требует 
 (DbSettings/SettingsBase), которого у порта нет; параметр не влияет на
 поведение встроенного движка. Тест остаётся `BlockedByPort`.
 
+Power-off seam (`TestBase.Crash`/`SetPowerOffCount`) — вне scope по решению
+пользователя: полный seam требует счётчика дисковых операций в `FileStore`
+с обрывом на середине записи и восстановлением при переоткрытии. `TestListener`
+и `TestTwoPhaseCommit` остаются `BlockedByPort` с этим основанием.
+
+`TestScript`: `SCRIPT ... DROP` реализован (проход DROP-строк перед CREATE,
+порядок сверен с jar). Сам тест остаётся красным по независимым пробелам
+скрипта (например, `ROWNUM` в `Parser.readTerm`), которые не относятся к DROP.
+
 `TestStringCache` — исследовано: `StringUtils.ToUpperEnglish` реализует
 полный Java-маппинг (как `String.toUpperCase(Locale.ENGLISH)`), а .NET
 `ToUpperInvariant` — простой. Расхождений 108 точек в BMP (SS: ß→"SS",
