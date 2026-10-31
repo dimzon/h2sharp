@@ -133,7 +133,7 @@ public sealed class TestStreams
                 {
                     size = Math.Min(size, test.Length - j);
                     int l = decompress.Read(test, j, size);
-                    if (l <= 0)
+                    if (l < 0)
                     {
                         break;
                     }

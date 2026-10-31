@@ -174,6 +174,7 @@ public static class FileUtils
     /// The reference's own <c>createDirectories</c> creates the whole chain, unlike its
     /// <c>FilePath.createDirectory</c>, which requires the parent to exist; the difference matters
     /// because the store calls this one before opening a file in a directory that may be missing.
+    /// The work goes through the FilePath scheme, so a memory file system creates nothing.
     /// </remarks>
     /// <param name="directory">the directory, or null for the current one</param>
     public static void CreateDirectories(string? directory)
@@ -183,10 +184,19 @@ public static class FileUtils
             return;
         }
 
-        DiskFilePath path = (DiskFilePath)FilePath.Get(directory);
-        if (!path.Exists())
+        FilePath path = FilePath.Get(directory);
+        if (path.Exists())
         {
-            _ = System.IO.Directory.CreateDirectory(path.SystemName);
+            if (!path.IsDirectory())
+            {
+                // This will fail, as in the reference.
+                path.CreateDirectory();
+            }
+        }
+        else
+        {
+            CreateDirectories(path.GetParent()?.ToString());
+            path.CreateDirectory();
         }
     }
 
