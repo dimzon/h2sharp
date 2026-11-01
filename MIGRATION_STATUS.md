@@ -7939,6 +7939,13 @@ DI/builders — отдельные надстройки. Обычный IntelliS
 ADR/AGENTS/спринт обновлены; существующий IH2Test служит примером pre-Open
 настроек, но production registration не переносится в тестовый интерфейс.
 
+### CREATE ALIAS — вне scope (по решению пользователя)
+
+Java-классы в порте не загружаются; `CREATE ALIAS` (Java-исходники, имена
+классов, `FOR 'class'`) не совместим со встроенным движком. Поверхность для
+вызываемых функций — .NET UDF (`RegisterUdf`/`RegisterRawUdf`). 9 Native-тестов
+Test*Alias остаются красными как фиксация, SQL-тесты не удаляются.
+
 ### Триггеры: первый этап (.NET API)
 
 **Второй этап (SQL CREATE/DROP TRIGGER, TRIGGERS info-schema) — вне scope по
