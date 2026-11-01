@@ -36,6 +36,8 @@ internal sealed class ClrAggregate : AbstractAggregate
         this.definition = definition;
     }
 
+    private bool EffectiveDistinct => distinct && !definition.Options.InvariantToDuplicates;
+
     /// <inheritdoc/>
     public override Expression Optimize(SessionLocal session)
     {
@@ -62,6 +64,12 @@ internal sealed class ClrAggregate : AbstractAggregate
         switch (visitor.GetVisitorType())
         {
             case ExpressionVisitor.Deterministic:
+                if (!definition.Options.Deterministic)
+                {
+                    return false;
+                }
+
+                break;
             case ExpressionVisitor.OptimizableAggregate:
                 return false;
             default:
@@ -117,7 +125,7 @@ internal sealed class ClrAggregate : AbstractAggregate
     /// <inheritdoc/>
     protected override object CreateAggregateData()
     {
-        return distinct
+        return EffectiveDistinct
             ? new AggregateDataCollecting(true, false, AggregateDataCollecting.NullCollectionMode.Ignored)
             : CreateInstance();
     }
@@ -125,44 +133,67 @@ internal sealed class ClrAggregate : AbstractAggregate
     /// <inheritdoc/>
     protected override Value GetAggregatedValue(SessionLocal session, object? aggregateData)
     {
-        IH2Aggregate aggregate;
-        if (distinct)
+        IH2Aggregate? aggregate = null;
+        bool transient = false;
+        try
         {
-            aggregate = CreateInstance();
-            if (aggregateData is AggregateDataCollecting data)
+            if (EffectiveDistinct)
             {
-                Value[]? values = data.GetArray();
-                if (values is not null)
+                aggregate = CreateInstance();
+                transient = true;
+                if (aggregateData is AggregateDataCollecting data)
                 {
-                    foreach (Value value in values)
+                    Value[]? values = data.GetArray();
+                    if (values is not null)
                     {
-                        if (args.Length == 1)
+                        foreach (Value value in values)
                         {
-                            aggregate.Accumulate(Call(() => AggregateValueConverter.ToDefaultObject(value)));
-                        }
-                        else
-                        {
-                            Value[] row = ((ValueRow)value).GetList();
-                            object?[] argValues = new object?[args.Length];
-                            for (int i = 0; i < args.Length; i++)
+                            if (args.Length == 1)
                             {
-                                int index = i;
-                                argValues[i] = Call(() => AggregateValueConverter.ToDefaultObject(row[index]));
+                                aggregate.Accumulate(Call(() => AggregateValueConverter.ToDefaultObject(value)));
                             }
+                            else
+                            {
+                                Value[] row = ((ValueRow)value).GetList();
+                                object?[] argValues = new object?[args.Length];
+                                for (int i = 0; i < args.Length; i++)
+                                {
+                                    int index = i;
+                                    argValues[i] = Call(() => AggregateValueConverter.ToDefaultObject(row[index]));
+                                }
 
-                            aggregate.Accumulate(Call(() => (object?)argValues));
+                                aggregate.Accumulate(Call(() => (object?)argValues));
+                            }
                         }
                     }
                 }
             }
-        }
-        else
-        {
-            aggregate = aggregateData as IH2Aggregate ?? CreateInstance();
-        }
+            else if (aggregateData is IH2Aggregate stored)
+            {
+                aggregate = stored;
+            }
+            else
+            {
+                aggregate = CreateInstance();
+                transient = true;
+            }
 
-        object? result = Call(aggregate.GetResult);
-        return result is null ? ValueNull.Instance : Call(() => AggregateValueConverter.ToValue(result, type!, session));
+            object? result = Call(aggregate.GetResult);
+            return result is null
+                ? ValueNull.Instance
+                : Call(() => AggregateValueConverter.ToValue(result, type!, session));
+        }
+        finally
+        {
+            if (transient)
+            {
+                Call(() =>
+                {
+                    DisposeIfNeeded(aggregate);
+                    return 0;
+                });
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -215,7 +246,7 @@ internal sealed class ClrAggregate : AbstractAggregate
 
     private void UpdateData(SessionLocal session, object aggregateData, Value?[]? remembered)
     {
-        if (distinct)
+        if (EffectiveDistinct)
         {
             Value[] argValues = new Value[args.Length];
             Value? arg = null;
@@ -256,10 +287,18 @@ internal sealed class ClrAggregate : AbstractAggregate
     {
         return Call(() =>
         {
-            IH2Aggregate aggregate = definition.Factory();
+            IH2Aggregate aggregate = definition.Provider.CreateAggregate();
             aggregate.Init();
             return aggregate;
         });
+    }
+
+    private static void DisposeIfNeeded(object? value)
+    {
+        if (value is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 
     private T Call<T>(Func<T> action)

@@ -377,11 +377,11 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
     }
 
-    void IH2Extensions.RegisterAggregate(string name, Func<IH2Aggregate> factory)
+    void IH2Extensions.RegisterAggregate(string name, IH2AggregateProvider provider)
     {
         EnsureCanRegister();
-        ArgumentNullException.ThrowIfNull(factory);
-        extensionConfiguration.AddAggregate(SqlName(name), factory);
+        ArgumentNullException.ThrowIfNull(provider);
+        extensionConfiguration.AddAggregate(SqlName(name), provider);
     }
 
     void IH2RawExtensions.RegisterRawUdf(

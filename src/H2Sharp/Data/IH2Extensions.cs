@@ -37,10 +37,11 @@ public interface IH2Extensions
     void RegisterUdf<T1, T2, T3, T4, TResult>(string name, Func<T1, T2, T3, T4, TResult> implementation, bool deterministic = false);
 
     /// <summary>
-    /// Registers a user-defined aggregate. The factory is called for every aggregate
-    /// instance the engine needs.
+    /// Registers a user-defined aggregate provider.
     /// </summary>
-    void RegisterAggregate(string name, Func<IH2Aggregate> factory);
+    /// <param name="name">the SQL name</param>
+    /// <param name="provider">the aggregate provider</param>
+    void RegisterAggregate(string name, IH2AggregateProvider provider);
 
     /// <summary>
     /// Registers a hash algorithm factory. The factory is called for every operation, so the

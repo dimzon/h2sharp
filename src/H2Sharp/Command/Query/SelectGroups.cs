@@ -20,6 +20,7 @@
  * group walking wait for OVER; remove() refuses with them, since only the window path
  * removes groups mid-walk.
  */
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using H2Sharp.Engine;
@@ -250,6 +251,19 @@ public abstract class SelectGroups
 
     private readonly Dictionary<Expressions.Analysis.DataAnalysisOperation, Expressions.Analysis.PartitionData> windowData = [];
     private readonly Dictionary<Expressions.Analysis.DataAnalysisOperation, SortedDictionary<Value, Expressions.Analysis.PartitionData>> windowPartitionData = [];
+    private readonly List<IDisposable> disposables = [];
+
+    /// <summary>
+    /// Registers aggregate data that owns resources and must be disposed with this group data.
+    /// </summary>
+    /// <param name="data">the aggregate data, or any object</param>
+    internal void RegisterDisposable(object? data)
+    {
+        if (data is IDisposable disposable)
+        {
+            disposables.Add(disposable);
+        }
+    }
 
     /// <summary>Gets the window data for an expression and partition.</summary>
     public Expressions.Analysis.PartitionData? GetWindowExprData(Expressions.Analysis.DataAnalysisOperation expr, Value? partitionKey)
@@ -373,11 +387,22 @@ public abstract class SelectGroups
     /// </summary>
     public virtual void Reset()
     {
-        currentGroupByExprData = null;
-        exprToIndexInGroupByData.Clear();
-        windowData.Clear();
-        windowPartitionData.Clear();
-        currentGroupRowId = 0;
+        try
+        {
+            foreach (IDisposable disposable in disposables)
+            {
+                disposable.Dispose();
+            }
+        }
+        finally
+        {
+            disposables.Clear();
+            currentGroupByExprData = null;
+            exprToIndexInGroupByData.Clear();
+            windowData.Clear();
+            windowPartitionData.Clear();
+            currentGroupRowId = 0;
+        }
     }
 
     /// <summary>

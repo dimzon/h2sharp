@@ -254,6 +254,7 @@ public abstract class DataAnalysisOperation : Expression
         if (partition is null)
         {
             object data = forOrderBy ? new List<Value?[]>() : CreateAggregateData();
+            groupData.RegisterDisposable(data);
             groupData.SetWindowExprData(this, key, new PartitionData(data));
             return data;
         }
@@ -321,6 +322,7 @@ public abstract class DataAnalysisOperation : Expression
         if (partition is null)
         {
             data = ordered ? new List<Value?[]>() : CreateAggregateData();
+            groupData.RegisterDisposable(data);
             partition = new PartitionData(data);
             groupData.SetWindowExprData(this, key, partition);
         }
@@ -344,6 +346,7 @@ public abstract class DataAnalysisOperation : Expression
         if (data is null && !ifExists)
         {
             data = CreateAggregateData();
+            groupData.RegisterDisposable(data);
             groupData.SetCurrentGroupExprData(this, data);
         }
 

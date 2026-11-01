@@ -509,15 +509,24 @@ TODO следующего среза: полноценный data-driven catalog
 
 ### Пользовательские агрегаты
 
-Добавлен `IH2Extensions.RegisterAggregate(string, Func<IH2Aggregate>)` на
-закрытом соединении. Контракт — MSSQL-подобный lifecycle
-(`Init` / `Accumulate` / `GetResult`), но без соединения в `Init`; `GetResult`
-пересчитываемый, потому что движок вызывает его для окон и пустых групп.
-`Merge` вынесен в отдельный `IH2MergeableAggregate` и текущим движком не
-вызывается.
+Добавлен `IH2Extensions.RegisterAggregate(string, IH2AggregateProvider)` на
+закрытом соединении. Провайдер — основной контракт: он отдаёт `Options` и
+создаёт новый экземпляр на каждую группу/окно. Делегатная и generic-формы —
+extension-методы над `AggregateProvider`/`AggregateProvider<T>`. Контракт —
+MSSQL-подобный lifecycle (`Init` / `Accumulate` / `GetResult`), но без
+соединения в `Init`; `GetResult` пересчитываемый. `Merge` вынесен в отдельный
+`IH2MergeableAggregate` и текущим движком не вызывается.
 
 Публичные типы: `H2Sharp.Data.Extensions.IH2Aggregate`,
-`IH2MergeableAggregate`, `AggregateBase`, `CollectingAggregateBase`.
+`IH2AggregateProvider`, `AggregateOptions`, `AggregateProvider`,
+`AggregateProvider<T>`, `IH2MergeableAggregate`, `AggregateBase`,
+`CollectingAggregateBase`. `Options` читается один раз при регистрации.
+`Deterministic` используется визитором, `InvariantToDuplicates` отключает сбор
+`DISTINCT`, `InvariantToOrder` зарезервирован. `IDisposable` не является
+частью `IH2Aggregate`; агрегат реализует его сам, если владеет ресурсами, и
+движок диспозит такие экземпляры в `SelectGroups.Reset()`/`finally` временных и
+ordered-window данных.
+
 Реализация — `ClrAggregate` в `Expressions/Aggregate/UserDefined/`; DISTINCT
 собирается штатным `AggregateDataCollecting` и проигрывается в свежий экземпляр
 при получении результата, FILTER и OVER идут через `AbstractAggregate`.
@@ -532,18 +541,21 @@ compatibility. Встроенные агрегаты сохраняют имен
 
 Ограничения: нет `CREATE/DROP AGGREGATE`, метаданных `INFORMATION_SCHEMA`,
 `SCRIPT` и персистентности регистрации; нет MSSQL-сериализации
-(`Read`/`Write`, `MaxByteSize`) и `IsInvariantTo*`. Встроенные агрегаты остаются
+(`Read`/`Write`, `MaxByteSize`). `InvariantToOrder` пока не влияет на
+исполнение: отдельного ordered-aggregate пути нет. Встроенные агрегаты остаются
 на `Value`-уровне; их возможный рефакторинг — только внутренний, без перевода
 на публичный контракт.
 
-Тесты: `tests/H2Sharp.Data.Tests/H2AggregateTests.cs` и оракул
+Тесты: `tests/H2Sharp.Data.Tests/H2AggregateTests.cs`,
+`H2AggregateProviderTests.cs` и оракул
 `tests/H2Sharp.Tests/AggregateOracleTests.cs` (Java `CREATE AGGREGATE` с
 `Oracle$Median`).
 
 Опциональная сборка `H2Sharp.Extensions` — витрина и набор утилит:
 `StringAgg` (`CollectingAggregateBase`), `GeometricMean`, `HarmonicMean`,
-`Product`, `WeightedAverage` и `CountIf` (`AggregateBase`). Регистрация —
-`RegisterH2Aggregates()` или отдельные `RegisterStringAgg()`,
+`Product`, `WeightedAverage` и `CountIf` (`AggregateBase`). У каждого есть
+провайдер с метаданными по умолчанию (`StringAggProvider` и т.д.). Регистрация
+— `RegisterH2Aggregates()` или отдельные `RegisterStringAgg()`,
 `RegisterGeometricMean()`, `RegisterHarmonicMean()`, `RegisterProduct()`,
 `RegisterWeightedAverage()`, `RegisterCountIf()`. По умолчанию имена с
 префиксом `H2_`, чтобы не конфликтовать со встроенными `STRING_AGG` /

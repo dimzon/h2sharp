@@ -160,7 +160,7 @@ internal sealed class ExtensionConfiguration
         list.Sort(static (a, b) => a.Arity.CompareTo(b.Arity));
     }
 
-    internal void AddAggregate(string name, Func<IH2Aggregate> factory)
+    internal void AddAggregate(string name, IH2AggregateProvider provider)
     {
         if (udfs.ContainsKey(name))
         {
@@ -172,7 +172,7 @@ internal sealed class ExtensionConfiguration
             throw new InvalidOperationException("An aggregate named " + name + " is already registered");
         }
 
-        aggregates.Add(name, new AggregateDefinition(name, factory));
+        aggregates.Add(name, new AggregateDefinition(name, provider));
     }
 
     internal void AddHash(string name, Func<HashAlgorithm> factory)

@@ -8,6 +8,7 @@
  * Sliced the same way as its base: the argument mapping, optimization and group
  * routing are real, the ordered window loop refuses until OVER is read.
  */
+using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Command.Query;
@@ -137,8 +138,15 @@ public abstract class AbstractAggregate : Analysis.DataAnalysisOperation
         for (int i = 0; i < ordered.Count;)
         {
             object data = CreateAggregateData();
-            foreach (Value?[] row in WindowFrame.Iterator(over, session, ordered, GetOverOrderBySort(), i, false)) UpdateFromExpressions(session, data, row);
-            i = ProcessGroup(result, GetAggregatedValue(session, data), ordered, rowIdColumn, i, ordered.Count, grouped);
+            try
+            {
+                foreach (Value?[] row in WindowFrame.Iterator(over, session, ordered, GetOverOrderBySort(), i, false)) UpdateFromExpressions(session, data, row);
+                i = ProcessGroup(result, GetAggregatedValue(session, data), ordered, rowIdColumn, i, ordered.Count, grouped);
+            }
+            finally
+            {
+                DisposeIfNeeded(data);
+            }
         }
     }
     private static bool CheckVariableBounds(WindowFrame frame, List<Value?[]> ordered)
@@ -160,39 +168,53 @@ public abstract class AbstractAggregate : Analysis.DataAnalysisOperation
     private void AggregateFastPartition(SessionLocal session, Dictionary<int, Value> result, List<Value?[]> ordered, int rowIdColumn, bool grouped)
     {
         object data = CreateAggregateData();
-        int lastIncluded = -1;
-        Value? value = null;
-        for (int i = 0; i < ordered.Count;)
+        try
         {
-            int newLast = WindowFrame.GetEndIndex(over!, session, ordered, GetOverOrderBySort(), i);
-            if (newLast > lastIncluded)
+            int lastIncluded = -1;
+            Value? value = null;
+            for (int i = 0; i < ordered.Count;)
             {
-                for (int j = lastIncluded + 1; j <= newLast; j++) UpdateFromExpressions(session, data, ordered[j]);
-                lastIncluded = newLast;
-                value = GetAggregatedValue(session, data);
+                int newLast = WindowFrame.GetEndIndex(over!, session, ordered, GetOverOrderBySort(), i);
+                if (newLast > lastIncluded)
+                {
+                    for (int j = lastIncluded + 1; j <= newLast; j++) UpdateFromExpressions(session, data, ordered[j]);
+                    lastIncluded = newLast;
+                    value = GetAggregatedValue(session, data);
+                }
+                value ??= GetAggregatedValue(session, data);
+                i = ProcessGroup(result, value, ordered, rowIdColumn, i, ordered.Count, grouped);
             }
-            value ??= GetAggregatedValue(session, data);
-            i = ProcessGroup(result, value, ordered, rowIdColumn, i, ordered.Count, grouped);
+        }
+        finally
+        {
+            DisposeIfNeeded(data);
         }
     }
     private void AggregateFastPartitionInReverse(SessionLocal session, Dictionary<int, Value> result, List<Value?[]> ordered, int rowIdColumn, bool grouped)
     {
         object data = CreateAggregateData();
-        int firstIncluded = ordered.Count;
-        Value? value = null;
-        for (int i = firstIncluded - 1; i >= 0;)
+        try
         {
-            int newLast = over!.GetWindowFrame()!.GetStartIndex(session, ordered, GetOverOrderBySort(), i);
-            if (newLast < firstIncluded)
+            int firstIncluded = ordered.Count;
+            Value? value = null;
+            for (int i = firstIncluded - 1; i >= 0;)
             {
-                for (int j = firstIncluded - 1; j >= newLast; j--) UpdateFromExpressions(session, data, ordered[j]);
-                firstIncluded = newLast;
-                value = GetAggregatedValue(session, data);
+                int newLast = over!.GetWindowFrame()!.GetStartIndex(session, ordered, GetOverOrderBySort(), i);
+                if (newLast < firstIncluded)
+                {
+                    for (int j = firstIncluded - 1; j >= newLast; j--) UpdateFromExpressions(session, data, ordered[j]);
+                    firstIncluded = newLast;
+                    value = GetAggregatedValue(session, data);
+                }
+                value ??= GetAggregatedValue(session, data);
+                Value?[] last = ordered[i], current = last;
+                do { result[current[rowIdColumn]!.GetInt()] = value; }
+                while (--i >= 0 && grouped && overOrderBySort!.Compare(last, current = ordered[i]) == 0);
             }
-            value ??= GetAggregatedValue(session, data);
-            Value?[] last = ordered[i], current = last;
-            do { result[current[rowIdColumn]!.GetInt()] = value; }
-            while (--i >= 0 && grouped && overOrderBySort!.Compare(last, current = ordered[i]) == 0);
+        }
+        finally
+        {
+            DisposeIfNeeded(data);
         }
     }
     private int ProcessGroup(Dictionary<int, Value> result, Value value, List<Value?[]> ordered, int rowIdColumn, int i, int size, bool grouped)
@@ -205,9 +227,24 @@ public abstract class AbstractAggregate : Analysis.DataAnalysisOperation
     private void AggregateWholePartition(SessionLocal session, Dictionary<int, Value> result, List<Value?[]> ordered, int rowIdColumn)
     {
         object data = CreateAggregateData();
-        foreach (Value?[] row in ordered) UpdateFromExpressions(session, data, row);
-        Value value = GetAggregatedValue(session, data);
-        foreach (Value?[] row in ordered) result[row[rowIdColumn]!.GetInt()] = value;
+        try
+        {
+            foreach (Value?[] row in ordered) UpdateFromExpressions(session, data, row);
+            Value value = GetAggregatedValue(session, data);
+            foreach (Value?[] row in ordered) result[row[rowIdColumn]!.GetInt()] = value;
+        }
+        finally
+        {
+            DisposeIfNeeded(data);
+        }
+    }
+
+    private static void DisposeIfNeeded(object? data)
+    {
+        if (data is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 
     /// <inheritdoc/>

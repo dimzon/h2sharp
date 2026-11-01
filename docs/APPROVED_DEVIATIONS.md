@@ -455,15 +455,22 @@ SQL-скриптов (`SCRIPT ... CIPHER`) — отдельное решение
 (`Init` / `Accumulate` / `Merge` / `Terminate`), а не по
 `org.h2.api.Aggregate`. Поэтому нет `init(Connection)`, `GetResult` является
 пересчитываемым аналогом `Terminate`, а `Merge` вынесен в отдельный
-`IH2MergeableAggregate` и текущим движком не вызывается. Публичные типы —
-`H2Sharp.Data.Extensions.IH2Aggregate`, `IH2MergeableAggregate`,
-`AggregateBase`, `CollectingAggregateBase`. Встроенные агрегаты остаются на
-`Value`-уровне; их возможный рефакторинг — только внутренний, без перевода на
-публичный object-контракт. Ограничения: нет `CREATE/DROP AGGREGATE`,
-метаданных `INFORMATION_SCHEMA`, `SCRIPT`, персистентности и MSSQL-сериализации.
-Примеры-утилиты (`StringAgg`, `GeometricMean`, `HarmonicMean`, `Product`,
-`WeightedAverage`, `CountIf`) поставляются отдельной опциональной сборкой
-`H2Sharp.Extensions`.
+`IH2MergeableAggregate` и текущим движком не вызывается. Основной контракт
+регистрации — `IH2AggregateProvider` (`Options` + `CreateAggregate()`);
+`Func<IH2Aggregate>` и generic-форма — extension-обёртки. `AggregateOptions`
+содержит `Deterministic` и `InvariantToDuplicates`; `InvariantToOrder`
+зарезервирован, отдельного ordered-aggregate пути нет. Публичные типы —
+`H2Sharp.Data.Extensions.IH2Aggregate`, `IH2AggregateProvider`,
+`AggregateOptions`, `AggregateProvider`, `AggregateProvider<T>`,
+`IH2MergeableAggregate`, `AggregateBase`, `CollectingAggregateBase`.
+`IDisposable` не входит в `IH2Aggregate`: конкретный агрегат реализует его сам,
+если владеет ресурсами; движок диспозит такие экземпляры на границах жизни
+данных. Встроенные агрегаты остаются на `Value`-уровне; их возможный
+рефакторинг — только внутренний, без перевода на публичный object-контракт.
+Ограничения: нет `CREATE/DROP AGGREGATE`, метаданных `INFORMATION_SCHEMA`,
+`SCRIPT`, персистентности и MSSQL-сериализации. Примеры-утилиты (`StringAgg`,
+`GeometricMean`, `HarmonicMean`, `Product`, `WeightedAverage`, `CountIf`)
+поставляются отдельной опциональной сборкой `H2Sharp.Extensions`.
 
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 

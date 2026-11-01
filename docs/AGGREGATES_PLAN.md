@@ -34,7 +34,30 @@ public interface IH2MergeableAggregate : IH2Aggregate
 {
     void Merge(IH2MergeableAggregate other);
 }
+
+public interface IH2AggregateProvider
+{
+    AggregateOptions Options { get; }
+    IH2Aggregate CreateAggregate();
+}
+
+public sealed class AggregateOptions
+{
+    public bool Deterministic { get; init; }
+    public bool InvariantToDuplicates { get; init; }
+    public bool InvariantToOrder { get; init; }
+}
 ```
+
+Провайдер — основной контракт. `Options` читается один раз при регистрации;
+`CreateAggregate()` обязан возвращать новый экземпляр на каждую группу/окно.
+
+`AggregateProvider` (делегат) и `AggregateProvider<T>` — адаптеры, а
+`RegisterAggregate(name, Func<...>, options)` и `RegisterAggregate<T>` —
+extension-методы. `IH2Aggregate` и `AggregateBase` **не** наследуют
+`IDisposable`: конкретный агрегат реализует `IDisposable` только если владеет
+unmanaged/освобождаемыми ресурсами. Движок проверяет `is IDisposable` и
+диспозит такие экземпляры на границах жизни данных.
 
 Базовые классы:
 
@@ -43,16 +66,17 @@ public interface IH2MergeableAggregate : IH2Aggregate
   конструктор принимает число аргументов, результат вычисляет `Compute`.
   Сортировку и прочую логику пользователь делает сам.
 
-`AggregateInput`, `RowIndex`, `AggregateOptions`, `OrderedAggregateBase`,
-`SetOrderBy` не вводились: они либо не нужны, либо дублируют эталонные
-механизмы и создают лишние аллокации.
+`AggregateInput`, `RowIndex`, `OrderedAggregateBase`, `SetOrderBy` не вводились:
+они либо не нужны, либо дублируют эталонные механизмы и создают лишние
+аллокации.
 
 ## Регистрация и исполнение
 
-- `IH2Extensions.RegisterAggregate(string name, Func<IH2Aggregate> factory)`.
-  Регистрация только на закрытом, не disposed соединении.
-- `AggregateDefinition` хранит только имя и фабрику; тип и арность проверяет
-  `GetResultType`.
+- `IH2Extensions.RegisterAggregate(string name, IH2AggregateProvider provider)`.
+  Регистрация только на закрытом, не disposed соединении. Делегатная форма —
+  extension-метод над `AggregateProvider`.
+- `AggregateDefinition` хранит имя, провайдера и снимок `Options`; тип и
+  арность проверяет `GetResultType`.
 - `ExtensionConfiguration` / `ExtensionRuntime` хранят снапшот реестра;
   `HasAggregate` / `FindAggregate`.
 - `Parser.ReadFunction`: встроенный агрегат → зарегистрированный агрегат →
@@ -84,6 +108,12 @@ public interface IH2MergeableAggregate : IH2Aggregate
   `ErrorCode.ExceptionInFunction1`, как у UDF.
 - `GetResultType` вызывается на пробном экземпляре во время оптимизации; `Init`
   вызывается на пробном экземпляре и на каждом экземпляре данных.
+- `Deterministic` из `AggregateOptions` разрешает ответ детерминированного
+  визитора; `InvariantToDuplicates` отключает сбор `DISTINCT`; `InvariantToOrder`
+  зарезервирован, отдельного ordered-aggregate пути нет.
+- `IDisposable`-агрегаты диспозятся в `SelectGroups.Reset()`, для временных
+  `DISTINCT`/пустой группы — в `ClrAggregate.GetAggregatedValue`, для
+  ordered-window локальных данных — в `finally` соответствующего цикла.
 
 ## Примеры и тесты
 
@@ -100,7 +130,8 @@ public interface IH2MergeableAggregate : IH2Aggregate
   `H2_WEIGHTED_AVERAGE`;
 - `CountIf` — количество TRUE, NULL/FALSE не считаются; `H2_COUNT_IF`;
 - `AggregateExtensions.RegisterH2Aggregates()` и отдельные `Register*` методы —
-  регистрация на закрытом соединении.
+  регистрация провайдеров (`StringAggProvider`, `GeometricMeanProvider` и т.д.)
+  на закрытом соединении.
 
 `tests/H2Sharp.Data.Tests/H2AggregateTests.cs`:
 
@@ -116,6 +147,14 @@ public interface IH2MergeableAggregate : IH2Aggregate
   `Product`, `WeightedAverage`, `CountIf`;
 - `DISTINCT`, `FILTER`, `NULL`, пустая группа, пользовательское имя, ошибки
   отрицательных аргументов и весов.
+
+`tests/H2Sharp.Data.Tests/H2AggregateProviderTests.cs`:
+
+- регистрация через провайдер, делегат и generic;
+- снимок `Options` при регистрации;
+- `InvariantToDuplicates` из провайдера;
+- `IDisposable`-агрегат диспозится один раз в группе, `DISTINCT`, пустой
+  группе, `OVER`, ordered `OVER` и при исключении.
 
 `tests/H2Sharp.Tests/AggregateOracleTests.cs`:
 

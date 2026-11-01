@@ -4,6 +4,7 @@
  */
 using System;
 using H2Sharp.Data;
+using H2Sharp.Data.Extensions;
 
 namespace H2Sharp.Extensions;
 
@@ -54,11 +55,11 @@ public static class AggregateExtensions
     /// The built-in <c>STRING_AGG</c> keeps that name; register this aggregate under a
     /// different name if both should be available.
     /// </remarks>
-    public static void RegisterStringAgg(this IH2Extensions extensions, string name = DefaultStringAggName)
+    public static void RegisterStringAgg(this IH2Extensions extensions, string name = DefaultStringAggName, AggregateOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(extensions);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        extensions.RegisterAggregate(name, static () => new StringAgg());
+        extensions.RegisterAggregate(name, new StringAggProvider(options));
     }
 
     /// <summary>
@@ -66,11 +67,11 @@ public static class AggregateExtensions
     /// </summary>
     /// <param name="extensions">the closed connection's extension surface</param>
     /// <param name="name">the SQL name, <c>H2_GEOMETRIC_MEAN</c> by default</param>
-    public static void RegisterGeometricMean(this IH2Extensions extensions, string name = DefaultGeometricMeanName)
+    public static void RegisterGeometricMean(this IH2Extensions extensions, string name = DefaultGeometricMeanName, AggregateOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(extensions);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        extensions.RegisterAggregate(name, static () => new GeometricMean());
+        extensions.RegisterAggregate(name, new GeometricMeanProvider(options));
     }
 
     /// <summary>
@@ -78,11 +79,11 @@ public static class AggregateExtensions
     /// </summary>
     /// <param name="extensions">the closed connection's extension surface</param>
     /// <param name="name">the SQL name, <c>H2_PRODUCT</c> by default</param>
-    public static void RegisterProduct(this IH2Extensions extensions, string name = DefaultProductName)
+    public static void RegisterProduct(this IH2Extensions extensions, string name = DefaultProductName, AggregateOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(extensions);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        extensions.RegisterAggregate(name, static () => new Product());
+        extensions.RegisterAggregate(name, new ProductProvider(options));
     }
 
     /// <summary>
@@ -90,11 +91,11 @@ public static class AggregateExtensions
     /// </summary>
     /// <param name="extensions">the closed connection's extension surface</param>
     /// <param name="name">the SQL name, <c>H2_HARMONIC_MEAN</c> by default</param>
-    public static void RegisterHarmonicMean(this IH2Extensions extensions, string name = DefaultHarmonicMeanName)
+    public static void RegisterHarmonicMean(this IH2Extensions extensions, string name = DefaultHarmonicMeanName, AggregateOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(extensions);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        extensions.RegisterAggregate(name, static () => new HarmonicMean());
+        extensions.RegisterAggregate(name, new HarmonicMeanProvider(options));
     }
 
     /// <summary>
@@ -102,11 +103,11 @@ public static class AggregateExtensions
     /// </summary>
     /// <param name="extensions">the closed connection's extension surface</param>
     /// <param name="name">the SQL name, <c>H2_WEIGHTED_AVERAGE</c> by default</param>
-    public static void RegisterWeightedAverage(this IH2Extensions extensions, string name = DefaultWeightedAverageName)
+    public static void RegisterWeightedAverage(this IH2Extensions extensions, string name = DefaultWeightedAverageName, AggregateOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(extensions);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        extensions.RegisterAggregate(name, static () => new WeightedAverage());
+        extensions.RegisterAggregate(name, new WeightedAverageProvider(options));
     }
 
     /// <summary>
@@ -114,10 +115,10 @@ public static class AggregateExtensions
     /// </summary>
     /// <param name="extensions">the closed connection's extension surface</param>
     /// <param name="name">the SQL name, <c>H2_COUNT_IF</c> by default</param>
-    public static void RegisterCountIf(this IH2Extensions extensions, string name = DefaultCountIfName)
+    public static void RegisterCountIf(this IH2Extensions extensions, string name = DefaultCountIfName, AggregateOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(extensions);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        extensions.RegisterAggregate(name, static () => new CountIf());
+        extensions.RegisterAggregate(name, new CountIfProvider(options));
     }
 }

@@ -99,6 +99,33 @@ public sealed class H2AggregateTests
     }
 
     [Fact]
+    public void InvariantToDuplicatesSkipsDistinctCollection()
+    {
+        MaxWithCounter.Reset();
+        using H2Connection connection = NewConnection();
+        ((IH2Extensions)connection).RegisterAggregate("CUSTOM_MAX", () => new MaxWithCounter());
+        connection.Open();
+        Execute(connection, "CREATE TABLE T(V INT)");
+        Execute(connection, "INSERT INTO T VALUES (1), (1), (2), (2), (3)");
+
+        Assert.Equal("3", Scalar(connection, "SELECT CUSTOM_MAX(DISTINCT V) FROM T"));
+        Assert.Equal(3, MaxWithCounter.AccumulateCalls);
+
+        MaxWithCounter.Reset();
+        using H2Connection invariantConnection = NewConnection();
+        ((IH2Extensions)invariantConnection).RegisterAggregate(
+            "CUSTOM_MAX",
+            () => new MaxWithCounter(),
+            new AggregateOptions { InvariantToDuplicates = true });
+        invariantConnection.Open();
+        Execute(invariantConnection, "CREATE TABLE T(V INT)");
+        Execute(invariantConnection, "INSERT INTO T VALUES (1), (1), (2), (2), (3)");
+
+        Assert.Equal("3", Scalar(invariantConnection, "SELECT CUSTOM_MAX(DISTINCT V) FROM T"));
+        Assert.Equal(5, MaxWithCounter.AccumulateCalls);
+    }
+
+    [Fact]
     public void GetResultCanBeEvaluatedMoreThanOnce()
     {
         Median median = new();
@@ -309,6 +336,35 @@ public sealed class H2AggregateTests
 
             return builder.ToString();
         }
+    }
+
+    private sealed class MaxWithCounter : AggregateBase
+    {
+        internal static int AccumulateCalls;
+
+        internal static void Reset() => AccumulateCalls = 0;
+
+        private int? max;
+
+        public override TypeInfo GetResultType(IReadOnlyList<TypeInfo> inputTypes)
+            => TypeInfo.TypeInteger;
+
+        public override void Accumulate(object? value)
+        {
+            AccumulateCalls++;
+            if (value is null)
+            {
+                return;
+            }
+
+            int number = Convert.ToInt32(value, CultureInfo.InvariantCulture);
+            if (max is null || number > max)
+            {
+                max = number;
+            }
+        }
+
+        public override object? GetResult() => max;
     }
 
     private sealed class ConstantZeroAggregate : AggregateBase
