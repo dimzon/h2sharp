@@ -346,6 +346,10 @@ Power-off seam (`TestBase.Crash`/`SetPowerOffCount`) — вне scope по ре�
 остаётся TODO: его реализация требует обвязки retry-цикла в ExecuteUpdate, а не
 точечной правки.
 
+Сериализация store: `ValueDataType` теперь пишет/читает все виды INTERVAL
+(с signed-байтом отрицательности, как эталон) и ENUM (ordinal),
+roundtrip-тесты в MvStore.Tests.
+
 `TestScript`: `SCRIPT ... DROP` реализован (проход DROP-строк перед CREATE,
 порядок сверен с jar). Сам тест остаётся красным по независимым пробелам
 скрипта (например, `ROWNUM` в `Parser.readTerm`), которые не относятся к DROP.

@@ -542,8 +542,44 @@ public sealed class ValueDataType : BasicDataType<Value>
                     break;
                 }
 
+            case Value.IntervalYear:
+            case Value.IntervalMonth:
+            case Value.IntervalDay:
+            case Value.IntervalHour:
+            case Value.IntervalMinute:
+                {
+                    ValueInterval interval = (ValueInterval)v;
+                    int ordinal = type - Value.IntervalYear;
+                    if (interval.IsNegative())
+                    {
+                        ordinal = ~ordinal;
+                    }
+
+                    buff.Put(Interval).Put((byte)ordinal).PutVarLong(interval.GetLeading());
+                    break;
+                }
+
+            case Value.IntervalSecond:
+            case Value.IntervalYearToMonth:
+            case Value.IntervalDayToHour:
+            case Value.IntervalDayToMinute:
+            case Value.IntervalDayToSecond:
+            case Value.IntervalHourToMinute:
+            case Value.IntervalHourToSecond:
             case Value.IntervalMinuteToSecond:
-                throw new TODOException("ValueDataType.write: INTERVAL");
+                {
+                    ValueInterval interval = (ValueInterval)v;
+                    int ordinal = type - Value.IntervalYear;
+                    if (interval.IsNegative())
+                    {
+                        ordinal = ~ordinal;
+                    }
+
+                    buff.Put(Interval).Put((byte)ordinal)
+                        .PutVarLong(interval.GetLeading())
+                        .PutVarLong(interval.GetRemaining());
+                    break;
+                }
 
             case Value.Blob:
                 {
@@ -687,11 +723,14 @@ public sealed class ValueDataType : BasicDataType<Value>
                 return ValueInteger.Get(DataUtils.ReadVarInt(buff, ref position));
 
             case Enum:
-                // The ordinal is on disk but the list of labels is not: an ENUM needs its
-                // enumerator set to become a value, and that comes from the column type, which
-                // the row reader is not given here. The reference reads it through the row
-                // factory for the same reason.
-                throw new TODOException("ValueDataType.read: ENUM needs the enumerator list");
+                {
+                    // The ordinal is on disk but the list of labels is not: an ENUM needs its
+                    // enumerator set to become a value, and that comes from the column type,
+                    // which the row reader is not given here. The reference answers the ordinal
+                    // alone when no column type is at hand, and so does this reader.
+                    int ordinal = DataUtils.ReadVarInt(buff, ref position);
+                    return ValueInteger.Get(ordinal);
+                }
 
             case BigintNeg:
                 return ValueBigint.Get(-DataUtils.ReadVarLong(buff, ref position));
@@ -817,7 +856,17 @@ public sealed class ValueDataType : BasicDataType<Value>
                 }
 
             case Interval:
-                throw new TODOException("ValueDataType.read: INTERVAL");
+                {
+                    // The ordinal byte is signed: its sign carries the negative flag, as in
+                    // the reference's buff.get().
+                    sbyte signedOrdinal = (sbyte)buff[position++];
+                    bool negative = signedOrdinal < 0;
+                    int ordinal = negative ? ~signedOrdinal : signedOrdinal;
+                    long leading = DataUtils.ReadVarLong(buff, ref position);
+                    long remaining = ordinal < 5 ? 0 : DataUtils.ReadVarLong(buff, ref position);
+                    return ValueInterval.From(
+                        (H2Sharp.Api.IntervalQualifier)ordinal, negative, leading, remaining);
+                }
 
             case Blob:
                 {
