@@ -14,21 +14,21 @@
 py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-lines 200 --top 25
 ```
 
-`H2SharpSql.Specs` теперь тоже собирает coverlet: **884 passed, 68 skipped**,
+`H2SharpSql.Specs` теперь тоже собирает coverlet: **893 passed, 68 skipped**,
 и его отчёт входит в общий merge.
 
 ## Итоговые цифры
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 66 241 | 81 596 | **81.18%** |
-| Ветви | 27 063 | 35 412 | **76.42%** |
+| Строки | 66 584 | 81 596 | **81.60%** |
+| Ветви | 27 191 | 35 412 | **76.78%** |
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 81.18% | 76.44% |
+| `H2Sharp` | 81.60% | 76.81% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -38,12 +38,28 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Сьют | Результат |
 |---|---|
-| `H2Sharp.Data.Tests` | 650 passed |
+| `H2Sharp.Data.Tests` | 654 passed |
 | `H2Sharp.MvStore.Tests` | 89 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
 | `H2Sharp.Tests` | 1557 passed |
-| `H2SharpSql.Specs` | 884 passed, 68 skipped |
+| `H2SharpSql.Specs` | 893 passed, 68 skipped |
 | `H2Sharp.Native.Tests` | 86 passed, 23 skipped в file-профиле + 11 тяжёлых тестов в memory-профиле (см. ниже) |
+
+## Прирост от последних тестов
+
+| Область | Было | Стало |
+|---|---:|---:|
+| Общие строки | 81.18% | **81.60%** |
+| Общие ветви | 76.42% | **76.78%** |
+| `MathFunction.cs` | 58.7% | **80.8%** |
+| `MVSortedTempResult.cs` | 0.0% | **51.4%** |
+| `MVPlainTempResult.cs` | 0.0% | **51.2%** |
+| `MVTempResult.cs` | 0.0% | **66.7%** |
+| `SimpleCase.cs` | 63.4% | **64.8%** |
+
+Добавлены тесты на типовые ветви `ROUND`/`TRUNC`/`MOD`/`ROUNDMAGIC`, на
+многооперандный `CASE` и на внешние сортированные/обычные temp-результаты
+через файловую БД с `MAX_MEMORY_ROWS`.
 
 ## Native-тесты: почему не весь набор
 
@@ -163,34 +179,34 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 | Файл | Покрытие |
 |---|---:|
-| `MvStore/Db/MVSortedTempResult.cs` | 0.0% |
 | `MvStore/Db/MVSpatialIndex.cs` | 42.0% |
+| `MvStore/Db/MVSortedTempResult.cs` | 51.4% |
 | `Indexes/IndexCondition.cs` | 52.1% |
-| `MvStore/Db/ValueDataType.cs` | 55.6% |
 | `Command/Dml/ScriptCommand.cs` | 57.0% |
 | `MvStore/MVStoreTool.cs` | 58.6% |
-| `Expressions/Functions/MathFunction.cs` | 58.7% |
 | `Util/DateTimeTemplate.cs` | 59.4% |
 | `Command/Dml/Merge.cs` | 60.1% |
-| `Result/LocalResult.cs` | 63.3% |
-| `Expressions/SimpleCase.cs` | 63.4% |
+| `MvStore/Db/ValueDataType.cs` | 60.6% |
 | `Command/Dml/MergeUsing.cs` | 63.8% |
 | `Expressions/Functions/BitFunction.cs` | 64.4% |
+| `Expressions/SimpleCase.cs` | 64.8% |
 | `MvStore/RTree/SpatialDataType.cs` | 64.8% |
 | `MvStore/RTree/MVRTreeMap.cs` | 65.7% |
+| `MvStore/Tx/TransactionMap.cs` | 67.5% |
+| `MvStore/Db/MVPrimaryIndex.cs` | 69.5% |
 
-По каталогам заметнее всего проседают `Result` (62.93%), `Values` (62.73%),
-`Tools` (61.99%), `Indexes` (69.48%) и `Message` (67.17%).
+По каталогам заметнее всего проседают `Values` (62.73%), `Tools` (61.99%),
+`Result` (66.83%), `Message` (67.17%) и `Indexes` (69.48%).
 
 ## Выводы
 
-1. Подключение `H2SharpSql.Specs` подняло общий процент с 76.88% до 80.36%
-   по строкам и с 72.67% до 75.51% по ветвям; memory-прогон 11 тяжёлых
-   native-тестов добавил ещё 0.82 п.п. — итог **81.18% / 76.42%**.
+1. После трёх итераций тестов: общий процент **81.60% / 76.78%**; за последнюю
+   итерацию добавлены `MathFunction` (58.7% → 80.8%), внешние temp-результаты
+   (`MVSortedTempResult` 0% → 51.4%) и дополнительные формы `CASE`.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.
 3. Реестр агрегатов и провайдеры закрыты лучше среднего: 88.3–100%.
 4. Основной резерв покрытия — не новый код, а старые крупные ветви:
-   оптимизатор, `MVSortedTempResult`, spatial/MVStore, `SET`/`MERGE`.
+   spatial/MVStore, `IndexCondition`, `SET`/`MERGE`, `DateTimeTemplate`.
 5. Memory-профиль (`H2SHARP_NATIVE_MEMORY=1`) ускоряет тяжёлые native-тесты
    в десятки раз, но не заменяет file-профиль: 4 теста проверяют файловое
    поведение и в memory-режиме падают.
