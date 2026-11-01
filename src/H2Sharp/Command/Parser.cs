@@ -40,6 +40,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using H2Sharp.Constraints;
+using H2Sharp.Data.Extensions;
 using H2Sharp.Engine;
 using H2Sharp.Extensions;
 using H2Sharp.Expressions;
@@ -6351,6 +6352,14 @@ public sealed partial class Parser
             return ReadQueryAggregate(aggregateSelect, aggregateType.Value, upperName);
         }
 
+        // Registered extensions sit between built-in aggregates and built-in functions.
+        // The port deliberately lets them fill or override scalar built-ins (ORA_HASH,
+        // ENCRYPT), while a built-in aggregate keeps its name.
+        if (session is not null && session.Extensions.HasAggregate(upperName))
+        {
+            return ReadClrAggregate(upperName, aggregateSelect);
+        }
+
         if (session is not null && session.Extensions.HasUdf(upperName))
         {
             return ReadUdfCall(upperName, aggregateSelect);
@@ -6383,6 +6392,33 @@ public sealed partial class Parser
         }
 
         throw DbException.Get(Api.ErrorCode.FunctionNotFound1, name);
+    }
+
+    private Expressions.Expression ReadClrAggregate(string name, Query.Select? aggregateSelect)
+    {
+        SessionLocal current = session
+            ?? throw new TODOException("Parser.readClrAggregate: this parser has no session");
+        AggregateDefinition? definition = current.Extensions.FindAggregate(name);
+        if (definition is null)
+        {
+            throw DbException.Get(Api.ErrorCode.FunctionNotFound1, name);
+        }
+
+        Query.Select select = aggregateSelect ?? currentSelect
+            ?? throw DbException.GetSyntaxError(sql, Current.Start, "SELECT");
+        bool distinct = ReadDistinctAgg();
+        List<Expressions.Expression> args = [];
+        do
+        {
+            args.Add(ReadQueryOr(select));
+        }
+        while (ReadIf(Token.Comma));
+
+        Expect(Token.CloseParen, ")");
+        Expressions.Aggregate.ClrAggregate aggregate =
+            new(definition, [.. args], select, distinct);
+        ReadFilterAndOver(aggregate, select);
+        return aggregate;
     }
 
     private Expressions.Expression ReadUdfCall(string name, Query.Select? aggregateSelect)

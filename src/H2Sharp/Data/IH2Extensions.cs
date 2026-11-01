@@ -7,6 +7,7 @@
  */
 using System;
 using System.Security.Cryptography;
+using H2Sharp.Data.Extensions;
 
 namespace H2Sharp.Data;
 
@@ -34,6 +35,12 @@ public interface IH2Extensions
 
     /// <summary>Registers a scalar function with four arguments.</summary>
     void RegisterUdf<T1, T2, T3, T4, TResult>(string name, Func<T1, T2, T3, T4, TResult> implementation, bool deterministic = false);
+
+    /// <summary>
+    /// Registers a user-defined aggregate. The factory is called for every aggregate
+    /// instance the engine needs.
+    /// </summary>
+    void RegisterAggregate(string name, Func<IH2Aggregate> factory);
 
     /// <summary>
     /// Registers a hash algorithm factory. The factory is called for every operation, so the

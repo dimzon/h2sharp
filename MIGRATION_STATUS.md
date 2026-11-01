@@ -507,6 +507,48 @@ TODO следующего среза: полноценный data-driven catalog
 `ReadBuiltinFunctionIf`, schema/FunctionAlias metadata, persistence/reopen,
 `CREATE/DROP ALIAS`, DI/triggers/trace и table-valued UDF.
 
+### Пользовательские агрегаты
+
+Добавлен `IH2Extensions.RegisterAggregate(string, Func<IH2Aggregate>)` на
+закрытом соединении. Контракт — MSSQL-подобный lifecycle
+(`Init` / `Accumulate` / `GetResult`), но без соединения в `Init`; `GetResult`
+пересчитываемый, потому что движок вызывает его для окон и пустых групп.
+`Merge` вынесен в отдельный `IH2MergeableAggregate` и текущим движком не
+вызывается.
+
+Публичные типы: `H2Sharp.Data.Extensions.IH2Aggregate`,
+`IH2MergeableAggregate`, `AggregateBase`, `CollectingAggregateBase`.
+Реализация — `ClrAggregate` в `Expressions/Aggregate/UserDefined/`; DISTINCT
+собирается штатным `AggregateDataCollecting` и проигрывается в свежий экземпляр
+при получении результата, FILTER и OVER идут через `AbstractAggregate`.
+Преобразование значений: SQL NULL → `null` (не `DBNull`), результат приводится
+к объявленному `TypeInfo`.
+
+Порядок разрешения в `Parser.ReadFunction`: встроенный агрегат →
+зарегистрированный агрегат → зарегистрированная UDF → builtin → window →
+compatibility. Встроенные агрегаты сохраняют имена; зарегистрированные
+расширения, как и раньше, могут заполнять/переопределять scalar builtins
+(`ORA_HASH`, `ENCRYPT`).
+
+Ограничения: нет `CREATE/DROP AGGREGATE`, метаданных `INFORMATION_SCHEMA`,
+`SCRIPT` и персистентности регистрации; нет MSSQL-сериализации
+(`Read`/`Write`, `MaxByteSize`) и `IsInvariantTo*`. Встроенные агрегаты остаются
+на `Value`-уровне; их возможный рефакторинг — только внутренний, без перевода
+на публичный контракт.
+
+Тесты: `tests/H2Sharp.Data.Tests/H2AggregateTests.cs` и оракул
+`tests/H2Sharp.Tests/AggregateOracleTests.cs` (Java `CREATE AGGREGATE` с
+`Oracle$Median`).
+
+Опциональная сборка `H2Sharp.Extensions` — витрина и набор утилит:
+`StringAgg` (`CollectingAggregateBase`), `GeometricMean`, `HarmonicMean`,
+`Product`, `WeightedAverage` и `CountIf` (`AggregateBase`). Регистрация —
+`RegisterH2Aggregates()` или отдельные `RegisterStringAgg()`,
+`RegisterGeometricMean()`, `RegisterHarmonicMean()`, `RegisterProduct()`,
+`RegisterWeightedAverage()`, `RegisterCountIf()`. По умолчанию имена с
+префиксом `H2_`, чтобы не конфликтовать со встроенными `STRING_AGG` /
+`LISTAGG`. Тесты — `tests/H2Sharp.Data.Tests/H2AggregatePackageTests.cs`.
+
 ### Conformance: тестовые ожидания и локальные дефекты info schema
 
 Разобран первый блок падений, где часть тестов была написана не по H2 2.5, а часть

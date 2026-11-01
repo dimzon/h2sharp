@@ -26,6 +26,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Transactions;
+using H2Sharp.Data.Extensions;
 using H2Sharp.Engine;
 using H2Sharp.Extensions;
 using H2Sharp.Util;
@@ -374,6 +375,13 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     {
         EnsureCanRegister();
         extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterAggregate(string name, Func<IH2Aggregate> factory)
+    {
+        EnsureCanRegister();
+        ArgumentNullException.ThrowIfNull(factory);
+        extensionConfiguration.AddAggregate(SqlName(name), factory);
     }
 
     void IH2RawExtensions.RegisterRawUdf(

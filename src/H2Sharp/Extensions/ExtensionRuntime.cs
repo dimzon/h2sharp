@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using H2Sharp.Data.Extensions;
 using H2Sharp.Message;
 using H2Sharp.Util;
 
@@ -14,15 +15,18 @@ namespace H2Sharp.Extensions;
 internal sealed class ExtensionRuntime
 {
     private readonly Dictionary<string, List<UdfDefinition>> udfs;
+    private readonly Dictionary<string, AggregateDefinition> aggregates;
     private readonly Dictionary<string, Func<HashAlgorithm>> hashes;
 
     private ExtensionRuntime(
         Dictionary<string, List<UdfDefinition>> udfs,
+        Dictionary<string, AggregateDefinition> aggregates,
         Dictionary<string, Func<HashAlgorithm>> hashes,
         Func<long?, Random>? randomGenerator,
         Func<int, Guid>? uuidGenerator)
     {
         this.udfs = udfs;
+        this.aggregates = aggregates;
         this.hashes = hashes;
         RandomGenerator = randomGenerator;
         UuidGenerator = uuidGenerator;
@@ -35,11 +39,17 @@ internal sealed class ExtensionRuntime
     internal static ExtensionRuntime Create(ExtensionConfiguration? configuration)
     {
         Dictionary<string, List<UdfDefinition>> udfs = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, AggregateDefinition> aggregates = new(StringComparer.OrdinalIgnoreCase);
         if (configuration is not null)
         {
             foreach ((string name, List<UdfDefinition> list) in configuration.Udfs)
             {
                 udfs.Add(name, [.. list]);
+            }
+
+            foreach ((string name, AggregateDefinition definition) in configuration.Aggregates)
+            {
+                aggregates.Add(name, definition);
             }
         }
 
@@ -63,8 +73,13 @@ internal sealed class ExtensionRuntime
         }
 
         return new ExtensionRuntime(
-            udfs, hashes, configuration?.RandomGenerator, configuration?.UuidGenerator);
+            udfs, aggregates, hashes, configuration?.RandomGenerator, configuration?.UuidGenerator);
     }
+
+    internal bool HasAggregate(string name) => aggregates.ContainsKey(name);
+
+    internal AggregateDefinition? FindAggregate(string name)
+        => aggregates.GetValueOrDefault(name);
 
     internal bool HasUdf(string name) => udfs.ContainsKey(name);
 

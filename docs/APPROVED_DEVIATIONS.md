@@ -449,6 +449,22 @@ SQL-скриптов (`SCRIPT ... CIPHER`) — отдельное решение
 `TestEncryptedDb` помечен `BlockedByPort` с пояснением в заголовке.
 Пересмотр — только по отдельному указанию пользователя.
 
+### D-036. Пользовательские агрегаты — MSSQL-подобный lifecycle
+
+Указание пользователя: контракт агрегатов моделируется по SQL Server CLR
+(`Init` / `Accumulate` / `Merge` / `Terminate`), а не по
+`org.h2.api.Aggregate`. Поэтому нет `init(Connection)`, `GetResult` является
+пересчитываемым аналогом `Terminate`, а `Merge` вынесен в отдельный
+`IH2MergeableAggregate` и текущим движком не вызывается. Публичные типы —
+`H2Sharp.Data.Extensions.IH2Aggregate`, `IH2MergeableAggregate`,
+`AggregateBase`, `CollectingAggregateBase`. Встроенные агрегаты остаются на
+`Value`-уровне; их возможный рефакторинг — только внутренний, без перевода на
+публичный object-контракт. Ограничения: нет `CREATE/DROP AGGREGATE`,
+метаданных `INFORMATION_SCHEMA`, `SCRIPT`, персистентности и MSSQL-сериализации.
+Примеры-утилиты (`StringAgg`, `GeometricMean`, `HarmonicMean`, `Product`,
+`WeightedAverage`, `CountIf`) поставляются отдельной опциональной сборкой
+`H2Sharp.Extensions`.
+
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 
 ### P-007. `ROWNUM` в DML — текущей команды нет

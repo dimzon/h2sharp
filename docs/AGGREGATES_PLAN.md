@@ -1,127 +1,155 @@
-# Пользовательские агрегаты: план (утверждён 2026-11-01)
+# Пользовательские агрегаты (Фазы 1–2 реализованы 2026-11-01)
 
-## Контекст
+## Решение
 
-MSSQL CLR-агрегаты (`[SqlUserDefinedAggregate]`, `Init/Accumulate/Merge/Terminate`)
-и H2-эталон (`org.h2.api.AggregateFunction` / `JavaAggregate`) показывают общий
-паттерн. В порте пользовательских агрегатов нет: `AggregateData` internal,
-`AggregateType` только встроенные. Исследование подтвердило готовые точки
-расширения:
+Контракт агрегатов моделируется по lifecycle SQL Server CLR
+(`Init` / `Accumulate` / `GetResult`), но исполнение остаётся H2-совместимым:
+`DISTINCT`, `FILTER` и `OVER` обрабатывает движок, а результат может быть
+запрошен повторно.
 
-- `AbstractAggregate` / `DataAnalysisOperation` — каркас выражения агрегата;
-- `SelectGroups` — состояние на группу (opaque-аккумулятор);
-- `Parser.ReadFunction` — порядок резолва (built-in → UDF);
-- `ExtensionConfiguration` / `ExtensionRuntime` — реестр расширений (UDF и др.);
-- специальные пути встроенных: `QuickAggregateQuery`, `AggregateDataCollecting`
-  (DISTINCT/ORDER BY), `GetSumType/GetAvgType`.
+Отличия от `org.h2.api.Aggregate` приняты осознанно:
 
-Требования пользователя:
+- нет `init(Connection)`: соединение в агрегат не передаётся;
+- `GetResult` — аналог `Terminate`, но пересчитываемый; движок вызывает его
+  больше одного раза (окна, пустая группа, повторное чтение);
+- `Merge` вынесен в `IH2MergeableAggregate` и текущим движком не вызывается:
+  partial/parallel execution в порте нет;
+- встроенные агрегаты остаются на `Value`-уровне (`Aggregate` /
+  `AggregateData*`), а не переводятся на публичный object-контракт.
 
-1. Сначала инфраструктура, потом примеры, и лишь затем аккуратный перенос
-   существующих агрегатов.
-2. Публичные типы — в пространстве имён `H2Sharp.Data.Extensions`.
-3. Проектировать с учётом производительности: без лишнего боксинга и создания
-   объектов (горячие пути).
+## Публичный контракт
 
-## Фаза 1. Инфраструктура
-
-### Публичный контракт — `src/H2Sharp/Data/Extensions/` (`namespace H2Sharp.Data.Extensions`)
+`src/H2Sharp/Data/Extensions/` (`namespace H2Sharp.Data.Extensions`):
 
 ```csharp
-public readonly record struct AggregateInput(
-    IReadOnlyList<object?> Values,   // CLR-значения аргументов; буфер движка, не хранить после Add
-    int RowIndex);
-
 public interface IH2Aggregate
 {
-    TypeInfo GetResultType(IReadOnlyList<TypeInfo> inputTypes);
     void Init();
-    void Add(AggregateInput input);
+    TypeInfo GetResultType(IReadOnlyList<TypeInfo> inputTypes);
+    void Accumulate(object? value);   // несколько аргументов — object?[]
     object? GetResult();
-    void Merge(IH2Aggregate other) { }
 }
 
-public interface IH2OrderedAggregate : IH2Aggregate
+public interface IH2MergeableAggregate : IH2Aggregate
 {
-    void SetOrderBy(SortOrder order);
-}
-
-public sealed class AggregateOptions
-{
-    public bool Deterministic { get; set; }
-    public bool IgnoreNulls { get; set; }
-    public bool InvariantToDuplicates { get; set; }
-    public bool InvariantToOrder { get; set; }
-    public TypeInfo? ResultType { get; set; }
+    void Merge(IH2MergeableAggregate other);
 }
 ```
 
-Базовые классы (в `H2Sharp.Data.Extensions`):
+Базовые классы:
 
-- `AggregateBase` — скелет (состояние + `AddValue`);
-- `SimpleAggregateBase` — однопроходный накопитель (`Accumulate(object? value)`);
-- `OrderedAggregateBase` (реализует `IH2OrderedAggregate`) — значения в
-  гарантированном порядке;
-- `CollectingAggregateBase` (реализует `IH2OrderedAggregate`) — собирает все
-  входы, сортирует при ordered, вычисляет через `Compute(IReadOnlyList<AggregateInput>)`.
+- `AggregateBase` — скелет; `Init` пустой, остальное абстрактно;
+- `CollectingAggregateBase` — хранит значения плоским `List<object?>`,
+  конструктор принимает число аргументов, результат вычисляет `Compute`.
+  Сортировку и прочую логику пользователь делает сам.
 
-### Производительность в дизайне
+`AggregateInput`, `RowIndex`, `AggregateOptions`, `OrderedAggregateBase`,
+`SetOrderBy` не вводились: они либо не нужны, либо дублируют эталонные
+механизмы и создают лишние аллокации.
 
-- буфер значений переиспользуется движком (один массив на строку); контракт
-  запрещает хранить ссылку после `Add`;
-- `RowIndex` — value-тип, без боксинга; `GetResultType` вызывается один раз;
-- базовые классы держат состояние в полях без лишних обёрток;
-- `CollectingAggregateBase` хранит список входов (или лёгкий список значений) без
-  record-обёртки на каждый элемент;
-- при ordered: компаратор/сортировка настраиваются один раз через `SetOrderBy`;
-- анти-паттерны документируются (конкатенации в цикле, `List<object>` в горячем пути).
+## Регистрация и исполнение
 
-### Регистрация и исполнение
+- `IH2Extensions.RegisterAggregate(string name, Func<IH2Aggregate> factory)`.
+  Регистрация только на закрытом, не disposed соединении.
+- `AggregateDefinition` хранит только имя и фабрику; тип и арность проверяет
+  `GetResultType`.
+- `ExtensionConfiguration` / `ExtensionRuntime` хранят снапшот реестра;
+  `HasAggregate` / `FindAggregate`.
+- `Parser.ReadFunction`: встроенный агрегат → зарегистрированный агрегат →
+  зарегистрированная UDF → builtin-функция → window → compatibility.
+  Встроенный агрегат сохраняет своё имя; зарегистрированные расширения могут
+  заполнять/переопределять scalar builtins, как уже делают `ORA_HASH` и
+  `ENCRYPT`.
+- `ClrAggregate : AbstractAggregate` (internal,
+  `Expressions/Aggregate/UserDefined/`) реализует эталонные ветви:
+  `Optimize`, `IsEverything`, `GetCost`, `GetUnenclosedSql`,
+  `CreateAggregateData`, `GetAggregatedValue`, `UpdateAggregate`,
+  `UpdateFromExpressions`, `UpdateGroupAggregates`, `GetNumExpressions`,
+  `RememberExpressions`.
+- Преобразование значений — `AggregateValueConverter`: SQL NULL → `null`
+  (не `DBNull`), результат приводится к объявленному `TypeInfo`.
 
-- `IH2Extensions.RegisterAggregate<T>(name, Func<IH2Aggregate> factory, AggregateOptions options)`
-  и `RegisterRawAggregate` (в `H2Sharp.Data`);
-- `AggregateDefinition` в `ExtensionConfiguration`, снапшот в `ExtensionRuntime`
-  (`HasAggregate/FindAggregate`);
-- `ClrAggregate : AbstractAggregate` (internal, `Expressions/Aggregate/UserDefined/`):
-  фабрика → `AggregateInput` → `GetResult` → ToValue; DISTINCT/FILTER/OVER
-  наследуются; ordered пробрасывает `orderBySort`;
-- `Parser.ReadFunction` — ветка после built-in агрегатов.
+## Семантика
 
-### Инфраструктурные тесты
+- `DISTINCT`: движок собирает `Value` / `ValueRow`, а при получении результата
+  проигрывает их через `Accumulate` в свежий экземпляр. `Accumulate` не
+  вызывается на каждой исходной строке.
+- `FILTER`: проверяется до `Accumulate`.
+- `OVER`: используется общий оконный механизм `AbstractAggregate` /
+  `DataAnalysisOperation`.
+- Пустая группа: создаётся свежий экземпляр, вызывается `GetResult`.
+- `NULL`-аргументы передаются в `Accumulate` как `null`; `IGNORE NULLS` не
+  вводится.
+- Ошибки пользовательского кода оборачиваются в
+  `ErrorCode.ExceptionInFunction1`, как у UDF.
+- `GetResultType` вызывается на пробном экземпляре во время оптимизации; `Init`
+  вызывается на пробном экземпляре и на каждом экземпляре данных.
 
-Регистрация/видимость/закрытость соединения; smoke ручной реализации интерфейса;
-базовые классы на тривиальных примерах.
+## Примеры и тесты
 
-## Фаза 2. Примеры
+Опциональная сборка `H2Sharp.Extensions` содержит примеры-утилиты:
 
-1. **string_agg**: `Concat : OrderedAggregateBase` —
-   `SELECT CUSTOM_STRAGG(VAL, ',') FROM T GROUP BY GRP`; варианты
-   DISTINCT/FILTER/NULL/пустая группа.
-2. **Нестандартное**: `GeometricMean : SimpleAggregateBase` (агрегат, которого нет
-   среди встроенных) + пользовательский агрегат на `CollectingAggregateBase`
-   (например, `Median`-подобный) для полноты покрытия категорий.
+- `StringAgg` (`CollectingAggregateBase`) — конкатенация non-NULL значений с
+  разделителем; по умолчанию `H2_STRING_AGG`;
+- `GeometricMean` (`AggregateBase`) — геометрическое среднее неотрицательных
+  чисел; `H2_GEOMETRIC_MEAN`;
+- `HarmonicMean` — гармоническое среднее неотрицательных чисел;
+  `H2_HARMONIC_MEAN`;
+- `Product` — произведение non-NULL чисел; `H2_PRODUCT`;
+- `WeightedAverage` — взвешенное среднее по двум аргументам (значение, вес);
+  `H2_WEIGHTED_AVERAGE`;
+- `CountIf` — количество TRUE, NULL/FALSE не считаются; `H2_COUNT_IF`;
+- `AggregateExtensions.RegisterH2Aggregates()` и отдельные `Register*` методы —
+  регистрация на закрытом соединении.
 
-Тесты: `tests/H2Sharp.Data.Tests/H2AggregateTests.cs`.
+`tests/H2Sharp.Data.Tests/H2AggregateTests.cs`:
 
-## Фаза 3. Аккуратный перенос встроенных
+- `GeometricMean` на `AggregateBase`;
+- `Median` и `CUSTOM_STRAGG` на `CollectingAggregateBase`;
+- `DISTINCT`, `FILTER`, `OVER`, пустая группа, `NULL`, многoаргументный
+  вызов, неверная арность, тип результата, повторный `GetResult`;
+- регистрация/закрытость соединения, независимость соединений, коллизии имён.
 
-- Только после зелёных фаз 1-2; строго по одному агрегату с сохранением всех
-  специализаций (`GetSumType/GetAvgType`, DISTINCT, OVER, QuickAggregateQuery,
-  список `Aggregates`).
-- Очередность: простые (SUM/MIN/MAX/COUNT/EVERY/ANY_VALUE/BIT*/BOOL_*) →
-  AVG/STDDEV/VAR → MEDIAN/LISTAGG-стиль (только если Фаза 2 покажет уверенность);
-  JSON/ENVELOPE/RANK-семейство остаются встроенными.
-- Критерий приёмки: бинарная эквивалентность со старыми путями (существующие
-  Specs/Data-тесты и оракул-тесты без изменений).
+`tests/H2Sharp.Data.Tests/H2AggregatePackageTests.cs`:
 
-## Документация
+- `RegisterH2Aggregates`, `StringAgg`, `GeometricMean`, `HarmonicMean`,
+  `Product`, `WeightedAverage`, `CountIf`;
+- `DISTINCT`, `FILTER`, `NULL`, пустая группа, пользовательское имя, ошибки
+  отрицательных аргументов и весов.
 
-`MIGRATION_STATUS.md`: модель MSSQL CLR → контракт `Data.Extensions`, фазы,
-производительность, ограничения.
+`tests/H2Sharp.Tests/AggregateOracleTests.cs`:
+
+- Java-fixture `Oracle$Median` через `CREATE AGGREGATE`;
+- сравнение обычного вызова, `DISTINCT`, `FILTER`, `OVER`, пустой группы с
+  `JavaAggregate`.
+
+## Фаза 3 — только внутренний рефакторинг
+
+Встроенные агрегаты не переводятся на `IH2Aggregate`. Допустимый рефакторинг —
+выделение общего реестра фабрик `AggregateData` и вынесение ветвей
+`CreateAggregateData` / `GetAggregatedValue` по типам с сохранением:
+
+- `QuickAggregateQuery` и index-пути `MIN`/`MAX`;
+- `GetSumType` / `GetAvgType`, точности и интервалов;
+- `AggregateDataCollecting` для `DISTINCT` / `ORDER BY`;
+- `LISTAGG`, JSON, `HISTOGRAM`, `MODE`, `RANK`-семейства.
+
+Критерий приёмки — существующие тесты без изменений плюс характеризационные
+тесты на типы результатов, пустую группу, `DISTINCT`, `OVER` и выбор
+quick/index-пути.
+
+## Вне scope
+
+- `CREATE/DROP AGGREGATE`, `INFORMATION_SCHEMA`, `SCRIPT`, персистентность
+  регистрации;
+- MSSQL-сериализация (`Read`/`Write`, `MaxByteSize`, `Format.UserDefined`);
+- `IsInvariantTo*`, типизированный `Accumulate`;
+- DI-фабрики, partial/parallel merge.
 
 ## Проверка
 
-- Фаза 1: `dotnet test H2Sharp.sln` (зелёный).
-- Фаза 2: `dotnet test tests/H2Sharp.Data.Tests --filter "FullyQualifiedName~H2AggregateTests"`.
-- Фаза 3: полные Data/Specs + core-оракул без изменений; покрытие `ClrAggregate`
-  и базовых классов в свежем coverage-наборе.
+```powershell
+dotnet test tests/H2Sharp.Data.Tests --filter "FullyQualifiedName~H2AggregateTests"
+dotnet test tests/H2Sharp.Tests --filter "FullyQualifiedName~AggregateOracleTests"
+dotnet test H2Sharp.sln --filter "Category!=BlockedByPort"
+```

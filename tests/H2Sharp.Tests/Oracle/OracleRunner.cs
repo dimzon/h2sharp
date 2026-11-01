@@ -45,6 +45,15 @@ internal static class OracleRunner
         => Run(inputs, body, numbers, extraJavaArgs, null);
 
     /// <summary>
+    /// Runs a snippet with extra Java members placed inside the generated class.
+    /// </summary>
+    internal static List<string> RunWithMembers(
+        IReadOnlyList<string> inputs,
+        string body,
+        string members)
+        => Run(inputs, body, null, null, null, members);
+
+    /// <summary>
     /// Runs a snippet and returns its output lines.
     /// </summary>
     /// <remarks>
@@ -67,7 +76,8 @@ internal static class OracleRunner
         string body,
         IReadOnlyList<int>? numbers,
         string[]? extraJavaArgs,
-        string? packageName)
+        string? packageName,
+        string? members = null)
     {
         if (JavaOracle.H2Jar is null)
         {
@@ -78,7 +88,7 @@ internal static class OracleRunner
 
         return JavaOracle.OutputLines(
             JavaOracle.RunWithInputs(
-                Program(body, packageName),
+                Program(body, packageName, members),
                 ClassName,
                 inputs,
                 [JavaOracle.H2Jar],
@@ -127,7 +137,7 @@ internal static class OracleRunner
     ///   nullable(String) - turns <see cref="NullMarker"/> back into null
     ///   hex(String)      - UTF-16 code units as hex, '=' prefixed
     /// </summary>
-    private static string Program(string body, string? packageName)
+    private static string Program(string body, string? packageName, string? members)
     {
         string declaration = packageName is null ? string.Empty : $"package {packageName};{Environment.NewLine}{Environment.NewLine}";
         return declaration
@@ -155,6 +165,8 @@ internal static class OracleRunner
               System.out.println("THROWS");
             }
           }
+
+        __MEMBERS__
 
           static String nullable(String s) {
             return s.equals(NULL_MARKER) ? null : s;
@@ -196,6 +208,7 @@ internal static class OracleRunner
           }
         }
         """
-            .Replace("BODY", body);
+            .Replace("BODY", body)
+            .Replace("__MEMBERS__", members ?? string.Empty);
     }
 }

@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using H2Sharp.Api;
+using H2Sharp.Data.Extensions;
 using H2Sharp.Engine;
 using H2Sharp.Message;
 using H2Sharp.Util;
@@ -120,11 +121,14 @@ internal sealed class UdfDefinition
 internal sealed class ExtensionConfiguration
 {
     private readonly Dictionary<string, List<UdfDefinition>> udfs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, AggregateDefinition> aggregates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<HashAlgorithm>> hashes = new(StringComparer.OrdinalIgnoreCase);
     private Func<long?, Random>? randomGenerator;
     private Func<int, Guid>? uuidGenerator;
 
     internal IReadOnlyDictionary<string, List<UdfDefinition>> Udfs => udfs;
+
+    internal IReadOnlyDictionary<string, AggregateDefinition> Aggregates => aggregates;
 
     internal IReadOnlyDictionary<string, Func<HashAlgorithm>> Hashes => hashes;
 
@@ -134,6 +138,12 @@ internal sealed class ExtensionConfiguration
 
     internal void Add(UdfDefinition definition)
     {
+        if (aggregates.ContainsKey(definition.Name))
+        {
+            throw new InvalidOperationException(
+                "An aggregate named " + definition.Name + " is already registered");
+        }
+
         if (!udfs.TryGetValue(definition.Name, out List<UdfDefinition>? list))
         {
             list = [];
@@ -148,6 +158,21 @@ internal sealed class ExtensionConfiguration
 
         list.Add(definition);
         list.Sort(static (a, b) => a.Arity.CompareTo(b.Arity));
+    }
+
+    internal void AddAggregate(string name, Func<IH2Aggregate> factory)
+    {
+        if (udfs.ContainsKey(name))
+        {
+            throw new InvalidOperationException("A UDF named " + name + " is already registered");
+        }
+
+        if (aggregates.ContainsKey(name))
+        {
+            throw new InvalidOperationException("An aggregate named " + name + " is already registered");
+        }
+
+        aggregates.Add(name, new AggregateDefinition(name, factory));
     }
 
     internal void AddHash(string name, Func<HashAlgorithm> factory)
@@ -166,6 +191,11 @@ internal sealed class ExtensionConfiguration
         foreach ((string name, List<UdfDefinition> list) in udfs)
         {
             clone.udfs.Add(name, [.. list]);
+        }
+
+        foreach ((string name, AggregateDefinition definition) in aggregates)
+        {
+            clone.aggregates.Add(name, definition);
         }
 
         foreach ((string name, Func<HashAlgorithm> factory) in hashes)
