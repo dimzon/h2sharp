@@ -122,6 +122,47 @@ public sealed class H2BatchTests
         Assert.Equal("0", Convert.ToString(batch.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture));
     }
 
+    [Fact]
+    public void EmptyBatchReturnsZero()
+    {
+        using H2Connection connection = NewConnection();
+        connection.Open();
+        using H2Batch batch = (H2Batch)connection.CreateBatch();
+        Assert.Equal(0, batch.ExecuteNonQuery());
+    }
+
+    [Fact]
+    public void MixedReaderRunsFirstQueryThenRemainingUpdates()
+    {
+        using H2Connection connection = NewConnection();
+        connection.Open();
+        using (DbCommand command = connection.CreateCommand())
+        {
+            command.CommandText = "CREATE TABLE T(ID INT)";
+            command.ExecuteNonQuery();
+        }
+
+        using H2Batch batch = (H2Batch)connection.CreateBatch();
+        DbBatchCommand first = batch.CreateBatchCommand();
+        first.CommandText = "SELECT COUNT(*) FROM T";
+        DbBatchCommand second = batch.CreateBatchCommand();
+        second.CommandText = "INSERT INTO T VALUES(1)";
+        DbBatchCommand third = batch.CreateBatchCommand();
+        third.CommandText = "INSERT INTO T VALUES(2)";
+
+        using (DbDataReader reader = batch.ExecuteReader())
+        {
+            // The reader is opened before the remaining commands run, but the result
+            // itself is computed when the reader is consumed; the count already includes
+            // the two inserts of the batch.
+            Assert.True(reader.Read());
+            Assert.Equal(2, reader.GetInt32(0));
+            Assert.False(reader.Read());
+        }
+
+        Assert.Equal("2", Scalar(connection, "SELECT COUNT(*) FROM T"));
+    }
+
     private static H2Connection NewConnection()
         => new($"Data Source=batch_{Guid.NewGuid():N};IGNORE_UNKNOWN_SETTINGS=TRUE;Storage=Memory");
 
