@@ -1369,7 +1369,8 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
             default:
                 if (type.GetValueType() is >= Value.IntervalYear and <= Value.IntervalMinuteToSecond)
                 {
-                    throw new TODOException("Aggregate.getSumType: SUM over intervals is not ported");
+                    return TypeInfo.GetTypeInfo(
+                        type.GetValueType(), ValueInterval.MaximumPrecision, type.GetDeclaredScale(), null);
                 }
 
                 return null;

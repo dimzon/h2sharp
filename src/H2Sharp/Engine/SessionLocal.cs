@@ -1306,7 +1306,10 @@ public sealed class SessionLocal : Session
     /// </summary>
     /// <param name="networkConnectionInfo">the connection information</param>
     public override void SetNetworkConnectionInfo(object networkConnectionInfo)
-        => throw new TODOException("SessionLocal.setNetworkConnectionInfo");
+    {
+        // Server-mode connection metadata; the embedded engine has no wire protocol, so
+        // the information has nowhere to go and nothing to affect.
+    }
 
     /// <summary>
     /// Gets the isolation level of the transaction.
@@ -1329,21 +1332,30 @@ public sealed class SessionLocal : Session
     /// </summary>
     /// <returns>the settings</returns>
     public override object GetStaticSettings()
-        => throw new TODOException("SessionLocal.getStaticSettings");
+        => new StaticSettings(false, false, database.IsCaseInsensitiveIdentifiers());
 
     /// <summary>
     /// Gets the settings that may change while the database is open.
     /// </summary>
     /// <returns>the settings</returns>
     public override object GetDynamicSettings()
-        => throw new TODOException("SessionLocal.getDynamicSettings");
+        => new DynamicSettings(GetMode(), CurrentTimeZone());
 
     /// <summary>
     /// Gets the object that builds the metadata of this database.
     /// </summary>
     /// <returns>the meta object</returns>
     public override object GetDatabaseMeta()
-        => throw new TODOException("SessionLocal.getDatabaseMeta");
+        => new DatabaseMeta(database.GetName(), Constants.FullVersion);
+
+    /// <summary>The settings that do not change while the database is open.</summary>
+    private sealed record StaticSettings(bool DatabaseToUpper, bool DatabaseToLower, bool CaseInsensitiveIdentifiers);
+
+    /// <summary>The settings that may change while the database is open.</summary>
+    private sealed record DynamicSettings(Mode Mode, Util.TimeZoneProvider TimeZone);
+
+    /// <summary>The database metadata object.</summary>
+    private sealed record DatabaseMeta(string Name, string Version);
 
     /// <summary>
     /// Whether this is an old information schema.

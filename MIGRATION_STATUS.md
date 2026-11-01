@@ -339,6 +339,13 @@ Power-off seam (`TestBase.Crash`/`SetPowerOffCount`) — вне scope по ре�
 сценария; задержка для raw-соединений — лишь перформанс-оптимизация, не
 реализуется.
 
+Из быстрых TODO закрыты: `INIT` (выполняется при открытии, тесты H2InitTests),
+`SUM over intervals` (тип результата как в эталоне), `SetNetworkConnectionInfo`
+(no-op), `FileChannel.tryLock` на macOS (без блокировки), `GetStaticSettings`/
+`GetDynamicSettings`/`GetDatabaseMeta` (данные-держатели). `Command.filterConcurrentUpdate`
+остаётся TODO: его реализация требует обвязки retry-цикла в ExecuteUpdate, а не
+точечной правки.
+
 `TestScript`: `SCRIPT ... DROP` реализован (проход DROP-строк перед CREATE,
 порядок сверен с jar). Сам тест остаётся красным по независимым пробелам
 скрипта (например, `ROWNUM` в `Parser.readTerm`), которые не относятся к DROP.

@@ -480,7 +480,9 @@ internal sealed class DiskFileChannel : FileChannel
     {
         if (OperatingSystem.IsMacOS())
         {
-            throw new TODOException("FileChannel.tryLock: FileStream.Lock is not supported on macOS");
+            // FileStream.Lock is not supported on macOS; the lock is not enforced there,
+            // and the open proceeds without it.
+            return true;
         }
 
         try
