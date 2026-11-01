@@ -4313,6 +4313,18 @@ public sealed partial class Parser
             }
             else
             {
+                // A clause word where a select item belongs is a syntax error, as in the
+                // reference; a word followed by an opening parenthesis may still be a
+                // function (LEFT(...), RIGHT(...)).
+                if (!Current.IsQuoted
+                    && Current.AsIdentifier is { } clauseWord
+                    && position + 1 < tokens.Count
+                    && tokens[position + 1].TokenType != Token.OpenParen
+                    && IsClauseWord(clauseWord))
+                {
+                    throw DbException.GetSyntaxError(sql, Current.Start, "a select item");
+                }
+
                 // H2 parseSelectExpressions reads every item through readExpression;
                 // aggregates are terms too, so their postfixes and operators use that
                 // reader.

@@ -8661,6 +8661,14 @@ TRX: `native-query-target-core.trx`, `native-query-target-specs.trx`,
 `query-target3.trx`, `native-ctas-targeted.trx`, `native-sequence-persistent.trx`,
 `native-blockers-oracle3.trx`.
 
+Покрытие парсера оракулом: новый набор `ParserCoverage*OracleTests` (16 тестов,
+~200 SQL-стейтментов) гоняет типы/литералы/касты, DDL, DML, SELECT
+(JOIN/GROUP/оконные/подзапросы/CTE/UNION), функции и коды ошибок через
+ADO-слой и сверяет с jar (база `ParserCoverageOracleBase`). Parser: 5779 → 5799
+covered, 2587 → 2574 uncovered. Заодно исправлен баг: `SELECT FROM` и
+clause-слова в списке выбора давали `COLUMN_NOT_FOUND` (42122) вместо
+`SYNTAX_ERROR_2` (42001), как эталон.
+
 Свежий conformance-срез (2026-11-01):
 - core: **1483 passed / 0 failed / 1483 total**, скипов 0 (оракул гоняется);
   прежние 3 PostfixCast падения закрыты.
