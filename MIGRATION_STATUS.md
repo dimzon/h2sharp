@@ -8668,9 +8668,10 @@ ADO-слой и сверяет с jar (база `ParserCoverageOracleBase`). З�
 баг: `SELECT FROM` и clause-слова в списке выбора давали `COLUMN_NOT_FOUND`
 (42122) вместо `SYNTAX_ERROR_2` (42001), как эталон.
 
-Покрытие Parser (точный union строк по cobertura пяти наборов: data/engine/
-mvstore/core/specs): **80.2% (6731/8390)**. Specs получили coverlet.collector
-и теперь участвуют в прогонах под покрытием.
+Покрытие Parser (точный union строк по cobertura шести наборов: data/engine/
+mvstore/core/specs/native-fast): **82.3% (6906/8390)**; Specs и частичный
+Native получили свои coverage-прогоны (coverlet.collector добавлен в Specs,
+тяжёлые тайм-чувствительные тесты Native исключаются фильтром).
 
 Свежий conformance-срез (2026-11-01):
 - core: **1483 passed / 0 failed / 1483 total**, скипов 0 (оракул гоняется);
