@@ -128,6 +128,96 @@ public sealed class H2DataCoverageTests
         }
     }
 
+    [Fact]
+    public void ConnectionStringRules()
+    {
+        using H2Connection connection = NewConnection();
+        string good = connection.ConnectionString;
+        connection.ConnectionString = good;
+        Assert.Equal(good, connection.ConnectionString);
+        connection.Open();
+        Assert.Throws<InvalidOperationException>(() => connection.ConnectionString = "Data Source=other;Storage=Memory");
+        connection.Close();
+
+        var ds = new H2DataSourceBuilder($"Data Source=ds_{Guid.NewGuid():N};Storage=Memory").Build();
+        H2Connection owned = (H2Connection)ds.CreateConnection();
+        Assert.Throws<InvalidOperationException>(() => owned.ConnectionString = "Data Source=other;Storage=Memory");
+        owned.Dispose();
+        ds.Dispose();
+    }
+
+    [Fact]
+    public void IsolationLevelsBeginAndCommit()
+    {
+        using H2Connection connection = NewConnection();
+        connection.Open();
+        foreach (System.Data.IsolationLevel level in new[]
+        {
+            System.Data.IsolationLevel.ReadCommitted,
+            System.Data.IsolationLevel.ReadUncommitted,
+            System.Data.IsolationLevel.RepeatableRead,
+            System.Data.IsolationLevel.Serializable,
+            System.Data.IsolationLevel.Snapshot,
+        })
+        {
+            using DbTransaction tx = connection.BeginTransaction(level);
+            using DbCommand command = connection.CreateCommand();
+            command.Transaction = tx;
+            command.CommandText = "SET @x=1";
+            command.ExecuteNonQuery();
+            tx.Commit();
+        }
+    }
+
+    [Fact]
+    public void OpenAndAsyncErrors()
+    {
+        using H2Connection empty = new();
+        Assert.Throws<InvalidOperationException>(() => empty.Open());
+        using H2Connection connection = NewConnection();
+        connection.Open();
+        Assert.Throws<InvalidOperationException>(() => connection.Open());
+        connection.Close();
+        connection.OpenAsync(default).GetAwaiter().GetResult();
+        connection.CloseAsync().GetAwaiter().GetResult();
+    }
+
+    [Fact]
+    public void EnlistmentRules()
+    {
+        using H2Connection connection = NewConnection();
+        connection.Open();
+        connection.EnlistTransaction(null);
+        using (var scope = new TransactionScope())
+        {
+            connection.EnlistTransaction(Transaction.Current);
+            using DbCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT 1";
+            command.ExecuteScalar();
+            scope.Complete();
+        }
+
+        // A second explicit transaction on the same connection is refused.
+        using DbTransaction explicitTx = connection.BeginTransaction();
+        Assert.Throws<InvalidOperationException>(() => connection.BeginTransaction());
+        explicitTx.Rollback();
+    }
+
+    [Fact]
+    public void ExtensionInterfaceGettersAndUuid()
+    {
+        using H2Connection connection = NewConnection();
+        var test = (IH2Test)connection;
+        Assert.Null(test.SystemClockProvider);
+        Assert.Null(test.RandomGeneratorProvider);
+        Assert.Null(test.UuidProvider);
+        Assert.Null(test.TimeZoneProviderProvider);
+        var ext = (IH2Extensions)connection;
+        ext.RegisterUuidGenerator(_ => Guid.NewGuid());
+        connection.Open();
+        Assert.NotNull(Scalar(connection, "SELECT RANDOM_UUID()"));
+    }
+
     private static H2Connection NewConnection()
         => new($"Data Source=cover_{Guid.NewGuid():N};IGNORE_UNKNOWN_SETTINGS=TRUE;Storage=Memory");
 
