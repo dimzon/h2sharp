@@ -352,6 +352,41 @@ public sealed class H2Command : DbCommand
     }
 
     /// <summary>
+    /// Runs this command once per parameter set, as one engine batch.
+    /// </summary>
+    /// <param name="parameterSets">the parameter sets, one run each</param>
+    /// <returns>the batch result</returns>
+    internal H2Sharp.Result.BatchResult ExecuteBatch(IReadOnlyList<object?[]> parameterSets)
+    {
+        SessionLocal current = CheckRunnableState();
+        List<Command.CommandContainer> containers = PrepareEngines(out Command.CommandList? lazyRemaining);
+        try
+        {
+            List<Values.Value?[]> engineSets = new(parameterSets.Count);
+            foreach (object?[] set in parameterSets)
+            {
+                Values.Value?[] values = new Values.Value?[set.Length];
+                for (int i = 0; i < set.Length; i++)
+                {
+                    values[i] = H2ValueMapper.ToValue(set[i], null, current.CastDataProvider);
+                }
+
+                engineSets.Add(values);
+            }
+
+            H2Sharp.Result.BatchResult result = containers[0].ExecuteBatchUpdate(engineSets, null!);
+            RunRemaining(containers);
+            lazyRemaining?.ExecuteRemaining();
+            return result;
+        }
+        finally
+        {
+            CloseContainers(containers);
+            lazyRemaining?.Close();
+        }
+    }
+
+    /// <summary>
     /// Creates a new parameter for this command.
     /// </summary>
     protected override DbParameter CreateDbParameter()

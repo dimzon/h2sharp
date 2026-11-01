@@ -350,6 +350,11 @@ Power-off seam (`TestBase.Crash`/`SetPowerOffCount`) — вне scope по ре�
 (с signed-байтом отрицательности, как эталон) и ENUM (ordinal),
 roundtrip-тесты в MvStore.Tests.
 
+ADO-батч: `H2Batch`/`H2BatchCommand` (`DbBatch`) + `H2Connection.CreateBatch`;
+движковый `Command.ExecuteBatchUpdate` выполняет наборы параметров одного
+оператора одной транзакцией с по-элементной фиксацией ошибок. Тесты
+H2BatchTests.
+
 `TestScript`: `SCRIPT ... DROP` реализован (проход DROP-строк перед CREATE,
 порядок сверен с jar). Сам тест остаётся красным по независимым пробелам
 скрипта (например, `ROWNUM` в `Parser.readTerm`), которые не относятся к DROP.

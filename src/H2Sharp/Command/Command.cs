@@ -350,8 +350,57 @@ public abstract class Command : CommandInterface
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The reference's executeBatchUpdate: one run per parameter set, each against the same
+    /// prepared statement, failures collected per set, and the transaction committed once
+    /// at the end when the session is in auto-commit.
+    /// </remarks>
     public virtual BatchResult ExecuteBatchUpdate(List<Value?[]> batchParameters, object generatedKeysRequest)
-        => throw new TODOException("Command.executeBatchUpdate: the transaction layer is not ported yet");
+    {
+        int size = batchParameters.Count;
+        long[] updateCounts = new long[size];
+        List<H2SharpException> exceptions = [];
+        bool wasAutoCommit = Session.GetAutoCommit();
+        if (wasAutoCommit)
+        {
+            Session.Begin();
+        }
+
+        try
+        {
+            for (int i = 0; i < size; i++)
+            {
+                Value?[] set = batchParameters[i];
+                List<ParameterInterface>? parameters = GetParameters();
+                if (parameters is not null)
+                {
+                    for (int j = 0; j < set.Length; j++)
+                    {
+                        parameters[j].SetValue(set[j] ?? ValueNull.Instance, closeOld: true);
+                    }
+                }
+
+                try
+                {
+                    updateCounts[i] = ExecuteUpdate(generatedKeysRequest).GetUpdateCount();
+                }
+                catch (H2SharpException e)
+                {
+                    exceptions.Add(e);
+                    updateCounts[i] = -3L;
+                }
+            }
+        }
+        finally
+        {
+            if (wasAutoCommit)
+            {
+                Session.Commit(false);
+            }
+        }
+
+        return new BatchResult(updateCounts, null, exceptions);
+    }
 
     /// <summary>
     /// Commits the current transaction when this command is not transactional.

@@ -488,6 +488,12 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     protected override DbProviderFactory DbProviderFactory => H2ProviderFactory.Instance;
 
     /// <summary>
+    /// Creates a batch over this connection.
+    /// </summary>
+    protected override DbBatch CreateDbBatch()
+        => new H2Batch(this);
+
+    /// <summary>
     /// Changes the current database for this connection.
     /// </summary>
     /// <remarks>
