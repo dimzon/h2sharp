@@ -192,6 +192,8 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
         return Aggregates.TryGetValue(name, out AggregateType type) ? type : null;
     }
 
+    internal static IReadOnlyDictionary<string, AggregateType> GetAggregateTypes() => Aggregates;
+
     /// <inheritdoc/>
     public override void SetEvaluatable(TableFilter tableFilter, bool value)
     {

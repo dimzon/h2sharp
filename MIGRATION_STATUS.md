@@ -533,18 +533,19 @@ ordered-window данных.
 Преобразование значений: SQL NULL → `null` (не `DBNull`), результат приводится
 к объявленному `TypeInfo`.
 
-Порядок разрешения в `Parser.ReadFunction`: встроенный агрегат →
-зарегистрированный агрегат → зарегистрированная UDF → builtin → window →
-compatibility. Встроенные агрегаты сохраняют имена; зарегистрированные
-расширения, как и раньше, могут заполнять/переопределять scalar builtins
-(`ORA_HASH`, `ENCRYPT`).
+Порядок разрешения в `Parser.ReadFunction`: единый `AggregateRegistry`
+(custom → built-in) → зарегистрированная UDF → builtin → window →
+compatibility. Проверок уникальности/резервирования нет: повторная регистрация
+перезаписывает предыдущую, custom с тем же именем перекрывает built-in. `ANY`,
+`EVERY`, `REGR_COUNT` уже идут через `ClrAggregateRegistration`; остальные
+встроенные агрегаты — `BuiltInAggregateRegistration` со своей грамматикой.
+Парсер не различает built-in и custom.
 
 Ограничения: нет `CREATE/DROP AGGREGATE`, метаданных `INFORMATION_SCHEMA`,
 `SCRIPT` и персистентности регистрации; нет MSSQL-сериализации
 (`Read`/`Write`, `MaxByteSize`). `InvariantToOrder` пока не влияет на
-исполнение: отдельного ordered-aggregate пути нет. Встроенные агрегаты остаются
-на `Value`-уровне; их возможный рефакторинг — только внутренний, без перевода
-на публичный контракт.
+исполнение: отдельного ordered-aggregate пути нет. Остальные встроенные
+агрегаты остаются на `Value`-уровне; их возможный рефакторинг — отдельный шаг.
 
 Тесты: `tests/H2Sharp.Data.Tests/H2AggregateTests.cs`,
 `H2AggregateProviderTests.cs` и оракул

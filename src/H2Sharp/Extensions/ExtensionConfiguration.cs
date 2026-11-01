@@ -138,12 +138,6 @@ internal sealed class ExtensionConfiguration
 
     internal void Add(UdfDefinition definition)
     {
-        if (aggregates.ContainsKey(definition.Name))
-        {
-            throw new InvalidOperationException(
-                "An aggregate named " + definition.Name + " is already registered");
-        }
-
         if (!udfs.TryGetValue(definition.Name, out List<UdfDefinition>? list))
         {
             list = [];
@@ -161,19 +155,7 @@ internal sealed class ExtensionConfiguration
     }
 
     internal void AddAggregate(string name, IH2AggregateProvider provider)
-    {
-        if (udfs.ContainsKey(name))
-        {
-            throw new InvalidOperationException("A UDF named " + name + " is already registered");
-        }
-
-        if (aggregates.ContainsKey(name))
-        {
-            throw new InvalidOperationException("An aggregate named " + name + " is already registered");
-        }
-
-        aggregates.Add(name, new AggregateDefinition(name, provider));
-    }
+        => aggregates[name] = new AggregateDefinition(name, provider);
 
     internal void AddHash(string name, Func<HashAlgorithm> factory)
         => hashes[StringUtils.ToUpperEnglish(name)] = factory;

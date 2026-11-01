@@ -29,11 +29,21 @@ namespace H2Sharp.Expressions.Aggregate;
 internal sealed class ClrAggregate : AbstractAggregate
 {
     private readonly AggregateDefinition definition;
+    private readonly int baseCost;
+    private readonly bool rendersDistinct;
 
-    internal ClrAggregate(AggregateDefinition definition, Expression[] args, Select select, bool distinct)
+    internal ClrAggregate(
+        AggregateDefinition definition,
+        Expression[] args,
+        Select select,
+        bool distinct,
+        int baseCost = 5,
+        bool rendersDistinct = false)
         : base(select, args, distinct)
     {
         this.definition = definition;
+        this.baseCost = baseCost;
+        this.rendersDistinct = rendersDistinct;
     }
 
     private bool EffectiveDistinct => distinct && !definition.Options.InvariantToDuplicates;
@@ -90,7 +100,7 @@ internal sealed class ClrAggregate : AbstractAggregate
     /// <inheritdoc/>
     public override int GetCost()
     {
-        int cost = 5;
+        int cost = baseCost;
         foreach (Expression arg in args)
         {
             cost += arg.GetCost();
@@ -108,6 +118,11 @@ internal sealed class ClrAggregate : AbstractAggregate
     public override StringBuilder GetUnenclosedSql(StringBuilder builder, int sqlFlags)
     {
         ParserUtil.QuoteIdentifier(builder, definition.Name, sqlFlags).Append('(');
+        if (rendersDistinct && distinct)
+        {
+            builder.Append("DISTINCT ");
+        }
+
         for (int i = 0; i < args.Length; i++)
         {
             if (i > 0)

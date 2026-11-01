@@ -465,8 +465,11 @@ SQL-скриптов (`SCRIPT ... CIPHER`) — отдельное решение
 `IH2MergeableAggregate`, `AggregateBase`, `CollectingAggregateBase`.
 `IDisposable` не входит в `IH2Aggregate`: конкретный агрегат реализует его сам,
 если владеет ресурсами; движок диспозит такие экземпляры на границах жизни
-данных. Встроенные агрегаты остаются на `Value`-уровне; их возможный
-рефакторинг — только внутренний, без перевода на публичный object-контракт.
+данных. Единый `AggregateRegistry` содержит built-in и custom entries; парсер
+не различает их. Проверок уникальности/резервирования нет: повторная
+регистрация перезаписывает предыдущую, custom перекрывает built-in. `ANY`,
+`EVERY`, `REGR_COUNT` перенесены на `ClrAggregate`; остальные встроенные
+агрегаты остаются на `Value`-уровне, их возможный рефакторинг — отдельный шаг.
 Ограничения: нет `CREATE/DROP AGGREGATE`, метаданных `INFORMATION_SCHEMA`,
 `SCRIPT`, персистентности и MSSQL-сериализации. Примеры-утилиты (`StringAgg`,
 `GeometricMean`, `HarmonicMean`, `Product`, `WeightedAverage`, `CountIf`)

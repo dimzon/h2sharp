@@ -171,23 +171,35 @@ public sealed class H2AggregateTests
     }
 
     [Fact]
-    public void BuiltinNamesWinOverRegisteredAggregates()
+    public void RegisteredAggregatesOverrideBuiltinNames()
     {
         using H2Connection connection = NewConnection();
         ((IH2Extensions)connection).RegisterAggregate("MEDIAN", () => new ConstantZeroAggregate());
         connection.Open();
 
-        Assert.Equal("2", Scalar(connection, "SELECT MEDIAN(X) FROM SYSTEM_RANGE(1, 3)"));
+        Assert.Equal("0", Scalar(connection, "SELECT MEDIAN(X) FROM SYSTEM_RANGE(1, 3)"));
     }
 
     [Fact]
-    public void UdfAndAggregateNamesCannotCollide()
+    public void LastAggregateRegistrationWins()
     {
         using H2Connection connection = NewConnection();
+        ((IH2Extensions)connection).RegisterAggregate("SAME_NAME", () => new ConstantZeroAggregate());
         ((IH2Extensions)connection).RegisterAggregate("SAME_NAME", () => new GeometricMean());
+        connection.Open();
 
-        Assert.Throws<InvalidOperationException>(
-            () => ((IH2Extensions)connection).RegisterUdf<int, int>("SAME_NAME", value => value));
+        Assert.Equal("4", Scalar(connection, "SELECT SAME_NAME(X) FROM SYSTEM_RANGE(4, 4)"));
+    }
+
+    [Fact]
+    public void AggregateWinsOverUdfWithSameName()
+    {
+        using H2Connection connection = NewConnection();
+        ((IH2Extensions)connection).RegisterAggregate("SAME_NAME", () => new ConstantZeroAggregate());
+        ((IH2Extensions)connection).RegisterUdf<int, int>("SAME_NAME", value => value);
+        connection.Open();
+
+        Assert.Equal("0", Scalar(connection, "SELECT SAME_NAME(3)"));
     }
 
     [Fact]

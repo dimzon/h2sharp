@@ -77,13 +77,15 @@ unmanaged/освобождаемыми ресурсами. Движок пров
   extension-метод над `AggregateProvider`.
 - `AggregateDefinition` хранит имя, провайдера и снимок `Options`; тип и
   арность проверяет `GetResultType`.
-- `ExtensionConfiguration` / `ExtensionRuntime` хранят снапшот реестра;
-  `HasAggregate` / `FindAggregate`.
-- `Parser.ReadFunction`: встроенный агрегат → зарегистрированный агрегат →
-  зарегистрированная UDF → builtin-функция → window → compatibility.
-  Встроенный агрегат сохраняет своё имя; зарегистрированные расширения могут
-  заполнять/переопределять scalar builtins, как уже делают `ORA_HASH` и
-  `ENCRYPT`.
+- `AggregateRegistry` — единый реестр имён: built-in entries заполняются на
+  старте internal-методом, custom entries приходят из `ExtensionRuntime`.
+  `Parser.ReadFunction` спрашивает только реестр и вызывает
+  `registration.Read(...)`; затем общий `ReadFilterAndOver`.
+- Проверок уникальности/резервирования нет: это локальный встраиваемый движок.
+  Custom entry ищется первым и перекрывает built-in с тем же именем; повторная
+  регистрация — last wins.
+- `ANY`, `EVERY`, `REGR_COUNT` — built-in entries на `ClrAggregate`; остальные
+  built-ins — `BuiltInAggregateRegistration` со специальной грамматикой.
 - `ClrAggregate : AbstractAggregate` (internal,
   `Expressions/Aggregate/UserDefined/`) реализует эталонные ветви:
   `Optimize`, `IsEverything`, `GetCost`, `GetUnenclosedSql`,

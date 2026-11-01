@@ -4888,15 +4888,9 @@ public sealed partial class Parser
     /// <param name="aggregateType">the aggregate type</param>
     /// <param name="aggregateName">the upper-case spelling of the call</param>
     /// <returns>the aggregate</returns>
-    private Expressions.Expression ReadQueryAggregate(
-        Query.Select? select, Expressions.Aggregate.AggregateType aggregateType, string aggregateName)
+    internal Expressions.Expression ReadBuiltInAggregateCore(
+        Expressions.Aggregate.AggregateType aggregateType, string aggregateName, Query.Select select)
     {
-        select ??= currentSelect;
-        if (select is null)
-        {
-            throw DbException.GetSyntaxError(sql, Current.Start);
-        }
-
         Expressions.Aggregate.Aggregate aggregate;
         switch (aggregateType)
         {
@@ -5061,7 +5055,6 @@ public sealed partial class Parser
         }
 
         Expect(Token.CloseParen, ")");
-        ReadFilterAndOver(aggregate, select);
         return aggregate;
     }
 
@@ -6207,7 +6200,16 @@ public sealed partial class Parser
                         // Parser.readTermWithoutIdentifier has explicit keyword branches.
                         Read();
                         Expect(Token.OpenParen, "(");
-                        return ReadQueryAggregate(aggregateSelect, Expressions.Aggregate.AggregateType.Any, "ANY");
+                        Query.Select anySelect = aggregateSelect ?? currentSelect
+                            ?? throw DbException.GetSyntaxError(sql, Current.Start, "SELECT");
+                        Expressions.Expression any = ReadBuiltInAggregateCore(
+                            Expressions.Aggregate.AggregateType.Any, "ANY", anySelect);
+                        if (any is Expressions.Aggregate.AbstractAggregate anyAggregate)
+                        {
+                            ReadFilterAndOver(anyAggregate, anySelect);
+                        }
+
+                        return any;
 
                     case ParserUtil.Cast:
                         // The reference reads a cast in its term reader, and the select list
@@ -6345,19 +6347,18 @@ public sealed partial class Parser
         Read();
         Expect(Token.OpenParen, "(");
         string upperName = StringUtils.ToUpperEnglish(name);
-        Expressions.Aggregate.AggregateType? aggregateType =
-            Expressions.Aggregate.Aggregate.GetAggregateType(upperName);
-        if (aggregateType is not null)
+        if (Expressions.Aggregate.AggregateRegistry.TryGet(
+            session, upperName, out Expressions.Aggregate.AggregateRegistration? registration))
         {
-            return ReadQueryAggregate(aggregateSelect, aggregateType.Value, upperName);
-        }
+            Query.Select select = aggregateSelect ?? currentSelect
+                ?? throw DbException.GetSyntaxError(sql, Current.Start, "SELECT");
+            Expressions.Expression aggregate = registration!.Read(this, select);
+            if (aggregate is Expressions.Aggregate.AbstractAggregate abstractAggregate)
+            {
+                ReadFilterAndOver(abstractAggregate, select);
+            }
 
-        // Registered extensions sit between built-in aggregates and built-in functions.
-        // The port deliberately lets them fill or override scalar built-ins (ORA_HASH,
-        // ENCRYPT), while a built-in aggregate keeps its name.
-        if (session is not null && session.Extensions.HasAggregate(upperName))
-        {
-            return ReadClrAggregate(upperName, aggregateSelect);
+            return aggregate;
         }
 
         if (session is not null && session.Extensions.HasUdf(upperName))
@@ -6394,19 +6395,14 @@ public sealed partial class Parser
         throw DbException.Get(Api.ErrorCode.FunctionNotFound1, name);
     }
 
-    private Expressions.Expression ReadClrAggregate(string name, Query.Select? aggregateSelect)
+    internal Expressions.Aggregate.ClrAggregate ReadClrAggregateCore(
+        AggregateDefinition definition,
+        Query.Select select,
+        int baseCost,
+        bool rendersDistinct,
+        bool readsDistinct)
     {
-        SessionLocal current = session
-            ?? throw new TODOException("Parser.readClrAggregate: this parser has no session");
-        AggregateDefinition? definition = current.Extensions.FindAggregate(name);
-        if (definition is null)
-        {
-            throw DbException.Get(Api.ErrorCode.FunctionNotFound1, name);
-        }
-
-        Query.Select select = aggregateSelect ?? currentSelect
-            ?? throw DbException.GetSyntaxError(sql, Current.Start, "SELECT");
-        bool distinct = ReadDistinctAgg();
+        bool distinct = readsDistinct && ReadDistinctAgg();
         List<Expressions.Expression> args = [];
         do
         {
@@ -6415,10 +6411,7 @@ public sealed partial class Parser
         while (ReadIf(Token.Comma));
 
         Expect(Token.CloseParen, ")");
-        Expressions.Aggregate.ClrAggregate aggregate =
-            new(definition, [.. args], select, distinct);
-        ReadFilterAndOver(aggregate, select);
-        return aggregate;
+        return new(definition, [.. args], select, distinct, baseCost, rendersDistinct);
     }
 
     private Expressions.Expression ReadUdfCall(string name, Query.Select? aggregateSelect)
