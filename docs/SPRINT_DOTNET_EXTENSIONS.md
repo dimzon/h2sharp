@@ -187,9 +187,11 @@ GetCurrentTransaction даёт ту же транзакцию внутри Fire.
   oldRow/newRow и изменение newRow определяются H2.
 - [x] Ошибка отменяет операцию; работа с базой внутри Fire использует ту же
   транзакцию (GetCurrentTransaction); закрытие проверяется отдельно.
-- [ ] CREATE/DROP TRIGGER (SQL-поверхность) связывают обработчик со Schema/Table
-  metadata; SELECT/ROLLBACK-события, INSTEAD OF, QUEUE/NOWAIT и наполнение
-  TRIGGERS info-schema — второй этап.
+- [ ] ~~CREATE/DROP TRIGGER (SQL-поверхность), SELECT/ROLLBACK-события,
+  INSTEAD OF, QUEUE/NOWAIT и наполнение TRIGGERS info-schema~~ — **вне scope
+  по решению пользователя**: API-регистрация через H2DataSource.RegisterTrigger
+  остаётся единственной поддержанной поверхностью, совместимость с оригиналом
+  здесь не ставится.
 
 ## 9. S7 — trace/diagnostics через DI
 
