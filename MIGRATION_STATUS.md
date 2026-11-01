@@ -8669,11 +8669,12 @@ ADO-слой и сверяет с jar (база `ParserCoverageOracleBase`). З�
 (42122) вместо `SYNTAX_ERROR_2` (42001), как эталон.
 
 Покрытие Parser (точный union строк по cobertura шести наборов: data/engine/
-mvstore/core/specs/native-fast на финальном коде): **89.5% (6300/7040)**.
+mvstore/core/specs/native-fast на финальном коде): **89.6% (6306/7040)**.
 Остаток ~740 строк — глубоко редкие защитные ветви; шестая волна дала +1,
 седьмая (drop identity, трёхчастные имена, WINDOW, LIMIT-выражения,
 inline-ограничения, DEFAULT ON NULL, generated, NULLS-индексы, math, invalid
-SET) — ещё +5 строк; легкодостижимое исчерпано.
+SET) — ещё +5 строк; девятая (JSON-формы, функциональные индексы,
+percentile, деревья) — ещё +3. Легкодостижимое исчерпано.
 Specs и частичный Native получили свои coverage-прогоны (coverlet.collector
 добавлен в Specs, тяжёлые тайм-чувствительные тесты Native исключаются
 фильтром). DTO-контур анализа подтверждён живым (UPDATE/DELETE/индексы/
