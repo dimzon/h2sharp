@@ -7941,6 +7941,12 @@ ADR/AGENTS/спринт обновлены; существующий IH2Test с�
 
 ### Триггеры: первый этап (.NET API)
 
+**Второй этап (SQL CREATE/DROP TRIGGER, TRIGGERS info-schema) — вне scope по
+решению пользователя**: для движка достаточно текущей API-регистрации через
+`H2DataSource.RegisterTrigger`; полная совместимость с оригиналом в этой части
+не ставится. Specs CreateTriggerCommandTests/DropTrigger остаются красными как
+фиксация; исходные SQL-тесты не удаляются.
+
 Реализован первый этап принятой ADR-001 границы: .NET-триггеры как интерфейс-
 контракт (IH2Trigger, IH2TriggerContext, IH2TriggerRow, H2TriggerEvent) в
 H2Sharp.Data; регистрация через H2DataSource.RegisterTrigger по предикату
