@@ -29,18 +29,33 @@ public abstract class ParserCoverageOracleBase
     /// <param name="dbName">the unique in-memory database name</param>
     /// <param name="statements">the SQL statements</param>
     protected static void AssertSameAsReference(string dbName, params string[] statements)
+        => Compare(dbName, null, statements);
+
+    /// <summary>
+    /// Runs the statements on the port through the ADO.NET layer and on the reference, and
+    /// asserts the answers match line for line, with the given compatibility mode fixed at
+    /// open (the port does not support SET MODE after open).
+    /// </summary>
+    /// <param name="dbName">the unique in-memory database name</param>
+    /// <param name="mode">the compatibility mode</param>
+    /// <param name="statements">the SQL statements</param>
+    protected static void AssertSameAsReferenceInMode(string dbName, string mode, params string[] statements)
+        => Compare(dbName, mode, statements);
+
+    private static void Compare(string dbName, string? mode, IReadOnlyList<string> statements)
     {
-        List<string> port = RunPort(dbName, statements);
-        List<string> java = RunJava(dbName, statements);
+        List<string> port = RunPort(dbName, mode, statements);
+        List<string> java = RunJava(dbName, mode, statements);
         Assert.True(
             java.Count == port.Count && java.SequenceEqual(port),
             "java:\n  " + string.Join("\n  ", java) + "\nport:\n  " + string.Join("\n  ", port));
     }
 
-    private static List<string> RunPort(string dbName, IReadOnlyList<string> statements)
+    private static List<string> RunPort(string dbName, string? mode, IReadOnlyList<string> statements)
     {
+        string options = mode is null ? string.Empty : $";MODE={mode}";
         using H2Connection connection = new(
-            $"Data Source={dbName};IGNORE_UNKNOWN_SETTINGS=TRUE;Storage=Memory");
+            $"Data Source={dbName};IGNORE_UNKNOWN_SETTINGS=TRUE;Storage=Memory{options}");
         connection.Open();
         List<string> lines = [];
         foreach (string sql in statements)
@@ -77,11 +92,11 @@ public abstract class ParserCoverageOracleBase
         return lines;
     }
 
-    private static List<string> RunJava(string dbName, IReadOnlyList<string> statements)
+    private static List<string> RunJava(string dbName, string? mode, IReadOnlyList<string> statements)
         => OracleRunner.Run(
             statements,
             """
-            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:DBNAME");
+            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:DBNAMEMODE");
             java.sql.Statement stat = conn.createStatement();
             for (String s : inputs) {
               try {
@@ -107,6 +122,7 @@ public abstract class ParserCoverageOracleBase
             }
             conn.close();
             """
-                .Replace("DBNAME", dbName),
+                .Replace("DBNAME", dbName)
+                .Replace("MODE", mode is null ? string.Empty : ";MODE=" + mode),
             extraJavaArgs: ["-Duser.language=en"]);
 }
