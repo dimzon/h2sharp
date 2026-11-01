@@ -22,7 +22,7 @@ public sealed class TestCollationEnglish : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("collation out of scope by decision")]
     [Trait("Category", "BlockedByPort")]
     public override void Test()
     {

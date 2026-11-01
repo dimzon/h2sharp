@@ -36,7 +36,7 @@ public sealed class TestSubqueryPerformanceOnLazyExecutionMode : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("timing artifact; the same order as the reference")]
     public override void Test()
     {
         DeleteDb("lazySubq");

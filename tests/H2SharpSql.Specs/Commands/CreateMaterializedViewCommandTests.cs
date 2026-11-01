@@ -63,7 +63,7 @@ public sealed class CreateMaterializedViewCommandTests
 public sealed class CreateRoleCommandTests
 {
     /// <summary>docs/commands.html:1756 — CREATE ROLE [ IF NOT EXISTS ] newRoleName</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void CreateRole_IfNotExists_RegistersItOnce() // CMD-1756
     {
         using IDbConnection connection = TestDatabase.Open();

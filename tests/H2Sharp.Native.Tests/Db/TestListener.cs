@@ -54,7 +54,7 @@ public sealed class TestListener : TestDb, IH2DatabaseEventListener
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("power-off seam out of scope")]
     [Trait("Category", "BlockedByPort")]
     public override void Test()
     {

@@ -29,7 +29,7 @@ public sealed class TestCompatibilityOracle : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("Oracle DATE type divergence by decision")]
     public override void Test()
     {
         TestNotNullSyntax();

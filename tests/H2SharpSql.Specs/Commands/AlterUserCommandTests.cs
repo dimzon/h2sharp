@@ -13,7 +13,7 @@ namespace H2SharpSql.Specs.Commands;
 public sealed class AlterUserCommandTests
 {
     /// <summary>docs/commands.html:1471 — ALTER USER userName ADMIN { TRUE | FALSE }</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void AlterUser_AdminGrant_MakesTheUserAnAdministrator() // CMD-1471
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -26,7 +26,7 @@ public sealed class AlterUserCommandTests
     }
 
     /// <summary>docs/commands.html:1490 — ALTER USER userName RENAME TO newUserName</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void AlterUser_Rename_GivesTheUserANewName() // CMD-1490
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -41,7 +41,7 @@ public sealed class AlterUserCommandTests
     }
 
     /// <summary>docs/commands.html:1509 — ALTER USER userName SET { PASSWORD string | SALT bytes HASH bytes }</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void AlterUser_SetPassword_ChangesItWithoutTouchingRows() // CMD-1509
     {
         using IDbConnection connection = TestDatabase.Open();

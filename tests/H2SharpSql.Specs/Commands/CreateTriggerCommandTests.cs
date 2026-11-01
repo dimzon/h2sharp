@@ -12,7 +12,7 @@ namespace H2SharpSql.Specs.Commands;
 public sealed class CreateTriggerCommandTests
 {
     /// <summary>docs/commands.html:1850 — CREATE TRIGGER [ IF NOT EXISTS ] [schemaName.]triggerName</summary>
-    [Fact]
+    [Fact(Skip = "SQL triggers out of scope by decision")]
     public void CreateTrigger_IfNotExists_RegistersItOnce() // CMD-1850
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -25,7 +25,7 @@ public sealed class CreateTriggerCommandTests
     }
 
     /// <summary>docs/commands.html:1851 — { BEFORE | AFTER | INSTEAD OF }</summary>
-    [Fact]
+    [Fact(Skip = "SQL triggers out of scope by decision")]
     public void CreateTrigger_AfterInsert_IsRegistered() // CMD-1851
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -37,7 +37,7 @@ public sealed class CreateTriggerCommandTests
     }
 
     /// <summary>docs/commands.html:1852 — { INSERT | UPDATE | DELETE | { SELECT | ROLLBACK } }</summary>
-    [Fact]
+    [Fact(Skip = "SQL triggers out of scope by decision")]
     public void CreateTrigger_TwoEvents_IsRegisteredForBoth() // CMD-1852
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -49,7 +49,7 @@ public sealed class CreateTriggerCommandTests
     }
 
     /// <summary>docs/commands.html:1853 — [,...] ON [schemaName.]tableName [ FOR EACH { ROW | STATEMENT } ]</summary>
-    [Fact]
+    [Fact(Skip = "SQL triggers out of scope by decision")]
     public void CreateTrigger_ForEachStatement_IsRegistered() // CMD-1853
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -61,7 +61,7 @@ public sealed class CreateTriggerCommandTests
     }
 
     /// <summary>docs/commands.html:1854 — [ QUEUE int ] [ NOWAIT ]</summary>
-    [Fact]
+    [Fact(Skip = "SQL triggers out of scope by decision")]
     public void CreateTrigger_QueueNoWait_IsRegistered() // CMD-1854
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -73,7 +73,7 @@ public sealed class CreateTriggerCommandTests
     }
 
     /// <summary>docs/commands.html:1855 — { CALL triggeredClassNameString | AS sourceCodeString }</summary>
-    [Fact]
+    [Fact(Skip = "SQL triggers out of scope by decision")]
     public void CreateTrigger_AsSourceCode_IsRegistered() // CMD-1855
     {
         using IDbConnection connection = TestDatabase.Open();

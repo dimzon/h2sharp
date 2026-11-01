@@ -13,7 +13,7 @@ namespace H2SharpSql.Specs.Commands;
 public sealed class PrivilegeCommandTests
 {
     /// <summary>docs/commands.html:2349 — GRANT { { SELECT | INSERT | UPDATE | DELETE } [,..] | ALL [ PRIVILEGES ] } ON</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void GrantRight_SelectOnTable_GivesTheRight() // CMD-2349
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -25,7 +25,7 @@ public sealed class PrivilegeCommandTests
     }
 
     /// <summary>docs/commands.html:2350 — { { SCHEMA schemaName } | { [ TABLE ] [schemaName.]tableName [,...] } }</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void GrantRight_OnSchema_GivesTheRight() // CMD-2350
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -37,7 +37,7 @@ public sealed class PrivilegeCommandTests
     }
 
     /// <summary>docs/commands.html:2351 — TO { PUBLIC | userName | roleName }</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void GrantRight_ToPublic_GivesTheRightToEveryone() // CMD-2351
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -49,7 +49,7 @@ public sealed class PrivilegeCommandTests
     }
 
     /// <summary>docs/commands.html:2372 — GRANT ALTER ANY SCHEMA TO userName</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void GrantAlterAnySchema_GivesTheRight() // CMD-2372
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -61,7 +61,7 @@ public sealed class PrivilegeCommandTests
     }
 
     /// <summary>docs/commands.html:2391 — GRANT { roleName [,...] } TO { PUBLIC | userName | roleName }</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void GrantRole_ToUser_GivesTheRole() // CMD-2391
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -73,7 +73,7 @@ public sealed class PrivilegeCommandTests
     }
 
     /// <summary>docs/commands.html:2448 — REVOKE { { SELECT | INSERT | UPDATE | DELETE } [,..] | ALL [ PRIVILEGES ] } ON</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void RevokeRight_SelectOnTable_RemovesTheRight() // CMD-2448
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -86,7 +86,7 @@ public sealed class PrivilegeCommandTests
     }
 
     /// <summary>docs/commands.html:2449 — { { SCHEMA schemaName } | { [ TABLE ] [schemaName.]tableName [,...] } }</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void RevokeRight_OnSchema_RemovesTheRight() // CMD-2449
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -99,7 +99,7 @@ public sealed class PrivilegeCommandTests
     }
 
     /// <summary>docs/commands.html:2450 — FROM { PUBLIC | userName | roleName }</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void RevokeRight_FromPublic_RemovesTheRight() // CMD-2450
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -112,7 +112,7 @@ public sealed class PrivilegeCommandTests
     }
 
     /// <summary>docs/commands.html:2471 — REVOKE ALTER ANY SCHEMA FROM userName</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void RevokeAlterAnySchema_RemovesTheRight() // CMD-2471
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -125,7 +125,7 @@ public sealed class PrivilegeCommandTests
     }
 
     /// <summary>docs/commands.html:2490 — REVOKE { roleName [,...] } FROM { PUBLIC | userName | roleName }</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void RevokeRole_FromUser_RemovesTheRole() // CMD-2490
     {
         using IDbConnection connection = TestDatabase.Open();

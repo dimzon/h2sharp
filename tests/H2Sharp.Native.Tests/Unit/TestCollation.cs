@@ -19,7 +19,7 @@ public sealed class TestCollation : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("collation out of scope by decision")]
     public override void Test()
     {
         DeleteDb("collation");

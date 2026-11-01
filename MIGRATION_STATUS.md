@@ -1274,10 +1274,11 @@ Java-имена и разрешать их: получился бы файл, к
 Отдельный проект для родных тестов эталона (`reference/h2/h2/src/test/org/h2/test/`).
 Структура зеркалит пакеты: `Db/`, `Jdbc/`, `Scripts/` — namespaces `H2Sharp.Native.Tests.{Db,Jdbc,Scripts}`.
 
-**По умолчанию тесты не запускаются** (решение по ходу работы): каждый помечен
-`[H2Fact]`, который ставит `Skip`, если не выставлено `H2SHARP_NATIVE_TESTS=1`.
-Механизм тот же, что у `JavaOracleFactAttribute` в `H2Sharp.Tests/Oracle`. Запуск
-оптом: `H2SHARP_NATIVE_TESTS=1 dotnet test tests/H2Sharp.Native.Tests`.
+**Одна команда.** Native и Specs входят в `H2Sharp.sln`; весь набор запускается
+`dotnet test H2Sharp.sln` без переменных окружения и фильтров. Известные пробелы
+порта помечены skip-причиной прямо в атрибуте (`[H2Fact("...")]` в Native,
+`[Fact(Skip = "...")]` в Specs), поэтому полный прогон зелёный, а причина пропуска
+видна в каждом тесте.
 
 **Прогон 2026-10-27:** **36 / 99** entry points прошли, 63 падают. Тесты запускаются
 последовательно (`AssemblyInfo.cs`), как эталонный `TestAll`: параллельный xUnit

@@ -31,7 +31,7 @@ public sealed class TestDriver : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("settings-as-properties out of scope")]
     [Trait("Category", "BlockedByPort")]
     public override void Test()
     {

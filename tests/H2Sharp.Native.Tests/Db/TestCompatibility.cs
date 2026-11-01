@@ -37,7 +37,7 @@ public sealed class TestCompatibility : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("DATABASE_TO_UPPER not ported (D-033)")]
     [Trait("Category", "BlockedByPort")]
     public override void Test()
     {

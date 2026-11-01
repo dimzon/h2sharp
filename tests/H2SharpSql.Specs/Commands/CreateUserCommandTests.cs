@@ -13,7 +13,7 @@ namespace H2SharpSql.Specs.Commands;
 public sealed class CreateUserCommandTests
 {
     /// <summary>docs/commands.html:1879 — CREATE USER [ IF NOT EXISTS ] newUserName</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void CreateUser_IfNotExists_RegistersItOnce() // CMD-1879
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -26,7 +26,7 @@ public sealed class CreateUserCommandTests
     }
 
     /// <summary>docs/commands.html:1880 — { PASSWORD string | SALT bytes HASH bytes } [ ADMIN ]</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     public void CreateUser_Admin_MarksTheUserAsAdministrator() // CMD-1880
     {
         using IDbConnection connection = TestDatabase.Open();

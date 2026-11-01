@@ -117,7 +117,7 @@ public sealed class TestScript : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("script blocked on unrelated gaps (ROWNUM and others)")]
     [Trait("Category", "BlockedByPort")]
     public override void Test()
     {

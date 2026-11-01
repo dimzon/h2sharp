@@ -25,7 +25,7 @@ public sealed class TestRights : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("users/rights not ported (D-004)")]
     public override void Test()
     {
         TestNullPassword();

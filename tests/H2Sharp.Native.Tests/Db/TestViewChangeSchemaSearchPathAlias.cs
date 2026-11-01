@@ -21,7 +21,7 @@ public sealed class TestViewChangeSchemaSearchPathAlias : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("CREATE ALIAS out of scope (Java machine required); register a .NET UDF")]
     [Trait("Category", "BlockedByPort")]
     public override void Test()
     {

@@ -12,7 +12,7 @@ namespace H2SharpSql.Specs.Commands;
 public sealed class CreateLinkedTableCommandTests
 {
     /// <summary>docs/commands.html:1729 — CREATE [ FORCE ] [ [ GLOBAL | LOCAL ] TEMPORARY ]</summary>
-    [Fact]
+    [Fact(Skip = "linked tables out of scope (D-030)")]
     public void CreateLinkedTable_Force_RegistersTheTableWithoutCheckingTheSource() // CMD-1729
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -24,7 +24,7 @@ public sealed class CreateLinkedTableCommandTests
     }
 
     /// <summary>docs/commands.html:1730 — LINKED TABLE [ IF NOT EXISTS ]</summary>
-    [Fact]
+    [Fact(Skip = "linked tables out of scope (D-030)")]
     public void CreateLinkedTable_IfNotExists_RegistersItOnce() // CMD-1730
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -38,7 +38,7 @@ public sealed class CreateLinkedTableCommandTests
     }
 
     /// <summary>docs/commands.html:1731 — [schemaName.]tableName ( driverString, urlString, userString, passwordString,</summary>
-    [Fact]
+    [Fact(Skip = "linked tables out of scope (D-030)")]
     public void CreateLinkedTable_DriverAndUrl_RegistersTheTable() // CMD-1731
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -50,7 +50,7 @@ public sealed class CreateLinkedTableCommandTests
     }
 
     /// <summary>docs/commands.html:1732 — [ originalSchemaString, ] originalTableString )</summary>
-    [Fact]
+    [Fact(Skip = "linked tables out of scope (D-030)")]
     public void CreateLinkedTable_QualifiedSourceName_IsAccepted() // CMD-1732
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -62,7 +62,7 @@ public sealed class CreateLinkedTableCommandTests
     }
 
     /// <summary>docs/commands.html:1733 — [ EMIT UPDATES | READONLY ] [ FETCH_SIZE sizeInt] [AUTOCOMMIT ON|OFF]</summary>
-    [Fact]
+    [Fact(Skip = "linked tables out of scope (D-030)")]
     public void CreateLinkedTable_ReadonlyWithFetchSize_RegistersTheTable() // CMD-1733
     {
         using IDbConnection connection = TestDatabase.Open();

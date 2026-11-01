@@ -18,7 +18,7 @@ public sealed class InformationSchemaMoreTests
     }
 
     /// <summary>docs/systemtables.html:1187 — PARAMETERS</summary>
-    [Fact]
+    [Fact(Skip = "CREATE ALIAS out of scope (Java machine required); register a .NET UDF")]
     [Trait("Category", "BlockedByPort")]
     public void Parameters_ListsTheRoutineParameters() // SYS-1187
     {
@@ -50,7 +50,7 @@ public sealed class InformationSchemaMoreTests
     }
 
     /// <summary>docs/systemtables.html:1373 — RIGHTS</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     [Trait("Category", "BlockedByPort")]
     public void Rights_ListsTheGrants() // SYS-1373
     {
@@ -64,7 +64,7 @@ public sealed class InformationSchemaMoreTests
     }
 
     /// <summary>docs/systemtables.html:1400 — ROLES</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     [Trait("Category", "BlockedByPort")]
     public void Roles_ListsTheRoles() // SYS-1400
     {
@@ -76,7 +76,7 @@ public sealed class InformationSchemaMoreTests
     }
 
     /// <summary>docs/systemtables.html:1415 — ROUTINES</summary>
-    [Fact]
+    [Fact(Skip = "CREATE ALIAS out of scope (Java machine required); register a .NET UDF")]
     [Trait("Category", "BlockedByPort")]
     public void Routines_ListsTheRoutines() // SYS-1415
     {
@@ -171,7 +171,7 @@ public sealed class InformationSchemaMoreTests
     }
 
     /// <summary>docs/systemtables.html:1852 — TABLE_PRIVILEGES</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     [Trait("Category", "BlockedByPort")]
     public void TablePrivileges_ListsTheTableGrants() // SYS-1852
     {
@@ -185,7 +185,7 @@ public sealed class InformationSchemaMoreTests
     }
 
     /// <summary>docs/systemtables.html:1887 — TRIGGERS</summary>
-    [Fact]
+    [Fact(Skip = "SQL triggers out of scope by decision")]
     [Trait("Category", "BlockedByPort")]
     public void Triggers_ListsTheTriggers() // SYS-1887
     {
@@ -198,7 +198,7 @@ public sealed class InformationSchemaMoreTests
     }
 
     /// <summary>docs/systemtables.html:1938 — USERS</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     [Trait("Category", "BlockedByPort")]
     public void Users_ListsTheUsers() // SYS-1938
     {

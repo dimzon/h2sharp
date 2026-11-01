@@ -24,7 +24,7 @@ public sealed class TestViewAlterTable : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("users/rights not ported (D-004)")]
     [Trait("Category", "BlockedByPort")]
     public override void Test()
     {

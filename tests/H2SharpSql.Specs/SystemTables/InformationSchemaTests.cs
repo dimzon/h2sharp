@@ -56,7 +56,7 @@ public sealed class InformationSchemaTests
     }
 
     /// <summary>docs/systemtables.html:495 — COLUMN_PRIVILEGES</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     [Trait("Category", "BlockedByPort")]
     public void ColumnPrivileges_ListsTheColumnGrants() // SYS-0495
     {

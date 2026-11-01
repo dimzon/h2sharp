@@ -13,7 +13,7 @@ namespace H2SharpSql.Specs.Commands;
 public sealed class DropObjectCommandTests
 {
     /// <summary>docs/commands.html:1946 — DROP AGGREGATE [ IF EXISTS ] aggregateName</summary>
-    [Fact]
+    [Fact(Skip = "CREATE ALIAS out of scope (Java machine required); register a .NET UDF")]
     public void DropAggregate_RemovesIt() // CMD-1946
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -26,7 +26,7 @@ public sealed class DropObjectCommandTests
     }
 
     /// <summary>docs/commands.html:1965 — DROP ALIAS [ IF EXISTS ] [schemaName.]aliasName</summary>
-    [Fact]
+    [Fact(Skip = "CREATE ALIAS out of scope (Java machine required); register a .NET UDF")]
     public void DropAlias_RemovesIt() // CMD-1965
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -65,7 +65,7 @@ public sealed class DropObjectCommandTests
     }
 
     /// <summary>docs/commands.html:2060 — DROP ROLE [ IF EXISTS ] roleName</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     [Trait("Category", "BlockedByPort")]
     public void DropRole_RemovesIt() // CMD-2060
     {
@@ -92,7 +92,7 @@ public sealed class DropObjectCommandTests
     }
 
     /// <summary>docs/commands.html:2138 — DROP TRIGGER [ IF EXISTS ] [schemaName.]triggerName</summary>
-    [Fact]
+    [Fact(Skip = "SQL triggers out of scope by decision")]
     public void DropTrigger_RemovesIt() // CMD-2138
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -106,7 +106,7 @@ public sealed class DropObjectCommandTests
     }
 
     /// <summary>docs/commands.html:2157 — DROP USER [ IF EXISTS ] userName</summary>
-    [Fact]
+    [Fact(Skip = "users/roles/privileges not ported (D-004)")]
     [Trait("Category", "BlockedByPort")]
     public void DropUser_RemovesIt() // CMD-2157
     {

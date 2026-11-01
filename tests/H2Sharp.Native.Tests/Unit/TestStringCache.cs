@@ -30,7 +30,7 @@ public sealed class TestStringCache
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("full vs simple case-fold mismatch (documented)")]
     public void Test()
     {
         TestToUpperToLower();

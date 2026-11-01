@@ -28,7 +28,7 @@ public sealed class TestMultiConn : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("CREATE ALIAS out of scope (Java machine required); register a .NET UDF")]
     public override void Test()
     {
         TestConcurrentShutdownQuery();

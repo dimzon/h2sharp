@@ -35,7 +35,7 @@ public sealed class TestTwoPhaseCommit : TestDb
     /// <summary>
     /// Run just this test.
     /// </summary>
-    [H2Fact]
+    [H2Fact("power-off seam out of scope")]
     public override void Test()
     {
         DeleteDb("twoPhaseCommit");

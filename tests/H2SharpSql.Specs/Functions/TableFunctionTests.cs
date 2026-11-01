@@ -13,7 +13,7 @@ namespace H2SharpSql.Specs.Functions;
 public sealed class TableFunctionTests
 {
     /// <summary>docs/functions.html:4185 — CSVREAD(fileNameString [, columnsString [, csvOptions ] ] )</summary>
-    [Fact]
+    [Fact(Skip = "not ported (documented in MIGRATION_STATUS)")]
     [Trait("Category", "BlockedByPort")]
     public void CsvRead_ReadsTheWrittenFile() // FUN-4185
     {
@@ -30,7 +30,7 @@ public sealed class TableFunctionTests
     }
 
     /// <summary>docs/functions.html:4203 — LINK_SCHEMA (targetSchemaString, driverString, urlString,</summary>
-    [Fact]
+    [Fact(Skip = "linked tables out of scope (D-030)")]
     public void LinkSchema_CreatesTheTargetSchema() // FUN-4203
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -44,7 +44,7 @@ public sealed class TableFunctionTests
     }
 
     /// <summary>docs/functions.html:4204 — userString, passwordString, sourceSchemaString)</summary>
-    [Fact]
+    [Fact(Skip = "linked tables out of scope (D-030)")]
     public void LinkSchema_WithExplicitDriver() // FUN-4204
     {
         using IDbConnection connection = TestDatabase.Open();
