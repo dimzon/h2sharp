@@ -6923,10 +6923,12 @@ public sealed partial class Parser
                     ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
                     Expressions.Functions.TableInfoFunction.EstimatedEnvelope);
 
-            // FileFunction (not ported).
+            // FileFunction is out of scope by decision: direct file access from SQL is a
+            // security surface; whoever needs it registers a UDF.
             case "FILE_READ":
             case "FILE_WRITE":
-                throw new TODOException("Parser.readBuiltinFunctionIf: FileFunction is not ported");
+                throw Message.DbException.GetUnsupportedException(
+                    "FILE_READ/FILE_WRITE are out of scope; register your own UDF");
 
             // DataTypeSQLFunction.
             case "DATA_TYPE_SQL":
@@ -6934,13 +6936,14 @@ public sealed partial class Parser
                     ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
                     ReadNextArgument(aggregateSelect), ReadLastArgument(aggregateSelect));
 
-            // CSVWriteFunction (not ported).
+            // CSVWriteFunction is out of scope by decision; whoever needs it registers a UDF.
             case "CSVWRITE":
-                throw new TODOException("Parser.readBuiltinFunctionIf: CSVWriteFunction is not ported");
+                throw Message.DbException.GetUnsupportedException(
+                    "CSVWRITE is out of scope; register your own UDF");
 
-            // SignalFunction (not ported).
             case "SIGNAL":
-                throw new TODOException("Parser.readBuiltinFunctionIf: SignalFunction is not ported");
+                return new Expressions.Functions.SignalFunction(
+                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect));
 
             // TruncateValueFunction.
             case "TRUNCATE_VALUE":

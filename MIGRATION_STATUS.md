@@ -355,6 +355,13 @@ LOB-in-database — **отложен** по решению пользовате�
 фронтенд + DML-интеграция) — крупная подсистема; TODO в `ValueDataType`
 и `ValueLob.copyToResult` остаются маркерами.
 
+Builtin-функции: `SIGNAL` реализован (валидация SQLSTATE, бросок
+`DbException.FromUser`); `ENCRYPT/DECRYPT` закрыты пакетом H2Sharp.Crypto
+(проверено roundtrip через `UseCrypto()`); `FILE_READ/FILE_WRITE` и
+`CSVWRITE` — **вне scope** по решению пользователя (прямой доступ к ФС из
+SQL; нуждающиеся регистрируют собственные UDF), парсер отвечает именованной
+`GetUnsupportedException`.
+
 ADO-батч: `H2Batch`/`H2BatchCommand` (`DbBatch`) + `H2Connection.CreateBatch`;
 движковый `Command.ExecuteBatchUpdate` выполняет наборы параметров одного
 оператора одной транзакцией с по-элементной фиксацией ошибок. Тесты
