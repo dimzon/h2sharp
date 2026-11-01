@@ -10,12 +10,17 @@ From the repository root:
 .\tools\coverage\run_coverage.ps1
 ```
 
-Runs Data, MvStore, Engine, Core (`H2Sharp.Tests`) and Native sequentially with
-`--collect:"XPlat Code Coverage"`, then prints the merged summary. The suites
-must run sequentially: parallel builds contend on the shared output DLL
-(CS2012 file locks). `H2SharpSql.Specs` is not included — it has no coverlet
-collector. The native suite needs `H2SHARP_NATIVE_TESTS=1`, which the script
-sets itself. Suites with known red tests do not stop the run.
+Runs Data, MvStore, Engine, Core (`H2Sharp.Tests`), SQL Specs and Native
+sequentially with `--collect:"XPlat Code Coverage"`, then prints the merged
+summary. The suites must run sequentially: parallel builds contend on the shared
+output DLL (CS2012 file locks). The native suite needs `H2SHARP_NATIVE_TESTS=1`,
+which the script sets itself. Suites with known red tests do not stop the run.
+
+The native suite contains a few very heavy tests (`TestCache`,
+`TestCachedQueryResults`, `TestAnalyzeTableTx`, ...). A full native run can take
+much longer than the rest of the suites; see
+[docs/COVERAGE_ANALYSIS.md](../../docs/COVERAGE_ANALYSIS.md) for the measured
+breakdown and the exclusions used for the reported baseline.
 
 ## Merge only
 
