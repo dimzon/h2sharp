@@ -1034,10 +1034,8 @@ public sealed partial class Parser
     private Prepared PrepareParsedStatement(SessionLocal current, Statement statement)
         => statement switch
         {
-            CreateTableStatement create => PrepareCreateTable(current, create),
             CreateIndexStatement createIndex => PrepareCreateIndex(current, createIndex),
             AlterTableStatement alter => PrepareAlterTable(current, alter),
-            DropTableStatement drop => PrepareDropTable(current, drop),
             DropIndexStatement dropIndex => PrepareDropIndex(current, dropIndex),
             InsertStatement insert => PrepareInsert(current, insert),
             UpdateStatement update => PrepareUpdate(current, update),
@@ -7773,97 +7771,6 @@ public sealed partial class Parser
     /// <param name="session">the session</param>
     /// <param name="statement">the parsed statement</param>
     /// <returns>the prepared statement</returns>
-    private Prepared PrepareCreateTable(SessionLocal session, CreateTableStatement statement)
-    {
-        Schemas.Schema schema = statement.Schema is null
-            ? CurrentSchema(session)
-            : session.GetDatabase().GetSchema(statement.Schema);
-        Ddl.CreateTable create = new(session, schema);
-        create.SetSql(statement.Sql, null);
-        create.SetTableName(statement.Name);
-        create.SetIfNotExists(statement.IfNotExists);
-        create.SetPersistIndexes(statement.PersistIndexes);
-        int id = 0;
-        foreach (ColumnDefinition column in statement.Columns)
-        {
-            Tables.Column tableColumn;
-            Schemas.Domain? columnDomain = schema.FindDomain(column.Type);
-            if (columnDomain is not null)
-            {
-                tableColumn = new Tables.Column(column.Name, columnDomain.GetDataType(), null, id++);
-                tableColumn.SetComment(columnDomain.GetComment());
-                tableColumn.SetDomain(columnDomain);
-            }
-            else
-            {
-                tableColumn = new Tables.Column(column.Name, ParseDataType(column.Type), null, id++);
-            }
-            if (column.NotNull)
-            {
-                tableColumn.SetNullable(false);
-            }
-
-            if (column.IdentityOptions is not null)
-            {
-                // An identity column is never nullable, and the sequence of it is created
-                // when the table is.
-                tableColumn.SetIdentityOptions(column.IdentityOptions, column.IdentityGeneratedAlways);
-            }
-
-            if (column.Generated is not null)
-            {
-                tableColumn.SetGeneratedExpression(column.Generated);
-            }
-
-            if (column.Default is not null)
-            {
-                tableColumn.SetDefaultExpression(session, column.Default);
-            }
-
-            if (column.OnUpdate is not null)
-            {
-                tableColumn.SetOnUpdateExpression(session, column.OnUpdate);
-            }
-
-            if (column.DefaultOnNull)
-            {
-                tableColumn.SetDefaultOnNull(true);
-            }
-
-            create.AddColumn(tableColumn);
-            if (column.PrimaryKey)
-            {
-                // One column-level PRIMARY KEY is one constraint over one column, as in the
-                // reference's readColumnConstraints: a second one over different columns is
-                // then two primary keys and error 90017, not one composite key. The column
-                // goes in by name, as in the reference; the constraint resolves it against
-                // the table when it runs.
-                create.AddConstraintCommand(CreateAddConstraintCommand(session, schema, statement.Name,
-                    false, new TableConstraintDefinition(column.ConstraintName, false,
-                        [new IndexColumn(tableColumn.GetName())], column.PrimaryKeyHash)));
-            }
-
-            if (column.RefTable is not null)
-            {
-                // One column-level REFERENCES is one foreign key over one column, as in the
-                // reference's readColumnConstraints.
-                create.AddConstraintCommand(CreateAddConstraintCommand(session, schema, statement.Name,
-                    false, new TableConstraintDefinition(column.ConstraintName, false,
-                        [new IndexColumn(tableColumn.GetName())], Hash: false,
-                        CommandInterface.AlterTableAddConstraintReferential, Comment: null,
-                        column.RefTableSchema, column.RefTable, column.RefColumns,
-                        column.RefUpdateAction, column.RefDeleteAction, CheckExisting: true)));
-            }
-        }
-
-        foreach (TableConstraintDefinition constraint in statement.Constraints)
-        {
-            create.AddConstraintCommand(
-                CreateAddConstraintCommand(session, schema, statement.Name, false, constraint));
-        }
-
-        return create;
-    }
 
     /// <summary>
     /// Builds the ALTER TABLE command for a statement the parser read.
@@ -8330,34 +8237,6 @@ public sealed partial class Parser
         return insert;
     }
 
-    private Prepared PrepareDropTable(SessionLocal session, DropTableStatement statement)
-    {
-        Ddl.DropTable drop = new(session);
-        drop.SetSql(statement.Sql, null);
-        drop.SetIfExists(statement.IfExists);
-        foreach ((string name, string? schemaName) in statement.Tables)
-        {
-            Schemas.Schema schema = schemaName is null
-                ? CurrentSchema(session)
-                : session.GetDatabase().GetSchema(schemaName);
-            drop.AddTable(schema, name);
-        }
-
-        if (statement.Cascade)
-        {
-            drop.SetDropAction(Constraints.ConstraintActionType.CASCADE);
-        }
-        else if (statement.Restrict)
-        {
-            drop.SetDropAction(Constraints.ConstraintActionType.RESTRICT);
-        }
-        else if (statement.SetDefault)
-        {
-            drop.SetDropAction(Constraints.ConstraintActionType.SET_DEFAULT);
-        }
-
-        return drop;
-    }
 
     /// <summary>
     /// Builds the CREATE INDEX command for a statement the parser read.
