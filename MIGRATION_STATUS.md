@@ -503,9 +503,19 @@ temp-таблицы, schema, time zone и transaction state; reset дороже 
   AES через BCL (`AES-128`, ECB, zero padding), XTEA и FOG — порты H2. Пакет
   опционален, ядро криптографии не содержит; векторы совпадают с jar.
 
-TODO следующего среза: полноценный data-driven catalog builtins вместо
-`ReadBuiltinFunctionIf`, schema/FunctionAlias metadata, persistence/reopen,
+TODO следующего среза: schema/FunctionAlias metadata, persistence/reopen,
 `CREATE/DROP ALIAS`, DI/triggers/trace и table-valued UDF.
+
+### Реестр built-in функций
+
+`FunctionRegistry` (`Expressions/Functions/FunctionRegistry.cs`) описывает
+функции, у которых грамматика — только список аргументов: унарные math/string,
+битовые функции, `REPLACE`/`LPAD`/`RPAD`/`LOCATE`, `SOUNDEX`, `NULLIF`,
+array/compress/session/table-info, `ZERO`/`PI`, sys-info и несколько точных
+арностей. `Parser.ReadBuiltinFunctionIf` сначала спрашивает реестр, затем
+оставляет в switch только специальную грамматику (`LOG`, `TRIM`, `LENGTH`,
+`TO_CHAR`, JSON/XML/regexp, date-time, `HASH`, `RAND`, `DB_OBJECT`, `GCD/LCM`).
+Поведение и типы не менялись; это сокращение ветвлений парсера.
 
 ### Пользовательские агрегаты
 

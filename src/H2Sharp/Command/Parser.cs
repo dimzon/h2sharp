@@ -6482,6 +6482,34 @@ public sealed partial class Parser
         return function;
     }
 
+    private Expressions.Expression ReadRegisteredFunction(
+        Expressions.Functions.FunctionRegistration registration, Query.Select? aggregateSelect)
+    {
+        if (registration.MaxArguments == 0)
+        {
+            Expect(Token.CloseParen, ")");
+            return registration.Create([]);
+        }
+
+        List<Expressions.Expression> args = [];
+        if (!ReadIf(Token.CloseParen))
+        {
+            do
+            {
+                args.Add(ReadQueryOr(aggregateSelect));
+            }
+            while (args.Count < registration.MaxArguments && ReadIf(Token.Comma));
+            Expect(Token.CloseParen, ")");
+        }
+
+        if (args.Count < registration.MinArguments)
+        {
+            throw DbException.GetSyntaxError(sql, Current.Start, "argument");
+        }
+
+        return registration.Create([.. args]);
+    }
+
     /// <summary>
     /// Reads a built-in function, the reference's readBuiltinFunctionIf. Returns null when the
     /// name is not read here, so that the caller may try the next switch.
@@ -6491,49 +6519,14 @@ public sealed partial class Parser
     /// <returns>the expression, or null</returns>
     private Expressions.Expression? ReadBuiltinFunctionIf(string upperName, Query.Select? aggregateSelect)
     {
+        if (Expressions.Functions.FunctionRegistry.TryGet(
+            upperName, out Expressions.Functions.FunctionRegistration? registration))
+        {
+            return ReadRegisteredFunction(registration!, aggregateSelect);
+        }
+
         switch (upperName)
         {
-            case "ABS":
-                return new Expressions.Functions.MathFunction(
-                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Abs);
-            case "MOD":
-                return new Expressions.Functions.MathFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.MathFunction.Mod);
-            case "SIN":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Sin);
-            case "COS":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Cos);
-            case "TAN":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Tan);
-            case "COT":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Cot);
-            case "SINH":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Sinh);
-            case "COSH":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Cosh);
-            case "TANH":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Tanh);
-            case "ASIN":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Asin);
-            case "ACOS":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Acos);
-            case "ATAN":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Atan);
-            case "ATAN2":
-                return new Expressions.Functions.MathFunction2(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.MathFunction2.Atan2);
             case "LOG":
                 {
                     Expressions.Expression arg1 = ReadQueryOr(aggregateSelect);
@@ -6549,110 +6542,6 @@ public sealed partial class Parser
                             ? Expressions.Functions.MathFunction1.Log10
                             : Expressions.Functions.MathFunction1.Ln);
                 }
-
-            case "LOG10":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Log10);
-            case "LN":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Ln);
-            case "EXP":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Exp);
-            case "POWER":
-                return new Expressions.Functions.MathFunction2(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.MathFunction2.Power);
-            case "SQRT":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Sqrt);
-            case "FLOOR":
-                return new Expressions.Functions.MathFunction(
-                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Floor);
-            case "CEIL":
-            case "CEILING":
-                return new Expressions.Functions.MathFunction(
-                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Ceil);
-            case "ROUND":
-                return new Expressions.Functions.MathFunction(
-                    ReadQueryOr(aggregateSelect), ReadIfArgument(aggregateSelect),
-                    Expressions.Functions.MathFunction.Round);
-            case "ROUNDMAGIC":
-                return new Expressions.Functions.MathFunction(
-                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Roundmagic);
-            case "SIGN":
-                return new Expressions.Functions.MathFunction(
-                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.MathFunction.Sign);
-            case "TRUNC":
-            case "TRUNCATE":
-                return new Expressions.Functions.MathFunction(
-                    ReadQueryOr(aggregateSelect), ReadIfArgument(aggregateSelect),
-                    Expressions.Functions.MathFunction.Trunc);
-            case "DEGREES":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Degrees);
-            case "RADIANS":
-                return new Expressions.Functions.MathFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.MathFunction1.Radians);
-
-            case "BITAND":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Bitand);
-            case "BITOR":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Bitor);
-            case "BITXOR":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Bitxor);
-            case "BITNOT":
-                return new Expressions.Functions.BitFunction(
-                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.BitFunction.Bitnot);
-            case "BITNAND":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Bitnand);
-            case "BITNOR":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Bitnor);
-            case "BITXNOR":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Bitxnor);
-            case "BITGET":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Bitget);
-            case "BITCOUNT":
-                return new Expressions.Functions.BitFunction(
-                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.BitFunction.Bitcount);
-            case "LSHIFT":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Lshift);
-            case "RSHIFT":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Rshift);
-            case "ULSHIFT":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Ulshift);
-            case "URSHIFT":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Urshift);
-            case "ROTATELEFT":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Rotateleft);
-            case "ROTATERIGHT":
-                return new Expressions.Functions.BitFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.BitFunction.Rotateright);
 
             case "EXTRACT":
                 {
@@ -6688,89 +6577,6 @@ public sealed partial class Parser
             case "PARSEDATETIME":
                 return ReadDateTimeFormatFunction(
                     Expressions.Functions.DateTimeFormatFunction.ParseDateTime, aggregateSelect);
-
-            case "DAYNAME":
-                return new Expressions.Functions.DayMonthNameFunction(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.DayMonthNameFunction.DayName);
-            case "MONTHNAME":
-                return new Expressions.Functions.DayMonthNameFunction(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.DayMonthNameFunction.MonthName);
-
-            case "CARDINALITY":
-                return new Expressions.Functions.CardinalityExpression(
-                    ReadSingleArgument(aggregateSelect), false);
-            case "ARRAY_MAX_CARDINALITY":
-                return new Expressions.Functions.CardinalityExpression(
-                    ReadSingleArgument(aggregateSelect), true);
-
-            case "LOCATE":
-                return new Expressions.Functions.StringFunction(
-                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
-                    ReadIfArgument(aggregateSelect), Expressions.Functions.StringFunction.Locate);
-            case "INSERT":
-                return new Expressions.Functions.StringFunction(
-                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
-                    ReadNextArgument(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.StringFunction.Insert);
-            case "REPLACE":
-                return new Expressions.Functions.StringFunction(
-                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
-                    ReadIfArgument(aggregateSelect), Expressions.Functions.StringFunction.Replace);
-            case "LPAD":
-                return new Expressions.Functions.StringFunction(
-                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
-                    ReadIfArgument(aggregateSelect), Expressions.Functions.StringFunction.Lpad);
-            case "RPAD":
-                return new Expressions.Functions.StringFunction(
-                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
-                    ReadIfArgument(aggregateSelect), Expressions.Functions.StringFunction.Rpad);
-            case "TRANSLATE":
-                return new Expressions.Functions.StringFunction(
-                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
-                    ReadLastArgument(aggregateSelect), Expressions.Functions.StringFunction.Translate);
-
-            case "UPPER":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Upper);
-            case "LOWER":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Lower);
-            case "ASCII":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Ascii);
-            case "CHAR":
-            case "CHR":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Char);
-            case "STRINGENCODE":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Stringencode);
-            case "STRINGDECODE":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Stringdecode);
-            case "STRINGTOUTF8":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Stringtoutf8);
-            case "UTF8TOSTRING":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Utf8tostring);
-            case "HEXTORAW":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Hextoraw);
-            case "RAWTOHEX":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Rawtohex);
-            case "SPACE":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.Space);
-            case "QUOTE_IDENT":
-                return new Expressions.Functions.StringFunction1(
-                    ReadSingleArgument(aggregateSelect), Expressions.Functions.StringFunction1.QuoteIdent);
-
-            case "REPEAT":
-                return new Expressions.Functions.StringFunction2(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.StringFunction2.Repeat);
 
             case "SUBSTRING":
                 return ReadSubstringFunction(aggregateSelect);
@@ -6839,32 +6645,6 @@ public sealed partial class Parser
             case "XMLTEXT":
                 return ReadParameters(new Expressions.Functions.XMLFunction(Expressions.Functions.XMLFunction.XMLTEXT), aggregateSelect);
 
-            case "TRIM_ARRAY":
-                return new Expressions.Functions.ArrayFunction(ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect), null,
-                    Expressions.Functions.ArrayFunction.TrimArray);
-            case "ARRAY_CONTAINS":
-                return new Expressions.Functions.ArrayFunction(ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect), null,
-                    Expressions.Functions.ArrayFunction.ArrayContains);
-            case "ARRAY_SLICE":
-                return new Expressions.Functions.ArrayFunction(ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
-                    ReadLastArgument(aggregateSelect), Expressions.Functions.ArrayFunction.ArraySlice);
-
-            case "COMPRESS":
-                return new Expressions.Functions.CompressFunction(
-                    ReadQueryOr(aggregateSelect), ReadIfArgument(aggregateSelect),
-                    Expressions.Functions.CompressFunction.Compress);
-            case "EXPAND":
-                return new Expressions.Functions.CompressFunction(
-                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.CompressFunction.Expand);
-
-            case "SOUNDEX":
-                return new Expressions.Functions.SoundexFunction(
-                    ReadSingleArgument(aggregateSelect), null, Expressions.Functions.SoundexFunction.Soundex);
-            case "DIFFERENCE":
-                return new Expressions.Functions.SoundexFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.SoundexFunction.Difference);
-
             case "JSON_OBJECT":
             {
                 Expressions.Functions.JsonConstructorFunction function = new(false);
@@ -6910,9 +6690,6 @@ public sealed partial class Parser
                 return ReadCoalesceFunction(Expressions.Functions.CoalesceFunction.Greatest, aggregateSelect);
             case "LEAST":
                 return ReadCoalesceFunction(Expressions.Functions.CoalesceFunction.Least, aggregateSelect);
-            case "NULLIF":
-                return new Expressions.Functions.NullIfFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect));
             case "CONCAT":
                 return ReadConcatFunction(Expressions.Functions.ConcatFunction.Concat, aggregateSelect);
             case "CONCAT_WS":
@@ -6942,104 +6719,16 @@ public sealed partial class Parser
                     null, Expressions.Functions.RandFunction.RandomUuid);
 
             // SessionControlFunction.
-            case "ABORT_SESSION":
-                return new Expressions.Functions.SessionControlFunction(
-                    ReadSingleArgument(aggregateSelect),
-                    Expressions.Functions.SessionControlFunction.AbortSession);
-            case "CANCEL_SESSION":
-                return new Expressions.Functions.SessionControlFunction(
-                    ReadSingleArgument(aggregateSelect),
-                    Expressions.Functions.SessionControlFunction.CancelSession);
-
-            // TableInfoFunction (the disk-space half; the envelope half needs spatial
-            // indexes, which are not ported, and answers null without one).
-            case "DISK_SPACE_USED":
-                return new Expressions.Functions.TableInfoFunction(
-                    ReadSingleArgument(aggregateSelect), null,
-                    Expressions.Functions.TableInfoFunction.DiskSpaceUsed);
-            case "ESTIMATED_ENVELOPE":
-                return new Expressions.Functions.TableInfoFunction(
-                    ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect),
-                    Expressions.Functions.TableInfoFunction.EstimatedEnvelope);
-
-            // FileFunction is out of scope by decision: direct file access from SQL is a
-            // security surface; whoever needs it registers a UDF.
             case "FILE_READ":
             case "FILE_WRITE":
                 throw Message.DbException.GetUnsupportedException(
                     "FILE_READ/FILE_WRITE are out of scope; register your own UDF");
 
             // DataTypeSQLFunction.
-            case "DATA_TYPE_SQL":
-                return new Expressions.Functions.DataTypeSQLFunction(
-                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
-                    ReadNextArgument(aggregateSelect), ReadLastArgument(aggregateSelect));
-
-            // CSVWriteFunction is out of scope by decision; whoever needs it registers a UDF.
             case "CSVWRITE":
                 throw Message.DbException.GetUnsupportedException(
                     "CSVWRITE is out of scope; register your own UDF");
 
-            case "SIGNAL":
-                return new Expressions.Functions.SignalFunction(
-                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect));
-
-            // TruncateValueFunction.
-            case "TRUNCATE_VALUE":
-                return new Expressions.Functions.TruncateValueFunction(
-                    ReadQueryOr(aggregateSelect), ReadNextArgument(aggregateSelect),
-                    ReadLastArgument(aggregateSelect));
-
-            case "ZERO":
-                Expect(Token.CloseParen, ")");
-                return Expressions.ValueExpression.Get(ValueInteger.Get(0));
-            case "PI":
-                Expect(Token.CloseParen, ")");
-                return Expressions.ValueExpression.Get(ValueDouble.Get(Math.PI));
-
-            // SysInfoFunction (zero-argument database and session information).
-            case "AUTOCOMMIT":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.Autocommit);
-            case "DATABASE_PATH":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.DatabasePath);
-            case "H2VERSION":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.H2version);
-            case "LOCK_MODE":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.LockMode);
-            case "LOCK_TIMEOUT":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.LockTimeout);
-            case "MEMORY_FREE":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.MemoryFree);
-            case "MEMORY_USED":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.MemoryUsed);
-            case "READONLY":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.Readonly);
-            case "SESSION_ID":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.SessionId);
-            case "TRANSACTION_ID":
-                Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.SysInfoFunction(
-                    Expressions.Functions.SysInfoFunction.TransactionId);
-
-            // DBObjectFunction (two- or three-argument database object lookup).
             case "DB_OBJECT_ID":
             case "DB_OBJECT_SQL":
             case "DB_OBJECT_SIZE":
