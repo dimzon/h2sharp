@@ -8627,6 +8627,15 @@ TRX: `native-query-target-core.trx`, `native-query-target-specs.trx`,
 `query-target3.trx`, `native-ctas-targeted.trx`, `native-sequence-persistent.trx`,
 `native-blockers-oracle3.trx`.
 
+Свежий conformance-срез (2026-11-01):
+- core: **1483 passed / 0 failed / 1483 total**, скипов 0 (оракул гоняется);
+  прежние 3 PostfixCast падения закрыты.
+- H2Sharp.Data.Tests: **609/609** (включая батч H2BatchTests 5/5).
+- Engine.Tests 9/9; MvStore.Tests 89/89.
+- Native (opt-in): ~97/121 зелёных; остальные — задокументированные области.
+- Specs (зелёный набор без BlockedByPort): 879/905; красные 26 — известные
+  DDL-классы (CreateTrigger ×6, DropTrigger, aliases, Script, link).
+
 ### Identity DDL: осмысленные отказы и границы conformance
 
 Conformance-набор действительно содержит DDL, включая `CREATE/ALTER/DROP USER`,
