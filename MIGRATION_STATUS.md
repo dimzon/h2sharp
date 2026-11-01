@@ -350,6 +350,11 @@ Power-off seam (`TestBase.Crash`/`SetPowerOffCount`) — вне scope по ре�
 (с signed-байтом отрицательности, как эталон) и ENUM (ordinal),
 roundtrip-тесты в MvStore.Tests.
 
+LOB-in-database — **отложен** по решению пользователя (план в
+`docs/LOB_STORE_PLAN.md`): полное хранилище LOB (StreamStore + карты +
+фронтенд + DML-интеграция) — крупная подсистема; TODO в `ValueDataType`
+и `ValueLob.copyToResult` остаются маркерами.
+
 ADO-батч: `H2Batch`/`H2BatchCommand` (`DbBatch`) + `H2Connection.CreateBatch`;
 движковый `Command.ExecuteBatchUpdate` выполняет наборы параметров одного
 оператора одной транзакцией с по-элементной фиксацией ошибок. Тесты
