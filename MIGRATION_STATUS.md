@@ -7939,6 +7939,14 @@ DI/builders — отдельные надстройки. Обычный IntelliS
 ADR/AGENTS/спринт обновлены; существующий IH2Test служит примером pre-Open
 настроек, но production registration не переносится в тестовый интерфейс.
 
+### Кодировки и collation (по решению пользователя)
+
+Unicode/кодировки — поддержан важный аспект (UTF-8/UTF-16, фолдинг
+идентификаторов). Полные collation-движки (весовые порядка, `CP500` и т.п.)
+— **вне scope**: Native-тесты TestCollation/TestCollationEnglish/
+TestPersistentSettingsCollation/TestSetCollation остаются красными как
+фиксация, SQL-тесты не удаляются.
+
 ### CREATE ALIAS — вне scope (по решению пользователя)
 
 Java-классы в порте не загружаются; `CREATE ALIAS` (Java-исходники, имена
