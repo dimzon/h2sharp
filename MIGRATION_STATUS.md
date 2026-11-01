@@ -8675,6 +8675,9 @@ mvstore/core/specs/native-fast на финальном коде): **89.6% (6306/
 inline-ограничения, DEFAULT ON NULL, generated, NULLS-индексы, math, invalid
 SET) — ещё +5 строк; девятая (JSON-формы, функциональные индексы,
 percentile, деревья) — ещё +3. Легкодостижимое исчерпано.
+Прямые unit-тесты Util (SmallMap, CacheTQ, PropertiesFile, DateTimeTemplate) и ADO
+(H2Enlistment, H2ParameterCollection, поверхность соединения, H2ValueMapper):
+Util 90.2%, Data 83.4%, общее покрытие 83.3%.
 Specs и частичный Native получили свои coverage-прогоны (coverlet.collector
 добавлен в Specs, тяжёлые тайм-чувствительные тесты Native исключаются
 фильтром). DTO-контур анализа подтверждён живым (UPDATE/DELETE/индексы/
