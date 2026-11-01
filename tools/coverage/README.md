@@ -22,6 +22,12 @@ much longer than the rest of the suites; see
 [docs/COVERAGE_ANALYSIS.md](../../docs/COVERAGE_ANALYSIS.md) for the measured
 breakdown and the exclusions used for the reported baseline.
 
+`H2SHARP_NATIVE_MEMORY=1` selects in-memory databases in `TestBase`. It is a
+speed profile for heavy tests, not a replacement for the file profile: tests
+that inspect database files or persistence (`TestSpaceReuse`, `TestReadOnly`,
+`TestSynonymForTable`, `TestMultiThread`) fail in it. The analysis above uses
+it only for heavy tests that pass in memory.
+
 ## Merge only
 
 If the per-suite reports already exist under `artifacts/TestResults/<Suite>/*/coverage.cobertura.xml`:

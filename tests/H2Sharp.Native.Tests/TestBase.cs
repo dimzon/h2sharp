@@ -60,6 +60,17 @@ public abstract class TestBase
     protected long start;
 
     /// <summary>
+    /// Selects in-memory databases for test runs that do not need file persistence.
+    /// </summary>
+    protected TestBase()
+    {
+        if (Environment.GetEnvironmentVariable("H2SHARP_NATIVE_MEMORY") == "1")
+        {
+            Config.Memory = true;
+        }
+    }
+
+    /// <summary>
     /// Get the test directory for this test.
     /// </summary>
     /// <param name="name">the directory name suffix</param>
