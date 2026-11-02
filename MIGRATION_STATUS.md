@@ -72,7 +72,11 @@ DISTINCT ON и hidden-колонки идут через отсортирова�
 `writeTimestampTime(timeNanos)`, как эталон, а не epoch-наносекунды; закрыто
 `ValueDataTypeTests`. `EXPLAIN` принимает `MERGE`, как `parseExplain` эталона
 (`DELETE`/`UPDATE`/`INSERT` шли через `ReadStatement`, а `MERGE` нечем было
-прочитать); закрыто `ExplainCommandTests`.
+прочитать); закрыто `ExplainCommandTests`. `ValueExpression.IsValueSet()`
+возвращает `true`, как в эталоне: без этого не срабатывала свёртка констант в
+`CompareLike.optimize` и `... LIKE 'A%' ESCAPE NULL` ронял планировщик
+внутренней ошибкой из `CreateIndexConditions`; закрыто
+`LikeOptimizationTests`.
 
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.

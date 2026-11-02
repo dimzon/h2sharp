@@ -159,6 +159,17 @@ public class ValueExpression : Expression
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// As in the reference's <c>ValueExpression.isValueSet</c>: a literal always
+    /// has its value, so constant folding (e.g. in <c>CompareLike.optimize</c>)
+    /// may read it at prepare time.
+    /// </remarks>
+    public override bool IsValueSet()
+    {
+        return true;
+    }
+
+    /// <inheritdoc/>
     public override bool IsNullConstant()
     {
         return value is ValueNull;
