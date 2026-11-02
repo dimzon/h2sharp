@@ -353,6 +353,90 @@ public sealed class FileSystemTests : IDisposable
     }
 
     [Fact]
+    public void DeletingAReadOnlyFileClearsTheFlagFirst()
+    {
+        DiskFilePath path = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "readonly.txt").Replace('\\', '/'));
+        Assert.True(path.CreateFile());
+        File.SetAttributes(path.ToRealPath().Name, FileAttributes.ReadOnly);
+
+        path.Delete();
+
+        Assert.False(path.Exists());
+    }
+
+    [Fact]
+    public void DeletingWhatIsNotThereIsNothing()
+    {
+        DiskFilePath path = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "missing.txt").Replace('\\', '/'));
+
+        path.Delete();
+
+        Assert.False(path.Exists());
+    }
+
+    [Fact]
+    public void CreatingAnExistingDirectoryIsRefused()
+    {
+        DiskFilePath path = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "sub2").Replace('\\', '/'));
+        path.CreateDirectory();
+
+        Assert.Throws<IOException>(() => path.CreateDirectory());
+    }
+
+    [Fact]
+    public void AMissingDirectoryListsNothing()
+    {
+        DiskFilePath path = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "nosuchdir").Replace('\\', '/'));
+
+        Assert.Empty(path.NewDirectoryStream());
+    }
+
+    [Fact]
+    public void WritabilityFollowsTheReadOnlyFlag()
+    {
+        DiskFilePath path = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "writable.txt").Replace('\\', '/'));
+        Assert.True(path.CreateFile());
+
+        Assert.True(path.CanWrite());
+        Assert.True(path.SetReadOnly());
+
+        File.SetAttributes(path.ToRealPath().Name, FileAttributes.ReadOnly);
+        Assert.False(path.CanWrite());
+        Assert.False(path.SetReadOnly());
+
+        File.SetAttributes(path.ToRealPath().Name, FileAttributes.Normal);
+    }
+
+    [Fact]
+    public void MovingWhatIsNotThereIsRefused()
+    {
+        DiskFilePath path = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "missing.txt").Replace('\\', '/'));
+        FilePath target = FilePath.Get(Path.Combine(directory, "target.txt").Replace('\\', '/'));
+
+        Assert.Throws<FileNotFoundException>(() => path.MoveTo(target, atomicReplace: true));
+    }
+
+    [Fact]
+    public void MovingOntoAFileWithoutReplaceIsRefused()
+    {
+        DiskFilePath first = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "first.txt").Replace('\\', '/'));
+        DiskFilePath second = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "second.txt").Replace('\\', '/'));
+        Assert.True(first.CreateFile());
+        Assert.True(second.CreateFile());
+
+        Assert.Throws<IOException>(() => first.MoveTo(second, atomicReplace: false));
+        Assert.True(first.Exists());
+    }
+
+    [Fact]
     public void AWrapperWouldSayWhatItStandsFor()
     {
         // Nothing is a wrapper yet, so unwrapping returns the path itself. The call exists because
