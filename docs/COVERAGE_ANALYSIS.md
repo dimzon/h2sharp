@@ -21,14 +21,14 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 69 286 | 81 653 | **84.85%** |
-| Ветви | 28 420 | 35 436 | **80.20%** |
+| Строки | 69 493 | 81 726 | **85.03%** |
+| Ветви | 28 561 | 35 545 | **80.35%** |
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 84.88% | 80.24% |
+| `H2Sharp` | 85.06% | 80.39% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -42,7 +42,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `H2Sharp.MvStore.Tests` | 103 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
 | `H2Sharp.Tests` | 1575 passed |
-| `H2SharpSql.Specs` | 931 passed, 68 skipped |
+| `H2SharpSql.Specs` | 944 passed, 68 skipped |
 | `H2Sharp.Native.Tests` | 86 passed, 23 skipped в file-профиле + 10 тяжёлых тестов в memory-профиле (`TestLIRSMemoryConsumption` в этом прогоне не уложился в таймаут) |
 
 ## Прирост от последних тестов
@@ -51,15 +51,18 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Область | Было | Стало |
 |---|---:|---:|
-| Общие строки | 84.14% | **84.85%** |
-| Общие ветви | 79.43% | **80.20%** |
-| `Command/*` | 86.50% | **86.93%** |
-| `MvStore/*` | 83.05% | **84.35%** |
+| Общие строки | 84.14% | **85.03%** |
+| Общие ветви | 79.43% | **80.35%** |
+| `Command/*` | 86.50% | **86.94%** |
+| `MvStore/*` | 83.05% | **84.56%** |
 | `Value/*` | 86.72% | **87.20%** |
-| `Expressions/*` | 79.42% | **80.44%** |
+| `Expressions/*` | 79.42% | **81.29%** |
 | `Command/Dml/Merge.cs` | 62.7% | **78.9%** |
 | `MvStore/MVStoreTool.cs` | 58.6% | **73.0%** |
 | `Command/Dml/SetClauseList.cs` | 74.4% | **77.5%** |
+| `Command/Dml/MergeUsing.cs` | 71.8% | **72.7%** |
+| `Expressions/Functions/DateTimeFunction.cs` | 71.9% | **74.8%** |
+| `MvStore/Db/MVSpatialIndex.cs` | 45.3% | **51.9%** |
 | `MvStore/Db/ValueDataType.cs` | 67.6% | **84.1%** |
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
@@ -185,7 +188,7 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 | Файл | Покрытие |
 |---|---:|
-| `MvStore/Db/MVSpatialIndex.cs` | 45.3% |
+| `MvStore/Db/MVSpatialIndex.cs` | 51.9% |
 | `MvStore/Db/MVPrimaryIndex.cs` | 69.8% |
 | `Expressions/Functions/BitFunction.cs` | 70.6% |
 | `Command/Dml/MergeUsing.cs` | 71.8% |
@@ -208,8 +211,8 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. После полного пересчёта на свежих отчётах: общий процент **84.85% /
-   80.20%**. Файловые проценты из новой секции «Прирост» актуальны.
+1. После полного пересчёта на свежих отчётах: общий процент **85.03% /
+   80.35%**. Файловые проценты из новой секции «Прирост» актуальны.
    Старые отчёты `artifacts/TestResults` перед merge убраны в
    `artifacts/TestResultsStale`, чтобы merge считал только по свежим.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.
