@@ -199,66 +199,6 @@ public sealed class ExpressionColumn : Expression
         }
     }
 
-    /// <summary>
-    /// Maps this column to a column of a resolver, or fails with the name it was looking for.
-    /// </summary>
-    /// <param name="resolver">the resolver</param>
-    /// <param name="alias">the alias of the column, or null to use the column name</param>
-    /// <param name="checkAll">true to check all columns, false to stop at the first match</param>
-    /// <returns>whether a column was found</returns>
-    public bool MapColumn(ColumnResolver resolver, string? alias, bool checkAll)
-    {
-        bool found = false;
-        string? foundColumn = null;
-        foreach (Column c in resolver.GetColumns())
-        {
-            string? cAlias = resolver.GetColumnName(c);
-            if (tableAlias == null || tableAlias.Equals(resolver.GetTableAlias(), StringComparison.Ordinal))
-            {
-                if (alias == null && cAlias.Equals(columnAlias, StringComparison.Ordinal))
-                {
-                    column = c;
-                    found = true;
-                    break;
-                }
-
-                if (cAlias.Equals(columnAlias, StringComparison.Ordinal)
-                    && (alias == null || alias.Equals(cAlias, StringComparison.Ordinal)))
-                {
-                    foundColumn = cAlias;
-                    column = c;
-                    found = true;
-                    if (!checkAll)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!found && foundColumn is not null)
-        {
-            columnAlias = foundColumn;
-        }
-
-        // The first mapping wins, as the reference keeps the first resolver. A column that a
-        // second table also has is an ambiguous column, and the reference says so rather than
-        // answering with one of the two.
-        if (found)
-        {
-            if (columnResolver is null)
-            {
-                columnResolver = resolver;
-            }
-            else if (!ReferenceEquals(columnResolver, resolver))
-            {
-                throw DbException.Get(Api.ErrorCode.AmbiguousColumnName1, columnAlias);
-            }
-        }
-
-        return found;
-    }
-
     /// <inheritdoc/>
     public override void MapColumns(ColumnResolver resolver, int level, int state)
     {

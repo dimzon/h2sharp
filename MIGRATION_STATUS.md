@@ -6354,6 +6354,10 @@ NO MINVALUE] [MAXVALUE n | NO MAXVALUE] [CYCLE | NO CYCLE] [CACHE n]`, `ALTER SE
   вычислим её фильтр) — без неё условие джойна попадало в фильтр, который ещё не прочитан;
 * `ExpressionColumn.MapColumn`: эталонная ошибка `90059` (`AmbiguousColumnName1`), когда колонку
   нашли две таблицы.
+* Удалена выдуманная публичная `ExpressionColumn.MapColumn(resolver, alias, checkAll)`: в
+  `org.h2.expression.ExpressionColumn` её нет (там только приватная
+  `mapColumn(resolver, col, level)`), у неё было ноль вызывающих и ноль хитов во всех
+  coverage-отчётах. Привязка идёт через `MapColumns`, как в эталоне.
 
 Оракул (`tests/H2Sharp.Tests/JoinOracleTests.cs`, 5 тестов): внутренний джойн, внешние джойны
 слева и справа, алиасы, три таблицы подряд, `NATURAL` и `CROSS` — совпадают с JVM. Тест через
