@@ -55,6 +55,21 @@ public sealed class PrimaryIndexBoundsTests
         Assert.Equal(0, connection.QuerySingle<int>("SELECT COUNT(*) FROM TEST WHERE ID > CAST('NaN' AS DOUBLE)"));
     }
 
+    /// <summary>An explicit _ROWID_ past the counter survives truncate-and-reuse</summary>
+    [Fact]
+    public void ExplicitRowIdInsert_SurvivesTruncateAndUpdate()
+    {
+        using IDbConnection connection = TestDatabase.Open();
+        _ = connection.Execute("CREATE TABLE R(V VARCHAR(50))");
+        _ = connection.Execute("INSERT INTO R(_ROWID_, V) VALUES (100, 'a')");
+        _ = connection.Execute("TRUNCATE TABLE R");
+        _ = connection.Execute("INSERT INTO R(V) VALUES ('b')");
+        _ = connection.Execute("UPDATE R SET V = 'c'");
+
+        Assert.Equal("c", connection.QuerySingle<string>("SELECT V FROM R"));
+        Assert.Equal(1L, connection.QuerySingle<long>("SELECT _ROWID_ FROM R"));
+    }
+
     /// <summary>_ROWID_ modifications are not allowed, as in the reference script test</summary>
     [Fact]
     public void RowIdAssignment_IsRejectedAsSyntaxError()
