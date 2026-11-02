@@ -11,6 +11,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
+using System.Text.RegularExpressions;
 using H2Sharp;
 using H2Sharp.Command;
 using H2Sharp.Engine;
@@ -61,6 +63,32 @@ public sealed class MergeUsingOracleTests
     }
 
     /// <summary>
+    /// The plan names the filters and the clauses, the same text on both sides once the layout
+    /// whitespace is folded away.
+    /// </summary>
+    [JavaOracleFact]
+    public void ThePlanIsTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE T(ID INT PRIMARY KEY, NAME VARCHAR(10))",
+            "CREATE TABLE U(ID INT, NAME VARCHAR(10))",
+            "EXPLAIN MERGE INTO T USING U ON T.ID = U.ID"
+                + " WHEN MATCHED AND T.NAME IS NOT NULL THEN UPDATE SET NAME = U.NAME"
+                + " WHEN MATCHED THEN DELETE"
+                + " WHEN NOT MATCHED THEN INSERT (ID, NAME) VALUES (U.ID, U.NAME)",
+        ];
+        List<string> port = RunPort(statements);
+        List<string> java = RunJava(statements);
+        // The plan is one layout question: the reference spreads it over indented lines, the
+        // port writes it inline, and a multi-line cell arrives as several captured lines, so
+        // the folded text as a whole is what is compared.
+        string javaText = Regex.Replace(string.Join(" ", java), "\\s+", " ").Trim();
+        string portText = Regex.Replace(string.Join(" ", port), "\\s+", " ").Trim();
+        Assert.True(javaText == portText, "java:\n" + javaText + "\nport:\n" + portText);
+    }
+
+    /// <summary>
     /// Runs the statements here and writes what the question answered: the rows, or the code of
     /// the error.
     /// </summary>
@@ -81,7 +109,8 @@ public sealed class MergeUsingOracleTests
             {
                 CommandContainer container =
                     Assert.IsType<CommandContainer>(session.PrepareCommand(sql));
-                if (sql.StartsWith("SELECT", StringComparison.Ordinal))
+                if (sql.StartsWith("SELECT", StringComparison.Ordinal)
+                    || sql.StartsWith("EXPLAIN", StringComparison.Ordinal))
                 {
                     ResultInterface result = container.Query(-1);
                     int visible = result.GetVisibleColumnCount();
@@ -92,7 +121,9 @@ public sealed class MergeUsingOracleTests
                         for (int i = 0; i < visible; i++)
                         {
                             Value? value = row[i];
-                            cells.Add(value is null or ValueNull ? "-" : value.GetString() ?? "-");
+                            cells.Add(value is null or ValueNull
+                                ? "-"
+                                : Regex.Replace(value.GetString() ?? "-", "\\s+", " "));
                         }
 
                         lines.Add("=" + string.Join(":", cells));
@@ -138,7 +169,7 @@ public sealed class MergeUsingOracleTests
                         line.append(':');
                       }
                       String s = rs.getString(c);
-                      line.append(rs.wasNull() ? "-" : s);
+                      line.append(rs.wasNull() ? "-" : s.replaceAll("\\\\s+", " "));
                     }
                     System.out.println(line);
                   }

@@ -119,6 +119,20 @@ NUMERIC за диапазоном long) дошли до конвертера г�
 `PrimaryIndexBoundsTests` — литералы этих значений оптимизатор сворачивает
 раньше обхода.
 
+`MergeUsing.getPlanSQL` был заглушкой с пометкой «TableFilter.getPlanSQL is
+not ported», хотя фильтровый план в порту уже есть; портирован по эталону
+(фильтры, ON, тексты WHEN — последние переведены с `ToString` на эталонный
+`getSQL(builder, sqlFlags)`), `EXPLAIN MERGE USING ...` отвечает тем же
+текстом, что и эталон; закрыто `MergeUsingOracleTests` +
+`MergeUsingCoverageTests` (по сценариям эталонного `TestMergeUsing`:
+dispatch трёх WHEN, отказ двойного обновления одной строки цели `23505`,
+FINAL/OLD/NEW TABLE вокруг merge, несоответствие списка колонок, параметры в
+INSERT VALUES, обёртка «INSERT --» на ошибке значения). Отмечено при
+сверке: post-SET `WHERE` в `WHEN MATCHED` читается только в режимах
+LEGACY/ORACLE (`mode.mergeWhere`) — порт верен; константно-ложный `ON`
+опустошает источник ещё до обхода — и эталон, и порт, т.к. ON становится
+условием join'а.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,

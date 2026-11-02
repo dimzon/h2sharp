@@ -344,12 +344,18 @@ public sealed class MergeUsing : DataChangeStatement
         => throw new TODOException("MergeUsing.collectDependencies: a table is not a DbObject yet");
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Not ported: the reference prints the filters of the plan, and the port's table filter has
-    /// no plan SQL yet.
-    /// </remarks>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
-        => throw new TODOException("MergeUsing.getPlanSQL: TableFilter.getPlanSQL is not ported");
+    {
+        targetTableFilter.GetPlanSql(builder.Append("MERGE INTO "), isJoin: false, sqlFlags);
+        sourceTableFilter.GetPlanSql(builder.Append('\n').Append("USING "), isJoin: false, sqlFlags);
+        _ = onCondition.GetSql(builder.Append('\n').Append("ON "), sqlFlags);
+        foreach (When w in when)
+        {
+            _ = w.GetSql(builder.Append('\n'), sqlFlags);
+        }
+
+        return builder;
+    }
 
     /// <summary>
     /// Abstract WHEN clause of the MERGE statement.
@@ -448,10 +454,14 @@ public sealed class MergeUsing : DataChangeStatement
             }
         }
 
-        /// <inheritdoc/>
-        public override string ToString()
+        /// <summary>
+        /// Appends the clause's SQL to the builder.
+        /// </summary>
+        /// <param name="builder">the builder</param>
+        /// <param name="sqlFlags">the formatting flags</param>
+        /// <returns>the builder</returns>
+        internal virtual StringBuilder GetSql(StringBuilder builder, int sqlFlags)
         {
-            StringBuilder builder = new();
             _ = builder.Append("WHEN ");
             if (this is WhenNotMatched)
             {
@@ -461,11 +471,14 @@ public sealed class MergeUsing : DataChangeStatement
             _ = builder.Append("MATCHED");
             if (AndCondition is not null)
             {
-                _ = AndCondition.GetUnenclosedSql(builder.Append(" AND "), HasSql.DefaultSqlFlags);
+                _ = AndCondition.GetUnenclosedSql(builder.Append(" AND "), sqlFlags);
             }
 
-            return builder.Append(" THEN ").ToString();
+            return builder.Append(" THEN ");
         }
+
+        /// <inheritdoc/>
+        public override string ToString() => GetSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
     }
 
     /// <summary>
@@ -504,8 +517,17 @@ public sealed class MergeUsing : DataChangeStatement
             }
         }
 
+        /// <summary>
+        /// Appends the clause's SQL to the builder.
+        /// </summary>
+        /// <param name="builder">the builder</param>
+        /// <param name="sqlFlags">the formatting flags</param>
+        /// <returns>the builder</returns>
+        internal override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
+            => base.GetSql(builder, sqlFlags).Append("DELETE");
+
         /// <inheritdoc/>
-        public override string ToString() => base.ToString() + "DELETE";
+        public override string ToString() => GetSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
     }
 
     /// <summary>
@@ -589,12 +611,19 @@ public sealed class MergeUsing : DataChangeStatement
             _ = setClauseList!.IsEverything(visitor);
         }
 
-        /// <inheritdoc/>
-        public override string ToString()
+        /// <summary>
+        /// Appends the clause's SQL to the builder.
+        /// </summary>
+        /// <param name="builder">the builder</param>
+        /// <param name="sqlFlags">the formatting flags</param>
+        /// <returns>the builder</returns>
+        internal override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
             => setClauseList is null
-                ? base.ToString() + "UPDATE"
-                : setClauseList.GetSql(new StringBuilder(base.ToString() + "UPDATE"), HasSql.DefaultSqlFlags)
-                    .ToString();
+                ? base.GetSql(builder, sqlFlags).Append("UPDATE")
+                : setClauseList.GetSql(base.GetSql(builder, sqlFlags).Append("UPDATE"), sqlFlags);
+
+        /// <inheritdoc/>
+        public override string ToString() => GetSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
     }
 
     /// <summary>
@@ -709,12 +738,20 @@ public sealed class MergeUsing : DataChangeStatement
             }
         }
 
-        /// <inheritdoc/>
-        public override string ToString()
+        /// <summary>
+        /// Appends the clause's SQL to the builder.
+        /// </summary>
+        /// <param name="builder">the builder</param>
+        /// <param name="sqlFlags">the formatting flags</param>
+        /// <returns>the builder</returns>
+        internal override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
         {
-            StringBuilder builder = new(base.ToString() + "INSERT (");
-            _ = Column.WriteColumns(builder, columns!, HasSql.DefaultSqlFlags).Append(")\nVALUES (");
-            return Expression.WriteExpressions(builder, values, HasSql.DefaultSqlFlags).Append(')').ToString();
+            _ = base.GetSql(builder, sqlFlags).Append("INSERT (");
+            _ = Column.WriteColumns(builder, columns!, sqlFlags).Append(")\nVALUES (");
+            return Expression.WriteExpressions(builder, values, sqlFlags).Append(')');
         }
+
+        /// <inheritdoc/>
+        public override string ToString() => GetSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
     }
 }
