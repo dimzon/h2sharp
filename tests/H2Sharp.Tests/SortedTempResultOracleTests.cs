@@ -46,6 +46,18 @@ public sealed class SortedTempResultOracleTests
             RunReference("SELECT DISTINCT ON (NAME) ID, NAME FROM T ORDER BY NAME, ID"),
             RunPort("SELECT DISTINCT ON (NAME) ID, NAME FROM T ORDER BY NAME, ID"));
 
+    [JavaOracleFact]
+    public void SpilledInSubqueryMatchesTheReference()
+        => Assert.Equal(
+            RunReference("SELECT ID FROM T WHERE ID IN (SELECT ID FROM T WHERE NAME = 'Ada') ORDER BY ID"),
+            RunPort("SELECT ID FROM T WHERE ID IN (SELECT ID FROM T WHERE NAME = 'Ada') ORDER BY ID"));
+
+    [JavaOracleFact]
+    public void SpilledExceptMatchesTheReference()
+        => Assert.Equal(
+            RunReference("SELECT ID FROM T EXCEPT SELECT ID FROM T WHERE ID > 9 ORDER BY ID"),
+            RunPort("SELECT ID FROM T EXCEPT SELECT ID FROM T WHERE ID > 9 ORDER BY ID"));
+
     private static List<string> RunPort(string query)
     {
         string path = NewPath();
