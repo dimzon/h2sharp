@@ -8,8 +8,8 @@
  *
  * What is left out, and why:
  *
- * The estimated envelope needs a spatial index on the column, and spatial indexes are not
- * ported; without one the answer is null, exactly as in the reference.
+ * Nothing: the estimated envelope reads the spatial index on the column, and without one
+ * the answer is null, exactly as in the reference.
  */
 using System.Text;
 using H2Sharp.Engine;
@@ -59,8 +59,20 @@ public sealed class TableInfoFunction : Function1_2
                     ? ValueNull.Instance
                     : ValueBigint.Get(table.GetDiskSpaceUsed(total: false, approximate: false));
             case EstimatedEnvelope:
-                // Without a spatial index on the column there is no envelope to estimate,
-                // which is the reference's answer in that case too.
+                // As in the reference: the envelope comes from the spatial index on
+                // the column, and without one the answer is null.
+                if (table is not null && v2 is not null)
+                {
+                    Tables.Column column = table.GetColumn(v2.GetString()!);
+                    foreach (Indexes.Index index in table.GetIndexes())
+                    {
+                        if (index is MvStore.Db.MVSpatialIndex spatial && spatial.IsFirstColumn(column))
+                        {
+                            return spatial.GetEstimatedBounds(session);
+                        }
+                    }
+                }
+
                 return ValueNull.Instance;
             default:
                 throw DbException.GetInternalError("function=" + function);

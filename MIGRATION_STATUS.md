@@ -76,7 +76,9 @@ DISTINCT ON и hidden-колонки идут через отсортирова�
 возвращает `true`, как в эталоне: без этого не срабатывала свёртка констант в
 `CompareLike.optimize` и `... LIKE 'A%' ESCAPE NULL` ронял планировщик
 внутренней ошибкой из `CreateIndexConditions`; закрыто
-`LikeOptimizationTests`.
+`LikeOptimizationTests`. `ESTIMATED_ENVELOPE(table, column)` читает
+`MVSpatialIndex.getEstimatedBounds`, как эталон, а не отвечает NULL;
+закрыто `SpatialIndexCoverageTests`.
 
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.

@@ -105,6 +105,28 @@ public sealed class SpatialIndexCoverageTests
         Assert.Equal(0, connection.QuerySingle<int>("SELECT COUNT(*) FROM GEO"));
     }
 
+    [Fact]
+    public void TableInfoFunctionsReadTheSpatialIndex()
+    {
+        using IDbConnection connection = TestDatabase.Open();
+        _ = connection.Execute("CREATE TABLE GEO(ID INT PRIMARY KEY, G GEOMETRY)");
+        _ = connection.Execute(
+            "INSERT INTO GEO VALUES (1, CAST('POINT(1 1)' AS GEOMETRY)), " +
+            "(2, CAST('POINT(29 19)' AS GEOMETRY))");
+        _ = connection.Execute("CREATE SPATIAL INDEX IDXGEO ON GEO(G)");
+
+        string envelope = connection.QuerySingle<string>(
+            "SELECT CAST(ESTIMATED_ENVELOPE('GEO', 'G') AS VARCHAR)");
+        Assert.StartsWith("POLYGON", envelope, StringComparison.Ordinal);
+        Assert.Contains("29", envelope, StringComparison.Ordinal);
+        Assert.Contains("19", envelope, StringComparison.Ordinal);
+
+        // An in-memory table uses no disk space, but the call walks the index pages.
+        Assert.True(connection.QuerySingle<long>("SELECT DISK_SPACE_USED('GEO')") >= 0);
+
+        _ = connection.Execute("DROP TABLE GEO");
+    }
+
     private static void GivenGeo(IDbConnection connection)
     {
         _ = connection.Execute("CREATE TABLE GEO(ID INT PRIMARY KEY, G GEOMETRY)");
