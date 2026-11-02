@@ -465,8 +465,8 @@ public sealed class ValueDataType : BasicDataType<Value>
             case Value.Timestamp:
                 {
                     ValueTimestamp ts = (ValueTimestamp)v;
-                    WriteTimestampTime(buff.Put(Timestamp), DateTimeUtils.GetEpochSeconds(ts.GetDateValue(), ts.GetTimeNanos(), 0)
-                        * 1_000_000_000L + (ts.GetTimeNanos() % 1_000_000_000L));
+                    buff.Put(Timestamp).PutVarLong(ts.GetDateValue());
+                    WriteTimestampTime(buff, ts.GetTimeNanos());
                     break;
                 }
 
@@ -818,12 +818,9 @@ public sealed class ValueDataType : BasicDataType<Value>
                     ReadTimeZone(buff, ref position));
 
             case Timestamp:
-                {
-                    long nanos = ReadTimestampTime(buff, ref position);
-                    long seconds = nanos / 1_000_000_000L;
-                    return ValueTimestamp.FromDateValueAndNanos(
-                        DateTimeUtils.DateValueFromLocalSeconds(seconds), (int)(nanos % 1_000_000_000L));
-                }
+                return ValueTimestamp.FromDateValueAndNanos(
+                    DataUtils.ReadVarLong(buff, ref position),
+                    ReadTimestampTime(buff, ref position));
 
             case TimestampTzOld:
                 return ValueTimestampTimeZone.FromDateValueAndNanos(

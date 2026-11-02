@@ -67,7 +67,10 @@ DISTINCT ON и hidden-колонки идут через отсортирова�
 поэтому MIN/MAX по индексу с `DESC NULLS LAST` больше не перепутан. `TestBigResult`
 зелёный. `DISTINCT ON` разбирается в `SELECT`-префиксе, его выражения входят в
 скрытые колонки и дают `distinctIndexes` для `LocalResult`; проверено
-`DistinctOnTests` и `DistinctOnOracleTests` (JVM).
+`DistinctOnTests` и `DistinctOnOracleTests` (JVM). `ValueDataType` для
+`TIMESTAMP`/`TIMESTAMP_TZ` пишет `putVarLong(dateValue)` +
+`writeTimestampTime(timeNanos)`, как эталон, а не epoch-наносекунды; закрыто
+`ValueDataTypeTests`.
 
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.

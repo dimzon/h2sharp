@@ -21,14 +21,14 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 68 701 | 81 648 | **84.14%** |
-| Ветви | 28 146 | 35 434 | **79.43%** |
+| Строки | 68 850 | 81 708 | **84.26%** |
+| Ветви | 28 223 | 35 476 | **79.56%** |
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 84.16% | 79.47% |
+| `H2Sharp` | 84.28% | 79.59% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -39,7 +39,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | Сьют | Результат |
 |---|---|
 | `H2Sharp.Data.Tests` | 655 passed |
-| `H2Sharp.MvStore.Tests` | 91 passed |
+| `H2Sharp.MvStore.Tests` | 96 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
 | `H2Sharp.Tests` | 1558 passed |
 | `H2SharpSql.Specs` | 917 passed, 68 skipped |
@@ -51,11 +51,10 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Область | Было | Стало |
 |---|---:|---:|
-| Общие строки | 83.88% | **84.14%** |
-| Общие ветви | 79.20% | **79.43%** |
-| `Command/*` | 85.87% | **86.50%** |
-| `ScriptCommand.cs` | 59.8% | **95.3%** |
-| `MVSpatialIndex.cs` | 42.0% | **45.3%** |
+| Общие строки | 84.14% | **84.26%** |
+| Общие ветви | 79.43% | **79.56%** |
+| `MvStore/*` | 81.90% | **83.05%** |
+| `MvStore/Db/ValueDataType.cs` | 67.6% | **84.1%** |
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
 `FORMATDATETIME`/`PARSEDATETIME` (.NET-форматы, locale/timezone, NULL),
@@ -184,7 +183,6 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 | `MvStore/MVStoreTool.cs` | 58.6% |
 | `Command/Dml/Merge.cs` | 62.7% |
 | `Expressions/SimpleCase.cs` | 64.8% |
-| `MvStore/Db/ValueDataType.cs` | 67.6% |
 | `MvStore/Db/MVSortedTempResult.cs` | 68.6% |
 | `MvStore/Db/MVPrimaryIndex.cs` | 69.8% |
 | `Expressions/Functions/BitFunction.cs` | 70.6% |
@@ -200,8 +198,8 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. После полного пересчёта на свежих отчётах: общий процент **84.14% /
-   79.43%**. Файловые проценты из новой секции «Прирост» актуальны.
+1. После полного пересчёта на свежих отчётах: общий процент **84.26% /
+   79.56%**. Файловые проценты из новой секции «Прирост» актуальны.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.
 3. Реестр агрегатов и провайдеры закрыты лучше среднего: 88.3–100%.
 4. Основной резерв покрытия — не новый код, а старые крупные ветви:
