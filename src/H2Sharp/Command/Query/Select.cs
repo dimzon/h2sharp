@@ -63,7 +63,9 @@ public sealed class Select : Query
 
     private bool isQuickAggregateQuery;
 
-    private bool isDistinct;
+    private Expression[]? distinctExpressions;
+
+    private int[]? distinctIndexes;
 
     private Expression? condition;
 
@@ -191,11 +193,11 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The order and group blocks of the reference's init: the select list snippets names
-    /// resolve against, then positions for ORDER BY and grouping indexes for GROUP BY, with
-    /// the HAVING move in between. Star expansion, the distinct indexes and the qualify move
-    /// wait: each needs machinery that is not here, and a half-mapped select would answer
-    /// wrong rows rather than refuse.
+    /// The order, distinct and group blocks of the reference's init: the select list
+    /// snippets names resolve against, the DISTINCT ON indexes, then positions for ORDER BY
+    /// and grouping indexes for GROUP BY, with the HAVING move in between. Star expansion and
+    /// the qualify move wait: each needs machinery that is not here, and a half-mapped select
+    /// would answer wrong rows rather than refuse.
     /// </remarks>
     public override void Init()
     {
@@ -205,13 +207,31 @@ public sealed class Select : Query
         }
 
         List<string>? expressionSQL = null;
-        if (orderList is not null || groupBy is not null)
+        if (distinctExpressions is not null || orderList is not null || groupBy is not null)
         {
             expressionSQL = new(visibleColumnCount);
             for (int i = 0; i < visibleColumnCount; i++)
             {
                 Expression expr = expressions[i].GetNonAliasExpression();
                 expressionSQL.Add(expr.GetSql(HasSql.DefaultSqlFlags, Expression.WithoutParentheses));
+            }
+        }
+
+        if (distinctExpressions is not null)
+        {
+            BitSet set = new();
+            foreach (Expression e in distinctExpressions)
+            {
+                set.Set(InitExpression(expressionSQL, e, false, filters, expressions));
+            }
+
+            int index = 0, count = set.Cardinality();
+            distinctIndexes = new int[count];
+            for (int i = 0; i < count; i++)
+            {
+                index = set.NextSetBit(index);
+                distinctIndexes[i] = index;
+                index++;
             }
         }
 
@@ -349,11 +369,11 @@ public sealed class Select : Query
     /// Whether this query is a DISTINCT or DISTINCT ON query.
     /// </summary>
     /// <remarks>
-    /// The reference also counts its distinct-expression list; that list is not ported, and
-    /// the DISTINCT ON marker stands in its place until it is.
+    /// The reference also counts its distinct-expression list, so this is true for both
+    /// DISTINCT and DISTINCT ON.
     /// </remarks>
     /// <returns>true for either distinct flavor</returns>
-    public override bool IsAnyDistinct() => distinct || isDistinct;
+    public override bool IsAnyDistinct() => distinct || distinctExpressions is not null;
 
     /// <inheritdoc/>
     public override void MapColumns(ColumnResolver resolver, int level, bool outer)
@@ -597,7 +617,7 @@ public sealed class Select : Query
         : topFilters.Count == 1 ? topFilters[0].HasFromClause() : true;
     public override bool IsConstantQuery()
     {
-        if (!base.IsConstantQuery() || isDistinct || condition is not null || isGroupQuery || isWindowQuery || HasFromClause()) return false;
+        if (!base.IsConstantQuery() || distinctExpressions is not null || condition is not null || isGroupQuery || isWindowQuery || HasFromClause()) return false;
         for (int i = 0; i < visibleColumnCount; i++) if (!expressions[i].IsConstant()) return false;
         return true;
     }
@@ -614,12 +634,19 @@ public sealed class Select : Query
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
     {
-        // Ported getPlanSQL over this port's existing fields. Explicit TABLE, DISTINCT ON and
-        // QUALIFY fields are not present in this Select representation yet.
+        // Ported getPlanSQL over this port's existing fields. Explicit TABLE is not present
+        // in this Select representation yet.
         WriteWithList(builder, sqlFlags);
         Expression[] exprList = GetExpressions();
         builder.Append("SELECT");
-        if (IsAnyDistinct()) builder.Append(" DISTINCT");
+        if (IsAnyDistinct())
+        {
+            builder.Append(" DISTINCT");
+            if (distinctExpressions is not null)
+            {
+                _ = Expression.WriteExpressions(builder.Append(" ON("), distinctExpressions, sqlFlags).Append(')');
+            }
+        }
         for (int i = 0; i < visibleColumnCount; i++)
         {
             if (i > 0) builder.Append(',');
@@ -666,7 +693,7 @@ public sealed class Select : Query
         if ((sqlFlags & HasSql.AddPlanInformation) != 0)
         {
             if (isQuickAggregateQuery) builder.Append("\n/* direct lookup */");
-            if (isDistinct) builder.Append("\n/* distinct */");
+            if (distinctExpressions is not null) builder.Append("\n/* distinct on */");
             if (indexSortedColumns == Indexes.IndexSort.FullySorted) builder.Append("\n/* index sorted */");
             else if (indexSortedColumns > 0) builder.Append("\n/* index sorted: ").Append(indexSortedColumns).Append(" of ")
                 .Append(sort!.GetOrderList()!.Count).Append(" columns */");
@@ -866,20 +893,20 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Flat, quick aggregate and grouped queries run; windowed, DISTINCT ON and locking
-    /// shapes refuse below, each waiting for its own machinery. What runs here is the
-    /// reference's flat path — skip the offset, fill the result, trim it — with lazy
-    /// execution left out: every result here is materialized, and a lazy one would hand
-    /// back a walk over tables the caller may close. Plain DISTINCT runs: the result itself
-    /// drops duplicates as rows arrive. The index fast path that would walk them in order
-    /// waits for secondary indexes, which are still a stub.
+    /// Flat, quick aggregate and grouped queries run; windowed and locking shapes refuse
+    /// below, each waiting for its own machinery. What runs here is the reference's flat
+    /// path — skip the offset, fill the result, trim it — with lazy execution left out:
+    /// every result here is materialized, and a lazy one would hand back a walk over tables
+    /// the caller may close. Plain DISTINCT and DISTINCT ON run: the result itself drops
+    /// duplicates as rows arrive. The index fast path that would walk them in order waits
+    /// for secondary indexes, which are still a stub.
     /// </remarks>
     public override ResultInterface? Run(long limit, ResultTarget? target)
     {
         DisableLazyForJoinSubqueries(topTableFilter!);
-        if (windows is not null || isDistinct)
+        if (windows is not null)
         {
-            throw new TODOException("Select.query: windowed and distinct on queries are not ported");
+            throw new TODOException("Select.query: windowed queries are not ported");
         }
 
         long offset;
@@ -899,7 +926,7 @@ public sealed class Select : Query
         // offset/fetch still need a LocalResult first.
         bool needResult = target is null
             || (sort is not null && indexSortedColumns != Indexes.IndexSort.FullySorted)
-            || distinct || isWindowQuery || isGroupQuery
+            || distinct || distinctExpressions is not null || isWindowQuery || isGroupQuery
             || fetch >= 0 || offset > 0;
         LocalResult? result = needResult
             ? new LocalResult(session, array, visibleColumnCount, resultWidth) : null;
@@ -921,6 +948,11 @@ public sealed class Select : Query
             result!.SetDistinct();
             // A deduplicated row is not the row that was read: skipping the offset up front
             // would skip raw rows and trim the wrong ones, so the result trims afterwards.
+            quickOffset = QuickOffset.No;
+        }
+        else if (distinctExpressions is not null)
+        {
+            result!.SetDistinct(distinctIndexes!);
             quickOffset = QuickOffset.No;
         }
 
@@ -1596,14 +1628,9 @@ public sealed class Select : Query
     }
 
     /// <summary>Set the distinct flag.</summary>
-    /// <remarks>
-    /// No boolean: the reference's setter takes none, and DISTINCT ON arrives through its
-    /// own setter. The exclusion will matter when that list is ported; until then the guard
-    /// reads the marker that stands in its place.
-    /// </remarks>
     public void SetDistinct()
     {
-        if (isDistinct)
+        if (distinctExpressions is not null)
         {
             throw DbException.GetUnsupportedException("DISTINCT ON together with DISTINCT");
         }
@@ -1611,9 +1638,17 @@ public sealed class Select : Query
         distinct = true;
     }
 
-    /// <summary>Sets whether the columns of this statement are distinct.</summary>
-    /// <param name="isDistinct">true for DISTINCT ON</param>
-    public void SetIsDistinct(bool isDistinct) => this.isDistinct = isDistinct;
+    /// <summary>Sets the DISTINCT ON expressions.</summary>
+    /// <param name="expressions">the distinct expressions</param>
+    public void SetDistinct(Expression[] expressions)
+    {
+        if (distinct)
+        {
+            throw DbException.GetUnsupportedException("DISTINCT ON together with DISTINCT");
+        }
+
+        distinctExpressions = expressions;
+    }
 
     /// <summary>
     /// Adds a table filter to this query.

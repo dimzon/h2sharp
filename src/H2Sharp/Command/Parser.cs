@@ -4265,7 +4265,30 @@ public sealed partial class Parser
 
         if (IsWord("DISTINCT"))
         {
-            select.SetDistinct();
+            if (IsWord("ON", consume: false)
+                && position + 1 < tokens.Count
+                && tokens[position + 1].TokenType == Token.OpenParen)
+            {
+                Read();
+                Read();
+                List<Expressions.Expression> distinctExpressions = [];
+                do
+                {
+                    distinctExpressions.Add(ReadQueryOr(select));
+                }
+                while (ReadIf(Token.Comma));
+
+                Expect(Token.CloseParen, ")");
+                select.SetDistinct([.. distinctExpressions]);
+            }
+            else
+            {
+                select.SetDistinct();
+            }
+        }
+        else
+        {
+            _ = IsWord("ALL");
         }
 
         // The star of a select list, with the table it names: null when there is no star,

@@ -65,7 +65,9 @@ DISTINCT ON и hidden-колонки идут через отсортирова�
 хранит `TIME/TIMESTAMP WITH TIME ZONE`, `ARRAY` и `ROW`, сравнивает коллекции по
 `sortTypes` и учитывает полную маску сортировки (`DESC` вместе с `NULLS FIRST/LAST`),
 поэтому MIN/MAX по индексу с `DESC NULLS LAST` больше не перепутан. `TestBigResult`
-зелёный.
+зелёный. `DISTINCT ON` разбирается в `SELECT`-префиксе, его выражения входят в
+скрытые колонки и дают `distinctIndexes` для `LocalResult`; проверено
+`DistinctOnTests` и `DistinctOnOracleTests` (JVM).
 
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.

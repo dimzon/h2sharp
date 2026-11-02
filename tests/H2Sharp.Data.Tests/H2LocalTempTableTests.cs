@@ -122,6 +122,35 @@ public sealed class H2LocalTempTableTests
     }
 
     [Fact]
+    public void DistinctOnResultSpillsToDiskAndReadsBack()
+    {
+        string path = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "h2sharp_distinct_on_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using H2Connection connection = new(
+                "Data Source=" + path + ";Storage=File;IGNORE_UNKNOWN_SETTINGS=true");
+            connection.Open();
+            using DbCommand command = connection.CreateCommand();
+            command.CommandText = "SET MAX_MEMORY_ROWS 1";
+            _ = command.ExecuteNonQuery();
+            command.CommandText = "SELECT DISTINCT ON (X % 5) X FROM SYSTEM_RANGE(1, 20) ORDER BY X";
+            using DbDataReader reader = command.ExecuteReader();
+            for (int i = 1; i <= 5; i++)
+            {
+                Assert.True(reader.Read());
+                Assert.Equal(i, reader.GetInt32(0));
+            }
+
+            Assert.False(reader.Read());
+        }
+        finally
+        {
+            DeleteDatabaseFiles(path);
+        }
+    }
+
+    [Fact]
     public void PlainResultSpillsToDiskAndReadsBack()
     {
         string path = System.IO.Path.Combine(
