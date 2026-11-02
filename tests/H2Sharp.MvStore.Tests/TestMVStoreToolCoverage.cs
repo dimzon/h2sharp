@@ -143,6 +143,29 @@ public sealed class TestMVStoreToolCoverage : StoreTestBase
     }
 
     [Fact]
+    public void RepairOfAHealthyStoreKeepsTheData()
+    {
+        string fileName = TempFile("tool-repair.h3");
+        DeleteFile(fileName);
+        using (MVStore store = new MVStore.Builder().FileName(fileName).Open())
+        {
+            MVMap<int, string> map = store.OpenMap<int, string>("data");
+            map.Put(1, "one");
+            store.Commit();
+        }
+
+        // Repair reports to the console, as in the reference; the test only
+        // checks the files it leaves behind.
+        MVStoreTool.Repair(fileName);
+
+        Assert.True(File.Exists(fileName + ".back"));
+        using (MVStore store = new MVStore.Builder().FileName(fileName).ReadOnly().Open())
+        {
+            Assert.Equal("one", store.OpenMap<int, string>("data").Get(1));
+        }
+    }
+
+    [Fact]
     public void MoveAtomicReplaceMovesTheFile()
     {
         string source = TempFile("tool-move-src.h3");
