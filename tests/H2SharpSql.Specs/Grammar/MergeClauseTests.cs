@@ -113,6 +113,69 @@ public sealed class MergeClauseTests
         Assert.Equal("x", connection.QuerySingle<string>("SELECT NAME FROM T WHERE ID = 3"));
     }
 
+    /// <summary>A WHEN MATCHED whose AND is always false is pruned at prepare time</summary>
+    [Fact]
+    public void MergeWhenMatchedClause_FalseCondition_IsPruned()
+    {
+        using IDbConnection connection = TestDatabase.Open();
+        GivenMergeTables(connection);
+
+        _ = connection.Execute(
+            "MERGE INTO T USING S ON T.ID = S.ID " +
+            "WHEN MATCHED AND 1 = 0 THEN UPDATE SET T.NAME = 'dead' " +
+            "WHEN MATCHED THEN UPDATE SET T.NAME = S.NAME");
+
+        Assert.Equal("Ada!", connection.QuerySingle<string>("SELECT NAME FROM T WHERE ID = 1"));
+    }
+
+    /// <summary>A WHEN NOT MATCHED whose AND is always false is pruned at prepare time</summary>
+    [Fact]
+    public void MergeWhenNotMatchedClause_FalseCondition_IsPruned()
+    {
+        using IDbConnection connection = TestDatabase.Open();
+        GivenMergeTables(connection);
+
+        _ = connection.Execute(
+            "MERGE INTO T USING S ON T.ID = S.ID " +
+            "WHEN NOT MATCHED AND 1 = 0 THEN INSERT (ID, NAME) VALUES (S.ID, 'dead') " +
+            "WHEN NOT MATCHED THEN INSERT (ID, NAME) VALUES (S.ID, S.NAME)");
+
+        Assert.Equal("Grace", connection.QuerySingle<string>("SELECT NAME FROM T WHERE ID = 3"));
+    }
+
+    /// <summary>A second unconditional WHEN MATCHED never runs: the first one wins</summary>
+    [Fact]
+    public void MergeWhenMatchedClause_DuplicateClause_FirstWins()
+    {
+        using IDbConnection connection = TestDatabase.Open();
+        GivenMergeTables(connection);
+
+        _ = connection.Execute(
+            "MERGE INTO T USING S ON T.ID = S.ID " +
+            "WHEN MATCHED THEN UPDATE SET T.NAME = S.NAME " +
+            "WHEN MATCHED THEN UPDATE SET T.NAME = 'dead'");
+
+        Assert.Equal("Ada!", connection.QuerySingle<string>("SELECT NAME FROM T WHERE ID = 1"));
+    }
+
+    /// <summary>Several unmatched source rows each insert their own row</summary>
+    [Fact]
+    public void MergeWhenNotMatchedClause_SeveralNewRows_AllInsert()
+    {
+        using IDbConnection connection = TestDatabase.Open();
+        GivenMergeTables(connection);
+        _ = connection.Execute("INSERT INTO S(ID, NAME, V) VALUES (4, 'Hopper', 4)");
+        _ = connection.Execute("INSERT INTO S(ID, NAME, V) VALUES (5, 'Lovelace', 5)");
+
+        _ = connection.Execute(
+            "MERGE INTO T USING S ON T.ID = S.ID " +
+            "WHEN NOT MATCHED THEN INSERT (ID, NAME) VALUES (S.ID, S.NAME)");
+
+        Assert.Equal(4, connection.QuerySingle<int>("SELECT COUNT(*) FROM T"));
+        Assert.Equal("Hopper", connection.QuerySingle<string>("SELECT NAME FROM T WHERE ID = 4"));
+        Assert.Equal("Lovelace", connection.QuerySingle<string>("SELECT NAME FROM T WHERE ID = 5"));
+    }
+
     private static void GivenMergeTables(IDbConnection connection)
     {
         _ = connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY, NAME VARCHAR(50))");
