@@ -21,14 +21,14 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 69 710 | 81 726 | **85.30%** |
-| Ветви | 28 646 | 35 545 | **80.59%** |
+| Строки | 70 038 | 82 162 | **85.24%** |
+| Ветви | 28 893 | 36 191 | **79.83%** |
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 85.32% | 80.63% |
+| `H2Sharp` | 85.27% | 79.87% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -41,8 +41,8 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `H2Sharp.Data.Tests` | 655 passed |
 | `H2Sharp.MvStore.Tests` | 112 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
-| `H2Sharp.Tests` | 1597 passed |
-| `H2SharpSql.Specs` | 955 passed, 68 skipped |
+| `H2Sharp.Tests` | 1608 passed |
+| `H2SharpSql.Specs` | 956 passed, 68 skipped |
 | `H2Sharp.Native.Tests` | 86 passed, 23 skipped в file-профиле + 10 тяжёлых тестов в memory-профиле (`TestLIRSMemoryConsumption` в этом прогоне не уложился в таймаут) |
 
 ## Прирост от последних тестов
@@ -62,13 +62,21 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Command/Dml/SetClauseList.cs` | 74.4% | **77.5%** |
 | `Command/Dml/MergeUsing.cs` | 71.8% | **72.7%** |
 | `Expressions/Functions/DateTimeFunction.cs` | 71.9% | **74.8%** |
-| `MvStore/Db/MVSpatialIndex.cs` | 45.3% | **51.9%** |
+| `MvStore/Db/MVSpatialIndex.cs` | 45.3% | **83.5%** |
 | `MvStore/Db/ValueDataType.cs` | 67.6% | **84.1%** |
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
 `FORMATDATETIME`/`PARSEDATETIME` (.NET-форматы, locale/timezone, NULL),
 битовые операции над `BINARY`/`BIGINT`, `ROUND`/`TRUNC` по типам и внешние
-temp-результаты через `MAX_MEMORY_ROWS`.
+temp-результаты через `MAX_MEMORY_ROWS`. Далее `MVSpatialIndex`: quick-путь
+`ENVELOPE` из индексных границ (JVM-оракул), уникальный spatial-индекс через
+`CREATE UNIQUE NULLS DISTINCT INDEX ... USING RTREE` (в обеих реализациях
+это `MVSecondaryIndex` — `createUnique` не несёт spatial-флаг), guard'ы
+создания, двухсессионная конкуренция uncommitted/committed и прямые тесты
+членов вне SQL. Остаток по файлу (60 строк) — defensive-пути, которых не
+достигает и эталон из SQL: guard'ы конструктора (парсер spatial-ветки не
+читает ни список колонок, ни сортировку), unique-ветки `Add`, ошибки `Remove`,
+закрытый стор и brace-артефакты отчёта.
 
 ## Native-тесты: почему не весь набор
 
@@ -188,7 +196,7 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 | Файл | Покрытие |
 |---|---:|
-| `MvStore/Db/MVSpatialIndex.cs` | 51.9% |
+| `MvStore/Db/MVSpatialIndex.cs` | 83.5% |
 | `MvStore/Db/MVPrimaryIndex.cs` | 69.8% |
 | `Expressions/Functions/BitFunction.cs` | 70.6% |
 | `Command/Dml/MergeUsing.cs` | 71.8% |
@@ -211,10 +219,12 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. После полного пересчёта на свежих отчётах: общий процент **85.30% /
-   80.59%**. Файловые проценты из новой секции «Прирост» актуальны.
-   Старые отчёты `artifacts/TestResults` перед merge убраны в
-   `artifacts/TestResultsStale`, чтобы merge считал только по свежим.
+1. После полного пересчёта на свежих отчётах: общий процент **85.24% /
+   79.83%**. Проценты строк почти не сдвинулись (новый исходник добавил
+   строк и ветвей быстрее, чем тесты закрыли старые), файловый сдвиг — в
+   `MVSpatialIndex` и `Parser`. Старые отчёты `artifacts/TestResults`
+   перед merge убраны в `artifacts/TestResultsStale`, чтобы merge считал
+   только по свежим.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.
 3. Реестр агрегатов и провайдеры закрыты лучше среднего: 88.3–100%.
 4. Основной резерв покрытия — не новый код, а старые крупные ветви:
