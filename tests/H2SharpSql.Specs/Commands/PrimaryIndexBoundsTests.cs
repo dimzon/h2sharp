@@ -94,4 +94,47 @@ public sealed class PrimaryIndexBoundsTests
         Assert.Equal(
             4, connection.QuerySingle<int>("SELECT COUNT(*) FROM TEST WHERE ID > CAST('-Infinity' AS DECFLOAT)"));
     }
+
+    /// <summary>
+    /// A parameterized bound survives optimization and reaches the walk, so every value kind
+    /// the bounds converter knows is exercised: a NaN lower bound is empty while a NaN upper
+    /// bound is open — the reference's own asymmetry — the double infinities saturate to the
+    /// long ends the way the Java cast does, DECFLOAT infinities walk from the open end or
+    /// hold nothing, and NUMERIC bounds past the long range end or empty the walk.
+    /// </summary>
+    [Fact]
+    public void ParameterBoundsWalkTheReferenceConversions()
+    {
+        using IDbConnection connection = GivenTable();
+
+        Assert.Equal([1L, 2L, 3L, 10L],
+            connection.Query<long>("SELECT ID FROM TEST WHERE ID < $d", new { d = double.NaN }).AsList());
+        Assert.Empty(connection.Query<long>("SELECT ID FROM TEST WHERE ID > $d", new { d = double.NaN }).AsList());
+
+        Assert.Empty(
+            connection.Query<long>("SELECT ID FROM TEST WHERE ID > $d", new { d = double.PositiveInfinity }).AsList());
+        Assert.Equal([1L, 2L, 3L, 10L],
+            connection.Query<long>("SELECT ID FROM TEST WHERE ID < $d", new { d = double.PositiveInfinity }).AsList());
+
+        Assert.Equal([1L, 2L, 3L, 10L], connection.Query<long>(
+            "SELECT ID FROM TEST WHERE ID > CAST($d AS DECFLOAT)", new { d = double.NegativeInfinity }).AsList());
+        Assert.Empty(connection.Query<long>(
+            "SELECT ID FROM TEST WHERE ID > CAST($d AS DECFLOAT)", new { d = double.PositiveInfinity }).AsList());
+        Assert.Equal([1L, 2L, 3L, 10L], connection.Query<long>(
+            "SELECT ID FROM TEST WHERE ID < CAST($d AS DECFLOAT)", new { d = double.PositiveInfinity }).AsList());
+        Assert.Empty(connection.Query<long>(
+            "SELECT ID FROM TEST WHERE ID < CAST($d AS DECFLOAT)", new { d = double.NegativeInfinity }).AsList());
+
+        Assert.Equal([1L, 2L, 3L, 10L],
+            connection.Query<long>("SELECT ID FROM TEST WHERE ID > $d", new { d = -2e19m }).AsList());
+        Assert.Empty(connection.Query<long>("SELECT ID FROM TEST WHERE ID > $d", new { d = 2e19m }).AsList());
+        Assert.Equal([1L, 2L, 3L, 10L],
+            connection.Query<long>("SELECT ID FROM TEST WHERE ID < $d", new { d = 2e19m }).AsList());
+        Assert.Empty(connection.Query<long>("SELECT ID FROM TEST WHERE ID < $d", new { d = -2e19m }).AsList());
+
+        Assert.Equal([2L, 3L, 10L],
+            connection.Query<long>("SELECT ID FROM TEST WHERE ID > $d", new { d = 1.5m }).AsList());
+        Assert.Equal([1L, 2L, 3L],
+            connection.Query<long>("SELECT ID FROM TEST WHERE ID < $d", new { d = 3.5m }).AsList());
+    }
 }

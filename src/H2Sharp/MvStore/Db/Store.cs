@@ -189,6 +189,15 @@ public sealed partial class Store : IDisposable
     }
 
     /// <summary>
+    /// Converts an MVStore exception to the database-level exception, as the reference's
+    /// convertMVStoreException does, with this store's own file name and encryption.
+    /// </summary>
+    /// <param name="e">the store failure</param>
+    /// <returns>the error to raise</returns>
+    internal H2SharpException ConvertMvStoreException(MvStoreException e)
+        => ConvertMvStoreException(e, fileName, encrypted);
+
+    /// <summary>
     /// Gets the MVStore.
     /// </summary>
     /// <returns>the store</returns>

@@ -106,6 +106,19 @@ unsupported), закреплены прямыми тестами по этало
 `Percentile.getFromIndex`/`getColumnIndex` в `GetValueQuick` и
 `IsEverything` по-прежнему не портированы — отдельная статья долга.
 
+`MVTable.convertException` был заглушкой (`GetInternalError`), тогда как
+эталон маппит `ERROR_TRANSACTION_LOCKED` в `CONCURRENT_UPDATE_1` (или
+`LOCK_TIMEOUT_1` для явного запроса блокировки через `convertLockException`),
+`ERROR_TRANSACTIONS_DEADLOCK` в `DEADLOCK_1`, а остальное — через
+`Store.convertMVStoreException`. Портирован полный маппинг (плюс экземплярный
+`Store.convertMVStoreException`), и двухсессионная гонка за один первичный
+ключ отвечает `90131`, как эталон, а не внутренней ошибкой; закрыто
+`PrimaryIndexDirectTests`. Границы `_ROWID_`/первичного столбца с
+параметрами (NaN, ±Inf DOUBLE с насыщающим кастом, DECFLOAT-бесконечности,
+NUMERIC за диапазоном long) дошли до конвертера границ и закреплены
+`PrimaryIndexBoundsTests` — литералы этих значений оптимизатор сворачивает
+раньше обхода.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,

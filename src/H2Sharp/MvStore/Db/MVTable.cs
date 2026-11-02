@@ -877,30 +877,39 @@ public sealed class MVTable : Table
     /// </summary>
     /// <remarks>
     /// The reference rethrows an MVStore failure as the database-level error with the file and
-    /// the key in it, because "the page could not be written" is not what a user can act on.
+    /// the key in it, because "the page could not be written" is not what a user can act on. A
+    /// row another transaction still holds is a concurrent update, and the same failure meeting
+    /// an explicit lock request is a lock timeout.
     /// </remarks>
     /// <param name="e">the store failure</param>
     /// <returns>the error to raise</returns>
-    public Exception ConvertException(Exception e)
-        => DbException.GetInternalError(Name + ": " + e.Message);
+    public Exception ConvertException(Exception e) => ConvertException(e, lockException: false);
 
     /// <summary>Converts a store failure from an attempt to lock a row.</summary>
     /// <param name="e">the store failure</param>
     /// <returns>the error to raise</returns>
-    public Exception ConvertLockException(MvStoreException e)
+    public Exception ConvertLockException(MvStoreException e) => ConvertException(e, lockException: true);
+
+    private Exception ConvertException(Exception e, bool lockException)
     {
-        int errorCode = e.GetErrorCode();
+        if (e is not MvStoreException storeException)
+        {
+            return DbException.Convert(e);
+        }
+
+        int errorCode = storeException.GetErrorCode();
         if (errorCode == DataUtils.ErrorTransactionLocked)
         {
-            return DbException.Get(ErrorCode.LockTimeout1, e, Name);
+            return DbException.Get(
+                lockException ? ErrorCode.LockTimeout1 : ErrorCode.ConcurrentUpdate1, storeException, Name);
         }
 
         if (errorCode == DataUtils.ErrorTransactionsDeadlock)
         {
-            return DbException.Get(ErrorCode.Deadlock1, e, Name);
+            return DbException.Get(ErrorCode.Deadlock1, storeException, Name);
         }
 
-        return ConvertException(e);
+        return database!.GetStore().ConvertMvStoreException(storeException);
     }
 
     /// <summary>
