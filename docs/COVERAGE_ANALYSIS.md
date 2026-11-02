@@ -14,21 +14,21 @@
 py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-lines 200 --top 25
 ```
 
-`H2SharpSql.Specs` теперь тоже собирает coverlet: **907 passed, 68 skipped**,
+`H2SharpSql.Specs` теперь тоже собирает coverlet: **915 passed, 68 skipped**,
 и его отчёт входит в общий merge.
 
 ## Итоговые цифры
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 68 484 | 81 648 | **83.88%** |
-| Ветви | 28 063 | 35 434 | **79.20%** |
+| Строки | 68 613 | 81 648 | **84.04%** |
+| Ветви | 28 104 | 35 434 | **79.31%** |
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 83.89% | 79.23% |
+| `H2Sharp` | 84.05% | 79.35% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -42,7 +42,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `H2Sharp.MvStore.Tests` | 89 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
 | `H2Sharp.Tests` | 1558 passed |
-| `H2SharpSql.Specs` | 907 passed, 68 skipped |
+| `H2SharpSql.Specs` | 915 passed, 68 skipped |
 | `H2Sharp.Native.Tests` | 86 passed, 23 skipped в file-профиле + 10 тяжёлых тестов в memory-профиле (`TestLIRSMemoryConsumption` в этом прогоне не уложился в таймаут) |
 
 ## Прирост от последних тестов
@@ -51,14 +51,10 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Область | Было | Стало |
 |---|---:|---:|
-| Общие строки | 81.64% | **83.88%** |
-| Общие ветви | 76.83% | **79.20%** |
-| `BitFunction.cs` | 70.5% | **70.6%** |
-| `MVSortedTempResult.cs` | 51.4% | **68.6%** |
-| `LocalResult.cs` | 71.2% | **73.9%** |
-| `Merge.cs` | 60.1% | **62.7%** |
-| `MergeUsing.cs` | 63.8% | **71.8%** |
-| `DateTimeFormatFunction.cs` | — | **82.6%** |
+| Общие строки | 83.88% | **84.04%** |
+| Общие ветви | 79.20% | **79.31%** |
+| `Command/*` | 85.87% | **86.50%** |
+| `ScriptCommand.cs` | 59.8% | **95.3%** |
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
 `FORMATDATETIME`/`PARSEDATETIME` (.NET-форматы, locale/timezone, NULL),
@@ -185,7 +181,6 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 |---|---:|
 | `MvStore/Db/MVSpatialIndex.cs` | 42.0% |
 | `MvStore/MVStoreTool.cs` | 58.6% |
-| `Command/Dml/ScriptCommand.cs` | 59.8% |
 | `Command/Dml/Merge.cs` | 62.7% |
 | `Expressions/SimpleCase.cs` | 64.8% |
 | `MvStore/RTree/SpatialDataType.cs` | 64.8% |
@@ -193,23 +188,24 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 | `MvStore/Db/ValueDataType.cs` | 67.6% |
 | `MvStore/Db/MVSortedTempResult.cs` | 68.6% |
 | `MvStore/Db/MVPrimaryIndex.cs` | 69.8% |
-| `Expressions/ExpressionColumn.cs` | 70.1% |
 | `Expressions/Functions/BitFunction.cs` | 70.6% |
 | `Command/Dml/MergeUsing.cs` | 71.8% |
 | `Expressions/Functions/DateTimeFunction.cs` | 71.9% |
+| `Expressions/ExpressionColumn.cs` | 73.6% |
 | `Result/LocalResult.cs` | 73.9% |
+| `MvStore/Cache/CacheLongKeyLIRS.cs` | 75.3% |
 
-По каталогам заметнее всего проседают `Values` (66.42%), `Result` (68.18%),
-`Message` (69.25%) и `Indexes` (76.36%).
+По каталогам заметнее всего проседают `Values` (66.42%), `Message` (69.25%), `Result` (68.18%)
+и `Indexes` (76.36%).
 
 ## Выводы
 
-1. После полного пересчёта на свежих отчётах: общий процент **83.88% /
-   79.20%**. Файловые проценты из новой секции «Прирост» актуальны.
+1. После полного пересчёта на свежих отчётах: общий процент **84.04% /
+   79.31%**. Файловые проценты из новой секции «Прирост» актуальны.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.
 3. Реестр агрегатов и провайдеры закрыты лучше среднего: 88.3–100%.
 4. Основной резерв покрытия — не новый код, а старые крупные ветви:
-   spatial/MVStore, `IndexCondition`, `SET`, `ScriptCommand`, `DateTimeTemplate`.
+   spatial/MVStore, `IndexCondition`, `SET`/`MERGE`, `DateTimeTemplate`.
 5. Memory-профиль (`H2SHARP_NATIVE_MEMORY=1`) ускоряет тяжёлые native-тесты
    в десятки раз, но не заменяет file-профиль: 4 теста проверяют файловое
    поведение и в memory-режиме падают. В текущем прогоне
