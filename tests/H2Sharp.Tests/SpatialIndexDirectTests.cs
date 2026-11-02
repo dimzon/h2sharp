@@ -12,6 +12,7 @@ using H2Sharp.Command;
 using H2Sharp.Engine;
 using H2Sharp.Indexes;
 using H2Sharp.MvStore.Db;
+using H2Sharp.Result;
 using H2Sharp.Values;
 using Xunit;
 
@@ -117,6 +118,46 @@ public sealed class SpatialIndexDirectTests
 
         Assert.Same(ValueNull.Instance, empty.GetBounds(session));
         Assert.Same(ValueNull.Instance, empty.GetEstimatedBounds(session));
+    }
+
+    [Fact]
+    public void AUniqueSpatialIndexSeesUncommittedNeighbors()
+    {
+        SessionLocal second = new(database, "sa");
+        Execute("CREATE TABLE U(ID INT PRIMARY KEY, THE_GEOM GEOMETRY)");
+        Execute("CREATE UNIQUE NULLS DISTINCT INDEX IDX_U ON U USING RTREE (THE_GEOM)");
+        Execute("SET AUTOCOMMIT FALSE");
+        Execute("INSERT INTO U VALUES (1, 'POINT (1 1)')");
+
+        // The neighbor is uncommitted: the loser drops its own key and reports a concurrent
+        // update rather than a duplicate.
+        H2SharpException concurrent = Assert.Throws<H2SharpException>(
+            () => Update(second, "INSERT INTO U VALUES (2, 'POINT (1 1)')"));
+        Assert.Equal(Api.ErrorCode.ConcurrentUpdate1, concurrent.H2ErrorCode);
+
+        Execute("COMMIT");
+
+        // Committed now: the same insert is a plain duplicate.
+        H2SharpException duplicate = Assert.Throws<H2SharpException>(
+            () => Update(second, "INSERT INTO U VALUES (2, 'POINT (1 1)')"));
+        Assert.Equal(Api.ErrorCode.DuplicateKey1, duplicate.H2ErrorCode);
+    }
+
+    [Fact]
+    public void RemovingARowWithoutGeometryIsNothing()
+    {
+        Execute("INSERT INTO G VALUES (3, NULL)");
+        MVTable table = (MVTable)database.GetSchema("PUBLIC").GetTableOrView(null, "G");
+        Row? row = table.GetRow(session, 3) as Row;
+
+        Assert.NotNull(row);
+        index.Remove(session, row!);
+    }
+
+    private static void Update(SessionLocal target, string sql)
+    {
+        CommandContainer container = Assert.IsType<CommandContainer>(target.PrepareCommand(sql));
+        _ = container.ExecuteUpdate(false);
     }
 
     private void Execute(string sql)

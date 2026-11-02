@@ -90,6 +90,10 @@ public sealed class SpatialIndexOracleTests
             "CREATE SPATIAL INDEX IDX_D ON G(THE_GEOM DESC)",
             "CREATE SPATIAL INDEX IDX_NF ON G(THE_GEOM NULLS FIRST)",
             "CREATE SPATIAL INDEX IDX_NL ON G(THE_GEOM NULLS LAST)",
+            "CREATE INDEX IDX_RM ON G USING RTREE (THE_GEOM, ID)",
+            "CREATE INDEX IDX_RD ON G USING RTREE (THE_GEOM DESC)",
+            "CREATE INDEX IDX_RNF ON G USING RTREE (THE_GEOM NULLS FIRST)",
+            "CREATE INDEX IDX_RNL ON G USING RTREE (THE_GEOM NULLS LAST)",
         ];
         List<string> java = RunJava("spatial_index_refusals_oracle", statements);
         List<string> port = RunPort("spatial_index_refusals_oracle", statements);
@@ -145,7 +149,7 @@ public sealed class SpatialIndexOracleTests
         [
             "CREATE TABLE G(ID INT PRIMARY KEY, THE_GEOM GEOMETRY)",
             "INSERT INTO G VALUES (1, 'POINT (1 1)'), (2, 'POINT (50 50)'), (3, 'POINT (2 2)')",
-            "CREATE UNIQUE SPATIAL INDEX IDX_U ON G(THE_GEOM)",
+            "CREATE UNIQUE NULLS DISTINCT INDEX IDX_U ON G USING RTREE (THE_GEOM)",
             "INSERT INTO G VALUES (4, 'POINT (2 2)')",
             "INSERT INTO G VALUES (5, 'POINT (9 9)')",
             "INSERT INTO G VALUES (6, NULL)",

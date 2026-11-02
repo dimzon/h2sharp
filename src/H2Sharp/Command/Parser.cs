@@ -9341,8 +9341,14 @@ public sealed partial class Parser
         if (statement.Spatial)
         {
             // A spatial index is over exactly one column with no sort type: the reference
-            // reads one identifier and the closing parenthesis.
+            // reads one identifier and the closing parenthesis, and a spelled nulls-distinct
+            // clause makes that single column the unique one.
             statement.Columns.Add(new IndexColumn(ReadIdentifier()));
+            if (statement.NullsDistinct is not null)
+            {
+                statement.UniqueColumnCount = 1;
+            }
+
             Expect(Token.CloseParen, ")");
             return statement;
         }

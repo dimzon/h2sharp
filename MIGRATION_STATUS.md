@@ -91,10 +91,18 @@ DISTINCT ON и hidden-колонки идут через отсортирова�
 `IsEverything` и ветки `ENVELOPE` в `GetValueQuick`, поэтому агрегат всегда
 шёл медленным путём с обходом строк; ответ совпадал, но индекс не читался.
 Портированы все три части, закрыто `SpatialIndexOracleTests` +
-`SpatialIndexDirectTests`. Члены `MVSpatialIndex`, которых SQL не достигает
-(`AddRowsToBuffer`/`AddBufferedRows` — internal error, `getMVMap` — TODO,
-`Cursor.previous` — unsupported), закреплены прямыми тестами по эталонному
-поведению. Быстрые пути `MEDIAN`/`PERCENTILE_CONT`/`PERCENTILE_DISC` через
+`SpatialIndexDirectTests`. Оракул вскрыл рядом стоящий дефект парсера:
+spatial-ветка `ReadCreateIndex` уходила из `parseIndexColumnList`-аналога без
+`uniqueColumnCount`, поэтому `CREATE UNIQUE NULLS DISTINCT INDEX ... USING
+RTREE (col)` создавал неуникальный индекс — эталон ставит `uniqueColumnCount = 1`
+при непустом nulls-distinct (Parser.java, ветка `if (spatial)`), порт теперь
+делает то же, и дубликат отвечает `23505`, как эталон. Члены
+`MVSpatialIndex`, которых SQL не достигает (`AddRowsToBuffer`/
+`AddBufferedRows` — internal error, `getMVMap` — TODO, `Cursor.previous` —
+unsupported), закреплены прямыми тестами по эталонному поведению, как и
+двухсессионная конкуренция за uncommitted-соседа в уникальном индексе
+(`ConcurrentUpdate1` → после коммита `DuplicateKey1`). Быстрые пути
+`MEDIAN`/`PERCENTILE_CONT`/`PERCENTILE_DISC` через
 `Percentile.getFromIndex`/`getColumnIndex` в `GetValueQuick` и
 `IsEverything` по-прежнему не портированы — отдельная статья долга.
 

@@ -105,9 +105,34 @@ public sealed class SpatialIndexCoverageTests
         Assert.Equal(0, connection.QuerySingle<int>("SELECT COUNT(*) FROM GEO"));
     }
 
+    /// <summary>docs/functions.html — ENVELOPE answers from the spatial index bounds; the
+    /// tree here is deep enough that the walk crosses inner nodes</summary>
     [Fact]
-    public void TableInfoFunctionsReadTheSpatialIndex()
+    public void EnvelopeAggregateReadsTheIndexOnADeepTree()
     {
+        using IDbConnection connection = TestDatabase.Open();
+        _ = connection.Execute("CREATE TABLE GEO(ID INT PRIMARY KEY, G GEOMETRY)");
+        for (int x = 0; x < 30; x++)
+        {
+            List<string> batch = [];
+            for (int y = 0; y < 20; y++)
+            {
+                batch.Add($"({x * 20 + y}, CAST('POINT({x} {y})' AS GEOMETRY))");
+            }
+
+            _ = connection.Execute("INSERT INTO GEO VALUES " + string.Join(", ", batch));
+        }
+
+        _ = connection.Execute("CREATE SPATIAL INDEX IDXGEO ON GEO(G)");
+
+        string envelope = connection.QuerySingle<string>("SELECT CAST(ENVELOPE(G) AS VARCHAR) FROM GEO");
+        Assert.StartsWith("POLYGON", envelope, StringComparison.Ordinal);
+        Assert.Contains("29", envelope, StringComparison.Ordinal);
+        Assert.Contains("19", envelope, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TableInfoFunctionsReadTheSpatialIndex()    {
         using IDbConnection connection = TestDatabase.Open();
         _ = connection.Execute("CREATE TABLE GEO(ID INT PRIMARY KEY, G GEOMETRY)");
         _ = connection.Execute(
