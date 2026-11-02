@@ -437,6 +437,38 @@ public sealed class FileSystemTests : IDisposable
     }
 
     [Fact]
+    public void ASecondLockOnTheSameFileIsRefused()
+    {
+        DiskFilePath path = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "locked.txt").Replace('\\', '/'));
+        Assert.True(path.CreateFile());
+
+        using FileChannel first = path.Open("rw");
+        using FileChannel second = path.Open("rw");
+
+        Assert.True(first.TryLock());
+        Assert.False(second.TryLock());
+
+        first.ReleaseLock();
+        Assert.True(second.TryLock());
+        second.ReleaseLock();
+    }
+
+    [Fact]
+    public void UnlockingWhatWasNeverLockedIsNothing()
+    {
+        DiskFilePath path = (DiskFilePath)FilePath.Get(
+            Path.Combine(directory, "unlocked.txt").Replace('\\', '/'));
+        Assert.True(path.CreateFile());
+
+        using FileChannel channel = path.Open("rw");
+        channel.ReleaseLock();
+
+        Assert.True(channel.TryLock());
+        channel.ReleaseLock();
+    }
+
+    [Fact]
     public void AWrapperWouldSayWhatItStandsFor()
     {
         // Nothing is a wrapper yet, so unwrapping returns the path itself. The call exists because
