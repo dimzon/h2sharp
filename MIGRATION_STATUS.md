@@ -157,6 +157,13 @@ VARCHAR/VARBINARY/BLOB/JSON × VALUE/ARRAY/OBJECT/SCALAR × WITH/WITHOUT
 UNIQUE KEYS, IS NOT JSON, CASE-операнд, NOT-свёртка, EXPLAIN, UPDATE-фильтр
 — сверена с JVM-оракулом; закрыто `JsonPredicateOracleTests`.
 
+Инлайнинг подвыражений `OperationN` (конкатенации, CONCAT, GCD) закреплён
+`InlineSubexpressionOracleTests`: скобки над колонками возвращаются в одну
+n-арную операцию, скобки из констант схлопываются раньше инлайна (это
+делает `determineType` у эталона и порта), два инлайна сразу идут через
+many-ветку копирования, неинлайнируемый аргумент между скобками — через
+else-ветку.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,
