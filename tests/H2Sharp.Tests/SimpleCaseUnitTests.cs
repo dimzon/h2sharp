@@ -1,6 +1,8 @@
 /* Copyright 2026 H2Sharp contributors. Licensed under MPL 2.0 or EPL 1.0. */
 using System;
 using System.Text;
+using H2Sharp.Api;
+using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Util;
 using H2Sharp.Values;
@@ -29,6 +31,135 @@ public sealed class SimpleCaseUnitTests
         Assert.Same(first.Result, expression.GetSubexpression(2));
         Assert.Same(second.Operands[0], expression.GetSubexpression(3));
         Assert.Same(second.Result, expression.GetSubexpression(4));
+    }
+
+    [Fact]
+    public void SetWhenAttachesAFirstWhen()
+    {
+        SimpleCase.SimpleWhen when = new(
+            ValueExpression.Get(ValueInteger.Get(1)),
+            ValueExpression.Get(ValueVarchar.Get("one")));
+        SimpleCase expression = new(
+            ValueExpression.Get(ValueInteger.Get(1)), null,
+            ValueExpression.Get(ValueVarchar.Get("other")));
+
+        expression.SetWhen(when);
+
+        Assert.Equal(4, expression.GetSubexpressionCount());
+        Assert.Same(when.Operands[0], expression.GetSubexpression(1));
+        Assert.Same(when.Result, expression.GetSubexpression(2));
+    }
+
+    [Fact]
+    public void SubexpressionAddressesOperandAndElse()
+    {
+        ValueExpression operand = ValueExpression.Get(ValueInteger.Get(1));
+        ValueExpression otherwise = ValueExpression.Get(ValueVarchar.Get("other"));
+        SimpleCase expression = new(
+            operand,
+            new SimpleCase.SimpleWhen(
+                ValueExpression.Get(ValueInteger.Get(1)),
+                ValueExpression.Get(ValueVarchar.Get("one"))),
+            otherwise);
+
+        Assert.Same(operand, expression.GetSubexpression(0));
+        Assert.Same(otherwise, expression.GetSubexpression(3));
+    }
+
+    [Fact]
+    public void NonConstantOperandDisablesConstantFolding()
+    {
+        SimpleCase.SimpleWhen when = new(
+            [
+                new Parameter(0),
+                ValueExpression.Get(ValueInteger.Get(2)),
+            ],
+            ValueExpression.Get(ValueVarchar.Get("one")));
+        SimpleCase expression = new(
+            ValueExpression.Get(ValueInteger.Get(1)), when,
+            ValueExpression.Get(ValueVarchar.Get("other")));
+
+        // The constant first operand matches, but the unset parameter keeps
+        // the expression non-constant, so optimize must return the case itself.
+        SessionLocal session = new(new Database(ConnectionInfo.Memory("simple_case")), "sa");
+        Assert.Same(expression, expression.Optimize(session));
+    }
+
+    [Fact]
+    public void UnknownResultTypeFallsBackToVarchar()
+    {
+        SimpleCase expression = new(
+            new Parameter(0),
+            new SimpleCase.SimpleWhen(
+                ValueExpression.Get(ValueInteger.Get(1)),
+                ValueExpression.Null),
+            null);
+
+        Assert.Same(expression, expression.Optimize(null!));
+        Assert.Equal(TypeInfo.TypeVarchar, expression.GetTypeInfo());
+    }
+
+    [Fact]
+    public void WalkersVisitOperandWhenAndElse()
+    {
+        SimpleCase.SimpleWhen when = new(
+            ValueExpression.Get(ValueInteger.Get(1)),
+            ValueExpression.Get(ValueVarchar.Get("one")));
+        SimpleCase expression = new(
+            ValueExpression.Get(ValueInteger.Get(1)), when,
+            ValueExpression.Get(ValueVarchar.Get("other")));
+
+        expression.SetEvaluatable(null!, true);
+        expression.UpdateAggregate(null!, 0);
+
+        Assert.Equal(1, expression.GetCost());
+    }
+
+    [Fact]
+    public void CostCountsElseResult()
+    {
+        SimpleCase expression = new(
+            ValueExpression.Get(ValueInteger.Get(1)),
+            new SimpleCase.SimpleWhen(
+                ValueExpression.Get(ValueInteger.Get(1)),
+                ValueExpression.Get(ValueVarchar.Get("one"))),
+            new Parameter(0));
+
+        Assert.Equal(2, expression.GetCost());
+    }
+
+    [Fact]
+    public void NonIndependentPartsFailIndependentVisitor()
+    {
+        SimpleCase operandFails = new(
+            new Parameter(0),
+            new SimpleCase.SimpleWhen(
+                ValueExpression.Get(ValueInteger.Get(1)),
+                ValueExpression.Get(ValueVarchar.Get("one"))),
+            null);
+        SimpleCase whenOperandFails = new(
+            ValueExpression.Get(ValueInteger.Get(1)),
+            new SimpleCase.SimpleWhen(
+                new Parameter(0),
+                ValueExpression.Get(ValueVarchar.Get("one"))),
+            null);
+        SimpleCase resultFails = new(
+            ValueExpression.Get(ValueInteger.Get(1)),
+            new SimpleCase.SimpleWhen(
+                ValueExpression.Get(ValueInteger.Get(1)),
+                new Parameter(0)),
+            null);
+        SimpleCase elseFails = new(
+            ValueExpression.Get(ValueInteger.Get(1)),
+            new SimpleCase.SimpleWhen(
+                ValueExpression.Get(ValueInteger.Get(1)),
+                ValueExpression.Get(ValueVarchar.Get("one"))),
+            new Parameter(0));
+
+        Assert.False(operandFails.IsEverything(ExpressionVisitor.IndependentVisitor));
+        Assert.False(whenOperandFails.IsEverything(ExpressionVisitor.IndependentVisitor));
+        Assert.False(resultFails.IsEverything(ExpressionVisitor.IndependentVisitor));
+        Assert.False(elseFails.IsEverything(ExpressionVisitor.IndependentVisitor));
     }
 
     [Fact]

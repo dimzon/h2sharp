@@ -35,4 +35,31 @@ public sealed class ExplainCommandTests
 
         Assert.NotEmpty(plan);
     }
+
+    /// <summary>docs/commands.html:873 — mergeInto with VALUES renders its plan</summary>
+    [Fact]
+    public void Explain_MergeIntoValues_ReturnsThePlan() // CMD-0873
+    {
+        using IDbConnection connection = TestDatabase.Open();
+        _ = connection.Execute("CREATE TABLE TEST(ID INT PRIMARY KEY, NAME VARCHAR(50))");
+
+        string plan = connection.QuerySingle<string>(
+            "EXPLAIN MERGE INTO TEST(ID, NAME) KEY(ID) VALUES (1, 'Ada')");
+
+        Assert.Contains("MERGE INTO", plan);
+    }
+
+    /// <summary>docs/commands.html:873 — mergeInto with a query renders its plan</summary>
+    [Fact]
+    public void Explain_MergeIntoQuery_ReturnsThePlan() // CMD-0873
+    {
+        using IDbConnection connection = TestDatabase.Open();
+        _ = connection.Execute("CREATE TABLE TEST(ID INT PRIMARY KEY, NAME VARCHAR(50))");
+        _ = connection.Execute("CREATE TABLE SOURCE(ID INT, NAME VARCHAR(50))");
+
+        string plan = connection.QuerySingle<string>(
+            "EXPLAIN MERGE INTO TEST KEY(ID) SELECT ID, NAME FROM SOURCE");
+
+        Assert.Contains("MERGE INTO", plan);
+    }
 }

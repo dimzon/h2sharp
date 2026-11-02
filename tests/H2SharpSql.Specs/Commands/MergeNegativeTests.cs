@@ -42,4 +42,19 @@ public sealed class MergeNegativeTests
         Assert.ThrowsAny<Exception>(
             () => connection.Execute("MERGE INTO TEST(ID) VALUES (1)"));
     }
+
+    [Fact]
+    public void MergeInto_ConflictingNonKeyValue_IsRejectedAsDuplicateKey()
+    {
+        using IDbConnection connection = TestDatabase.Open();
+        _ = connection.Execute(
+            "CREATE TABLE TEST(ID INT PRIMARY KEY, NAME VARCHAR(50) UNIQUE)");
+        _ = connection.Execute("INSERT INTO TEST(ID, NAME) VALUES (1, 'Ada')");
+
+        H2Sharp.H2SharpException duplicate = Assert.Throws<H2Sharp.H2SharpException>(
+            () => connection.Execute("MERGE INTO TEST KEY(ID) VALUES (2, 'Ada')"));
+
+        Assert.Equal(23505, duplicate.H2ErrorCode);
+        Assert.Equal(1, connection.QuerySingle<int>("SELECT COUNT(*) FROM TEST"));
+    }
 }

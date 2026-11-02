@@ -1486,6 +1486,12 @@ public sealed partial class Parser
         {
             nested = ParseInsert(nestedStart);
         }
+        else if (IsWord("MERGE", consume: false))
+        {
+            // As in the reference's parseExplain: EXPLAIN accepts MERGE alongside
+            // DELETE, UPDATE and INSERT.
+            nested = PrepareMerge(current);
+        }
         else
         {
             Statement statement = ReadStatement();
