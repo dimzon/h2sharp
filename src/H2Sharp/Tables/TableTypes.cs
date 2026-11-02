@@ -1814,6 +1814,21 @@ public abstract class Table
     public virtual Row GetTemplateRow() => CreateRow(new Value[GetColumns().Length], DefaultRow.MemoryCalculate);
 
     /// <summary>
+    /// Creates a row template that carries a value for a single column, or an all-null row of
+    /// the table's width.
+    /// </summary>
+    /// <remarks>
+    /// Ported from the reference's <c>getTemplateSimpleRow</c>: a search bound for one column
+    /// does not need room for the rest, and a single-slot row says so.
+    /// </remarks>
+    /// <param name="singleColumn">whether the row only needs one column</param>
+    /// <returns>the row template</returns>
+    public virtual SearchRow GetTemplateSimpleRow(bool singleColumn)
+        => singleColumn
+            ? new SimpleRowValue(GetColumns().Length)
+            : new DefaultRow(new Value?[GetColumns().Length]);
+
+    /// <summary>
     /// Prepares the specified row for INSERT: defaults are filled in, all values are
     /// converted to target data types and validated.
     /// </summary>

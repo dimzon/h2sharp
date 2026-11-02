@@ -102,9 +102,15 @@ RTREE (col)` создавал неуникальный индекс — этал
 unsupported), закреплены прямыми тестами по эталонному поведению, как и
 двухсессионная конкуренция за uncommitted-соседа в уникальном индексе
 (`ConcurrentUpdate1` → после коммита `DuplicateKey1`). Быстрые пути
-`MEDIAN`/`PERCENTILE_CONT`/`PERCENTILE_DISC` через
-`Percentile.getFromIndex`/`getColumnIndex` в `GetValueQuick` и
-`IsEverything` по-прежнему не портированы — отдельная статья долга.
+`MEDIAN`/`PERCENTILE_CONT`/`PERCENTILE_DISC` портированы:
+`Percentile.getColumnIndex`/`getFromIndex`/`isNullsLast` (вместе с эталонным
+`Table.getTemplateSimpleRow` → `SimpleRowValue`) и ветки в `IsEverything`/
+`GetValueQuick` — новые cases существующего реестра, без перестройки;
+`SELECT MEDIAN(x)` по индексированной колонке отвечает с концов индекса,
+как эталон. Вся матрица — индексный/массивный путь, NULL посреди данных,
+DESC-порядок в WITHIN GROUP, интерполяция по DOUBLE/TIMESTAMP/DATE/
+VARCHAR, NULL- и вне-диапазонный аргумент — сверена с JVM-оракулом; закрыто
+`PercentileOracleTests`.
 
 `MVTable.convertException` был заглушкой (`GetInternalError`), тогда как
 эталон маппит `ERROR_TRANSACTION_LOCKED` в `CONCURRENT_UPDATE_1` (или

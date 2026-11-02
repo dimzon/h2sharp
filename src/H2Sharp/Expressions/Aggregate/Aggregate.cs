@@ -401,6 +401,30 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
                     return v;
                 }
 
+            case AggregateType.PercentileCont:
+            case AggregateType.PercentileDisc:
+                {
+                    Value v = args[0].GetValue(session);
+                    if (v is ValueNull)
+                    {
+                        return ValueNull.Instance;
+                    }
+
+                    BigDecimal arg = v.GetBigDecimal();
+                    if (arg.Signum() >= 0 && arg.CompareTo(BigDecimal.One) <= 0)
+                    {
+                        return Percentile.GetFromIndex(session, orderByList![0].expression!, type!.GetValueType(),
+                            orderByList, arg, aggregateType == AggregateType.PercentileCont);
+                    }
+
+                    throw Message.DbException.GetInvalidValueException(
+                        aggregateType == AggregateType.PercentileCont
+                            ? "PERCENTILE_CONT argument"
+                            : "PERCENTILE_DISC argument", arg);
+                }
+            case AggregateType.Median:
+                return Percentile.GetFromIndex(session, args[0], type!.GetValueType(), orderByList, Percentile.Half,
+                    interpolate: true);
             case AggregateType.Envelope:
                 {
                     H2Sharp.MvStore.Db.MVSpatialIndex spatialIndex =
@@ -1484,6 +1508,17 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
                 case AggregateType.Min:
                 case AggregateType.Max:
                     return GetMinMaxColumnIndex() is not null;
+                case AggregateType.PercentileCont:
+                case AggregateType.PercentileDisc:
+                    return args[0].IsConstant() && Percentile.GetColumnIndex(
+                        select.GetSession().GetDatabase(), orderByList![0].expression!) is not null;
+                case AggregateType.Median:
+                    if (distinct)
+                    {
+                        return false;
+                    }
+
+                    return Percentile.GetColumnIndex(select.GetSession().GetDatabase(), args[0]) is not null;
                 case AggregateType.Envelope:
                     return AggregateDataEnvelope.GetGeometryColumnIndex(args[0]) is not null;
                 default:

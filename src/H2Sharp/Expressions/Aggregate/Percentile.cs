@@ -5,18 +5,16 @@ using System.Numerics;
 using H2Sharp.Api;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
+using H2Sharp.Indexes;
 using H2Sharp.Result;
+using H2Sharp.Tables;
 using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Expressions.Aggregate;
 
 /// <summary>
-/// MEDIAN inverse distribution function.
-///
-/// Only the array path is ported: the index path (getFromIndex) needs
-/// canFindNext, which no ported index provides yet, and the engine never asks
-/// for it because MEDIAN is not optimizable to a quick query.
+/// PERCENTILE_CONT, PERCENTILE_DISC, and MEDIAN inverse distribution functions.
 /// </summary>
 internal static class Percentile
 {
@@ -24,6 +22,194 @@ internal static class Percentile
     /// BigDecimal value of 0.5.
     ///
     internal static readonly BigDecimal Half = BigDecimal.Parse("0.5");
+
+    private static bool IsNullsLast(DefaultNullOrdering defaultNullOrdering, H2Sharp.Indexes.Index index)
+        => DefaultNullOrderingRules.CompareNull(defaultNullOrdering, true, index.GetIndexColumns()[0].SortType) > 0;
+
+    /// <summary>
+    /// The index (if any) for the column specified in the inverse distribution function.
+    /// </summary>
+    /// <param name="database">the database</param>
+    /// <param name="on">the expression (usually a column expression)</param>
+    /// <returns>the index, or null</returns>
+    internal static H2Sharp.Indexes.Index? GetColumnIndex(Database database, Expression on)
+    {
+        DefaultNullOrdering defaultNullOrdering = database.GetDefaultNullOrdering();
+        H2Sharp.Indexes.Index? result = null;
+        if (on is ExpressionColumn col)
+        {
+            Column column = col.GetColumn()!;
+            TableFilter? filter = col.GetTableFilter();
+            if (filter is not null)
+            {
+                bool nullable = column.IsNullable() != Column.NotNullable;
+                foreach (H2Sharp.Indexes.Index index in filter.GetTable()!.GetIndexes())
+                {
+                    if (index.CanFindNext() && index.IsFirstColumn(column))
+                    {
+                        // Prefer index without nulls last for nullable columns
+                        if (result is null || result.GetColumns().Length > index.GetColumns().Length
+                            || nullable && IsNullsLast(defaultNullOrdering, result)
+                                && !IsNullsLast(defaultNullOrdering, index))
+                        {
+                            result = index;
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Gets the result from the index.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="expression">the expression</param>
+    /// <param name="dataType">the data type</param>
+    /// <param name="orderByList">ORDER BY list, null when the aggregate has none</param>
+    /// <param name="percentile">argument of percentile function, or 0.5 for median</param>
+    /// <param name="interpolate">whether value should be interpolated</param>
+    /// <returns>the result</returns>
+    internal static Value GetFromIndex(
+        SessionLocal session, Expression expression, int dataType, List<QueryOrderBy>? orderByList,
+        BigDecimal percentile, bool interpolate)
+    {
+        Database db = session.GetDatabase();
+        H2Sharp.Indexes.Index index = GetColumnIndex(db, expression)!;
+        long count = index.GetRowCount(session);
+        if (count == 0)
+        {
+            return ValueNull.Instance;
+        }
+
+        H2Sharp.Indexes.Cursor cursor = index.GetCursor(session, null, null, false)!;
+        _ = cursor.Next();
+        int columnId = index.GetColumns()[0].GetColumn().GetColumnId();
+        ExpressionColumn expr = (ExpressionColumn)expression;
+        if (expr.GetColumn()!.IsNullable() != Column.NotNullable)
+        {
+            bool hasNulls = false;
+            SearchRow? row;
+            // Try to skip nulls from the start first with the same cursor that
+            // will be used to read values.
+            while (count > 0)
+            {
+                row = cursor.GetSearchRow();
+                if (row is null)
+                {
+                    return ValueNull.Instance;
+                }
+
+                if (row.GetValue(columnId) is ValueNull)
+                {
+                    count--;
+                    _ = cursor.Next();
+                    hasNulls = true;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (count == 0)
+            {
+                return ValueNull.Instance;
+            }
+
+            // If no nulls found and if index orders nulls last create a second
+            // cursor to count nulls at the end.
+            if (!hasNulls && IsNullsLast(db.GetDefaultNullOrdering(), index))
+            {
+                TableFilter tableFilter = expr.GetTableFilter()!;
+                SearchRow check = tableFilter.GetTable()!.GetTemplateSimpleRow(true);
+                check.SetValue(columnId, ValueNull.Instance);
+                H2Sharp.Indexes.Cursor nullsCursor = index.GetCursor(session, check, check, false)!;
+                while (nullsCursor.Next())
+                {
+                    count--;
+                }
+
+                if (count <= 0)
+                {
+                    return ValueNull.Instance;
+                }
+            }
+        }
+
+        bool reverseIndex = (orderByList is not null
+                ? orderByList[0].sortType & SortOrder.Descending : 0)
+            != (index.GetIndexColumns()[0].SortType & SortOrder.Descending);
+        BigDecimal fpRow = BigDecimal.FromLong(count - 1).Multiply(percentile);
+        long rowIdx1 = fpRow.LongValue();
+        BigDecimal factor = fpRow.Subtract(BigDecimal.FromLong(rowIdx1));
+        long rowIdx2;
+        if (factor.Signum() == 0)
+        {
+            interpolate = false;
+            rowIdx2 = rowIdx1;
+        }
+        else
+        {
+            rowIdx2 = rowIdx1 + 1;
+            if (!interpolate)
+            {
+                if (factor.CompareTo(Half) > 0)
+                {
+                    rowIdx1 = rowIdx2;
+                }
+                else
+                {
+                    rowIdx2 = rowIdx1;
+                }
+            }
+        }
+
+        long skip = reverseIndex ? count - 1 - rowIdx2 : rowIdx1;
+        for (int i = 0; i < skip; i++)
+        {
+            _ = cursor.Next();
+        }
+
+        SearchRow? found = cursor.GetSearchRow();
+        if (found is null)
+        {
+            return ValueNull.Instance;
+        }
+
+        Value v = found.GetValue(columnId) ?? ValueNull.Instance;
+        if (v is ValueNull)
+        {
+            return v;
+        }
+
+        if (interpolate)
+        {
+            _ = cursor.Next();
+            found = cursor.GetSearchRow();
+            if (found is null)
+            {
+                return v;
+            }
+
+            Value v2 = found.GetValue(columnId) ?? ValueNull.Instance;
+            if (v2 is ValueNull)
+            {
+                return v;
+            }
+
+            if (reverseIndex)
+            {
+                (v, v2) = (v2, v);
+            }
+
+            return Interpolate(v, v2, factor, dataType, session, db.GetCompareMode());
+        }
+
+        return v;
+    }
 
     ///
     /// Gets the result from the array of values.

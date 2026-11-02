@@ -21,14 +21,14 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 70 513 | 82 388 | **85.59%** |
-| Ветви | 29 104 | 36 327 | **80.12%** |
+| Строки | 70 813 | 82 765 | **85.56%** |
+| Ветви | 29 283 | 36 630 | **79.94%** |
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 85.62% | 80.16% |
+| `H2Sharp` | 85.59% | 79.98% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -68,6 +68,8 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Command/Dml/MergeUsing.cs` | 72.7% | **82.5%** |
 | `MvStore/RTree/MVRTreeMap.cs` | 73.5% | **94.4%** |
 | `Expressions/Functions/DateTimeFunction.cs` | 74.8% | **87.0%** |
+| `Expressions/Aggregate/Percentile.cs` | 25.3% | **75.3%** |
+| `Expressions/Aggregate/Aggregate.cs` | 75.3% | **85.4%** |
 | `MvStore/Db/ValueDataType.cs` | 67.6% | **84.1%** |
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
@@ -224,10 +226,12 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. После полного пересчёта на свежих отчётах: общий процент **85.59% /
-   80.12%**. Пять крупнейших должников из прошлого пересчёта закрыты:
+1. После полного пересчёта на свежих отчётах: общий процент **85.56% /
+   79.94%**. Пять крупнейших должников из прошлого пересчёта закрыты:
    `MVSpatialIndex` 51.9→83.5, `MVPrimaryIndex` 69.8→88.5, `MergeUsing`
-   72.7→82.5, `MVRTreeMap` 73.5→94.4, `DateTimeFunction` 74.8→87.0.
+   72.7→82.5, `MVRTreeMap` 73.5→94.4, `DateTimeFunction` 74.8→87.0; затем
+   `Percentile` 25.3→75.3 и `Aggregate` 75.3→85.4 (быстрые пути
+   `MEDIAN`/`PERCENTILE_*`).
    Старые отчёты `artifacts/TestResults` перед merge убраны в
    `artifacts/TestResultsStale`, чтобы merge считал только по свежим.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.
