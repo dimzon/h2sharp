@@ -93,6 +93,20 @@ public sealed class CastOracleTests
         "SELECT CAST('2020-01-02' AS DATE FORMAT 'dd.MM.yyyy')",
         "SELECT CAST(1 AS INTEGER FORMAT 'x')",
         "SELECT CAST('2020-01-02' AS DATE FORMAT 'yyyy-QQQQ')",
+        "SELECT CAST('abcdef' AS VARCHAR(3))",
+        "SELECT CAST('abcdef' AS CHAR(3))",
+        "SELECT CAST('ab' AS CHAR(3))",
+        "SELECT CAST('abcdef' AS CLOB(3))",
+        "SELECT CAST(CAST('abc' AS BLOB) AS CLOB)",
+        "SELECT CAST(0 AS BOOLEAN)",
+        "SELECT CAST(42 AS BOOLEAN)",
+        "SELECT CAST('true' AS BOOLEAN)",
+        "SELECT CAST(TRUE AS TINYINT)",
+        "SELECT CAST(FALSE AS BIGINT)",
+        "SELECT CAST(INTERVAL '5' DAY AS INTEGER)",
+        "SELECT CAST(1000 AS TINYINT)",
+        "SELECT CAST(X'FF00' AS BINARY(1))",
+        "SELECT CAST(256 AS SMALLINT)",
     ];
 
     /// <summary>
