@@ -191,6 +191,54 @@ public sealed class DateTimeArithmeticOracleTests
         Assert.Equal(java, port);
     }
 
+    /// <summary>
+    /// DATEDIFF over every unit boundary the reference counts, and DATEADD over the fields
+    /// whose answers need their own arithmetic, including the time zone offsets.
+    /// </summary>
+    [JavaOracleFact]
+    public void DateDiffAndDateAddUnitsMatchJdbc()
+    {
+        CompareStatements([
+            "SELECT DATEDIFF(NANOSECOND, TIMESTAMP '2024-01-01 00:00:00.000000001', "
+                + "TIMESTAMP '2024-01-02 00:00:00.000000002')",
+            "SELECT DATEDIFF(MICROSECOND, TIMESTAMP '2024-01-01 00:00:00.000001', "
+                + "TIMESTAMP '2024-01-03 00:00:00.000002')",
+            "SELECT DATEDIFF(MILLISECOND, TIMESTAMP '2024-01-01 00:00:00', TIMESTAMP '2024-01-01 00:00:00.5')",
+            "SELECT DATEDIFF(SECOND, TIME '23:00:00', TIME '01:00:00')",
+            "SELECT DATEDIFF(MINUTE, TIMESTAMP '2024-01-01 10:00:00', TIMESTAMP '2024-01-02 09:30:00')",
+            "SELECT DATEDIFF(HOUR, TIMESTAMP '2024-01-01 10:00:00', TIMESTAMP '2024-01-02 09:30:00')",
+            "SELECT DATEDIFF(DAY, DATE '2024-01-01', DATE '2024-03-01')",
+            "SELECT DATEDIFF(WEEK, DATE '2024-01-01', DATE '2024-03-01')",
+            "SELECT DATEDIFF(ISO_WEEK, DATE '2024-01-01', DATE '2024-03-01')",
+            "SELECT DATEDIFF(MONTH, DATE '2024-01-15', DATE '2024-03-01')",
+            "SELECT DATEDIFF(QUARTER, DATE '2023-11-15', DATE '2024-03-01')",
+            "SELECT DATEDIFF(YEAR, DATE '2020-05-05', DATE '2024-01-01')",
+            "SELECT DATEDIFF(MILLENNIUM, DATE '1000-01-01', DATE '3000-06-15')",
+            "SELECT DATEDIFF(CENTURY, DATE '1800-01-01', DATE '2050-01-01')",
+            "SELECT DATEDIFF(DECADE, DATE '1995-01-01', DATE '2024-01-01')",
+            "SELECT DATEDIFF(TIMEZONE_HOUR, TIMESTAMP WITH TIME ZONE '2024-01-01 00:00:00+02:00', "
+                + "TIMESTAMP WITH TIME ZONE '2024-06-01 00:00:00+05:00')",
+            "SELECT DATEDIFF(TIMEZONE_MINUTE, TIMESTAMP WITH TIME ZONE '2024-01-01 00:00:00+02:00', "
+                + "TIMESTAMP WITH TIME ZONE '2024-06-01 00:00:00-05:30')",
+            "SELECT DATEDIFF(TIMEZONE_SECOND, TIME WITH TIME ZONE '01:00:00+02:00', "
+                + "TIME WITH TIME ZONE '01:00:00-02:00')",
+            "SELECT DATEADD(WEEK, 2, DATE '2024-01-01')",
+            "SELECT DATEADD(QUARTER, 1, DATE '2024-01-01')",
+            "SELECT DATEADD(YEAR, 2, DATE '2024-02-29')",
+            "SELECT DATEADD(MONTH, 1, DATE '2024-01-31')",
+            "SELECT DATEADD(MICROSECOND, 1500, TIMESTAMP '2024-01-01 00:00:00')",
+            "SELECT DATEADD(SECOND, 90, TIME '00:00:30')",
+            "SELECT DATEADD(HOUR, 25, DATE '2024-01-01')",
+            "SELECT DATEADD(TIMEZONE_HOUR, 3, TIMESTAMP WITH TIME ZONE '2024-01-01 00:00:00+02:00')",
+            "SELECT DATEADD(TIMEZONE_MINUTE, 90, TIMESTAMP WITH TIME ZONE '2024-01-01 00:00:00+02:00')",
+            "SELECT DATEADD(TIMEZONE_SECOND, 5400, TIMESTAMP WITH TIME ZONE '2024-01-01 00:00:00+02:00')",
+            "SELECT DATEADD(TIMEZONE_HOUR, 1, TIME WITH TIME ZONE '01:00:00+02:00')",
+            "SELECT DATEADD(TIMEZONE_MINUTE, -30, TIME WITH TIME ZONE '01:00:00+02:00')",
+            "SELECT DATEADD(TIMEZONE_SECOND, 1, TIME WITH TIME ZONE '01:00:00+02:00')",
+            "SELECT DATEADD(TIMEZONE_HOUR, 1, TIMESTAMP '2024-01-01 00:00:00')",
+        ]);
+    }
+
     private static void CompareStatements(string[] statements)
     {
         using H2Connection connection = new("Data Source=datetime_arithmetic_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");

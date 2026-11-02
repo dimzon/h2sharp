@@ -133,6 +133,11 @@ LEGACY/ORACLE (`mode.mergeWhere`) — порт верен; константно-
 опустошает источник ещё до обхода — и эталон, и порт, т.к. ON становится
 условием join'а.
 
+`DATEDIFF`/`DATEADD` по всем единицам (NANOSECOND…HOUR, WEEK/ISO_WEEK,
+MONTH/QUARTER/YEAR, MILLENNIUM/CENTURY/DECADE, TIMEZONE_HOUR/MINUTE/SECOND
+над TIMESTAMP/TIME WITH TIME ZONE, включая отказ TZ-поля на значении без
+зоны) сверены с JVM-оракулом; закрыто `DateTimeArithmeticOracleTests`.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,
