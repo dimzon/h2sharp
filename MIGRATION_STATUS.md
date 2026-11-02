@@ -70,7 +70,9 @@ DISTINCT ON и hidden-колонки идут через отсортирова�
 `DistinctOnTests` и `DistinctOnOracleTests` (JVM). `ValueDataType` для
 `TIMESTAMP`/`TIMESTAMP_TZ` пишет `putVarLong(dateValue)` +
 `writeTimestampTime(timeNanos)`, как эталон, а не epoch-наносекунды; закрыто
-`ValueDataTypeTests`.
+`ValueDataTypeTests`. `EXPLAIN` принимает `MERGE`, как `parseExplain` эталона
+(`DELETE`/`UPDATE`/`INSERT` шли через `ReadStatement`, а `MERGE` нечем было
+прочитать); закрыто `ExplainCommandTests`.
 
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
