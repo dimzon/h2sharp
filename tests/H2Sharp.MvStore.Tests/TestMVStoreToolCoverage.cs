@@ -4,6 +4,7 @@
  *
  * Human-readable tool output over a small store: dump and info.
  */
+using System;
 using System.IO;
 using System.Text;
 using H2Sharp.MvStore;
@@ -61,6 +62,59 @@ public sealed class TestMVStoreToolCoverage : StoreTestBase
         }
 
         Assert.Contains("File not found", dump.ToString());
+    }
+
+    [Fact]
+    public void InfoListsEveryChunkButTheLast()
+    {
+        string fileName = TempFile("tool-info-chunks.h3");
+        DeleteFile(fileName);
+        using (MVStore store = new MVStore.Builder().FileName(fileName).Open())
+        {
+            MVMap<int, string> map = store.OpenMap<int, string>("data");
+            for (int c = 0; c < 8; c++)
+            {
+                for (int i = 0; i < 200; i++)
+                {
+                    map.Put(c * 200 + i, "value-" + i);
+                }
+
+                store.Commit();
+            }
+        }
+
+        StringBuilder info = new();
+        string? error;
+        using (StringWriter infoWriter = new(info))
+        {
+            error = MVStoreTool.Info(fileName, infoWriter);
+        }
+
+        Assert.Null(error);
+        // Eight commits wrote eight chunks; the newest one is live, not listed.
+        Assert.Contains("Chunk count: 7", info.ToString());
+        Assert.Contains("Chunk 7:", info.ToString());
+    }
+
+    [Fact]
+    public void DumpOfAGarbageFileReportsErrorsInsteadOfThrowing()
+    {
+        string fileName = TempFile("tool-garbage.h3");
+        DeleteFile(fileName);
+        // One whole block of garbage and one torn tail block: the torn read
+        // is reported, not thrown.
+        byte[] garbage = new byte[5000];
+        new Random(42).NextBytes(garbage);
+        garbage[0] = (byte)'x';
+        File.WriteAllBytes(fileName, garbage);
+
+        StringBuilder dump = new();
+        using (StringWriter writer = new(dump))
+        {
+            MVStoreTool.Dump(fileName, writer, details: true);
+        }
+
+        Assert.Contains("ERROR", dump.ToString());
     }
 
     [Fact]
