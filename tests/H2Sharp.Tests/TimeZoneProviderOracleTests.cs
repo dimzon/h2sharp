@@ -201,6 +201,30 @@ public sealed class TimeZoneProviderOracleTests
     /// corpus: they would fail on the name while agreeing on everything that matters.
     /// </remarks>
     [Fact]
+    public void ZeroOffsetIsTheUtcSingleton()
+    {
+        Assert.Same(TimeZoneProvider.Utc, TimeZoneProvider.OfOffset(0));
+        Assert.Same(TimeZoneProvider.Utc, TimeZoneProvider.OfId("Z"));
+        Assert.Same(TimeZoneProvider.Utc, TimeZoneProvider.OfId("GMT"));
+        Assert.Same(TimeZoneProvider.Utc, TimeZoneProvider.OfId("UTC"));
+        Assert.Equal(3_600, TimeZoneProvider.OfOffset(3_600).GetTimeZoneOffsetUtc(Summer));
+        Assert.Equal(-3_600, TimeZoneProvider.OfOffset(-3_600).GetTimeZoneOffsetUtc(Summer));
+    }
+
+    [Fact]
+    public void OutOfRangeOffsetIsRefused()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => TimeZoneProvider.OfOffset(18 * 3_600 + 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TimeZoneProvider.OfOffset(-(18 * 3_600 + 1)));
+    }
+
+    [Fact]
+    public void NamedZonesComeFromTheCache()
+    {
+        Assert.Same(TimeZoneProvider.OfId("Europe/Moscow"), TimeZoneProvider.OfId("Europe/Moscow"));
+    }
+
+    [Fact]
     public void ABareAbbreviationKeepsTheNameItWasGiven()
     {
         TimeZoneProvider est = TimeZoneProvider.OfId("EST");
