@@ -14,21 +14,21 @@
 py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-lines 200 --top 25
 ```
 
-`H2SharpSql.Specs` теперь тоже собирает coverlet: **893 passed, 68 skipped**,
+`H2SharpSql.Specs` теперь тоже собирает coverlet: **896 passed, 68 skipped**,
 и его отчёт входит в общий merge.
 
 ## Итоговые цифры
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 66 584 | 81 596 | **81.60%** |
-| Ветви | 27 191 | 35 412 | **76.78%** |
+| Строки | 66 618 | 81 596 | **81.64%** |
+| Ветви | 27 206 | 35 412 | **76.83%** |
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 81.60% | 76.81% |
+| `H2Sharp` | 81.65% | 76.85% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -42,20 +42,21 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `H2Sharp.MvStore.Tests` | 89 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
 | `H2Sharp.Tests` | 1557 passed |
-| `H2SharpSql.Specs` | 893 passed, 68 skipped |
+| `H2SharpSql.Specs` | 896 passed, 68 skipped |
 | `H2Sharp.Native.Tests` | 86 passed, 23 skipped в file-профиле + 11 тяжёлых тестов в memory-профиле (см. ниже) |
 
 ## Прирост от последних тестов
 
 | Область | Было | Стало |
 |---|---:|---:|
-| Общие строки | 81.18% | **81.60%** |
-| Общие ветви | 76.42% | **76.78%** |
+| Общие строки | 81.18% | **81.64%** |
+| Общие ветви | 76.42% | **76.83%** |
 | `MathFunction.cs` | 58.7% | **80.8%** |
 | `MVSortedTempResult.cs` | 0.0% | **51.4%** |
 | `MVPlainTempResult.cs` | 0.0% | **51.2%** |
 | `MVTempResult.cs` | 0.0% | **66.7%** |
 | `SimpleCase.cs` | 63.4% | **64.8%** |
+| `BitFunction.cs` | 64.4% | **70.5%** |
 
 Добавлены тесты на типовые ветви `ROUND`/`TRUNC`/`MOD`/`ROUNDMAGIC`, на
 многооперандный `CASE` и на внешние сортированные/обычные temp-результаты
@@ -188,7 +189,7 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 | `Command/Dml/Merge.cs` | 60.1% |
 | `MvStore/Db/ValueDataType.cs` | 60.6% |
 | `Command/Dml/MergeUsing.cs` | 63.8% |
-| `Expressions/Functions/BitFunction.cs` | 64.4% |
+| `Expressions/Functions/BitFunction.cs` | 70.5% |
 | `Expressions/SimpleCase.cs` | 64.8% |
 | `MvStore/RTree/SpatialDataType.cs` | 64.8% |
 | `MvStore/RTree/MVRTreeMap.cs` | 65.7% |
@@ -200,9 +201,10 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. После трёх итераций тестов: общий процент **81.60% / 76.78%**; за последнюю
-   итерацию добавлены `MathFunction` (58.7% → 80.8%), внешние temp-результаты
-   (`MVSortedTempResult` 0% → 51.4%) и дополнительные формы `CASE`.
+1. После трёх итераций тестов: общий процент **81.64% / 76.83%**; за последнюю
+   итерацию добавлены `MathFunction` (58.7% → 80.8%), `BitFunction`
+   (64.4% → 70.5%), внешние temp-результаты (`MVSortedTempResult`
+   0% → 51.4%) и дополнительные формы `CASE`.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.
 3. Реестр агрегатов и провайдеры закрыты лучше среднего: 88.3–100%.
 4. Основной резерв покрытия — не новый код, а старые крупные ветви:
