@@ -80,6 +80,16 @@ public sealed class LikeOptimizationTests
         Assert.Equal(22025, e.H2ErrorCode);
     }
 
+    /// <summary>docs/grammar.html:2569 — a constant NULL folds to unknown, not to an error</summary>
+    [Fact]
+    public void Like_NullLiteral_FoldsToUnknown()
+    {
+        using IDbConnection connection = GivenNames();
+
+        Assert.Null(connection.QuerySingle<string?>("SELECT CAST(NULL AS VARCHAR) LIKE 'A%'"));
+        Assert.Null(connection.QuerySingle<string?>("SELECT CAST(NULL AS VARCHAR) REGEXP 'A.*'"));
+    }
+
     /// <summary>docs/grammar.html:2587 — REGEXP looks for the pattern inside the value</summary>
     [Fact]
     public void Regexp_FindsThePatternInsideTheValue()

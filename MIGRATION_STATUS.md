@@ -78,7 +78,11 @@ DISTINCT ON и hidden-колонки идут через отсортирова�
 внутренней ошибкой из `CreateIndexConditions`; закрыто
 `LikeOptimizationTests`. `ESTIMATED_ENVELOPE(table, column)` читает
 `MVSpatialIndex.getEstimatedBounds`, как эталон, а не отвечает NULL;
-закрыто `SpatialIndexCoverageTests`.
+закрыто `SpatialIndexCoverageTests`. Правка `IsValueSet` вскрыла второй
+дефект в `CompareLike.optimize`: свёртка констант звала `GetBoolean()` на
+значении и роняла `NULL LIKE 'a'` внутренней ошибкой, тогда как эталон
+зовёт `ValueExpression.getBoolean(Value)`, заворачивающую NULL в UNKNOWN;
+портированы `GetBoolean(Value)` и вызов, закрыто `LikeOptimizationTests`.
 
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.

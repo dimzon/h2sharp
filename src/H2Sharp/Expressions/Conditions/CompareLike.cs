@@ -259,7 +259,7 @@ public sealed class CompareLike : Condition
         {
             if (left.IsValueSet())
             {
-                return ValueExpression.Get(ValueBoolean.Get(GetValue(session).GetBoolean()));
+                return ValueExpression.GetBoolean(GetValue(session));
             }
 
             Value r = right.GetValue(session);

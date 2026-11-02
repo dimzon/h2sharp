@@ -21,14 +21,14 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 69 493 | 81 726 | **85.03%** |
-| Ветви | 28 561 | 35 545 | **80.35%** |
+| Строки | 69 710 | 81 726 | **85.30%** |
+| Ветви | 28 646 | 35 545 | **80.59%** |
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 85.06% | 80.39% |
+| `H2Sharp` | 85.32% | 80.63% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -39,10 +39,10 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | Сьют | Результат |
 |---|---|
 | `H2Sharp.Data.Tests` | 655 passed |
-| `H2Sharp.MvStore.Tests` | 103 passed |
+| `H2Sharp.MvStore.Tests` | 112 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
-| `H2Sharp.Tests` | 1575 passed |
-| `H2SharpSql.Specs` | 944 passed, 68 skipped |
+| `H2Sharp.Tests` | 1597 passed |
+| `H2SharpSql.Specs` | 955 passed, 68 skipped |
 | `H2Sharp.Native.Tests` | 86 passed, 23 skipped в file-профиле + 10 тяжёлых тестов в memory-профиле (`TestLIRSMemoryConsumption` в этом прогоне не уложился в таймаут) |
 
 ## Прирост от последних тестов
@@ -51,8 +51,8 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Область | Было | Стало |
 |---|---:|---:|
-| Общие строки | 84.14% | **85.03%** |
-| Общие ветви | 79.43% | **80.35%** |
+| Общие строки | 84.14% | **85.30%** |
+| Общие ветви | 79.43% | **80.59%** |
 | `Command/*` | 86.50% | **86.94%** |
 | `MvStore/*` | 83.05% | **84.56%** |
 | `Value/*` | 86.72% | **87.20%** |
@@ -211,8 +211,8 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. После полного пересчёта на свежих отчётах: общий процент **85.03% /
-   80.35%**. Файловые проценты из новой секции «Прирост» актуальны.
+1. После полного пересчёта на свежих отчётах: общий процент **85.30% /
+   80.59%**. Файловые проценты из новой секции «Прирост» актуальны.
    Старые отчёты `artifacts/TestResults` перед merge убраны в
    `artifacts/TestResultsStale`, чтобы merge считал только по свежим.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.

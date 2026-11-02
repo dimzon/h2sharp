@@ -82,6 +82,25 @@ public class ValueExpression : Expression
         };
     }
 
+    /// <summary>
+    /// Creates a boolean expression for the given value, or unknown for null.
+    /// </summary>
+    /// <remarks>
+    /// As in the reference's <c>ValueExpression.getBoolean(Value)</c>: a null value folds to
+    /// unknown rather than throwing, which is how <c>NULL LIKE 'a'</c> optimizes.
+    /// </remarks>
+    /// <param name="value">the value</param>
+    /// <returns>the expression</returns>
+    public static ValueExpression GetBoolean(Value value)
+    {
+        if (value is ValueNull)
+        {
+            return TypedValueExpression.Unknown;
+        }
+
+        return value.GetBoolean() ? True : False;
+    }
+
     /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
     {
