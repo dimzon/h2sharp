@@ -5598,150 +5598,175 @@ public sealed partial class Parser
         Expressions.Expression left = ReadQueryConcat(aggregateSelect);
         while (true)
         {
-            if (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
-                or Token.SmallerEqual or Token.BiggerEqual or Token.SpatialIntersects)
+            // The reference's readCondition loop: NOT before the right-hand side belongs to
+            // the condition, and "NOT NULL" here is the column constraint, not the predicate,
+            // so the token goes back and the loop ends.
+            int backup = position;
+            bool not = ReadIf(ParserUtil.Not);
+            if (not && CurrentType == ParserUtil.Null)
             {
-                int compareType = ReadQueryComparisonType();
-                left = ReadComparison(left, compareType, aggregateSelect);
-                continue;
+                position = backup;
+                break;
             }
 
-            if (CurrentType == ParserUtil.Is)
+            Expressions.Expression? right = ReadConditionRightHandSide(
+                left, not, whenOperand: false, aggregateSelect);
+            if (right is null)
             {
-                // Reference readConditionIs: NULL, DISTINCT, TRUE, FALSE, UNKNOWN, OF, JSON.
-                Read();
-                bool not = ReadIf(ParserUtil.Not);
-                if (CurrentType == ParserUtil.Null)
-                {
-                    Read();
-                    left = new Expressions.Conditions.ConditionIsNull(left, not, whenOperand: false);
-                }
-                else if (CurrentType == ParserUtil.Distinct)
-                {
-                    Read();
-                    ExpectWord("FROM");
-                    left = ReadComparison(left, not ? Expressions.Conditions.Comparison.EqualNullSafe
-                        : Expressions.Conditions.Comparison.NotEqualNullSafe, aggregateSelect);
-                }
-                else if (CurrentType is ParserUtil.True or ParserUtil.False)
-                {
-                    bool value = CurrentType == ParserUtil.True;
-                    Read();
-                    left = new Expressions.Conditions.BooleanTest(left, not, whenOperand: false, value);
-                }
-                else if (CurrentType == ParserUtil.Unknown)
-                {
-                    Read();
-                    left = new Expressions.Conditions.BooleanTest(left, not, whenOperand: false, null);
-                }
-                else if (IsWord("OF"))
-                {
-                    Expect(Token.OpenParen, "(");
-                    List<TypeInfo> typeList = [];
-                    do
-                    {
-                        typeList.Add(ReadDataType());
-                    }
-                    while (ReadIfMore());
-                    left = new Expressions.Conditions.TypePredicate(left, not, whenOperand: false, [.. typeList]);
-                }
-                else if (IsWord("JSON"))
-                {
-                    left = ReadIsJsonPredicate(left, not);
-                }
-                else
-                {
-                    throw DbException.GetSyntaxError(sql, Current.Start, "NULL");
-                }
-                continue;
+                position = backup;
+                return left;
             }
 
-            if (CurrentType == ParserUtil.Between
-                || CurrentType == ParserUtil.Not && tokens[position + 1].TokenType == ParserUtil.Between)
-            {
-                bool not = ReadIf(ParserUtil.Not);
-                Expect(ParserUtil.Between, "BETWEEN");
-                bool symmetric = IsWord("SYMMETRIC");
-                if (!symmetric)
-                {
-                    _ = IsWord("ASYMMETRIC");
-                }
-
-                Expressions.Expression a = ReadQueryConcat(aggregateSelect);
-                ExpectWord("AND");
-                left = new Expressions.Conditions.BetweenPredicate(
-                    left, not, whenOperand: false, symmetric, a, ReadQueryConcat(aggregateSelect));
-                continue;
-            }
-
-            if (CurrentType == ParserUtil.In
-                || CurrentType == ParserUtil.Not && tokens[position + 1].TokenType == ParserUtil.In)
-            {
-                bool not = ReadIf(ParserUtil.Not);
-                Expect(ParserUtil.In, "IN");
-                Expect(Token.OpenParen, "(");
-                if (session!.GetMode().AllowEmptyInPredicate && ReadIf(Token.CloseParen))
-                {
-                    left = not ? Expressions.ValueExpression.True : Expressions.ValueExpression.False;
-                    continue;
-                }
-
-                if (IsDerivedQuery())
-                {
-                    Query.Query query = ParseQueryExpression(prepare: false);
-                    Expect(Token.CloseParen, ")");
-                    left = new Expressions.Conditions.ConditionInQuery(
-                        left, not, whenOperand: false, query, all: false,
-                        Expressions.Conditions.Comparison.Equal);
-                    continue;
-                }
-
-                List<Expressions.Expression> values = [];
-                do
-                {
-                    values.Add(ReadQueryConcat(aggregateSelect));
-                }
-                while (ReadIf(Token.Comma));
-
-                Expect(Token.CloseParen, ")");
-                left = new Expressions.Conditions.ConditionInList(
-                    left, not, whenOperand: false, values);
-                continue;
-            }
-
-            if (CurrentType == ParserUtil.Like
-                || IsWord("ILIKE", consume: false)
-                || IsWord("REGEXP", consume: false)
-                || CurrentType == ParserUtil.Not && IsLikeFollowing())
-            {
-                bool not = ReadIf(ParserUtil.Not);
-                if (ReadIf(ParserUtil.Like))
-                {
-                    left = ReadLikePredicate(
-                        left, Expressions.Conditions.CompareLike.LikeType.Like, not);
-                }
-                else if (IsWord("ILIKE", consume: false))
-                {
-                    ExpectWord("ILIKE");
-                    left = ReadLikePredicate(
-                        left, Expressions.Conditions.CompareLike.LikeType.ILike, not);
-                }
-                else
-                {
-                    ExpectWord("REGEXP");
-                    Expressions.Expression b = ReadQuerySum(aggregateSelect);
-                    left = new Expressions.Conditions.CompareLike(
-                        session!.GetCompareMode(), left, not, whenOperand: false, b, escape: null,
-                        Expressions.Conditions.CompareLike.LikeType.Regexp);
-                }
-
-                continue;
-            }
-
-            break;
+            left = right;
         }
 
         return left;
+    }
+
+    /// <summary>
+    /// Reads the right-hand side of a comparison: the predicates and the comparison operators
+    /// that may follow an operand, as the reference's readConditionRightHandSide.
+    /// </summary>
+    /// <remarks>
+    /// A null return means the next token does not continue the condition; for a WHEN operand
+    /// that is the caller's signal to fall back to a plain expression.
+    /// </remarks>
+    /// <param name="left">the left operand, or the CASE operand for a WHEN operand</param>
+    /// <param name="not">whether NOT was read before the right-hand side</param>
+    /// <param name="whenOperand">whether this is the when operand of the simple case</param>
+    /// <param name="aggregateSelect">the aggregate select, if any</param>
+    /// <returns>the condition, or null when the next token does not start one</returns>
+    private Expressions.Expression? ReadConditionRightHandSide(
+        Expressions.Expression left, bool not, bool whenOperand, Query.Select? aggregateSelect)
+    {
+        if (!not && CurrentType == ParserUtil.Is)
+        {
+            // Reference readConditionIs: NULL, DISTINCT, TRUE, FALSE, UNKNOWN, OF, JSON.
+            Read();
+            bool isNot = ReadIf(ParserUtil.Not);
+            if (CurrentType == ParserUtil.Null)
+            {
+                Read();
+                left = new Expressions.Conditions.ConditionIsNull(left, isNot, whenOperand);
+            }
+            else if (CurrentType == ParserUtil.Distinct)
+            {
+                Read();
+                ExpectWord("FROM");
+                left = ReadComparison(left, isNot ? Expressions.Conditions.Comparison.EqualNullSafe
+                    : Expressions.Conditions.Comparison.NotEqualNullSafe, aggregateSelect, whenOperand);
+            }
+            else if (CurrentType is ParserUtil.True or ParserUtil.False)
+            {
+                bool value = CurrentType == ParserUtil.True;
+                Read();
+                left = new Expressions.Conditions.BooleanTest(left, isNot, whenOperand, value);
+            }
+            else if (CurrentType == ParserUtil.Unknown)
+            {
+                Read();
+                left = new Expressions.Conditions.BooleanTest(left, isNot, whenOperand, null);
+            }
+            else if (IsWord("OF"))
+            {
+                Expect(Token.OpenParen, "(");
+                List<TypeInfo> typeList = [];
+                do
+                {
+                    typeList.Add(ReadDataType());
+                }
+                while (ReadIfMore());
+                left = new Expressions.Conditions.TypePredicate(left, isNot, whenOperand, [.. typeList]);
+            }
+            else if (IsWord("JSON"))
+            {
+                left = ReadIsJsonPredicate(left, isNot, whenOperand);
+            }
+            else
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start, "NULL");
+            }
+
+            return left;
+        }
+
+        if (CurrentType == ParserUtil.Between)
+        {
+            Expect(ParserUtil.Between, "BETWEEN");
+            bool symmetric = IsWord("SYMMETRIC");
+            if (!symmetric)
+            {
+                _ = IsWord("ASYMMETRIC");
+            }
+
+            Expressions.Expression a = ReadQueryConcat(aggregateSelect);
+            ExpectWord("AND");
+            return new Expressions.Conditions.BetweenPredicate(
+                left, not, whenOperand, symmetric, a, ReadQueryConcat(aggregateSelect));
+        }
+
+        if (CurrentType == ParserUtil.In)
+        {
+            Expect(ParserUtil.In, "IN");
+            Expect(Token.OpenParen, "(");
+            if (!whenOperand && session!.GetMode().AllowEmptyInPredicate && ReadIf(Token.CloseParen))
+            {
+                return not ? Expressions.ValueExpression.True : Expressions.ValueExpression.False;
+            }
+
+            if (IsDerivedQuery())
+            {
+                Query.Query query = ParseQueryExpression(prepare: false);
+                Expect(Token.CloseParen, ")");
+                return new Expressions.Conditions.ConditionInQuery(
+                    left, not, whenOperand, query, all: false,
+                    Expressions.Conditions.Comparison.Equal);
+            }
+
+            List<Expressions.Expression> values = [];
+            do
+            {
+                values.Add(ReadQueryConcat(aggregateSelect));
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
+            return new Expressions.Conditions.ConditionInList(
+                left, not, whenOperand, values);
+        }
+
+        if (CurrentType == ParserUtil.Like
+            || IsWord("ILIKE", consume: false)
+            || IsWord("REGEXP", consume: false))
+        {
+            if (ReadIf(ParserUtil.Like))
+            {
+                return ReadLikePredicate(
+                    left, Expressions.Conditions.CompareLike.LikeType.Like, not, whenOperand);
+            }
+
+            if (IsWord("ILIKE", consume: false))
+            {
+                ExpectWord("ILIKE");
+                return ReadLikePredicate(
+                    left, Expressions.Conditions.CompareLike.LikeType.ILike, not, whenOperand);
+            }
+
+            ExpectWord("REGEXP");
+            Expressions.Expression b = ReadQuerySum(aggregateSelect);
+            return new Expressions.Conditions.CompareLike(
+                session!.GetCompareMode(), left, not, whenOperand, b, escape: null,
+                Expressions.Conditions.CompareLike.LikeType.Regexp);
+        }
+
+        if (!not && CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
+            or Token.SmallerEqual or Token.BiggerEqual or Token.SpatialIntersects)
+        {
+            int compareType = ReadQueryComparisonType();
+            return ReadComparison(left, compareType, aggregateSelect, whenOperand);
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -5765,7 +5790,8 @@ public sealed partial class Parser
     }
 
     // H2 readComparison: quantified comparison accepts either a subquery or an array.
-    private Expression ReadComparison(Expression left, int compareType, Query.Select? select)
+    private Expression ReadComparison(
+        Expression left, int compareType, Query.Select? select, bool whenOperand = false)
     {
         bool all = IsWord("ALL", consume: false);
         if (all || IsWord("ANY", consume: false) || IsWord("SOME", consume: false))
@@ -5773,12 +5799,12 @@ public sealed partial class Parser
             Read();
             Expect(Token.OpenParen, "(");
             Expression result = IsDerivedQuery()
-                ? new Expressions.Conditions.ConditionInQuery(left, false, false, ParseQueryExpression(prepare: false), all, compareType)
-                : new Expressions.Conditions.ConditionInArray(left, false, ReadQueryOr(select), all, compareType);
+                ? new Expressions.Conditions.ConditionInQuery(left, whenOperand, false, ParseQueryExpression(prepare: false), all, compareType)
+                : new Expressions.Conditions.ConditionInArray(left, whenOperand, ReadQueryOr(select), all, compareType);
             Expect(Token.CloseParen, ")");
             return result;
         }
-        return new Expressions.Conditions.Comparison(compareType, left, ReadQueryConcat(select), false);
+        return new Expressions.Conditions.Comparison(compareType, left, ReadQueryConcat(select), whenOperand);
     }
 
     /// <summary>
@@ -5787,8 +5813,10 @@ public sealed partial class Parser
     /// </summary>
     /// <param name="left">the expression to test</param>
     /// <param name="not">whether this is IS NOT JSON</param>
+    /// <param name="whenOperand">whether this is the when operand of the simple case</param>
     /// <returns>the predicate</returns>
-    private Expressions.Conditions.IsJsonPredicate ReadIsJsonPredicate(Expression left, bool not)
+    private Expressions.Conditions.IsJsonPredicate ReadIsJsonPredicate(
+        Expression left, bool not, bool whenOperand = false)
     {
         Util.Json.JsonItemType itemType;
         if (ReadIf(ParserUtil.Value))
@@ -5823,7 +5851,7 @@ public sealed partial class Parser
             _ = IsWord("KEYS");
         }
 
-        return new Expressions.Conditions.IsJsonPredicate(left, not, whenOperand: false, unique, itemType);
+        return new Expressions.Conditions.IsJsonPredicate(left, not, whenOperand, unique, itemType);
     }
 
     /// <summary>
@@ -7431,12 +7459,13 @@ public sealed partial class Parser
     /// <param name="not">whether this is NOT LIKE</param>
     /// <returns>the predicate</returns>
     private Expressions.Expression ReadLikePredicate(
-        Expressions.Expression left, Expressions.Conditions.CompareLike.LikeType likeType, bool not)
+        Expressions.Expression left, Expressions.Conditions.CompareLike.LikeType likeType, bool not,
+        bool whenOperand = false)
     {
         Expressions.Expression right = ReadQueryConcat();
         Expressions.Expression? escape = IsWord("ESCAPE") ? ReadQueryConcat() : null;
         return new Expressions.Conditions.CompareLike(
-            session!.GetCompareMode(), left, not, whenOperand: false, right, escape, likeType);
+            session!.GetCompareMode(), left, not, whenOperand, right, escape, likeType);
     }
 
     /// <summary>
@@ -7473,12 +7502,12 @@ public sealed partial class Parser
 
         Expressions.Expression operand = ReadQueryOr(aggregateSelect);
         ExpectWord("WHEN");
-        Expressions.SimpleCase.SimpleWhen when = ReadSimpleWhenClause(aggregateSelect);
+        Expressions.SimpleCase.SimpleWhen when = ReadSimpleWhenClause(aggregateSelect, operand);
         Expressions.SimpleCase.SimpleWhen? current = when;
         while (IsWord("WHEN", consume: false))
         {
             ExpectWord("WHEN");
-            Expressions.SimpleCase.SimpleWhen next = ReadSimpleWhenClause(aggregateSelect);
+            Expressions.SimpleCase.SimpleWhen next = ReadSimpleWhenClause(aggregateSelect, operand);
             current!.SetWhen(next);
             current = next;
         }
@@ -7495,21 +7524,56 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Reads one WHEN of a simple CASE: one or more compared values, then THEN and a result.
+    /// Reads one WHEN of a simple CASE: one or more compared operands, then THEN and a result.
     /// </summary>
+    /// <remarks>
+    /// A compared operand is either a plain expression or, as the reference's
+    /// readWhenOperand allows, a condition right-hand side against the CASE operand —
+    /// <c>CASE J WHEN IS JSON ARRAY THEN ...</c>.
+    /// </remarks>
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <param name="caseOperand">the operand of the CASE</param>
     /// <returns>the WHEN</returns>
-    private Expressions.SimpleCase.SimpleWhen ReadSimpleWhenClause(Query.Select? aggregateSelect)
+    private Expressions.SimpleCase.SimpleWhen ReadSimpleWhenClause(
+        Query.Select? aggregateSelect, Expressions.Expression caseOperand)
     {
-        List<Expressions.Expression> operands = [ReadQueryOr(aggregateSelect)];
+        List<Expressions.Expression> operands = [ReadWhenOperand(aggregateSelect, caseOperand)];
         while (ReadIf(Token.Comma))
         {
-            operands.Add(ReadQueryOr(aggregateSelect));
+            operands.Add(ReadWhenOperand(aggregateSelect, caseOperand));
         }
 
         ExpectWord("THEN");
         return new Expressions.SimpleCase.SimpleWhen(
             operands.ToArray(), ReadQueryOr(aggregateSelect));
+    }
+
+    /// <summary>
+    /// Reads one compared operand of a simple CASE WHEN, as the reference's readWhenOperand:
+    /// a condition right-hand side against the CASE operand if the next token starts one, a
+    /// plain expression otherwise.
+    /// </summary>
+    /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
+    /// <param name="caseOperand">the operand of the CASE</param>
+    /// <returns>the operand</returns>
+    private Expressions.Expression ReadWhenOperand(
+        Query.Select? aggregateSelect, Expressions.Expression caseOperand)
+    {
+        int backup = position;
+        bool not = ReadIf(ParserUtil.Not);
+        Expressions.Expression? whenOperand = ReadConditionRightHandSide(
+            caseOperand, not, whenOperand: true, aggregateSelect);
+        if (whenOperand is null)
+        {
+            if (not)
+            {
+                position = backup;
+            }
+
+            whenOperand = ReadQueryOr(aggregateSelect);
+        }
+
+        return whenOperand;
     }
 
     /// <summary>

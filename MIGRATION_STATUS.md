@@ -144,6 +144,19 @@ MONTH/QUARTER/YEAR, MILLENNIUM/CENTURY/DECADE, TIMEZONE_HOUR/MINUTE/SECOND
 над TIMESTAMP/TIME WITH TIME ZONE, включая отказ TZ-поля на значении без
 зоны) сверены с JVM-оракулом; закрыто `DateTimeArithmeticOracleTests`.
 
+Оракул `IS JSON` вскрыл недопортированный `readWhenOperand`: simple CASE в
+порте читал WHEN-операнды как обычные выражения, тогда как эталон пробует
+condition right-hand side против операнда CASE — `CASE J WHEN IS JSON ARRAY
+THEN ...` отвечал 42001. Извлечён `ReadConditionRightHandSide` (точная
+форма эталона: null = «следующий токен не продолжает условие», NOT
+перед RHS на стороне вызывающего цикла с откатом позиции), WHEN-операнды
+простого CASE читаются через `readWhenOperand`-аналог, `whenOperand`
+протянут в `NullPredicate`/`BooleanTest`/`TypePredicate`/`BetweenPredicate`/
+IN/LIKE/`Comparison`/`IsJsonPredicate`. Вся матрица `datatypes/json.sql` —
+VARCHAR/VARBINARY/BLOB/JSON × VALUE/ARRAY/OBJECT/SCALAR × WITH/WITHOUT
+UNIQUE KEYS, IS NOT JSON, CASE-операнд, NOT-свёртка, EXPLAIN, UPDATE-фильтр
+— сверена с JVM-оракулом; закрыто `JsonPredicateOracleTests`.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,
