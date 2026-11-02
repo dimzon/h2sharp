@@ -84,6 +84,20 @@ DISTINCT ON и hidden-колонки идут через отсортирова�
 зовёт `ValueExpression.getBoolean(Value)`, заворачивающую NULL в UNKNOWN;
 портированы `GetBoolean(Value)` и вызов, закрыто `LikeOptimizationTests`.
 
+Агрегат `ENVELOPE(column)` по колонке со spatial-индексом отвечает из
+`MVSpatialIndex.getBounds` через quick-путь `Aggregate.getValueQuick` —
+как эталон (`Aggregate.java:561`, `AggregateDataEnvelope.getGeometryColumnIndex`).
+Прежде в порту недоставало lookup-хелпера, optimizable-условия в
+`IsEverything` и ветки `ENVELOPE` в `GetValueQuick`, поэтому агрегат всегда
+шёл медленным путём с обходом строк; ответ совпадал, но индекс не читался.
+Портированы все три части, закрыто `SpatialIndexOracleTests` +
+`SpatialIndexDirectTests`. Члены `MVSpatialIndex`, которых SQL не достигает
+(`AddRowsToBuffer`/`AddBufferedRows` — internal error, `getMVMap` — TODO,
+`Cursor.previous` — unsupported), закреплены прямыми тестами по эталонному
+поведению. Быстрые пути `MEDIAN`/`PERCENTILE_CONT`/`PERCENTILE_DISC` через
+`Percentile.getFromIndex`/`getColumnIndex` в `GetValueQuick` и
+`IsEverything` по-прежнему не портированы — отдельная статья долга.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,

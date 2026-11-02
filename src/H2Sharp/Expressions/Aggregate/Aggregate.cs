@@ -401,6 +401,16 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
                     return v;
                 }
 
+            case AggregateType.Envelope:
+                {
+                    H2Sharp.MvStore.Db.MVSpatialIndex spatialIndex =
+                        (H2Sharp.MvStore.Db.MVSpatialIndex)(AggregateDataEnvelope
+                            .GetGeometryColumnIndex(args[0])
+                            ?? throw Message.DbException.GetInternalError("type=" + aggregateType));
+                    // The bounds reader answers ValueNull for an empty index, never a true null.
+                    return spatialIndex.GetBounds(session) ?? ValueNull.Instance;
+                }
+
             default:
                 throw Message.DbException.GetInternalError("type=" + aggregateType);
         }
@@ -1474,6 +1484,8 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
                 case AggregateType.Min:
                 case AggregateType.Max:
                     return GetMinMaxColumnIndex() is not null;
+                case AggregateType.Envelope:
+                    return AggregateDataEnvelope.GetGeometryColumnIndex(args[0]) is not null;
                 default:
                     return false;
             }

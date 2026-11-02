@@ -86,6 +86,10 @@ public sealed class SpatialIndexOracleTests
             "CREATE UNIQUE SPATIAL INDEX ON G(THE_GEOM)",
             "CREATE HASH INDEX IDX_H ON G(ID) USING RTREE (ID)",
             "CREATE SPATIAL INDEX IDX_S ON G(THE_GEOM) USING RTREE (THE_GEOM)",
+            "CREATE SPATIAL INDEX IDX_M ON G(THE_GEOM, ID)",
+            "CREATE SPATIAL INDEX IDX_D ON G(THE_GEOM DESC)",
+            "CREATE SPATIAL INDEX IDX_NF ON G(THE_GEOM NULLS FIRST)",
+            "CREATE SPATIAL INDEX IDX_NL ON G(THE_GEOM NULLS LAST)",
         ];
         List<string> java = RunJava("spatial_index_refusals_oracle", statements);
         List<string> port = RunPort("spatial_index_refusals_oracle", statements);
@@ -126,6 +130,36 @@ public sealed class SpatialIndexOracleTests
         ];
         List<string> java = RunJava("spatial_index_plan_oracle", statements);
         List<string> port = RunPort("spatial_index_plan_oracle", statements);
+        AssertTrue(java, port);
+    }
+
+    /// <summary>
+    /// A unique spatial index refuses a duplicate envelope but stores NULL geometries without
+    /// an entry, and the ENVELOPE aggregate answers from the index bounds instead of a scan:
+    /// the quick path the reference takes when the column carries a spatial index.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheUniqueIndexAndTheEnvelopeAggregateMatchTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE G(ID INT PRIMARY KEY, THE_GEOM GEOMETRY)",
+            "INSERT INTO G VALUES (1, 'POINT (1 1)'), (2, 'POINT (50 50)'), (3, 'POINT (2 2)')",
+            "CREATE UNIQUE SPATIAL INDEX IDX_U ON G(THE_GEOM)",
+            "INSERT INTO G VALUES (4, 'POINT (2 2)')",
+            "INSERT INTO G VALUES (5, 'POINT (9 9)')",
+            "INSERT INTO G VALUES (6, NULL)",
+            "INSERT INTO G VALUES (7, NULL)",
+            "DELETE FROM G WHERE ID = 6",
+            "SELECT ENVELOPE(THE_GEOM) FROM G",
+            "SELECT ID FROM G WHERE THE_GEOM && 'POINT (2 2)' ORDER BY ID",
+            "CREATE TABLE E(ID INT PRIMARY KEY, THE_GEOM GEOMETRY)",
+            "CREATE SPATIAL INDEX IDX_E ON E(THE_GEOM)",
+            "SELECT ENVELOPE(THE_GEOM) FROM E",
+            "SELECT ESTIMATED_ENVELOPE('E', 'THE_GEOM') IS NULL",
+        ];
+        List<string> java = RunJava("spatial_index_envelope_oracle", statements);
+        List<string> port = RunPort("spatial_index_envelope_oracle", statements);
         AssertTrue(java, port);
     }
 
