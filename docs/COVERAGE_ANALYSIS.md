@@ -21,22 +21,23 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 68 972 | 84 683 | **81.45%** |
-| Ветви | 28 582 | 39 628 | **72.13%** |
+| Строки | 69 332 | 81 937 | **84.62%** |
+| Ветви | 28 289 | 35 578 | **79.51%** |
 
 > Методика: merge пяти наборов (`H2Sharp.Tests`, `H2SharpSql.Specs`,
-> `H2Sharp.MvStore.Tests`, `H2Sharp.Data.Tests`, `H2Sharp.Engine.Tests`).
+> `H2Sharp.MvStore.Tests`, `H2Sharp.Data.Tests`, `H2Sharp.Engine.Tests`) на
+> одном билде Debug/net10 (`artifacts/TestResultsSprint4`).
 > `H2Sharp.Native.Tests` под coverlet не досчитывается (обрыв на тяжёлых
-> тестах), поэтому в общий процент не входит — этим объясняется шаг вниз
-> относительно прошлого снимка, куда входил его старый отчёт. Знаменатель
-> ветвей в union выше, чем в любом отдельном отчёте: сборки net8.0 и net10.0
-> дают разные condition-coverage на одних и тех же строках.
+> тестах), поэтому в общий процент не входит. Прежний срез
+> 81.45%/72.13% считался union-ом с отчётами другой ревизии и второго
+> таргета; его знаменатель на ~2.7k строк и ~4k ветвей больше, поэтому
+> напрямую эти два среза не сравниваются.
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 81.45% | 72.13% |
+| `H2Sharp` | 84.64% | 79.55% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -47,13 +48,11 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | Сьют | Результат |
 |---|---|
 | `H2Sharp.Data.Tests` | 655 passed |
-| `H2Sharp.MvStore.Tests` | 112 passed |
+| `H2Sharp.MvStore.Tests` | 122 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
-| `H2Sharp.Tests` | 1628 passed |
-| `H2SharpSql.Specs` | 975 passed, 68 skipped |
-| `H2Sharp.MvStore.Tests` | 116 passed |
-| `H2Sharp.Native.Tests` | 27 passed, 9 skipped, далее прогон обрывается на тяжёлых тестах (известное ограничение coverlet-профиля) |
-| `H2Sharp.Native.Tests` | 86 passed, 23 skipped в file-профиле + 10 тяжёлых тестов в memory-профиле (`TestLIRSMemoryConsumption` в этом прогоне не уложился в таймаут) |
+| `H2Sharp.Tests` | 1683 passed |
+| `H2SharpSql.Specs` | 983 passed, 68 skipped |
+| `H2Sharp.Native.Tests` | вне merge: под coverlet обрывается на тяжёлых тестах (см. ниже) |
 
 ## Прирост от последних тестов
 
@@ -89,18 +88,31 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Values/ValueLob.cs` | 63.4% | **76.3%** |
 | `Command/CommandList.cs` | 46.2% | **74.5%** |
 | `MvStore/Db/ValueDataType.cs` | 67.6% | **84.1%** |
-| `Expressions/ValueExpression.cs` | — | покрыт `createIndexConditions` (см. ниже) |
-| `Indexes/IndexCondition.cs` | 48.6% | **88.4%** |
-| `Expressions/Conditions/ConditionInQuery.cs` | 55.1% | **82.9%** |
-| `Command/Query/Optimizer.cs` | 36.5% | **93.0%** |
+| `Expressions/ValueExpression.cs` | — | **100.0%** |
+| `Indexes/IndexCondition.cs` | 48.6% | **89.5%** |
+| `Expressions/Conditions/ConditionInQuery.cs` | 55.1% | **84.2%** |
+| `Command/Query/Optimizer.cs` | 36.5% | **97.2%** |
 | `Util/MathUtils.cs` | 32.2% | **80.2%** |
 | `Util/DateTimeTemplate.cs` | 59.4% | **98.9%** |
 
-Три последние строки — отдельный замер по тестам спринта
-(`IndexConditionOracleTests` + `IndexConditionPlanTests`), а не по всему
-набору: так видно, что именно принесли эти тесты. Замер делается на одном
-свежем билде; старые отчёты содержат PDB другой ревизии файла, и union
-считает две разные нумерации строк, занижая процент.
+Чистый прогон пяти наборов на одном билде (Debug, net10, без старых отчётов):
+
+| Метрика | Покрыто | Всего | Процент |
+|---|---:|---:|---:|
+| Строки | 69 332 | 81 937 | **84.62%** |
+| Ветви | 28 289 | 35 578 | **79.51%** |
+
+Прошлые 81.45%/72.13% считались union-ом с отчётами другой ревизии и
+второго таргета (знаменатель был больше на ~2.7k строк и ~4k ветвей),
+поэтому эти два среза напрямую не сравниваются; текущий — эталонный для
+следующих замеров.
+
+Числа в таблице выше — из этого же merge; отдельные замеры по тестам
+спринта (`IndexConditionOracleTests`, `IndexConditionPlanTests`,
+`OptimizerOracleTests`, `MathUtilsTests`, `DateTimeTemplateOracleTests`)
+давали меньший процент, потому что в них входит только один набор.
+Замер делается на одном свежем билде; старые отчёты содержат PDB другой
+ревизии файла, и union считает две разные нумерации строк, занижая процент.
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
 `FORMATDATETIME`/`PARSEDATETIME` (.NET-форматы, locale/timezone, NULL),
@@ -233,44 +245,46 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 | Файл | Покрытие |
 |---|---:|
-| `MvStore/Db/MVSpatialIndex.cs` | 83.5% |
-| `MvStore/Db/MVPrimaryIndex.cs` | 69.8% |
-| `Expressions/Functions/BitFunction.cs` | 70.6% |
-| `Command/Dml/MergeUsing.cs` | 71.8% |
-| `Expressions/Functions/DateTimeFunction.cs` | 71.9% |
-| `MvStore/MVStoreTool.cs` | 73.0% |
-| `MvStore/RTree/MVRTreeMap.cs` | 73.5% |
-| `Expressions/ExpressionColumn.cs` | 73.6% |
-| `Value/Value.Conversion.Families.cs` | 77.4% |
+| `MvStore/Tx/TransactionMap.cs` | 67.5% |
+| `Schemas/Sequence.cs` | 72.5% |
+| `Engine/Database.Settings.cs` | 75.1% |
+| `Expressions/Aggregate/Percentile.cs` | 75.3% |
+| `Result/LocalResult.cs` | 75.7% |
+| `Data/H2ValueMapper.cs` | 75.7% |
 | `Command/Dml/SetClauseList.cs` | 77.5% |
 | `Store/FileStore.cs` | 77.5% |
-| `Store/FileSystem/DiskFilePath.cs` | 77.5% |
-| `MvStore/RTree/SpatialDataType.cs` | 78.2% |
-| `Util/TimeZoneProvider.cs` | 78.4% |
+| `Data/Dialect.cs` | 77.8% |
+| `Command/Dml/Merge.cs` | 78.3% |
 | `Util/CacheLRU.cs` | 78.5% |
-| `Command/Dml/Merge.cs` | 78.9% |
-| `Result/LocalResult.cs` | 79.5% |
+| `Command/Dml/Set.cs` | 78.5% |
+| `Command/Command.cs` | 79.1% |
+| `Schemas/Schema.cs` | 79.1% |
+| `Command/Query/Select.cs` | 79.4% |
+| `Command/Parser.Set.cs` | 79.5% |
 
-По каталогам заметнее всего проседают `Values` (66.42%), `Message` (69.25%), `Result` (68.18%)
-и `Indexes` (76.36%).
+По каталогам заметнее всего проседают `Message` (67.2%), `Result` (68.4%),
+`Mode` (67.6%), `Indexes` (76.0%) и `Schemas` (79.5%).
 
 ## Выводы
 
-1. После полного пересчёта на свежих отчётах: общий процент **80.98% /
-   69.24%** по пяти наборам (методика и причина отличия от прошлого снимка —
-   в примечании к таблице выше). Все десять целей двух спринтов закрыты:
-   `MVSpatialIndex` 51.9→83.5, `MVPrimaryIndex` 69.8→88.5, `MergeUsing`
-   72.7→82.5, `MVRTreeMap` 73.5→94.4, `DateTimeFunction` 74.8→87.0,
-   `Percentile` 25.3→75.3, `Aggregate` 75.3→85.4 (быстрые пути
-   `MEDIAN`/`PERCENTILE_*`), `IsJsonPredicate` 41.0→77.8, `OperationN`
-   47.5→89.4, `TimeZoneOperation` 62.4→99.3, `ConstraintDomain` 64.8→75.7,
-   `DropDomain` →90.2 (обход зависимостей при `DROP DOMAIN`).
-   Старые отчёты `artifacts/TestResults` перед merge убраны в
-   `artifacts/TestResultsStale`, чтобы merge считал только по свежим.
+1. Свежий чистый срез: **84.62% / 79.51%** по пяти наборам, один билд.
+   Спринт 4 закрыл `IndexCondition` 48.6→89.5, `ConditionInQuery` 55.1→84.2,
+   `Optimizer` 36.5→97.2, `MathUtils` 32.2→80.2, `DateTimeTemplate`
+   59.4→98.9 и `ValueExpression` →100; по пути найдены и исправлены два
+   дефекта порта: отсутствующий `ValueExpression.createIndexConditions`
+   (всегда-ложное условие не попадало в план) и `SecureRandomInt`,
+   возвращавший отрицательные значения. Ранее закрытые цели двух
+   предыдущих спринтов: `MVSpatialIndex` 51.9→83.5, `MVPrimaryIndex`
+   69.8→88.5, `MergeUsing` 72.7→82.5, `MVRTreeMap` 73.5→94.4,
+   `DateTimeFunction` 74.8→87.0, `Percentile` 25.3→75.3, `Aggregate`
+   75.3→85.4, `IsJsonPredicate` 41.0→77.8, `OperationN` 47.5→89.4,
+   `TimeZoneOperation` 62.4→99.3, `ConstraintDomain` 64.8→75.7,
+   `DropDomain` →90.2, `CommandList` 46.2→74.5.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.
 3. Реестр агрегатов и провайдеры закрыты лучше среднего: 88.3–100%.
-4. Основной резерв покрытия — не новый код, а старые крупные ветви:
-   spatial/MVStore, `IndexCondition`, `SET`/`MERGE`, `DateTimeTemplate`.
+4. Основной резерв покрытия теперь — `Result` (68%), `Message` (67%),
+   `Indexes` (76%) и `Value`-конверсии: это старые крупные ветви, а не
+   свежий код.
 5. Memory-профиль (`H2SHARP_NATIVE_MEMORY=1`) ускоряет тяжёлые native-тесты
    в десятки раз, но не заменяет file-профиль: 4 теста проверяют файловое
    поведение и в memory-режиме падают. В текущем прогоне
