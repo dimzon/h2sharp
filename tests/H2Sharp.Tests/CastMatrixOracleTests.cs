@@ -56,6 +56,24 @@ public sealed class CastMatrixOracleTests
         "ARRAY[1, 2]",
         "ROW (1, 2)",
         "'{\"a\":1}'",
+        // The source forms the first matrix did not write: each interval field on its
+        // own, a decimal floating-point literal, geometry text, a nested cast to a
+        // padded CHAR, and the numeric edges.
+        "INTERVAL '5' YEAR",
+        "INTERVAL '5' MONTH",
+        "INTERVAL '5' DAY",
+        "INTERVAL '5' HOUR",
+        "INTERVAL '5' MINUTE",
+        "INTERVAL '5' SECOND",
+        "DECFLOAT '1.5'",
+        "DECFLOAT '1E+300'",
+        "'POINT(1 2)'",
+        "CAST('ab' AS CHAR(3))",
+        "9007199254740993",
+        "-9223372036854775808",
+        "1.7976931348623157E308",
+        "2.2250738585072014E-308",
+        "0.000000000000000000000000000001",
     ];
 
     /// <summary>
@@ -95,6 +113,24 @@ public sealed class CastMatrixOracleTests
         "INTERVAL DAY TO SECOND",
         "INTEGER ARRAY",
         "JSON",
+        // The remaining targets: the single interval fields, geometry (plain and with
+        // its type and SRID), and the wide or narrow spellings a provider sends.
+        "INTERVAL YEAR",
+        "INTERVAL MONTH",
+        "INTERVAL DAY",
+        "INTERVAL HOUR",
+        "INTERVAL MINUTE",
+        "INTERVAL SECOND",
+        "GEOMETRY",
+        "GEOMETRY(POINT, 4326)",
+        "CHAR(1)",
+        "CHAR(300)",
+        "BINARY(1)",
+        "BINARY(8)",
+        "NUMERIC(38, 0)",
+        "DECFLOAT(10)",
+        "VARCHAR(1)",
+        "DOUBLE PRECISION",
     ];
 
     /// <summary>
