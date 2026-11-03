@@ -21,12 +21,12 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 69 592 | 81 971 | **84.90%** |
-| Ветви | 28 462 | 35 556 | **80.05%** |
+| Строки | 69 812 | 81 971 | **85.17%** |
+| Ветви | 28 557 | 35 560 | **80.31%** |
 
 > Методика: merge пяти наборов (`H2Sharp.Tests`, `H2SharpSql.Specs`,
 > `H2Sharp.MvStore.Tests`, `H2Sharp.Data.Tests`, `H2Sharp.Engine.Tests`) на
-> одном билде Debug/net10 (`artifacts/TestResultsFilter`).
+> одном билде Debug/net10 (`artifacts/TestResultsPush`).
 > `H2Sharp.Native.Tests` под coverlet не досчитывается (обрыв на тяжёлых
 > тестах), поэтому в общий процент не входит. Прежний срез
 > 81.45%/72.13% считался union-ом с отчётами другой ревизии и второго
@@ -37,7 +37,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 84.92% | 80.08% |
+| `H2Sharp` | 85.19% | 80.35% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -50,7 +50,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `H2Sharp.Data.Tests` | 655 passed |
 | `H2Sharp.MvStore.Tests` | 122 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
-| `H2Sharp.Tests` | 1685 passed |
+| `H2Sharp.Tests` | 1686 passed |
 | `H2Sharp.Data.Tests` | 657 passed |
 | `H2SharpSql.Specs` | 983 passed, 68 skipped |
 | `H2Sharp.Native.Tests` | вне merge: под coverlet обрывается на тяжёлых тестах (см. ниже) |
@@ -98,6 +98,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Value/Value.Conversion.Families.cs` | 79.8% | **84.5%** |
 | `Tables/TableFilter.cs` | 82.3% | **88.3%** |
 | `Tables/TableTypes.cs` | 82.8% | **85.4%** |
+| `Indexes/RegularQueryExpressionIndex.cs` | 21.1% | **85.5%** |
 
 Прошлые 81.45%/72.13% считались union-ом с отчётами другой ревизии и
 второго таргета (знаменатель был больше на ~2.7k строк и ~4k ветвей),
@@ -265,7 +266,7 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. Свежий чистый срез: **84.90% / 80.05%** по пяти наборам, один билд.
+1. Свежий чистый срез: **85.17% / 80.31%** по пяти наборам, один билд.
    Спринт 4 закрыл `IndexCondition` 48.6→89.5, `ConditionInQuery` 55.1→84.2,
    `Optimizer` 36.5→97.2, `MathUtils` 32.2→80.2, `DateTimeTemplate`
    59.4→98.9 и `ValueExpression` →100; по пути найдены и исправлены два

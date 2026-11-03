@@ -110,22 +110,24 @@ public sealed class IndexConditionPlanTests
     }
 
     [Fact]
-    public void ADerivedTableKeepsTheInConditionOutOfTheIndex()
+    public void ADerivedTablePushesTheEqualityButKeepsTheInOutOfTheIndex()
     {
         using IDbConnection connection = GivenIndexed();
         _ = connection.Execute("CREATE TABLE TEST2(A INT, B INT, ID INT, NAME INT, PRIMARY KEY(ID, NAME))");
         _ = connection.Execute("CREATE UNIQUE INDEX C2 ON TEST2(B, A)");
         _ = connection.Execute("INSERT INTO TEST2 VALUES (1, 10, 1, 1), (2, 20, 2, 2)");
 
-        // An IN combined with another condition cannot use the index of a derived table, so
-        // the index is named without a condition.
+        // The equality is pushed into the derived query as a parameter of its index, while a
+        // single-column IN combined with another condition cannot become one parameter and
+        // stays outside.
         string plan = Plan(connection, "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A = 1 AND B IN (10, 20)");
-        Assert.Contains("C2 */", plan, StringComparison.Ordinal);
-        Assert.DoesNotContain("C2: ", plan, StringComparison.Ordinal);
+        Assert.Contains("C2: A IS NOT DISTINCT FROM", plan, StringComparison.Ordinal);
+        Assert.DoesNotContain("B IS NOT DISTINCT FROM", plan, StringComparison.Ordinal);
 
+        // A row-value IN is split into one equality per column, so both columns are pushed.
         string compound = Plan(connection, "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A = 1 AND (B, A) IN ((10, 1))");
-        Assert.Contains("C2 */", compound, StringComparison.Ordinal);
-        Assert.DoesNotContain("C2: ", compound, StringComparison.Ordinal);
+        Assert.Contains("C2: A IS NOT DISTINCT FROM", compound, StringComparison.Ordinal);
+        Assert.Contains("B IS NOT DISTINCT FROM", compound, StringComparison.Ordinal);
     }
 
     [Fact]

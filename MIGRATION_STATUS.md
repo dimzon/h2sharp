@@ -9166,3 +9166,41 @@ ADR-001 (`IH2Trigger`, `H2DataSource.RegisterTrigger`) реализован, а 
   сверяются с логом.
 
 В сводном прогоне общие 84.90% строк / 80.05% ветвей.
+
+### Derived-table pushdown: таблица без вида и правило переноса условий (2026-11-03)
+
+Причина, по которой `Select.AllowGlobalConditions()` был жёстко `false`
+(комментарий «pushdown неверен»), оказалась не в pushdown, а в подмене вида
+таблицы: `QueryExpressionTable.GetTableType()` отвечал `TABLE`, тогда как
+эталон для derived table и CTE отвечает `null`. Из-за этого правило маски в
+`IndexCondition.GetMask` («IN вместе с другим условием — только для обычной
+таблицы») не срабатывало: IN-условие уезжало в индекс derived-таблицы как
+одно равенство с параметром, параметр не выставлялся, и запрос возвращал
+0 строк. Именно это и было записано как «фильтры не отвечают на условие».
+
+Исправлено по эталону:
+* добавлен `Table.NO_TABLE_TYPE = -1` — число для эталонного `null`;
+  `QueryExpressionTable` (derived table и CTE) отвечает им, а не `TABLE`;
+  все сравнения с `TABLE`/`VIEW`/`SYSTEM_TABLE` в DDL-фильтрах от этого
+  получают ровно эталонный смысл (`null != TABLE` и т. п.);
+* `AllowGlobalConditions()` восстановлен формулой эталона:
+  `OFFSET is null && FETCH is null && distinctExpressions is null`.
+
+После этого ожил перенесённый, но мёртвый pushdown:
+`RegularQueryExpressionIndex` (второй конструктор, `AddConditions`,
+копирование параметров в `GetCursor`). План теперь совпадает с эталоном:
+`WHERE A = 1 AND B IN (10, 20)` пушит в derived-индекс только равенство
+`A IS NOT DISTINCT FROM ?1`, IN остаётся снаружи; row-value IN
+`(B, A) IN ((10, 1))` раскладывается на равенства по колонкам и пушится
+целиком — так же, как в H2.
+
+Тесты: `IndexConditionOracleTests` дополнен derived-запросами (равенство,
+`>=`, `<=`, `BETWEEN`, `OR`, сочетание равенства и IN, VIEW над TEST2) —
+все ответы сверены с JVM; `IndexConditionPlanTests` проверяет план
+(равенство в индексе, IN вне его; row-value IN — оба равенства).
+
+Покрытие: `RegularQueryExpressionIndex` 21.1% → **85.5%**,
+`ConditionLocalAndGlobal` 0% → **77.2%**, общие 84.90/80.05 →
+**85.17/80.31**. Остаток в индексе: spatial-pushdown (в порте TODO),
+копирование `originalParameters` (prepared statement поверх derived-таблицы)
+и защитные ветки `SetParameter`.

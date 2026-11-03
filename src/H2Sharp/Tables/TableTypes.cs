@@ -1047,6 +1047,17 @@ public abstract class Table
     public const int VIEW = 6;
 
     /// <summary>
+    /// No catalog kind: a derived table or a common table expression.
+    /// </summary>
+    /// <remarks>
+    /// The reference answers <c>null</c> from <c>getTableType()</c> for those tables. This
+    /// hierarchy counts kinds with numbers, so "no kind" is a number of its own rather than a
+    /// stand-in that claims to be a regular table: the mask rule for an IN combined with another
+    /// condition reads this and keeps the IN out of an index that belongs to a derived table.
+    /// </remarks>
+    public const int NO_TABLE_TYPE = -1;
+
+    /// <summary>
     /// Whether this table is temporary.
     /// </summary>
     /// <remarks>

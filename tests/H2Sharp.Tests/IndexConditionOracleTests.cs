@@ -109,6 +109,18 @@ public sealed class IndexConditionOracleTests
             "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A = 1 AND B IN (10, 20) ORDER BY A",
             "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A = 1 AND (B, A) IN ((10, 1)) ORDER BY A",
             "SELECT * FROM (SELECT A, B FROM TEST2) WHERE B IN (10, 20) ORDER BY A",
+            // The derived query's own index is fed the outer condition: equality, range and
+            // both together, with the condition that cannot become one equality left outside.
+            "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A = 1 ORDER BY A",
+            "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A >= 1 ORDER BY A",
+            "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A <= 2 ORDER BY A",
+            "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A BETWEEN 1 AND 2 ORDER BY A",
+            "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A = 1 AND B = 10 ORDER BY A",
+            "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A = 1 OR B = 20 ORDER BY A",
+            "SELECT * FROM (SELECT A, B FROM TEST2) WHERE A = 1 AND B > 5 ORDER BY A",
+            "CREATE VIEW V3 AS SELECT A, B FROM TEST2",
+            "SELECT * FROM V3 WHERE A = 1 AND B IN (10, 20) ORDER BY A",
+            "SELECT * FROM V3 WHERE A BETWEEN 1 AND 2 ORDER BY A",
             // A view is not a regular table either: the same conditions answer the same rows.
             "CREATE VIEW V2 AS SELECT A, B FROM TEST2",
             "SELECT * FROM V2 WHERE A = 1 AND B IN (10, 20) ORDER BY A",
@@ -131,9 +143,40 @@ public sealed class IndexConditionOracleTests
         ];
         List<string> port = RunPort(statements);
         List<string> java = RunJava(statements);
+        int common = Math.Min(java.Count, port.Count);
+        for (int i = 0; i < common; i++)
+        {
+            Assert.True(
+                java[i] == port[i],
+                $"line {i}:\n  java: {java[i]}\n  port: {port[i]}\n"
+                + "java statement: " + StatementOf(java[i], statements) + "\n"
+                + "port statement: " + StatementOf(port[i], statements));
+        }
+
         Assert.True(
-            java.Count == port.Count && java.SequenceEqual(port),
-            "java:\n  " + string.Join("\n  ", java) + "\nport:\n  " + string.Join("\n  ", port));
+            java.Count == port.Count,
+            "lines: java=" + java.Count.ToString(CultureInfo.InvariantCulture)
+            + " port=" + port.Count.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// The statement a result line came from, from the index the line carries.
+    /// </summary>
+    /// <param name="line">the result line</param>
+    /// <param name="statements">the statements</param>
+    /// <returns>the statement</returns>
+    private static string StatementOf(string line, IReadOnlyList<string> statements)
+    {
+        int equals = line.IndexOf('=', StringComparison.Ordinal);
+        if (equals < 0
+            || !int.TryParse(
+                line.AsSpan(0, equals), NumberStyles.Integer, CultureInfo.InvariantCulture, out int index)
+            || index < 0 || index >= statements.Count)
+        {
+            return "(unknown)";
+        }
+
+        return statements[index];
     }
 
     /// <summary>
@@ -151,8 +194,9 @@ public sealed class IndexConditionOracleTests
             CompareMode = CompareMode.GetInstance(null, 0),
         };
         List<string> lines = [];
-        foreach (string sql in statements)
+        for (int statementIndex = 0; statementIndex < statements.Count; statementIndex++)
         {
+            string sql = statements[statementIndex];
             try
             {
                 CommandContainer container =
@@ -171,19 +215,19 @@ public sealed class IndexConditionOracleTests
                             cells.Add(value is null or ValueNull ? "-" : value.GetString() ?? "-");
                         }
 
-                        lines.Add("=" + string.Join(":", cells));
+                        lines.Add(statementIndex + "=" + string.Join(":", cells));
                     }
                 }
                 else
                 {
-                    lines.Add("=" + container.ExecuteUpdate(false).GetUpdateCount());
+                    lines.Add(statementIndex + "=" + container.ExecuteUpdate(false).GetUpdateCount());
                 }
             }
             catch (Exception e)
             {
                 lines.Add(e is H2SharpException h2
-                    ? "=" + h2.H2ErrorCode.ToString(CultureInfo.InvariantCulture)
-                    : "=" + e.GetType().Name + ":" + e.Message);
+                    ? statementIndex + "=" + h2.H2ErrorCode.ToString(CultureInfo.InvariantCulture)
+                    : statementIndex + "=" + e.GetType().Name + ":" + e.Message);
             }
         }
 
@@ -208,7 +252,7 @@ public sealed class IndexConditionOracleTests
                   java.sql.ResultSet rs = stat.getResultSet();
                   int columns = rs.getMetaData().getColumnCount();
                   while (rs.next()) {
-                    StringBuilder line = new StringBuilder("=");
+                    StringBuilder line = new StringBuilder().append(i).append("=");
                     for (int c = 1; c <= columns; c++) {
                       if (c > 1) {
                         line.append(':');
@@ -219,10 +263,10 @@ public sealed class IndexConditionOracleTests
                     System.out.println(line);
                   }
                 } else {
-                  System.out.println("=" + stat.getUpdateCount());
+                  System.out.println(i + "=" + stat.getUpdateCount());
                 }
               } catch (java.sql.SQLException e) {
-                System.out.println("=" + e.getErrorCode());
+                System.out.println(i + "=" + e.getErrorCode());
               }
             }
             conn.close();

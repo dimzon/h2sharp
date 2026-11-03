@@ -1747,12 +1747,15 @@ public sealed class Select : Query
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The reference's rule: a condition may be pushed into this query only when it has no
+    /// OFFSET, no FETCH and no DISTINCT ON — each of those makes the rows the condition would
+    /// see different from the rows the outer query sees. The port used to answer false
+    /// unconditionally, which kept every pushed condition outside and left the derived table's
+    /// index without conditions; the rule itself is the reference's.
+    /// </remarks>
     public override bool AllowGlobalConditions()
-        // Pushdown into a derived query is not correct in this port yet: the outer condition
-        // is added to the query, but the query's filters do not answer it. Keeping every
-        // condition outside preserves the result; this is a performance gap, not a semantic
-        // one. Restore the reference rule when the pushdown is fixed.
-        => false;
+        => GetOffset() is null && GetFetch() is null && distinctExpressions is null;
 
     private static Expression AddGlobalCondition(Expression? condition, Expression additional)
     {

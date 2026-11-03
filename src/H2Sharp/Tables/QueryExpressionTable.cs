@@ -172,11 +172,11 @@ public abstract class QueryExpressionTable : Table
     /// <inheritdoc/>
     /// <remarks>
     /// The reference answers null here: a derived table is not a kind of table the catalog
-    /// knows about. This hierarchy counts kinds with numbers and has no number for "no kind",
-    /// so the derived table answers the kind of a regular table — the same answer the data
-    /// change delta table gives.
+    /// knows about. <see cref="Table.NO_TABLE_TYPE"/> is that answer in a hierarchy that counts
+    /// kinds with numbers. Answering TABLE instead made the IN mask rule treat a derived table
+    /// as a regular table and push an IN condition into the derived index as one equality.
     /// </remarks>
-    public override int GetTableType() => TABLE;
+    public override int GetTableType() => NO_TABLE_TYPE;
 
     /// <inheritdoc/>
     public override bool IsDeterministic()
@@ -200,8 +200,7 @@ public abstract class QueryExpressionTable : Table
         base.AddDependencies(dependencies);
         foreach (Table table in tables)
         {
-            // QueryExpressionTable is the view classification of derived tables in D-011;
-            // their GetTableType currently returns TABLE instead of the reference's null.
+            // A derived table stands for its query and is not a dependency of its own.
             if (table is not QueryExpressionTable) table.AddDependencies(dependencies);
         }
     }
