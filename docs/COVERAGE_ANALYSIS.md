@@ -21,8 +21,8 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 69 588 | 81 971 | **84.89%** |
-| Ветви | 28 460 | 35 556 | **80.04%** |
+| Строки | 69 592 | 81 971 | **84.90%** |
+| Ветви | 28 462 | 35 556 | **80.05%** |
 
 > Методика: merge пяти наборов (`H2Sharp.Tests`, `H2SharpSql.Specs`,
 > `H2Sharp.MvStore.Tests`, `H2Sharp.Data.Tests`, `H2Sharp.Engine.Tests`) на
@@ -51,6 +51,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `H2Sharp.MvStore.Tests` | 122 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
 | `H2Sharp.Tests` | 1685 passed |
+| `H2Sharp.Data.Tests` | 657 passed |
 | `H2SharpSql.Specs` | 983 passed, 68 skipped |
 | `H2Sharp.Native.Tests` | вне merge: под coverlet обрывается на тяжёлых тестах (см. ниже) |
 
@@ -264,7 +265,7 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. Свежий чистый срез: **84.89% / 80.04%** по пяти наборам, один билд.
+1. Свежий чистый срез: **84.90% / 80.05%** по пяти наборам, один билд.
    Спринт 4 закрыл `IndexCondition` 48.6→89.5, `ConditionInQuery` 55.1→84.2,
    `Optimizer` 36.5→97.2, `MathUtils` 32.2→80.2, `DateTimeTemplate`
    59.4→98.9 и `ValueExpression` →100; по пути найдены и исправлены два

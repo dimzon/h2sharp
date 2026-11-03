@@ -9141,7 +9141,28 @@ AM/PM без пары, смещения больше 18 часов, повтор
 `CANCEL`), построение плана/`SetPlanItem` с вложенными join-планами,
 `fromTrigger`-ветки `ConvertUpdateRow` (триггер DI-регистрации может
 изменить GENERATED-колонку: эталон тогда отбрасывает это значение и
-пересчитывает колонку — путь реализован, но тестом не покрыт; сами
-триггеры этапа 1 ADR-001 реализованы и оракулены, см. раздел выше)
+пересчитывает колонку — покрыт `ABeforeTriggerCannotOverwriteAGeneratedColumn`;
+сами триггеры этапа 1 ADR-001 реализованы и оракулены, см. раздел выше)
 и базовая `Table.UpdateRows` — её перекрывает `MVTable`, так что базовая
 реализация из SQL недостижима.
+
+### Триггеры: GENERATED-колонка и MERGE (2026-11-03)
+
+Проверка утверждения «триггеры не портированы» показала обратное: этап 1
+ADR-001 (`IH2Trigger`, `H2DataSource.RegisterTrigger`) реализован, а DDL
+`CREATE/DROP TRIGGER` — это этап 2. Формулировка в записи про фильтры и
+старая запись про `MERGE` исправлены.
+
+Добавлены два сценария в `H2TriggerTests`:
+
+* `ABeforeTriggerCannotOverwriteAGeneratedColumn` — before-insert триггер
+  пишет значение в `GENERATED ALWAYS AS`-колонку; эталон это значение
+  отбрасывает и пересчитывает колонку (проверяется хранимое значение).
+  Покрывает `TriggerObject`-ветку `ConvertUpdateRow(..., fromTrigger: true)`
+  и генератную ветку `Table.ConvertUpdateRow`;
+* `MergeFiresTheRegisteredInsertAndUpdateTriggers` — `MERGE INTO ... KEY(ID)
+  VALUES` с триггером на `Insert | Update`: первая строка вставляет
+  (`old = null`), вторая обновляет (`old`, `new`), порядок и значения
+  сверяются с логом.
+
+В сводном прогоне общие 84.90% строк / 80.05% ветвей.

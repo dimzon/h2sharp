@@ -333,6 +333,55 @@ public sealed class H2TriggerTests
             before: true, rowBased: true, () => new RecordingTrigger([])));
     }
 
+    [Fact]
+    public void ABeforeTriggerCannotOverwriteAGeneratedColumn()
+    {
+        (H2DataSource dataSource, H2Connection connection, _) = OpenDb();
+        Exec(connection, "CREATE TABLE GEN(ID INT PRIMARY KEY, A INT, B INT GENERATED ALWAYS AS (A * 2))");
+
+        RecordingTrigger trigger = new([]);
+        trigger.OnFire = (_, _, newRow) =>
+        {
+            Assert.NotNull(newRow);
+            for (int i = 0; i < newRow.ColumnNames.Count; i++)
+            {
+                if (string.Equals(newRow.ColumnNames[i], "B", StringComparison.OrdinalIgnoreCase))
+                {
+                    // The reference discards a value a trigger writes into a generated
+                    // column and computes the column instead.
+                    newRow.SetValue(i, 999);
+                }
+            }
+        };
+        dataSource.RegisterTrigger(
+            "GEN_REWRITE", (_, name) => name == "GEN", H2TriggerEvent.Insert,
+            before: true, rowBased: true, () => trigger);
+
+        Exec(connection, "INSERT INTO GEN(ID, A) VALUES (1, 21)");
+        Assert.Equal("42", Scalar(connection, "SELECT B FROM GEN WHERE ID=1"));
+    }
+
+    [Fact]
+    public void MergeFiresTheRegisteredInsertAndUpdateTriggers()
+    {
+        (H2DataSource dataSource, H2Connection connection, List<string> log) = OpenDb();
+        Exec(connection, "CREATE TABLE MERGED(ID INT PRIMARY KEY, V INT)");
+
+        dataSource.RegisterTrigger(
+            "MERGED_ROWS", (_, name) => name == "MERGED",
+            H2TriggerEvent.Insert | H2TriggerEvent.Update,
+            before: true, rowBased: true, () => new RecordingTrigger(log));
+
+        // The first MERGE inserts, the second one updates the row with the same key.
+        Exec(connection, "MERGE INTO MERGED KEY(ID) VALUES (1, 10)");
+        Exec(connection, "MERGE INTO MERGED KEY(ID) VALUES (1, 20)");
+
+        Assert.Equal(
+            ["init:PUBLIC.MERGED", "fire:old=null|new=[1,10]", "fire:old=[1,10]|new=[1,20]"],
+            log);
+        Assert.Equal("20", Scalar(connection, "SELECT V FROM MERGED WHERE ID=1"));
+    }
+
     private sealed class RecordingTrigger : IH2Trigger
     {
         private readonly List<string> log;
