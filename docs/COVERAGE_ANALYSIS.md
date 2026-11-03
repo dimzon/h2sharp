@@ -89,6 +89,15 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Values/ValueLob.cs` | 63.4% | **76.3%** |
 | `Command/CommandList.cs` | 46.2% | **74.5%** |
 | `MvStore/Db/ValueDataType.cs` | 67.6% | **84.1%** |
+| `Expressions/ValueExpression.cs` | — | покрыт `createIndexConditions` (см. ниже) |
+| `Indexes/IndexCondition.cs` | 48.6% | **88.4%** |
+| `Expressions/Conditions/ConditionInQuery.cs` | 55.1% | **82.9%** |
+
+Три последние строки — отдельный замер по тестам спринта
+(`IndexConditionOracleTests` + `IndexConditionPlanTests`), а не по всему
+набору: так видно, что именно принесли эти тесты. Замер делается на одном
+свежем билде; старые отчёты содержат PDB другой ревизии файла, и union
+считает две разные нумерации строк, занижая процент.
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
 `FORMATDATETIME`/`PARSEDATETIME` (.NET-форматы, locale/timezone, NULL),

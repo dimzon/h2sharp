@@ -21,6 +21,8 @@
 using System;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Expressions.Conditions;
+using H2Sharp.Indexes;
 using H2Sharp.Tables;
 using H2Sharp.Util;
 using H2Sharp.Values;
@@ -124,6 +126,21 @@ public class ValueExpression : Expression
     public override TypeInfo GetTypeInfo()
     {
         return value.GetTypeInfo();
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The reference's <c>ValueExpression.createIndexConditions</c>: a condition that folded to
+    /// FALSE contributes an always-false index condition, which is how the scan of a table is
+    /// skipped altogether. It carries no column, so the index condition's column arguments are
+    /// <c>null</c> here, as in the reference.
+    /// </remarks>
+    public override void CreateIndexConditions(SessionLocal session, TableFilter filter)
+    {
+        if (value.GetValueType() == Value.Boolean && !value.GetBoolean())
+        {
+            filter.AddIndexCondition(IndexCondition.Get(Comparison.False, null, this));
+        }
     }
 
     /// <inheritdoc/>

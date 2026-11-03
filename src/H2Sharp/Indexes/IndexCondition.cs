@@ -135,12 +135,13 @@ public class IndexCondition
     /// Create an index condition with the given parameters.
     /// </summary>
     /// <param name="compareType">the comparison type, see constants in <see cref="Comparison"/></param>
-    /// <param name="column">the column</param>
+    /// <param name="column">the column, or null for the always-false condition</param>
     /// <param name="expression">the expression</param>
     /// <returns>the index condition</returns>
-    public static IndexCondition Get(int compareType, ExpressionColumn column, Expression expression)
+    public static IndexCondition Get(int compareType, ExpressionColumn? column, Expression expression)
     {
-        ArgumentNullException.ThrowIfNull(column);
+        // No null check on the column: the reference's get() passes null for Comparison.FALSE
+        // (see ValueExpression.createIndexConditions), and the constructor handles it.
         return new IndexCondition(compareType, column, null, expression, null, null);
     }
 
