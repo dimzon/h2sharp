@@ -188,6 +188,18 @@ RESTRICT по зависимой колонке и по зависимому д�
 констрейнта и дефолта — сверена с JVM-оракулом; закрыто
 `DomainConstraintOracleTests`.
 
+Большие LOB (запись в сторе, а не в строке) прогнаны целиком: круг
+CLOB/BLOB через таблицу, LENGTH/OCTET_LENGTH/CHAR_LENGTH, `SUBSTRING` окна,
+`POSITION`, CAST к более узкому типу, DISTINCT и сравнение по тексту,
+потоковое чтение (`GetStream`); `LobStorageTests`. Дефект: при неизвестной
+байтовой длине CLOB `ValueClob.GetBytesInternal` звал
+`IOUtils.ReadBytesAndClose(int.MaxValue)`, а порт выделял буфер ровно по
+длине — `OutOfMemoryException`; `readBytesAndClose` портирован по эталону
+(длина — верхняя граница, буфер растёт блоками от `IO_BUFFER_SIZE`).
+Окна `ValueLob.GetReader/GetInputStream` над файловым LOB (в т.ч. при
+неизвестной длине), их отказы, хэш большого значения по длине, сравнение
+значений из разных мест и удаление временного файла — `ValueLobWindowsTests`.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,

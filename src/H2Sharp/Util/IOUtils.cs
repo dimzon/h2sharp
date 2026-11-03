@@ -254,19 +254,18 @@ public static class IOUtils
         ArgumentNullException.ThrowIfNull(input);
         try
         {
+            // The length is an upper bound, as in the reference: a value not more than zero
+            // means "to the end", and the buffer grows in blocks rather than being allocated
+            // at the bound — a caller may name a bound it believes is the data's size, which
+            // for a large object is int.MaxValue.
             if (length <= 0)
             {
-                using MemoryStream outStream = new(Constants.IoBufferSize);
-                _ = Copy(input, outStream);
-                return outStream.ToArray();
+                length = int.MaxValue;
             }
 
-            // Exact size: the length is an upper bound the stream usually fills, so one
-            // allocation does it. A short stream still ends correctly, through one more copy
-            // on a path that means the input was malformed anyway.
-            byte[] result = new byte[length];
-            int copied = ReadFully(input, result, length);
-            return copied == length ? result : result[..copied];
+            using MemoryStream outStream = new((int)Math.Min(Constants.IoBufferSize, length));
+            _ = Copy(input, outStream, length);
+            return outStream.ToArray();
         }
         finally
         {
