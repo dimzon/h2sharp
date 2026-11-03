@@ -407,37 +407,35 @@ public static class StringUtils
                 }
                 else
                 {
-                    if (at + 4 > l)
-                    {
-                        throw GetFormatException(s, at);
-                    }
-
                     char ch = s[at];
                     int end;
+                    if (ch == '+')
+                    {
+                        if (at + 7 > l)
+                        {
+                            throw GetFormatException(s, at);
+                        }
+
+                        end = at + 7;
+                    }
+                    else
+                    {
+                        end = at + 4;
+                    }
+
+                    // The reference advances i inside the parse call's own argument
+                    // (s.substring(i, i += 4)), so a parse failure is reported after the
+                    // digits, not at their start. Advancing before the attempt is the same
+                    // thing written without the side effect inside an argument.
+                    i = end;
                     try
                     {
-                        if (ch == '+')
-                        {
-                            if (at + 7 > l)
-                            {
-                                throw GetFormatException(s, at);
-                            }
-
-                            end = at + 7;
-                            cp = ParseUnsignedInt(s, at + 1, end, 16);
-                        }
-                        else
-                        {
-                            end = at + 4;
-                            cp = ParseUnsignedInt(s, at, end, 16);
-                        }
+                        cp = ParseUnsignedInt(s, ch == '+' ? at + 1 : at, end, 16);
                     }
                     catch (FormatException)
                     {
-                        throw GetFormatException(s, at);
+                        throw GetFormatException(s, i);
                     }
-
-                    i = end;
                 }
             }
 
@@ -1768,7 +1766,7 @@ public static class StringUtils
         {
             while (end > begin && test(ReadCodePointBefore(s, end)))
             {
-                end -= CodePointLengthAt(s, end);
+                end -= CodePointLengthBefore(s, end);
             }
         }
 
@@ -2523,6 +2521,17 @@ public static class StringUtils
     private static int CodePointLengthAt(string s, int index)
         => index < s.Length && (int)s[index] is >= 0xD800 and <= 0xDBFF ? 2 : 1;
 
+    /// <summary>
+    /// The number of characters the code point ending at <paramref name="index"/> takes:
+    /// two when a low surrogate is preceded by a high one, one otherwise. This is
+    /// <c>Character.charCount(codePointBefore(end))</c> — the length of what was just read,
+    /// not of what comes next.
+    /// </summary>
+    private static int CodePointLengthBefore(string s, int index)
+        => index > 1
+            && (int)s[index - 1] is >= 0xDC00 and <= 0xDFFF
+            && (int)s[index - 2] is >= 0xD800 and <= 0xDBFF ? 2 : 1;
+
     private static bool IsSurrogatePair(char first, char second)
         => (int)first is >= 0xD800 and <= 0xDBFF && (int)second is >= 0xDC00 and <= 0xDFFF;
 
@@ -2537,7 +2546,7 @@ public static class StringUtils
             // and the caller turns that into nothing at all.
             char c = s[i];
             int digit = c < HexDecode.Length ? HexDecode[c] : -1;
-            if (digit < 0)
+            if (digit < 0 || digit >= radix)
             {
                 throw new FormatException();
             }
