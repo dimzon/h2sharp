@@ -21,8 +21,8 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 68 827 | 84 991 | **80.98%** |
-| Ветви | 28 537 | 41 214 | **69.24%** |
+| Строки | 68 972 | 84 683 | **81.45%** |
+| Ветви | 28 582 | 39 628 | **72.13%** |
 
 > Методика: merge пяти наборов (`H2Sharp.Tests`, `H2SharpSql.Specs`,
 > `H2Sharp.MvStore.Tests`, `H2Sharp.Data.Tests`, `H2Sharp.Engine.Tests`).
@@ -36,7 +36,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 80.98% | 69.23% |
+| `H2Sharp` | 81.45% | 72.13% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -49,8 +49,8 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `H2Sharp.Data.Tests` | 655 passed |
 | `H2Sharp.MvStore.Tests` | 112 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
-| `H2Sharp.Tests` | 1623 passed |
-| `H2SharpSql.Specs` | 966 passed, 68 skipped |
+| `H2Sharp.Tests` | 1628 passed |
+| `H2SharpSql.Specs` | 975 passed, 68 skipped |
 | `H2Sharp.MvStore.Tests` | 116 passed |
 | `H2Sharp.Native.Tests` | 27 passed, 9 skipped, далее прогон обрывается на тяжёлых тестах (известное ограничение coverlet-профиля) |
 | `H2Sharp.Native.Tests` | 86 passed, 23 skipped в file-профиле + 10 тяжёлых тестов в memory-профиле (`TestLIRSMemoryConsumption` в этом прогоне не уложился в таймаут) |
@@ -84,6 +84,10 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Expressions/TimeZoneOperation.cs` | 62.4% | **99.3%** |
 | `Constraints/ConstraintDomain.cs` | 64.8% | **75.7%** |
 | `Command/Ddl/DropDomain.cs` | — | **90.2%** |
+| `Values/ValueClob.cs` | 41.3% | **79.8%** |
+| `Values/ValueBlob.cs` | 48.8% | **67.2%** |
+| `Values/ValueLob.cs` | 63.4% | **76.3%** |
+| `Command/CommandList.cs` | 46.2% | **74.5%** |
 | `MvStore/Db/ValueDataType.cs` | 67.6% | **84.1%** |
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
