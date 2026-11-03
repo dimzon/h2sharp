@@ -1074,8 +1074,10 @@ public static class IntervalUtils
     private static long ParseIntervalLeading(string s, int start, int end, bool negative)
     {
         // From the span, as the remaining half already parses: the substring allocated per
-        // field for the same digits.
-        long leading = long.Parse(s.AsSpan(start, end - start), CultureInfo.InvariantCulture);
+        // field for the same digits. Only a leading sign is allowed: Java's Long.parseLong
+        // does not skip spaces, and " 12 " is not an interval.
+        long leading = long.Parse(
+            s.AsSpan(start, end - start), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
         if (leading == 0)
         {
             return negative ^ s[start] == '-' ? long.MinValue : 0;

@@ -21,12 +21,12 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 69 332 | 81 937 | **84.62%** |
-| Ветви | 28 289 | 35 578 | **79.51%** |
+| Строки | 69 468 | 81 971 | **84.75%** |
+| Ветви | 28 409 | 35 556 | **79.90%** |
 
 > Методика: merge пяти наборов (`H2Sharp.Tests`, `H2SharpSql.Specs`,
 > `H2Sharp.MvStore.Tests`, `H2Sharp.Data.Tests`, `H2Sharp.Engine.Tests`) на
-> одном билде Debug/net10 (`artifacts/TestResultsSprint4`).
+> одном билде Debug/net10 (`artifacts/TestResultsCast`).
 > `H2Sharp.Native.Tests` под coverlet не досчитывается (обрыв на тяжёлых
 > тестах), поэтому в общий процент не входит. Прежний срез
 > 81.45%/72.13% считался union-ом с отчётами другой ревизии и второго
@@ -37,7 +37,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 84.64% | 79.55% |
+| `H2Sharp` | 84.77% | 79.94% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -94,25 +94,20 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Command/Query/Optimizer.cs` | 36.5% | **97.2%** |
 | `Util/MathUtils.cs` | 32.2% | **80.2%** |
 | `Util/DateTimeTemplate.cs` | 59.4% | **98.9%** |
-
-Чистый прогон пяти наборов на одном билде (Debug, net10, без старых отчётов):
-
-| Метрика | Покрыто | Всего | Процент |
-|---|---:|---:|---:|
-| Строки | 69 332 | 81 937 | **84.62%** |
-| Ветви | 28 289 | 35 578 | **79.51%** |
+| `Value/Value.Conversion.Families.cs` | 79.8% | **84.5%** |
 
 Прошлые 81.45%/72.13% считались union-ом с отчётами другой ревизии и
 второго таргета (знаменатель был больше на ~2.7k строк и ~4k ветвей),
-поэтому эти два среза напрямую не сравниваются; текущий — эталонный для
+поэтому эти срезы напрямую не сравниваются; текущий — эталонный для
 следующих замеров.
 
 Числа в таблице выше — из этого же merge; отдельные замеры по тестам
 спринта (`IndexConditionOracleTests`, `IndexConditionPlanTests`,
-`OptimizerOracleTests`, `MathUtilsTests`, `DateTimeTemplateOracleTests`)
-давали меньший процент, потому что в них входит только один набор.
-Замер делается на одном свежем билде; старые отчёты содержат PDB другой
-ревизии файла, и union считает две разные нумерации строк, занижая процент.
+`OptimizerOracleTests`, `MathUtilsTests`, `DateTimeTemplateOracleTests`,
+`CastMatrixOracleTests`) давали меньший процент, потому что в них входит
+только один набор. Замер делается на одном свежем билде; старые отчёты
+содержат PDB другой ревизии файла, и union считает две разные нумерации
+строк, занижая процент.
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
 `FORMATDATETIME`/`PARSEDATETIME` (.NET-форматы, locale/timezone, NULL),
@@ -267,13 +262,19 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. Свежий чистый срез: **84.62% / 79.51%** по пяти наборам, один билд.
+1. Свежий чистый срез: **84.75% / 79.90%** по пяти наборам, один билд.
    Спринт 4 закрыл `IndexCondition` 48.6→89.5, `ConditionInQuery` 55.1→84.2,
    `Optimizer` 36.5→97.2, `MathUtils` 32.2→80.2, `DateTimeTemplate`
    59.4→98.9 и `ValueExpression` →100; по пути найдены и исправлены два
    дефекта порта: отсутствующий `ValueExpression.createIndexConditions`
    (всегда-ложное условие не попадало в план) и `SecureRandomInt`,
-   возвращавший отрицательные значения. Ранее закрытые цели двух
+   возвращавший отрицательные значения. Матрица `CAST` (спринт 5) подняла
+   `Value.Conversion.Families` 79.8→84.5 и нашла ещё шесть дефектов: заглушки
+   `GetBytes`/`GetShort`/`GetDouble`/`GetFloat`/`GetBigDecimal`/`GetSignum`
+   отвечали внутренней ошибкой вместо эталонных кодов, `ParseIntervalLeading`
+   пропускал пробелы, `ParseTime`/`ParseTimestamp` отказывали вместо перевода
+   в зону сессии, `SET TIME ZONE` не влиял на касты, а `SMALLINT` не умел
+   BINARY/VARBINARY. Ранее закрытые цели двух
    предыдущих спринтов: `MVSpatialIndex` 51.9→83.5, `MVPrimaryIndex`
    69.8→88.5, `MergeUsing` 72.7→82.5, `MVRTreeMap` 73.5→94.4,
    `DateTimeFunction` 74.8→87.0, `Percentile` 25.3→75.3, `Aggregate`

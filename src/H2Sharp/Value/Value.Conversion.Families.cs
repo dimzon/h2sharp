@@ -612,6 +612,20 @@ public abstract partial class Value
             case Double:
                 return ValueSmallint.Get(ConvertToShortChecked(ConvertToLongChecked(GetDouble(), column), column));
 
+            case Binary:
+            case Varbinary:
+                {
+                    // Two bytes are a SMALLINT, read big-endian, as the reference reads them.
+                    // Any other length is a conversion error, not a number.
+                    byte[] bytes = GetBytesNoCopy()!;
+                    if (bytes.Length == 2)
+                    {
+                        return ValueSmallint.Get(unchecked((short)((bytes[0] << 8) + (bytes[1] & 0xff))));
+                    }
+
+                    throw GetDataConversionErrorException(Smallint);
+                }
+
             case Null:
                 throw DbException.GetInternalError();
 

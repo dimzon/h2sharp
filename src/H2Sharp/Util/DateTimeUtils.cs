@@ -937,7 +937,6 @@ public static class DateTimeUtils
     /// <param name="withTimeZone">whether the result should carry a zone</param>
     /// <returns>the timestamp</returns>
     /// <exception cref="ArgumentException">if the text is not a timestamp</exception>
-    /// <exception cref="NotSupportedException">if a zone is asked for or written</exception>
     public static Values.Value ParseTimestamp(string s, Engine.CastDataProvider? provider, bool withTimeZone)
     {
         int dateEnd = s.IndexOf(' ');
@@ -959,25 +958,98 @@ public static class DateTimeUtils
 
         long dateValue = ParseDateValue(s, 0, dateEnd);
         long nanos = 0;
+        TimeZoneProvider? tz = null;
         if (timeStart >= 0)
         {
-            dateEnd++;
-            int timeEnd = FindTimeZone(s, dateEnd, out bool hasTimeZone);
-            if (hasTimeZone)
+            int timeEnd;
+            if (s.EndsWith("Z", StringComparison.Ordinal))
             {
-                return ParseTimestampWithTimeZone(s, dateEnd, timeEnd, dateValue, provider);
+                tz = TimeZoneProvider.Utc;
+                timeEnd = s.Length - 1;
+            }
+            else
+            {
+                int timeZoneStart = s.IndexOf('+', timeStart);
+                if (timeZoneStart < 0)
+                {
+                    timeZoneStart = s.IndexOf('-', timeStart);
+                }
+
+                if (timeZoneStart >= 0)
+                {
+                    // Allow a [timeZoneName] part after the offset.
+                    int offsetEnd = s.IndexOf('[', timeZoneStart + 1);
+                    if (offsetEnd < 0)
+                    {
+                        offsetEnd = s.Length;
+                    }
+
+                    tz = TimeZoneProvider.OfId(s[timeZoneStart..offsetEnd]);
+                    if (s[timeZoneStart - 1] == ' ')
+                    {
+                        timeZoneStart--;
+                    }
+
+                    timeEnd = timeZoneStart;
+                }
+                else
+                {
+                    timeZoneStart = s.IndexOf(' ', timeStart);
+                    if (timeZoneStart > 0)
+                    {
+                        tz = TimeZoneProvider.OfId(s[(timeZoneStart + 1)..]);
+                        timeEnd = timeZoneStart;
+                    }
+                    else
+                    {
+                        timeEnd = s.Length;
+                    }
+                }
             }
 
-            nanos = ParseTimeNanos(s, dateEnd, timeEnd);
+            nanos = ParseTimeNanos(s, timeStart, timeEnd);
         }
 
         if (withTimeZone)
         {
-            throw new NotSupportedException(
-                "a timestamp without a time zone written as one that has it");
+            TimeZoneProvider zone = tz ?? provider?.CurrentTimeZone() ?? TimeZoneProvider.GetDefault();
+            int tzSeconds = zone.GetTimeZoneOffsetUtc(zone.GetEpochSecondsFromLocal(dateValue, nanos));
+            return Values.ValueTimestampTimeZone.FromDateValueAndNanos(dateValue, nanos, tzSeconds);
+        }
+
+        if (tz is not null)
+        {
+            long seconds = tz.GetEpochSecondsFromLocal(dateValue, nanos);
+            seconds += (provider?.CurrentTimeZone() ?? TimeZoneProvider.GetDefault())
+                .GetTimeZoneOffsetUtc(seconds);
+            dateValue = DateValueFromLocalSeconds(seconds);
+            nanos = (nanos % NanosPerSecond) + NanosFromLocalSeconds(seconds);
         }
 
         return Values.ValueTimestamp.FromDateValueAndNanos(dateValue, nanos);
+    }
+
+    /// <summary>
+    /// The current timestamp, expressed in the given time zone.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>currentTimestamp(TimeZoneProvider, Instant)</c>: dates before the Unix
+    /// epoch are not handled specially, because the caller is always "now".
+    /// </remarks>
+    /// <param name="timeZone">the time zone to write the moment in</param>
+    /// <param name="now">the moment</param>
+    /// <returns>the current timestamp with that zone's offset</returns>
+    public static Values.ValueTimestampTimeZone CurrentTimestamp(
+        TimeZoneProvider timeZone, DateTimeOffset now)
+    {
+        long second = now.ToUnixTimeSeconds();
+        int offset = timeZone.GetTimeZoneOffsetUtc(second);
+        second += offset;
+        return Values.ValueTimestampTimeZone.FromDateValueAndNanos(
+            DateValueFromAbsoluteDay(second / SecondsPerDay),
+            ((second % SecondsPerDay) * NanosPerSecond)
+                + ((now.Ticks % TimeSpan.TicksPerSecond) * 100L),
+            offset);
     }
 
     /// <summary>
@@ -988,71 +1060,84 @@ public static class DateTimeUtils
     /// <param name="withTimeZone">whether the result should carry a zone</param>
     /// <returns>the time</returns>
     /// <exception cref="ArgumentException">if the text is not a time</exception>
-    /// <exception cref="NotSupportedException">if a zone is asked for or written</exception>
     public static Values.Value ParseTime(string s, Engine.CastDataProvider? provider, bool withTimeZone)
     {
-        int timeEnd = FindTimeZone(s, 0, out bool hasTimeZone);
-        if (hasTimeZone)
+        int timeEnd;
+        TimeZoneProvider? tz = null;
+        if (s.EndsWith("Z", StringComparison.Ordinal))
         {
-            if (!withTimeZone)
+            tz = TimeZoneProvider.Utc;
+            timeEnd = s.Length - 1;
+        }
+        else
+        {
+            int timeZoneStart = s.IndexOf('+', 1);
+            if (timeZoneStart < 0)
             {
-                throw new NotSupportedException(
-                    "a time with a time zone written as one that has not got it");
+                timeZoneStart = s.IndexOf('-', 1);
             }
 
-            long zoned = ParseTimeNanos(s, 0, timeEnd);
-            return Values.ValueTimeTimeZone.FromNanos(zoned, ParseTimeZoneOffset(s, timeEnd));
-        }
+            if (timeZoneStart >= 0)
+            {
+                tz = TimeZoneProvider.OfId(s[timeZoneStart..]);
+                if (s[timeZoneStart - 1] == ' ')
+                {
+                    timeZoneStart--;
+                }
 
-        if (withTimeZone)
-        {
-            throw new NotSupportedException(
-                "a time without a time zone written as one that has it");
+                timeEnd = timeZoneStart;
+            }
+            else
+            {
+                timeZoneStart = s.IndexOf(' ', 1);
+                if (timeZoneStart > 0)
+                {
+                    tz = TimeZoneProvider.OfId(s[(timeZoneStart + 1)..]);
+                    timeEnd = timeZoneStart;
+                }
+                else
+                {
+                    timeEnd = s.Length;
+                }
+            }
+
+            if (tz is not null && !tz.HasFixedOffset())
+            {
+                throw Message.DbException.Get(
+                    Api.ErrorCode.InvalidDatetimeConstant2, "TIME WITH TIME ZONE", s);
+            }
         }
 
         long nanos = ParseTimeNanos(s, 0, timeEnd);
+        if (withTimeZone)
+        {
+            int offset = tz is not null
+                ? tz.GetTimeZoneOffsetUtc(0L)
+                : CurrentOffsetSeconds(provider);
+            return Values.ValueTimeTimeZone.FromNanos(nanos, offset);
+        }
+
+        if (tz is not null)
+        {
+            // The text says which zone its time was written in; the value keeps the time of the
+            // session's zone, so the difference moves the clock.
+            nanos = NormalizeNanosOfDay(
+                nanos + ((CurrentOffsetSeconds(provider) - tz.GetTimeZoneOffsetUtc(0L))
+                    * (long)NanosPerSecond));
+        }
+
         return Values.ValueTime.FromNanos(nanos);
     }
 
     /// <summary>
-    /// Where the time ends and whether there is a time zone after it.
+    /// The session's offset from UTC now, as the reference reads it from its current timestamp.
     /// </summary>
-    /// <remarks>
-    /// A zone is a Z at the end, an offset beginning with a plus or a minus, or a name after a
-    /// space. The search starts at <paramref name="start"/> rather than at the beginning because a
-    /// timestamp has a date in front of it, and a dash inside the date must not be read as the sign
-    /// of an offset.
-    /// </remarks>
-    private static int FindTimeZone(string s, int start, out bool hasTimeZone)
-    {
-        hasTimeZone = false;
-        if (s.EndsWith("Z", StringComparison.Ordinal))
-        {
-            hasTimeZone = true;
-            return s.Length - 1;
-        }
-
-        int timeZoneStart = s.IndexOf('+', start);
-        if (timeZoneStart < 0)
-        {
-            timeZoneStart = s.IndexOf('-', start);
-        }
-
-        if (timeZoneStart >= 0)
-        {
-            hasTimeZone = true;
-            return timeZoneStart > 0 && s[timeZoneStart - 1] == ' ' ? timeZoneStart - 1 : timeZoneStart;
-        }
-
-        timeZoneStart = s.IndexOf(' ', start);
-        if (timeZoneStart > 0)
-        {
-            hasTimeZone = true;
-            return timeZoneStart;
-        }
-
-        return s.Length;
-    }
+    /// <param name="provider">the cast information provider, or null</param>
+    /// <returns>the offset in seconds</returns>
+    private static int CurrentOffsetSeconds(Engine.CastDataProvider? provider)
+        => provider is not null
+            ? provider.CurrentTimestamp().GetTimeZoneOffsetSeconds()
+            : TimeZoneProvider.GetDefault().GetTimeZoneOffsetUtc(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
 
     /// <summary>
     /// Writes a time zone offset after a time, as <c>+01</c>, <c>+01:30</c> or <c>+01:30:45</c>.
@@ -1264,78 +1349,4 @@ public static class DateTimeUtils
         return Values.ValueTimestampTimeZone.FromDateValueAndNanos(dateValue, timeNanos, newOffset);
     }
 
-    private static Values.Value ParseTimestampWithTimeZone(
-        string s, int dateEnd, int timeEnd, long dateValue, Engine.CastDataProvider? provider)
-    {
-        long nanos = ParseTimeNanos(s, dateEnd, timeEnd);
-        ReadOnlySpan<char> zone = s.AsSpan(timeEnd).Trim();
-        int offset;
-        if (zone.Length > 1 && zone[0] is not ('Z' or 'z' or '+' or '-'))
-        {
-            TimeZoneProvider timeZone = TimeZoneProvider.OfId(zone.ToString());
-            offset = timeZone.GetTimeZoneOffsetUtc(
-                timeZone.GetEpochSecondsFromLocal(dateValue, nanos));
-        }
-        else
-        {
-            offset = ParseTimeZoneOffset(s, timeEnd);
-        }
-
-        return Values.ValueTimestampTimeZone.FromDateValueAndNanos(dateValue, nanos, offset);
-    }
-
-    /// <summary>
-    /// The offset in seconds that is written from <paramref name="start"/> to the end of the text.
-    /// </summary>
-    /// <remarks>
-    /// Three shapes are written: a Z for Greenwich, a signed number of hours with minutes and
-    /// seconds after it, and a name after a space. Only the first two are read here: a name is a
-    /// zone of the operating system's database, which is not something a library should be deciding
-    /// for a literal, and the reference answers a name with the zone the session is in.
-    /// </remarks>
-    private static int ParseTimeZoneOffset(string s, int start)
-    {
-        // No substring and no split: the zone is sliced where it stands, and at most two
-        // colons are ever looked for. A third colon is more than three parts, which is the
-        // shape the split refused.
-        ReadOnlySpan<char> zone = s.AsSpan(start).Trim();
-        if (zone.Length == 0 || (zone.Length == 1 && zone[0] is 'Z' or 'z'))
-        {
-            return 0;
-        }
-
-        if (zone[0] is not ('+' or '-'))
-        {
-            throw new ArgumentException(s, nameof(s));
-        }
-
-        bool negative = zone[0] == '-';
-        ReadOnlySpan<char> digits = zone[1..];
-        int first = digits.IndexOf(':');
-        ReadOnlySpan<char> hoursPart = first < 0 ? digits : digits[..first];
-        ReadOnlySpan<char> rest = first < 0 ? [] : digits[(first + 1)..];
-        int second = rest.IndexOf(':');
-        ReadOnlySpan<char> minutesPart = second < 0 ? rest : rest[..second];
-        ReadOnlySpan<char> secondsPart = second < 0 ? [] : rest[(second + 1)..];
-        if (secondsPart.IndexOf(':') >= 0)
-        {
-            throw new ArgumentException(s, nameof(s));
-        }
-
-        int hours = StringUtils.ParseUInt31(hoursPart);
-        int minutes = first < 0 ? 0 : StringUtils.ParseUInt31(minutesPart);
-        int seconds = second < 0 ? 0 : StringUtils.ParseUInt31(secondsPart);
-        if (minutes > 59 || seconds > 59)
-        {
-            throw new ArgumentException(s, nameof(s));
-        }
-
-        int offset = (hours * 3_600) + (minutes * 60) + seconds;
-        if (hours > 18 || (hours == 18 && (minutes > 0 || seconds > 0)))
-        {
-            throw new ArgumentException(s, nameof(s));
-        }
-
-        return negative ? -offset : offset;
-    }
 }

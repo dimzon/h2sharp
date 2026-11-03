@@ -9076,3 +9076,44 @@ AM/PM без пары, смещения больше 18 часов, повтор
 **84.62% строк / 79.51% ветвей** (69 332/81 937 и 28 289/35 578). Прежние
 81.45/72.13 считались union-ом с отчётами другой ревизии и второго таргета —
 знаменатель там больше, поэтому срезы не сравниваются напрямую.
+
+### CAST across the type families: шесть дефектов порта (2026-11-03)
+
+`CastMatrixOracleTests` прогоняет 30 значений × 32 целевых типа (около 960
+`CAST`, плюс `SET TIME ZONE 'UTC'`) и сверяет ответы и коды ошибок с JVM
+построчно. Матрица нашла шесть расхождений, все — в порте:
+
+1. `Value.GetBytes()` бросал внутреннюю ошибку «не портировано». Эталонная
+   база бросает 22018 (VARBINARY): `CAST(TRUE AS BINARY(2))` в H2 отвечает
+   ошибкой конверсии, а не внутренним сбоем. Исправлено; `GetBytesNoCopy`
+   наследует то же.
+2. `Value.GetShort()` был заглушкой, а `GetDouble()`/`GetFloat()`/
+   `GetBigDecimal()` отвечали «не портировано» вместо 22018 для
+   DOUBLE/REAL/NUMERIC; `GetSignum()` — вместо 50100 (эталонный
+   `getUnsupportedExceptionForOperation("SIGNUM")`). Приведено к эталону.
+3. `IntervalUtils.ParseIntervalLeading` читал через .NET `long.Parse`,
+   который пропускает пробелы, тогда как `Long.parseLong` — нет:
+   `CAST(' 12 ' AS INTERVAL YEAR TO MONTH)` порт принимал, эталон отвечает
+   22007. Теперь `NumberStyles.AllowLeadingSign`.
+4. `DateTimeUtils.ParseTime`/`ParseTimestamp` отказывали
+   `NotSupportedException`-ом, когда зона в тексте не совпадала с целевым
+   типом. Эталон вместо отказа переводит значение в зону сессии
+   (`TIME` из `'12:34:56+02:00'` — это `10:34` при UTC), а для типа с зоной
+   подставляет зону сессии, если её нет в тексте. Перенесено дословно;
+   собственные обходные `FindTimeZone`/`ParseTimestampWithTimeZone`/
+   `ParseTimeZoneOffset` удалены как больше не нужные.
+5. `SessionLocal.CurrentTimestamp()` (и `CurrentTimeZone()` у кастов)
+   игнорировали `SET TIME ZONE`: касты получали отдельный
+   `DefaultCastDataProvider`. Теперь провайдер по умолчанию — сама сессия
+   (`castDataProvider ?? this`), поэтому зона сессии видна конверсиям; явно
+   заданный тестовый провайдер по-прежнему главнее (на нём держится
+   `H2CurrentDateTimeTests`). `ZeroBasedEnums()` берётся у базы (как в
+   эталоне), `sessionStart` — в зоне сессии.
+6. `ConvertToSmallintType` не умел BINARY/VARBINARY: эталон читает два байта
+   big-endian (`CAST(X'0102' AS SMALLINT)` = 258), порт отвечал 22018.
+
+Покрытие `Value/Value.Conversion.Families.cs` по сводному прогону:
+79.8% → **84.5%**; общие 84.62/79.51 → **84.75/79.90** (`IntervalUtils`
+91.8%, `DateTimeUtils` 90.4%, `SessionLocal` 86.2%). Остаток в файле —
+режим присваивания (`ConvertForAssignTo`: вставка слишком длинной строки
+или бинарника в колонку), ENUM/JavaObject/JSON-ветки и защитные default-и.

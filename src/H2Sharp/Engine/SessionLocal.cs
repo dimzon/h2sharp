@@ -645,10 +645,22 @@ public sealed class SessionLocal : Session
     /// Gets where casts come from.
     /// </summary>
     /// <remarks>
-    /// A test double by default in tests, the real machine here: a session that nobody overrode
-    /// answers with the regular mode, the real clock and the system zone.
+    /// The reference passes the session itself wherever a cast or a comparison needs a
+    /// <see cref="CastDataProvider"/>, so the session's zone, clock and mode are the ones the
+    /// conversions see — that is what makes <c>SET TIME ZONE</c> visible to them. This port keeps
+    /// a settable provider so a test can freeze the clock, and answers with the session when
+    /// nobody has set one.
     /// </remarks>
-    public CastDataProvider CastDataProvider { get; set; } = DefaultCastDataProvider.Instance;
+    private CastDataProvider? castDataProvider;
+
+    /// <summary>
+    /// Gets where casts come from.
+    /// </summary>
+    public CastDataProvider CastDataProvider
+    {
+        get => castDataProvider ?? this;
+        set => castDataProvider = value;
+    }
 
     /// <summary>
     /// Gets the factory of the random number generator, when a test set one.
@@ -707,7 +719,7 @@ public sealed class SessionLocal : Session
         this.database = database;
         this.userName = userName;
         this.id = id;
-        sessionStart = DefaultCastDataProvider.Instance.CurrentTimestamp();
+        sessionStart = Util.DateTimeUtils.CurrentTimestamp(timeZone, DateTimeOffset.UtcNow);
         CompareMode = database.GetCompareMode();
         // Reference: this.lockTimeout = database.getLockTimeout();
         lockTimeout = database.GetLockTimeout();
@@ -1377,26 +1389,34 @@ public sealed class SessionLocal : Session
     }
 
     /// <summary>
-    /// Gets the current timestamp, which is fixed for the length of one statement or
-    /// transaction.
+    /// Gets the current timestamp, expressed in the session's time zone.
     /// </summary>
+    /// <remarks>
+    /// The reference answers from the session zone: after <c>SET TIME ZONE</c> the same moment
+    /// is written with the new offset, and that is what the casts that read the current time rely
+    /// on. A provider a test set is asked instead, so a frozen clock stays frozen. The reference
+    /// also fixes the value for the length of a command; this port does not keep a command-start
+    /// instant yet, so each call is the moment the call is made.
+    /// </remarks>
     /// <returns>the current timestamp</returns>
     public override Values.ValueTimestampTimeZone CurrentTimestamp()
-        => CastDataProvider.CurrentTimestamp();
+        => castDataProvider is not null
+            ? castDataProvider.CurrentTimestamp()
+            : Util.DateTimeUtils.CurrentTimestamp(timeZone, DateTimeOffset.UtcNow);
 
     /// <summary>
     /// Gets the current time zone.
     /// </summary>
     /// <returns>the time zone</returns>
     public override Util.TimeZoneProvider CurrentTimeZone()
-        => timeZone;
+        => castDataProvider?.CurrentTimeZone() ?? timeZone;
 
     /// <summary>
     /// Whether ENUM values are 0-based.
     /// </summary>
     /// <returns>true if they are</returns>
     public override bool ZeroBasedEnums()
-        => CastDataProvider.ZeroBasedEnums();
+        => GetDatabase().ZeroBasedEnums();
 
     /// <summary>The value of a user-defined variable, or NULL.</summary>
     private Dictionary<string, Values.Value>? variables;

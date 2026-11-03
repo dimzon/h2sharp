@@ -138,8 +138,13 @@ public abstract partial class Value
     /// Get the value as a byte array.
     /// </summary>
     /// <returns>the byte array</returns>
+    /// <remarks>
+    /// The reference's base <c>getBytes()</c> refuses with the data conversion error for
+    /// VARBINARY. The port used to answer with an internal "not ported" error, which is not an
+    /// answer a user can get from H2: a BOOLEAN cannot become binary, and that is 22018.
+    /// </remarks>
     public virtual byte[]? GetBytes()
-        => throw GetUnsupportedException("getBytes");
+        => throw GetDataConversionErrorException(Varbinary);
 
     /// <summary>
     /// Get the value as a byte array, without copying.
@@ -187,7 +192,7 @@ public abstract partial class Value
     /// Get the value as a 16 bit integer.
     /// </summary>
     /// <returns>the short value</returns>
-    public virtual short GetShort() => throw GetUnsupportedException("getShort");
+    public virtual short GetShort() => ConvertToSmallintType(null).GetShort();
 
     /// <summary>
     /// Get the value as an integer.
@@ -205,13 +210,18 @@ public abstract partial class Value
     /// Get the value as a double.
     /// </summary>
     /// <returns>the double value</returns>
-    public virtual double GetDouble() => throw GetUnsupportedException("getDouble");
+    /// <remarks>
+    /// The reference's base <c>getDouble()</c> refuses with the conversion error for DOUBLE; the
+    /// port used to answer with an internal "not ported" error, which no H2 user can receive.
+    /// </remarks>
+    public virtual double GetDouble() => throw GetDataConversionErrorException(Double);
 
     /// <summary>
     /// Get the value as a float.
     /// </summary>
     /// <returns>the float value</returns>
-    public virtual float GetFloat() => throw GetUnsupportedException("getFloat");
+    /// <remarks>As the reference's base <c>getFloat()</c>: the conversion error for REAL.</remarks>
+    public virtual float GetFloat() => throw GetDataConversionErrorException(Real);
 
     /// <summary>
     /// Get the value as an arbitrary precision integer.
@@ -231,8 +241,9 @@ public abstract partial class Value
     /// digits and rounds on division, and NUMERIC(38, 10) is a real column type.
     /// </remarks>
     /// <returns>the decimal value</returns>
+    /// <remarks>As the reference's base <c>getBigDecimal()</c>: the conversion error for NUMERIC.</remarks>
     public virtual H2Sharp.Util.BigDecimal GetBigDecimal()
-        => throw GetUnsupportedException("getBigDecimal");
+        => throw GetDataConversionErrorException(Numeric);
 
     /// <summary>
     /// Compare two values of the same type, without the conversion and NULL handling that
@@ -258,7 +269,7 @@ public abstract partial class Value
     /// Get the sign of the value, where negative is -1, zero is 0, and positive is 1.
     /// </summary>
     /// <returns>the signum</returns>
-    public virtual int GetSignum() => throw GetUnsupportedException("getSignum");
+    public virtual int GetSignum() => throw GetUnsupportedExceptionForOperation("SIGNUM");
 
     /// <summary>
     /// Check if this value contains NULL, which is true for NULL itself and for a compound
