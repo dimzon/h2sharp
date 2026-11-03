@@ -109,6 +109,44 @@ public sealed class ConstraintDomain : Constraint
         }
     }
 
+    /// <summary>
+    /// Gets the check constraint expression for this column.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="columnName">the column name to print instead of VALUE, or null to keep it
+    /// as VALUE</param>
+    /// <returns>the expression</returns>
+    public Expression GetCheckConstraint(SessionLocal session, string? columnName)
+    {
+        string sql;
+        if (columnName is not null)
+        {
+            lock (this)
+            {
+                try
+                {
+                    resolver.SetColumnName(columnName);
+                    sql = expr!.GetSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
+                }
+                finally
+                {
+                    resolver.ResetColumnName();
+                }
+            }
+
+            // The rendered SQL names the column, so it parses as a plain expression,
+            // as in the reference; only the VALUE spelling needs the domain flag.
+            return new Command.Parser(session).ParseExpression(sql);
+        }
+
+        lock (this)
+        {
+            sql = expr!.GetSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
+        }
+
+        return new Command.Parser(session).ParseDomainConstraintExpression(sql);
+    }
+
     /// <inheritdoc/>
     public override bool UsesIndex(Index index) => false;
 
@@ -154,17 +192,17 @@ public sealed class ConstraintDomain : Constraint
 
             foreach (Table table in schema.GetAllTablesAndViews(session))
             {
-                CheckTable(session, table);
+                CheckTable(session, table, targetDomain);
             }
         }
     }
 
-    private void CheckTable(SessionLocal session, Table table)
+    private void CheckTable(SessionLocal session, Table table, Domain targetDomain)
     {
         Column[] columns = table.GetColumns();
         for (int i = 0; i < columns.Length; i++)
         {
-            if (!ReferenceEquals(columns[i].GetDomain(), domain))
+            if (!ReferenceEquals(columns[i].GetDomain(), targetDomain))
             {
                 continue;
             }

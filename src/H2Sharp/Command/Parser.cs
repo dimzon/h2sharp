@@ -709,6 +709,33 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Parses a SQL code snippet that represents an expression for a domain constraint.
+    /// </summary>
+    /// <remarks>
+    /// The VALUE identifier inside the snippet resolves as the domain's column, as in the
+    /// reference's parseDomainConstraintExpression.
+    /// </remarks>
+    /// <param name="sql">the code snippet</param>
+    /// <returns>the expression object</returns>
+    public Expression ParseDomainConstraintExpression(string sql)
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+        BitSet parameters = new();
+        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        CheckParameterIndex(parameters);
+        Parser parser = new(sql, provider, tokens, session);
+        parser.parseDomainConstraint = true;
+        try
+        {
+            return parser.ReadExpression();
+        }
+        finally
+        {
+            parser.parseDomainConstraint = false;
+        }
+    }
+
+    /// <summary>
     /// Whether only semicolons and the end stand between the position and the input end.
     /// </summary>
     /// <returns>true when nothing more is written</returns>
@@ -4117,14 +4144,14 @@ public sealed partial class Parser
         string domainName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
         Ddl.DropDomain command = new(session, schema);
         command.SetDomainName(domainName);
-        command.SetIfExists(ifExists);
+        command.SetIfDomainExists(ifExists);
         if (IsWord("CASCADE"))
         {
-            command.SetCascade(true);
+            command.SetDropAction(Constraints.ConstraintActionType.CASCADE);
         }
-        else
+        else if (IsWord("RESTRICT"))
         {
-            _ = IsWord("RESTRICT");
+            command.SetDropAction(Constraints.ConstraintActionType.RESTRICT);
         }
 
         return command;

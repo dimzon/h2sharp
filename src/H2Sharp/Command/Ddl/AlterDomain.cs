@@ -18,7 +18,7 @@ namespace H2Sharp.Command.Ddl;
 /// <summary>The base class for ALTER DOMAIN commands.</summary>
 public abstract class AlterDomain : SchemaCommand
 {
-    private string domainName = string.Empty;
+    protected string domainName = string.Empty;
 
     private bool ifDomainExists;
 

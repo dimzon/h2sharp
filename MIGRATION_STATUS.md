@@ -171,6 +171,23 @@ NULL в операндах, отказы (неизвестная зона, им�
 с колонкой и детерминистская прогулка через оптимизацию сравнений — сверена
 с JVM-оракулом; закрыто `TimeZoneOperationOracleTests`.
 
+Оракул доменов вскрыл два дефекта. `ConstraintDomain.CheckTable` сравнивал
+колонку с полем `domain` вместо проверяемого `targetDomain`, поэтому
+`ALTER DOMAIN` базового домена в цепочке домен-над-доменом не проверял
+зависимые колонки; теперь сравнение с параметром обхода, как в эталонном
+`forAllDependencies`. `DropDomain` проверял только собственные констрейнты
+домена и не обходил зависимости вовсе: `DROP DOMAIN` с колонкой или
+зависимым доменом проходил молча. Портирован эталонный `DropDomain.update`:
+`ForAllDependencies` с `CopyColumn`/`CopyDomain` (RESTRICT по умолчанию —
+`CANNOT_DROP_2`, как `DROP_RESTRICT=true`; CASCADE переносит констрейнты
+домена на колонку/зависимый домен и копирует DEFAULT/ON UPDATE, затем
+выставляет родительский домен), плюс эталонные `ConstraintDomain.
+getCheckConstraint` и `Parser.parseDomainConstraintExpression`.
+Матрица — существующие данные, NOCHECK, NULL/FALSE/TRUE, rename, DROP
+RESTRICT по зависимой колонке и по зависимому домену, CASCADE с переносом
+констрейнта и дефолта — сверена с JVM-оракулом; закрыто
+`DomainConstraintOracleTests`.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,
