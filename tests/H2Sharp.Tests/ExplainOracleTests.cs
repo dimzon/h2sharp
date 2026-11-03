@@ -45,7 +45,7 @@ public sealed class ExplainOracleTests
         ]);
     }
 
-    private static void Check(string[] statements)
+    internal static void Check(string[] statements)
     {
         List<string> port = [];
         using H2Connection connection = new("Data Source=explain_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");

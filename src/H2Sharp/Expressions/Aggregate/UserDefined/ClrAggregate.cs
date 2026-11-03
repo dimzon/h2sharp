@@ -117,7 +117,11 @@ internal sealed class ClrAggregate : AbstractAggregate
     /// <inheritdoc/>
     public override StringBuilder GetUnenclosedSql(StringBuilder builder, int sqlFlags)
     {
-        ParserUtil.QuoteIdentifier(builder, definition.Name, sqlFlags).Append('(');
+        // A function name is not an identifier: the reference appends the aggregate's
+        // name verbatim (aggregateType.name()), and quoting it would print "EVERY"(...)
+        // where the reference prints EVERY(...). The same holds for a registered
+        // aggregate, whose name a reader could only have written unquoted.
+        _ = builder.Append(definition.Name).Append('(');
         if (rendersDistinct && distinct)
         {
             builder.Append("DISTINCT ");

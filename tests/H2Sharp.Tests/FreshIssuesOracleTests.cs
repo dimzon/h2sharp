@@ -129,7 +129,9 @@ public sealed class FreshIssuesOracleTests
             command.CommandText = statements[i];
             try
             {
-                bool query = statements[i].StartsWith("SELECT", StringComparison.Ordinal) || statements[i].StartsWith('(');
+                bool query = statements[i].StartsWith("SELECT", StringComparison.Ordinal)
+                    || statements[i].StartsWith("EXPLAIN", StringComparison.Ordinal)
+                    || statements[i].StartsWith('(');
                 if (!query) { port.Add(prefix + "U:" + command.ExecuteNonQuery()); continue; }
                 using DbDataReader rows = command.ExecuteReader();
                 while (rows.Read())
@@ -163,6 +165,16 @@ public sealed class FreshIssuesOracleTests
                 }
             }
             """);
-        Assert.True(java.SequenceEqual(port), "JVM:\n" + string.Join('\n', java) + "\nPort:\n" + string.Join('\n', port));
+        // xUnit truncates long assertion messages, and two lists that differ near the end
+        // print as two identical prefixes. Report the first differing line instead.
+        Assert.True(java.Count == port.Count,
+            "lines: jvm=" + java.Count + " port=" + port.Count
+            + (java.Count > 0 && port.Count > 0
+                ? "\n  first jvm:  " + java[0] + "\n  first port: " + port[0]
+                : ""));
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == port[i], "line " + i + ":\n  jvm:  " + java[i] + "\n  port: " + port[i]);
+        }
     }
 }

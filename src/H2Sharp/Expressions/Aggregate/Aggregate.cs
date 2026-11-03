@@ -1592,6 +1592,11 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
             return GetSqlListagg(builder, sqlFlags);
         }
 
+        if (aggregateType == AggregateType.ArrayAgg)
+        {
+            return GetSqlArrayAgg(builder, sqlFlags);
+        }
+
         if (aggregateType == AggregateType.JsonArrayagg)
         {
             return GetSqlJsonArrayAgg(builder, sqlFlags);
@@ -1704,6 +1709,22 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
         return AppendTailConditions(builder, sqlFlags, false);
     }
 
+    private StringBuilder GetSqlArrayAgg(StringBuilder builder, int sqlFlags)
+    {
+        _ = builder.Append("ARRAY_AGG(");
+        if (distinct)
+        {
+            _ = builder.Append("DISTINCT ");
+        }
+
+        args[0].GetUnenclosedSql(builder, sqlFlags);
+        // The reference prints ARRAY_AGG's ordering inside the parentheses, not as a
+        // WITHIN GROUP clause: getSQLArrayAggregate calls Window.appendOrderBy directly.
+        H2Sharp.Expressions.Analysis.Window.AppendOrderBy(builder, orderByList, sqlFlags, false);
+        _ = builder.Append(')');
+        return AppendTailConditions(builder, sqlFlags, false);
+    }
+
     private StringBuilder GetSqlJsonArrayAgg(StringBuilder builder, int sqlFlags)
     {
         _ = builder.Append("JSON_ARRAYAGG(");
@@ -1714,6 +1735,8 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
 
         args[0].GetUnenclosedSql(builder, sqlFlags);
         JsonConstructorFunction.GetJsonFunctionFlagsSql(builder, flags, forArray: true);
+        // Same as ARRAY_AGG: the ordering lives inside the parentheses.
+        H2Sharp.Expressions.Analysis.Window.AppendOrderBy(builder, orderByList, sqlFlags, false);
         _ = builder.Append(')');
         return AppendTailConditions(builder, sqlFlags, false);
     }
