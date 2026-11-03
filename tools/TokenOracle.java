@@ -35,6 +35,7 @@ import java.util.List;
 import org.h2.engine.Session;
 import org.h2.jdbc.JdbcConnection;
 import org.h2.message.DbException;
+import org.h2.util.ParserUtil;
 
 /** Reads statements with the reference tokenizer and prints what it read. */
 /**
@@ -184,8 +185,8 @@ class TokenOracle {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 1) {
-            System.err.println("usage: TokenOracle <statements file>");
+        if (args.length < 1 || args.length > 3) {
+            System.err.println("usage: TokenOracle <statements file> [mode] [nonKeywords]");
             System.exit(2);
         }
 
@@ -194,7 +195,14 @@ class TokenOracle {
             statements.add(unescape(line));
         }
 
-        try (Connection connection = DriverManager.getConnection(URL);
+        String modeName = args.length >= 2 ? args[1] : "REGULAR";
+        BitSet nonKeywords = null;
+        if (args.length >= 3 && args[2].equals("nonKeywords")) {
+            nonKeywords = new BitSet();
+            nonKeywords.set(ParserUtil.VALUE);
+        }
+
+        try (Connection connection = DriverManager.getConnection(URL + ";MODE=" + modeName);
                 java.io.PrintWriter out = new java.io.PrintWriter(new java.io.OutputStreamWriter(System.out, StandardCharsets.UTF_8))) {
             Session session = ((JdbcConnection) connection).getSession();
 
@@ -206,9 +214,9 @@ class TokenOracle {
                 // One line per answer, and the line breaks inside an answer are written out as \n:
                 // a statement may produce any number of tokens and this way a failure names the
                 // statement it is about instead of the token it happened to be on.
-                out.println(escape(tokenize(session, statement, false, false, null)));
-                out.println(escape(tokenize(session, statement, true, false, null)));
-                out.println(escape(tokenize(session, statement, false, true, null)));
+                out.println(escape(tokenize(session, statement, false, false, nonKeywords)));
+                out.println(escape(tokenize(session, statement, true, false, nonKeywords)));
+                out.println(escape(tokenize(session, statement, false, true, nonKeywords)));
             }
         }
     }

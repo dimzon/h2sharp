@@ -248,12 +248,90 @@ public sealed class TokenizerOracleTests
         "SELECT ?1, ?",
         "SELECT X'4'",
         "SELECT X'ZZ'",
+        "SELECT X'AB''CD'",
+        "SELECT 'a' 'b",
+        "SELECT \"a\" \"b",
+        "SELECT `a` `b",
+        "SELECT [a]",
+        "SELECT 1 /* a * b */ , 2",
+        "SELECT ?99999999999999999999",
+        "SELECT CURRENTX, CURRENT_SCHEMAX, CURRENT_TIMESTAMPX FROM T",
+        "SELECT U&'\0041' UESCAPE",
+        "SELECT U&'\0041' UESCAPE '00'",
+        "SELECT U&'\0041' UESCAPE 'aF'",
+        "SELECT U&'\0041' UESCAPE '\"'",
+        "SELECT U&'\0041' UESCAPE '+'",
+        "SELECT U&'\0041' UESCAPE ' '",
+        "SELECT U&'\0041' UESCAPE 'F'",
+        "SELECT 'a𝐀b'",
+        "SELECT \"𝐀\" FROM T",
+        "SELECT 𝐀",
+        "SELECT 12345678901234567890123456789012L",
+        "SELECT 12345678901234567890123456789012e5",
+        "SELECT 12345678901234567890123456789012_3",
+        "SELECT 12345678901234567890123456789012.5",
+        "SELECT 1.5_",
+        "SELECT 1._5",
+        "SELECT 1.5_4_",
+        "SELECT 1.5e2_3_",
+        "SELECT 1e_5",
+        "SELECT 0x_1",
+        "SELECT 0b_1",
+        "SELECT 0x1__0",
+        "SELECT 0x1_L",
+        "SELECT 0x1L",
+        "SELECT 0b1_L",
     ];
 
     [JavaOracleFact]
     public void TheTokensMatchTheReference()
     {
         (List<string> java, List<string> csharp) = Read();
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == csharp[i], $"line {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
+    /// <summary>
+    /// MSSQLServer reads [names] as quoted identifiers; every other mode reads the same
+    /// characters as an open bracket keyword.
+    /// </summary>
+    [JavaOracleFact]
+    public void BracketQuotedNamesMatchInMssqlServerMode()
+    {
+        string[] statements =
+        [
+            "SELECT [a] + [b]",
+            "SELECT [unterminated",
+            "SELECT [a] FROM [T] WHERE [a] > 1",
+        ];
+        (List<string> java, List<string> csharp) = Read("MSSQLServer", corpus: statements);
+
+        Assert.Equal(java.Count, csharp.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == csharp[i], $"line {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+        }
+    }
+
+    /// <summary>
+    /// A keyword named in NON_KEYWORDS reads as an identifier, and the tokenizer must agree with
+    /// the reference about which reading wins.
+    /// </summary>
+    [JavaOracleFact]
+    public void NonKeywordsMatchTheReference()
+    {
+        string[] statements =
+        [
+            "SELECT VALUE",
+            "SELECT VALUE FROM (VALUES (1)) T(X)",
+        ];
+        bool[] nonKeywords = new bool[ParserUtil.Values + 1];
+        nonKeywords[ParserUtil.Value] = true;
+        (List<string> java, List<string> csharp) = Read(nonKeywords: nonKeywords, corpus: statements);
 
         Assert.Equal(java.Count, csharp.Count);
         for (int i = 0; i < java.Count; i++)
@@ -270,7 +348,7 @@ public sealed class TokenizerOracleTests
     public void TheCorpusReachesEveryReader()
     {
         HashSet<int> kinds = [];
-        TestProvider provider = new();
+        TestProvider provider = new("REGULAR");
         foreach (string statement in Statements)
         {
             Tokenizer tokenizer = new(provider, false, false, null);
@@ -315,18 +393,26 @@ public sealed class TokenizerOracleTests
     /// <summary>
     /// Reads the corpus on both sides and returns what each said, line by line.
     /// </summary>
-    private static (List<string> Java, List<string> CSharp) Read()
+    private static (List<string> Java, List<string> CSharp) Read(
+        string modeName = "REGULAR", bool[]? nonKeywords = null, string[]? corpus = null)
     {
         if (JavaOracle.ReferenceRoot is null || JavaOracle.H2Jar is null)
         {
             throw new InvalidOperationException("reference H2 is not available");
         }
 
+        string[] statements = corpus ?? Statements;
         string oracle = Path.Combine(JavaOracle.ReferenceRoot, "tools", "TokenOracle.java");
-        string statements = Path.Combine(
+        string statementsFile = Path.Combine(
             Path.GetTempPath(),
             "h2sharp-token-statements-" + Guid.NewGuid().ToString("N") + ".txt");
-        File.WriteAllLines(statements, Statements.Select(Escape));
+        File.WriteAllLines(statementsFile, statements.Select(Escape));
+
+        List<string> programArgs = [statementsFile, modeName];
+        if (nonKeywords is not null)
+        {
+            programArgs.Add("nonKeywords");
+        }
 
         try
         {
@@ -338,14 +424,14 @@ public sealed class TokenizerOracleTests
                     [JavaOracle.H2Jar],
                     extraJavaArgs: ["-Duser.language=en", "-Dstdout.encoding=UTF-8", "-Dfile.encoding=UTF-8"],
                     numbers: null,
-                    programArgs: [statements]));
+                    programArgs: [.. programArgs]));
 
             List<string> csharp = [];
-            foreach (string statement in Statements)
+            foreach (string statement in statements)
             {
                 foreach ((bool upper, bool lower) in new[] { (false, false), (true, false), (false, true) })
                 {
-                    csharp.AddRange(Read(statement, upper, lower));
+                    csharp.AddRange(Read(statement, upper, lower, modeName, nonKeywords));
                 }
             }
 
@@ -353,18 +439,21 @@ public sealed class TokenizerOracleTests
         }
         finally
         {
-            File.Delete(statements);
+            File.Delete(statementsFile);
         }
     }
 
     /// <summary>
     /// What this port makes of one statement, in the same shape the oracle prints.
     /// </summary>
-    private static List<string> Read(string sql, bool identifiersToUpper, bool identifiersToLower)
+    private static List<string> Read(
+        string sql, bool identifiersToUpper, bool identifiersToLower,
+        string modeName = "REGULAR", bool[]? nonKeywords = null)
     {
         List<string> lines = [];
-        TestProvider provider = new();
-        Tokenizer tokenizer = new(provider, identifiersToUpper, identifiersToLower, null);
+        TestProvider provider = new(modeName);
+        BitArray? keywords = nonKeywords is null ? null : new BitArray(nonKeywords);
+        Tokenizer tokenizer = new(provider, identifiersToUpper, identifiersToLower, keywords);
         BitSet parameters = new();
         try
         {
@@ -443,9 +532,13 @@ public sealed class TokenizerOracleTests
 
     private sealed class TestProvider : CastDataProvider
     {
+        private readonly Mode mode;
+
+        internal TestProvider(string modeName) => mode = Mode.GetInstance(modeName)!;
+
         public bool ZeroBasedEnums() => true;
 
-        public Mode GetMode() => Mode.GetRegular();
+        public Mode GetMode() => mode;
 
         public ValueTimestampTimeZone CurrentTimestamp() => Provider.CurrentTimestamp();
 
