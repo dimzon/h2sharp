@@ -121,6 +121,9 @@ public sealed class IndexConditionOracleTests
             "CREATE VIEW V3 AS SELECT A, B FROM TEST2",
             "SELECT * FROM V3 WHERE A = 1 AND B IN (10, 20) ORDER BY A",
             "SELECT * FROM V3 WHERE A BETWEEN 1 AND 2 ORDER BY A",
+            // An expression the planner may fold away: the pushed parameter can disappear.
+            "SELECT * FROM (SELECT NULL AS X) Y WHERE Y.X = 1",
+            "SELECT * FROM (SELECT 1 AS X) Y WHERE Y.X = 1",
             // A view is not a regular table either: the same conditions answer the same rows.
             "CREATE VIEW V2 AS SELECT A, B FROM TEST2",
             "SELECT * FROM V2 WHERE A = 1 AND B IN (10, 20) ORDER BY A",

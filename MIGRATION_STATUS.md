@@ -9199,9 +9199,9 @@ ADR-001 (`IH2Trigger`, `H2DataSource.RegisterTrigger`) реализован, а 
 все ответы сверены с JVM; `IndexConditionPlanTests` проверяет план
 (равенство в индексе, IN вне его; row-value IN — оба равенства).
 
-Покрытие: `RegularQueryExpressionIndex` 21.1% → **93.8%**,
+Покрытие: `RegularQueryExpressionIndex` 21.1% → **96.9%**,
 `ConditionLocalAndGlobal` 0% → **77.2%**, общие 84.90/80.05 →
-**85.19/80.33**.
+**85.20/80.34**.
 
 Пространственная ветка того же индекса больше не TODO: эталон объявляет
 `RegularQueryExpressionIndex implements SpatialIndex` и передаёт в поиск
@@ -9215,7 +9215,13 @@ ADR-001 (`IH2Trigger`, `H2DataSource.RegisterTrigger`) реализован, а 
 покрытие строки `SetParameter(... intersection ...)` подтверждено (3
 попадания).
 
-Остаток в индексе: копирование `originalParameters` (prepared statement
-поверх derived-таблицы), ветка `len = 0` при полном скане (недостижима:
-pushdown создаётся только при непустой маске) и защитные ветки
-`SetParameter`.
+Копирование `originalParameters` закрыто `DerivedTableParameterOracleTests`:
+derived-запрос со своими `?1`, внешнее равенство `?2` и внешний диапазон
+`?2`, значения переустанавливаются между прогонами — исходные параметры
+переносятся в пере-подготовленный запрос на каждом запуске (строки
+копирования — 8 попаданий), ответы сверены с JDBC prepared statement.
+
+Остаток в индексе: ветка `len = 0` (pushdown создаётся только при непустой
+маске, так что скана без границ здесь нет) и защитные ветки `SetParameter`
+(параметр, оптимизированный прочь: `SELECT * FROM (SELECT NULL AS X) Y
+WHERE Y.X = 1` проверен — защита не понадобилась).
