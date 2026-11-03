@@ -273,8 +273,14 @@ public static class MathUtils
     /// Get a cryptographically secure pseudo random int value between 0 (including) and the
     /// given value (excluding).
     /// </summary>
+    /// <remarks>
+    /// The reference calls <c>SecureRandom.nextInt(bound)</c>, whose contract is a uniformly
+    /// distributed non-negative value below the bound. The previous port expression masked the
+    /// long and then narrowed it to <c>int</c> before the modulo, so the sign bit of the low
+    /// half could survive and the result was sometimes negative. <see cref="RandomNumberGenerator.GetInt32(int)"/>
+    /// is the same contract on this platform.
+    /// </remarks>
     /// <param name="lowerThan">the value returned will be lower than this value</param>
-    /// <returns>the random long value</returns>
-    public static int SecureRandomInt(int lowerThan)
-        => (int)(SecureRandomLong() & 0x7FFFFFFFFFFFFFFF) % lowerThan;
+    /// <returns>the random int value</returns>
+    public static int SecureRandomInt(int lowerThan) => RandomNumberGenerator.GetInt32(lowerThan);
 }

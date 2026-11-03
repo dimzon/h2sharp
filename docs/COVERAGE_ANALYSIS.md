@@ -93,6 +93,8 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Indexes/IndexCondition.cs` | 48.6% | **88.4%** |
 | `Expressions/Conditions/ConditionInQuery.cs` | 55.1% | **82.9%** |
 | `Command/Query/Optimizer.cs` | 36.5% | **93.0%** |
+| `Util/MathUtils.cs` | 32.2% | **80.2%** |
+| `Util/DateTimeTemplate.cs` | 59.4% | **98.9%** |
 
 Три последние строки — отдельный замер по тестам спринта
 (`IndexConditionOracleTests` + `IndexConditionPlanTests`), а не по всему
