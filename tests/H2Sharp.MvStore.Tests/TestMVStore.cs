@@ -5,16 +5,16 @@
  * Ported from org.h2.test.store.TestMVStore.
  *
  * Each Java subtest is its own fact: the in-memory facts run green today, the file-backed ones
- * fail with TODOException until the file store is ported, and a few stay out for reasons below.
- * Java runs everything from one test() method; the split changes no body.
+ * run against the ported file store, and a few stay out for reasons below. Java runs everything
+ * from one test() method; the split changes no body.
  *
- * Deferred until the file store lands: testCompactFully, testCompact, testCompactMapNotOpen and
- * testTruncateFile (they drive RandomAccessStore through a helper that needs its type),
- * testCacheSize (cache implementation plus hit ratios), testWriteDelay and
- * testBackgroundExceptionListener (background-thread timing the suite must not depend on), and
- * testFileHeaderCorruption (raw channel surgery on real bytes). Skipped: the OffHeapStore tests
- * and the provided-file-store test (backends out of scope) and testLargerThan2G (a multi-gigabyte
- * file). testAtomicOperations and testRandom run in memory here: their files are incidental
+ * Deferred still: testCacheSize (cache implementation plus hit ratios), testWriteDelay and
+ * testBackgroundExceptionListener (background-thread timing the suite must not depend on),
+ * testFileHeaderCorruption (raw channel surgery on real bytes), and testLargerThan2G (a
+ * multi-gigabyte file). The compact tests, testTruncateFile and testReuseSpace now run against
+ * the ported file store: their compactMoveChunks helper needs RandomAccessStore, which is in the
+ * port. Skipped: the OffHeapStore tests and the provided-file-store test (backends out of scope).
+ * testAtomicOperations and testRandom run in memory here: their files are incidental
  * scaffolding — no commit, no reopen, no sizes — and the map code paths are identical.
  *
  * Two things do not map one for one. Java's byte arrays are signed, so every byte[] value here
@@ -1237,6 +1237,230 @@ public sealed class TestMVStore : StoreTestBase
                 Assert.True(len <= initialLength * 3);
             }
         }
+    }
+
+    [Fact]
+    public void TestCompactFully()
+    {
+        string fileName = TempFile("TestCompactFully.h3");
+        DeleteFile(fileName);
+        using (MVStore s = new MVStore.Builder().
+            FileName(fileName).
+            AutoCommitDisabled().
+            Open())
+        {
+            s.SetRetentionTime(0);
+            s.SetVersionsToKeep(0);
+            MVMap<int, string> m;
+            for (int i = 0; i < 100; i++)
+            {
+                m = s.OpenMap<int, string>("data" + i);
+                m.Put(0, "Hello World");
+                s.Commit();
+            }
+
+            for (int i = 0; i < 100; i += 2)
+            {
+                m = s.OpenMap<int, string>("data" + i);
+                s.RemoveMap(m);
+                s.Commit();
+            }
+
+            IFileStore fileStore = s.GetFileStore()!;
+            long sizeOld = fileStore.Size();
+            CompactMoveChunks(s);
+            s.Close();
+            long sizeNew = fileStore.Size();
+            AssertTrue("old: " + sizeOld + " new: " + sizeNew, sizeNew < sizeOld);
+        }
+    }
+
+    /// <summary>
+    /// The chunk-moving pass, when the file store has it.
+    /// </summary>
+    private static void CompactMoveChunks(MVStore s)
+    {
+        if (s.GetFileStore() is RandomAccessStore fileStore)
+        {
+            fileStore.CompactMoveChunks(100, long.MaxValue, s);
+        }
+    }
+
+    [Fact]
+    public void TestCompactMapNotOpen()
+    {
+        string fileName = TempFile("TestCompactMapNotOpen.h3");
+        DeleteFile(fileName);
+        const int factor = 100;
+        using (MVStore s = OpenStore(fileName, 1000))
+        {
+            s.SetAutoCommitDelay(0);
+            MVMap<int, string> m = s.OpenMap<int, string>("data");
+            for (int j = 0; j < 10; j++)
+            {
+                for (int i = j * factor; i < 10 * factor; i++)
+                {
+                    m.Put(i, "Hello" + j);
+                }
+
+                s.Commit();
+            }
+        }
+
+        using (MVStore s = OpenStore(fileName))
+        {
+            s.SetAutoCommitDelay(0);
+            s.SetRetentionTime(0);
+            s.SetVersionsToKeep(0);
+
+            int chunkCount1 = GetChunkCount(s);
+            s.Compact(80, 1);
+            s.Compact(80, 1);
+
+            int chunkCount2 = GetChunkCount(s);
+            AssertTrue(chunkCount1 + " <= " + chunkCount2, chunkCount2 >= chunkCount1);
+
+            MVMap<int, string> m = s.OpenMap<int, string>("data");
+            for (int i = 0; i < 10; i++)
+            {
+                bool result = s.Compact(50, 50 * 1024);
+                s.Commit();
+                if (!result)
+                {
+                    break;
+                }
+            }
+
+            AssertFalse(s.Compact(50, 1024));
+            CompactMoveChunks(s);
+
+            int chunkCount3 = GetChunkCount(s);
+
+            AssertTrue(
+                chunkCount1 + " >= " + chunkCount2 + " > " + chunkCount3,
+                chunkCount3 < chunkCount1);
+
+            for (int i = 0; i < 10 * factor; i++)
+            {
+                AssertTrue("x" + i, m.Get(i) == "Hello" + (i / factor));
+            }
+        }
+    }
+
+    private static int GetChunkCount(MVStore s)
+    {
+        IDictionary<string, string> layout = s.GetLayoutMap()!;
+        int chunkCount = 0;
+        foreach (string k in layout.Keys)
+        {
+            if (k.StartsWith(DataUtils.LayoutChunk, StringComparison.Ordinal))
+            {
+                chunkCount++;
+            }
+        }
+
+        return chunkCount;
+    }
+
+    [Fact]
+    public void TestCompact()
+    {
+        string fileName = TempFile("TestCompact.h3");
+        DeleteFile(fileName);
+        long initialLength = 0;
+        for (int j = 0; j < 20; j++)
+        {
+            Sleep(2);
+            using (MVStore s = OpenStore(fileName))
+            {
+                s.SetRetentionTime(0);
+                s.SetVersionsToKeep(0);
+                MVMap<int, string> m = s.OpenMap<int, string>("data");
+                for (int i = 0; i < 100; i++)
+                {
+                    m.Put(j + i, "Hello " + j);
+                }
+
+                IFileStore fileStore = s.GetFileStore()!;
+                Assert.NotNull(fileStore);
+                Log("Before - fill rate: " + s.GetFillRate() + "%, chunks fill rate: "
+                    + ((RandomAccessStore)fileStore).GetChunksFillRate() + ", len: " + new FileInfo(fileName).Length);
+                s.Compact(80, 2048);
+                CompactMoveChunks(s);
+                Log("After  - fill rate: " + s.GetFillRate() + "%, chunks fill rate: "
+                    + ((RandomAccessStore)fileStore).GetChunksFillRate() + ", len: " + new FileInfo(fileName).Length);
+            }
+
+            long len = new FileInfo(fileName).Length;
+            if (initialLength == 0)
+            {
+                initialLength = len;
+            }
+            else
+            {
+                AssertTrue("initial: " + initialLength + " len: " + len, len <= initialLength * 3);
+            }
+        }
+
+        using (MVStore s = OpenStore(fileName))
+        {
+            MVMap<int, string> m = s.OpenMap<int, string>("data");
+            for (int i = 0; i < 100; i++)
+            {
+                m.Remove(i);
+            }
+
+            s.Compact(80, 1024);
+        }
+
+        using (MVStore s = OpenStore(fileName))
+        {
+            _ = s.OpenMap<int, string>("data");
+            s.Compact(80, 1024);
+        }
+    }
+
+    [Fact]
+    public void TestTruncateFile()
+    {
+        string fileName = TempFile("TestTruncateFile.h3");
+        DeleteFile(fileName);
+        using (MVStore s = OpenStore(fileName))
+        {
+            MVMap<int, string> m = s.OpenMap<int, string>("data");
+            string data = new('x', 10000);
+            for (int i = 1; i < 10; i++)
+            {
+                m.Put(i, data);
+                s.Commit();
+            }
+        }
+
+        long len = new FileInfo(fileName).Length;
+        using (MVStore s = OpenStore(fileName))
+        {
+            s.SetRetentionTime(0);
+            s.SetVersionsToKeep(0);
+            s.SetAutoCommitDelay(0);
+            // remove 75%
+            MVMap<int, string> m = s.OpenMap<int, string>("data");
+            for (int i = 0; i < 10; i++)
+            {
+                if (i % 4 != 0)
+                {
+                    Sleep(2);
+                    m.Remove(i);
+                    s.Commit();
+                }
+            }
+
+            AssertTrue(s.Compact(100, 50 * 1024));
+            // compaction alone will not guarantee file size reduction
+            CompactMoveChunks(s);
+        }
+
+        long len2 = new FileInfo(fileName).Length;
+        AssertTrue("len2: " + len2 + " len: " + len, len2 < len);
     }
 
     [Fact]
