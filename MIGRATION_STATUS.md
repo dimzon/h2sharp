@@ -9316,3 +9316,28 @@ decimal, строка с удвоенной кавычкой, CHAR, UUID.
 остальные 12 случаев зелёные. Покрытие файла от этого теста мало
 (значительная часть уже покрыта SQL-наборами), общий union:
 85.59/80.75 → **85.60/80.75**.
+
+### H2ValueMapper: прямое покрытие веток (2026-11-03)
+
+`H2ValueMapperBranchTests` (Data.Tests, 45 тестов) закрывает ветки ADO-
+преобразователя напрямую: все принятые CLR-формы `ToValue` (enum через
+underlying-тип, BigInteger, char, JsonDocument/JsonElement, DateOnly,
+TimeOnly, TimeSpan с `DbType.Time` и без него, DateTimeOffset, Stream → BLOB,
+TextReader → CLOB, списки и массивы), отказы (ступенчатый массив,
+неизвестный тип, превышение `MaxArrayCardinality`), откат компонентного типа
+для полностью NULL-типизированных списков; все семейства `ToObject` (числа,
+строки, байты, JSON как UTF-8-байты документа, дата/время с зонами,
+UUID→Guid, geometry→WKT, массив/строка, интервалы; YEAR TO MONTH отказывается
+от TimeSpan, неизвестный тип — TODOException); `ToArrayObject` (расширение
+`long[]`, отказ NULL в value-type массиве, NULL в `int?[]`, рекурсия во
+вложенные массивы); `GetFieldType` по всем семействам; `GetDbType` по всем
+веткам плюс enum; `ToDecimal` на нечисловом DECFLOAT.
+
+Для доступа к internal-поверхности в `H2Sharp.csproj` добавлен
+`InternalsVisibleTo` для `H2Sharp.Data.Tests` (тестовая инфраструктура).
+
+Дефектов не найдено — все преобразования совпали с ожиданиями по ADO-правилам
+(это тот же «только отчёт» режим, что и для диалекта; исправлять ничего не
+пришлось). Покрытие `Data/H2ValueMapper.cs` 75.7% → **87.9%** (76.0% → 88.7%
+в merged union); общие 85.60/80.75 → **85.66/80.91**. Остаток — ветки
+`GetElementTypeInfo` для вложенных generic-интерфейсов и защитные отказы.
