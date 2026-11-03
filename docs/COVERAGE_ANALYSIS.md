@@ -21,8 +21,8 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 69 845 | 81 980 | **85.20%** |
-| Ветви | 28 569 | 35 562 | **80.34%** |
+| Строки | 69 978 | 81 980 | **85.36%** |
+| Ветви | 28 633 | 35 562 | **80.52%** |
 
 > Методика: merge пяти наборов (`H2Sharp.Tests`, `H2SharpSql.Specs`,
 > `H2Sharp.MvStore.Tests`, `H2Sharp.Data.Tests`, `H2Sharp.Engine.Tests`) на
@@ -37,7 +37,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 85.22% | 80.38% |
+| `H2Sharp` | 85.39% | 80.56% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -99,6 +99,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Tables/TableFilter.cs` | 82.3% | **88.3%** |
 | `Tables/TableTypes.cs` | 82.8% | **85.4%** |
 | `Indexes/RegularQueryExpressionIndex.cs` | 21.1% | **96.9%** |
+| `Command/Dml/Set.cs` | 78.5% | **93.9%** |
 
 Прошлые 81.45%/72.13% считались union-ом с отчётами другой ревизии и
 второго таргета (знаменатель был больше на ~2.7k строк и ~4k ветвей),
@@ -108,7 +109,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 Числа в таблице выше — из этого же merge; отдельные замеры по тестам
 спринта (`IndexConditionOracleTests`, `IndexConditionPlanTests`,
 `OptimizerOracleTests`, `MathUtilsTests`, `DateTimeTemplateOracleTests`,
-`CastMatrixOracleTests`, `TableFilterOracleTests`) давали меньший процент, потому что в них входит
+`CastMatrixOracleTests`, `TableFilterOracleTests`, `SetCommandOracleTests`) давали меньший процент, потому что в них входит
 только один набор. Замер делается на одном свежем билде; старые отчёты
 содержат PDB другой ревизии файла, и union считает две разные нумерации
 строк, занижая процент.
@@ -255,7 +256,6 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 | `Data/Dialect.cs` | 77.8% |
 | `Command/Dml/Merge.cs` | 78.3% |
 | `Util/CacheLRU.cs` | 78.5% |
-| `Command/Dml/Set.cs` | 78.5% |
 | `Command/Command.cs` | 79.1% |
 | `Schemas/Schema.cs` | 79.1% |
 | `Command/Query/Select.cs` | 79.4% |
@@ -266,7 +266,7 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. Свежий чистый срез: **85.20% / 80.34%** по пяти наборам, один билд.
+1. Свежий чистый срез: **85.36% / 80.52%** по пяти наборам, один билд.
    Спринт 4 закрыл `IndexCondition` 48.6→89.5, `ConditionInQuery` 55.1→84.2,
    `Optimizer` 36.5→97.2, `MathUtils` 32.2→80.2, `DateTimeTemplate`
    59.4→98.9 и `ValueExpression` →100; по пути найдены и исправлены два

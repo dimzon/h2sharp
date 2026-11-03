@@ -9225,3 +9225,31 @@ derived-запрос со своими `?1`, внешнее равенство `
 маске, так что скана без границ здесь нет) и защитные ветки `SetParameter`
 (параметр, оптимизированный прочь: `SELECT * FROM (SELECT NULL AS X) Y
 WHERE Y.X = 1` проверен — защита не понадобилась).
+
+### SET: опции, их отказы и блок настроек (2026-11-03)
+
+`SetCommandOracleTests` прогоняет `SET` через обе реализации: отказы по
+диапазонам (`ALLOW_LITERALS 3`, `CACHE_SIZE -1`, `DB_CLOSE_DELAY -2`,
+`DEFAULT_LOCK_TIMEOUT -1`, `MAX_LOG_SIZE -1`, `MAX_MEMORY_UNDO -1`,
+`QUERY_TIMEOUT -1`, `EXCLUSIVE 5`, `LAZY_QUERY_EXECUTION 2`,
+`RETENTION_TIME -1`, `BUILTIN_ALIAS_OVERRIDE 2`, `IGNORE_CATALOGS 2`,
+`DEFAULT_NULL_ORDERING BAD`), принятые значения всех опций, которые можно
+поставить без файловой БД, `INFORMATION_SCHEMA.SETTINGS` по этим опциям,
+`SET @X` с чтением, `SET SCHEMA`, `SET SCHEMA_SEARCH_PATH`, `SET TIME ZONE`,
+`SET CLUSTER 'TRUE'`/`''`, `SET COLLATION` во всех силах (OFF/IDENTICAL/
+PRIMARY/SECONDARY/TERTIARY, повтор без изменений, отказ при наличии
+таблицы), `SET JAVA_OBJECT_SERIALIZER` до и после появления таблицы,
+`SET EXCLUSIVE 1/2/0`, `SET ALLOW_LITERALS NUMBERS/NONE` с проверкой, что
+литералы действительно запрещены. Ответы и коды сверены с JVM.
+
+Расхождений в самом `SET` нет. Два ограничения — утверждённые/известные:
+`SET MODE` на другой режим — D-029 (режим фиксирован при открытии; порт
+отвечает 50100, поэтому в матрицу входит только no-op и неизвестный режим),
+а `DbSettings` (`ANALYZE_*`, `AUTO_COMPACT_FILL_RATE`, ...) не портированы —
+поэтому блок настроек сравнивается по опциям, которые тест ставит сам.
+
+Покрытие `Command/Dml/Set.cs` 78.5% → **93.9%**; общие 85.20/80.34 →
+**85.36/80.52**. Остаток: ветки конфликта `EXCLUSIVE` (нужна вторая сессия,
+держащая эксклюзив), `CREATE_BUILD` внутри открытия БД, `SET CATALOG` с
+успешным именем, TODO `AUTHENTICATOR`, trace-система (не портирована) и
+неиспользуемые перегрузки `SetStringValue`/`SetStringArray`.
