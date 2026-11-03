@@ -21,14 +21,22 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 70 813 | 82 765 | **85.56%** |
-| Ветви | 29 283 | 36 630 | **79.94%** |
+| Строки | 68 827 | 84 991 | **80.98%** |
+| Ветви | 28 537 | 41 214 | **69.24%** |
+
+> Методика: merge пяти наборов (`H2Sharp.Tests`, `H2SharpSql.Specs`,
+> `H2Sharp.MvStore.Tests`, `H2Sharp.Data.Tests`, `H2Sharp.Engine.Tests`).
+> `H2Sharp.Native.Tests` под coverlet не досчитывается (обрыв на тяжёлых
+> тестах), поэтому в общий процент не входит — этим объясняется шаг вниз
+> относительно прошлого снимка, куда входил его старый отчёт. Знаменатель
+> ветвей в union выше, чем в любом отдельном отчёте: сборки net8.0 и net10.0
+> дают разные condition-coverage на одних и тех же строках.
 
 По сборкам:
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 85.59% | 79.98% |
+| `H2Sharp` | 80.98% | 69.23% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -41,9 +49,10 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `H2Sharp.Data.Tests` | 655 passed |
 | `H2Sharp.MvStore.Tests` | 112 passed |
 | `H2Sharp.Engine.Tests` | 9 passed |
-| `H2Sharp.Tests` | 1618 passed |
+| `H2Sharp.Tests` | 1623 passed |
 | `H2SharpSql.Specs` | 966 passed, 68 skipped |
 | `H2Sharp.MvStore.Tests` | 116 passed |
+| `H2Sharp.Native.Tests` | 27 passed, 9 skipped, далее прогон обрывается на тяжёлых тестах (известное ограничение coverlet-профиля) |
 | `H2Sharp.Native.Tests` | 86 passed, 23 skipped в file-профиле + 10 тяжёлых тестов в memory-профиле (`TestLIRSMemoryConsumption` в этом прогоне не уложился в таймаут) |
 
 ## Прирост от последних тестов
@@ -70,6 +79,11 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Expressions/Functions/DateTimeFunction.cs` | 74.8% | **87.0%** |
 | `Expressions/Aggregate/Percentile.cs` | 25.3% | **75.3%** |
 | `Expressions/Aggregate/Aggregate.cs` | 75.3% | **85.4%** |
+| `Expressions/Conditions/IsJsonPredicate.cs` | 41.0% | **77.8%** |
+| `Expressions/OperationN.cs` | 47.5% | **89.4%** |
+| `Expressions/TimeZoneOperation.cs` | 62.4% | **99.3%** |
+| `Constraints/ConstraintDomain.cs` | 64.8% | **75.7%** |
+| `Command/Ddl/DropDomain.cs` | — | **90.2%** |
 | `MvStore/Db/ValueDataType.cs` | 67.6% | **84.1%** |
 
 Добавлены тесты: `DISTINCT ON` (SQL + JVM-оракул), ошибки `MERGE INTO`,
@@ -226,12 +240,15 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. После полного пересчёта на свежих отчётах: общий процент **85.56% /
-   79.94%**. Пять крупнейших должников из прошлого пересчёта закрыты:
+1. После полного пересчёта на свежих отчётах: общий процент **80.98% /
+   69.24%** по пяти наборам (методика и причина отличия от прошлого снимка —
+   в примечании к таблице выше). Все десять целей двух спринтов закрыты:
    `MVSpatialIndex` 51.9→83.5, `MVPrimaryIndex` 69.8→88.5, `MergeUsing`
-   72.7→82.5, `MVRTreeMap` 73.5→94.4, `DateTimeFunction` 74.8→87.0; затем
-   `Percentile` 25.3→75.3 и `Aggregate` 75.3→85.4 (быстрые пути
-   `MEDIAN`/`PERCENTILE_*`).
+   72.7→82.5, `MVRTreeMap` 73.5→94.4, `DateTimeFunction` 74.8→87.0,
+   `Percentile` 25.3→75.3, `Aggregate` 75.3→85.4 (быстрые пути
+   `MEDIAN`/`PERCENTILE_*`), `IsJsonPredicate` 41.0→77.8, `OperationN`
+   47.5→89.4, `TimeZoneOperation` 62.4→99.3, `ConstraintDomain` 64.8→75.7,
+   `DropDomain` →90.2 (обход зависимостей при `DROP DOMAIN`).
    Старые отчёты `artifacts/TestResults` перед merge убраны в
    `artifacts/TestResultsStale`, чтобы merge считал только по свежим.
 2. Новый реестр функций закрыт тестами хорошо: `FunctionRegistry` — 99.2%.
