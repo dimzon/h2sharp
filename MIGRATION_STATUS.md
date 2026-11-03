@@ -9199,8 +9199,23 @@ ADR-001 (`IH2Trigger`, `H2DataSource.RegisterTrigger`) реализован, а 
 все ответы сверены с JVM; `IndexConditionPlanTests` проверяет план
 (равенство в индексе, IN вне его; row-value IN — оба равенства).
 
-Покрытие: `RegularQueryExpressionIndex` 21.1% → **85.5%**,
+Покрытие: `RegularQueryExpressionIndex` 21.1% → **93.8%**,
 `ConditionLocalAndGlobal` 0% → **77.2%**, общие 84.90/80.05 →
-**85.17/80.31**. Остаток в индексе: spatial-pushdown (в порте TODO),
-копирование `originalParameters` (prepared statement поверх derived-таблицы)
-и защитные ветки `SetParameter`.
+**85.19/80.33**.
+
+Пространственная ветка того же индекса больше не TODO: эталон объявляет
+`RegularQueryExpressionIndex implements SpatialIndex` и передаёт в поиск
+`intersection`; порт класс интерфейсом не помечал и на spatial-маске
+бросал `TODOException` — условие `&&` оставалось снаружи, а параметр
+внутреннего запроса, добавленный `AddConditions`, никто не выставлял.
+Теперь `FindByGeometry` (с эталонным `assert !reverse`) идёт в общий
+`Find` с intersection, длина берётся и по нему, параметр выставляется из
+`intersection.GetValue(i)`. Оракул `AGeometryPushesIntoADerivedTable`:
+`&&` на derived-таблице и VIEW, включая пустой и непустой ответ;
+покрытие строки `SetParameter(... intersection ...)` подтверждено (3
+попадания).
+
+Остаток в индексе: копирование `originalParameters` (prepared statement
+поверх derived-таблицы), ветка `len = 0` при полном скане (недостижима:
+pushdown создаётся только при непустой маске) и защитные ветки
+`SetParameter`.

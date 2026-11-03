@@ -25,7 +25,7 @@ namespace H2Sharp.Indexes;
 /// <summary>
 /// A regular query expression index.
 /// </summary>
-public sealed class RegularQueryExpressionIndex : QueryExpressionIndex
+public sealed class RegularQueryExpressionIndex : QueryExpressionIndex, SpatialIndex
 {
     private readonly int[]? indexMasks;
 
@@ -188,6 +188,29 @@ public sealed class RegularQueryExpressionIndex : QueryExpressionIndex
 
     /// <inheritdoc/>
     public override Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last, bool reverse)
+        => Find(session, first, last, null);
+
+    /// <summary>
+    /// Finds the rows whose geometry intersects the given one.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>findByGeometry</c> asserts the walk is forward: a geometry lookup has
+    /// one direction, and a reversed one would be a different question.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="first">the lower bound</param>
+    /// <param name="last">the upper bound</param>
+    /// <param name="reverse">whether to walk backwards</param>
+    /// <param name="intersection">the geometry to intersect with, or null</param>
+    /// <returns>the cursor</returns>
+    public Cursor? FindByGeometry(
+        SessionLocal session, SearchRow? first, SearchRow? last, bool reverse, SearchRow? intersection)
+    {
+        System.Diagnostics.Debug.Assert(!reverse);
+        return Find(session, first, last, intersection);
+    }
+
+    private Cursor? Find(SessionLocal session, SearchRow? first, SearchRow? last, SearchRow? intersection)
     {
         List<Parameter>? paramList = query.GetParameters();
         if (originalParameters is not null)
@@ -210,6 +233,10 @@ public sealed class RegularQueryExpressionIndex : QueryExpressionIndex
             else if (last is not null)
             {
                 len = last.GetColumnCount();
+            }
+            else if (intersection is not null)
+            {
+                len = intersection.GetColumnCount();
             }
             else
             {
@@ -237,9 +264,7 @@ public sealed class RegularQueryExpressionIndex : QueryExpressionIndex
 
                 if ((mask & IndexCondition.SpatialIntersects) != 0)
                 {
-                    // Spatial bounds are not ported.
-                    throw new TODOException(
-                        "RegularQueryExpressionIndex.find: spatial index conditions are not ported");
+                    SetParameter(paramList, idx++, intersection!.GetValue(i)!);
                 }
             }
         }

@@ -21,8 +21,8 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Метрика | Покрыто | Всего | Процент |
 |---|---:|---:|---:|
-| Строки | 69 812 | 81 971 | **85.17%** |
-| Ветви | 28 557 | 35 560 | **80.31%** |
+| Строки | 69 840 | 81 980 | **85.19%** |
+| Ветви | 28 568 | 35 562 | **80.33%** |
 
 > Методика: merge пяти наборов (`H2Sharp.Tests`, `H2SharpSql.Specs`,
 > `H2Sharp.MvStore.Tests`, `H2Sharp.Data.Tests`, `H2Sharp.Engine.Tests`) на
@@ -37,7 +37,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 
 | Сборка | Строки | Ветви |
 |---|---:|---:|
-| `H2Sharp` | 85.19% | 80.35% |
+| `H2Sharp` | 85.22% | 80.37% |
 | `H2Sharp.Crypto` | 93.57% | 86.84% |
 | `H2Sharp.Extensions` | 85.65% | 77.50% |
 | `H2Sharp.Hashes` | 100.00% | 100.00% |
@@ -98,7 +98,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Value/Value.Conversion.Families.cs` | 79.8% | **84.5%** |
 | `Tables/TableFilter.cs` | 82.3% | **88.3%** |
 | `Tables/TableTypes.cs` | 82.8% | **85.4%** |
-| `Indexes/RegularQueryExpressionIndex.cs` | 21.1% | **85.5%** |
+| `Indexes/RegularQueryExpressionIndex.cs` | 21.1% | **93.8%** |
 
 Прошлые 81.45%/72.13% считались union-ом с отчётами другой ревизии и
 второго таргета (знаменатель был больше на ~2.7k строк и ~4k ветвей),
@@ -266,7 +266,7 @@ memory-прогонами. Итоговые 81.18% — всё ещё не пол
 
 ## Выводы
 
-1. Свежий чистый срез: **85.17% / 80.31%** по пяти наборам, один билд.
+1. Свежий чистый срез: **85.19% / 80.33%** по пяти наборам, один билд.
    Спринт 4 закрыл `IndexCondition` 48.6→89.5, `ConditionInQuery` 55.1→84.2,
    `Optimizer` 36.5→97.2, `MathUtils` 32.2→80.2, `DateTimeTemplate`
    59.4→98.9 и `ValueExpression` →100; по пути найдены и исправлены два

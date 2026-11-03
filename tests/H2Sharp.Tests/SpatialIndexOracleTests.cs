@@ -168,6 +168,29 @@ public sealed class SpatialIndexOracleTests
     }
 
     /// <summary>
+    /// A spatial condition on a derived table and a view: the geometry is pushed into the
+    /// derived query as a parameter of its index, and the rows are the same as the reference's.
+    /// </summary>
+    [JavaOracleFact]
+    public void AGeometryPushesIntoADerivedTable()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE GD(ID INT PRIMARY KEY, G GEOMETRY)",
+            "INSERT INTO GD VALUES (1, 'POINT (1 1)'), (2, 'POINT (50 50)'), (3, 'POINT (2 2)')",
+            "SELECT ID FROM (SELECT ID, G FROM GD) X WHERE X.G && 'POINT (1 1)' ORDER BY ID",
+            "SELECT ID FROM (SELECT ID, G FROM GD) X WHERE X.G && 'POLYGON ((0 0, 3 0, 3 3, 0 3, 0 0))' ORDER BY ID",
+            "SELECT COUNT(*) FROM (SELECT ID, G FROM GD) X WHERE X.G && 'POINT (50 50)'",
+            "CREATE VIEW GV AS SELECT ID, G FROM GD",
+            "SELECT ID FROM GV WHERE G && 'POINT (2 2)' ORDER BY ID",
+            "SELECT ID FROM GV WHERE G && 'POINT (99 99)' ORDER BY ID",
+        ];
+        List<string> java = RunJava("spatial_derived_oracle", statements);
+        List<string> port = RunPort("spatial_derived_oracle", statements);
+        AssertTrue(java, port);
+    }
+
+    /// <summary>
     /// Compares the answers of the two sides.
     /// </summary>
     /// <param name="java">the answers of the reference</param>
