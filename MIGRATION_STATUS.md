@@ -164,6 +164,13 @@ n-арную операцию, скобки из констант схлопыв
 many-ветку копирования, неинлайнируемый аргумент между скобками — через
 else-ветку.
 
+`AT TIME ZONE`/`AT LOCAL` (`TimeZoneOperation`) по всей матрице — TIMESTAMP/
+TIMESTAMP TZ/TIME/TIME TZ × имя зоны/интервал/LOCAL, летне-зимняя граница,
+NULL в операндах, отказы (неизвестная зона, именованная зона над TIME,
+интервал за ±18 часов), синтаксическая ошибка на не-datetime, EXPLAIN
+с колонкой и детерминистская прогулка через оптимизацию сравнений — сверена
+с JVM-оракулом; закрыто `TimeZoneOperationOracleTests`.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,
