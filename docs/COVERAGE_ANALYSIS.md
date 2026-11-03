@@ -92,6 +92,7 @@ py -3 tools/coverage/merge_cov.py --results-dir artifacts/TestResults --min-line
 | `Expressions/ValueExpression.cs` | — | покрыт `createIndexConditions` (см. ниже) |
 | `Indexes/IndexCondition.cs` | 48.6% | **88.4%** |
 | `Expressions/Conditions/ConditionInQuery.cs` | 55.1% | **82.9%** |
+| `Command/Query/Optimizer.cs` | 36.5% | **93.0%** |
 
 Три последние строки — отдельный замер по тестам спринта
 (`IndexConditionOracleTests` + `IndexConditionPlanTests`), а не по всему
