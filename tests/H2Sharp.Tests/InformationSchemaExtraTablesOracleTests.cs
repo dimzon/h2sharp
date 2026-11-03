@@ -55,6 +55,9 @@ public sealed class InformationSchemaExtraTablesOracleTests
             "SELECT * FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS "
                 + "WHERE CHECK_CLAUSE LIKE '%ID > 0%' OR CONSTRAINT_NAME = 'N_POS' ORDER BY CONSTRAINT_NAME",
             "SELECT * FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_NAME = 'CC' ORDER BY CONSTRAINT_NAME",
+            // A CHECK constraint names the columns its expression reads.
+            "SELECT * FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE "
+                + "WHERE CONSTRAINT_NAME = 'N_POS' ORDER BY COLUMN_NAME",
         ]);
     }
 
@@ -70,6 +73,14 @@ public sealed class InformationSchemaExtraTablesOracleTests
             "SELECT * FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_NAME = 'C2_FK'",
             "SELECT * FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_NAME IN ('C2', 'P') "
                 + "ORDER BY CONSTRAINT_NAME, COLUMN_NAME",
+            // A check constraint carries no key columns, and the view still walks it.
+            "CREATE TABLE C3(N INT CHECK (N <> 0))",
+            "SELECT * FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_NAME = 'C3'",
+            // A foreign key that names the second column of its unique constraint.
+            "CREATE TABLE P3(A INT, B INT, CONSTRAINT P3_UB UNIQUE (B, A))",
+            "CREATE TABLE C5(X INT, Y INT, CONSTRAINT C5_FK FOREIGN KEY (X, Y) REFERENCES P3(B, A))",
+            "SELECT * FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_NAME = 'C5' "
+                + "ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION",
         ]);
     }
 
@@ -103,6 +114,47 @@ public sealed class InformationSchemaExtraTablesOracleTests
             "CREATE SEQUENCE S1 START WITH 10 INCREMENT BY 2 MINVALUE 5 MAXVALUE 100 CYCLE",
             "CREATE SEQUENCE S2",
             "SELECT * FROM INFORMATION_SCHEMA.SEQUENCES WHERE SEQUENCE_NAME IN ('S1', 'S2') ORDER BY SEQUENCE_NAME",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void SessionsCatalogNameAndSynonymsMatchJdbc()
+    {
+        FreshIssuesOracleTests.Compare([
+            "SELECT * FROM INFORMATION_SCHEMA.INFORMATION_SCHEMA_CATALOG_NAME",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SESSIONS",
+            "SELECT USER_NAME, IS_ADMIN FROM INFORMATION_SCHEMA.SESSIONS",
+            "CREATE TABLE T(ID INT PRIMARY KEY)",
+            "CREATE SYNONYM SY FOR T",
+            "SELECT * FROM INFORMATION_SCHEMA.SYNONYMS WHERE SYNONYM_NAME = 'SY'",
+            "SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'SY'",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void GeneratedAndOnUpdateColumnsMatchJdbc()
+    {
+        FreshIssuesOracleTests.Compare([
+            "CREATE DOMAIN D INT ON UPDATE 1",
+            "CREATE TABLE GC(A INT, B INT DEFAULT 0 ON UPDATE A + 1, C INT GENERATED ALWAYS AS (A * 2), S D)",
+            "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'GC' ORDER BY ORDINAL_POSITION",
+            "SELECT * FROM INFORMATION_SCHEMA.DOMAINS WHERE DOMAIN_NAME = 'D'",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void RichColumnTypesMatchJdbc()
+    {
+        FreshIssuesOracleTests.Compare([
+            "CREATE TABLE IT(I INTERVAL DAY(3) TO SECOND(2), J INTERVAL YEAR TO MONTH, "
+                + "G GEOMETRY(POINT, 4326), E ENUM('a', 'b'))",
+            "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'IT' ORDER BY ORDINAL_POSITION",
+            "SELECT * FROM INFORMATION_SCHEMA.ELEMENT_TYPES ORDER BY 1, 2, 3, 4",
+            "SELECT * FROM INFORMATION_SCHEMA.ENUM_VALUES ORDER BY 1, 2, 3, 4",
+            // An enum domain lists its values through the domain arm of the same view.
+            "CREATE DOMAIN ED AS ENUM('x', 'y')",
+            "SELECT * FROM INFORMATION_SCHEMA.ENUM_VALUES ORDER BY 1, 2, 3, 4",
+            "SELECT * FROM INFORMATION_SCHEMA.DOMAINS WHERE DOMAIN_NAME = 'ED'",
         ]);
     }
 
