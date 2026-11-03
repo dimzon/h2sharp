@@ -119,7 +119,8 @@ public sealed class FreshIssuesOracleTests
 
     internal static void Compare(string[] statements)
     {
-        using H2Connection connection = new("Data Source=fresh_issues_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
+        string databaseName = "fresh_issues_" + Guid.NewGuid().ToString("N");
+        using H2Connection connection = new("Data Source=" + databaseName + ";Storage=Memory");
         connection.Open();
         List<string> port = [];
         for (int i = 0; i < statements.Length; i++)
@@ -144,6 +145,15 @@ public sealed class FreshIssuesOracleTests
             }
             catch (H2SharpException error) { port.Add(prefix + "E:" + error.H2ErrorCode.ToString(CultureInfo.InvariantCulture)); }
         }
+        // The port's in-memory database carries a GUID so parallel runs cannot collide; the
+        // reference's JDBC one is a fixed mem name. The catalog column holds the database
+        // name, so the two spellings are brought together before the rows are compared.
+        string catalog = databaseName.ToUpperInvariant();
+        for (int p = 0; p < port.Count; p++)
+        {
+            port[p] = port[p].Replace(catalog, "FRESH_ISSUES", StringComparison.Ordinal);
+        }
+
         List<string> java = OracleRunner.Run(statements, """
             try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:fresh_issues")) {
                 for (int i = 0; i < inputs.length; i++) {

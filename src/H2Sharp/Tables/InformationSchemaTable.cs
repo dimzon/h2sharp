@@ -1675,6 +1675,17 @@ public sealed class InformationSchemaTable : Table
                 collationName = collation;
             }
 
+            Schemas.Domain? domain = c.GetDomain();
+            string? domainCatalog = null;
+            string? domainSchema = null;
+            string? domainName = null;
+            if (domain is not null)
+            {
+                domainCatalog = catalog;
+                domainSchema = domain.GetSchema().GetName();
+                domainName = domain.GetName();
+            }
+
             string? columnDefault = null;
             string isGenerated;
             string? generationExpression = null;
@@ -1786,11 +1797,11 @@ public sealed class InformationSchemaTable : Table
                 // COLLATION_NAME
                 collationName,
                 // DOMAIN_CATALOG
-                null,
+                domainCatalog,
                 // DOMAIN_SCHEMA
-                null,
+                domainSchema,
                 // DOMAIN_NAME
-                null,
+                domainName,
                 // MAXIMUM_CARDINALITY
                 dt.MaximumCardinality,
                 // DTD_IDENTIFIER
@@ -1998,8 +2009,24 @@ public sealed class InformationSchemaTable : Table
         }
 
         Table table = constraint.GetTable();
+        ConstraintUnique? referenced = constraint.GetReferencedConstraint();
         for (int i = 0; i < indexColumns.Length; i++)
         {
+            Value? positionInUniqueConstraint = null;
+            if (referenced is not null)
+            {
+                Column? referencedColumn = ((ConstraintReferential)constraint).GetRefColumns()[i].GetColumn();
+                IndexColumn[] refColumns = referenced.GetColumns();
+                for (int j = 0; j < refColumns.Length; j++)
+                {
+                    if (ReferenceEquals(refColumns[j].GetColumn(), referencedColumn))
+                    {
+                        positionInUniqueConstraint = ValueInteger.Get(j + 1);
+                        break;
+                    }
+                }
+            }
+
             Add(
                 rows,
                 catalog,
@@ -2010,7 +2037,7 @@ public sealed class InformationSchemaTable : Table
                 table.GetTableName(),
                 indexColumns[i].GetColumn()?.GetName(),
                 ValueInteger.Get(i + 1),
-                null);
+                positionInUniqueConstraint);
         }
     }
 
@@ -2027,19 +2054,64 @@ public sealed class InformationSchemaTable : Table
         string catalog,
         Constraint constraint)
     {
-        Table table = constraint.GetTable();
-        foreach (Column column in constraint.GetReferencedColumns(table))
+        switch (constraint.GetConstraintType())
         {
-            Add(
-                rows,
-                catalog,
-                column.GetTable()?.GetSchema()?.GetName(),
-                column.GetTable()?.GetTableName(),
-                column.GetName(),
-                catalog,
-                constraint.GetSchema()?.GetName(),
-                constraint.GetName());
+            case Constraint.Type.CHECK:
+            case Constraint.Type.DOMAIN:
+                {
+                    HashSet<Column> columns = [];
+                    _ = constraint.GetExpression()!.IsEverything(
+                        ExpressionVisitor.GetColumnsVisitor(columns, null));
+                    foreach (Column column in columns)
+                    {
+                        AddConstraintColumnUsageRow(rows, catalog, constraint, column);
+                    }
+
+                    break;
+                }
+
+            case Constraint.Type.REFERENTIAL:
+                {
+                    // A foreign key names columns on both sides of the reference: the
+                    // referenced table's columns come first, then the constraint's own.
+                    Table table = constraint.GetRefTable();
+                    foreach (Column column in constraint.GetReferencedColumns(table))
+                    {
+                        AddConstraintColumnUsageRow(rows, catalog, constraint, column);
+                    }
+
+                    goto case Constraint.Type.PRIMARY_KEY;
+                }
+
+            case Constraint.Type.PRIMARY_KEY:
+            case Constraint.Type.UNIQUE:
+                {
+                    Table table = constraint.GetTable();
+                    foreach (Column column in constraint.GetReferencedColumns(table))
+                    {
+                        AddConstraintColumnUsageRow(rows, catalog, constraint, column);
+                    }
+
+                    break;
+                }
         }
+    }
+
+    private static void AddConstraintColumnUsageRow(
+        List<Value[]> rows,
+        string catalog,
+        Constraint constraint,
+        Column column)
+    {
+        Add(
+            rows,
+            catalog,
+            column.GetTable()?.GetSchema()?.GetName(),
+            column.GetTable()?.GetTableName(),
+            column.GetName(),
+            catalog,
+            constraint.GetSchema()?.GetName(),
+            constraint.GetName());
     }
 
     /// <summary>
@@ -2070,7 +2142,10 @@ public sealed class InformationSchemaTable : Table
             NullsDistinctToString(indexType?.GetNullsDistinct()),
             ValueBoolean.Get(indexType?.GetBelongsToConstraint() ?? false),
             index.GetComment(),
-            index.GetType().Name);
+            // The reference answers getClass().getName(): the fully qualified runtime type
+            // of the index implementation. FullName is that same answer in .NET spelling;
+            // the type itself differs by platform the way the namespace says.
+            index.GetType().FullName);
     }
 
     /// <summary>
