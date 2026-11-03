@@ -9253,3 +9253,30 @@ PRIMARY/SECONDARY/TERTIARY, повтор без изменений, отказ �
 держащая эксклюзив), `CREATE_BUILD` внутри открытия БД, `SET CATALOG` с
 успешным именем, TODO `AUTHENTICATOR`, trace-система (не портирована) и
 неиспользуемые перегрузки `SetStringValue`/`SetStringArray`.
+
+### TransactionMap: уровни изоляции, undo-логи и размеры (2026-11-03)
+
+`TestTransactionMapIsolation` (MvStore.Tests, 8 тестов) закрывает изоляционный
+слой карты, который до этого не исполнялся:
+
+* `RepeatableReadIterator` — слияние snapshot-курсора и собственных
+  изменений: добавление, обновление, удаление закоммиченной записи, вставка
+  между чужими ключами; путь `HasNext`/`Next` с peek-ом; размер через
+  `SizeAsLongRepeatableReadWithChanges`;
+* те же итераторы для `SNAPSHOT` и `SERIALIZABLE`;
+* `GetFromSnapshot` собственных неподтверждённых значений;
+* `IsDeletedByCurrentTransaction` / `IsSameTransaction` (своё, чужое,
+  отсутствующее);
+* `Append` — вставка без чтения undo-лога, с коммитом и перечитыванием;
+* коррекция размера по undo-логам: чужая неподтверждённая запись не видна
+  (`MapId` есть в логе, записи в снимке нет — сработала защита
+  `currentValue is null` на строках 173–174), снимок собирается
+  `MarkStatementStart` с картой, а append-буфер undo-лога сбрасывается
+  `MVStore.Commit()`;
+* размер на `READ UNCOMMITTED` с собственными добавлением и удалением
+  (ветка `committingTransactions = null` в `IsIrrelevant`).
+
+Покрытие `MvStore/Tx/TransactionMap.cs` 67.5% → **95.9%**; общие
+85.36/80.52 → **85.59/80.75**. Остаток — защитные ветки (тайм-ауты
+`TryPut`/`TryRemove` при конкуренции, `ContainsKey`-углы, служебные
+`HasNext`/`Next`-ошибки).
