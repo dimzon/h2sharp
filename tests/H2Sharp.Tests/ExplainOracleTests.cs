@@ -100,6 +100,13 @@ public sealed class ExplainOracleTests
               }
             }
             """);
-        Assert.Equal(java, port);
+        // Line by line: xUnit truncates a long Assert.Equal diff, and the plans are long.
+        Assert.True(java.Count == port.Count,
+            "lines: jvm=" + java.Count + " port=" + port.Count);
+        for (int i = 0; i < java.Count; i++)
+        {
+            Assert.True(java[i] == port[i],
+                "line " + i + ":\n  jvm:  " + java[i] + "\n  port: " + port[i]);
+        }
     }
 }

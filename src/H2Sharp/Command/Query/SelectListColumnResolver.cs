@@ -14,7 +14,7 @@ using H2Sharp.Values;
 namespace H2Sharp.Command.Query;
 
 /// <summary>
-/// Resolves select-list aliases in HAVING, as the reference does.
+/// Resolves select-list aliases in HAVING and QUALIFY, as the reference does.
 /// </summary>
 public sealed class SelectListColumnResolver : ColumnResolver
 {
@@ -67,13 +67,19 @@ public sealed class SelectListColumnResolver : ColumnResolver
     public Value? GetValue(Column column) => null;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The reference resolves the alias to the select-list expression and rejects the
+    /// reference later, in the group stage-2 checks: the substituted expression object is
+    /// not the object the group collected its data under, so reading it in a grouped query
+    /// is the GROUP BY error <em>unless</em> the expression carries its own aggregate state
+    /// (an aggregate alias in HAVING) or is evaluated in exactly that stage (a window
+    /// function alias in QUALIFY). The port answers the same question here, eagerly,
+    /// because the substituted copy is not the expression the runtime check inspects.
+    /// </remarks>
     public Expression Optimize(ExpressionColumn expressionColumn, Column column)
     {
         Expression expression = expressions[column.GetColumnId()];
-        // H2's group validation rejects a HAVING reference to a select-list alias unless the
-        // aliased expression is aggregate: a scalar alias is not considered grouped even when
-        // GROUP BY names the same alias.
-        if (!ContainsAggregate(expression))
+        if (!ContainsAggregate(expression) && !ContainsWindowFunction(expression))
         {
             throw Message.DbException.Get(Api.ErrorCode.MustGroupByColumn1,
                 expressionColumn.GetSql(Util.HasSql.TraceSqlFlags));
@@ -92,6 +98,24 @@ public sealed class SelectListColumnResolver : ColumnResolver
         for (int i = 0; i < expression.GetSubexpressionCount(); i++)
         {
             if (ContainsAggregate(expression.GetSubexpression(i)!))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ContainsWindowFunction(Expression expression)
+    {
+        if (expression is Expressions.Analysis.WindowFunction)
+        {
+            return true;
+        }
+
+        for (int i = 0; i < expression.GetSubexpressionCount(); i++)
+        {
+            if (ContainsWindowFunction(expression.GetSubexpression(i)!))
             {
                 return true;
             }
