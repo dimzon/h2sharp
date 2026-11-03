@@ -200,6 +200,17 @@ CLOB/BLOB через таблицу, LENGTH/OCTET_LENGTH/CHAR_LENGTH, `SUBSTRING
 неизвестной длине), их отказы, хэш большого значения по длине, сравнение
 значений из разных мест и удаление временного файла — `ValueLobWindowsTests`.
 
+`CommandList` пройден на двух уровнях: текст из нескольких операторов через
+Data-провайдер (первый отвечает, остальные работают ради эффекта; параметры
+доходят до всех; `NextResult` докатывает хвост; кэш инвалидируется по DDL) —
+`CommandListTests`; и как его отдаёт сессия (только первое подготовлено,
+остальное откладывается и парсится после, отложенный список запросов
+докатывается, `GetDependencies`/`InvalidateCachedResult`/`Close`) —
+`CommandListDirectTests`. Ветви `GetParameters`/`QueryMeta`/`IsRetryable`
+листа в порту никем не зовутся (defensive), а `CollectDependencies` у
+`Insert`/`Delete` — по-прежнему TODO: это дефект порта, зафиксированный
+отдельными заглушками.
+
 `Query.Run`/`Exists` используют result cache эталона: transaction stability,
 statement/snapshot modification ids, per-table ids, параметры, лимит и порядок IN.
 `READ_UNCOMMITTED`, обновлённые в текущей транзакции таблицы, UNION,
