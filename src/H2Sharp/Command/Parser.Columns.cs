@@ -162,7 +162,8 @@ public sealed partial class Parser
 
         if (IsWord("CONSTRAINT"))
         {
-            string constraintName = ReadIdentifierWithSchema(session!, out Schema constraintSchema);
+            string constraintName = ReadIdentifierWithSchema(
+                session!, schema.GetName(), out Schema constraintSchema);
             if (!ReferenceEquals(constraintSchema, schema))
             {
                 throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
@@ -756,8 +757,9 @@ public sealed partial class Parser
 
         ExpectWord("INTO");
         string tableName = ReadIdentifierWithSchema(session!, out Schema schema);
-        Table table = schema.ResolveTableOrView(session, tableName)
-            ?? throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
+        // The reference reads the target through readTableOrView(), whose refusal names an
+        // empty database rather than a missing table; the helper answers that here too.
+        Table table = ReadTableOrView(session!, schema, tableName);
         command.SetTable(table);
         List<Column>? columns = null;
         if (ReadIf(Token.OpenParen))

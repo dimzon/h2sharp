@@ -102,7 +102,7 @@ public sealed class DropDatabase : DefineCommand
                 continue;
             }
 
-            db.RemoveSchema(schema);
+            db.RemoveSchema(current, schema);
         }
     }
 

@@ -254,6 +254,168 @@ public sealed class SequenceOracleTests
     }
 
     /// <summary>
+    /// The defaults of a descending sequence and of a starting point below the default
+    /// minimum, the same on both sides.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheDefaultsOfBothDirectionsAreTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE SEQUENCE SEQ_DOWN INCREMENT BY -1",
+            "SELECT NEXT VALUE FOR SEQ_DOWN",
+            "SELECT NEXT VALUE FOR SEQ_DOWN",
+            "CREATE SEQUENCE SEQ_DOWN2 INCREMENT BY -1 START WITH -5",
+            "SELECT NEXT VALUE FOR SEQ_DOWN2",
+            "SELECT NEXT VALUE FOR SEQ_DOWN2",
+            "CREATE SEQUENCE SEQ_UP2 START WITH 0",
+            "SELECT NEXT VALUE FOR SEQ_UP2",
+            "SELECT SEQUENCE_NAME, START_VALUE, MINIMUM_VALUE, MAXIMUM_VALUE, INCREMENT "
+                + "FROM INFORMATION_SCHEMA.SEQUENCES ORDER BY SEQUENCE_NAME",
+        ];
+        AssertSame(RunJava(statements), RunPort(statements));
+    }
+
+    /// <summary>
+    /// The declared types and the effective precision of a sequence, the same on both sides.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheTypesAreTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE SEQUENCE SEQ_N1 AS NUMERIC(10, 2)",
+            "SELECT NEXT VALUE FOR SEQ_N1",
+            "CREATE SEQUENCE SEQ_N2 AS NUMERIC(38, 2)",
+            "SELECT NEXT VALUE FOR SEQ_N2",
+            "CREATE SEQUENCE SEQ_F AS DECFLOAT",
+            "SELECT NEXT VALUE FOR SEQ_F",
+            "CREATE SEQUENCE SEQ_B AS BIGINT",
+            "SELECT NEXT VALUE FOR SEQ_B",
+            "CREATE SEQUENCE SEQ_I AS INTEGER",
+            "SELECT NEXT VALUE FOR SEQ_I",
+            "SELECT SEQUENCE_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE "
+                + "FROM INFORMATION_SCHEMA.SEQUENCES ORDER BY SEQUENCE_NAME",
+        ];
+        AssertSame(RunJava(statements), RunPort(statements));
+    }
+
+    /// <summary>
+    /// The cache sizes, including one wider than the range, the same on both sides.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheCacheIsTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE SEQUENCE SEQ_C1 CACHE 1",
+            "CREATE SEQUENCE SEQ_C5 CACHE 5",
+            "SELECT NEXT VALUE FOR SEQ_C5",
+            "SELECT NEXT VALUE FOR SEQ_C5",
+            "SELECT NEXT VALUE FOR SEQ_C5",
+            "SELECT NEXT VALUE FOR SEQ_C5",
+            "SELECT NEXT VALUE FOR SEQ_C5",
+            "SELECT NEXT VALUE FOR SEQ_C5",
+            "CREATE SEQUENCE SEQ_C100 CACHE 100",
+            "CREATE SEQUENCE SEQ_CR MINVALUE 1 MAXVALUE 3 CACHE 10",
+            "SELECT NEXT VALUE FOR SEQ_CR",
+            "SELECT NEXT VALUE FOR SEQ_CR",
+            "SELECT NEXT VALUE FOR SEQ_CR",
+            "SELECT SEQUENCE_NAME, CACHE FROM INFORMATION_SCHEMA.SEQUENCES "
+                + "WHERE SEQUENCE_NAME LIKE 'SEQ_C%' ORDER BY SEQUENCE_NAME",
+        ];
+        AssertSame(RunJava(statements), RunPort(statements));
+    }
+
+    /// <summary>
+    /// Cycling and exhaustion in both directions, the same on both sides.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheCycleAndExhaustionAreTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE SEQUENCE SEQ_CY MINVALUE 1 MAXVALUE 3 CYCLE",
+            "SELECT NEXT VALUE FOR SEQ_CY",
+            "SELECT NEXT VALUE FOR SEQ_CY",
+            "SELECT NEXT VALUE FOR SEQ_CY",
+            "SELECT NEXT VALUE FOR SEQ_CY",
+            "SELECT NEXT VALUE FOR SEQ_CY",
+            "CREATE SEQUENCE SEQ_EX MINVALUE 1 MAXVALUE 2 NO CYCLE",
+            "SELECT NEXT VALUE FOR SEQ_EX",
+            "SELECT NEXT VALUE FOR SEQ_EX",
+            "SELECT NEXT VALUE FOR SEQ_EX",
+            "SELECT NEXT VALUE FOR SEQ_EX",
+            "CREATE SEQUENCE SEQ_DCY MINVALUE -3 MAXVALUE -1 INCREMENT BY -1 CYCLE",
+            "SELECT NEXT VALUE FOR SEQ_DCY",
+            "SELECT NEXT VALUE FOR SEQ_DCY",
+            "SELECT NEXT VALUE FOR SEQ_DCY",
+            "SELECT NEXT VALUE FOR SEQ_DCY",
+            "SELECT NEXT VALUE FOR SEQ_DCY",
+            "CREATE SEQUENCE SEQ_DEX MINVALUE -3 MAXVALUE -1 INCREMENT BY -1 NO CYCLE",
+            "SELECT NEXT VALUE FOR SEQ_DEX",
+            "SELECT NEXT VALUE FOR SEQ_DEX",
+            "SELECT NEXT VALUE FOR SEQ_DEX",
+            "SELECT NEXT VALUE FOR SEQ_DEX",
+        ];
+        AssertSame(RunJava(statements), RunPort(statements));
+    }
+
+    /// <summary>
+    /// The ALTER of an exhausted sequence and the cache change, the same on both sides.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheAlterOfAnExhaustedSequenceIsTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE SEQUENCE SEQ_X MINVALUE 1 MAXVALUE 2",
+            "SELECT NEXT VALUE FOR SEQ_X",
+            "SELECT NEXT VALUE FOR SEQ_X",
+            "SELECT NEXT VALUE FOR SEQ_X",
+            "ALTER SEQUENCE SEQ_X RESTART",
+            "SELECT NEXT VALUE FOR SEQ_X",
+            "SELECT NEXT VALUE FOR SEQ_X",
+            "SELECT NEXT VALUE FOR SEQ_X",
+            "ALTER SEQUENCE SEQ_X RESTART WITH 1",
+            "SELECT NEXT VALUE FOR SEQ_X",
+            "ALTER SEQUENCE SEQ_X CACHE 4",
+            "SELECT CACHE FROM INFORMATION_SCHEMA.SEQUENCES WHERE SEQUENCE_NAME = 'SEQ_X'",
+            "ALTER SEQUENCE SEQ_X MINVALUE 0",
+            "ALTER SEQUENCE SEQ_X MAXVALUE 10",
+            "ALTER SEQUENCE SEQ_X INCREMENT BY 2",
+            "SELECT NEXT VALUE FOR SEQ_X",
+        ];
+        AssertSame(RunJava(statements), RunPort(statements));
+    }
+
+    /// <summary>
+    /// The refusals of CREATE and ALTER SEQUENCE, the same on both sides.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheRefusalsAreTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE SEQ_T(ID INT DEFAULT NEXT VALUE FOR SEQ_DEF)",
+            "CREATE SEQUENCE SEQ_DEF",
+            "INSERT INTO SEQ_T DEFAULT VALUES",
+            "INSERT INTO SEQ_T DEFAULT VALUES",
+            "SELECT ID FROM SEQ_T ORDER BY ID",
+            "CREATE SEQUENCE SEQ_DEF IF NOT EXISTS",
+            "DROP SEQUENCE SEQ_DEF",
+            "DROP SEQUENCE SEQ_DEF",
+            "DROP SEQUENCE IF EXISTS SEQ_DEF",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SEQUENCES WHERE SEQUENCE_NAME = 'SEQ_DEF'",
+            "CREATE SEQUENCE SEQ_BAD INCREMENT BY 0",
+            "CREATE SEQUENCE SEQ_BAD2 START WITH 10 MINVALUE 1 MAXVALUE 5",
+            "CREATE SEQUENCE SEQ_BAD3 MINVALUE 5 MAXVALUE 4",
+            "CREATE SEQUENCE SEQ_BAD4 CACHE 50 MINVALUE 1 MAXVALUE 3",
+        ];
+        AssertSame(RunJava(statements), RunPort(statements));
+    }
+
+    /// <summary>
     /// Compares the answers of the two sides.
     /// </summary>
     /// <param name="java">the answers of the reference</param>
