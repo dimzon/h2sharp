@@ -29,6 +29,7 @@ public sealed class H2GetSchemaTests
         Assert.Equal(4, Int(Row(collections, "CollectionName", "Columns"), "NumberOfRestrictions"));
         Assert.Equal(4, Int(Row(collections, "CollectionName", "Indexes"), "NumberOfRestrictions"));
         Assert.Equal(3, Int(Row(collections, "CollectionName", "ForeignKeys"), "NumberOfRestrictions"));
+        Assert.Equal(3, Int(Row(collections, "CollectionName", "Procedures"), "NumberOfRestrictions"));
         Assert.Equal(2, Int(Row(collections, "CollectionName", "Schemas"), "NumberOfRestrictions"));
 
         DataTable restrictions = connection.GetSchema(DbMetaDataCollectionNames.Restrictions);
@@ -128,6 +129,20 @@ public sealed class H2GetSchemaTests
         DataTable tableTypes = connection.GetSchema("TableTypes");
         Assert.Equal(5, tableTypes.Rows.Count);
         Assert.Contains("BASE TABLE", Values(tableTypes, "TABLE_TYPE"));
+    }
+
+    [Fact]
+    public void ProceduresAreAdvertisedButEmpty()
+    {
+        using H2Connection connection = NewConnection();
+        connection.Open();
+
+        DataTable procedures = connection.GetSchema("Procedures", [null, "PUBLIC", null]);
+        Assert.Equal(
+            ["PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "RESERVED1", "RESERVED2",
+                "RESERVED3", "REMARKS", "PROCEDURE_TYPE", "SPECIFIC_NAME"],
+            Names(procedures));
+        Assert.Empty(procedures.Rows);
     }
 
     [Fact]

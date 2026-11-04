@@ -15,9 +15,11 @@ namespace H2Sharp.Data;
 /// Registers host-provided functions and platform services on a closed connection.
 /// </summary>
 /// <remarks>
-/// Registration is the H2Sharp counterpart of the reference's schema-level functions. The
-/// connection owns the configuration until it is opened; opening takes an immutable snapshot, so
-/// an active session is never reconfigured underneath a statement.
+/// Registration is the .NET extension surface, not SQL <c>CREATE ALIAS</c>: the embedded
+/// engine stores no executable code, so functions registered here are session-scoped and
+/// never become schema objects (D-037). The connection owns the configuration until it is
+/// opened; opening takes an immutable snapshot, so an active session is never reconfigured
+/// underneath a statement.
 /// </remarks>
 public interface IH2Extensions
 {

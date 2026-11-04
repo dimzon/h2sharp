@@ -517,6 +517,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         ("Columns", 4, 3),
         ("Indexes", 4, 3),
         ("ForeignKeys", 3, 3),
+        ("Procedures", 3, 3),
         ("TableTypes", 0, 0),
         ("Catalogs", 0, 0),
         ("Schemas", 2, 2),
@@ -531,6 +532,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         ("Columns", ["Catalog", "Schema", "Table", "Column"]),
         ("Indexes", ["Catalog", "Schema", "Table", "Index"]),
         ("ForeignKeys", ["Catalog", "Schema", "Table"]),
+        ("Procedures", ["Catalog", "Schema", "Procedure"]),
         ("Schemas", ["Catalog", "Schema"]),
     ];
 
@@ -584,6 +586,12 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
                     Restriction(restrictionValues, 3))),
             "INDEXES" => IndexesTable(meta, restrictionValues),
             "FOREIGNKEYS" => ForeignKeysTable(meta, restrictionValues),
+            "PROCEDURES" => ToDataTable(
+                "Procedures",
+                meta.GetProcedures(
+                    Restriction(restrictionValues, 0),
+                    Restriction(restrictionValues, 1),
+                    Restriction(restrictionValues, 2))),
             "TABLETYPES" => ToDataTable("TableTypes", meta.GetTableTypes()),
             "CATALOGS" => ToDataTable("Catalogs", meta.GetCatalogs()),
             "SCHEMAS" => ToDataTable(

@@ -20,10 +20,11 @@
   менее доступный базовый класс (языковое отклонение).
   `Session.GetDatabaseMeta()` теперь возвращает `DatabaseMeta`, а не `object`;
   `SessionLocal` создаёт `DatabaseMetaLocal(this)`.
-* `GetProcedures`/`GetProcedureColumns` отказывают `TODOException` (нет
-  `FunctionAlias`), `GetColumnPrivileges`/`GetTablePrivileges` — (нет
-  `Right`/`User`, D-004), `Get*Functions` — (нет `Help`). В `GetSchema` эти
-  коллекции не выставляются; `Procedures` появится вместе с `FunctionAlias`.
+* `GetProcedures`/`GetProcedureColumns` возвращают эталонные колонки без строк:
+  `CREATE ALIAS`/`FunctionAlias` вне scope по D-037 — встраиваемый движок не
+  хранит исполняемый код в базе, поэтому alias не может быть персистентным.
+  `GetColumnPrivileges`/`GetTablePrivileges` по-прежнему отказывают (нет
+  `Right`/`User`, D-004), `Get*Functions` — (нет `Help`).
 * `DataType.ConvertTypeToSqlType` снова отдаёт `java.sql.Types` — так
   выглядят эталонные metadata-колонки; .NET-проекция остаётся в
   `DataType.SqlType`. Добавлен internal `ConvertValueTypeToSqlType` для строки
@@ -36,7 +37,8 @@
 * Добавлены эталонные `Table.GetSQLTableType` и `Column.GetDefaultSQL`.
 * `H2Connection.GetSchema`/`GetSchemaAsync`: `MetaDataCollections`,
   `Restrictions`, `DataTypes`, `ReservedWords`, `Tables`, `Columns`,
-  `Indexes`, `ForeignKeys`, `TableTypes`, `Catalogs`, `Schemas`. Колонки
+  `Indexes`, `ForeignKeys`, `Procedures`, `TableTypes`, `Catalogs`, `Schemas`.
+  Колонки
   engine-backed коллекций — эталонные (`TABLE_CAT`, `TABLE_SCHEM`, ...);
   `MetaDataCollections`/`Restrictions` — стандартная ADO.NET-форма;
   `ReservedWords` — колонка `ReservedWord`.

@@ -115,6 +115,10 @@ public sealed class MetadataOracleTests
         print(md.getExportedKeys(null, "PUBLIC", "P"));
         section("crossReference");
         print(md.getCrossReference(null, "PUBLIC", "P", null, "PUBLIC", "C"));
+        section("procedures");
+        print(md.getProcedures(null, "PUBLIC", null));
+        section("procedureColumns");
+        print(md.getProcedureColumns(null, "PUBLIC", null, null));
         section("typeInfo");
         print(md.getTypeInfo());
         section("keywords");
@@ -145,6 +149,8 @@ public sealed class MetadataOracleTests
         Add(actual, "exportedKeys", Describe(meta.GetExportedKeys(null, "PUBLIC", "P")));
         Add(actual, "crossReference", Describe(
             meta.GetCrossReference(null, "PUBLIC", "P", null, "PUBLIC", "C")));
+        Add(actual, "procedures", Describe(meta.GetProcedures(null, "PUBLIC", null)));
+        Add(actual, "procedureColumns", Describe(meta.GetProcedureColumns(null, "PUBLIC", null, null)));
         Add(actual, "typeInfo", Describe(meta.GetTypeInfo()));
         actual.Add("=keywords");
         actual.Add("=sqlKeywords:" + Hex(meta.GetSQLKeywords()));

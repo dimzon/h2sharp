@@ -186,16 +186,61 @@ public sealed class DatabaseMetaLocal : DatabaseMetaLocalBase
     public override string GetSearchStringEscape() => "\\";
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// D-037: CREATE ALIAS is out of scope. The engine is embedded and stores no executable
+    /// code, so a function alias cannot be persistent; there is nothing to report. The
+    /// result keeps the reference columns and has no rows, which is the honest answer for
+    /// this database, not a placeholder that hides an unported feature.
+    /// </remarks>
     public override ResultInterface GetProcedures(
         string? catalog, string? schemaPattern, string? procedureNamePattern)
-        => throw new TODOException(
-            "DatabaseMetaLocal.getProcedures: FunctionAlias is not ported, so procedures have no rows");
+    {
+        CheckClosed();
+        SimpleResult result = new();
+        result.AddColumn("PROCEDURE_CAT", TypeInfo.TypeVarchar);
+        result.AddColumn("PROCEDURE_SCHEM", TypeInfo.TypeVarchar);
+        result.AddColumn("PROCEDURE_NAME", TypeInfo.TypeVarchar);
+        result.AddColumn("RESERVED1", TypeInfo.TypeNull);
+        result.AddColumn("RESERVED2", TypeInfo.TypeNull);
+        result.AddColumn("RESERVED3", TypeInfo.TypeNull);
+        result.AddColumn("REMARKS", TypeInfo.TypeVarchar);
+        result.AddColumn("PROCEDURE_TYPE", TypeInfo.TypeSmallint);
+        result.AddColumn("SPECIFIC_NAME", TypeInfo.TypeVarchar);
+        return result;
+    }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// D-037, the counterpart of GetProcedures: there are no function aliases, so the
+    /// reference's procedure-column row set is empty.
+    /// </remarks>
     public override ResultInterface GetProcedureColumns(
         string? catalog, string? schemaPattern, string? procedureNamePattern, string? columnNamePattern)
-        => throw new TODOException(
-            "DatabaseMetaLocal.getProcedureColumns: FunctionAlias is not ported, so procedures have no columns");
+    {
+        CheckClosed();
+        SimpleResult result = new();
+        result.AddColumn("PROCEDURE_CAT", TypeInfo.TypeVarchar);
+        result.AddColumn("PROCEDURE_SCHEM", TypeInfo.TypeVarchar);
+        result.AddColumn("PROCEDURE_NAME", TypeInfo.TypeVarchar);
+        result.AddColumn("COLUMN_NAME", TypeInfo.TypeVarchar);
+        result.AddColumn("COLUMN_TYPE", TypeInfo.TypeSmallint);
+        result.AddColumn("DATA_TYPE", TypeInfo.TypeInteger);
+        result.AddColumn("TYPE_NAME", TypeInfo.TypeVarchar);
+        result.AddColumn("PRECISION", TypeInfo.TypeInteger);
+        result.AddColumn("LENGTH", TypeInfo.TypeInteger);
+        result.AddColumn("SCALE", TypeInfo.TypeSmallint);
+        result.AddColumn("RADIX", TypeInfo.TypeSmallint);
+        result.AddColumn("NULLABLE", TypeInfo.TypeSmallint);
+        result.AddColumn("REMARKS", TypeInfo.TypeVarchar);
+        result.AddColumn("COLUMN_DEF", TypeInfo.TypeVarchar);
+        result.AddColumn("SQL_DATA_TYPE", TypeInfo.TypeInteger);
+        result.AddColumn("SQL_DATETIME_SUB", TypeInfo.TypeInteger);
+        result.AddColumn("CHAR_OCTET_LENGTH", TypeInfo.TypeInteger);
+        result.AddColumn("ORDINAL_POSITION", TypeInfo.TypeInteger);
+        result.AddColumn("IS_NULLABLE", TypeInfo.TypeVarchar);
+        result.AddColumn("SPECIFIC_NAME", TypeInfo.TypeVarchar);
+        return result;
+    }
 
     /// <inheritdoc/>
     public override ResultInterface GetTables(
