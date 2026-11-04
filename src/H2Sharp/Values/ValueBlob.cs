@@ -179,7 +179,9 @@ public sealed class ValueBlob : ValueLob
 
         if (LobData is LobDataInMemory inMemory)
         {
-            p = IOUtils.StreamEncoding.GetString(inMemory.GetSmall()).Length;
+            // The number of UTF-16 code units the bytes decode to: the answer string.Length
+            // would give, without decoding the bytes into a string.
+            p = Utf8.CodeUnitCount(inMemory.GetSmall());
         }
         else
         {
