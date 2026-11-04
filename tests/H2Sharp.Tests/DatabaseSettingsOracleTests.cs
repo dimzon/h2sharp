@@ -73,7 +73,7 @@ public sealed class DatabaseSettingsOracleTests
     /// <summary>
     /// Runs the statements over a fresh database on both sides, with the same URL suffix.
     /// </summary>
-    private static void Compare(string urlSuffix, string[] statements)
+    internal static void Compare(string urlSuffix, string[] statements)
     {
         string databaseName = "db_settings_" + Guid.NewGuid().ToString("N");
         string portUrl = "Data Source=" + databaseName + ";Storage=Memory";

@@ -49,7 +49,7 @@ namespace H2Sharp.MvStore.Db;
 /// </summary>
 public sealed class MVTable : Table
 {
-    private readonly Column[] columns;
+    private Column[] columns = [];
 
     private readonly MVPrimaryIndex primaryIndex;
 
@@ -171,8 +171,7 @@ public sealed class MVTable : Table
         Schema = schema;
         Id = id;
         Name = name;
-        this.columns = columns;
-        for (int i = 0; i < columns.Length; i++) columns[i].SetTable(this, i);
+        SetColumns(columns);
         // The database's own store, as in the reference: a table on another store would be
         // invisible to every transaction but its own.
         store = database.GetStore().GetTransactionStore();
@@ -184,6 +183,46 @@ public sealed class MVTable : Table
         // relies on that to tell a keyed table from a keyless one.
         primaryIndex = new MVPrimaryIndex(null!, this, id, IndexColumn.Wrap(this.columns), IndexType.CreateScan(true));
         indexes = new List<Index> { primaryIndex };
+    }
+
+    /// <summary>
+    /// Sets the columns of this table, the reference's <c>Table.setColumns</c>.
+    /// </summary>
+    /// <remarks>
+    /// The reference keeps the columns by name in a map that compares the names the way the
+    /// database compares identifiers, and refuses a second column of the same name through
+    /// it. This hierarchy does not keep that map - <c>FindColumn</c> scans the array - so the
+    /// duplicate check uses a map of its own, never outliving the call. The type check and the
+    /// column limit are the reference's too; a create statement with two columns called
+    /// <c>A</c> is one statement, not two chances to notice.
+    /// </remarks>
+    /// <param name="columns">the columns, in order</param>
+    private void SetColumns(Column[] columns)
+    {
+        if (columns.Length > Constants.MaxColumns)
+        {
+            throw DbException.Get(
+                ErrorCode.TooManyColumns1,
+                Constants.MaxColumns.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        this.columns = columns;
+        HashSet<string> names = new(
+            database is null ? StringComparer.Ordinal : database.IdentifierComparer);
+        for (int i = 0; i < columns.Length; i++)
+        {
+            Column column = columns[i];
+            if (column.GetTypeInfo().GetValueType() == Value.Unknown)
+            {
+                throw DbException.Get(ErrorCode.UnknownDataType1, column.GetSql(HasSql.TraceSqlFlags));
+            }
+
+            column.SetTable(this, i);
+            if (!names.Add(column.GetName()))
+            {
+                throw DbException.Get(ErrorCode.DuplicateColumnName1, column.GetName());
+            }
+        }
     }
 
     /// <summary>Gets the schema of this table, if any.</summary>

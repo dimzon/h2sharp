@@ -841,7 +841,9 @@ public sealed partial class Parser
                     mul = 1L << 50;
                     break;
                 default:
-                    throw DbException.GetSyntaxError(sql, Current.Start, "precision");
+                    // The reference throws the bare getSyntaxError(), which is the syntax
+                    // error without an expected-token list.
+                    throw DbException.GetSyntaxError(sql, Current.Start);
             }
 
             if (p > long.MaxValue / mul)
@@ -865,8 +867,12 @@ public sealed partial class Parser
             case Value.Char:
                 if (!IsWord("CHARACTERS") && !IsWord("OCTETS"))
                 {
-                    IsWord("CHAR");
-                    IsWord("BYTE");
+                    // CHAR and BYTE are Oracle's units; the reference accepts them only
+                    // where the mode allows them.
+                    if (provider.GetMode().CharAndByteLengthUnits && !ReadIfCompat("CHAR"))
+                    {
+                        ReadIfCompat("BYTE");
+                    }
                 }
 
                 break;

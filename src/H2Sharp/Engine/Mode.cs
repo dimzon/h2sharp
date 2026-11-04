@@ -165,6 +165,12 @@ public sealed class Mode
     public bool ConvertOnlyToSmallerScale { get; }
 
     /// <summary>
+    /// Whether CHAR and BYTE may be written after a character type's length as its unit, as in
+    /// Oracle's <c>VARCHAR2(10 CHAR)</c>.
+    /// </summary>
+    public bool CharAndByteLengthUnits { get; }
+
+    /// <summary>
     /// Whether a DISTINCT query may order by an expression that is not in its select list.
     /// </summary>
     /// <remarks>
@@ -296,6 +302,7 @@ public sealed class Mode
         bool minusIsExcept,
         CharPadding charPadding = CharPadding.Always,
         bool convertOnlyToSmallerScale = false,
+        bool charAndByteLengthUnits = false,
         bool allowUnrelatedOrderByExpressionsInDistinctQueries = false,
         bool treatEmptyStringsAsNull = false,
         bool greatestLeastIgnoreNulls = false,
@@ -330,6 +337,7 @@ public sealed class Mode
         MinusIsExcept = minusIsExcept;
         CharPadding = charPadding;
         ConvertOnlyToSmallerScale = convertOnlyToSmallerScale;
+        CharAndByteLengthUnits = charAndByteLengthUnits;
         AllowUnrelatedOrderByExpressionsInDistinctQueries = allowUnrelatedOrderByExpressionsInDistinctQueries;
         TreatEmptyStringsAsNull = treatEmptyStringsAsNull;
         GreatestLeastIgnoreNulls = greatestLeastIgnoreNulls;
@@ -421,8 +429,8 @@ public sealed class Mode
                 autoIncrementClause: true, alterTableModifyColumn: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
-                CharPadding.Always, convertOnlyToSmallerScale: true, treatEmptyStringsAsNull: true,
-                mergeWhere: true, decimalSequences: true,
+                CharPadding.Always, convertOnlyToSmallerScale: true, charAndByteLengthUnits: true,
+                treatEmptyStringsAsNull: true, mergeWhere: true, decimalSequences: true,
                 alterTableModifyColumn: true, alterTableModifyColumnPreserveNullability: true),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
