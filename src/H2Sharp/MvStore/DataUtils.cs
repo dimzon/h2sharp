@@ -399,12 +399,21 @@ public static class DataUtils
     public static string ReadString(Span<byte> buff, ref int position) => ReadString(buff, ref position, ReadVarInt(buff, ref position));
 
     /// <summary>
+    /// The stack budget of a string read, in characters. Page strings — keys, column values,
+    /// schema names — are overwhelmingly shorter than it; longer reads rent from the pool.
+    /// </summary>
+    private const int ReadStringStackChars = 256;
+
+    /// <summary>
     /// Read a string of the given number of characters.
     /// </summary>
     /// <remarks>
-    /// The characters rent rather than allocate: string.Create cannot carry the ref position
-    /// through its state (a Span cannot ride a generic argument), and a closure would cost
-    /// the allocation this removes. The rented buffer always goes back, even on a short read.
+    /// The decode runs once and the result is materialized once. Short reads decode into the
+    /// stack and answer one string; the direct <c>string.Create</c> build the decode would
+    /// otherwise use cannot take this call's shape on the .NET versions this port targets —
+    /// a span cannot ride the state argument, and the buffer here is a span, so there is no
+    /// array to hand over as a memory either. Long reads rent, decode, and copy once into
+    /// the result; the rented buffer always goes back, even on a short read.
     /// </remarks>
     /// <param name="buff">the buffer</param>
     /// <param name="position">where to read</param>
@@ -412,32 +421,48 @@ public static class DataUtils
     /// <returns>the string</returns>
     public static string ReadString(Span<byte> buff, ref int position, int len)
     {
-        char[] chars = ArrayPool<char>.Shared.Rent(len);
+        if (len <= ReadStringStackChars)
+        {
+            Span<char> chars = stackalloc char[ReadStringStackChars];
+            DecodeStringChars(chars[..len], buff, ref position);
+            return new string(chars[..len]);
+        }
+
+        char[] rented = ArrayPool<char>.Shared.Rent(len);
         try
         {
-            for (int i = 0; i < len; i++)
-            {
-                int x = buff[position++];
-                if (x < 0x80)
-                {
-                    chars[i] = (char)x;
-                }
-                else if (x >= 0xe0)
-                {
-                    chars[i] = (char)(((x & 0xf) << 12)
-                        + ((buff[position++] & 0x3f) << 6) + (buff[position++] & 0x3f));
-                }
-                else
-                {
-                    chars[i] = (char)(((x & 0x1f) << 6) + (buff[position++] & 0x3f));
-                }
-            }
-
-            return new string(chars, 0, len);
+            DecodeStringChars(rented.AsSpan(0, len), buff, ref position);
+            return new string(rented, 0, len);
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(chars);
+            ArrayPool<char>.Shared.Return(rented);
+        }
+    }
+
+    /// <summary>
+    /// Decodes the reference's modified UTF-8 into the given characters, moving the position
+    /// past the bytes consumed. The decode itself is the reference's: one, two or three bytes
+    /// per character by the lead byte, which is also what carries the two-byte zero.
+    /// </summary>
+    private static void DecodeStringChars(Span<char> chars, Span<byte> buff, ref int position)
+    {
+        for (int i = 0; i < chars.Length; i++)
+        {
+            int x = buff[position++];
+            if (x < 0x80)
+            {
+                chars[i] = (char)x;
+            }
+            else if (x >= 0xe0)
+            {
+                chars[i] = (char)(((x & 0xf) << 12)
+                    + ((buff[position++] & 0x3f) << 6) + (buff[position++] & 0x3f));
+            }
+            else
+            {
+                chars[i] = (char)(((x & 0x1f) << 6) + (buff[position++] & 0x3f));
+            }
         }
     }
 
