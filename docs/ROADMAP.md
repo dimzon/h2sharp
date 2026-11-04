@@ -159,11 +159,13 @@ erasure to `object` sits in 6+ Tx files, and heterogeneous undo-log is a proven 
 `H2DataAdapter`, `H2DbColumn`, `H2ValueMapper`, `H2ParameterRewriter`. Named `$name`
 parameters are rewritten to `$N` before the engine sees them.
 
-Tests live in their own project, `tests/H2Sharp.Data.Tests` (297 green), and the gate is
-Dapper: `DapperSmokeTests` drives an in-memory database end to end over `IDbConnection`
-(open, create, insert, update, select, delete). `H2CommandBuilder`/`H2DataAdapter` refuse
-command generation and batch updates — they need the schema machinery behind
-`GetInsertCommand` and friends. File databases are not wired (`OpenAsync`).
+Tests live in their own project, `tests/H2Sharp.Data.Tests`, and the gate is Dapper:
+`DapperSmokeTests` drives an in-memory database end to end over `IDbConnection`
+(open, create, insert, update, select, delete). `H2CommandBuilder` still refuses command
+generation and `H2DataAdapter` has no batch updates — those need the schema machinery
+behind `GetInsertCommand` and friends. `H2DataAdapter` does raise its typed row events,
+and `H2Connection.GetSchema` answers from the ported engine metadata
+(`H2Sharp.Jdbc.Meta`). File databases are not wired (`OpenAsync`).
 
 ## Phase 9 — EF Core provider — in a sibling repository
 
