@@ -20,6 +20,94 @@ namespace H2Sharp.Expressions.Conditions;
 /// </summary>
 public sealed class UniquePredicate : PredicateWithSubquery
 {
+    private sealed class Target : ResultTarget
+    {
+        private readonly int columnCount;
+
+        private readonly NullsDistinct nullsDistinct;
+
+        private readonly LocalResult result;
+
+        internal bool HasDuplicates;
+
+        internal Target(int columnCount, NullsDistinct nullsDistinct, LocalResult result)
+        {
+            this.columnCount = columnCount;
+            this.nullsDistinct = nullsDistinct;
+            this.result = result;
+        }
+
+        public void LimitsWereApplied()
+        {
+            // Nothing to do
+        }
+
+        public long GetRowCount()
+        {
+            // Not required
+            return 0L;
+        }
+
+        public void AddRow(params Value?[] values)
+        {
+            if (HasDuplicates)
+            {
+                return;
+            }
+
+            switch (nullsDistinct)
+            {
+                case NullsDistinct.Distinct:
+                    for (int i = 0; i < columnCount; i++)
+                    {
+                        if (values[i] is ValueNull)
+                        {
+                            return;
+                        }
+                    }
+
+                    break;
+                case NullsDistinct.AllDistinct:
+                {
+                    bool allNull = true;
+                    for (int i = 0; i < columnCount; i++)
+                    {
+                        if (values[i] is not ValueNull)
+                        {
+                            allNull = false;
+                            break;
+                        }
+                    }
+
+                    if (allNull)
+                    {
+                        return;
+                    }
+
+                    break;
+                }
+
+                default:
+                    break;
+            }
+
+            if (values.Length != columnCount)
+            {
+                Value?[] copy = new Value?[columnCount];
+                Array.Copy(values, copy, System.Math.Min(values.Length, columnCount));
+                values = copy;
+            }
+
+            long expected = result.GetRowCount() + 1;
+            result.AddRow(values);
+            if (expected != result.GetRowCount())
+            {
+                HasDuplicates = true;
+                result.Close();
+            }
+        }
+    }
+
     private readonly NullsDistinct nullsDistinct;
 
     /// <summary>
@@ -37,7 +125,7 @@ public sealed class UniquePredicate : PredicateWithSubquery
     public override Expression Optimize(SessionLocal session)
     {
         base.Optimize(session);
-        if (query.IsAnyDistinct())
+        if (query.IsStandardDistinct())
         {
             return ValueExpression.True;
         }
@@ -52,78 +140,10 @@ public sealed class UniquePredicate : PredicateWithSubquery
         int columnCount = query.GetColumnCount();
         LocalResult result = new(session, query.GetExpressions(), columnCount, columnCount);
         result.SetDistinct();
-        bool hasDuplicates = false;
-        ResultInterface rows = query.Run(int.MaxValue);
-        try
-        {
-            while (!hasDuplicates && rows.Next())
-            {
-                Value?[] values = rows.CurrentRow();
-                if (values.Length != columnCount)
-                {
-                    Value?[] copy = new Value?[columnCount];
-                    Array.Copy(values, copy, System.Math.Min(values.Length, columnCount));
-                    values = copy;
-                }
-
-                switch (nullsDistinct)
-                {
-                    case NullsDistinct.Distinct:
-                        bool hasNull = false;
-                        for (int i = 0; i < columnCount; i++)
-                        {
-                            if (values[i] is ValueNull)
-                            {
-                                hasNull = true;
-                                break;
-                            }
-                        }
-
-                        if (hasNull)
-                        {
-                            continue;
-                        }
-
-                        break;
-                    case NullsDistinct.AllDistinct:
-                    {
-                        bool allNull = true;
-                        for (int i = 0; i < columnCount; i++)
-                        {
-                            if (values[i] is not ValueNull)
-                            {
-                                allNull = false;
-                                break;
-                            }
-                        }
-
-                        if (allNull)
-                        {
-                            continue;
-                        }
-
-                        break;
-                    }
-
-                    default:
-                        break;
-                }
-
-                long expected = result.GetRowCount() + 1;
-                result.AddRow(values);
-                if (expected != result.GetRowCount())
-                {
-                    hasDuplicates = true;
-                }
-            }
-        }
-        finally
-        {
-            rows.Close();
-            result.Close();
-        }
-
-        return ValueBoolean.Get(!hasDuplicates);
+        Target target = new(columnCount, nullsDistinct, result);
+        _ = query.Run(int.MaxValue, target);
+        result.Close();
+        return ValueBoolean.Get(!target.HasDuplicates);
     }
 
     /// <inheritdoc/>

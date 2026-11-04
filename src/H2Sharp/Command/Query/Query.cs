@@ -127,6 +127,9 @@ public abstract class Query : Prepared
     /// <summary>Sets the ordering of an IN predicate value list.</summary>
     public void SetInPredicateResultSortTypes(int[] sortTypes) => inPredicateSortTypes = sortTypes;
 
+    /// <summary>Whether this query is a plain {@code DISTINCT} query.</summary>
+    public bool IsStandardDistinct() => distinct;
+
     /// <summary>Whether this query removes duplicates.</summary>
     public virtual bool IsAnyDistinct() => distinct;
 

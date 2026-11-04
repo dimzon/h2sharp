@@ -9461,3 +9461,36 @@ Data 717, Engine 9, MvStore 152. Покрытие union (5 наборов) —
 вместо 255; `TestView.Test` — `rownum()` во вложенном запросе даёт 1 вместо 2.
 Оба падения обрывают тесты раньше и занижают покрытие Native; к этому спринту
 отношения не имеют.
+
+### UNIQUE-предикат, TRUNCATE_VALUE и округление (2026-11-04)
+
+`UniquePredicateOracleTests` повторяет reference-скрипт `predicates/unique.sql`:
+дубликаты и `UNIQUE(TABLE ...)`, три режима `NULLS`, коррелированный подзапрос,
+`DISTINCT ON`, set-операции через целевой результат и планы. Оракул нашёл дефект:
+порт оптимизировал по `IsAnyDistinct()`, который у `Select` истинен и для
+`DISTINCT ON`, тогда как эталон спрашивает `isStandardDistinct()` — только
+плоский `DISTINCT`. `UNIQUE(SELECT DISTINCT ON (...) ...)` в порте всегда
+отвечал TRUE не проверяя строки. Добавлен `Query.IsStandardDistinct()` с
+эталонным телом, предикат переписан на эталонный `ResultTarget` (ранний выход
+по дубликату и закрытие результата, а не материализация всего подзапроса).
+
+`TruncateValueOracleTests` проходит reference-скрипт
+`functions/system/truncate-value.sql` и добавляет numeric/decfloat со scale,
+строки и binary, массивы, force-ветку для целых и floating point, NULL, колонку,
+ноль и отказы. Оракул нашёл дефект: порт проверял `SupportsPrecision` локальным
+списком NUMERIC/DECFLOAT/ARRAY, тогда как эталон читает флаг таблицы типов, где
+строки, binary, массивы и интервалы его тоже поддерживают — `TRUNCATE_VALUE('Test
+123', 4, FALSE)` возвращал строку целиком. Теперь спрашивается
+`DataType.GetDataType(valueType).SupportsPrecision`.
+
+`MathFunctionOracleTests` переносит случаи reference-скриптов
+round/roundmagic/truncate/floor/ceil/mod/abs: отрицательные scale у INTEGER и
+NUMERIC, NULL-scale, REAL/DOUBLE/DECFLOAT, граничные double-значения, ROUNDMAGIC,
+датные формы TRUNCATE, производные типы колонок и отказы. Покрытие:
+`MathFunction` 57.7% → **97.5%**, `UniquePredicate` 0% → **93.8%**,
+`TruncateValueFunction` 0% → **97.1%**. Остались только недостижимые из SQL
+ветки: защитные `GetInternalError`, недостижимый clamp scale после `CheckScale`,
+мёртвая DECFLOAT-ветка force (в эталоне тоже) и интерфейсные методы Target,
+которые движок не зовёт.
+
+Проверено: `H2Sharp.Tests` 1846 зелёных, Data 717, Engine 9, MvStore 152.

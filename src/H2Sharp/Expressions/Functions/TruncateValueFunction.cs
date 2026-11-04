@@ -49,7 +49,9 @@ public sealed class TruncateValueFunction : FunctionN
         int requested = precision > int.MaxValue ? int.MaxValue : (int)precision;
         TypeInfo type = v1!.GetTypeInfo();
         int valueType = type.GetValueType();
-        if (SupportsPrecision(valueType))
+        // The reference asks the data type table, where strings, binary, arrays, numeric,
+        // decfloat and intervals all support a precision parameter.
+        if (DataType.GetDataType(valueType).SupportsPrecision)
         {
             if (precision < type.GetPrecision())
             {
@@ -112,13 +114,6 @@ public sealed class TruncateValueFunction : FunctionN
 
         return v1;
     }
-
-    /// <summary>
-    /// Whether the type carries a precision the function can truncate to. The reference reads
-    /// this off its type table; NUMERIC, DECFLOAT and ARRAY are the ones that do.
-    /// </summary>
-    private static bool SupportsPrecision(int valueType)
-        => valueType is Value.Numeric or Value.Decfloat or Value.Array;
 
     /// <summary>
     /// Rounds to so many significant digits, HALF_UP, as MathContext does.
