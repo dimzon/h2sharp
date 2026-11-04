@@ -157,11 +157,51 @@ public sealed class Schema : DbObject
             database.RemoveSchemaObject(session, constraint);
         }
 
+        // There can be dependencies between tables, e.g. a materialized view on its
+        // underlying table or computed columns, so the pass is repeated until the map is
+        // empty, and a table with a dependent is left for a later pass. The reference's
+        // `modified` flag breaks a circle: when a pass removes nothing, the dependents' column
+        // expressions lose their dependencies and the next pass can proceed.
+        bool modified = true;
         while (true)
         {
             List<Table> tables = GetAllTablesAndViews(session);
-            if (tables.Count == 0) break;
-            database.RemoveSchemaObject(session, tables[0]);
+            if (tables.Count == 0)
+            {
+                break;
+            }
+
+            bool newModified = false;
+            foreach (Table table in tables)
+            {
+                // The reference iterates the live concurrent map, whose iterator skips the
+                // entries removed during the pass; this list is a snapshot, so the check is
+                // explicit: removing a materialized view takes its underlying table with it.
+                if (!ReferenceEquals(FindTableOrView(null, table.GetTableName()), table))
+                {
+                    continue;
+                }
+
+                Table? dependentTable = database.GetDependentTable(table, table);
+                if (dependentTable is null)
+                {
+                    database.RemoveSchemaObject(session, table);
+                    newModified = true;
+                }
+                else if (!ReferenceEquals(dependentTable.GetSchema(), this))
+                {
+                    throw DbException.Get(ErrorCode.CannotDrop2,
+                        table.GetTraceSql(), dependentTable.GetTraceSql());
+                }
+                else if (!modified)
+                {
+                    dependentTable.RemoveColumnExpressionsDependencies(session);
+                    dependentTable.SetModified();
+                    database.UpdateMeta(session, dependentTable);
+                }
+            }
+
+            modified = newModified;
         }
 
         foreach (TableSynonym synonym in GetAllSynonyms().ToArray())

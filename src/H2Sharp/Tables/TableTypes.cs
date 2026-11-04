@@ -1302,6 +1302,20 @@ public abstract class Table
         return columns.ToArray();
     }
 
+    /// <summary>
+    /// Removes dependencies of column expressions, used for tables with circular
+    /// dependencies.
+    /// </summary>
+    /// <param name="session">the session</param>
+    public virtual void RemoveColumnExpressionsDependencies(SessionLocal session)
+    {
+        foreach (Column column in GetColumns())
+        {
+            column.SetDefaultExpression(session, null);
+            column.SetOnUpdateExpression(session, null);
+        }
+    }
+
     /// <summary>Gets the SQL used by the metadata table.</summary>
     public virtual string? GetCreateSqlForMeta() => GetCreateSql();
 

@@ -182,15 +182,28 @@ public sealed partial class Database : CastDataProvider
     }
 
     /// <summary>
-    /// Removes a schema.
+    /// Removes a schema from the database, the reference's removeDatabaseObject: the children
+    /// go first, while the schema is still in the map, and the map entry is taken out after
+    /// them.
     /// </summary>
+    /// <remarks>
+    /// The order is what makes a cascading drop work: the children's dependency walk looks
+    /// across every registered schema, so a schema removed from the map before its children
+    /// hides the very tables the walk has to order.
+    /// </remarks>
+    /// <param name="session">the session</param>
     /// <param name="schema">the schema</param>
-    public void RemoveSchema(Schemas.Schema schema)
+    public void RemoveSchema(SessionLocal session, Schemas.Schema schema)
     {
+        ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(schema);
         lock (syncRoot)
         {
-            _ = schemas.Remove(schema.GetName());
+            // The name is captured before the children go: removing them invalidates the
+            // schema and clears its name, and the reference takes the name at entry too.
+            string name = schema.GetName()!;
+            schema.RemoveChildrenAndResources(session);
+            _ = schemas.Remove(name);
         }
     }
 
@@ -1254,6 +1267,26 @@ public sealed partial class Database : CastDataProvider
                 return null;
         }
 
+        return FindDependentTable(obj, except);
+    }
+
+    /// <summary>
+    /// Finds a table that depends on the given table, as the reference's getDependentTable
+    /// does for the tables it removes while dropping a schema.
+    /// </summary>
+    /// <remarks>
+    /// The reference has one signature because its Table is a SchemaObject; this hierarchy
+    /// keeps Table apart (D-011), so the table query has its own overload rather than a cast
+    /// through an unrelated base.
+    /// </remarks>
+    /// <param name="obj">the table</param>
+    /// <param name="except">the table to exclude, or null</param>
+    /// <returns>the first dependent table, or null</returns>
+    public Tables.Table? GetDependentTable(Tables.Table obj, Tables.Table? except)
+        => FindDependentTable(obj, except);
+
+    private Tables.Table? FindDependentTable(object obj, Tables.Table? except)
+    {
         HashSet<object> dependencies = [];
         lock (syncRoot)
         {

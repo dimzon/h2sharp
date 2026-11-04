@@ -1347,12 +1347,20 @@ public sealed partial class Parser
         string indexName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
         ExpectWord("RENAME");
         ExpectWord("TO");
+        // The reference reads the new name with readIdentifierWithSchema(old.getName()) and
+        // checks the schema it names: a rename cannot move an index to another schema.
+        string newName = ReadIdentifierWithSchema(current, schema.GetName(), out Schemas.Schema newSchema);
+        if (!IdentifierEquals(newSchema.GetName(), schema.GetName()))
+        {
+            throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
+        }
+
         Ddl.AlterIndexRename command = new(current);
         command.SetSql(sql, null);
         command.SetIfExists(ifExists);
         command.SetOldSchema(schema);
         command.SetOldName(indexName);
-        command.SetNewName(ReadIdentifier());
+        command.SetNewName(newName);
         return command;
     }
 
@@ -2913,9 +2921,22 @@ public sealed partial class Parser
     /// <param name="schema">the schema the name belongs to</param>
     /// <returns>the name</returns>
     private string ReadIdentifierWithSchema(SessionLocal session, out Schemas.Schema schema)
+        => ReadIdentifierWithSchema(session, CurrentSchema(session).GetName(), out schema);
+
+    /// <summary>
+    /// Reads a name whose schema defaults to the given one, as the reference's
+    /// <c>readIdentifierWithSchema(defaultSchemaName)</c> does. A constraint's or an index's
+    /// name belongs to its object's schema, not to whatever schema the session is on.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="defaultSchemaName">the schema an unqualified name belongs to</param>
+    /// <param name="schema">the schema the name belongs to</param>
+    /// <returns>the name</returns>
+    private string ReadIdentifierWithSchema(
+        SessionLocal session, string defaultSchemaName, out Schemas.Schema schema)
     {
         string name = ReadIdentifier();
-        schema = CurrentSchema(session);
+        schema = session.GetDatabase().GetSchema(defaultSchemaName);
         if (!ReadIf(Token.Dot))
         {
             return name;
@@ -3961,7 +3982,8 @@ public sealed partial class Parser
             if (IsWord("CONSTRAINT"))
             {
                 ifNotExists = ReadIfNotExists();
-                constraintName = ReadIdentifierWithSchema(session, out Schemas.Schema constraintSchema);
+                constraintName = ReadIdentifierWithSchema(
+                    session, schema.GetName(), out Schemas.Schema constraintSchema);
                 if (!ReferenceEquals(schema, constraintSchema))
                 {
                     throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
@@ -4001,7 +4023,8 @@ public sealed partial class Parser
             if (IsWord("CONSTRAINT"))
             {
                 bool ifConstraintExists = ReadIfExists(false);
-                string constraintName = ReadIdentifierWithSchema(session, out Schemas.Schema constraintSchema);
+                string constraintName = ReadIdentifierWithSchema(
+                    session, schema.GetName(), out Schemas.Schema constraintSchema);
                 if (!ReferenceEquals(schema, constraintSchema))
                 {
                     throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
@@ -4036,7 +4059,8 @@ public sealed partial class Parser
         {
             if (IsWord("CONSTRAINT"))
             {
-                string constraintName = ReadIdentifierWithSchema(session, out Schemas.Schema constraintSchema);
+                string constraintName = ReadIdentifierWithSchema(
+                    session, schema.GetName(), out Schemas.Schema constraintSchema);
                 if (!ReferenceEquals(schema, constraintSchema))
                 {
                     throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);

@@ -83,8 +83,10 @@ public sealed class DropSchema : DefineCommand
             }
         }
 
-        db.RemoveSchema(schema);
-        schema.RemoveChildrenAndResources(GetSession());
+        // The reference's removeDatabaseObject removes the children first and takes the
+        // schema out of the database map after them; Database.RemoveSchema does both in
+        // that order.
+        db.RemoveSchema(GetSession(), schema);
         return 0;
     }
 
