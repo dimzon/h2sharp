@@ -31,7 +31,7 @@ namespace H2Sharp.Data;
 /// <summary>
 /// Reads the rows of a query result.
 /// </summary>
-public sealed class H2DataReader : DbDataReader
+public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
 {
     private Result.ResultInterface? result;
 
@@ -612,7 +612,7 @@ public sealed class H2DataReader : DbDataReader
     /// <remarks>
     /// Empty when there are no columns, as GetSchemaTable is null then: the two answer
     /// the same question, and disagreeing would make one of them a lie. The synchronous
-    /// shape does not exist on DbDataReader, so this is the asynchronous one.
+    /// shape is the interface method below; both read the same descriptions.
     /// </remarks>
     public override Task<System.Collections.ObjectModel.ReadOnlyCollection<DbColumn>> GetColumnSchemaAsync(
         CancellationToken cancellationToken = default)
@@ -623,10 +623,15 @@ public sealed class H2DataReader : DbDataReader
                 cancellationToken);
         }
 
-        List<DbColumn> columns = new(ColumnDescriptions());
-        return Task.FromResult<System.Collections.ObjectModel.ReadOnlyCollection<DbColumn>>(
-            columns.AsReadOnly());
+        return Task.FromResult(ColumnSchema());
     }
+
+    /// <summary>
+    /// Describes every visible column synchronously, as the ADO.NET schema interface asks.
+    /// </summary>
+    /// <returns>the column descriptions, empty when there are no columns</returns>
+    System.Collections.ObjectModel.ReadOnlyCollection<DbColumn> IDbColumnSchemaGenerator.GetColumnSchema()
+        => ColumnSchema();
 
     /// <inheritdoc/>
     /// <remarks>
@@ -665,6 +670,16 @@ public sealed class H2DataReader : DbDataReader
         }
 
         return table;
+    }
+
+    /// <summary>
+    /// Wraps the column descriptions in the shape the schema interfaces return.
+    /// </summary>
+    /// <returns>the column descriptions, empty when there are no columns</returns>
+    private System.Collections.ObjectModel.ReadOnlyCollection<DbColumn> ColumnSchema()
+    {
+        List<DbColumn> columns = new(ColumnDescriptions());
+        return columns.AsReadOnly();
     }
 
     /// <summary>
