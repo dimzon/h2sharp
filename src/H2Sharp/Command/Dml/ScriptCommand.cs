@@ -15,6 +15,7 @@
  * default switches are read from the grammar exactly as in the reference.
  */
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -434,52 +435,71 @@ public sealed class ScriptCommand : Prepared
         int id = nextLobId++;
         if (value.GetValueType() == Value.Blob)
         {
-            byte[] bytes = new byte[lobBlockSize];
-            using Stream input = value.GetInputStream();
-            for (int part = 0;; part++)
+            // The block buffer rents for the whole run; a rented array is longer than the
+            // block size, so the read is bounded to it and the block boundaries stay what
+            // they were.
+            byte[] bytes = ArrayPool<byte>.Shared.Rent(lobBlockSize);
+            try
             {
-                int len = ReadFully(input, bytes);
-                if (len <= 0)
+                using Stream input = value.GetInputStream();
+                for (int part = 0;; part++)
                 {
-                    break;
-                }
+                    int len = ReadFully(input, bytes, lobBlockSize);
+                    if (len <= 0)
+                    {
+                        break;
+                    }
 
-                StringBuilder buff = new(lobBlockSize * 2);
-                _ = buff.Append("INSERT INTO SYSTEM_LOB_STREAM VALUES(").Append(id)
-                    .Append(", ").Append(part).Append(", NULL, X'");
-                _ = StringUtils.ConvertBytesToHex(buff, bytes, len).Append("')");
-                add(buff.ToString());
+                    StringBuilder buff = new(lobBlockSize * 2);
+                    _ = buff.Append("INSERT INTO SYSTEM_LOB_STREAM VALUES(").Append(id)
+                        .Append(", ").Append(part).Append(", NULL, X'");
+                    _ = StringUtils.ConvertBytesToHex(buff, bytes, len).Append("')");
+                    add(buff.ToString());
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(bytes);
             }
         }
         else
         {
-            char[] chars = new char[lobBlockSize];
-            using TextReader reader = value.GetReader()!;
-            for (int part = 0;; part++)
+            // The block buffer rents for the whole run, and the quoting reads the slice
+            // directly: per block, what is left is the builder and its string.
+            char[] chars = ArrayPool<char>.Shared.Rent(lobBlockSize);
+            try
             {
-                int len = ReadFully(reader, chars);
-                if (len == 0)
+                using TextReader reader = value.GetReader()!;
+                for (int part = 0;; part++)
                 {
-                    break;
-                }
+                    int len = ReadFully(reader, chars, lobBlockSize);
+                    if (len == 0)
+                    {
+                        break;
+                    }
 
-                StringBuilder buff = new(lobBlockSize * 2);
-                _ = buff.Append("INSERT INTO SYSTEM_LOB_STREAM VALUES(").Append(id)
-                    .Append(", ").Append(part).Append(", ");
-                _ = StringUtils.QuoteStringSql(buff, new string(chars, 0, len)).Append(", NULL)");
-                add(buff.ToString());
+                    StringBuilder buff = new(lobBlockSize * 2);
+                    _ = buff.Append("INSERT INTO SYSTEM_LOB_STREAM VALUES(").Append(id)
+                        .Append(", ").Append(part).Append(", ");
+                    _ = StringUtils.QuoteStringSql(buff, chars.AsSpan(0, len)).Append(", NULL)");
+                    add(buff.ToString());
+                }
+            }
+            finally
+            {
+                ArrayPool<char>.Shared.Return(chars);
             }
         }
 
         return id;
     }
 
-    private static int ReadFully(Stream input, byte[] buffer)
+    private static int ReadFully(Stream input, byte[] buffer, int len)
     {
         int total = 0;
-        while (total < buffer.Length)
+        while (total < len)
         {
-            int read = input.Read(buffer, total, buffer.Length - total);
+            int read = input.Read(buffer, total, len - total);
             if (read <= 0)
             {
                 break;
@@ -491,12 +511,12 @@ public sealed class ScriptCommand : Prepared
         return total;
     }
 
-    private static int ReadFully(TextReader input, char[] buffer)
+    private static int ReadFully(TextReader input, char[] buffer, int len)
     {
         int total = 0;
-        while (total < buffer.Length)
+        while (total < len)
         {
-            int read = input.Read(buffer, total, buffer.Length - total);
+            int read = input.Read(buffer, total, len - total);
             if (read <= 0)
             {
                 break;

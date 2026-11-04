@@ -551,7 +551,18 @@ public static class StringUtils
     public static StringBuilder QuoteStringSql(StringBuilder builder, string? s)
         => s is null
             ? builder.Append("NULL")
-            : QuoteIdentifierOrLiteral(builder, s, '\'');
+            : QuoteStringSql(builder, s.AsSpan());
+
+    /// <summary>
+    /// Converts a span to a string literal, on the same terms as the string overload: the
+    /// caller that holds a slice — the script writer's LOB blocks — does not have to build a
+    /// string just to have it quoted.
+    /// </summary>
+    /// <param name="builder">string builder to append result to</param>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the specified string builder</returns>
+    public static StringBuilder QuoteStringSql(StringBuilder builder, ReadOnlySpan<char> s)
+        => QuoteIdentifierOrLiteral(builder, s, '\'');
 
     /// <summary>
     /// Decodes a Unicode SQL string.
@@ -1597,9 +1608,9 @@ public static class StringUtils
     /// <param name="s">the text</param>
     /// <returns>the specified builder</returns>
     public static StringBuilder QuoteIdentifier(StringBuilder builder, string s)
-        => QuoteIdentifierOrLiteral(builder, s, '"');
+        => QuoteIdentifierOrLiteral(builder, s.AsSpan(), '"');
 
-    private static StringBuilder QuoteIdentifierOrLiteral(StringBuilder builder, string s, char q)
+    private static StringBuilder QuoteIdentifierOrLiteral(StringBuilder builder, ReadOnlySpan<char> s, char q)
     {
         int l = s.Length;
 
@@ -1623,7 +1634,7 @@ public static class StringUtils
 
         if (plain)
         {
-            return builder.Append(q).Append(s.AsSpan(0, l)).Append(q);
+            return builder.Append(q).Append(s[..l]).Append(q);
         }
 
         int builderLength = builder.Length;
@@ -2631,7 +2642,7 @@ public static class StringUtils
     /// yields the astral code point and advances two characters, an unpaired
     /// surrogate yields the surrogate code unit itself and advances one character.
     /// </summary>
-    internal static int ReadCodePoint(string s, ref int i)
+    internal static int ReadCodePoint(ReadOnlySpan<char> s, ref int i)
     {
         int cp = s[i];
         if (i + 1 < s.Length)

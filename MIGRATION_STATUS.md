@@ -9937,3 +9937,29 @@ Engine 9, MvStore 152.
 
 Проверено: `H2Sharp.Tests` 1889 зелёных (`Category!=BlockedByPort`), Data 717,
 Engine 9, MvStore 152.
+
+### 2.7: ScriptCommand — LOB-блоки без сборки строк (2026-11-04)
+
+Пункт 2.7 аудита `docs/PERF_AUDIT_ALLOCATIONS.md`, с поправкой к подсчёту:
+`char[]` в CLOB-ветке собирался один раз на вызов, а не на блок — на блок
+приходились `new string(chars, 0, len)`, StringBuilder и `ToString()`. Теперь
+оба буфера (char[] для CLOB и byte[] для BLOB — ветки симметричны, аудит
+флаговал только первую) арендуются на время выгрузки; `ReadFully` принял
+явную длину блока, потому что арендованный массив длиннее `lobBlockSize`, и
+границы блоков обязаны остаться прежними; цитирование идёт через новую
+span-перегрузку `QuoteStringSql(StringBuilder, ReadOnlySpan<char>)` — срез
+больше не материализуется в string ради кавычек.
+
+Под этим: `QuoteIdentifierOrLiteral` переведён на `ReadOnlySpan<char>`
+(string-перегрузки `QuoteStringSql`/`QuoteIdentifier` делегируют через
+`AsSpan()`), и общий `ReadCodePoint` принял span-параметр — все его
+string-вызовы совместимы неявной конверсией, логика не менялась.
+
+Тесты: `ScriptCommandOracleTests` (текст SCRIPT против JVM, включая LOB-данные;
+круговой RUNSCRIPT-тест — прежний BlockedByPort), `StringUtilsOracleTests`
+(цитирование против JVM). Специального аллокационного гейта нет: SCRIPT —
+команда выгрузки, а не горячий путь OLTP; цена блока теперь — builder и его
+строка, что и является пределом формы `add(string)`.
+
+Проверено: `H2Sharp.Tests` 1889 зелёных (`Category!=BlockedByPort`), Data 717,
+Engine 9, MvStore 152.
