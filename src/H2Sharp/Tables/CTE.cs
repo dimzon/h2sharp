@@ -8,6 +8,7 @@
  *
  * A common table expression: the table a WITH clause names.
  */
+using System.Text;
 using H2Sharp.Command.Query;
 using H2Sharp.Engine;
 using H2Sharp.Indexes;
@@ -59,6 +60,14 @@ public sealed class CTE : QueryExpressionTable
     }
 
     internal void SetColumnsForResolution(Column[] resolutionColumns) => columns = resolutionColumns;
+
+    /// <inheritdoc/>
+    public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
+    {
+        // The reference's CTE.getSQL: a common table expression is named without its schema,
+        // because it does not live in one.
+        return Util.ParserUtil.QuoteIdentifier(builder, name, sqlFlags);
+    }
 
     /// <summary>Whether this expression is recursive.</summary>
     public bool IsRecursive() => recursive;

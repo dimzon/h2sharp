@@ -128,6 +128,11 @@ public sealed class TableView : QueryExpressionTable
     public override Query? GetTopQuery() => null;
 
     /// <inheritdoc/>
+    public override string? GetDropSql()
+        => GetSql(new StringBuilder("DROP VIEW IF EXISTS "), HasSql.DefaultSqlFlags)
+            .Append(" CASCADE").ToString();
+
+    /// <inheritdoc/>
     public override string? GetCreateSql() => GetCreateSql(false, true);
 
     /// <inheritdoc/>

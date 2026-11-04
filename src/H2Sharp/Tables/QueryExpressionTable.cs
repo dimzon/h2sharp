@@ -267,5 +267,14 @@ public abstract class QueryExpressionTable : Table
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => builder.Append(name);
+    {
+        // SchemaObject.getSQL: the schema qualifies the name, as it does for every object.
+        Schema? objectSchema = GetSchema();
+        if (objectSchema is not null)
+        {
+            _ = H2Sharp.Util.ParserUtil.QuoteIdentifier(builder, objectSchema.GetName(), sqlFlags).Append('.');
+        }
+
+        return H2Sharp.Util.ParserUtil.QuoteIdentifier(builder, name, sqlFlags);
+    }
 }

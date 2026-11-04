@@ -395,9 +395,15 @@ public sealed class Sequence : SchemaObject
     public Cycle GetCycle() => cycle;
 
     /// <summary>Gets the SQL that drops this sequence.</summary>
-    public override string GetDropSql()
+    public override string? GetDropSql()
     {
-        StringBuilder builder = new("DROP SEQUENCE ");
+        // Reference: an identity column's sequence is scripted with its table, not dropped.
+        if (GetBelongsToTable())
+        {
+            return null;
+        }
+
+        StringBuilder builder = new("DROP SEQUENCE IF EXISTS ");
         return GetSql(builder, 0).ToString();
     }
 

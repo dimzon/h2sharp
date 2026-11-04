@@ -97,7 +97,7 @@ public sealed class SchemaOracleTests
         Assert.False(schema.IsSystem());
         Assert.True(schema.CanDrop());
         Assert.True(schema.IsEmpty());
-        Assert.Equal("CREATE SCHEMA IF NOT EXISTS \"S5\" AUTHORIZATION SA", schema.GetCreateSql());
+        Assert.Equal("CREATE SCHEMA IF NOT EXISTS \"S5\" AUTHORIZATION \"SA\"", schema.GetCreateSql());
 
         // A reserved name is held until it is freed; a null name is simply ignored.
         schema.ReserveUniqueName("TMP");

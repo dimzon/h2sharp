@@ -2447,6 +2447,16 @@ public abstract class Table
     /// </summary>
     public abstract string? GetCreateSql();
 
+    /// <inheritdoc/>
+    public virtual string? GetDropSql()
+    {
+        // TableBase.getDropSQL: a table is dropped with CASCADE. The port's Table is not a
+        // DbObject, so the method lives here rather than on the object hierarchy.
+        StringBuilder builder = new("DROP TABLE IF EXISTS ");
+        _ = GetSql(builder, HasSql.DefaultSqlFlags).Append(" CASCADE");
+        return builder.ToString();
+    }
+
     /// <summary>
     /// The SQL to name this table in a trace or an error, as the reference's HasSQL default.
     /// </summary>

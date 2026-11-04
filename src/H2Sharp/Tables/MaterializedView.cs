@@ -178,6 +178,11 @@ public sealed class MaterializedView : Table
         => throw DbException.GetUnsupportedException("MATERIALIZED VIEW.TRUNCATE");
 
     /// <inheritdoc/>
+    public override string? GetDropSql()
+        => GetSql(new StringBuilder("DROP MATERIALIZED VIEW IF EXISTS "), HasSql.DefaultSqlFlags)
+            .ToString();
+
+    /// <inheritdoc/>
     public override string? GetCreateSql()
         => GetCreateSql(orReplace: false, force: false);
 

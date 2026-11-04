@@ -141,8 +141,11 @@ public sealed class Schema : DbObject
             return null!;
         }
 
+        // The reference writes the owner's own getSQL, which quotes the name like any other
+        // identifier: AUTHORIZATION "SA".
         return "CREATE SCHEMA IF NOT EXISTS " + GetSql(0) + " AUTHORIZATION "
-            + GetOwnerName();
+            + Util.ParserUtil.QuoteIdentifier(
+                new StringBuilder(), GetOwnerName(), Util.HasSql.DefaultSqlFlags);
     }
 
     /// <inheritdoc/>

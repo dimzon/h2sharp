@@ -9604,3 +9604,45 @@ Native 96 (два прежних дефекта Native — `TestResultSetGetters
 
 Покрытие `Parser.DataTypes` 81.1% → **91.3%**; union 88.22% → **88.28% строк**.
 Проверено: `H2Sharp.Tests` 1861 зелёный.
+
+### SCRIPT: текст скрипта и найденные в нём дефекты (2026-11-04)
+
+`ScriptCommandOracleTests` сравнивает текст `SCRIPT` построчно с эталоном для
+форм по умолчанию, `COLUMNS`, `SIMPLE`, `DROP`, `NODATA` и `BLOCKSIZE 4` на
+схеме с доменом, последовательностью, таблицей с identity, generated- и
+default-выражениями, явным первичным ключом, индексом, представлением, LOB-
+данными, второй схемой и комментариями. Строка `CREATE USER` эталона
+отфильтрована: у порта нет пользователей (D-004).
+
+Оракул нашёл и заставил исправить:
+
+* **OVERRIDING SYSTEM VALUE** не печатался для identity-колонки: цикл
+  определения спрашивал `IsGenerated()`, который для identity без
+  default-выражения ложен; эталон спрашивает `isGeneratedAlways()`.
+* **SIMPLE и размер буфера**: порт складывал все строки в один INSERT, тогда
+  как эталон в SIMPLE пишет по INSERT на строку и разрезает оператор при
+  превышении `IO_BUFFER_SIZE`; цикл переписан по эталону.
+* **Уборка LOB-помощников** (`DROP TABLE SYSTEM_LOB_STREAM`, `DROP ALIAS ...`)
+  стояла в конце генератора строк, а эталон делает её после всего прохода
+  таблиц и перед непервичными ограничениями.
+* **Порядок DROP**: домены с их `DROP DOMAIN` идут до прохода DROP таблиц,
+  последовательности — после; проход использует `getDropSQL`.
+* **`Table.getDropSQL`** не был портирован: добавлены `DROP TABLE ... CASCADE`,
+  `TableView` — `DROP VIEW`, `MaterializedView` — `DROP MATERIALIZED VIEW`,
+  `Sequence` — `DROP SEQUENCE IF EXISTS` и `null` для sequence колонки.
+* **SQL представления и CTE**: `QueryExpressionTable.GetSql` теперь
+  квалифицирует имя схемой, как `SchemaObject.getSQL`; `CTE.GetSql`
+  переопределён эталонным телом (имя без схемы), иначе метки колонок
+  подзапросов получали `PUBLIC.`.
+* **`CREATE SCHEMA`** цитирует владельца: `AUTHORIZATION "SA"` (тест
+  `SchemaOracleTests` обновлён).
+
+`RUNSCRIPT`, `ScriptBase` и `ScriptReader` в порте отсутствуют вовсе, поэтому
+круговой тест `SCRIPT TO` → `RUNSCRIPT FROM` зафиксирован как
+`BlockedByPort` — первый такой тест в core-наборе.
+
+Покрытие `ScriptCommand` 56.7% → **86.5%**; union 88.28% → **88.38% строк**.
+Проверено: `H2Sharp.Tests` 1867 зелёных (`Category!=BlockedByPort`), Data 717,
+Engine 9, MvStore 152, Native 96 — падают только два прежних дефекта Native
+(`TestResultSetGetters`, `TestView`), `TestTempTables` и `TestTransaction`
+проходят поодиночке и падают лишь под полной параллельной нагрузкой.

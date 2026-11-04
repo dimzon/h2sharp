@@ -154,37 +154,38 @@ public sealed class ScriptCommand : Prepared
             Add(schema.GetCreateSql());
         }
 
-        // The DROP lines come first, as a pass of their own: the reference drops the
-        // objects in this order (tables before sequences) and then scripts their creations.
-        if (drop)
-        {
-            foreach (Table table in BuildTables(schemas))
-            {
-                StringBuilder builder = new("DROP TABLE IF EXISTS ");
-                _ = table.GetSql(builder, HasSql.DefaultSqlFlags);
-                Add(builder.Append(" CASCADE").ToString());
-            }
-
-            foreach (Sequence sequence in BuildSequences(schemas))
-            {
-                StringBuilder builder = new("DROP SEQUENCE IF EXISTS ");
-                _ = sequence.GetSql(builder, 0);
-                Add(builder.ToString());
-            }
-        }
-
+        // Reference order: the domain dictation (drop and create) comes before the table drop
+        // pass, then the table drops, then the sequences with their drops and creates.
         foreach (Schema schema in schemas)
         {
             List<Domain> domains = schema.GetAllDomains();
             domains.Sort(static (a, b) => string.CompareOrdinal(a.GetName(), b.GetName()));
             foreach (Domain domain in domains)
             {
+                if (drop)
+                {
+                    Add(domain.GetDropSql());
+                }
+
                 Add(domain.GetCreateSql());
+            }
+        }
+
+        if (drop)
+        {
+            foreach (Table table in BuildTables(schemas))
+            {
+                Add(table.GetDropSql());
             }
         }
 
         foreach (Sequence sequence in BuildSequences(schemas))
         {
+            if (drop)
+            {
+                Add(sequence.GetDropSql());
+            }
+
             Add(sequence.GetCreateSql());
         }
 
@@ -225,6 +226,17 @@ public sealed class ScriptCommand : Prepared
                     Add(index.GetCreateSql());
                 }
             }
+
+        }
+
+        // The reference drops the temporary LOB helpers after the whole table loop and before
+        // the non-primary constraints.
+        if (tempLobTableCreated)
+        {
+            Add("DROP TABLE IF EXISTS SYSTEM_LOB_STREAM", true);
+            Add("DROP ALIAS IF EXISTS SYSTEM_COMBINE_CLOB", true);
+            Add("DROP ALIAS IF EXISTS SYSTEM_COMBINE_BLOB", true);
+            tempLobTableCreated = false;
         }
 
         foreach (Schema schema in schemas)
@@ -304,7 +316,10 @@ public sealed class ScriptCommand : Prepared
         bool withGenerated = false, withGeneratedAlwaysAsIdentity = false;
         foreach (Column column in columns)
         {
-            if (!column.IsGenerated()) continue;
+            // The reference asks isGeneratedAlways() here, which includes an identity column:
+            // isGenerated() is false for an identity without a default expression, and the
+            // OVERRIDING SYSTEM VALUE would be lost.
+            if (!column.IsGeneratedAlways()) continue;
             if (column.IsIdentity()) withGeneratedAlwaysAsIdentity = true;
             else withGenerated = true;
         }
@@ -342,26 +357,29 @@ public sealed class ScriptCommand : Prepared
 
         Cursor cursor = scan.GetCursor(GetSession(), null, null, false)
             ?? throw DbException.GetInternalError("SCRIPT: table has no cursor");
-        bool firstRow = true;
+        // The reference opens the row with '(' before taking the header snapshot, so each
+        // additional row starts at ",\n(" and every flushed chunk is a complete statement.
+        _ = builder.Append('(');
+        string insertHeader = builder.ToString();
+        StringBuilder? rowBuilder = null;
         while (cursor.Next())
         {
             Row? row = cursor.Get()
                 ?? throw DbException.GetInternalError("SCRIPT: cursor returned no row");
-            if (!firstRow)
+            if (rowBuilder is null)
             {
-                _ = builder.Append(",\n(");
+                rowBuilder = new StringBuilder(insertHeader);
             }
             else
             {
-                _ = builder.Append('(');
-                firstRow = false;
+                _ = rowBuilder.Append(",\n(");
             }
 
             bool needComma = false;
             for (int i = 0; i < columns.Length; i++)
             {
                 if (columns[i].IsGenerated()) continue;
-                if (needComma) _ = builder.Append(", ");
+                if (needComma) _ = rowBuilder.Append(", ");
                 needComma = true;
                 Value value = row.GetValue(i)!;
                 if (value.GetTypeInfo().GetPrecision() > lobBlockSize)
@@ -369,35 +387,35 @@ public sealed class ScriptCommand : Prepared
                     if (value.GetValueType() == Value.Clob)
                     {
                         int id = WriteLobStream(value, add);
-                        _ = builder.Append("SYSTEM_COMBINE_CLOB(").Append(id).Append(')');
+                        _ = rowBuilder.Append("SYSTEM_COMBINE_CLOB(").Append(id).Append(')');
                         continue;
                     }
 
                     if (value.GetValueType() == Value.Blob)
                     {
                         int id = WriteLobStream(value, add);
-                        _ = builder.Append("SYSTEM_COMBINE_BLOB(").Append(id).Append(')');
+                        _ = rowBuilder.Append("SYSTEM_COMBINE_BLOB(").Append(id).Append(')');
                         continue;
                     }
                 }
 
-                _ = value.GetSql(builder, HasSql.NoCasts);
+                _ = value.GetSql(rowBuilder, HasSql.NoCasts);
             }
 
-            _ = builder.Append(')');
+            _ = rowBuilder.Append(')');
+            // SIMPLE writes one INSERT per row; otherwise the statement grows until it
+            // crosses the buffer size, and the rows written so far stand as their own
+            // complete INSERT.
+            if (simple || rowBuilder.Length > Constants.IoBufferSize)
+            {
+                add(rowBuilder.ToString());
+                rowBuilder = null;
+            }
         }
 
-        if (!firstRow)
+        if (rowBuilder is not null)
         {
-            add(builder.ToString());
-        }
-
-        if (tempLobTableCreated)
-        {
-            add("DROP TABLE IF EXISTS SYSTEM_LOB_STREAM");
-            add("DROP ALIAS IF EXISTS SYSTEM_COMBINE_CLOB");
-            add("DROP ALIAS IF EXISTS SYSTEM_COMBINE_BLOB");
-            tempLobTableCreated = false;
+            add(rowBuilder.ToString());
         }
     }
 
