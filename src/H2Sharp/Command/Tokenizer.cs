@@ -1424,7 +1424,7 @@ public sealed class Tokenizer
     }
 
     private string ExtractIdentifier(string sql, int beginIndex, int endIndex)
-        => ConvertCase(sql[beginIndex..endIndex]);
+        => ConvertCase(sql.AsSpan(beginIndex, endIndex - beginIndex));
 
     private int ReadQuotedIdentifier(
         string sql, int end, int tokenStart, int i, char c, bool unicode, List<Token> tokens)
@@ -1468,6 +1468,10 @@ public sealed class Tokenizer
         return i;
     }
 
+    // The string form is what the quoted-identifier path calls: it has a string already, and
+    // the string overload keeps the cache and the identity fast path that returns the original
+    // instance. The span form is for the slice out of the SQL text, where the copy the string
+    // form would pay is exactly the allocation this port is not making.
     private string ConvertCase(string s)
     {
         if (identifiersToUpper)
@@ -1476,6 +1480,16 @@ public sealed class Tokenizer
         }
 
         return identifiersToLower ? StringUtils.ToLowerEnglish(s) : s;
+    }
+
+    private string ConvertCase(ReadOnlySpan<char> s)
+    {
+        if (identifiersToUpper)
+        {
+            return StringUtils.ToUpperEnglish(s);
+        }
+
+        return identifiersToLower ? StringUtils.ToLowerEnglish(s) : s.ToString();
     }
 
     private static int ReadBinaryString(string sql, int tokenStart, int end, int i, List<Token> tokens)

@@ -230,6 +230,19 @@ private string ExtractIdentifier(string sql, int beginIndex, int endIndex)
 
 **Эффект.** Высокий: ~−1 аллокация на идентификатор на каждый prepare.
 
+> **Развёрнуто с поправками (2026-11-04).** Сделано через span-перегрузки
+> `ToUpperEnglish`/`ToLowerEnglish` в `StringUtils`, фолд из среза; guard — не
+> отдельный `NeedsCaseExpansion`, а существующий `HasCaseFoldingOverrides`
+> (порог 0x00DF: всё с суррогатами и ﬁ уходит в builder-путь эталонного
+> фолдинга). Две поправки к приведённому коду: (1) `string.Create` со
+> span-состоянием не компилируется на net8 (CS9244; probe из §0 собирался
+> только на net10) — использован паттерн `Hex.BytesToHex` (стек-буфер /
+> scratch-массив); (2) добавлен identity-pre-scan, чтобы уже-верхние
+> идентификаторы сохранили поведение эталонного `toUpperEnglish` (возврат
+> того же содержимого одной аллокацией — материализацией среза).
+> `ParserUtil.Members.cs:143` — не аллокация: при `identifiersToUpper` второй
+> фолд identity-проверка с 0 аллокаций, при `identifiersToLower` он нужен.
+
 ### 1.5. `ToUpperCache`: массив-пара на каждый промах — Средний/Высокий (✓)
 
 **Место:** `src/H2Sharp/Util/StringUtils.cs:164`, `:171` (поле — `:79`)

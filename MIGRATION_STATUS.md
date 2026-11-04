@@ -9731,3 +9731,44 @@ FindDependentTable) остались под локом, как были.
 
 Проверено: `H2Sharp.Tests` 1876 зелёных (`Category!=BlockedByPort`), Data 717,
 Engine 9, MvStore 152.
+
+### Идентификатор токенизатора: одна аллокация на фолд (2026-11-04)
+
+Пункт 1.4 аудита `docs/PERF_AUDIT_ALLOCATIONS.md`. `ExtractIdentifier` шёл по
+эталонной форме `convertCase(sql.substring(...))` — срез строки, затем копия
+фолда: два string на идентификатор в нижнерегистровом SQL (и эталон платит те
+же два; экономит он только на уже-верхних именах, где `toUpperEnglish`
+возвращает исходный инстанс). Введены span-перегрузки
+`StringUtils.ToUpperEnglish(ReadOnlySpan<char>)` и `ToLowerEnglish`, и фолд
+идёт прямо из среза: меняющийся фолд и тождественный стоят ровно один string.
+
+Корректность пути держится на уже проверенных границах, новых правил фолда не
+введено: всё, что на 0x00DF и выше (override-таблица начинается с ß; сюда же
+попадают суррогаты и ﬁ), уходит в существующий путь `ToUpperEnglishCore` на
+материализованной копии, как раньше; ниже порога фолд один-к-одному, и scan
+(`NeedsUpperInvariantFold`/`NeedsLowerInvariantFold`) — общий с
+`UpperInvariantIfChanged`/`LowerInvariantIfChanged`, так что string- и
+span-перегрузки отвечают на один вопрос об одних символах. Кавычковый путь
+(`ReadQuotedIdentifier`) остался на string-перегрузке с кэшем и
+identity-возвратом исходного инстанса.
+
+Отступление от текста аудита, вынужденное платформой: `string.Create` со
+span-состоянием не компилируется на net8 (CS9244, ref struct как TState —
+только с net9; probe из §0 аудита собирался только на net10). Использован
+домашний паттерн `Hex.BytesToHex` — стек-буфер до 256 символов, scratch-массив
+выше; результат — единственная аллокация для реальных длин имён.
+
+Замечание аудита про `ParserUtil.GetTokenType` (Members.cs:143) уточнено: при
+`identifiersToUpper` текст токена уже верхний, и второй фолд — это
+identity-проверка без аллокации; при `identifiersToLower` фолд там нужен.
+Изменений не требует.
+
+Тесты: оракул `ToUpperAndLowerEnglish_FromSpansMatchReferenceJvm` — тот же
+корпус против JVM через span-перегрузки; `SpanOverloadsAgreeWithStringOverloads`
+— span-перегрузки отвечают то же, что string-перегрузки, на всём корпусе плюс
+вход выше стек-буфера; гейты
+`ToUpperEnglish_FromSpan_AllocatesOnlyTheResult` /
+`ToLowerEnglish_FromSpan_AllocatesOnlyTheResult`.
+
+Проверено: `H2Sharp.Tests` 1880 зелёных (`Category!=BlockedByPort`), Data 717,
+Engine 9, MvStore 152.

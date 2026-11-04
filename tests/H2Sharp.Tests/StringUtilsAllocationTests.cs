@@ -168,6 +168,32 @@ public sealed class StringUtilsAllocationTests
     }
 
     [Fact]
+    public void ToUpperEnglish_FromSpan_AllocatesOnlyTheResult()
+    {
+        // The tokenizer's slice: whether the fold changes the text or not, the answer is one
+        // string — the folded copy for a lowercase identifier, the materialized text for one
+        // that is already uppercase. What must never come back is the second string the
+        // slice-then-fold path used to pay.
+        const string LowerName = "table_name";
+        const string UpperName = "TABLE_NAME";
+
+        long lower = Measure(() => StringUtils.ToUpperEnglish(LowerName.AsSpan()));
+        Assert.InRange(lower, LowerName.Length * sizeof(char), StringSize(LowerName.Length));
+
+        long upper = Measure(() => StringUtils.ToUpperEnglish(UpperName.AsSpan()));
+        Assert.InRange(upper, UpperName.Length * sizeof(char), StringSize(UpperName.Length));
+    }
+
+    [Fact]
+    public void ToLowerEnglish_FromSpan_AllocatesOnlyTheResult()
+    {
+        const string UpperName = "TABLE_NAME";
+
+        long allocated = Measure(() => StringUtils.ToLowerEnglish(UpperName.AsSpan()));
+        Assert.InRange(allocated, UpperName.Length * sizeof(char), StringSize(UpperName.Length));
+    }
+
+    [Fact]
     public void JavaEncode_AllocatesOnlyTheResult()
     {
         string input = LongWithEscapes();

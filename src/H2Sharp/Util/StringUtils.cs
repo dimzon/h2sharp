@@ -172,6 +172,32 @@ public static class StringUtils
         return s2;
     }
 
+    /// <summary>
+    /// Convert a span to uppercase using the English locale.
+    /// </summary>
+    /// <remarks>
+    /// The overload for callers that hold a slice of a larger text and would otherwise pay a
+    /// copy of it just to fold it — the tokenizer's identifier extraction is the one that
+    /// matters. The mapping is what the string overload's fast path produces: below the
+    /// override threshold every character folds one to one, so the scan and the per-character
+    /// build answer exactly what <see cref="UpperInvariantIfChanged"/> does on the same
+    /// characters; anything at or above the threshold, where an override or a surrogate can
+    /// expand, goes to <see cref="ToUpperEnglishCore"/> on a materialized copy, as the string
+    /// overload does. Unlike the string overload this one has no cache: a slice has no
+    /// instance to key it by, and the one string the fold costs is the floor anyway.
+    /// </remarks>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the uppercase text</returns>
+    public static string ToUpperEnglish(ReadOnlySpan<char> s)
+    {
+        if (HasCaseFoldingOverrides(s))
+        {
+            return ToUpperEnglishCore(s.ToString());
+        }
+
+        return NeedsUpperInvariantFold(s) ? UpperInvariantFromSpan(s) : s.ToString();
+    }
+
     private static string ToUpperEnglishCore(string s)
     {
         if (!HasCaseFoldingOverrides(s))
@@ -212,6 +238,15 @@ public static class StringUtils
     /// gen0 allocation out of the hot identifier path.
     /// </summary>
     private static string UpperInvariantIfChanged(string s)
+        => NeedsUpperInvariantFold(s) ? s.ToUpperInvariant() : s;
+
+    /// <summary>
+    /// Whether any character of the text changes under the invariant uppercase mapping. The
+    /// scan is what <see cref="UpperInvariantIfChanged"/> and the span overload of
+    /// <see cref="ToUpperEnglish(ReadOnlySpan{char})"/> share, so the two answer the same
+    /// question about the same characters and cannot drift.
+    /// </summary>
+    private static bool NeedsUpperInvariantFold(ReadOnlySpan<char> s)
     {
         for (int i = 0; i < s.Length; i++)
         {
@@ -220,7 +255,7 @@ public static class StringUtils
             {
                 if (c is >= 'a' and <= 'z')
                 {
-                    return s.ToUpperInvariant();
+                    return true;
                 }
 
                 continue;
@@ -228,11 +263,37 @@ public static class StringUtils
 
             if (char.ToUpperInvariant(c) != c)
             {
-                return s.ToUpperInvariant();
+                return true;
             }
         }
 
-        return s;
+        return false;
+    }
+
+    /// <summary>
+    /// The stack budget of the span folds, in characters. Identifiers — the text these folds
+    /// run on — are names, not sentences; anything above it goes to a scratch array.
+    /// </summary>
+    private const int FoldStackChars = 256;
+
+    /// <summary>
+    /// The invariant uppercase mapping, built straight from the span into one string. A stack
+    /// buffer carries the short fold and a scratch array the long one, because a
+    /// <c>ReadOnlySpan</c> cannot be the state of <see cref="string.Create{TState}"/> on the
+    /// .NET versions this port targets; the result is the only allocation either way for the
+    /// lengths identifiers actually have.
+    /// </summary>
+    private static string UpperInvariantFromSpan(ReadOnlySpan<char> s)
+    {
+        char[]? heap = s.Length <= FoldStackChars ? null : new char[s.Length];
+        Span<char> chars = heap is null ? stackalloc char[FoldStackChars] : heap;
+
+        for (int i = 0; i < s.Length; i++)
+        {
+            chars[i] = char.ToUpperInvariant(s[i]);
+        }
+
+        return new string(chars[..s.Length]);
     }
 
     /// <summary>
@@ -255,6 +316,14 @@ public static class StringUtils
     }
 
     private static string LowerInvariantIfChanged(string s)
+        => NeedsLowerInvariantFold(s) ? s.ToLowerInvariant() : s;
+
+    /// <summary>
+    /// Whether any character of the text changes under the invariant lowercase mapping.
+    /// Shared by <see cref="LowerInvariantIfChanged"/> and the span overload of
+    /// <see cref="ToLowerEnglish(ReadOnlySpan{char})"/>, for the same reason as the upper scan.
+    /// </summary>
+    private static bool NeedsLowerInvariantFold(ReadOnlySpan<char> s)
     {
         for (int i = 0; i < s.Length; i++)
         {
@@ -263,7 +332,7 @@ public static class StringUtils
             {
                 if (c is >= 'A' and <= 'Z')
                 {
-                    return s.ToLowerInvariant();
+                    return true;
                 }
 
                 continue;
@@ -271,11 +340,28 @@ public static class StringUtils
 
             if (char.ToLowerInvariant(c) != c)
             {
-                return s.ToLowerInvariant();
+                return true;
             }
         }
 
-        return s;
+        return false;
+    }
+
+    /// <summary>
+    /// The invariant lowercase mapping, built straight from the span into one string. Same
+    /// shape and the same reason as <see cref="UpperInvariantFromSpan"/>.
+    /// </summary>
+    private static string LowerInvariantFromSpan(ReadOnlySpan<char> s)
+    {
+        char[]? heap = s.Length <= FoldStackChars ? null : new char[s.Length];
+        Span<char> chars = heap is null ? stackalloc char[FoldStackChars] : heap;
+
+        for (int i = 0; i < s.Length; i++)
+        {
+            chars[i] = char.ToLowerInvariant(s[i]);
+        }
+
+        return new string(chars[..s.Length]);
     }
 
     /// <summary>
@@ -295,6 +381,16 @@ public static class StringUtils
             return LowerInvariantIfChanged(s);
         }
 
+        return ToLowerEnglishCore(s);
+    }
+
+    /// <summary>
+    /// The builder path of the lowercase fold, for text that carries an override: the exact
+    /// mappings of <see cref="CaseFolding.Lower"/> where they exist, the invariant mapping for
+    /// every other character. Shared by the string and the span overloads.
+    /// </summary>
+    private static string ToLowerEnglishCore(string s)
+    {
         int extra = 0;
         for (int i = 0; i < s.Length; i++)
         {
@@ -323,6 +419,28 @@ public static class StringUtils
     }
 
     /// <summary>
+    /// Convert a span to lowercase using the English locale.
+    /// </summary>
+    /// <remarks>
+    /// The span counterpart of <see cref="ToLowerEnglish(string)"/>, on the same terms as
+    /// <see cref="ToUpperEnglish(ReadOnlySpan{char})"/>: below <see cref="LowerOverrideThreshold"/>
+    /// the fold is one to one and the scan answers exactly what
+    /// <see cref="LowerInvariantIfChanged"/> does, anything above it goes to the builder path
+    /// on a materialized copy.
+    /// </remarks>
+    /// <param name="s">the text to convert</param>
+    /// <returns>the lowercase text</returns>
+    public static string ToLowerEnglish(ReadOnlySpan<char> s)
+    {
+        if (HasLowerCaseFoldingOverrides(s))
+        {
+            return ToLowerEnglishCore(s.ToString());
+        }
+
+        return NeedsLowerInvariantFold(s) ? LowerInvariantFromSpan(s) : s.ToString();
+    }
+
+    /// <summary>
     /// Cheap pre-check so that the overwhelmingly common ASCII path avoids building a
     /// StringBuilder. The lowest code point with a full-mapping override is U+00DF
     /// (LATIN SMALL LETTER SHARP S), so anything below that is safe.
@@ -340,7 +458,41 @@ public static class StringUtils
         return false;
     }
 
+    /// <summary>
+    /// The span form of <see cref="HasCaseFoldingOverrides(string)"/>, for the caller that
+    /// holds a slice and does not want to materialize it to ask the question.
+    /// </summary>
+    private static bool HasCaseFoldingOverrides(ReadOnlySpan<char> s)
+    {
+        foreach (char c in s)
+        {
+            if (c >= 0x00DF)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool HasLowerCaseFoldingOverrides(string s)
+    {
+        foreach (char c in s)
+        {
+            if (c >= LowerOverrideThreshold)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The span form of <see cref="HasLowerCaseFoldingOverrides(string)"/>, for the same
+    /// caller as the upper check.
+    /// </summary>
+    private static bool HasLowerCaseFoldingOverrides(ReadOnlySpan<char> s)
     {
         foreach (char c in s)
         {

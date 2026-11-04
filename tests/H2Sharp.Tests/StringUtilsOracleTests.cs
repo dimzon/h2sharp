@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using H2Sharp.Tests.Oracle;
 using H2Sharp.Util;
@@ -140,22 +141,29 @@ public sealed class StringUtilsOracleTests
 
     // -------------------------------------------------------------- case folding
 
+    /// <summary>
+    /// The corpus of the case-folding comparisons: the shapes that decide which path folds
+    /// them, and the code points whose mapping the JVM and .NET disagree about unless
+    /// <c>Util/CaseFolding.cs</c> carries them.
+    /// </summary>
+    private static readonly string[] CaseFoldingInputs =
+    [
+        "", "a", "abc", "ABC", "MiXeD", "\u00e9", "\u00c9", "stra\u00dfe",
+        "\u0130", "\u0131", "\u01c5", "\u01c6", "\u01c9", "\u01c8", "i\u0307",
+        "german", "t\u00fcrk", "dotted I", "I with dot", "\u00df", "\u1e9e",
+        "\uD83D\uDE00", "0", "9", "-", "_", "\u0130\u0131", "y", "z",
+
+        // Code points whose case mapping changed between Unicode versions, and the
+        // long s. .NET deliberately keeps U+017F distinct from "S" while Java maps
+        // it, so it is exactly the kind of entry Util/CaseFolding.cs has to carry.
+        "\u017f", "\u019b", "\u0264", "\u1c89", "\u1c8a",
+        "\ua7cb", "\ua7cc", "\ua7cd", "\ua7da", "\ua7db", "\ua7dc",
+    ];
+
     [JavaOracleFact]
     public void ToUpperAndLowerEnglish_MatchReferenceJvm()
     {
-        List<string> inputs =
-        [
-            "", "a", "abc", "ABC", "MiXeD", "\u00e9", "\u00c9", "stra\u00dfe",
-            "\u0130", "\u0131", "\u01c5", "\u01c6", "\u01c9", "\u01c8", "i\u0307",
-            "german", "t\u00fcrk", "dotted I", "I with dot", "\u00df", "\u1e9e",
-            "\uD83D\uDE00", "0", "9", "-", "_", "\u0130\u0131", "y", "z",
-
-            // Code points whose case mapping changed between Unicode versions, and the
-            // long s. .NET deliberately keeps U+017F distinct from "S" while Java maps
-            // it, so it is exactly the kind of entry Util/CaseFolding.cs has to carry.
-            "\u017f", "\u019b", "\u0264", "\u1c89", "\u1c8a",
-            "\ua7cb", "\ua7cc", "\ua7cd", "\ua7da", "\ua7db", "\ua7dc",
-        ];
+        List<string> inputs = CaseFoldingInputs.ToList();
 
         string body = """
                       for (String s : inputs) {
@@ -173,6 +181,53 @@ public sealed class StringUtilsOracleTests
         }
 
         AssertSame(java, csharp, "toUpperEnglish/toLowerEnglish");
+    }
+
+    [JavaOracleFact]
+    public void ToUpperAndLowerEnglish_FromSpansMatchReferenceJvm()
+    {
+        // The span overloads answer the tokenizer's identifier extraction, where the text is a
+        // slice of the SQL statement and the copy a string overload would pay is the allocation
+        // the tokenizer does not make. The corpus is the one the string overload is judged by,
+        // so the fast paths, the overrides and the astral code points are compared with the
+        // JVM on the same shapes.
+        List<string> inputs = CaseFoldingInputs.ToList();
+
+        string body = """
+                      for (String s : inputs) {
+                        System.out.println(hex(org.h2.util.StringUtils.toUpperEnglish(s)));
+                        System.out.println(hex(org.h2.util.StringUtils.toLowerEnglish(s)));
+                      }
+            """;
+
+        List<string> java = OracleRunner.Run(inputs, body);
+        List<string> csharp = new(inputs.Count * 2);
+        foreach (string s in inputs)
+        {
+            csharp.Add(OracleRunner.Hex(StringUtils.ToUpperEnglish(s.AsSpan())));
+            csharp.Add(OracleRunner.Hex(StringUtils.ToLowerEnglish(s.AsSpan())));
+        }
+
+        AssertSame(java, csharp, "toUpperEnglish/toLowerEnglish from spans");
+    }
+
+    [Fact]
+    public void SpanOverloadsAgreeWithStringOverloads()
+    {
+        // Not a JVM comparison, but the property that lets the span overloads serve the
+        // tokenizer while the string overload keeps serving everything else: whatever shape
+        // the text has, the two overloads fold it to the same characters. The corpus carries
+        // the identity fold, the one-to-one fold, the overrides and an input longer than the
+        // stack buffer the span fold builds into.
+        foreach (string s in CaseFoldingInputs)
+        {
+            Assert.Equal(StringUtils.ToUpperEnglish(s), StringUtils.ToUpperEnglish(s.AsSpan()));
+            Assert.Equal(StringUtils.ToLowerEnglish(s), StringUtils.ToLowerEnglish(s.AsSpan()));
+        }
+
+        string longName = new string('a', 512);
+        Assert.Equal(StringUtils.ToUpperEnglish(longName), StringUtils.ToUpperEnglish(longName.AsSpan()));
+        Assert.Equal(StringUtils.ToLowerEnglish(longName.ToUpperInvariant()), StringUtils.ToLowerEnglish(longName.ToUpperInvariant().AsSpan()));
     }
 
     /// <summary>
