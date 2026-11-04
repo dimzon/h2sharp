@@ -52,6 +52,7 @@ public sealed class RowOracleTests
         ]);
 
         csharp.Add(Identity());
+        csharp.Add(SameValuesMatrix());
         csharp.Add(KeysAndCopying());
 
         SimpleRowValue simple0 = new(3);
@@ -141,6 +142,62 @@ public sealed class RowOracleTests
             return what + ":THROWS";
           }
         }
+
+        static String sameValuesMatrix() {
+          org.h2.result.Row[][] pairs = {
+            {org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("x") },
+              org.h2.result.SearchRow.MEMORY_CALCULATE),
+             org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("x") },
+              org.h2.result.SearchRow.MEMORY_CALCULATE)},
+            {org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("x") },
+              org.h2.result.SearchRow.MEMORY_CALCULATE),
+             org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("x"),
+                org.h2.value.ValueInteger.get(2) },
+              org.h2.result.SearchRow.MEMORY_CALCULATE)},
+            {org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("x") },
+              org.h2.result.SearchRow.MEMORY_CALCULATE),
+             org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(9), org.h2.value.ValueVarchar.get("x") },
+              org.h2.result.SearchRow.MEMORY_CALCULATE)},
+            {org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("x") },
+              org.h2.result.SearchRow.MEMORY_CALCULATE),
+             org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("y") },
+              org.h2.result.SearchRow.MEMORY_CALCULATE)},
+            {org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("x") },
+              org.h2.result.SearchRow.MEMORY_CALCULATE),
+             org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("1") },
+              org.h2.result.SearchRow.MEMORY_CALCULATE)},
+            {org.h2.result.Row.get(new org.h2.value.Value[] { null },
+              org.h2.result.SearchRow.MEMORY_CALCULATE),
+             org.h2.result.Row.get(new org.h2.value.Value[] { null },
+              org.h2.result.SearchRow.MEMORY_CALCULATE)},
+            {org.h2.result.Row.get(new org.h2.value.Value[] { null },
+              org.h2.result.SearchRow.MEMORY_CALCULATE),
+             org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1) },
+              org.h2.result.SearchRow.MEMORY_CALCULATE)},
+            {org.h2.result.Row.get(new org.h2.value.Value[] {
+                org.h2.value.ValueInteger.get(1) },
+              org.h2.result.SearchRow.MEMORY_CALCULATE),
+             org.h2.result.Row.get(new org.h2.value.Value[] { null },
+              org.h2.result.SearchRow.MEMORY_CALCULATE)},
+          };
+          StringBuilder b = new StringBuilder();
+          for (int i = 0; i < pairs.length; i++) {
+            if (i > 0) b.append('|');
+            b.append(pairs[i][0].hasSameValues(pairs[i][1]));
+          }
+          return b.toString();
+        }
         }
 
         org.h2.result.Row[] rows = {
@@ -171,6 +228,7 @@ public sealed class RowOracleTests
         org.h2.result.Row r3 = org.h2.result.Row.get(b, org.h2.result.SearchRow.MEMORY_CALCULATE);
         System.out.println(r1.hasSameValues(r2) + "|" + r1.hasSameValues(r3) + "|"
             + r1.hasSharedData(r2) + "|" + r1.hasSharedData(r3) + "|" + r2.hasSharedData(r3));
+        System.out.println(R.sameValuesMatrix());
 
         org.h2.result.Row kr = org.h2.result.Row.get(new org.h2.value.Value[] {
             org.h2.value.ValueInteger.get(1), org.h2.value.ValueVarchar.get("x") },
@@ -278,6 +336,43 @@ public sealed class RowOracleTests
         Row r3 = Row.Get(b, SearchRow.MemoryCalculate);
         return J(r1.HasSameValues(r2)) + "|" + J(r1.HasSameValues(r3)) + "|"
             + J(r1.HasSharedData(r2)) + "|" + J(r1.HasSharedData(r3)) + "|" + J(r2.HasSharedData(r3));
+    }
+
+    private static string SameValuesMatrix()
+    {
+        // Equal values held by different rows, rows of different length, a difference in
+        // either position, same text of a different type, and the null-slot cases: what
+        // hasSameValues answers on each is pinned by the matrix, not just by the one
+        // equal-values case above.
+        (Row, Row)[] pairs =
+        [
+            (Row.Get([ValueInteger.Get(1), ValueVarchar.Get("x")], SearchRow.MemoryCalculate),
+             Row.Get([ValueInteger.Get(1), ValueVarchar.Get("x")], SearchRow.MemoryCalculate)),
+            (Row.Get([ValueInteger.Get(1), ValueVarchar.Get("x")], SearchRow.MemoryCalculate),
+             Row.Get([ValueInteger.Get(1), ValueVarchar.Get("x"), ValueInteger.Get(2)], SearchRow.MemoryCalculate)),
+            (Row.Get([ValueInteger.Get(1), ValueVarchar.Get("x")], SearchRow.MemoryCalculate),
+             Row.Get([ValueInteger.Get(9), ValueVarchar.Get("x")], SearchRow.MemoryCalculate)),
+            (Row.Get([ValueInteger.Get(1), ValueVarchar.Get("x")], SearchRow.MemoryCalculate),
+             Row.Get([ValueInteger.Get(1), ValueVarchar.Get("y")], SearchRow.MemoryCalculate)),
+            (Row.Get([ValueInteger.Get(1), ValueVarchar.Get("x")], SearchRow.MemoryCalculate),
+             Row.Get([ValueInteger.Get(1), ValueVarchar.Get("1")], SearchRow.MemoryCalculate)),
+            (Row.Get([null!], SearchRow.MemoryCalculate), Row.Get([null!], SearchRow.MemoryCalculate)),
+            (Row.Get([null!], SearchRow.MemoryCalculate), Row.Get([ValueInteger.Get(1)], SearchRow.MemoryCalculate)),
+            (Row.Get([ValueInteger.Get(1)], SearchRow.MemoryCalculate), Row.Get([null!], SearchRow.MemoryCalculate)),
+        ];
+
+        StringBuilder b = new();
+        for (int i = 0; i < pairs.Length; i++)
+        {
+            if (i > 0)
+            {
+                _ = b.Append('|');
+            }
+
+            _ = b.Append(J(pairs[i].Item1.HasSameValues(pairs[i].Item2)));
+        }
+
+        return b.ToString();
     }
 
     private static string KeysAndCopying()

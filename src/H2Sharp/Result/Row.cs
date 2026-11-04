@@ -1,5 +1,5 @@
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using H2Sharp.Values;
 
 namespace H2Sharp.Result;
@@ -42,7 +42,28 @@ public abstract class Row : SearchRow
     /// </summary>
     /// <param name="other">the other row</param>
     /// <returns><c>true</c> if values are equal, <c>false</c> otherwise</returns>
-    public bool HasSameValues(Row other) => GetValueList().SequenceEqual(other.GetValueList());
+    // The reference's Arrays.equals compares element-wise and allocates nothing. SequenceEqual
+    // reached the same comparison through IEnumerable, which boxed the struct array enumerator
+    // twice per call on every UPDATE; EqualityComparer<Value?>.Default is what SequenceEqual
+    // used under the hood, so the loop below changes none of that comparison and drops both boxes.
+    public bool HasSameValues(Row other)
+    {
+        Value?[] a = GetValueList(), b = other.GetValueList();
+        if (a.Length != b.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (!EqualityComparer<Value?>.Default.Equals(a[i], b[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Check whether this row and the specified row share the same underlying data with values.
