@@ -653,6 +653,13 @@ public bool IsIdentity()
     }
 
     /// <summary>
+    /// Gets the default expression as SQL, or null when there is none.
+    /// </summary>
+    /// <returns>the default SQL, or null</returns>
+    public string? GetDefaultSQL()
+        => defaultExpression?.GetUnenclosedSql(new StringBuilder(), HasSql.DefaultSqlFlags).ToString();
+
+    /// <summary>
     /// Gets the effective default expression: an identity column has none, otherwise the
     /// column's own default or the one inherited from its domain.
     /// </summary>

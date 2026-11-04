@@ -89,6 +89,15 @@ public sealed class MVDelegateIndex : MVIndex<long, SearchRow>
         return mainIndex.GetMVMap();
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The reference reaches the same page through <c>getMVMap()</c>; the port's primary
+    /// index cannot build that typed map yet, but it does answer the byte count directly,
+    /// and the delegate stores nothing of its own, so that is the same number.
+    /// </remarks>
+    public override long GetDiskSpaceUsed(bool approximate)
+        => mainIndex.GetDiskSpaceUsed(approximate);
+
     internal ITransactionMap GetTransactionMap(Transaction transaction)
         => mainIndex.GetTransactionMap(transaction);
 
