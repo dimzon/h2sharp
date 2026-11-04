@@ -9543,3 +9543,33 @@ Native 96 (два прежних дефекта Native — `TestResultSetGetters
 воспроизводятся на HEAD). Покрытие union: 87.93% → **88.05% строк**
 (83.65% → 83.9% веток); `Merge.cs` 46.1% → 81.9%, `TableValueConstructorTable`
 78.6%, `TruncateTable` 88.9%.
+
+### Агрегаты: типы результатов, окна и SQL-рендеринг (2026-11-04)
+
+`AggregateTypeOracleTests` (4 оракульных теста) проходит reference-скрипты
+`functions/aggregate/avg.sql` и `sum.sql` плюс добавляет:
+
+* AVG/SUM по всем числовым, DECFLOAT- и INTERVAL-типам и производные типы
+  колонок через `DATA_TYPE_SQL(... DTD_IDENTIFIER)` — 21 тип на функцию,
+  включая `DECFLOAT(27)`, `NUMERIC(29, 10)` и `INTERVAL ... (9)`;
+* переполняющие значения `9e99999`, `NUMERIC(100000)` и интервал
+  `999999999999999999` SECOND;
+* SUM/AVG по пустой таблице, DISTINCT и FILTER в группах;
+* оконные агрегаты: RANGE/ROWS-рамки, `WINDOW`-определение,
+  `SUM(DISTINCT ...) OVER`, FILTER в окне, вложенный `SUM(COUNT(*)) OVER()`;
+* LISTAGG как оконная функция (с WITHIN GROUP, без него и с FILTER) и
+  `ARRAY_AGG(... ORDER BY ...) OVER`;
+* переписывания COUNT: `COUNT(1)`, `COUNT(NULL)`, `COUNT(DISTINCT 1)`,
+  пустые выборки и FILTER;
+* EXPLAIN всех семейств агрегатов — COUNT/SUM/MIN/MAX/AVG, DISTINCT, стандартные
+  отклонения и дисперсии, MEDIAN/PERCENTILE, LISTAGG (DISTINCT, разделитель,
+  ON OVERFLOW TRUNCATE с фильтром и счётчиком), ARRAY_AGG, JSON_ARRAYAGG с
+  FORMAT JSON/ABSENT ON NULL, JSON_OBJECTAGG, FILTER, оконные формы, ANY/EVERY/
+  ANY_VALUE, REGR_*/COVAR_*/CORR, битовые агрегаты, GCD/LCM/HISTOGRAM/MODE и
+  недетерминированный `SUM(RAND())`.
+
+Дефектов не найдено — все значения, типы и планы совпали с эталоном построчно.
+Покрытие `Aggregate` 83.5% → **88.6%**; остались недостижимые из SQL пути:
+переполнение LISTAGG за `MaxStringLength` (мегабайты на строку), запрещённый
+синтаксически `MODE(DISTINCT ...)`, недостижимый default оптимизации и
+интерфейсные ветки. Union: 88.05% → **88.22% строк** (84.02% веток).
