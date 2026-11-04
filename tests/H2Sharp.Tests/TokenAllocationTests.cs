@@ -86,7 +86,7 @@ public sealed class TokenAllocationTests
     public void PrintingAKeywordCostsNothing()
     {
         // A keyword prints its own text, which is the entry of the table and not a new string.
-        Token token = new Token.KeywordToken(0, ParserUtil.Select);
+        Token token = Token.KeywordToken(0, ParserUtil.Select);
 
         Assert.Equal(0, Measure(() => Assert.Equal("SELECT", token.ToString())));
         Assert.Equal(0, Measure(() => Assert.Equal("SELECT", token.AsIdentifier)));
@@ -98,8 +98,8 @@ public sealed class TokenAllocationTests
         // A bare name prints as the string it already is. A quoted one is a new string, because
         // the quotes have to go around it; the reference builds one too, so this is the cost of
         // the operation rather than of the port.
-        Token bare = new Token.IdentifierToken(0, "Customers", false, false);
-        Token quoted = new Token.IdentifierToken(0, "Customers", true, false);
+        Token bare = Token.IdentifierToken(0, "Customers", false, false);
+        Token quoted = Token.IdentifierToken(0, "Customers", true, false);
 
         Assert.Equal(0, Measure(() => Assert.Equal("Customers", bare.ToString())));
 
@@ -112,25 +112,28 @@ public sealed class TokenAllocationTests
     {
         // The first question mark is written without a number, which is a constant, and every
         // other one writes its number into the builder the reference writes it into.
-        Token first = new Token.ParameterToken(0, 0);
+        Token first = Token.ParameterToken(0, 0);
 
         Assert.Equal(0, Measure(() => Assert.Equal("?", first.ToString())));
     }
 
     [Fact]
-    public void CloningATokenCostsOneObject()
+    public void CloningATokenCostsNothing()
     {
-        Token token = new Token.KeywordOrIdentifierToken(0, ParserUtil.Order, "Order");
+        // A token is a struct (the approved deviation of audit item 1.6), so the clone a
+        // batch statement is copied with is the copy itself. The reference's clone allocates;
+        // this is the case where the port lands below the reference on purpose.
+        Token token = Token.KeywordOrIdentifierToken(0, ParserUtil.Order, "Order");
 
         long perClone = MeasurePerCall(() => token.Clone());
 
-        Assert.InRange(perClone, 24, 64);
+        Assert.Equal(0, perClone);
     }
 
     [Fact]
     public void TheValueOfALiteralIsBuiltOnceAndKept()
     {
-        Token number = new Token.IntegerToken(0, 7);
+        Token number = Token.IntegerToken(0, 7);
 
         Assert.Same(number.GetValue(null), number.GetValue(null));
         Assert.Equal(0, Measure(() => number.GetValue(null)));

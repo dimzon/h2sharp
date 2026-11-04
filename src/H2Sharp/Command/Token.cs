@@ -21,7 +21,7 @@ namespace H2Sharp.Command;
 /// A token of a parsed statement: the constants of the kinds of token, the text
 /// each kind is written as, and the body in Token.Body.cs.
 /// </summary>
-public abstract partial class Token
+public partial struct Token
 {
     /// <summary>
     /// Token with parameter.

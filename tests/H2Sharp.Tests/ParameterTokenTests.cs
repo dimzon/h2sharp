@@ -40,7 +40,7 @@ public sealed class ParameterTokenTests
     [Fact]
     public void ABareQuestionMarkIsNumberedByOrder()
     {
-        List<Token.ParameterToken> parameters = Parameters("SELECT * FROM T WHERE A = ? AND B = ?");
+        List<Token> parameters = Parameters("SELECT * FROM T WHERE A = ? AND B = ?");
 
         Assert.Equal([1, 2], parameters.Select(p => p.Index));
     }
@@ -49,7 +49,7 @@ public sealed class ParameterTokenTests
     public void AParameterWrittenByPositionKeepsThatPosition()
     {
         // "?2" is the parameter at position two, so the number that was written is the index.
-        Token.ParameterToken only = Assert.Single(Parameters("SELECT * FROM T WHERE ID = ?2"));
+        Token only = Assert.Single(Parameters("SELECT * FROM T WHERE ID = ?2"));
 
         Assert.Equal(2, only.Index);
     }
@@ -75,6 +75,6 @@ public sealed class ParameterTokenTests
         return Tokenizer.TokenizeForTest(sql, false, seen, new TestCastDataProvider());
     }
 
-    private static List<Token.ParameterToken> Parameters(string sql)
-        => [.. Tokenize(sql).OfType<Token.ParameterToken>()];
+    private static List<Token> Parameters(string sql)
+        => [.. Tokenize(sql).Where(t => t.TokenType == Token.Parameter)];
 }

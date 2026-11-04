@@ -140,13 +140,13 @@ public sealed class Tokenizer
                         char c2 = sql[i + 1];
                         if (c2 == '=')
                         {
-                            token = new Token.KeywordToken(i++, Token.NotEqual);
+                            token = Token.KeywordToken(i++, Token.NotEqual);
                             break;
                         }
 
                         if (c2 == '~')
                         {
-                            token = new Token.KeywordToken(i++, Token.NotTilde);
+                            token = Token.KeywordToken(i++, Token.NotTilde);
                             break;
                         }
                     }
@@ -180,7 +180,7 @@ public sealed class Tokenizer
                                 throw DbException.GetSyntaxError(sql, i);
                             }
 
-                            token = new Token.CharacterStringToken(i, sql[stringStart..stringEnd], false);
+                            token = Token.CharacterStringToken(i, sql[stringStart..stringEnd], false);
                             i = stringEnd + 1;
                         }
                         else
@@ -196,19 +196,19 @@ public sealed class Tokenizer
                         // token followed by the name as an identifier, which the parser binds to
                         // a session variable; named parameters are written "$name" and are
                         // rewritten by the ADO.NET layer before the engine sees the text.
-                        token = new Token.ParameterToken(i, 0);
+                        token = Token.ParameterToken(i, 0);
                     }
 
                     break;
 
                 case '%':
-                    token = new Token.KeywordToken(i, Token.Percent);
+                    token = Token.KeywordToken(i, Token.Percent);
                     break;
 
                 case '&':
                     if (i < end && sql[i + 1] == '&')
                     {
-                        token = new Token.KeywordToken(i++, Token.SpatialIntersects);
+                        token = Token.KeywordToken(i++, Token.SpatialIntersects);
                         break;
                     }
 
@@ -219,11 +219,11 @@ public sealed class Tokenizer
                     continue;
 
                 case '(':
-                    token = new Token.KeywordToken(i, Token.OpenParen);
+                    token = Token.KeywordToken(i, Token.OpenParen);
                     break;
 
                 case ')':
-                    token = new Token.KeywordToken(i, Token.CloseParen);
+                    token = Token.KeywordToken(i, Token.CloseParen);
                     if (stopOnCloseParen)
                     {
                         tokens.Add(token);
@@ -234,15 +234,15 @@ public sealed class Tokenizer
                     break;
 
                 case '*':
-                    token = new Token.KeywordToken(i, Token.Asterisk);
+                    token = Token.KeywordToken(i, Token.Asterisk);
                     break;
 
                 case '+':
-                    token = new Token.KeywordToken(i, Token.PlusSign);
+                    token = Token.KeywordToken(i, Token.PlusSign);
                     break;
 
                 case ',':
-                    token = new Token.KeywordToken(i, Token.Comma);
+                    token = Token.KeywordToken(i, Token.Comma);
                     break;
 
                 case '-':
@@ -252,7 +252,7 @@ public sealed class Tokenizer
                         continue;
                     }
 
-                    token = new Token.KeywordToken(i, Token.MinusSign);
+                    token = Token.KeywordToken(i, Token.MinusSign);
                     break;
 
                 case '.':
@@ -266,7 +266,7 @@ public sealed class Tokenizer
                         }
                     }
 
-                    token = new Token.KeywordToken(i, Token.Dot);
+                    token = Token.KeywordToken(i, Token.Dot);
                     break;
 
                 case '/':
@@ -286,7 +286,7 @@ public sealed class Tokenizer
                         }
                     }
 
-                    token = new Token.KeywordToken(i, Token.Slash);
+                    token = Token.KeywordToken(i, Token.Slash);
                     break;
 
                 case '0':
@@ -336,22 +336,22 @@ public sealed class Tokenizer
                         char c2 = sql[i + 1];
                         if (c2 == ':')
                         {
-                            token = new Token.KeywordToken(i++, Token.ColonColon);
+                            token = Token.KeywordToken(i++, Token.ColonColon);
                             break;
                         }
 
                         if (c2 == '=')
                         {
-                            token = new Token.KeywordToken(i++, Token.ColonEq);
+                            token = Token.KeywordToken(i++, Token.ColonEq);
                             break;
                         }
                     }
 
-                    token = new Token.KeywordToken(i, Token.Colon);
+                    token = Token.KeywordToken(i, Token.Colon);
                     break;
 
                 case ';':
-                    token = new Token.KeywordToken(i, Token.Semicolon);
+                    token = Token.KeywordToken(i, Token.Semicolon);
                     break;
 
                 case '<':
@@ -360,32 +360,32 @@ public sealed class Tokenizer
                         char c2 = sql[i + 1];
                         if (c2 == '=')
                         {
-                            token = new Token.KeywordToken(i++, Token.SmallerEqual);
+                            token = Token.KeywordToken(i++, Token.SmallerEqual);
                             break;
                         }
 
                         if (c2 == '>')
                         {
-                            token = new Token.KeywordToken(i++, Token.NotEqual);
+                            token = Token.KeywordToken(i++, Token.NotEqual);
                             break;
                         }
                     }
 
-                    token = new Token.KeywordToken(i, Token.Smaller);
+                    token = Token.KeywordToken(i, Token.Smaller);
                     break;
 
                 case '=':
-                    token = new Token.KeywordToken(i, Token.Equal);
+                    token = Token.KeywordToken(i, Token.Equal);
                     break;
 
                 case '>':
                     if (i < end && sql[i + 1] == '=')
                     {
-                        token = new Token.KeywordToken(i++, Token.BiggerEqual);
+                        token = Token.KeywordToken(i++, Token.BiggerEqual);
                         break;
                     }
 
-                    token = new Token.KeywordToken(i, Token.Bigger);
+                    token = Token.KeywordToken(i, Token.Bigger);
                     break;
 
                 case '?':
@@ -394,14 +394,14 @@ public sealed class Tokenizer
                         char c3 = sql[i + 2];
                         if (c3 == '(')
                         {
-                            token = new Token.KeywordToken(i, Token.OpenBracket);
+                            token = Token.KeywordToken(i, Token.OpenBracket);
                             i += 2;
                             break;
                         }
 
                         if (c3 == ')')
                         {
-                            token = new Token.KeywordToken(i, Token.CloseBracket);
+                            token = Token.KeywordToken(i, Token.CloseBracket);
                             i += 2;
                             break;
                         }
@@ -412,7 +412,7 @@ public sealed class Tokenizer
                     continue;
 
                 case '@':
-                    token = new Token.KeywordToken(i, Token.At);
+                    token = Token.KeywordToken(i, Token.At);
                     break;
 
                 case 'A':
@@ -589,19 +589,19 @@ public sealed class Tokenizer
                             throw DbException.GetSyntaxError(sql, i);
                         }
 
-                        token = new Token.IdentifierToken(
+                        token = Token.IdentifierToken(
                             i, sql[identifierStart..identifierEnd], true, false);
                         i = identifierEnd;
                     }
                     else
                     {
-                        token = new Token.KeywordToken(i, Token.OpenBracket);
+                        token = Token.KeywordToken(i, Token.OpenBracket);
                     }
 
                     break;
 
                 case ']':
-                    token = new Token.KeywordToken(i, Token.CloseBracket);
+                    token = Token.KeywordToken(i, Token.CloseBracket);
                     break;
 
                 case '_':
@@ -609,24 +609,24 @@ public sealed class Tokenizer
                     continue;
 
                 case '{':
-                    token = new Token.KeywordToken(i, Token.OpenBrace);
+                    token = Token.KeywordToken(i, Token.OpenBrace);
                     break;
 
                 case '|':
                     if (i < end && sql[i + 1] == '|')
                     {
-                        token = new Token.KeywordToken(i++, Token.Concatenation);
+                        token = Token.KeywordToken(i++, Token.Concatenation);
                         break;
                     }
 
                     throw DbException.GetSyntaxError(sql, i);
 
                 case '}':
-                    token = new Token.KeywordToken(i, Token.CloseBrace);
+                    token = Token.KeywordToken(i, Token.CloseBrace);
                     break;
 
                 case '~':
-                    token = new Token.KeywordToken(i, Token.Tilde);
+                    token = Token.KeywordToken(i, Token.Tilde);
                     break;
 
                 default:
@@ -662,14 +662,14 @@ public sealed class Tokenizer
             ProcessUescape(sql, tokens);
         }
 
-        tokens.Add(new Token.EndOfInputToken(end + 1));
+        tokens.Add(Token.EndOfInputToken(end + 1));
         return tokens;
     }
 
     private int ReadIdentifier(string sql, int end, int tokenStart, int i, List<Token> tokens)
     {
         int endIndex = FindIdentifierEnd(sql, end, i);
-        tokens.Add(new Token.IdentifierToken(tokenStart, ExtractIdentifier(sql, tokenStart, endIndex), false, false));
+        tokens.Add(Token.IdentifierToken(tokenStart, ExtractIdentifier(sql, tokenStart, endIndex), false, false));
         return endIndex;
     }
 
@@ -1367,17 +1367,17 @@ public sealed class Tokenizer
         Token token;
         if (type == ParserUtil.Identifier)
         {
-            token = new Token.IdentifierToken(
+            token = Token.IdentifierToken(
                 tokenStart, ExtractIdentifier(sql, tokenStart, endIndex), false, false);
         }
         else if (nonKeywords is not null && type < nonKeywords.Length && nonKeywords.Get(type))
         {
-            token = new Token.KeywordOrIdentifierToken(
+            token = Token.KeywordOrIdentifierToken(
                 tokenStart, type, ExtractIdentifier(sql, tokenStart, endIndex));
         }
         else
         {
-            token = new Token.KeywordToken(tokenStart, type);
+            token = Token.KeywordToken(tokenStart, type);
         }
 
         tokens.Add(token);
@@ -1514,7 +1514,7 @@ public sealed class Tokenizer
             s = ConvertCase(s);
         }
 
-        tokens.Add(new Token.IdentifierToken(tokenStart, s, true, unicode));
+        tokens.Add(Token.IdentifierToken(tokenStart, s, true, unicode));
         return i;
     }
 
@@ -1563,7 +1563,7 @@ public sealed class Tokenizer
         }
         while (i <= end && sql[i] == '\'');
 
-        tokens.Add(new Token.BinaryStringToken(tokenStart, result.WrittenSpan.ToArray()));
+        tokens.Add(Token.BinaryStringToken(tokenStart, result.WrittenSpan.ToArray()));
         return i;
     }
 
@@ -1622,7 +1622,7 @@ public sealed class Tokenizer
             s = builder.ToString();
         }
 
-        tokens.Add(new Token.CharacterStringToken(tokenStart, s!, unicode));
+        tokens.Add(Token.CharacterStringToken(tokenStart, s!, unicode));
         return i;
     }
 
@@ -1692,7 +1692,7 @@ public sealed class Tokenizer
             throw DbException.Get(ErrorCode.HexStringWrong1, sql[start..(i + 1)]);
         }
 
-        tokens.Add(new Token.BinaryStringToken(start, StringUtils.ConvertHexToBytes(sql.AsSpan(start, i - start))));
+        tokens.Add(Token.BinaryStringToken(start, StringUtils.ConvertHexToBytes(sql.AsSpan(start, i - start))));
         return i;
     }
 
@@ -1810,8 +1810,8 @@ public sealed class Tokenizer
         }
 
         tokens.Add(bigint
-            ? new Token.BigintToken(start, number)
-            : new Token.IntegerToken(start, (int)number));
+            ? Token.BigintToken(start, number)
+            : Token.IntegerToken(start, (int)number));
         return i;
     }
 
@@ -1899,7 +1899,7 @@ public sealed class Tokenizer
             throw DbException.GetSyntaxError(sql, tokenStart, "Numeric");
         }
 
-        tokens.Add(new Token.IntegerToken(tokenStart, (int)number));
+        tokens.Add(Token.IntegerToken(tokenStart, (int)number));
         return i;
     }
 
@@ -1944,7 +1944,7 @@ public sealed class Tokenizer
             throw DbException.GetSyntaxError(sql, tokenStart, "Numeric");
         }
 
-        tokens.Add(new Token.ValueToken(
+        tokens.Add(Token.ValueToken(
             tokenStart, ValueNumeric.Get(ReadBigDecimal(sql, tokenStart, i, withUnderscore))));
         return i;
     }
@@ -2005,7 +2005,7 @@ public sealed class Tokenizer
             throw DbException.GetSyntaxError(sql, tokenStart, "Approximate numeric");
         }
 
-        tokens.Add(new Token.ValueToken(
+        tokens.Add(Token.ValueToken(
             tokenStart, ValueDecfloat.Get(ReadBigDecimal(sql, tokenStart, i, withUnderscore))));
         return i;
     }
@@ -2052,11 +2052,11 @@ public sealed class Tokenizer
                 throw DbException.GetSyntaxError(sql, tokenStart, "BIGINT");
             }
 
-            token = new Token.ValueToken(tokenStart, ValueNumeric.Get(bigInteger));
+            token = Token.ValueToken(tokenStart, ValueNumeric.Get(bigInteger));
         }
         else
         {
-            token = new Token.BigintToken(tokenStart, (long)bigInteger);
+            token = Token.BigintToken(tokenStart, (long)bigInteger);
         }
 
         tokens.Add(token);
@@ -2195,7 +2195,7 @@ public sealed class Tokenizer
             throw DbException.GetInvalidValueException("parameter index", number);
         }
 
-        tokens.Add(new Token.ParameterToken(tokenStart, (int)number));
+        tokens.Add(Token.ParameterToken(tokenStart, (int)number));
         return i;
     }
 
@@ -2208,7 +2208,12 @@ public sealed class Tokenizer
     /// </remarks>
     private static int AssignParameterIndex(List<Token> tokens, int lastParameter, BitSet parameters)
     {
-        Token.ParameterToken parameter = (Token.ParameterToken)tokens[^1];
+        Token parameter = tokens[^1];
+        if (parameter.TokenType != Token.Parameter)
+        {
+            throw DbException.GetInternalError();
+        }
+
         int index = parameter.Index;
         if (index == 0)
         {
@@ -2217,7 +2222,8 @@ public sealed class Tokenizer
                 throw DbException.Get(ErrorCode.CannotMixIndexedAndUnindexedParams);
             }
 
-            parameter.index = index = ++lastParameter;
+            parameter.Index = index = ++lastParameter;
+            tokens[^1] = parameter;
         }
         else if (lastParameter > 0)
         {
@@ -2263,9 +2269,9 @@ public sealed class Tokenizer
                     {
                         Token t3 = tokens[index + 1];
                         tokens.RemoveAt(index + 1);
-                        if (t3 is Token.CharacterStringToken characterStringToken)
+                        if (t3.IsCharacterString)
                         {
-                            string s = characterStringToken.text;
+                            string s = t3.Text!;
                             if (JavaCharacter.CharCount(s.Length) == 1 && s.Length == 1)
                             {
                                 int escape = s[0];
@@ -2277,6 +2283,7 @@ public sealed class Tokenizer
                                 {
                                     uescape = escape;
                                     token.ConvertUnicode(uescape);
+                                    tokens[index] = token;
                                     continue;
                                 }
                             }
@@ -2288,6 +2295,7 @@ public sealed class Tokenizer
             }
 
             token.ConvertUnicode(uescape);
+            tokens[index] = token;
         }
     }
 }

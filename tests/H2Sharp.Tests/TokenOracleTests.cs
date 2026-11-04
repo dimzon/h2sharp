@@ -130,11 +130,11 @@ public sealed class TokenOracleTests
             string? text = Token.Tokens[type];
             if (text is null)
             {
-                Assert.Null(new Token.KeywordToken(0, type).AsIdentifier);
+                Assert.Null(Token.KeywordToken(0, type).AsIdentifier);
                 continue;
             }
 
-            Token token = new Token.KeywordToken(0, type);
+            Token token = Token.KeywordToken(0, type);
             Assert.Equal(text, token.ToString());
             Assert.Equal(text, token.AsIdentifier);
             Assert.Equal(type, token.TokenType);
@@ -146,7 +146,7 @@ public sealed class TokenOracleTests
     {
         // A keyword is also allowed as a name, and a name keeps the case it was written with,
         // which is the whole reason a table may be called "order".
-        Token token = new Token.KeywordOrIdentifierToken(0, ParserUtil.Order, "Order");
+        Token token = Token.KeywordOrIdentifierToken(0, ParserUtil.Order, "Order");
         Assert.Equal(ParserUtil.Order, token.TokenType);
         Assert.Equal("Order", token.ToString());
         Assert.Equal("Order", token.AsIdentifier);
@@ -157,7 +157,7 @@ public sealed class TokenOracleTests
     {
         // A quoted name prints between double quotes, which is what makes a name that is a
         // keyword survive being read back.
-        Token quoted = new Token.IdentifierToken(0, "select", true, false);
+        Token quoted = Token.IdentifierToken(0, "select", true, false);
         Assert.Equal("\"select\"", quoted.ToString());
         Assert.Equal(ParserUtil.Identifier, quoted.TokenType);
         Assert.True(quoted.IsQuoted);
@@ -166,7 +166,7 @@ public sealed class TokenOracleTests
         Assert.NotSame(quoted, clone);
         Assert.Equal(quoted.ToString(), clone.ToString());
 
-        Token bare = new Token.IdentifierToken(0, "Select", false, false);
+        Token bare = Token.IdentifierToken(0, "Select", false, false);
         Assert.Equal("Select", bare.ToString());
         Assert.False(bare.IsQuoted);
         Assert.Equal(ParserUtil.Identifier, bare.TokenType);
@@ -175,11 +175,11 @@ public sealed class TokenOracleTests
     [Fact]
     public void ParameterToken_PrintsItsNumberOnlyWhenItIsNotTheFirst()
     {
-        Assert.Equal("?", new Token.ParameterToken(0, 0).ToString());
-        Assert.Equal("?1", new Token.ParameterToken(0, 1).ToString());
-        Assert.Equal("?7", new Token.ParameterToken(0, 7).ToString());
-        Assert.Equal("?", new Token.ParameterToken(0, 3).AsIdentifier);
-        Assert.Equal(3, new Token.ParameterToken(0, 3).Index);
+        Assert.Equal("?", Token.ParameterToken(0, 0).ToString());
+        Assert.Equal("?1", Token.ParameterToken(0, 1).ToString());
+        Assert.Equal("?7", Token.ParameterToken(0, 7).ToString());
+        Assert.Equal("?", Token.ParameterToken(0, 3).AsIdentifier);
+        Assert.Equal(3, Token.ParameterToken(0, 3).Index);
     }
 
     [Fact]
@@ -187,25 +187,25 @@ public sealed class TokenOracleTests
     {
         // A literal prints as the value it stands for, which is the one place a token prints
         // something other than itself.
-        Token number = new Token.IntegerToken(0, 42);
+        Token number = Token.IntegerToken(0, 42);
         Assert.Equal(Token.Literal, number.TokenType);
         Assert.Equal("42", number.ToString());
 
-        Token big = new Token.BigintToken(0, 9223372036854775807L);
+        Token big = Token.BigintToken(0, 9223372036854775807L);
         Assert.Equal("9223372036854775807", big.ToString());
 
-        Token text = new Token.CharacterStringToken(0, "it's", false);
+        Token text = Token.CharacterStringToken(0, "it's", false);
         Assert.Equal("'it''s'", text.ToString());
         Assert.Same(text.GetValue(null), text.GetValue(null));
 
-        Token bytes = new Token.BinaryStringToken(0, [0x41, 0x42]);
+        Token bytes = Token.BinaryStringToken(0, [0x41, 0x42]);
         Assert.Equal("X'4142'", bytes.ToString());
     }
 
     [Fact]
     public void EndOfInputToken_IsTheEndOfInput()
     {
-        Token end = new Token.EndOfInputToken(7);
+        Token end = Token.EndOfInputToken(7);
         Assert.Equal(Token.EndOfInput, end.TokenType);
         Assert.Null(end.AsIdentifier);
         Assert.False(end.IsQuoted);
@@ -220,25 +220,25 @@ public sealed class TokenOracleTests
     {
         // An escape is the escape character and four hex digits, with no letter in between,
         // and the escape character is whatever the statement said it was.
-        Token escaped = new Token.IdentifierToken(0, "a\\0041b", false, true);
+        Token escaped = Token.IdentifierToken(0, "a\\0041b", false, true);
         Assert.True(escaped.NeedsUnicodeConversion);
         escaped.ConvertUnicode('\\');
         Assert.Equal("aAb", escaped.ToString());
         Assert.False(escaped.NeedsUnicodeConversion);
         Assert.Throws<Exception>(() => escaped.ConvertUnicode('\\'));
 
-        Token plain = new Token.IdentifierToken(0, "abc", false, false);
+        Token plain = Token.IdentifierToken(0, "abc", false, false);
         Assert.False(plain.NeedsUnicodeConversion);
         Assert.Throws<Exception>(() => plain.ConvertUnicode('\\'));
 
-        Token hashed = new Token.CharacterStringToken(0, "#0041", true);
+        Token hashed = Token.CharacterStringToken(0, "#0041", true);
         Assert.True(hashed.NeedsUnicodeConversion);
         hashed.ConvertUnicode('#');
         Assert.Equal("'A'", hashed.ToString());
 
         // Two escape characters in a row are one of them, which is how a backslash is written
         // at all.
-        Token doubled = new Token.IdentifierToken(0, "a\\\\b", false, true);
+        Token doubled = Token.IdentifierToken(0, "a\\\\b", false, true);
         doubled.ConvertUnicode('\\');
         Assert.Equal("a\\b", doubled.ToString());
     }

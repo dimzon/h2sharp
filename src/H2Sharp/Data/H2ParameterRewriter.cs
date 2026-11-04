@@ -72,13 +72,13 @@ internal static class H2ParameterRewriter
 
         foreach (Token token in tokens)
         {
-            if (token is not Token.ParameterToken parameter)
+            if (token.TokenType != Token.Parameter)
             {
                 continue;
             }
 
             hasParameter = true;
-            int start = parameter.Start;
+            int start = token.Start;
             char marker = text[start];
 
             if (marker == '?')

@@ -1553,10 +1553,18 @@ public sealed partial class Parser
             commandTokens = tokens;
             if (beginIndex != 0)
             {
+                // A token is a struct: the shift happens on the copy and the copy goes back.
                 for (int i = 0; i < commandTokens.Count - 1; i++)
-                    commandTokens[i].SubtractFromStart(beginIndex);
+                {
+                    Token token = commandTokens[i];
+                    token.SubtractFromStart(beginIndex);
+                    commandTokens[i] = token;
+                }
             }
-            Current.Start = text.Length;
+
+            Token last = commandTokens[position];
+            last.Start = text.Length;
+            commandTokens[position] = last;
             sql = text;
         }
         else
@@ -1568,8 +1576,10 @@ public sealed partial class Parser
                 token.SubtractFromStart(beginIndex);
                 commandTokens.Add(token);
             }
-            commandTokens.Add(new Token.EndOfInputToken(text.Length));
+
+            commandTokens.Add(Token.EndOfInputToken(text.Length));
         }
+
         command.SetSql(text, commandTokens);
     }
 
@@ -6204,7 +6214,7 @@ public sealed partial class Parser
             return ReadQueryTerm(aggregateSelect);
         }
 
-        if (Current is Token.ParameterToken parameter)
+        if (CurrentType == Token.Parameter)
         {
             return ReadParameter();
         }
@@ -8413,7 +8423,7 @@ public sealed partial class Parser
     // ParserBase.readParameter returns the same object for every occurrence of an index.
     private Expressions.Parameter ReadParameter()
     {
-        int index = ((Token.ParameterToken)Current).Index - 1;
+        int index = Current.Index - 1;
         Read();
         usedParameters.Set(index);
         while (parameterList.Count <= index)
@@ -8449,14 +8459,14 @@ public sealed partial class Parser
             return;
         }
 
-        if (Current is not Token.LiteralToken)
+        if (CurrentType != Token.Literal)
         {
             return;
         }
 
         int allowed = session.GetDatabase().GetAllowLiterals();
         if (allowed == Engine.Constants.AllowLiteralsNone
-            || (Current is Token.CharacterStringToken or Token.BinaryStringToken
+            || (Current.IsStringLiteral
                 && allowed != Engine.Constants.AllowLiteralsAll))
         {
             throw Message.DbException.Get(Api.ErrorCode.LiteralsAreNotAllowed);
