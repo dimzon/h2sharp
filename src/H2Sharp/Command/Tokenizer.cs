@@ -42,6 +42,29 @@ namespace H2Sharp.Command;
 /// </remarks>
 public sealed class Tokenizer
 {
+    // The ASCII characters a name may continue with, derived from JavaCharacter itself at
+    // startup rather than written down, so the set cannot disagree with IsJavaIdentifierPart;
+    // IdentifierPartSetMatchesJavaCharacter pins that for every code. The ignorable controls
+    // Java accepts inside a name (U+0000..U+0008, U+000E..U+001B, U+007F) are the reason the
+    // set is derived and not spelled — a hand-written "A-Za-z0-9_$" would silently refuse a
+    // name the reference accepts.
+    internal static readonly SearchValues<char> AsciiIdParts =
+        SearchValues.Create(BuildAsciiIdPartChars());
+
+    private static char[] BuildAsciiIdPartChars()
+    {
+        List<char> chars = [];
+        for (int c = 0; c < 128; c++)
+        {
+            if (JavaCharacter.IsJavaIdentifierPart((char)c))
+            {
+                chars.Add((char)c);
+            }
+        }
+
+        return [.. chars];
+    }
+
     private readonly CastDataProvider provider;
 
     private readonly bool identifiersToUpper;
@@ -1384,7 +1407,7 @@ public sealed class Tokenizer
         return true;
     }
 
-    private int FindIdentifierEnd(string sql, int end, int i)
+    internal int FindIdentifierEnd(string sql, int end, int i)
     {
         i++;
         for (; ; )
@@ -1394,10 +1417,38 @@ public sealed class Tokenizer
                 break;
             }
 
+            // One vectorized sweep answers how far the plain ASCII name characters go, and the
+            // per-character check below answers it only for the one character that stopped the
+            // sweep: what the derived set does not know — anything at or above U+0080, and the
+            // '#' the Oracle mode lets into a name — keeps the reference's own check, exactly
+            // as it reads here otherwise. The sweep stops at every non-name terminator, so an
+            // ordinary identifier pays the Unicode table once instead of per character.
+            int stop = sql.AsSpan(i, end + 1 - i).IndexOfAnyExcept(AsciiIdParts);
+            if (stop < 0)
+            {
+                i = end + 1;
+                break;
+            }
+
+            i += stop;
+            char c = sql[i];
+            if (c < 0x80)
+            {
+                // The set the sweep ran on and the mask come from the same loop, so an ASCII
+                // character here is not a name character; the one ASCII name character the
+                // set may still refuse is '#' with the Oracle mode on.
+                if (c == '#' && provider.GetMode().SupportPoundSymbolForColumnNames)
+                {
+                    i++;
+                    continue;
+                }
+
+                break;
+            }
+
             // The fast path reads the character as is: CategoryOf answers BMP values from the
             // same BCL call either way, and a lone surrogate reads as its own value on both
             // paths, so only a high surrogate needs the pair read.
-            char c = sql[i];
             int cp;
             bool isPart;
             if (JavaCharacter.IsHighSurrogate(c))
@@ -1411,8 +1462,7 @@ public sealed class Tokenizer
                 isPart = JavaCharacter.IsJavaIdentifierPart(c);
             }
 
-            if (!isPart
-                && (cp != '#' || !provider.GetMode().SupportPoundSymbolForColumnNames))
+            if (!isPart)
             {
                 break;
             }
