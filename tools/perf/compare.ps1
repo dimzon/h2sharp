@@ -13,9 +13,9 @@ param(
 )
 
 function Get-Report($dir, $name) {
-    $path = Join-Path $dir $name
-    if (-not (Test-Path $path)) { return $null }
-    return Get-Content $path -Raw | ConvertFrom-Json
+    $path = Get-ChildItem $dir -Recurse -Filter $name | Select-Object -First 1
+    if ($null -eq $path) { return $null }
+    return Get-Content $path.FullName -Raw | ConvertFrom-Json
 }
 
 function Format-Delta($before, $after) {
@@ -29,7 +29,7 @@ function Format-Delta($before, $after) {
 }
 
 $rows = @()
-foreach ($headFile in Get-ChildItem $Head -Filter '*-report-full-compressed.json') {
+foreach ($headFile in Get-ChildItem $Head -Recurse -Filter '*-report-full-compressed.json') {
     $baselineReport = Get-Report $Baseline $headFile.Name
     if ($null -eq $baselineReport) { continue }
     $headReport = Get-Content $headFile.FullName -Raw | ConvertFrom-Json

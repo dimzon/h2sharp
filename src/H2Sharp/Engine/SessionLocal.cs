@@ -1364,6 +1364,14 @@ public sealed class SessionLocal : Session
     /// <summary>The settings that do not change while the database is open.</summary>
     private sealed record StaticSettings(bool DatabaseToUpper, bool DatabaseToLower, bool CaseInsensitiveIdentifiers);
 
+    /// <summary>
+    /// How unquoted identifiers are folded, as the reference reads it from
+    /// <c>DbSettings.DATABASE_TO_UPPER</c>/<c>DATABASE_TO_LOWER</c> in
+    /// <c>ParserBase</c>. Those two settings are not modeled in this port yet, so the fold is
+    /// the reference default: to upper, never to lower.
+    /// </summary>
+    internal (bool Upper, bool Lower) IdentifierFolding => (true, false);
+
     /// <summary>The settings that may change while the database is open.</summary>
     private sealed record DynamicSettings(Mode Mode, Util.TimeZoneProvider TimeZone);
 

@@ -163,7 +163,12 @@ public sealed class TokenOracleTests
         Assert.True(quoted.IsQuoted);
 
         Token clone = quoted.Clone();
-        Assert.NotSame(quoted, clone);
+        // A struct has no identity; what Clone promises is an independent copy, so move the
+        // clone and prove the original did not move with it.
+        int start = quoted.Start;
+        clone.SubtractFromStart(1);
+        Assert.NotEqual(start, clone.Start);
+        Assert.Equal(start, quoted.Start);
         Assert.Equal(quoted.ToString(), clone.ToString());
 
         Token bare = Token.IdentifierToken(0, "Select", false, false);

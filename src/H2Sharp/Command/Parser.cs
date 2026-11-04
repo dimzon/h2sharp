@@ -555,12 +555,37 @@ public sealed partial class Parser
         if (tokens is null)
         {
             BitSet parameters = new();
-            tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+            tokens = CreateTokenizer(parameters).Tokenize(sql, false, parameters);
             CheckParameterIndex(parameters);
         }
         Parser parser = new(sql, provider, tokens, current);
         parser.SetSuppliedParameters(parameterList);
         return parser.ParseOneStatement();
+    }
+
+    /// <summary>
+    /// Builds the tokenizer for a statement, as the reference's <c>ParserBase.initialize</c>
+    /// does: the session's identifier folding and non-keyword set when there is a session, and
+    /// the special-use no-fold default otherwise.
+    /// </summary>
+    /// <param name="parameters">the parameters of the statement, written back by the tokenizer</param>
+    /// <returns>the tokenizer</returns>
+    private Tokenizer CreateTokenizer(BitSet parameters)
+        => CreateTokenizer(provider, session);
+
+    /// <summary>
+    /// Builds the tokenizer for a statement from an explicit session, or the special-use default
+    /// when there is none.
+    /// </summary>
+    private static Tokenizer CreateTokenizer(CastDataProvider provider, SessionLocal? session)
+    {
+        if (session is not null)
+        {
+            (bool upper, bool lower) = session.IdentifierFolding;
+            return new Tokenizer(provider, upper, lower, session.GetNonKeywords());
+        }
+
+        return new Tokenizer(provider, identifiersToUpper: false, identifiersToLower: false, nonKeywords: null);
     }
 
     /// <summary>
@@ -591,7 +616,7 @@ public sealed partial class Parser
         SessionLocal current = session ?? throw new TODOException("Parser.prepareCommand: this parser has no session");
 
         BitSet parameters = new();
-        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        List<Token> tokens = CreateTokenizer(parameters).Tokenize(sql, false, parameters);
         CheckParameterIndex(parameters);
         Parser parser = new(sql, provider, tokens, current);
         if (suppliedParameters is null)
@@ -672,7 +697,7 @@ public sealed partial class Parser
         ArgumentNullException.ThrowIfNull(sql);
         SessionLocal current = session ?? throw new TODOException("Parser.prepareQueryExpression: this parser has no session");
         BitSet parameters = new();
-        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        List<Token> tokens = CreateTokenizer(parameters).Tokenize(sql, false, parameters);
         CheckParameterIndex(parameters);
         Parser parser = new(sql, provider, tokens, current);
         parser.SetSuppliedParameters(parameterList);
@@ -702,7 +727,7 @@ public sealed partial class Parser
     {
         ArgumentNullException.ThrowIfNull(sql);
         BitSet parameters = new();
-        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        List<Token> tokens = CreateTokenizer(parameters).Tokenize(sql, false, parameters);
         CheckParameterIndex(parameters);
         Parser parser = new(sql, provider, tokens, session);
         return parser.ReadExpression();
@@ -721,7 +746,7 @@ public sealed partial class Parser
     {
         ArgumentNullException.ThrowIfNull(sql);
         BitSet parameters = new();
-        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, provider);
+        List<Token> tokens = CreateTokenizer(parameters).Tokenize(sql, false, parameters);
         CheckParameterIndex(parameters);
         Parser parser = new(sql, provider, tokens, session);
         parser.parseDomainConstraint = true;
@@ -1837,7 +1862,7 @@ public sealed partial class Parser
     internal static Query.Query CompileViewQuery(SessionLocal session, string sql)
     {
         BitSet parameters = new();
-        List<Token> tokens = Tokenizer.TokenizeForTest(sql, false, parameters, session);
+        List<Token> tokens = CreateTokenizer(session.CastDataProvider, session).Tokenize(sql, false, parameters);
         Parser parser = new(sql, session.CastDataProvider, tokens, session);
         session.SetParsingCreateView(true);
         Query.Query query;
@@ -8041,7 +8066,7 @@ public sealed partial class Parser
         // The existing statement DTO retains text. Reuse H2's token-based reader rather than
         // a second type grammar; this also retains array component types and cardinalities.
         Parser parser = new(typeName, provider,
-            Tokenizer.TokenizeForTest(typeName, false, new BitSet(), provider), session);
+            CreateTokenizer(provider, session).Tokenize(typeName, false, new BitSet()), session);
         TypeInfo type = parser.ReadIfDataType()
             ?? throw DbException.GetSyntaxError(typeName, parser.Current.Start, "data type");
         if (parser.CurrentType != Token.EndOfInput)
@@ -8394,7 +8419,7 @@ public sealed partial class Parser
     /// <returns>the statement</returns>
     public static Statement Parse(string sql, CastDataProvider provider, BitSet parameters)
     {
-        Parser parser = new(sql, provider, Tokenizer.TokenizeForTest(sql, false, parameters, provider));
+        Parser parser = new(sql, provider, CreateTokenizer(provider, session: null).Tokenize(sql, false, parameters));
         CheckParameterIndex(parameters);
         Statement statement = parser.ReadStatement();
         statement.Sql = sql;
