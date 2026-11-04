@@ -9664,3 +9664,37 @@ null-слоты с обеих сторон. Новый гейт `RowAllocationTe
 `Measure`, что у `StringUtilsAllocationTests`.
 
 Проверено: `H2Sharp.Tests` 1870 зелёных (`Category!=BlockedByPort`).
+
+### Конверсии VARCHAR: span-парс и trim по эталону (2026-11-04)
+
+Пункт 2.1 аудита `docs/PERF_AUDIT_ALLOCATIONS.md`, в объёме `ValueStringBase`:
+`GetBigDecimal` переведён со string-перегрузки `BigDecimal.Parse(value.Trim())`
+на существующую span-перегрузку, а общий `Parse<T>` (GetByte/GetShort/GetInt/
+GetLong) и `GetBoolean` — на trim по спану. Паддированное значение больше не
+производит копию строки.
+
+Оракул расширил находку: trim с эталоном расходился в обе стороны. Java
+`String.trim` снимает всё до U+0020 включительно, .NET `Trim()` — по
+`char.IsWhiteSpace`: U+00A0 и U+3000 .NET снимал, хотя эталон их оставляет в
+тексте и парсер эталона значение отказывает, а U+001F .NET оставлял, хотя
+эталон снимает и парсер эталона значение принимает. Введён `TrimForParse`
+(`<= ' '`), оракул `ValueStringBaseOracleTests` закрывает обе стороны границы
+против JVM (30 корпусов: паддинг ASCII/tab/VT/US/NBSP/ideographic, экспоненты,
+границы sbyte, булевы слова, отказы).
+
+Гейт `ValueAllocationTests.ParsedConversionsCostNoMoreForPaddedText`:
+паддированное значение стоит ровно столько же, сколько голое, для `GetBigDecimal`
+и `GetInt`; NBSP-случай зафиксирован как честный отказ.
+
+Не в этом объёме: пять мест в `Value.Conversion.Families.cs` (`:1225`, `:1530`,
+`:1604`, `:1683`, `:1792`) из того же пункта аудита — там `ValueDate/Time/
+Timestamp...Parse` принимают только `string`, span-перегрузки требуют
+предварительной работы в `DateTimeUtils`, а аллокация там и так только при
+реальном паддинге; помечены в аудите как отложенные.
+
+Проверено: `H2Sharp.Tests` 1872 зелёных (`Category!=BlockedByPort`), Data 717,
+Engine 9, MvStore 152. Native полный параллельный прогон не сравнивается
+напрямую: набор его падений — случайный от прогона к прогону и на коде до
+правок (документированная чувствительность к нагрузке); одиночный прогон
+затронутых классов зелёный, детерминированно остаются прежние два
+(`TestResultSetGetters`, `TestView`).

@@ -508,4 +508,29 @@ public sealed class ValueAllocationTests
             first.GetHashCode().ToString(CultureInfo.InvariantCulture)
                 == third.GetHashCode().ToString(CultureInfo.InvariantCulture));
     }
+
+    [Fact]
+    public void ParsedConversionsCostNoMoreForPaddedText()
+    {
+        // The conversions of a VARCHAR trim the text before the parse, and the trim has to run
+        // on the span the parser reads: a trimmed copy would add a string to every padded
+        // value, which is exactly the shape CAST(v AS DECIMAL) and friends arrive in. Whatever
+        // the bare form costs, padded forms of the same text cost the same, whatever the
+        // padding is made of - and the result itself is the same object shape on every call.
+        Value bare = ValueVarchar.Get("12345.6789");
+        Value spaced = ValueVarchar.Get("  12345.6789  ");
+
+        long decimalCost = Measure(() => bare.GetBigDecimal());
+        Assert.Equal(decimalCost, Measure(() => spaced.GetBigDecimal()));
+
+        Value bareInt = ValueVarchar.Get("12345");
+        Value paddedInt = ValueVarchar.Get("  12345  ");
+        long intCost = Measure(() => bareInt.GetInt());
+        Assert.Equal(intCost, Measure(() => paddedInt.GetInt()));
+
+        // What the trim refuses to strip, the parse refuses to read: a U+00A0-padded number is
+        // a conversion error on both sides of the oracle, which is what makes the cost comparison
+        // above about the U+0020 padding only.
+        Assert.Throws<H2SharpException>(() => ValueVarchar.Get("\u00a012345.6789\u00a0").GetBigDecimal());
+    }
 }

@@ -131,7 +131,7 @@ public abstract class ValueStringBase : Value
     /// </remarks>
     public sealed override bool GetBoolean()
     {
-        ReadOnlySpan<char> s = value.AsSpan().Trim();
+        ReadOnlySpan<char> s = TrimForParse(value.AsSpan());
         if (MemoryExtensions.Equals(s, "true", StringComparison.OrdinalIgnoreCase)
             || MemoryExtensions.Equals(s, "t", StringComparison.OrdinalIgnoreCase)
             || MemoryExtensions.Equals(s, "yes", StringComparison.OrdinalIgnoreCase)
@@ -181,7 +181,7 @@ public abstract class ValueStringBase : Value
     {
         try
         {
-            return BigDecimal.Parse(value.Trim());
+            return BigDecimal.Parse(TrimForParse(value.AsSpan()), value);
         }
         catch (FormatException e)
         {
@@ -361,6 +361,32 @@ public abstract class ValueStringBase : Value
         return false;
     }
 
+    /// <summary>
+    /// Trims the text the way Java's <c>String.trim</c> does: every character up to and
+    /// including U+0020 goes, and nothing else. .NET's own <c>Trim</c> would also strip the
+    /// Unicode spaces above it — U+00A0 and its friends — and where Java's trim leaves one in
+    /// the text the reference parser refuses the value, so this trim leaves it in too. The
+    /// trim runs on the span the parse reads, so a padded number costs no strings.
+    /// </summary>
+    /// <param name="s">the text to trim</param>
+    /// <returns>the text without the reference's own trim characters at the ends</returns>
+    private static ReadOnlySpan<char> TrimForParse(ReadOnlySpan<char> s)
+    {
+        int start = 0;
+        int end = s.Length;
+        while (start < end && s[start] <= ' ')
+        {
+            start++;
+        }
+
+        while (end > start && s[end - 1] <= ' ')
+        {
+            end--;
+        }
+
+        return s[start..end];
+    }
+
     private static T Parse<T>(
         string text,
         TryParse<T> tryParse,
@@ -368,7 +394,7 @@ public abstract class ValueStringBase : Value
     {
         try
         {
-            if (!tryParse(text.AsSpan().Trim(), style, CultureInfo.InvariantCulture, out T result))
+            if (!tryParse(TrimForParse(text.AsSpan()), style, CultureInfo.InvariantCulture, out T result))
             {
                 throw new FormatException(text);
             }
