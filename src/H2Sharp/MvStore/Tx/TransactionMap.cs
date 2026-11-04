@@ -475,9 +475,18 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// <summary>
     /// The value from a snapshot taken during the call.
     /// </summary>
+    /// <remarks>
+    /// The reference's <c>getImmediate</c> hands the CAS loop a capturing lambda, which on the
+    /// JVM is one object per row read; the port translated that shape as a closure plus a
+    /// delegate, which is two. The loop here answers a tuple instead, so a read allocates
+    /// nothing, and the loop can inline, which a delegate-parameter method cannot.
+    /// </remarks>
     public V? GetImmediate(K key)
-        => TransactionStore.Unbox<V>(UseSnapshot((rootReference, committedTransactions) =>
-                                GetFromSnapshotObject(rootReference, committedTransactions, key)));
+    {
+        (RootReference<object, VersionedValue<object>> rootReference, long[] committedTransactions) =
+            ReadSnapshotRoot();
+        return TransactionStore.Unbox<V>(GetFromSnapshotObject(rootReference, committedTransactions, key));
+    }
 
     internal Snapshot<object, VersionedValue<object>> GetSnapshot()
         => transaction.AllowNonRepeatableRead()
@@ -508,16 +517,30 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// <summary>
     /// A new snapshot of this map.
     /// </summary>
-    internal Snapshot<object, VersionedValue<object>> CreateSnapshot() => UseSnapshot(
-        (root, committing) => new Snapshot<object, VersionedValue<object>>(root, committing));
-
-    private R UseSnapshot<R>(Func<RootReference<object, VersionedValue<object>>, long[], R> snapshotConsumer)
+    internal Snapshot<object, VersionedValue<object>> CreateSnapshot()
     {
-        // The purpose of the following loop is to get a coherent picture
-        // of a state of two independent volatile / atomic variables,
-        // which they had at some recent moment in time.
-        // In order to get such a "snapshot", we wait for a moment of silence,
-        // when neither of the variables concurrently changes it's value.
+        (RootReference<object, VersionedValue<object>> root, long[] committing) = ReadSnapshotRoot();
+        return new Snapshot<object, VersionedValue<object>>(root, committing);
+    }
+
+    /// <summary>
+    /// A coherent picture of the map's root and the committing transactions at one moment:
+    /// the pair the reference's <c>useSnapshot</c> loop assembles and hands its consumer.
+    /// </summary>
+    /// <remarks>
+    /// The purpose of the following loop is to get a coherent picture
+    /// of a state of two independent volatile / atomic variables,
+    /// which they had at some recent moment in time.
+    /// In order to get such a "snapshot", we wait for a moment of silence,
+    /// when neither of the variables concurrently changes it's value.
+    /// <para>
+    /// The reference passes the pair to a <c>BiFunction</c>; the tuple is what lets the
+    /// callers here take it without the delegate in between.
+    /// </para>
+    /// </remarks>
+    /// <returns>the root reference and the committing transactions of one moment</returns>
+    private (RootReference<object, VersionedValue<object>> Root, long[] Committing) ReadSnapshotRoot()
+    {
         TransactionStore store = transaction.Store!;
         VersionedBitSet committingTransactions = store.CommittingTransactions;
         while (true)
@@ -527,7 +550,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
             committingTransactions = store.CommittingTransactions;
             if (ReferenceEquals(committingTransactions, prevCommittingTransactions))
             {
-                return snapshotConsumer(root, committingTransactions.Bits);
+                return (root, committingTransactions.Bits);
             }
         }
     }
@@ -537,8 +560,11 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// than its value, so a missing value-typed entry does not read as present.
     /// </summary>
     public bool ContainsKey(object? key)
-        => UseSnapshot((rootReference, committedTransactions) =>
-            GetFromSnapshotObject(rootReference, committedTransactions, (K)key!)) is not null;
+    {
+        (RootReference<object, VersionedValue<object>> rootReference, long[] committedTransactions) =
+            ReadSnapshotRoot();
+        return GetFromSnapshotObject(rootReference, committedTransactions, (K)key!) is not null;
+    }
 
     /// <summary>
     /// Whether the row was deleted by this transaction.

@@ -88,6 +88,17 @@ private (RootReference<object, VersionedValue<object>>, long[]) ReadSnapshotRoot
 **Эффект.** Критический: −2 аллокации на чтение строки, возвращается инлайнинг
 `GetImmediate`. Отклонением от эталона не является — наоборот, убирает портом придуманный слой.
 
+> **Развёрнуто с поправкой к обоснованию (2026-11-04).** Утверждение «в эталоне
+> вызов напрямую, `UseSnapshot` придумана портом» неверно: эталон имеет
+> `TransactionMap.useSnapshot(BiFunction)` (`TransactionMap.java:560`), и его
+> `getImmediate` передаёт capturing lambda — один объект на чтение на JVM.
+> Порт перевёл эталон 1:1; разница в том, что .NET-lambda с захватом — это
+> closure + delegate (два объекта) и непроинлайненный цикл. Кортежный
+> `ReadSnapshotRoot` — .NET-улучшение ниже эталонной цены (0 аллокаций),
+> зафиксировано в комментарии метода и в MIGRATION_STATUS. `ContainsKey`
+> дополнительно к `GetImmediate` переведён на кортеж — у него та же проблема;
+> `UseSnapshot<R>` удалён, `CreateSnapshot` тоже на кортеже.
+
 ### 1.2. Декодирование VARCHAR: аренда пула плюс вторая копия строки — Высокий (✓)
 
 **Место:** `src/H2Sharp/MvStore/DataUtils.cs:413-434` (`ReadString`)

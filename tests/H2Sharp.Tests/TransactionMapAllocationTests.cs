@@ -95,6 +95,61 @@ public sealed class TransactionMapAllocationTests : IDisposable
         Assert.True(allocated < 60000, $"allocated {allocated} bytes for {Rows} rows");
     }
 
+    [Fact]
+    public void GetImmediateAndContainsKeyAllocateNothing()
+    {
+        Transaction transaction = transactions.Begin();
+        try
+        {
+            TransactionMap<string, string> map = transaction.OpenMap<string, string>("alloc_probe");
+            map.Put("key", "value");
+            Assert.Equal("value", map.GetImmediate("key"));
+
+            // The row-read entry point and the contains check both go through the snapshot
+            // loop, which the reference reaches through a capturing lambda - one object per
+            // row on the JVM - and which this port had translated as a closure plus a
+            // delegate, two objects per row. The loop answers a tuple now, so neither path
+            // allocates anything.
+            Assert.Equal(0, Measure(() => map.GetImmediate("key")));
+            Assert.Equal(0, Measure(() => map.ContainsKey("key")));
+        }
+        finally
+        {
+            transaction.Rollback();
+        }
+    }
+
+    /// <summary>
+    /// Runs the action a few times for the JIT and the lazy statics, then takes the smallest
+    /// allocation figure of five measured runs, so a tiered recompilation or a background
+    /// collection cannot read as a cost of the method.
+    /// </summary>
+    private static long Measure(Action action)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            action();
+        }
+
+        long smallest = long.MaxValue;
+        for (int i = 0; i < 5; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            action();
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            if (allocated < smallest)
+            {
+                smallest = allocated;
+            }
+        }
+
+        return smallest;
+    }
+
     private static Row Row(int id, string name)
         => new DefaultRow([ValueInteger.Get(id), ValueVarchar.Get(name)]);
 

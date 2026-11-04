@@ -9802,3 +9802,24 @@ DEL, таб, '#' с Oracle-режимом и без, астральные бук
 
 Проверено: `H2Sharp.Tests` 1882 зелёных (`Category!=BlockedByPort`), Data 717,
 Engine 9, MvStore 152.
+
+### Чтение строки из транзакционной карты без closure (2026-11-04)
+
+Пункт 1.1 аудита `docs/PERF_AUDIT_ALLOCATIONS.md`, с поправкой к его
+обоснованию. `UseSnapshot<R>(Func<...>)` — не придумка порта: эталонный
+`TransactionMap.useSnapshot(BiFunction)` существует, и его `getImmediate`
+передаёт capturing lambda — один объект на чтение на JVM. Порт перевёл это
+1:1, но в .NET capturing lambda — это closure + delegate, то есть два объекта
+и непроинлайненный CAS-цикл на каждое чтение строки.
+
+Цикл теперь отвечает кортежем (`ReadSnapshotRoot`), и `GetImmediate`,
+`ContainsKey` и `CreateSnapshot` берут пару напрямую: 0 аллокаций на чтение и
+возврат инлайнинга. `UseSnapshot<R>` удалён — потребителей с «настоящим»
+различием не осталось. Это .NET-улучшение ниже эталонной цены (у эталона —
+одна аллокация lambda), записано в комментарии метода.
+
+Гейт `TransactionMapAllocationTests.GetImmediateAndContainsKeyAllocateNothing`:
+0 байт на `GetImmediate` и `ContainsKey` по существующему ключу.
+
+Проверено: `H2Sharp.Tests` 1883 зелёных (`Category!=BlockedByPort`), Data 717,
+Engine 9, MvStore 152.
