@@ -9573,3 +9573,34 @@ Native 96 (два прежних дефекта Native — `TestResultSetGetters
 переполнение LISTAGG за `MaxStringLength` (мегабайты на строку), запрещённый
 синтаксически `MODE(DISTINCT ...)`, недостижимый default оптимизации и
 интерфейсные ветки. Union: 88.05% → **88.22% строк** (84.02% веток).
+
+### Грамматика типов: алиасы, интервалы, геометрия, ARRAY/ROW (2026-11-04)
+
+`DataTypeGrammarOracleTests` (5 оракульных тестов) проходит эталонные таблицы
+`datatypes/interval.sql` и `datatypes/geometry.sql` и добавляет:
+
+* написания CHARACTER/NATIONAL: `CHAR VARYING`, `CHAR LARGE OBJECT`,
+  `CHARACTER VARYING/LARGE OBJECT`, `NATIONAL CHARACTER`, `NATIONAL CHAR`,
+  `NCHAR VARYING/LARGE OBJECT`, `VARCHAR2`, `NCLOB` — с метаданными
+  `DATA_TYPE`, `DATA_TYPE_SQL`, `DTD_IDENTIFIER`;
+* TIMESTAMP/TIME: точность, `(6, 4)`, `WITH TIME ZONE` и `WITHOUT TIME ZONE`;
+* все 13 квалификаторов INTERVAL, с точностью и шкалой, их литералы и
+  ИНФОРМАЦИЯ_SCHEMA-поля `INTERVAL_TYPE`/`INTERVAL_PRECISION`; отказы
+  `DAY TO YEAR`, `YEAR(0)`, `SECOND(5, 10)`;
+* 17 геометрических квалификаторов (`GEOMETRY(GEOMETRY, 1)`, `POINT Z`,
+  `POINTZ`, `POINT M`, `POINT ZM`, SRID `-100`, все OGC-типы) и отказы
+  `BADTYPE`, `POINT BAD`, `1`, `POINT, 1, 2`;
+* `INT ARRAY`, `INT ARRAY[3]`, `ROW(...)`, вложенный ROW, дубликат поля ROW,
+  пустой ROW и `ARRAY` в позиции имени типа;
+* отказы точности/шкалы для VARCHAR/CHAR/BINARY/VARBINARY/NUMERIC/DECIMAL/
+  DECFLOAT/TIMESTAMP/TIME/INTERVAL и поиск домена (`NOSUCHDOMAIN`,
+  `PUBLIC.NOSUCHDOMAIN`, `NOSUCHSCHEMA.NOSUCHDOMAIN`, `PG_CATALOG....`).
+
+Оракул нашёл расхождение в кодах ошибок геометрии: эталон бросает
+`getSyntaxError()` без списка ожиданий (42000) после чтения типа и с
+оставшимся ожиданием `GEOMETRY` (42001) до него; порт всегда отвечал 42001.
+Различие воспроизведено по состоянию «тип прочитан» с комментарием, что
+механизма expectedList в порте нет.
+
+Покрытие `Parser.DataTypes` 81.1% → **91.3%**; union 88.22% → **88.28% строк**.
+Проверено: `H2Sharp.Tests` 1861 зелёный.

@@ -570,15 +570,19 @@ public sealed partial class Parser
             int type = 0;
             if (CurrentType != ParserUtil.Identifier || Current.IsQuoted)
             {
-                throw DbException.GetSyntaxError(sql, Current.Start, "geometry type");
+                // The reference throws the bare getSyntaxError() here, before readIf has put
+                // an expectation into its list: code 42000.
+                throw DbException.GetSyntaxError(sql, Current.Start);
             }
 
             if (!IsWord("GEOMETRY"))
             {
+                bool typeRead = false;
                 try
                 {
                     type = EWKTUtils.ParseGeometryType(Current.AsIdentifier!);
                     Read();
+                    typeRead = true;
                     if (type / 1_000 == 0 && CurrentType == ParserUtil.Identifier && !Current.IsQuoted)
                     {
                         type += EWKTUtils.ParseDimensionSystem(Current.AsIdentifier!) * 1_000;
@@ -587,7 +591,13 @@ public sealed partial class Parser
                 }
                 catch (ArgumentException)
                 {
-                    throw DbException.GetSyntaxError(sql, Current.Start, "geometry type");
+                    // The reference throws getSyntaxError(), whose code depends on its
+                    // expected-token list: readIf("GEOMETRY") leaves the failed GEOMETRY
+                    // expectation there (42001) until read() clears the list (42000). The port
+                    // has no expected-list state, so the same distinction is made here.
+                    throw typeRead
+                        ? DbException.GetSyntaxError(sql, Current.Start)
+                        : DbException.GetSyntaxError(sql, Current.Start, "GEOMETRY");
                 }
             }
 
