@@ -130,8 +130,13 @@ public sealed class FreshIssuesOracleTests
             command.CommandText = statements[i];
             try
             {
+                // JDBC's execute() reports a result set for every query command; the port's
+                // reader path has to be asked for those the same way.
                 bool query = statements[i].StartsWith("SELECT", StringComparison.Ordinal)
                     || statements[i].StartsWith("EXPLAIN", StringComparison.Ordinal)
+                    || statements[i].StartsWith("WITH", StringComparison.Ordinal)
+                    || statements[i].StartsWith("TABLE", StringComparison.Ordinal)
+                    || statements[i].StartsWith("CALL", StringComparison.Ordinal)
                     || statements[i].StartsWith('(');
                 if (!query) { port.Add(prefix + "U:" + command.ExecuteNonQuery()); continue; }
                 using DbDataReader rows = command.ExecuteReader();
@@ -177,10 +182,18 @@ public sealed class FreshIssuesOracleTests
             """);
         // xUnit truncates long assertion messages, and two lists that differ near the end
         // print as two identical prefixes. Report the first differing line instead.
+        int firstDifference = 0;
+        while (firstDifference < java.Count && firstDifference < port.Count
+            && java[firstDifference] == port[firstDifference])
+        {
+            firstDifference++;
+        }
+
         Assert.True(java.Count == port.Count,
-            "lines: jvm=" + java.Count + " port=" + port.Count
-            + (java.Count > 0 && port.Count > 0
-                ? "\n  first jvm:  " + java[0] + "\n  first port: " + port[0]
+            "lines: jvm=" + java.Count + " port=" + port.Count + " first diff at " + firstDifference
+            + (firstDifference < java.Count || firstDifference < port.Count
+                ? "\n  jvm:  " + (firstDifference < java.Count ? java[firstDifference] : "<none>")
+                    + "\n  port: " + (firstDifference < port.Count ? port[firstDifference] : "<none>")
                 : ""));
         for (int i = 0; i < java.Count; i++)
         {

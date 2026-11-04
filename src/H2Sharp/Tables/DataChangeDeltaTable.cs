@@ -24,6 +24,7 @@ using H2Sharp.Indexes;
 using H2Sharp.Result;
 using H2Sharp.Schemas;
 using H2Sharp.Values;
+using H2Sharp.Message;
 
 namespace H2Sharp.Tables;
 
@@ -176,9 +177,11 @@ public sealed class DataChangeDeltaTable : VirtualConstructedTable
     }
 
     /// <inheritdoc/>
-    public override void Truncate(SessionLocal session)
-    {
-    }
+    public override int GetId() => 0;
+
+    /// <inheritdoc/>
+    public override long Truncate(SessionLocal session)
+        => throw DbException.GetUnsupportedException("Virtual table");
 
     /// <inheritdoc/>
     public override void RemoveChildrenAndResources(SessionLocal session)

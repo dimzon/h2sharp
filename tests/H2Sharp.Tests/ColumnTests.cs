@@ -138,7 +138,7 @@ public sealed class ColumnTests
         public override System.Text.StringBuilder GetSql(System.Text.StringBuilder builder, int sqlFlags)
             => builder.Append("T");
 
-        public override void Truncate(SessionLocal session) => throw new TODOException("TableFake");
+        public override long Truncate(SessionLocal session) => throw new TODOException("TableFake");
 
         public override void RemoveChildrenAndResources(SessionLocal session) => throw new TODOException("TableFake");
 

@@ -247,7 +247,29 @@ public sealed class Merge : CommandWithValues
                 }
 
                 TypeInfo colType = col.GetTypeInfo();
-                TypeInfo.CheckComparable(colType, v.GetTypeInfo());
+                TypeInfo rightType = v.GetTypeInfo();
+                // The reference skips the comparability check for a numeric/BOOLEAN pair in
+                // the modes that allow such a comparison; the conversion below still runs.
+                bool booleanComparison = false;
+                if (session.GetMode().NumericWithBooleanComparison)
+                {
+                    int leftValueType = colType.GetValueType();
+                    if (leftValueType == Value.Boolean)
+                    {
+                        booleanComparison = DataType.IsNumericType(rightType.GetValueType());
+                    }
+                    else if (DataType.IsNumericType(leftValueType)
+                        && rightType.GetValueType() == Value.Boolean)
+                    {
+                        booleanComparison = true;
+                    }
+                }
+
+                if (!booleanComparison)
+                {
+                    TypeInfo.CheckComparable(colType, rightType);
+                }
+
                 parameters[j++].SetValue(v.ConvertForAssignTo(colType, session.CastDataProvider, col));
             }
 

@@ -35,6 +35,14 @@ public abstract class VirtualConstructedTable : Table
     /// <inheritdoc/>
     public override Index? GetScanIndex(SessionLocal session) => new VirtualConstructedTableIndex(this);
 
+    // The reference inherits these from VirtualTable, which has no indexes of its own.
+
+    /// <inheritdoc/>
+    public override int GetIndexCount() => 0;
+
+    /// <inheritdoc/>
+    public override Index[] GetIndexes() => [];
+
     /// <inheritdoc/>
     public override long GetMaxDataModificationId() => long.MaxValue;
 }

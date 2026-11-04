@@ -186,7 +186,42 @@ public sealed class Comparison : Condition
     {
         left = left.Optimize(session);
         right = right.Optimize(session);
-        TypeInfo.CheckComparable(left.GetTypeInfo(), right.GetTypeInfo());
+        // The reference skips the comparability check for EQUAL / NOT EQUAL (null-safe ones
+        // included) on a numeric/BOOLEAN pair in the modes that allow the comparison.
+        bool booleanComparison = false;
+        if (session.GetMode().NumericWithBooleanComparison)
+        {
+            switch (compareType)
+            {
+                case Equal:
+                case NotEqual:
+                case EqualNullSafe:
+                case NotEqualNullSafe:
+                {
+                    TypeInfo leftType = left.GetTypeInfo(), rightType = right.GetTypeInfo();
+                    int leftValueType = leftType.GetValueType();
+                    if (leftValueType == Value.Boolean)
+                    {
+                        booleanComparison = DataType.IsNumericType(rightType.GetValueType());
+                    }
+                    else if (DataType.IsNumericType(leftValueType)
+                        && rightType.GetValueType() == Value.Boolean)
+                    {
+                        booleanComparison = true;
+                    }
+
+                    break;
+                }
+
+                default:
+                    break;
+            }
+        }
+
+        if (!booleanComparison)
+        {
+            TypeInfo.CheckComparable(left.GetTypeInfo(), right.GetTypeInfo());
+        }
 
         if (whenOperand)
         {

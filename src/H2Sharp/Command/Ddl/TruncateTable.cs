@@ -50,8 +50,7 @@ public sealed class TruncateTable : DefineCommand
             throw Message.DbException.Get(Api.ErrorCode.CannotTruncate1, target.GetTraceSql());
         }
 
-        target.Truncate(session);
-        long result = 0;
+        long result = target.Truncate(session);
         if (restart)
         {
             foreach (Column column in target.GetColumns())
@@ -60,6 +59,7 @@ public sealed class TruncateTable : DefineCommand
                 if (sequence is not null)
                 {
                     sequence.Modify(sequence.GetStartValue(), null, null, null, null, null, null);
+                    GetSession().GetDatabase().UpdateMeta(session, sequence);
                 }
             }
         }

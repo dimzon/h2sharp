@@ -54,8 +54,10 @@ public sealed class InformationSchemaTableSurfaceTests
         Assert.Same(table.GetSchema(), session.GetDatabase()!.GetSchema("INFORMATION_SCHEMA"));
         Assert.False(table.IsClosed());
 
-        // The no-ops the table contract still demands.
-        table.Truncate(session);
+        // The no-ops the table contract still demands. TRUNCATE is a refusal in the reference:
+        // MetaTable.truncate throws FEATURE_NOT_SUPPORTED for "META".
+        H2SharpException truncate = Assert.Throws<H2SharpException>(() => table.Truncate(session));
+        Assert.Equal(H2Sharp.Api.ErrorCode.FeatureNotSupported1, truncate.H2ErrorCode);
         table.RemoveChildrenAndResources(session);
         table.Close();
         Assert.False(table.IsClosed());

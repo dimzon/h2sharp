@@ -9494,3 +9494,52 @@ NUMERIC, NULL-scale, REAL/DOUBLE/DECFLOAT, граничные double-значе�
 которые движок не зовёт.
 
 Проверено: `H2Sharp.Tests` 1846 зелёных, Data 717, Engine 9, MvStore 152.
+
+### MERGE: эталонные merge.sql и mergeUsing.sql (2026-11-04)
+
+`MergeOracleTests` (6 оракульных тестов) проходит reference-скрипты
+`dml/merge.sql` и `dml/mergeUsing.sql`: VALUES/KEY/DEFAULT и generated-колонки,
+SELECT-источник, MySQL-преобразование BOOLEAN, USING с DUAL/VALUES/таблицей,
+WHEN ... AND, DELETE, FINAL TABLE, identity с OVERRIDING и планы.
+
+Оракул вскрыл серию расхождений и дефектов порта:
+
+* **Чтение алиаса.** Порт проверял «похоже на имя и не слово-клауза» своим
+  `IsNameToken`/`IsClauseWord`, тогда как эталон спрашивает `isIdentifier()`;
+  из-за этого `SELECT` съедался как алиас таблицы и
+  `MERGE INTO T SELECT ...` был синтаксической ошибкой. Ветка заменена
+  эталонной, изобретённый `IsNameToken` удалён.
+* **`parseValuesForCommand`** не был портирован: VALUES понимал только
+  скобочные строки, а голое `VALUES 2` эталона — нет. Helper портирован
+  дословно (ROW(...), скобки, голое выражение) и подключён к MERGE.
+* **`SET MODE`** в порте отказывал («режим фиксирован при открытии»), тогда как
+  эталон присваивает режим (`Database.setMode`, без bump remoteSettingsId —
+  удалённые сессии не портированы). Отказ убран; тест `H2ConnectionModeTests`
+  теперь проверяет смену режима, а строка подключения по-прежнему выбирает
+  базу.
+* **`numericWithBooleanComparison`** отсутствовал: добавлен в `Mode` (Legacy,
+  DB2, HSQLDB, SQL Server, MariaDB, MySQL) и проверяется в `Merge` и
+  `Comparison` эталонным условием. `MERGE ... VALUES 2` по BOOLEAN-ключу в
+  MySQL-режиме теперь проходит.
+* **`Table.truncate` возвращает long**, а не void: `MVTable` отдаёт
+  `GetRowCountApproximation`, виртуальные таблицы отказывают как эталон
+  («Virtual table», «META», имя класса), `TRUNCATE TABLE` возвращает число
+  строк и обновляет метаданные последовательностей при RESTART. Тест
+  INFORMATION_SCHEMA-поверхности ждёт отказ `META`.
+* **`USING VALUES (...)`-источник**: сгенерированный алиас передаётся в
+  `readFromAlias` и заменяется явным (`S`), после алиаса читается список
+  derived-колонок, `USE INDEX` — в эталонном порядке.
+* **`TableValueConstructor.toTable`** возвращает уже построенную таблицу для
+  неупорядоченного конструктора без offset/fetch (добавлены `Query.HasOrder`,
+  internal-доступ к offset/fetch); таблица VALUES печатает себя в скобках,
+  привязывает колонки к таблице и имеет id 0; `VirtualConstructedTable` отдаёт
+  пустой список индексов; виртуальным таблицам добавлен `GetId() => 0`.
+* **`Parser.findColumn`** теперь делегирует `TableFilter.findColumn`, как
+  эталон, а не перебирает `GetColumns()` в обход derived-имён — это чинило
+  `LEFT JOIN (VALUES 2) T2(A) USING(A)`.
+
+Проверено: `H2Sharp.Tests` 1852 зелёных, Data 717, Engine 9, MvStore 152,
+Native 96 (два прежних дефекта Native — `TestResultSetGetters` и `TestView` —
+воспроизводятся на HEAD). Покрытие union: 87.93% → **88.05% строк**
+(83.65% → 83.9% веток); `Merge.cs` 46.1% → 81.9%, `TableValueConstructorTable`
+78.6%, `TruncateTable` 88.9%.

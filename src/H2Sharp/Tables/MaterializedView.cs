@@ -174,7 +174,7 @@ public sealed class MaterializedView : Table
         => throw DbException.GetUnsupportedException("MATERIALIZED VIEW.REMOVE_ROW");
 
     /// <inheritdoc/>
-    public override void Truncate(SessionLocal session)
+    public override long Truncate(SessionLocal session)
         => throw DbException.GetUnsupportedException("MATERIALIZED VIEW.TRUNCATE");
 
     /// <inheritdoc/>

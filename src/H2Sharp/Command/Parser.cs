@@ -2377,8 +2377,10 @@ public sealed partial class Parser
         }
 
         Tables.Table fromTable;
-        bool hasAlias = true;
         string tableName;
+        // The alias a table starts with: the generated name of a VALUES constructor, which an
+        // explicitly written alias replaces, exactly as readFromAlias(alias) does.
+        string? baseAlias = null;
         if (IsWord("VALUES", consume: false))
         {
             // The table of a table value constructor: the rows a VALUES clause names.
@@ -2388,7 +2390,7 @@ public sealed partial class Parser
             tableName = "_VALUES_" + Current.Start.ToString(System.Globalization.CultureInfo.InvariantCulture);
             fromTable = values.ToTable(
                 tableName, null, queryParameters, forCreateView: false, topQuery: select);
-            hasAlias = false;
+            baseAlias = tableName;
         }
         else
         {
@@ -2474,18 +2476,25 @@ public sealed partial class Parser
 
         string? filterAlias;
         Tables.IndexHints? indexHints = null;
-        if (hasAlias && ReadIfUseIndex())
+        List<string>? derivedColumnNames = null;
+        // Reference tail of readTablePrimary: USE INDEX may precede the alias; otherwise the
+        // alias is read (replacing the generated one of a VALUES constructor when written)
+        // and a derived column list and USE INDEX may follow it.
+        if (ReadIfUseIndex())
         {
-            // USE INDEX before any alias, as the reference reads it.
-            filterAlias = null;
+            filterAlias = baseAlias;
             indexHints = ParseIndexHints(fromTable);
         }
         else
         {
-            filterAlias = hasAlias ? ReadFromAlias() : null;
-            if (filterAlias is not null && ReadIfUseIndex())
+            filterAlias = ReadFromAlias(baseAlias);
+            if (filterAlias is not null)
             {
-                indexHints = ParseIndexHints(fromTable);
+                derivedColumnNames = ReadDerivedColumnNames();
+                if (ReadIfUseIndex())
+                {
+                    indexHints = ParseIndexHints(fromTable);
+                }
             }
         }
         // The reference inherits the alias for CTE as views from the table name: a filter
@@ -2502,9 +2511,15 @@ public sealed partial class Parser
             DiscardWithTableHints();
         }
 
-        return new(
-            session, fromTable, filterAlias ?? (hasAlias ? null : tableName),
+        Tables.TableFilter buildFilter = new(
+            session, fromTable, filterAlias,
             rightsChecked: true, select, 0, indexHints);
+        if (derivedColumnNames is not null)
+        {
+            buildFilter.SetDerivedColumns(derivedColumnNames);
+        }
+
+        return buildFilter;
     }
 
     /// <summary>
@@ -2775,17 +2790,7 @@ public sealed partial class Parser
     /// <param name="name">the name of the column</param>
     /// <returns>the column, or null when the table has no such column</returns>
     private Tables.Column? FindColumn(Tables.TableFilter filter, string name)
-    {
-        foreach (Tables.Column column in filter.GetColumns())
-        {
-            if (IdentifierEquals(column.GetName(), name))
-            {
-                return column;
-            }
-        }
-
-        return null;
-    }
+        => filter.FindColumn(name);
 
     /// <summary>
     /// Collects the filters of a join, as the reference's visit of a nested join does.
@@ -2829,16 +2834,11 @@ public sealed partial class Parser
     /// <returns>the alias, or null when there is none</returns>
     private string? ReadFromAlias(string? alias = null)
     {
-        if (IsWord("AS"))
+        // Reference: readIf(AS) || isIdentifier() — a keyword alias needs AS unless the session
+        // declared the word a non-keyword, and the alias is only replaced when one was read.
+        if (IsWord("AS") || IsIdentifier())
         {
-            return ReadIdentifier();
-        }
-
-        // A name that is already there is not replaced by an implicit one: the reference
-        // reads the alias of a table that has one only when the name was written out.
-        if (alias is null && IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
-        {
-            return ReadIdentifier();
+            alias = ReadIdentifier();
         }
 
         return alias;
@@ -3453,22 +3453,7 @@ public sealed partial class Parser
 
         if (IsWord("VALUES"))
         {
-            do
-            {
-                Expect(Token.OpenParen, "(");
-                List<Expressions.Expression> values = [];
-                if (!ReadIf(Token.CloseParen))
-                {
-                    do
-                    {
-                        values.Add(ReadExpressionOrDefault());
-                    }
-                    while (ReadIfMore());
-                }
-
-                command.AddRow([.. values]);
-            }
-            while (ReadIf(Token.Comma));
+            ParseValuesForCommand(command);
         }
         else
         {
@@ -3477,6 +3462,52 @@ public sealed partial class Parser
 
         command.SetSql(sql, null);
         return command;
+    }
+
+    /// <summary>
+    /// Reads the rows of a VALUES clause, as the reference's parseValuesForCommand does:
+    /// either a parenthesized (or ROW-parenthesized) list per row, or a single bare
+    /// expression per row.
+    /// </summary>
+    /// <param name="command">the command the rows are added to</param>
+    private void ParseValuesForCommand(Dml.CommandWithValues command)
+    {
+        List<Expressions.Expression> values = [];
+        do
+        {
+            values.Clear();
+            bool multiColumn;
+            if (IsWord("ROW", consume: false) && position + 1 < tokens.Count
+                && tokens[position + 1].TokenType == Token.OpenParen)
+            {
+                Read();
+                Expect(Token.OpenParen, "(");
+                multiColumn = true;
+            }
+            else
+            {
+                multiColumn = ReadIf(Token.OpenParen);
+            }
+
+            if (multiColumn)
+            {
+                if (!ReadIf(Token.CloseParen))
+                {
+                    do
+                    {
+                        values.Add(ReadExpressionOrDefault());
+                    }
+                    while (ReadIfMore());
+                }
+            }
+            else
+            {
+                values.Add(ReadExpressionOrDefault());
+            }
+
+            command.AddRow([.. values]);
+        }
+        while (ReadIf(Token.Comma));
     }
 
     /// <summary>
@@ -4380,7 +4411,7 @@ public sealed partial class Parser
             {
                 item = new Expressions.ExpressionColumn("*", null, 0);
             }
-            else if (IsNameToken()
+            else if (IsIdentifier()
                 && position + 2 < tokens.Count
                 && tokens[position + 1].TokenType == Token.Dot
                 && tokens[position + 2].TokenType == Token.Asterisk)
@@ -4418,7 +4449,7 @@ public sealed partial class Parser
                 {
                     alias = ReadIdentifier();
                 }
-                else if (IsNameToken() && !IsClauseWord(Current.AsIdentifier!))
+                else if (IsIdentifier())
                 {
                     // The reference reads the alias of a select item the same way it reads
                     // the alias of a table: with the AS or without it, and the two forms
@@ -4879,15 +4910,6 @@ public sealed partial class Parser
 
         throw new TODOException("Parser.parseQuerySelect: LIMIT/OFFSET takes an integer literal here");
     }
-
-    /// <summary>
-    /// Whether the current token can be a name: a plain identifier or a keyword, which the
-    /// reference also allows as a name. Punctuation is never one, which is what keeps a comma
-    /// or a parenthesis from being read as an alias.
-    /// </summary>
-    private bool IsNameToken()
-        => CurrentType == ParserUtil.Identifier
-            || (CurrentType >= ParserUtil.FirstKeyword && CurrentType <= ParserUtil.LastKeyword);
 
     /// <summary>
     /// Whether the word opens a clause this reader does not read: such a word is never a table

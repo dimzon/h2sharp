@@ -52,12 +52,12 @@ public abstract class Query : Prepared
     /// <summary>
     /// The expression that says how many rows to skip, or null.
     /// </summary>
-    private Expression? offsetExpr;
+    internal Expression? offsetExpr;
 
     /// <summary>
     /// The expression that says how many rows to read, or null.
     /// </summary>
-    private Expression? fetchExpr;
+    internal Expression? fetchExpr;
 
     /// <summary>
     /// Whether the fetch is a percentage of the rows rather than a number of them.
@@ -129,6 +129,9 @@ public abstract class Query : Prepared
 
     /// <summary>Whether this query is a plain {@code DISTINCT} query.</summary>
     public bool IsStandardDistinct() => distinct;
+
+    /// <summary>Whether this query has an order (an ORDER BY list or a prepared sort).</summary>
+    public bool HasOrder() => orderList is not null || sort is not null;
 
     /// <summary>Whether this query removes duplicates.</summary>
     public virtual bool IsAnyDistinct() => distinct;
@@ -685,7 +688,7 @@ public abstract class Query : Prepared
     /// <param name="forCreateView">whether the table is made for a view</param>
     /// <param name="topQuery">the query the table is a part of, or null</param>
     /// <returns>the table</returns>
-    public Tables.Table ToTable(
+    public virtual Tables.Table ToTable(
         string alias,
         Tables.Column[]? columnTemplates,
         List<Parameter> parameters,

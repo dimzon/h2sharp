@@ -248,7 +248,7 @@ public abstract class QueryExpressionTable : Table
     public override string? GetCreateSql() => null;
 
     /// <inheritdoc/>
-    public override void Truncate(SessionLocal session)
+    public override long Truncate(SessionLocal session)
         => throw DbException.GetUnsupportedException(GetType().Name + ".truncate");
 
     /// <inheritdoc/>

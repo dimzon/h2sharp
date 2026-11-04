@@ -25,10 +25,13 @@ public sealed class H2ConnectionModeTests
 
         using (var command = first.CreateCommand())
         {
+            // SET MODE changes the mode of a running database, as in the reference; the
+            // connection string's Mode still selects which in-memory database is opened.
             command.CommandText = "SET MODE Regular";
-            H2SharpException error = Assert.Throws<H2SharpException>(() => command.ExecuteNonQuery());
-            Assert.Equal(ErrorCode.FeatureNotSupported1, error.H2ErrorCode);
+            Assert.Equal(0, command.ExecuteNonQuery());
         }
+
+        Assert.Equal(Mode.GetInstance("Regular"), first.CurrentDatabase!.GetMode());
 
         using H2Connection conflicting = new(
             "Data Source=" + name + ";Storage=Memory;Mode=Regular");

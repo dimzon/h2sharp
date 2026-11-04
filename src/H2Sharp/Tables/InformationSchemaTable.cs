@@ -929,9 +929,8 @@ public sealed class InformationSchemaTable : Table
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags) => builder.Append(name);
 
     /// <inheritdoc/>
-    public override void Truncate(SessionLocal session)
-    {
-    }
+    public override long Truncate(SessionLocal session)
+        => throw DbException.GetUnsupportedException("META");
 
     /// <inheritdoc/>
     public override void RemoveChildrenAndResources(SessionLocal session)

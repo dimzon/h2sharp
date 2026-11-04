@@ -162,9 +162,11 @@ public sealed class RangeTable : Table
     }
 
     /// <inheritdoc/>
-    public override void Truncate(SessionLocal session)
-    {
-    }
+    public override int GetId() => 0;
+
+    /// <inheritdoc/>
+    public override long Truncate(SessionLocal session)
+        => throw DbException.GetUnsupportedException("Virtual table");
 
     /// <inheritdoc/>
     public override void RemoveChildrenAndResources(SessionLocal session)

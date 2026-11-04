@@ -16,6 +16,7 @@ using H2Sharp.Indexes;
 using H2Sharp.Result;
 using H2Sharp.Schemas;
 using H2Sharp.Values;
+using H2Sharp.Message;
 
 namespace H2Sharp.Tables;
 
@@ -51,6 +52,12 @@ public sealed class TableValueConstructorTable : VirtualConstructedTable
         this.columns = columns;
         this.columnExpressions = columnExpressions;
         this.rows = rows;
+        // The table is used directly when it is a FROM source, so its columns have to know
+        // which table they belong to, as the reference's setColumns makes them.
+        for (int i = 0; i < columns.Length; i++)
+        {
+            columns[i].SetTable(this, i);
+        }
     }
 
     /// <inheritdoc/>
@@ -107,9 +114,11 @@ public sealed class TableValueConstructorTable : VirtualConstructedTable
     public override Schema? GetSchema() => schema;
 
     /// <inheritdoc/>
-    public override void Truncate(SessionLocal session)
-    {
-    }
+    public override int GetId() => 0;
+
+    /// <inheritdoc/>
+    public override long Truncate(SessionLocal session)
+        => throw DbException.GetUnsupportedException("Virtual table");
 
     /// <inheritdoc/>
     public override void Close()
@@ -125,7 +134,7 @@ public sealed class TableValueConstructorTable : VirtualConstructedTable
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
     {
-        _ = builder.Append("VALUES ");
+        _ = builder.Append('(').Append("VALUES ");
         for (int i = 0; i < rows.Count; i++)
         {
             if (i > 0)
@@ -148,6 +157,6 @@ public sealed class TableValueConstructorTable : VirtualConstructedTable
             _ = builder.Append(')');
         }
 
-        return builder;
+        return builder.Append(')');
     }
 }

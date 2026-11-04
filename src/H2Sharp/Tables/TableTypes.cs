@@ -2473,7 +2473,8 @@ public abstract class Table
     /// Drops all rows of this table.
     /// </summary>
     /// <param name="session">the session</param>
-    public abstract void Truncate(H2Sharp.Engine.SessionLocal session);
+    /// <returns>the number of removed rows, possibly including uncommitted rows</returns>
+    public abstract long Truncate(H2Sharp.Engine.SessionLocal session);
 
     /// <summary>
     /// Whether this table can be the target of a foreign key, as the reference's

@@ -1251,13 +1251,17 @@ public sealed class MVTable : Table
     }
 
     /// <inheritdoc/>
-    public override void Truncate(SessionLocal session)
+    public override long Truncate(SessionLocal session)
     {
+        long result = GetRowCountApproximation(session);
         for (int i = indexes.Count - 1; i >= 0; i--)
         {
             indexes[i].Truncate(session);
         }
         SyncLastModificationIdWithDatabase();
+        // The reference also resets changesUntilAnalyze here; the ANALYZE bookkeeping is not
+        // ported, so there is no counter to reset.
+        return result;
     }
 
     /// <inheritdoc/>

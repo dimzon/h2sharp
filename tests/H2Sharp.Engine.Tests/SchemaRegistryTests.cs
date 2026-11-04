@@ -148,7 +148,7 @@ public sealed class SchemaRegistryTests
         public override System.Text.StringBuilder GetSql(System.Text.StringBuilder builder, int sqlFlags)
             => builder.Append(name);
 
-        public override void Truncate(SessionLocal session) => throw new TODOException("TestTable holds nothing");
+        public override long Truncate(SessionLocal session) => throw new TODOException("TestTable holds nothing");
 
         public override void RemoveChildrenAndResources(SessionLocal session)
             => throw new TODOException("TestTable has no children");

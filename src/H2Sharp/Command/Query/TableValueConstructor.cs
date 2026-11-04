@@ -91,6 +91,20 @@ public sealed class TableValueConstructor : Query
         => table ?? throw new TODOException("TableValueConstructor.getTable: the table is not built yet");
 
     /// <inheritdoc/>
+    public override Tables.Table ToTable(string alias, Tables.Column[]? columnTemplates,
+        List<Parameter> parameters, bool forCreateView, Query? topQuery)
+    {
+        // Reference: an unordered constructor with no offset or fetch is the table it already
+        // built, not a derived table over itself.
+        if (!HasOrder() && offsetExpr is null && fetchExpr is null && table is not null)
+        {
+            return table;
+        }
+
+        return base.ToTable(alias, columnTemplates, parameters, forCreateView, topQuery);
+    }
+
+    /// <inheritdoc/>
     public override int GetCommandType() => CommandInterface.Select;
 
     /// <inheritdoc/>

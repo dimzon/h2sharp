@@ -375,11 +375,9 @@ public sealed partial class Database
 
     public void SetMode(Mode newMode)
     {
-        if (!ReferenceEquals(mode, newMode))
-        {
-            throw DbException.GetUnsupportedException(
-                "SET MODE: the mode is fixed when the database is opened");
-        }
+        mode = newMode;
+        // The reference also bumps remoteSettingsId here, so remote sessions drop cached
+        // settings; remote sessions are not ported, so there is no id to bump.
     }
 
     public Mode GetMode()

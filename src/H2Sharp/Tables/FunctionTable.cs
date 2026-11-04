@@ -6,6 +6,7 @@ using H2Sharp.Expressions.Functions.Table;
 using H2Sharp.Indexes;
 using H2Sharp.Result;
 using H2Sharp.Schemas;
+using H2Sharp.Message;
 
 namespace H2Sharp.Tables;
 
@@ -67,7 +68,8 @@ public class FunctionTable : VirtualConstructedTable
     /// <inheritdoc/>
     public override Index[] GetIndexes() => [];
     /// <inheritdoc/>
-    public override void Truncate(SessionLocal session) { }
+    public override long Truncate(SessionLocal session)
+        => throw DbException.GetUnsupportedException("Virtual table");
     /// <inheritdoc/>
     public override void Close() { }
     /// <inheritdoc/>

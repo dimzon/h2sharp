@@ -239,6 +239,12 @@ public sealed class Mode
     /// </summary>
     public bool OnDuplicateKeyUpdate { get; }
 
+    /// <summary>
+    /// Whether a numeric value and a BOOLEAN may be compared with EQUAL / NOT EQUAL, as the
+    /// reference allows in Legacy, DB2, HSQLDB, SQL Server, MariaDB and MySQL.
+    /// </summary>
+    public bool NumericWithBooleanComparison { get; }
+
     /// <summary>Whether sequences of this mode use NUMERIC instead of BIGINT by default.</summary>
     public bool DecimalSequences { get; }
 
@@ -313,6 +319,7 @@ public sealed class Mode
         bool mergeWhere = false,
         bool allNumericTypesHavePrecision = false,
         bool onDuplicateKeyUpdate = false,
+        bool numericWithBooleanComparison = false,
         bool decimalSequences = false,
         bool groupByColumnIndex = false,
         bool topInSelect = false,
@@ -348,6 +355,7 @@ public sealed class Mode
         MergeWhere = mergeWhere;
         AllNumericTypesHavePrecision = allNumericTypesHavePrecision;
         OnDuplicateKeyUpdate = onDuplicateKeyUpdate;
+        NumericWithBooleanComparison = numericWithBooleanComparison;
         DecimalSequences = decimalSequences;
         GroupByColumnIndex = groupByColumnIndex;
         TopInSelect = topInSelect;
@@ -409,24 +417,27 @@ public sealed class Mode
             ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true,
                 greatestLeastIgnoreNulls: true, mergeWhere: true, topInSelect: true, topInDml: true,
                 identityDataType: true, serialDataTypes: true, autoIncrementClause: true,
-                identityClause: true, allowEmptyInPredicate: true),
-            ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true),
+                identityClause: true, allowEmptyInPredicate: true, numericWithBooleanComparison: true),
+            ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true,
+                numericWithBooleanComparison: true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true,
-                allowPlusForStringConcat: true, topInSelect: true),
+                allowPlusForStringConcat: true, topInSelect: true, numericWithBooleanComparison: true),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
                 greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true,
                 allowPlusForStringConcat: true, topInSelect: true, topInDml: true,
                 identityClause: true, allowEmptySchemaValuesAsDefaultSchema: true,
-                discardWithTableHints: true),
+                discardWithTableHints: true, numericWithBooleanComparison: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
-                autoIncrementClause: true, alterTableModifyColumn: true),
+                autoIncrementClause: true, alterTableModifyColumn: true,
+                numericWithBooleanComparison: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
-                autoIncrementClause: true, alterTableModifyColumn: true),
+                autoIncrementClause: true, alterTableModifyColumn: true,
+                numericWithBooleanComparison: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, charAndByteLengthUnits: true,
