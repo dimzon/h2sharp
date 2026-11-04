@@ -163,6 +163,437 @@ public sealed class MetadataOracleTests
         session.Close();
     }
 
+    /// <summary>
+    /// The metadata collections the reference answers empty, the version numbers, the
+    /// schema-pattern filter, the object-type filters of the table listing, and the catalog
+    /// mismatch that makes every listing answer its columns and no rows.
+    /// </summary>
+    [JavaOracleFact]
+    public void EmptyCollectionsAndCatalogMismatchMatchTheReference()
+    {
+        SessionLocal session = NewSession();
+        DatabaseMeta meta = session.GetDatabaseMeta();
+
+        List<string> actual = [];
+        Add(actual, "versionColumns", Describe(meta.GetVersionColumns(null, "PUBLIC", "P")));
+        Add(actual, "udts", Describe(meta.GetUDTs(null, "PUBLIC", null, null)));
+        Add(actual, "udtsStruct", Describe(meta.GetUDTs(null, "PUBLIC", null, [2002])));
+        Add(actual, "superTypes", Describe(meta.GetSuperTypes(null, "PUBLIC", null)));
+        Add(actual, "superTables", Describe(meta.GetSuperTables(null, "PUBLIC", null)));
+        Add(actual, "attributes", Describe(meta.GetAttributes(null, "PUBLIC", null, null)));
+        Add(actual, "functions", Describe(meta.GetFunctions(null, "PUBLIC", null)));
+        Add(actual, "functionColumns", Describe(meta.GetFunctionColumns(null, "PUBLIC", null, null)));
+        Add(actual, "schemasPattern", Describe(meta.GetSchemas(null, "PUB")));
+        actual.Add("=majorMinor:" + Hex(
+            meta.GetDatabaseMajorVersion().ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + "." + meta.GetDatabaseMinorVersion().ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+        // A catalog that is not this database: every check answers its columns, no rows.
+        Add(actual, "tablesWrongCatalog", Describe(meta.GetTables("OTHER", "PUBLIC", null, null)));
+        Add(actual, "columnsWrongCatalog", Describe(meta.GetColumns("OTHER", "PUBLIC", null, null)));
+        Add(actual, "bestRowWrongCatalog", Describe(
+            meta.GetBestRowIdentifier("OTHER", "PUBLIC", "P", 2, nullable: true)));
+        Add(actual, "primaryWrongCatalog", Describe(meta.GetPrimaryKeys("OTHER", "PUBLIC", "P")));
+        Add(actual, "importedWrongCatalog", Describe(meta.GetImportedKeys("OTHER", "PUBLIC", "C")));
+        Add(actual, "exportedWrongCatalog", Describe(meta.GetExportedKeys("OTHER", "PUBLIC", "P")));
+        Add(actual, "crossWrongCatalog", Describe(
+            meta.GetCrossReference("OTHER", "PUBLIC", "P", null, "PUBLIC", "C")));
+        Add(actual, "crossWrongForeign", Describe(
+            meta.GetCrossReference(null, "PUBLIC", "P", "OTHER", "PUBLIC", "C")));
+        Add(actual, "indexesWrongCatalog", Describe(
+            meta.GetIndexInfo("OTHER", "PUBLIC", "C", unique: false, approximate: false)));
+        Add(actual, "schemasWrongCatalog", Describe(meta.GetSchemas("OTHER", null)));
+        Add(actual, "pseudoWrongCatalog", Describe(meta.GetPseudoColumns("OTHER", "PUBLIC", null, null)));
+
+        // The object-type filters: the reference maps TABLE to BASE TABLE, keeps only the
+        // listed types, and answers nothing for a type nobody has.
+        Add(actual, "tablesTypeTable", Describe(meta.GetTables(null, "PUBLIC", null, ["TABLE"])));
+        Add(actual, "tablesTypeView", Describe(meta.GetTables(null, "PUBLIC", null, ["VIEW"])));
+        Add(actual, "tablesTypeNone", Describe(meta.GetTables(null, "PUBLIC", null, ["NOSUCH"])));
+
+        List<string> java = OracleRunner.RunWithMembers([], JavaSetup + """
+            section("versionColumns");
+            print(md.getVersionColumns(null, "PUBLIC", "P"));
+            section("udts");
+            print(md.getUDTs(null, "PUBLIC", null, null));
+            section("udtsStruct");
+            print(md.getUDTs(null, "PUBLIC", null, new int[]{java.sql.Types.STRUCT}));
+            section("superTypes");
+            print(md.getSuperTypes(null, "PUBLIC", null));
+            section("superTables");
+            print(md.getSuperTables(null, "PUBLIC", null));
+            section("attributes");
+            print(md.getAttributes(null, "PUBLIC", null, null));
+            section("functions");
+            print(md.getFunctions(null, "PUBLIC", null));
+            section("functionColumns");
+            print(md.getFunctionColumns(null, "PUBLIC", null, null));
+            section("schemasPattern");
+            print(md.getSchemas(null, "PUB"));
+            text("majorMinor", md.getDatabaseMajorVersion() + "." + md.getDatabaseMinorVersion());
+
+            section("tablesWrongCatalog");
+            print(md.getTables("OTHER", "PUBLIC", null, null));
+            section("columnsWrongCatalog");
+            print(md.getColumns("OTHER", "PUBLIC", null, null));
+            section("bestRowWrongCatalog");
+            print(md.getBestRowIdentifier("OTHER", "PUBLIC", "P", java.sql.DatabaseMetaData.bestRowSession, true));
+            section("primaryWrongCatalog");
+            print(md.getPrimaryKeys("OTHER", "PUBLIC", "P"));
+            section("importedWrongCatalog");
+            print(md.getImportedKeys("OTHER", "PUBLIC", "C"));
+            section("exportedWrongCatalog");
+            print(md.getExportedKeys("OTHER", "PUBLIC", "P"));
+            section("crossWrongCatalog");
+            print(md.getCrossReference("OTHER", "PUBLIC", "P", null, "PUBLIC", "C"));
+            section("crossWrongForeign");
+            print(md.getCrossReference(null, "PUBLIC", "P", "OTHER", "PUBLIC", "C"));
+            section("indexesWrongCatalog");
+            print(md.getIndexInfo("OTHER", "PUBLIC", "C", false, false));
+            section("schemasWrongCatalog");
+            print(md.getSchemas("OTHER", null));
+            section("pseudoWrongCatalog");
+            print(md.getPseudoColumns("OTHER", "PUBLIC", null, null));
+
+            section("tablesTypeTable");
+            print(md.getTables(null, "PUBLIC", null, new String[]{"TABLE"}));
+            section("tablesTypeView");
+            print(md.getTables(null, "PUBLIC", null, new String[]{"VIEW"}));
+            section("tablesTypeNone");
+            print(md.getTables(null, "PUBLIC", null, new String[]{"NOSUCH"}));
+            conn.close();
+            """, JavaMembers);
+        CompareLines(java, actual);
+        session.Close();
+    }
+
+    /// <summary>
+    /// The metadata over a schema with an invisible column, a table without a key, a unique
+    /// index, a descending composite index, a composite primary key, four foreign keys with
+    /// the different update rules, and a synonym; plus the pattern and empty-string forms of
+    /// the schema and name filters and the index and best-row variants.
+    /// </summary>
+    [JavaOracleFact]
+    public void RichSchemaMetadataMatchesTheReference()
+    {
+        const string ExtraDdl = """
+            stat.execute("CREATE TABLE NOPK(A INT, H INT INVISIBLE, CONSTRAINT UQ_NOPK_A UNIQUE(A))");
+            stat.execute("CREATE TABLE UI(A INT, B INT)");
+            stat.execute("CREATE UNIQUE INDEX UQ_UI_A ON UI(A)");
+            stat.execute("CREATE TABLE FK2(ID INT PRIMARY KEY, R INT, C INT, S INT, D INT DEFAULT 0, "
+                + "CONSTRAINT F_R FOREIGN KEY(R) REFERENCES NOPK(A), "
+                + "CONSTRAINT F_C FOREIGN KEY(C) REFERENCES NOPK(A) ON UPDATE CASCADE, "
+                + "CONSTRAINT F_S FOREIGN KEY(S) REFERENCES NOPK(A) ON UPDATE SET NULL, "
+                + "CONSTRAINT F_D FOREIGN KEY(D) REFERENCES NOPK(A) ON UPDATE SET DEFAULT)");
+            stat.execute("CREATE TABLE FK3(ID INT PRIMARY KEY, C INT, S INT, D INT DEFAULT 0, R INT, "
+                + "CONSTRAINT G_C FOREIGN KEY(C) REFERENCES NOPK(A) ON DELETE CASCADE, "
+                + "CONSTRAINT G_S FOREIGN KEY(S) REFERENCES NOPK(A) ON DELETE SET NULL, "
+                + "CONSTRAINT G_D FOREIGN KEY(D) REFERENCES NOPK(A) ON DELETE SET DEFAULT, "
+                + "CONSTRAINT G_R FOREIGN KEY(R) REFERENCES NOPK(A) ON DELETE RESTRICT ON UPDATE RESTRICT)");
+            stat.execute("CREATE TABLE CP(A INT, B INT, CONSTRAINT PK_CP PRIMARY KEY(A, B))");
+            stat.execute("CREATE INDEX CP_DESC ON CP(A DESC, B)");
+            stat.execute("CREATE TABLE UC(A INT, CONSTRAINT UQ_UC UNIQUE(A))");
+            stat.execute("CREATE SYNONYM P_SYN FOR P");
+            stat.execute("CREATE SCHEMA S2");
+            stat.execute("CREATE TABLE S2.T2(X INT, Y INT)");
+            """;
+        SessionLocal session = NewSession();
+        Execute(session, "CREATE TABLE NOPK(A INT, H INT INVISIBLE, CONSTRAINT UQ_NOPK_A UNIQUE(A))");
+        Execute(session, "CREATE TABLE UI(A INT, B INT)");
+        Execute(session, "CREATE UNIQUE INDEX UQ_UI_A ON UI(A)");
+        Execute(session, "CREATE TABLE FK2(ID INT PRIMARY KEY, R INT, C INT, S INT, D INT DEFAULT 0, "
+            + "CONSTRAINT F_R FOREIGN KEY(R) REFERENCES NOPK(A), "
+            + "CONSTRAINT F_C FOREIGN KEY(C) REFERENCES NOPK(A) ON UPDATE CASCADE, "
+            + "CONSTRAINT F_S FOREIGN KEY(S) REFERENCES NOPK(A) ON UPDATE SET NULL, "
+            + "CONSTRAINT F_D FOREIGN KEY(D) REFERENCES NOPK(A) ON UPDATE SET DEFAULT)");
+        Execute(session, "CREATE TABLE FK3(ID INT PRIMARY KEY, C INT, S INT, D INT DEFAULT 0, R INT, "
+            + "CONSTRAINT G_C FOREIGN KEY(C) REFERENCES NOPK(A) ON DELETE CASCADE, "
+            + "CONSTRAINT G_S FOREIGN KEY(S) REFERENCES NOPK(A) ON DELETE SET NULL, "
+            + "CONSTRAINT G_D FOREIGN KEY(D) REFERENCES NOPK(A) ON DELETE SET DEFAULT, "
+            + "CONSTRAINT G_R FOREIGN KEY(R) REFERENCES NOPK(A) ON DELETE RESTRICT ON UPDATE RESTRICT)");
+        Execute(session, "CREATE TABLE CP(A INT, B INT, CONSTRAINT PK_CP PRIMARY KEY(A, B))");
+        Execute(session, "CREATE INDEX CP_DESC ON CP(A DESC, B)");
+        Execute(session, "CREATE TABLE UC(A INT, CONSTRAINT UQ_UC UNIQUE(A))");
+        Execute(session, "CREATE SYNONYM P_SYN FOR P");
+        Execute(session, "CREATE SCHEMA S2");
+        Execute(session, "CREATE TABLE S2.T2(X INT, Y INT)");
+        DatabaseMeta meta = session.GetDatabaseMeta();
+
+        List<string> actual = [];
+        Add(actual, "tablesAll", Describe(meta.GetTables(null, null, null, null)));
+        Add(actual, "tablesEmptySchema", Describe(meta.GetTables(null, "", null, null)));
+        Add(actual, "tablesSchemaPattern", Describe(meta.GetTables(null, "%", null, null)));
+        Add(actual, "tablesNamePattern", Describe(meta.GetTables(null, "PUBLIC", "P%", null)));
+        Add(actual, "columnsAll", Describe(meta.GetColumns(null, "%", null, null)));
+        Add(actual, "columnsEmptySchema", Describe(meta.GetColumns(null, "", null, null)));
+        Add(actual, "columnsNamePattern", Describe(meta.GetColumns(null, "PUBLIC", "NOPK", "%")));
+        Add(actual, "columnsInvisible", Describe(meta.GetColumns(null, "PUBLIC", "NOPK", "H")));
+        Add(actual, "columnsLike", Describe(meta.GetColumns(null, "PUBLIC", null, "NA%")));
+        Add(actual, "indexesComposite", Describe(
+            meta.GetIndexInfo(null, "PUBLIC", "CP", unique: false, approximate: false)));
+        Add(actual, "indexesCompositeUnique", Describe(
+            meta.GetIndexInfo(null, "PUBLIC", "CP", unique: true, approximate: false)));
+        Add(actual, "indexesPrimary", Describe(
+            meta.GetIndexInfo(null, "PUBLIC", "P", unique: false, approximate: false)));
+        Add(actual, "indexesApproximate", Describe(
+            meta.GetIndexInfo(null, "PUBLIC", "CP", unique: false, approximate: true)));
+        Add(actual, "indexesUniqueIndex", Describe(
+            meta.GetIndexInfo(null, "PUBLIC", "UI", unique: false, approximate: false)));
+        Add(actual, "primaryComposite", Describe(meta.GetPrimaryKeys(null, "PUBLIC", "CP")));
+        Add(actual, "primaryNoKey", Describe(meta.GetPrimaryKeys(null, "PUBLIC", "NOPK")));
+        Add(actual, "importedRules", Describe(meta.GetImportedKeys(null, "PUBLIC", "FK2")));
+        Add(actual, "exportedRules", Describe(meta.GetExportedKeys(null, "PUBLIC", "NOPK")));
+        Add(actual, "crossRules", Describe(
+            meta.GetCrossReference(null, "PUBLIC", "NOPK", null, "PUBLIC", "FK2")));
+        Add(actual, "bestRowNoKey", Describe(
+            meta.GetBestRowIdentifier(null, "PUBLIC", "NOPK", 2, nullable: true)));
+        Add(actual, "bestRowComposite", Describe(
+            meta.GetBestRowIdentifier(null, "PUBLIC", "CP", 2, nullable: true)));
+        Add(actual, "bestRowNotNullable", Describe(
+            meta.GetBestRowIdentifier(null, "PUBLIC", "P", 2, nullable: false)));
+        Add(actual, "bestRowTemporary", Describe(
+            meta.GetBestRowIdentifier(null, "PUBLIC", "P", 1, nullable: true)));
+        Add(actual, "pseudoAll", Describe(meta.GetPseudoColumns(null, "PUBLIC", null, null)));
+        Add(actual, "pseudoPattern", Describe(meta.GetPseudoColumns(null, "PUBLIC", null, "%")));
+        Add(actual, "pseudoNoKey", Describe(meta.GetPseudoColumns(null, "PUBLIC", "NOPK", null)));
+        Add(actual, "schemasEmpty", Describe(meta.GetSchemas(null, "")));
+        Add(actual, "schemasNone", Describe(meta.GetSchemas(null, "NOPE")));
+        Add(actual, "versionColumnsNoKey", Describe(meta.GetVersionColumns(null, "PUBLIC", "NOPK")));
+        Add(actual, "deleteRules", Describe(meta.GetImportedKeys(null, "PUBLIC", "FK3")));
+        Add(actual, "schemasPublic", Describe(meta.GetSchemas(null, "PUBLIC")));
+        Add(actual, "bestRowTemporaryScope", Describe(
+            meta.GetBestRowIdentifier(null, "PUBLIC", "CP", 0, nullable: true)));
+        Add(actual, "tablesNoSchema", Describe(meta.GetTables(null, "NOPE", null, null)));
+        Add(actual, "columnsNoSchema", Describe(meta.GetColumns(null, "NOPE", null, null)));
+        Add(actual, "primaryNoSchema", Describe(meta.GetPrimaryKeys(null, "NOPE", "P")));
+        Add(actual, "importedNoSchema", Describe(meta.GetImportedKeys(null, "NOPE", "C")));
+        Add(actual, "exportedNoSchema", Describe(meta.GetExportedKeys(null, "NOPE", "P")));
+        Add(actual, "indexesNoSchema", Describe(
+            meta.GetIndexInfo(null, "NOPE", "C", unique: false, approximate: false)));
+        Add(actual, "bestRowNoSchema", Describe(
+            meta.GetBestRowIdentifier(null, "NOPE", "P", 2, nullable: true)));
+        Add(actual, "pseudoNoSchema", Describe(meta.GetPseudoColumns(null, "NOPE", null, null)));
+        Add(actual, "importedOnParent", Describe(meta.GetImportedKeys(null, "PUBLIC", "P")));
+        Add(actual, "importedOnComposite", Describe(meta.GetImportedKeys(null, "PUBLIC", "CP")));
+        Add(actual, "exportedOnChild", Describe(meta.GetExportedKeys(null, "PUBLIC", "C")));
+        Add(actual, "exportedOnFk2", Describe(meta.GetExportedKeys(null, "PUBLIC", "FK2")));
+        Add(actual, "crossNoMatch", Describe(
+            meta.GetCrossReference(null, "PUBLIC", "P", null, "PUBLIC", "FK2")));
+        Add(actual, "crossEmptyPrimarySchema", Describe(
+            meta.GetCrossReference(null, "", "NOPK", null, "PUBLIC", "FK2")));
+        Add(actual, "crossNoPrimarySchema", Describe(
+            meta.GetCrossReference(null, "NOPE", "NOPK", null, "PUBLIC", "FK2")));
+        Add(actual, "primaryEmptySchema", Describe(meta.GetPrimaryKeys(null, "", "P")));
+        Add(actual, "importedEmptySchema", Describe(meta.GetImportedKeys(null, "", "C")));
+        Add(actual, "indexesEmptySchema", Describe(
+            meta.GetIndexInfo(null, "", "C", unique: false, approximate: false)));
+        Add(actual, "pseudoEmptySchema", Describe(meta.GetPseudoColumns(null, "", null, null)));
+        Add(actual, "bestRowUniqueTable", Describe(
+            meta.GetBestRowIdentifier(null, "PUBLIC", "UC", 2, nullable: true)));
+        Add(actual, "bestRowSchemaNoTable", Describe(
+            meta.GetBestRowIdentifier(null, "S2", "P", 2, nullable: true)));
+        Add(actual, "primarySchemaNoTable", Describe(meta.GetPrimaryKeys(null, "S2", "P")));
+        Add(actual, "importedSchemaNoTable", Describe(meta.GetImportedKeys(null, "S2", "C")));
+        Add(actual, "exportedSchemaNoTable", Describe(meta.GetExportedKeys(null, "S2", "P")));
+        Add(actual, "crossForeignSchemaNoTable", Describe(
+            meta.GetCrossReference(null, "PUBLIC", "NOPK", null, "S2", "FK2")));
+        Add(actual, "indexesSchemaNoTable", Describe(
+            meta.GetIndexInfo(null, "S2", "C", unique: false, approximate: false)));
+        Add(actual, "pseudoPatternNone", Describe(meta.GetPseudoColumns(null, "PUBLIC", null, "ZZZ")));
+        Add(actual, "primaryNullSchema", Describe(meta.GetPrimaryKeys(null, null, "P")));
+        Add(actual, "importedNullSchema", Describe(meta.GetImportedKeys(null, null, "C")));
+        Add(actual, "exportedNullSchema", Describe(meta.GetExportedKeys(null, null, "P")));
+        Add(actual, "indexesNullSchema", Describe(
+            meta.GetIndexInfo(null, null, "C", unique: false, approximate: false)));
+        Add(actual, "bestRowNullSchema", Describe(
+            meta.GetBestRowIdentifier(null, null, "P", 2, nullable: true)));
+        Add(actual, "pseudoNullSchema", Describe(meta.GetPseudoColumns(null, null, null, null)));
+        Add(actual, "crossNullPrimarySchema", Describe(
+            meta.GetCrossReference(null, null, "NOPK", null, "PUBLIC", "FK2")));
+
+        List<string> java = OracleRunner.RunWithMembers([], JavaSetup + ExtraDdl + """
+            section("tablesAll");
+            print(md.getTables(null, null, null, null));
+            section("tablesEmptySchema");
+            print(md.getTables(null, "", null, null));
+            section("tablesSchemaPattern");
+            print(md.getTables(null, "%", null, null));
+            section("tablesNamePattern");
+            print(md.getTables(null, "PUBLIC", "P%", null));
+            section("columnsAll");
+            print(md.getColumns(null, "%", null, null));
+            section("columnsEmptySchema");
+            print(md.getColumns(null, "", null, null));
+            section("columnsNamePattern");
+            print(md.getColumns(null, "PUBLIC", "NOPK", "%"));
+            section("columnsInvisible");
+            print(md.getColumns(null, "PUBLIC", "NOPK", "H"));
+            section("columnsLike");
+            print(md.getColumns(null, "PUBLIC", null, "NA%"));
+            section("indexesComposite");
+            print(md.getIndexInfo(null, "PUBLIC", "CP", false, false));
+            section("indexesCompositeUnique");
+            print(md.getIndexInfo(null, "PUBLIC", "CP", true, false));
+            section("indexesPrimary");
+            print(md.getIndexInfo(null, "PUBLIC", "P", false, false));
+            section("indexesApproximate");
+            print(md.getIndexInfo(null, "PUBLIC", "CP", false, true));
+            section("indexesUniqueIndex");
+            print(md.getIndexInfo(null, "PUBLIC", "UI", false, false));
+            section("primaryComposite");
+            print(md.getPrimaryKeys(null, "PUBLIC", "CP"));
+            section("primaryNoKey");
+            print(md.getPrimaryKeys(null, "PUBLIC", "NOPK"));
+            section("importedRules");
+            print(md.getImportedKeys(null, "PUBLIC", "FK2"));
+            section("exportedRules");
+            print(md.getExportedKeys(null, "PUBLIC", "NOPK"));
+            section("crossRules");
+            print(md.getCrossReference(null, "PUBLIC", "NOPK", null, "PUBLIC", "FK2"));
+            section("bestRowNoKey");
+            print(md.getBestRowIdentifier(null, "PUBLIC", "NOPK", java.sql.DatabaseMetaData.bestRowTransaction, true));
+            section("bestRowComposite");
+            print(md.getBestRowIdentifier(null, "PUBLIC", "CP", java.sql.DatabaseMetaData.bestRowTransaction, true));
+            section("bestRowNotNullable");
+            print(md.getBestRowIdentifier(null, "PUBLIC", "P", java.sql.DatabaseMetaData.bestRowTransaction, false));
+            section("bestRowTemporary");
+            print(md.getBestRowIdentifier(null, "PUBLIC", "P", java.sql.DatabaseMetaData.bestRowTemporary, true));
+            section("pseudoAll");
+            print(md.getPseudoColumns(null, "PUBLIC", null, null));
+            section("pseudoPattern");
+            print(md.getPseudoColumns(null, "PUBLIC", null, "%"));
+            section("pseudoNoKey");
+            print(md.getPseudoColumns(null, "PUBLIC", "NOPK", null));
+            section("schemasEmpty");
+            print(md.getSchemas(null, ""));
+            section("schemasNone");
+            print(md.getSchemas(null, "NOPE"));
+            section("versionColumnsNoKey");
+            print(md.getVersionColumns(null, "PUBLIC", "NOPK"));
+            section("deleteRules");
+            print(md.getImportedKeys(null, "PUBLIC", "FK3"));
+            section("schemasPublic");
+            print(md.getSchemas(null, "PUBLIC"));
+            section("bestRowTemporaryScope");
+            print(md.getBestRowIdentifier(null, "PUBLIC", "CP", java.sql.DatabaseMetaData.bestRowTemporary, true));
+            section("tablesNoSchema");
+            print(md.getTables(null, "NOPE", null, null));
+            section("columnsNoSchema");
+            print(md.getColumns(null, "NOPE", null, null));
+            section("primaryNoSchema");
+            print(md.getPrimaryKeys(null, "NOPE", "P"));
+            section("importedNoSchema");
+            print(md.getImportedKeys(null, "NOPE", "C"));
+            section("exportedNoSchema");
+            print(md.getExportedKeys(null, "NOPE", "P"));
+            section("indexesNoSchema");
+            print(md.getIndexInfo(null, "NOPE", "C", false, false));
+            section("bestRowNoSchema");
+            print(md.getBestRowIdentifier(null, "NOPE", "P", java.sql.DatabaseMetaData.bestRowSession, true));
+            section("pseudoNoSchema");
+            print(md.getPseudoColumns(null, "NOPE", null, null));
+            section("importedOnParent");
+            print(md.getImportedKeys(null, "PUBLIC", "P"));
+            section("importedOnComposite");
+            print(md.getImportedKeys(null, "PUBLIC", "CP"));
+            section("exportedOnChild");
+            print(md.getExportedKeys(null, "PUBLIC", "C"));
+            section("exportedOnFk2");
+            print(md.getExportedKeys(null, "PUBLIC", "FK2"));
+            section("crossNoMatch");
+            print(md.getCrossReference(null, "PUBLIC", "P", null, "PUBLIC", "FK2"));
+            section("crossEmptyPrimarySchema");
+            print(md.getCrossReference(null, "", "NOPK", null, "PUBLIC", "FK2"));
+            section("crossNoPrimarySchema");
+            print(md.getCrossReference(null, "NOPE", "NOPK", null, "PUBLIC", "FK2"));
+            section("primaryEmptySchema");
+            print(md.getPrimaryKeys(null, "", "P"));
+            section("importedEmptySchema");
+            print(md.getImportedKeys(null, "", "C"));
+            section("indexesEmptySchema");
+            print(md.getIndexInfo(null, "", "C", false, false));
+            section("pseudoEmptySchema");
+            print(md.getPseudoColumns(null, "", null, null));
+            section("bestRowUniqueTable");
+            print(md.getBestRowIdentifier(null, "PUBLIC", "UC", java.sql.DatabaseMetaData.bestRowSession, true));
+            section("bestRowSchemaNoTable");
+            print(md.getBestRowIdentifier(null, "S2", "P", java.sql.DatabaseMetaData.bestRowSession, true));
+            section("primarySchemaNoTable");
+            print(md.getPrimaryKeys(null, "S2", "P"));
+            section("importedSchemaNoTable");
+            print(md.getImportedKeys(null, "S2", "C"));
+            section("exportedSchemaNoTable");
+            print(md.getExportedKeys(null, "S2", "P"));
+            section("crossForeignSchemaNoTable");
+            print(md.getCrossReference(null, "PUBLIC", "NOPK", null, "S2", "FK2"));
+            section("indexesSchemaNoTable");
+            print(md.getIndexInfo(null, "S2", "C", false, false));
+            section("pseudoPatternNone");
+            print(md.getPseudoColumns(null, "PUBLIC", null, "ZZZ"));
+            section("primaryNullSchema");
+            print(md.getPrimaryKeys(null, null, "P"));
+            section("importedNullSchema");
+            print(md.getImportedKeys(null, null, "C"));
+            section("exportedNullSchema");
+            print(md.getExportedKeys(null, null, "P"));
+            section("indexesNullSchema");
+            print(md.getIndexInfo(null, null, "C", false, false));
+            section("bestRowNullSchema");
+            print(md.getBestRowIdentifier(null, null, "P", java.sql.DatabaseMetaData.bestRowSession, true));
+            section("pseudoNullSchema");
+            print(md.getPseudoColumns(null, null, null, null));
+            section("crossNullPrimarySchema");
+            print(md.getCrossReference(null, null, "NOPK", null, "PUBLIC", "FK2"));
+            conn.close();
+            """, JavaMembers);
+        CompareLines(java, actual);
+        session.Close();
+    }
+
+    /// <summary>
+    /// The metadata refusals: a missing table name is an invalid value, and every call after
+    /// the session closed names the shutdown, as the reference refuses.
+    /// </summary>
+    [Fact]
+    public void TheMetadataArgumentsAreChecked()
+    {
+        SessionLocal session = NewSession();
+        DatabaseMeta meta = session.GetDatabaseMeta();
+
+        // The reference's default, answered without a session setting.
+        Assert.Equal(DefaultNullOrdering.LOW, meta.GetDefaultNullOrdering());
+        Assert.StartsWith("2.5", meta.GetDatabaseProductVersion(), StringComparison.Ordinal);
+        Assert.Equal(90008, ErrorCodeOf(() => meta.GetBestRowIdentifier(null, null, null, 0, true)));
+        Assert.Equal(90008, ErrorCodeOf(() => meta.GetPrimaryKeys(null, null, null)));
+        Assert.Equal(90008, ErrorCodeOf(() => meta.GetImportedKeys(null, null, null)));
+        Assert.Equal(90008, ErrorCodeOf(() => meta.GetExportedKeys(null, null, null)));
+        Assert.Equal(90008, ErrorCodeOf(() => meta.GetCrossReference(null, null, null, null, null, null)));
+        // The primary table is there, the foreign one is missing.
+        Assert.Equal(90008, ErrorCodeOf(() => meta.GetCrossReference(null, "PUBLIC", "P", null, "PUBLIC", null)));
+        Assert.Equal(90008, ErrorCodeOf(() => meta.GetIndexInfo(null, null, null, false, false)));
+
+        session.Close();
+        // The reference's getTables and getColumns have no closed-session check and answer
+        // the listing; only the getters that call checkClosed name the shutdown.
+        Assert.Equal(0, ErrorCodeOf(() => meta.GetTables(null, null, null, null)));
+        Assert.Equal(0, ErrorCodeOf(() => meta.GetColumns(null, null, null, null)));
+        Assert.Equal(90121, ErrorCodeOf(() => meta.GetTypeInfo()));
+        Assert.Equal(90121, ErrorCodeOf(() => meta.GetVersionColumns(null, null, null)));
+    }
+
+    private static int ErrorCodeOf(Func<ResultInterface> call)
+    {
+        try
+        {
+            using ResultInterface result = call();
+            return 0;
+        }
+        catch (H2SharpException error)
+        {
+            return error.H2ErrorCode;
+        }
+    }
+
     private static SessionLocal NewSession()
     {
         SessionLocal session = new(new Database(ConnectionInfo.Memory(DatabaseName)), "sa");
