@@ -193,6 +193,15 @@ public sealed class InformationSchemaTable : Table
         columns = BuildColumns(type);
         for (int i = 0; i < columns.Length; i++)
         {
+            // A database with case-insensitive identifiers declares the catalogue's text
+            // columns as VARCHAR_IGNORECASE, so a filter on a name matches a name however
+            // it is spelled - the reference's MetaTable.column does exactly this.
+            if (schema.GetDatabase().IsCaseInsensitiveIdentifiers()
+                && ReferenceEquals(columns[i].GetTypeInfo(), TypeInfo.TypeVarchar))
+            {
+                columns[i].SetType(TypeInfo.TypeVarcharIgnorecase);
+            }
+
             columns[i].SetTable(this, i);
         }
 
@@ -1266,6 +1275,25 @@ public sealed class InformationSchemaTable : Table
                 break;
             default:
                 throw DbException.GetInternalError("type=" + type);
+        }
+
+        // The values are converted to the columns' declared types, as the reference's
+        // MetaTable.add does through Column.convert: for a case-insensitive database the
+        // text columns are VARCHAR_IGNORECASE, so the values stored in them are too.
+        if (database.IsCaseInsensitiveIdentifiers())
+        {
+            for (int r = 0; r < rows.Count; r++)
+            {
+                Value[] row = rows[r];
+                for (int i = 0; i < row.Length; i++)
+                {
+                    if (ReferenceEquals(columns[i].GetTypeInfo(), TypeInfo.TypeVarcharIgnorecase)
+                        && row[i] is ValueVarchar varchar)
+                    {
+                        row[i] = ValueVarcharIgnoreCase.Get(varchar.GetString()!);
+                    }
+                }
+            }
         }
 
         return rows;
