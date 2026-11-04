@@ -270,21 +270,35 @@ public static class StringUtils
         return false;
     }
 
+#if !NET9_0_OR_GREATER
     /// <summary>
     /// The stack budget of the span folds, in characters. Identifiers — the text these folds
-    /// run on — are names, not sentences; anything above it goes to a scratch array.
+    /// run on — are names, not sentences; anything above it goes to a scratch array. From
+    /// .NET 9 the folds build the result directly and the budget is not read.
     /// </summary>
     private const int FoldStackChars = 256;
+#endif
 
     /// <summary>
-    /// The invariant uppercase mapping, built straight from the span into one string. A stack
-    /// buffer carries the short fold and a scratch array the long one, because a
-    /// <c>ReadOnlySpan</c> cannot be the state of <see cref="string.Create{TState}"/> on the
-    /// .NET versions this port targets; the result is the only allocation either way for the
-    /// lengths identifiers actually have.
+    /// The invariant uppercase mapping, built straight from the span into one string.
     /// </summary>
+    /// <remarks>
+    /// From .NET 9 a span can ride <see cref="string.Create{TState}"/>'s state, so the fold
+    /// writes the result and nothing else. Below that the state has to be a plain struct, and
+    /// the fold goes through a stack buffer — a scratch array above it — and copies once more;
+    /// the result is the only allocation either way for the lengths identifiers actually have.
+    /// </remarks>
     private static string UpperInvariantFromSpan(ReadOnlySpan<char> s)
     {
+#if NET9_0_OR_GREATER
+        return string.Create(s.Length, s, static (dst, src) =>
+        {
+            for (int i = 0; i < src.Length; i++)
+            {
+                dst[i] = char.ToUpperInvariant(src[i]);
+            }
+        });
+#else
         char[]? heap = s.Length <= FoldStackChars ? null : new char[s.Length];
         Span<char> chars = heap is null ? stackalloc char[FoldStackChars] : heap;
 
@@ -294,6 +308,7 @@ public static class StringUtils
         }
 
         return new string(chars[..s.Length]);
+#endif
     }
 
     /// <summary>
@@ -353,6 +368,15 @@ public static class StringUtils
     /// </summary>
     private static string LowerInvariantFromSpan(ReadOnlySpan<char> s)
     {
+#if NET9_0_OR_GREATER
+        return string.Create(s.Length, s, static (dst, src) =>
+        {
+            for (int i = 0; i < src.Length; i++)
+            {
+                dst[i] = char.ToLowerInvariant(src[i]);
+            }
+        });
+#else
         char[]? heap = s.Length <= FoldStackChars ? null : new char[s.Length];
         Span<char> chars = heap is null ? stackalloc char[FoldStackChars] : heap;
 
@@ -362,6 +386,7 @@ public static class StringUtils
         }
 
         return new string(chars[..s.Length]);
+#endif
     }
 
     /// <summary>
