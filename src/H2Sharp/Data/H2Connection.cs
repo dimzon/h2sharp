@@ -563,38 +563,43 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         SessionLocal current = session
             ?? throw new InvalidOperationException("The connection is closed");
         DatabaseMeta meta = current.GetDatabaseMeta();
-        string key = collectionName.ToUpperInvariant();
-        return key switch
+
+        // The arms compare without copying: ToUpperInvariant built a string on every call
+        // only to compare it with constants, and the case-insensitive comparison answers the
+        // same names without the copy.
+        bool Is(string name) => collectionName.Equals(name, StringComparison.OrdinalIgnoreCase);
+
+        return collectionName switch
         {
-            "METADATACOLLECTIONS" => MetaDataCollectionsTable(),
-            "RESTRICTIONS" => RestrictionsTable(),
-            "DATATYPES" => ToDataTable(DbMetaDataCollectionNames.DataTypes, meta.GetTypeInfo()),
-            "RESERVEDWORDS" => ReservedWordsTable(meta),
-            "TABLES" => ToDataTable(
+            _ when Is("METADATACOLLECTIONS") => MetaDataCollectionsTable(),
+            _ when Is("RESTRICTIONS") => RestrictionsTable(),
+            _ when Is("DATATYPES") => ToDataTable(DbMetaDataCollectionNames.DataTypes, meta.GetTypeInfo()),
+            _ when Is("RESERVEDWORDS") => ReservedWordsTable(meta),
+            _ when Is("TABLES") => ToDataTable(
                 "Tables",
                 meta.GetTables(
                     Restriction(restrictionValues, 0),
                     Restriction(restrictionValues, 1),
                     Restriction(restrictionValues, 2),
                     Restriction(restrictionValues, 3) is { } type ? [type] : null)),
-            "COLUMNS" => ToDataTable(
+            _ when Is("COLUMNS") => ToDataTable(
                 "Columns",
                 meta.GetColumns(
                     Restriction(restrictionValues, 0),
                     Restriction(restrictionValues, 1),
                     Restriction(restrictionValues, 2),
                     Restriction(restrictionValues, 3))),
-            "INDEXES" => IndexesTable(meta, restrictionValues),
-            "FOREIGNKEYS" => ForeignKeysTable(meta, restrictionValues),
-            "PROCEDURES" => ToDataTable(
+            _ when Is("INDEXES") => IndexesTable(meta, restrictionValues),
+            _ when Is("FOREIGNKEYS") => ForeignKeysTable(meta, restrictionValues),
+            _ when Is("PROCEDURES") => ToDataTable(
                 "Procedures",
                 meta.GetProcedures(
                     Restriction(restrictionValues, 0),
                     Restriction(restrictionValues, 1),
                     Restriction(restrictionValues, 2))),
-            "TABLETYPES" => ToDataTable("TableTypes", meta.GetTableTypes()),
-            "CATALOGS" => ToDataTable("Catalogs", meta.GetCatalogs()),
-            "SCHEMAS" => ToDataTable(
+            _ when Is("TABLETYPES") => ToDataTable("TableTypes", meta.GetTableTypes()),
+            _ when Is("CATALOGS") => ToDataTable("Catalogs", meta.GetCatalogs()),
+            _ when Is("SCHEMAS") => ToDataTable(
                 "Schemas",
                 meta.GetSchemas(
                     Restriction(restrictionValues, 0),

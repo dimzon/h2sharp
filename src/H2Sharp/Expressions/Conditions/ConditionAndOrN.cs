@@ -8,7 +8,6 @@
  */
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Message;
@@ -88,14 +87,36 @@ public sealed class ConditionAndOrN : Condition
 
     private static readonly IComparer<Expression> CompareByCost = Comparer<Expression>.Create((left, right) => left.GetCost() - right.GetCost());
 
+    /// <summary>
+    /// Sorts the operands by cost in place, stably.
+    /// </summary>
+    /// <remarks>
+    /// Collections.sort is stable and List.Sort is not, and the reference's relative order
+    /// for operands of equal cost is observed. An insertion sort is stable by construction
+    /// and needs neither the iterator, the delegate nor the array the OrderBy().ToArray()
+    /// shape built on every planning pass; an AND/OR list is a handful of operands, which is
+    /// the range insertion sort is for.
+    /// </remarks>
+    private void SortByCost()
+    {
+        for (int i = 1; i < expressions.Count; i++)
+        {
+            Expression current = expressions[i];
+            int j = i - 1;
+            while (j >= 0 && CompareByCost.Compare(expressions[j], current) > 0)
+            {
+                expressions[j + 1] = expressions[j];
+                j--;
+            }
+
+            expressions[j + 1] = current;
+        }
+    }
+
     public override Expression Optimize(SessionLocal session)
     {
         for (int i = 0; i < expressions.Count; i++) expressions[i] = expressions[i].Optimize(session);
-        // Collections.sort is stable; List.Sort is not. OrderBy preserves the
-        // reference's relative order for operands with equal evaluation costs.
-        Expression[] sorted = expressions.OrderBy(e => e, CompareByCost).ToArray();
-        expressions.Clear();
-        expressions.AddRange(sorted);
+        SortByCost();
         OptimizeMerge(0);
         for (int i = 1; i < expressions.Count;)
         {
@@ -137,9 +158,7 @@ public sealed class ConditionAndOrN : Condition
             if (OptimizeMerge(i)) continue;
             i++;
         }
-        sorted = expressions.OrderBy(e => e, CompareByCost).ToArray();
-        expressions.Clear();
-        expressions.AddRange(sorted);
+        SortByCost();
         return expressions.Count == 1 ? CastToBoolean(session, expressions[0]) : this;
     }
 

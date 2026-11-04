@@ -932,6 +932,16 @@ if (session?.Extensions.FindAggregate(name) is { } custom)
 статическим `Comparison<IComparable>` (компаратор `CompareByCost` уже статический) либо
 вставка на месте при малом числе операндов.
 
+> **Развёрнуто (2026-11-04).** Стабильная вставка на месте (`SortByCost`) — именно
+> вставка, а не `Array.Sort`: эталонный `Collections.sort` стабилен, а
+> `Array.Sort`/`List.Sort` — нет, и относительный порядок равных по цене операндов
+> наблюдаем. Второй пункт §5 (`H2Connection.ToUpperInvariant`) тоже сделан —
+> ветки сравнивают `OrdinalIgnoreCase`. Не вошло: `ValueJson` (байты удерживаются
+> значениями — span-свойство давало бы `ToArray()` на вызов), пулинг в
+> `BitFunction`/`ArrayFunction` (нужен разбор владения по каждому месту — отдельный
+> пункт, ошибка «аренда утекла в значение» хуже аллокации), 214 `ThrowIfNull`,
+> `.ToArray()`-геттеры (Низкий). Перечень в MIGRATION_STATUS.
+
 **214 × `?? throw new ArgumentNullException(nameof(x))` → `ArgumentNullException.ThrowIfNull(x)` — Средний.**
 `Data/H2Connection.cs:127`, `:408`, `:414`; `Store/DataReader.cs:43`; `Indexes/Index.cs:125`;
 `Util/Utils.cs:620`; `MvStore/Type/MetaType.cs:99`; `Data/Extensions/AggregateProvider.cs:23`.
