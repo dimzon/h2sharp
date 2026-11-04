@@ -1,5 +1,53 @@
 # MIGRATION STATUS — рабочая памятка
 
+### System.Data.Common: batch, schema и metadata (feature/system-data-common)
+
+Пункты P0/P1 из `docs/ANALYSIS_SYSTEM_DATA_COMMON.md` реализованы в отдельном
+бранче.
+
+* `H2ProviderFactory.CreateBatch()` возвращает `H2Batch` без соединения;
+  `CanCreateBatch => true`. `H2Batch` принимает nullable-соединение, которое
+  назначается через `DbBatch.Connection`.
+* `H2DataReader` реализует `IDbColumnSchemaGenerator`; sync `GetColumnSchema()`
+  и `GetColumnSchemaAsync()` читают один `ColumnSchema()`.
+* `H2DataAdapter` объявляет типизированные `RowUpdating`/`RowUpdated`. В BCL
+  .NET 10 нет `RowUpdatingEventHandler`/`RowUpdatedEventHandler`, поэтому
+  введены `H2RowUpdatingEventHandler`/`H2RowUpdatedEventHandler` (по образцу
+  SqlClient). `FillError` наследуется и поднимается `DataAdapter.Fill`.
+* Портирован `org.h2.jdbc.meta` в `H2Sharp.Jdbc.Meta`:
+  `DatabaseMeta`, `DatabaseMetaLocalBase`, `DatabaseMetaLocal`.
+  `DatabaseMetaLocalBase` public — C# не разрешает public-классу наследовать
+  менее доступный базовый класс (языковое отклонение).
+  `Session.GetDatabaseMeta()` теперь возвращает `DatabaseMeta`, а не `object`;
+  `SessionLocal` создаёт `DatabaseMetaLocal(this)`.
+* `GetProcedures`/`GetProcedureColumns` отказывают `TODOException` (нет
+  `FunctionAlias`), `GetColumnPrivileges`/`GetTablePrivileges` — (нет
+  `Right`/`User`, D-004), `Get*Functions` — (нет `Help`). В `GetSchema` эти
+  коллекции не выставляются; `Procedures` появится вместе с `FunctionAlias`.
+* `DataType.ConvertTypeToSqlType` снова отдаёт `java.sql.Types` — так
+  выглядят эталонные metadata-колонки; .NET-проекция остаётся в
+  `DataType.SqlType`. Добавлен internal `ConvertValueTypeToSqlType` для строки
+  `TYPE_INFO`.
+* `SimpleResult.SortRows` использует стабильную сортировку: Java `List.sort`
+  стабилен, и metadata-строки с одинаковым `DATA_TYPE` держат порядок каталога.
+* `MVDelegateIndex.GetDiskSpaceUsed` делегирует главному индексу: эталон
+  приходит к той же странице через `getMVMap()`, который в порте ещё не
+  строится.
+* Добавлены эталонные `Table.GetSQLTableType` и `Column.GetDefaultSQL`.
+* `H2Connection.GetSchema`/`GetSchemaAsync`: `MetaDataCollections`,
+  `Restrictions`, `DataTypes`, `ReservedWords`, `Tables`, `Columns`,
+  `Indexes`, `ForeignKeys`, `TableTypes`, `Catalogs`, `Schemas`. Колонки
+  engine-backed коллекций — эталонные (`TABLE_CAT`, `TABLE_SCHEM`, ...);
+  `MetaDataCollections`/`Restrictions` — стандартная ADO.NET-форма;
+  `ReservedWords` — колонка `ReservedWord`.
+* Тесты: `H2BatchTests`, `H2DataReaderSchemaTests`, `H2DataAdapterTests`,
+  `H2GetSchemaTests`, `MetadataOracleTests` (`JavaOracleFact`: Tables, Columns,
+  Schemas, Catalogs, TableTypes, Indexes, Primary/Imported/Exported/
+  CrossReference keys, TypeInfo, SQLKeywords, BestRow, PseudoColumns).
+
+Новых записей в `docs/APPROVED_DEVIATIONS.md` нет: это принятая .NET-граница
+(ADR-001/D-020/D-021), а языковое отклонение public-base записано здесь.
+
 ### Connection string, typed ConnectionInfo и фиксированный MODE
 
 Публичная строка подключения переведена на classic ADO.NET:
