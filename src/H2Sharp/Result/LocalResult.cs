@@ -108,8 +108,24 @@ public class LocalResult : ResultInterface, ResultTarget
     /// <param name="table">the table</param>
     /// <returns>the local result</returns>
     public static LocalResult ForTable(SessionLocal session, Table table)
-        => throw new TODOException(
-            "LocalResult.forTable: it needs a ColumnResolver, and mapping a column is done through a resolver here; TableFilter is not ported");
+    {
+        Column[] columns = table.GetColumns();
+        int degree = columns.Length;
+        Expression[] expressions = new Expression[degree + 1];
+        Database database = session.GetDatabase()!;
+        for (int i = 0; i < degree; i++)
+        {
+            expressions[i] = new ExpressionColumn(database, columns[i]);
+        }
+
+        // The last expression is the row key, which is why the result has one column more
+        // than the table: the data-change delta tables read the key back out of it.
+        Column? rowIdColumn = table.GetRowIdColumn();
+        expressions[degree] = rowIdColumn is not null
+            ? new ExpressionColumn(database, rowIdColumn)
+            : ExpressionColumn.RowId(table.GetTableName());
+        return new LocalResult(session, expressions, degree, degree + 1);
+    }
 
     /// <summary>
     /// Construct a local result object.
@@ -392,7 +408,15 @@ public class LocalResult : ResultInterface, ResultTarget
     /// </summary>
     /// <returns>row</returns>
     public Row CurrentRowForTable()
-        => throw new TODOException("LocalResult.currentRowForTable: Database.getRowFactory is not ported");
+    {
+        int degree = visibleColumnCount;
+        Value?[] current = CurrentRow();
+        // Every row in the port is the default row; the reference asks its row factory,
+        // because a table may define a row with its own memory accounting.
+        Row row = Row.Get(current[..degree], SearchRow.MemoryCalculate);
+        row.SetKey(current[degree]!.GetLong());
+        return row;
+    }
 
     /// <inheritdoc/>
     public Value?[] CurrentRow()

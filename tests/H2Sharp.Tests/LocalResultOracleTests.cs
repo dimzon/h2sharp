@@ -30,6 +30,7 @@ using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Result;
 using H2Sharp.Tests.Oracle;
+using H2Sharp.Util;
 using H2Sharp.Values;
 using Xunit;
 
@@ -80,6 +81,61 @@ public sealed class LocalResultOracleTests
     /// ORDER BY with a nonzero OFFSET sorts the window, not from the offset for the offset's
     /// length: the range bug sorted the wrong slice and threw past the end.
     /// </summary>
+    [JavaOracleFact]
+    public void DistinctMembership_MatchesReference()
+    {
+        string body = """
+                      org.h2.result.LocalResult r = new org.h2.result.LocalResult(session, expr, 1, 1);
+                      for (org.h2.value.Value[] row : rows) { r.addRow(row); }
+                      r.setDistinct();
+                      org.h2.value.Value[] probes = {
+                          org.h2.value.ValueInteger.get(1),
+                          org.h2.value.ValueNumeric.get(new java.math.BigDecimal("1.000")),
+                          org.h2.value.ValueInteger.get(2),
+                          org.h2.value.ValueInteger.get(3),
+                          org.h2.value.ValueNumeric.get(new java.math.BigDecimal("3.0")),
+                          org.h2.value.ValueNull.INSTANCE,
+                          org.h2.value.ValueInteger.get(9),
+                      };
+                      for (org.h2.value.Value probe : probes) {
+                        System.out.println("has " + probe.toString() + "=" + r.containsDistinct(new org.h2.value.Value[]{ probe }));
+                      }
+                      for (org.h2.value.Value probe : probes) {
+                        r.removeDistinct(new org.h2.value.Value[]{ probe });
+                        System.out.println("after " + probe.toString() + " count=" + r.getRowCount());
+                      }
+            """;
+
+        List<string> java = OracleRunner.Run([], JavaSession + JavaRows + body);
+
+        LocalResult result = NewResult();
+        AddRows(result);
+        result.SetDistinct();
+        Value?[] probes =
+        [
+            ValueInteger.Get(1),
+            ValueNumeric.Get(BigDecimal.Parse("1.000")),
+            ValueInteger.Get(2),
+            ValueInteger.Get(3),
+            ValueNumeric.Get(BigDecimal.Parse("3.0")),
+            ValueNull.Instance,
+            ValueInteger.Get(9),
+        ];
+        List<string> csharp = [];
+        foreach (Value? probe in probes)
+        {
+            csharp.Add("has " + probe!.ToString() + "=" + J(result.ContainsDistinct([probe])));
+        }
+
+        foreach (Value? probe in probes)
+        {
+            result.RemoveDistinct([probe]);
+            csharp.Add("after " + probe!.ToString() + " count=" + result.GetRowCount());
+        }
+
+        AssertSame(java, csharp);
+    }
+
     [JavaOracleFact]
     public void SortedOffset_MatchesReference()
     {
@@ -283,6 +339,8 @@ public sealed class LocalResultOracleTests
             lines.Add("  " + (row[0]?.ToString() ?? "null"));
         }
     }
+
+    private static string J(bool value) => value ? "true" : "false";
 
     private static void AssertSame(List<string> java, List<string> csharp)
     {
