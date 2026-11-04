@@ -238,6 +238,30 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The stage reaches every argument and ORDER BY expression, as in the reference's
+    /// Aggregate.updateGroupAggregates: a window aggregate over a grouped query has group
+    /// aggregates for its arguments, and they only have their per-group data when the group
+    /// stage was forwarded to them.
+    /// </remarks>
+    protected override void UpdateGroupAggregates(SessionLocal session, int stage)
+    {
+        base.UpdateGroupAggregates(session, stage);
+        foreach (Expression arg in args)
+        {
+            arg.UpdateAggregate(session, stage);
+        }
+
+        if (orderByList is not null)
+        {
+            foreach (QueryOrderBy orderBy in orderByList)
+            {
+                orderBy.expression!.UpdateAggregate(session, stage);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     protected override object CreateAggregateData()
     {
         switch (aggregateType)

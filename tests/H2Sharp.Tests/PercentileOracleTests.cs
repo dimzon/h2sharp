@@ -125,6 +125,100 @@ public sealed class PercentileOracleTests
     }
 
     /// <summary>
+    /// The types the first test does not interpolate — REAL, TIMESTAMP WITH TIME ZONE,
+    /// BOOLEAN, the interval qualifiers — and the window aggregate form, the same on both
+    /// sides.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheRemainingTypesAndWindowsAnswerTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE T2(ID INT, R REAL, TSTZ TIMESTAMP WITH TIME ZONE, B BOOLEAN, S VARCHAR, "
+                + "IY INTERVAL YEAR, IM INTERVAL MONTH, IYM INTERVAL YEAR TO MONTH, "
+                + "ID2 INTERVAL DAY, IH INTERVAL HOUR, IMIN INTERVAL MINUTE, ISEC INTERVAL SECOND, "
+                + "IDH INTERVAL DAY TO HOUR, IDM INTERVAL DAY TO MINUTE, IHM INTERVAL HOUR TO MINUTE, "
+                + "IHS INTERVAL HOUR TO SECOND, IMS INTERVAL MINUTE TO SECOND)",
+            "CREATE INDEX IDX2_R ON T2(R)",
+            "CREATE INDEX IDX2_TSTZ ON T2(TSTZ)",
+            "CREATE INDEX IDX2_B ON T2(B)",
+            "CREATE INDEX IDX2_S ON T2(S)",
+            "INSERT INTO T2 VALUES (1, 1.5, TIMESTAMP WITH TIME ZONE '2024-01-01 01:00:00+01:00', TRUE, 'a', "
+                + "INTERVAL '1' YEAR, INTERVAL '1' MONTH, INTERVAL '1-1' YEAR TO MONTH, "
+                + "INTERVAL '1' DAY, INTERVAL '1' HOUR, INTERVAL '1' MINUTE, INTERVAL '1' SECOND, "
+                + "INTERVAL '1 01' DAY TO HOUR, INTERVAL '1 01:01' DAY TO MINUTE, "
+                + "INTERVAL '01:01' HOUR TO MINUTE, INTERVAL '01:01:01' HOUR TO SECOND, "
+                + "INTERVAL '01:01' MINUTE TO SECOND)",
+            "INSERT INTO T2 VALUES (3, 3.5, TIMESTAMP WITH TIME ZONE '2024-01-03 03:00:00+03:00', FALSE, 'c', "
+                + "INTERVAL '3' YEAR, INTERVAL '3' MONTH, INTERVAL '3-3' YEAR TO MONTH, "
+                + "INTERVAL '3' DAY, INTERVAL '3' HOUR, INTERVAL '3' MINUTE, INTERVAL '3' SECOND, "
+                + "INTERVAL '3 03' DAY TO HOUR, INTERVAL '3 03:03' DAY TO MINUTE, "
+                + "INTERVAL '03:03' HOUR TO MINUTE, INTERVAL '03:03:03' HOUR TO SECOND, "
+                + "INTERVAL '03:03' MINUTE TO SECOND)",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY R) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY TSTZ) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY B) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY S) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IY) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IM) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IYM) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ID2) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IH) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IMIN) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ISEC) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IDH) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IDM) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IHM) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IHS) FROM T2",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY IMS) FROM T2",
+            // The window form: one answer per partition.
+            "CREATE TABLE TW(G INT, V INT)",
+            "INSERT INTO TW VALUES (1, 1), (1, 2), (1, 3), (2, 10), (2, 20)",
+            "SELECT G, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY V) OVER (PARTITION BY G) FROM TW ORDER BY G, V",
+            "SELECT G, MEDIAN(V) OVER (PARTITION BY G) FROM TW ORDER BY G, V",
+            "SELECT G, PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY V) OVER (PARTITION BY G) FROM TW ORDER BY G, V",
+            // NULLs last by the default ordering: the second cursor counts them at the end.
+            "SET DEFAULT_NULL_ORDERING LAST",
+            "CREATE TABLE DZ(Y INT)",
+            "CREATE INDEX IDZ ON DZ(Y DESC)",
+            "INSERT INTO DZ VALUES (1), (2), (3), (4), (NULL)",
+            "SELECT MEDIAN(Y) FROM DZ",
+            "SELECT PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY Y) FROM DZ",
+            "SELECT PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY Y) FROM DZ",
+            // All NULLs with the NULLs last: the second cursor counts the count out.
+            "CREATE TABLE DN(Y INT)",
+            "CREATE INDEX IDN ON DN(Y)",
+            "INSERT INTO DN VALUES (NULL)",
+            "SELECT MEDIAN(Y) FROM DN",
+            // The array path's rounding and reverse rules.
+            "SELECT PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY ID + 0) FROM T2",
+            "SELECT PERCENTILE_DISC(0.1) WITHIN GROUP (ORDER BY ID + 0) FROM T2",
+            "SELECT PERCENTILE_CONT(0.3) WITHIN GROUP (ORDER BY ID + 0 DESC) FROM T2",
+            "SELECT PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ID + 0 DESC) FROM T2",
+            // Two equal values: the interpolated pair is the same value, returned as it is.
+            "CREATE TABLE TE(V INT)",
+            "INSERT INTO TE VALUES (5), (5)",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY V + 0) FROM TE",
+            // A TIME WITH TIME ZONE crossing midnight between two half-hour offsets.
+            "CREATE TABLE TT(A TIME WITH TIME ZONE, B TIME WITH TIME ZONE)",
+            "INSERT INTO TT VALUES (TIME WITH TIME ZONE '23:59:00+00:01', TIME WITH TIME ZONE '00:01:00+01:00'), "
+                + "(TIME WITH TIME ZONE '00:00:30+01:00', TIME WITH TIME ZONE '23:58:30+00:00')",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY A) FROM TT",
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY B) FROM TT",
+            // A fraction whose offset does not fall on a whole second.
+            "SELECT PERCENTILE_CONT(0.987654321) WITHIN GROUP (ORDER BY A) FROM TT",
+            "SELECT PERCENTILE_CONT(0.987654321) WITHIN GROUP (ORDER BY B) FROM TT",
+            "SELECT PERCENTILE_CONT(0.987654321) WITHIN GROUP (ORDER BY TSTZ) FROM T2",
+            "SELECT PERCENTILE_CONT(0.012345679) WITHIN GROUP (ORDER BY TSTZ) FROM T2",
+        ];
+        List<string> port = RunPort(statements);
+        List<string> java = RunJava(statements);
+        Assert.True(
+            java.Count == port.Count && java.SequenceEqual(port),
+            "java:\n  " + string.Join("\n  ", java) + "\nport:\n  " + string.Join("\n  ", port));
+    }
+
+    /// <summary>
     /// Runs the statements here and writes what the question answered: the rows, or the code of
     /// the error.
     /// </summary>
