@@ -388,7 +388,7 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
         }
 
         if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob
-            && cell.GetBytes() is byte[] bytes && bytes.Length == 16)
+            && cell.GetBytesNoCopy() is byte[] bytes && bytes.Length == 16)
         {
             return new Guid(bytes);
         }
@@ -433,11 +433,16 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The slice is copied into the caller's buffer and the source is never exposed, so the
+    /// internal array is read without the defensive whole-value copy: a windowed read of a
+    /// large LOB used to materialize the whole value per window.
+    /// </remarks>
     public override long GetBytes(int ordinal, long fieldOffset, byte[]? buffer, int bufferOffset, int length)
     {
         Value cell = NotNull(ordinal, "Byte[]");
         if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob or Value.Json
-            && cell.GetBytes() is byte[] bytes)
+            && cell.GetBytesNoCopy() is byte[] bytes)
         {
             return CopySlice(bytes, fieldOffset, buffer, bufferOffset, length);
         }

@@ -23,8 +23,8 @@ public static class Program
         IConfig config = DefaultConfig.Instance
             .AddJob(Job.Default
                 .WithLaunchCount(1)
-                .WithWarmupCount(2)
-                .WithIterationCount(5))
+                .WithWarmupCount(3)
+                .WithIterationCount(10))
             .AddDiagnoser(MemoryDiagnoser.Default);
 
         BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, config);
