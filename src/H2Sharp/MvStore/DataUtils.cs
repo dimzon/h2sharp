@@ -399,21 +399,17 @@ public static class DataUtils
     public static string ReadString(Span<byte> buff, ref int position) => ReadString(buff, ref position, ReadVarInt(buff, ref position));
 
     /// <summary>
-    /// The stack budget of a string read, in characters. Page strings — keys, column values,
-    /// schema names — are overwhelmingly shorter than it; longer reads rent from the pool.
-    /// </summary>
-    private const int ReadStringStackChars = 256;
-
-    /// <summary>
     /// Read a string of the given number of characters.
     /// </summary>
     /// <remarks>
-    /// The decode runs once and the result is materialized once. Short reads decode into the
-    /// stack and answer one string; the direct <c>string.Create</c> build the decode would
-    /// otherwise use cannot take this call's shape on the .NET versions this port targets —
-    /// a span cannot ride the state argument, and the buffer here is a span, so there is no
-    /// array to hand over as a memory either. Long reads rent, decode, and copy once into
-    /// the result; the rented buffer always goes back, even on a short read.
+    /// The read counts the bytes the decode will consume and advances the position by that
+    /// count; the count pass and the decode follow the same one-two-three bytes rule, so a
+    /// truncated body fails in the count with the out-of-range read the decode would have
+    /// raised at the same byte. From .NET 9 a span can ride <c>string.Create</c>'s state, and
+    /// the decode writes the result directly — the result is the only allocation. Below that
+    /// the state has to be a plain struct, and the decode goes into a stack buffer for the
+    /// short strings pages mostly hold, renting from the pool above that, then copies once
+    /// into the result.
     /// </remarks>
     /// <param name="buff">the buffer</param>
     /// <param name="position">where to read</param>
@@ -421,49 +417,79 @@ public static class DataUtils
     /// <returns>the string</returns>
     public static string ReadString(Span<byte> buff, ref int position, int len)
     {
+        int start = position;
+        int bytes = CountStringBytes(buff[start..], len);
+        position = start + bytes;
+        ReadOnlySpan<byte> body = buff.Slice(start, bytes);
+#if NET9_0_OR_GREATER
+        return string.Create(len, body, DecodeStringChars);
+#else
         if (len <= ReadStringStackChars)
         {
             Span<char> chars = stackalloc char[ReadStringStackChars];
-            DecodeStringChars(chars[..len], buff, ref position);
+            DecodeStringChars(chars[..len], body);
             return new string(chars[..len]);
         }
 
         char[] rented = ArrayPool<char>.Shared.Rent(len);
         try
         {
-            DecodeStringChars(rented.AsSpan(0, len), buff, ref position);
+            DecodeStringChars(rented.AsSpan(0, len), body);
             return new string(rented, 0, len);
         }
         finally
         {
             ArrayPool<char>.Shared.Return(rented);
         }
+#endif
+    }
+
+#if !NET9_0_OR_GREATER
+    /// <summary>
+    /// The stack budget of a string read, in characters. Page strings — keys, column values,
+    /// schema names — are overwhelmingly shorter than it; longer reads rent from the pool.
+    /// From .NET 9 the decode writes the result directly and the budget is not read.
+    /// </summary>
+    private const int ReadStringStackChars = 256;
+#endif
+
+    /// <summary>
+    /// Decodes the reference's modified UTF-8 into the given characters. The decode itself is
+    /// the reference's: one, two or three bytes per character by the lead byte, which is also
+    /// what carries the two-byte zero. Shared by both target frameworks — only how the result
+    /// is built differs between them.
+    /// </summary>
+    private static void DecodeStringChars(Span<char> chars, ReadOnlySpan<byte> bytes)
+    {
+        int p = 0;
+        for (int i = 0; i < chars.Length; i++)
+        {
+            int x = bytes[p++];
+            chars[i] = x < 0x80
+                ? (char)x
+                : x >= 0xe0
+                    ? (char)(((x & 0xf) << 12)
+                        + ((bytes[p++] & 0x3f) << 6) + (bytes[p++] & 0x3f))
+                    : (char)(((x & 0x1f) << 6) + (bytes[p++] & 0x3f));
+        }
     }
 
     /// <summary>
-    /// Decodes the reference's modified UTF-8 into the given characters, moving the position
-    /// past the bytes consumed. The decode itself is the reference's: one, two or three bytes
-    /// per character by the lead byte, which is also what carries the two-byte zero.
+    /// How many bytes the decode of the given number of characters consumes, by the same
+    /// one-two-three-bytes-per-lead-byte rule the decode follows. The read advances its
+    /// position by this count, and the count pass is also the bounds check: a truncated body
+    /// fails here with the out-of-range read the decode would have raised at the same byte.
     /// </summary>
-    private static void DecodeStringChars(Span<char> chars, Span<byte> buff, ref int position)
+    private static int CountStringBytes(ReadOnlySpan<byte> buff, int len)
     {
-        for (int i = 0; i < chars.Length; i++)
+        int p = 0;
+        for (int i = 0; i < len; i++)
         {
-            int x = buff[position++];
-            if (x < 0x80)
-            {
-                chars[i] = (char)x;
-            }
-            else if (x >= 0xe0)
-            {
-                chars[i] = (char)(((x & 0xf) << 12)
-                    + ((buff[position++] & 0x3f) << 6) + (buff[position++] & 0x3f));
-            }
-            else
-            {
-                chars[i] = (char)(((x & 0x1f) << 6) + (buff[position++] & 0x3f));
-            }
+            int x = buff[p++];
+            p += x < 0x80 ? 0 : (x >= 0xe0 ? 2 : 1);
         }
+
+        return p;
     }
 
     /// <summary>
