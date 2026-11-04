@@ -9420,3 +9420,44 @@ UUID→Guid, geometry→WKT, массив/строка, интервалы; YEAR
 `0x`-как-binary в Legacy), `stopOnCloseParen=true` (движок вызывает с true
 только внутри разбора выражений) и защитные отказы, которые собственная
 валидация токенизатора делает недостижимыми из SQL.
+
+### Предикаты, DB_OBJECT_* и CREATE_BUILD (2026-11-04)
+
+`PredicateFunctionOracleTests` (5 оракульных тестов) сверяет с JVM:
+* BETWEEN в обеих формах, SYMMETRIC, NULL-границы и NOT (планы через
+  `ExplainOracleTests`);
+* IS NULL по скалярам и ROW-значениям, в том числе `(A, B) IS NULL`;
+* IS JSON / IS JSON ARRAY / OBJECT / SCALAR / WITH UNIQUE KEYS по VARCHAR и
+  JSON-колонкам;
+* `DB_OBJECT_ID/SQL/SIZE/TOTAL_SIZE/APPROXIMATE_SIZE/APPROXIMATE_TOTAL_SIZE`
+  по таблице, ограничению, индексу, последовательности, схеме и настройке.
+
+Оракул нашёл дефект: `BetweenPredicate.Optimize` при обеих константных
+границах спрашивал `GetBoolean()` у значения и падал на NULL-границе. Эталон
+зовёт `ValueExpression.getBoolean(Value)`, который сводит NULL к UNKNOWN —
+портировано дословно.
+
+**CREATE_BUILD на старте.** Эталон (Database.java 368–378) после `starting =
+false` создаёт настройку `CREATE_BUILD` с выделенным id и коммитит системную
+сессию. Порт этого не делал, поэтому `DB_OBJECT_ID('SETTING','CREATE_BUILD')`
+отвечал NULL. Добавлено; `DatabaseMetaIdTests` ожидает теперь 2, а не 1: первый
+id выдаёт `setModified()` индекса `SYS_ID`, второй — `clearQueryCache()` при
+добавлении настройки (как в эталоне).
+
+**`MVPrimaryIndex` при создании на работающей базе.** Портированы две строки
+конструктора: `dataMap.map.setVolatile(!table.isPersistData() ||
+!indexType.isPersistent())` и `if (!db.isStarting()) dataMap.clear();`.
+`MVTable` передаёт конструктору настоящую `Database` (раньше — `null!`, потому
+что параметр не использовался); без этого `isStarting()` падал. Тесты, которые
+создают таблицы с id 0, теперь не видят строку CREATE_BUILD в общей карте
+`table.0`, как и на JVM.
+
+Проверено: `H2Sharp.Tests` 1839 зелёных (`Category!=BlockedByPort`),
+Data 717, Engine 9, MvStore 152. Покрытие union (5 наборов) —
+**87.57% строк / 83.22% веток**.
+
+**Найдены предсуществующие дефекты Native (воспроизводятся на HEAD d666df7):**
+`TestResultSetGetters.Test` — `ColumnSize` объявленного `VARCHAR(255)` равен 0
+вместо 255; `TestView.Test` — `rownum()` во вложенном запросе даёт 1 вместо 2.
+Оба падения обрывают тесты раньше и занижают покрытие Native; к этому спринту
+отношения не имеют.

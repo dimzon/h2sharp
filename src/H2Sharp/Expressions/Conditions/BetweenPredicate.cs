@@ -101,7 +101,9 @@ public sealed class BetweenPredicate : Condition
 
             if (aValue is not null && bValue is not null)
             {
-                return ValueExpression.Get(ValueBoolean.Get(GetValue(session, value, aValue, bValue).GetBoolean()));
+                // ValueExpression.getBoolean(Value) folds the NULL result to UNKNOWN; asking
+                // the value itself would demand a boolean from a NULL bound.
+                return ValueExpression.GetBoolean(GetValue(session, value, aValue, bValue));
             }
         }
 

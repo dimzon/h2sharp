@@ -181,7 +181,7 @@ public sealed class MVTable : Table
         // reference's MVTable constructor says with createScan(true). It is not a primary key
         // index: a table without a PRIMARY KEY has no key index at all, and FindPrimaryKey
         // relies on that to tell a keyed table from a keyless one.
-        primaryIndex = new MVPrimaryIndex(null!, this, id, IndexColumn.Wrap(this.columns), IndexType.CreateScan(true));
+        primaryIndex = new MVPrimaryIndex(database, this, id, IndexColumn.Wrap(this.columns), IndexType.CreateScan(true));
         indexes = new List<Index> { primaryIndex };
     }
 

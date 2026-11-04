@@ -568,6 +568,21 @@ public sealed partial class Database : CastDataProvider
         {
             starting = false;
         }
+
+        if (!readOnly)
+        {
+            // Set CREATE_BUILD in a new database, as the reference does after the meta rows.
+            string settingName = Command.Dml.SetTypes.GetTypeName(Command.Dml.SetTypes.CreateBuild);
+            Setting? setting = FindSetting(settingName);
+            if (setting is null)
+            {
+                setting = new Setting(this, AllocateObjectId(), settingName);
+                setting.SetIntValue(Constants.BuildId);
+                AddDatabaseObject(systemSession, setting);
+                // The reference commits the system session right after the setting is added.
+                systemSession.Commit(true);
+            }
+        }
     }
 
     /// <summary>

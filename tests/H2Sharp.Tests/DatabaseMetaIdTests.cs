@@ -22,11 +22,13 @@ public sealed class DatabaseMetaIdTests
         Database db = new(ConnectionInfo.Memory("meta_id"));
 
         // Opening the database creates the SYS_ID index, and the reference stamps every
-        // index it adds with setModified(), so the counter is already 1 by the time a caller
-        // can ask.
-        Assert.Equal(1, db.GetNextModificationMetaId());
-        Assert.Equal(2, db.GetModificationMetaId());
+        // index it adds with setModified(), so the counter is already 1 by the time the
+        // database starts. Then the CREATE_BUILD setting is added on a running database: the
+        // reference's addDatabaseObject() clears the query cache of the new object, which
+        // hands out one more id. The counter is 2 before a caller can ask.
         Assert.Equal(2, db.GetNextModificationMetaId());
         Assert.Equal(3, db.GetModificationMetaId());
+        Assert.Equal(3, db.GetNextModificationMetaId());
+        Assert.Equal(4, db.GetModificationMetaId());
     }
 }

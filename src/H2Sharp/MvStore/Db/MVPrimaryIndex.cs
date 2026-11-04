@@ -68,13 +68,20 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
         dataMap = t is null
             ? throw new TODOException("MVPrimaryIndex: the table has no transaction yet")
             : t.OpenMap(mapName, LongDataType.Instance, valueType);
+        dataMap.InnerMap.SetVolatile(!table.IsPersistData || indexType?.IsPersistent() != true);
+        if (!database.IsStarting())
+        {
+            // Reference: a primary index created on a running database starts empty. Opening an
+            // existing table during startup keeps its rows.
+            dataMap.Clear();
+        }
+
         t.Commit();
 
         // include uncommitted keys as well: the map's last key is where the counter resumes,
         // and a key that is still in flight is a key that will be taken.
         long? k = LastKeyOf(dataMap.InnerMap);
         lastKey.Set(k ?? 0);
-        _ = database;
     }
 
     /// <summary>
