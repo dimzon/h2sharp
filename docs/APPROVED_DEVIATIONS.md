@@ -475,6 +475,31 @@ SQL-скриптов (`SCRIPT ... CIPHER`) — отдельное решение
 `GeometricMean`, `HarmonicMean`, `Product`, `WeightedAverage`, `CountIf`)
 поставляются отдельной опциональной сборкой `H2Sharp.Extensions`.
 
+### D-037. `CREATE ALIAS`/`FunctionAlias` — вне scope: нет хранения исполняемого кода
+
+Указание пользователя: `CREATE ALIAS` не реализуется. H2Sharp — встраиваемый
+движок, и он не хранит исполняемый код в базе; поэтому SQL alias технически не
+может быть персистентным. SQL aliases — это schema objects, которые эталон
+сохраняет в БД и в `SCRIPT`; без персистентности их контракт не выполняется.
+
+Следствия:
+
+* нет `UserDefinedFunction`/`FunctionAlias`, `CreateFunctionAlias`,
+  `DropFunctionAlias` и реестра `Schema.functionsAndAggregates`;
+* `CREATE ALIAS`/`DROP ALIAS` не обслуживают SQL aliases; `COMMENT ON ALIAS`
+  отвечает «alias not found», потому что таких объектов нет;
+* `DatabaseMetaData.getProcedures`/`getProcedureColumns` возвращают эталонные
+  колонки без строк (`DatabaseMetaLocal`), а `GetSchema("Procedures")` отдаёт
+  пустую таблицу;
+* .NET-функции остаются connection/session-scoped: `IH2Extensions.RegisterUdf`,
+  снимок `ExtensionRuntime`, вызов `ClrFunction`. Это не SQL alias и не schema
+  object: они не попадают в metadata, `SCRIPT` и другие сессии.
+
+ADR-001 §2 («SQL aliases подключаются к тому же механизму») в части SQL aliases
+этим решением отменён: общий механизм — это .NET UDF, а не хранение
+исполняемого кода. Метаданные и выполнение по-прежнему используют
+`Schema`/`DbObject`/`Expression`; второй реестр для alias не вводится.
+
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 
 ### P-007. `ROWNUM` в DML — текущей команды нет

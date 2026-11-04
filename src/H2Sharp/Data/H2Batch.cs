@@ -26,7 +26,7 @@ public sealed class H2Batch : DbBatch
 
     private H2Transaction? transaction;
 
-    internal H2Batch(H2Connection connection)
+    internal H2Batch(H2Connection? connection = null)
     {
         this.connection = connection;
     }

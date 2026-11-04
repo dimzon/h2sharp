@@ -442,6 +442,12 @@ public sealed class DataType
     /// <summary>
     /// The SQL type a value type is reported as.
     /// </summary>
+    /// <remarks>
+    /// The numbers are java.sql.Types, because this is the reference's method and the
+    /// metadata rows it feeds are the reference's rows. The .NET projection is
+    /// <see cref="SqlType"/>; the two vocabularies are different, and the metadata contract
+    /// keeps the reference's.
+    /// </remarks>
     /// <param name="type">the type</param>
     /// <returns>the SQL type</returns>
     public static int ConvertTypeToSqlType(TypeInfo type)
@@ -450,24 +456,61 @@ public sealed class DataType
         switch (valueType)
         {
             case Value.Numeric:
-                // .NET has no SQL type that means "a numeric which is not a decimal", so the two the
-                // reference distinguishes are one here. The distinction is the reference's, and it
-                // is decided by the extended type information; both answers are SqlDbType.Decimal.
-                return (int)System.Data.SqlDbType.Decimal;
+                return type.GetExtTypeInfo() is not null ? 3 /* DECIMAL */ : 2 /* NUMERIC */;
 
             case Value.Real:
             case Value.Double:
                 // A type that declares a width is a FLOAT, which is how a FLOAT(p) column is
                 // reported; one that does not is reported as the type itself.
-                if (type.GetPrecision() >= 0)
+                if (type.GetDeclaredPrecision() >= 0)
                 {
-                    return (int)System.Data.SqlDbType.Float;
+                    return 6 /* FLOAT */;
                 }
 
                 break;
         }
 
-        return GetDataType(valueType).SqlType;
+        return ConvertValueTypeToSqlType(valueType);
+    }
+
+    /// <summary>
+    /// The SQL type of a value type, as the reference's type catalogue declares it.
+    /// </summary>
+    /// <remarks>
+    /// This is the reference's <c>DataType.sqlType</c>, which the catalogue row holds per
+    /// value type. The port's <see cref="SqlType"/> column is the .NET projection instead,
+    /// so the metadata rows that need the reference's numbers read this method.
+    /// </remarks>
+    /// <param name="valueType">the value type</param>
+    /// <returns>the SQL type</returns>
+    internal static int ConvertValueTypeToSqlType(int valueType)
+    {
+        return valueType switch
+        {
+            Value.Unknown or Value.Null => 0, // NULL
+            Value.Char => 1, // CHAR
+            Value.Varchar or Value.VarcharIgnorecase => 12, // VARCHAR
+            Value.Clob => 2005, // CLOB
+            Value.Binary or Value.Uuid => -2, // BINARY
+            Value.Varbinary => -3, // VARBINARY
+            Value.Blob => 2004, // BLOB
+            Value.Boolean => 16, // BOOLEAN
+            Value.Tinyint => -6, // TINYINT
+            Value.Smallint => 5, // SMALLINT
+            Value.Integer => 4, // INTEGER
+            Value.Bigint => -5, // BIGINT
+            Value.Numeric or Value.Decfloat => 2, // NUMERIC
+            Value.Real => 7, // REAL
+            Value.Double => 8, // DOUBLE
+            Value.Date => 91, // DATE
+            Value.Time => 92, // TIME
+            Value.TimeTz => 2013, // TIME_WITH_TIMEZONE
+            Value.Timestamp => 93, // TIMESTAMP
+            Value.TimestampTz => 2014, // TIMESTAMP_WITH_TIMEZONE
+            Value.JavaObject => 2000, // JAVA_OBJECT
+            Value.Array => 2003, // ARRAY
+            _ => 1111, // OTHER: ENUM, GEOMETRY, JSON, ROW and the interval types
+        };
     }
 
     /// <summary>

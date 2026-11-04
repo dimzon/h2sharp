@@ -21,6 +21,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using H2Sharp.Jdbc.Meta;
 using H2Sharp.Message;
 using H2Sharp.Store;
 using H2Sharp.Values;
@@ -179,7 +180,7 @@ public abstract class Session : CastDataProvider, IDisposable
     /// Gets the database meta object.
     /// </summary>
     /// <returns>the meta object</returns>
-    public abstract object GetDatabaseMeta();
+    public abstract DatabaseMeta GetDatabaseMeta();
 
     /// <summary>
     /// Whether this is an old information schema.

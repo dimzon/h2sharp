@@ -16,6 +16,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using H2Sharp.Engine;
 using H2Sharp.Util;
 using H2Sharp.Values;
@@ -346,9 +347,15 @@ public class SimpleResult : ResultInterface, ResultTarget
     /// <summary>
     /// Sort rows in the list.
     /// </summary>
+    /// <remarks>
+    /// Java's List.sort is stable and the reference relies on it for ties — the metadata
+    /// rows that share a DATA_TYPE keep the catalogue's order. .NET's List.Sort makes no
+    /// such promise, so the stable merge is used here for the same reason it is used by
+    /// SortOrder.Sort.
+    /// </remarks>
     /// <param name="comparator">the comparator</param>
     public void SortRows(Comparison<Value?[]> comparator)
     {
-        rows.Sort(comparator);
+        Utils.StableSort(CollectionsMarshal.AsSpan(rows), 0, rows.Count, comparator);
     }
 }

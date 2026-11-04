@@ -8,11 +8,10 @@
  * reference because it is not part of H2 either — the reference reaches a caller through
  * JDBC, and this type is what the same job looks like on this side.
  *
- * Everything that needs the database refuses. That is the honest state of the port: there
- * is no engine yet (no Database, no Session, no Parser), so a connection string is text
- * this type can hold and nothing more. The refusals are TODOException rather than a
- * plausible answer, because a provider that answers "version 2.5" or "database H2" without
- * having connected is worse than one that says it cannot.
+ * The connection owns a session on an open database. Schema discovery reads the engine's
+ * metadata (H2Sharp.Jdbc.Meta), which is the same catalogue walk the reference's JDBC
+ * DatabaseMetaData performs in its default mode; the rows are the reference's, wrapped in
+ * the DataTables ADO.NET expects.
  *
  * Naming. H2Connection rather than Connection, because `Connection` in a namespace that is
  * imported next to System.Data.Common collides with DbConnection, SqlConnection and every
@@ -29,7 +28,10 @@ using System.Transactions;
 using H2Sharp.Data.Extensions;
 using H2Sharp.Engine;
 using H2Sharp.Extensions;
+using H2Sharp.Jdbc.Meta;
+using H2Sharp.Result;
 using H2Sharp.Util;
+using H2Sharp.Values;
 using H2DbException = H2Sharp.Message.DbException;
 // The engine's isolation level and the ADO.NET one share the name; the transaction surface
 // of this file speaks ADO.NET, the session surface speaks the engine's.
@@ -500,6 +502,256 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// </summary>
     protected override DbBatch CreateDbBatch()
         => new H2Batch(this);
+
+    /// <summary>
+    /// The collections GetSchema can answer, their restriction counts and the number of
+    /// identifier parts in a collection name.
+    /// </summary>
+    private static readonly (string Name, int Restrictions, int IdentifierParts)[] SchemaCollections =
+    [
+        (DbMetaDataCollectionNames.MetaDataCollections, 0, 0),
+        (DbMetaDataCollectionNames.Restrictions, 0, 0),
+        (DbMetaDataCollectionNames.DataTypes, 0, 0),
+        (DbMetaDataCollectionNames.ReservedWords, 0, 0),
+        ("Tables", 4, 3),
+        ("Columns", 4, 3),
+        ("Indexes", 4, 3),
+        ("ForeignKeys", 3, 3),
+        ("Procedures", 3, 3),
+        ("TableTypes", 0, 0),
+        ("Catalogs", 0, 0),
+        ("Schemas", 2, 2),
+    ];
+
+    /// <summary>
+    /// The restriction names of each collection that has any.
+    /// </summary>
+    private static readonly (string Collection, string[] Restrictions)[] SchemaRestrictions =
+    [
+        ("Tables", ["Catalog", "Schema", "Table", "TableType"]),
+        ("Columns", ["Catalog", "Schema", "Table", "Column"]),
+        ("Indexes", ["Catalog", "Schema", "Table", "Index"]),
+        ("ForeignKeys", ["Catalog", "Schema", "Table"]),
+        ("Procedures", ["Catalog", "Schema", "Procedure"]),
+        ("Schemas", ["Catalog", "Schema"]),
+    ];
+
+    /// <inheritdoc/>
+    public override DataTable GetSchema()
+        => GetSchema(DbMetaDataCollectionNames.MetaDataCollections);
+
+    /// <inheritdoc/>
+    public override DataTable GetSchema(string collectionName)
+        => GetSchema(collectionName, null);
+
+    /// <inheritdoc/>
+    public override DataTable GetSchema(string collectionName, string?[]? restrictionValues)
+    {
+        if (collectionName is null)
+        {
+            throw new ArgumentException("The collection name is null", nameof(collectionName));
+        }
+
+        int allowed = RestrictionCount(collectionName);
+        if (restrictionValues is not null && restrictionValues.Length > allowed)
+        {
+            throw new ArgumentException(
+                $"More restrictions were provided than the collection {collectionName} supports",
+                nameof(restrictionValues));
+        }
+
+        SessionLocal current = session
+            ?? throw new InvalidOperationException("The connection is closed");
+        DatabaseMeta meta = current.GetDatabaseMeta();
+        string key = collectionName.ToUpperInvariant();
+        return key switch
+        {
+            "METADATACOLLECTIONS" => MetaDataCollectionsTable(),
+            "RESTRICTIONS" => RestrictionsTable(),
+            "DATATYPES" => ToDataTable(DbMetaDataCollectionNames.DataTypes, meta.GetTypeInfo()),
+            "RESERVEDWORDS" => ReservedWordsTable(meta),
+            "TABLES" => ToDataTable(
+                "Tables",
+                meta.GetTables(
+                    Restriction(restrictionValues, 0),
+                    Restriction(restrictionValues, 1),
+                    Restriction(restrictionValues, 2),
+                    Restriction(restrictionValues, 3) is { } type ? [type] : null)),
+            "COLUMNS" => ToDataTable(
+                "Columns",
+                meta.GetColumns(
+                    Restriction(restrictionValues, 0),
+                    Restriction(restrictionValues, 1),
+                    Restriction(restrictionValues, 2),
+                    Restriction(restrictionValues, 3))),
+            "INDEXES" => IndexesTable(meta, restrictionValues),
+            "FOREIGNKEYS" => ForeignKeysTable(meta, restrictionValues),
+            "PROCEDURES" => ToDataTable(
+                "Procedures",
+                meta.GetProcedures(
+                    Restriction(restrictionValues, 0),
+                    Restriction(restrictionValues, 1),
+                    Restriction(restrictionValues, 2))),
+            "TABLETYPES" => ToDataTable("TableTypes", meta.GetTableTypes()),
+            "CATALOGS" => ToDataTable("Catalogs", meta.GetCatalogs()),
+            "SCHEMAS" => ToDataTable(
+                "Schemas",
+                meta.GetSchemas(
+                    Restriction(restrictionValues, 0),
+                    Restriction(restrictionValues, 1))),
+            _ => throw new ArgumentException(
+                $"The requested collection ({collectionName}) is not defined.", nameof(collectionName)),
+        };
+    }
+
+    /// <inheritdoc/>
+    public override Task<DataTable> GetSchemaAsync(CancellationToken cancellationToken = default)
+        => GetSchemaAsync(DbMetaDataCollectionNames.MetaDataCollections, null, cancellationToken);
+
+    /// <inheritdoc/>
+    public override Task<DataTable> GetSchemaAsync(
+        string collectionName, CancellationToken cancellationToken = default)
+        => GetSchemaAsync(collectionName, null, cancellationToken);
+
+    /// <inheritdoc/>
+    public override Task<DataTable> GetSchemaAsync(
+        string collectionName, string?[]? restrictionValues,
+        CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled<DataTable>(cancellationToken);
+        }
+
+        return Task.FromResult(GetSchema(collectionName, restrictionValues));
+    }
+
+    private static int RestrictionCount(string collectionName)
+    {
+        foreach ((string name, int restrictions, _) in SchemaCollections)
+        {
+            if (string.Equals(name, collectionName, StringComparison.OrdinalIgnoreCase))
+            {
+                return restrictions;
+            }
+        }
+
+        throw new ArgumentException(
+            $"The requested collection ({collectionName}) is not defined.", nameof(collectionName));
+    }
+
+    private static string? Restriction(string?[]? values, int index)
+        => values is not null && index < values.Length ? values[index] : null;
+
+    private static DataTable MetaDataCollectionsTable()
+    {
+        DataTable table = new(DbMetaDataCollectionNames.MetaDataCollections);
+        table.Columns.Add("CollectionName", typeof(string));
+        table.Columns.Add("NumberOfRestrictions", typeof(int));
+        table.Columns.Add("NumberOfIdentifierParts", typeof(int));
+        foreach ((string name, int restrictions, int identifierParts) in SchemaCollections)
+        {
+            table.Rows.Add(name, restrictions, identifierParts);
+        }
+
+        return table;
+    }
+
+    private static DataTable RestrictionsTable()
+    {
+        DataTable table = new(DbMetaDataCollectionNames.Restrictions);
+        table.Columns.Add("CollectionName", typeof(string));
+        table.Columns.Add("RestrictionName", typeof(string));
+        table.Columns.Add("RestrictionDefault", typeof(string));
+        table.Columns.Add("RestrictionNumber", typeof(int));
+        foreach ((string collection, string[] restrictions) in SchemaRestrictions)
+        {
+            for (int i = 0; i < restrictions.Length; i++)
+            {
+                table.Rows.Add(collection, restrictions[i], DBNull.Value, i + 1);
+            }
+        }
+
+        return table;
+    }
+
+    private static DataTable ReservedWordsTable(DatabaseMeta meta)
+    {
+        DataTable table = new(DbMetaDataCollectionNames.ReservedWords);
+        table.Columns.Add("ReservedWord", typeof(string));
+        foreach (string word in meta.GetSQLKeywords().Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            table.Rows.Add(word);
+        }
+
+        return table;
+    }
+
+    private static DataTable IndexesTable(DatabaseMeta meta, string?[]? restrictionValues)
+    {
+        string? table = Restriction(restrictionValues, 2);
+        if (string.IsNullOrEmpty(table))
+        {
+            throw new ArgumentException(
+                "The Indexes collection requires a table restriction", nameof(restrictionValues));
+        }
+
+        string? index = Restriction(restrictionValues, 3);
+        return ToDataTable(
+            "Indexes",
+            meta.GetIndexInfo(
+                Restriction(restrictionValues, 0), Restriction(restrictionValues, 1), table,
+                unique: false, approximate: false),
+            filterOrdinal: 5,
+            filterValue: string.IsNullOrEmpty(index) ? null : index);
+    }
+
+    private static DataTable ForeignKeysTable(DatabaseMeta meta, string?[]? restrictionValues)
+    {
+        string? table = Restriction(restrictionValues, 2);
+        if (string.IsNullOrEmpty(table))
+        {
+            throw new ArgumentException(
+                "The ForeignKeys collection requires a table restriction", nameof(restrictionValues));
+        }
+
+        return ToDataTable(
+            "ForeignKeys",
+            meta.GetImportedKeys(
+                Restriction(restrictionValues, 0), Restriction(restrictionValues, 1), table));
+    }
+
+    private static DataTable ToDataTable(
+        string name, ResultInterface result, int filterOrdinal = -1, string? filterValue = null)
+    {
+        DataTable table = new(name);
+        int count = result.GetVisibleColumnCount();
+        for (int i = 0; i < count; i++)
+        {
+            TypeInfo type = result.GetColumnType(i);
+            table.Columns.Add(result.GetColumnName(i), H2ValueMapper.GetFieldType(type));
+        }
+
+        while (result.Next())
+        {
+            Value?[] row = result.CurrentRow();
+            if (filterValue is not null && filterOrdinal >= 0
+                && !string.Equals(row[filterOrdinal]?.GetString(), filterValue, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            object?[] values = new object?[count];
+            for (int i = 0; i < count; i++)
+            {
+                values[i] = H2ValueMapper.ToObject(row[i]);
+            }
+
+            table.Rows.Add(values);
+        }
+
+        return table;
+    }
 
     /// <summary>
     /// Changes the current database for this connection.

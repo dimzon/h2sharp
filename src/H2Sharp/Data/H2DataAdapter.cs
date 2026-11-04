@@ -5,11 +5,16 @@
  *
  * A data adapter over the provider.
  *
- * DbDataAdapter's abstract surface is only the row-update events: filling and updating
- * run through the commands, so a fill reads through the select command into the table
- * and an update writes through the insert, update and delete commands. What is not here
- * is batch updating and conflict detection, which need the schema machinery behind
- * GetInsertCommand and friends — those live on the command builder and refuse there.
+ * Filling and updating run through the commands, so a fill reads through the select
+ * command into the table and an update writes through the insert, update and delete
+ * commands. The row-update events are declared here, because DbDataAdapter itself keeps
+ * only the hooks that create and raise the arguments: without this declaration a caller
+ * could not subscribe to them. FillError is different — DataAdapter declares and raises
+ * it itself, so it is inherited and needs no member here.
+ *
+ * What is not here is batch updating and conflict detection, which need the schema
+ * machinery behind GetInsertCommand and friends — those live on the command builder and
+ * refuse there.
  */
 using System;
 using System.Data;
@@ -74,5 +79,37 @@ public sealed class H2DataAdapter : DbDataAdapter
     {
         get => (H2Command?)base.DeleteCommand;
         set => base.DeleteCommand = value;
+    }
+
+    /// <summary>
+    /// Occurs before an update command runs for a row.
+    /// </summary>
+    public event H2RowUpdatingEventHandler? RowUpdating;
+
+    /// <summary>
+    /// Occurs after an update command ran for a row.
+    /// </summary>
+    public event H2RowUpdatedEventHandler? RowUpdated;
+
+    /// <inheritdoc/>
+    protected override RowUpdatingEventArgs CreateRowUpdatingEvent(
+        DataRow dataRow, IDbCommand? command, StatementType statementType, DataTableMapping tableMapping)
+        => new H2RowUpdatingEventArgs(dataRow, command, statementType, tableMapping);
+
+    /// <inheritdoc/>
+    protected override RowUpdatedEventArgs CreateRowUpdatedEvent(
+        DataRow dataRow, IDbCommand? command, StatementType statementType, DataTableMapping tableMapping)
+        => new H2RowUpdatedEventArgs(dataRow, command, statementType, tableMapping);
+
+    /// <inheritdoc/>
+    protected override void OnRowUpdating(RowUpdatingEventArgs value)
+    {
+        RowUpdating?.Invoke(this, (H2RowUpdatingEventArgs)value);
+    }
+
+    /// <inheritdoc/>
+    protected override void OnRowUpdated(RowUpdatedEventArgs value)
+    {
+        RowUpdated?.Invoke(this, (H2RowUpdatedEventArgs)value);
     }
 }

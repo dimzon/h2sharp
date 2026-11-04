@@ -1210,6 +1210,25 @@ public abstract class Table
     public virtual bool IsView() => false;
 
     /// <summary>
+    /// Returns the SQL table type for INFORMATION_SCHEMA.
+    /// </summary>
+    /// <returns>the SQL table type</returns>
+    public string GetSQLTableType()
+    {
+        if (IsView())
+        {
+            return "VIEW";
+        }
+
+        if (IsTemporary())
+        {
+            return IsGlobalTemporary() ? "GLOBAL TEMPORARY" : "LOCAL TEMPORARY";
+        }
+
+        return "BASE TABLE";
+    }
+
+    /// <summary>
     /// Refuses writes when the database is read only, the reference's
     /// Table.checkWritingAllowed. Some tables overwrite the default behaviour.
     /// </summary>

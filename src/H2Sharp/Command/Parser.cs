@@ -6355,7 +6355,7 @@ public sealed partial class Parser
                     case ParserUtil.Set:
                         // The reference's readSetFunction: SET(@var, value) assigns and answers
                         // the value. The user-defined function alias override around it needs
-                        // CREATE ALIAS, which is not ported.
+                        // CREATE ALIAS, which is out of scope (D-037).
                         Read();
                         Expect(Token.OpenParen, "(");
                         return new Expressions.Functions.SetFunction(

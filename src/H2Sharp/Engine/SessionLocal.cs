@@ -26,6 +26,7 @@ using H2Sharp.Command;
 using H2Sharp.Message;
 using H2Sharp.Extensions;
 using H2Sharp.Indexes;
+using H2Sharp.Jdbc.Meta;
 using H2Sharp.Util;
 
 namespace H2Sharp.Engine;
@@ -1357,17 +1358,14 @@ public sealed class SessionLocal : Session
     /// Gets the object that builds the metadata of this database.
     /// </summary>
     /// <returns>the meta object</returns>
-    public override object GetDatabaseMeta()
-        => new DatabaseMeta(database.GetName(), Constants.FullVersion);
+    public override DatabaseMeta GetDatabaseMeta()
+        => new DatabaseMetaLocal(this);
 
     /// <summary>The settings that do not change while the database is open.</summary>
     private sealed record StaticSettings(bool DatabaseToUpper, bool DatabaseToLower, bool CaseInsensitiveIdentifiers);
 
     /// <summary>The settings that may change while the database is open.</summary>
     private sealed record DynamicSettings(Mode Mode, Util.TimeZoneProvider TimeZone);
-
-    /// <summary>The database metadata object.</summary>
-    private sealed record DatabaseMeta(string Name, string Version);
 
     /// <summary>
     /// Whether this is an old information schema.
