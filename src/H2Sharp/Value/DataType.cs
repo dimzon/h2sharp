@@ -177,7 +177,13 @@ public sealed class DataType
 
     private static readonly DataType?[] TypesByValueType = new DataType?[128];
 
-    private static readonly Dictionary<string, DataType> TypesByName = new(StringComparer.Ordinal);
+    // Built during static construction, frozen once, and read forever after: every column
+    // declaration resolves its type name through this probe. The builder stays only because
+    // the Add helpers write into it; the frozen copy is what the lookups see, with the same
+    // ordinal comparer, so the answers are the ones the builder dictionary gave.
+    private static readonly Dictionary<string, DataType> typesByNameBuilder = new(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, DataType> TypesByName;
 
     private DataType()
     {
@@ -318,6 +324,8 @@ public sealed class DataType
         dataType.Suffix = ")";
         dataType.Params = "NAME DATA_TYPE [,...]";
         Add(Value.Row, System.Data.SqlDbType.Variant, dataType, "ROW");
+
+        TypesByName = typesByNameBuilder.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -590,7 +598,7 @@ public sealed class DataType
 
         foreach (string name in names)
         {
-            TypesByName[name] = dataType;
+            typesByNameBuilder[name] = dataType;
         }
     }
 

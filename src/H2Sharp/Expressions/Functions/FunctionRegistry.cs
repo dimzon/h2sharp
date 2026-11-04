@@ -7,6 +7,7 @@
  * their own parser branches.
  */
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using H2Sharp.Values;
 
@@ -34,12 +35,16 @@ internal sealed class FunctionRegistration
 
 internal static class FunctionRegistry
 {
-    private static readonly Dictionary<string, FunctionRegistration> Functions = Create();
+    // Frozen after construction and never written again: every function name a statement
+    // resolves goes through this probe, and the frozen copy answers it without the bucket
+    // walk of the growing dictionary. The OrdinalIgnoreCase comparer is preserved, so the
+    // answers are the ones the dictionary gave.
+    private static readonly FrozenDictionary<string, FunctionRegistration> Functions = Create();
 
     internal static bool TryGet(string name, out FunctionRegistration registration)
         => Functions.TryGetValue(name, out registration!);
 
-    private static Dictionary<string, FunctionRegistration> Create()
+    private static FrozenDictionary<string, FunctionRegistration> Create()
     {
         Dictionary<string, FunctionRegistration> functions = new(StringComparer.OrdinalIgnoreCase);
 
@@ -162,7 +167,7 @@ internal static class FunctionRegistry
         Add(functions, "SESSION_ID", 0, 0, _ => new SysInfoFunction(SysInfoFunction.SessionId));
         Add(functions, "TRANSACTION_ID", 0, 0, _ => new SysInfoFunction(SysInfoFunction.TransactionId));
 
-        return functions;
+        return functions.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
 
     private static void Add(

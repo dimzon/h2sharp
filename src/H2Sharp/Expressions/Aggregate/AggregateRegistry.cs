@@ -82,7 +82,7 @@ internal static class AggregateRegistry
     {
         if (session?.Extensions.FindAggregate(name) is { } custom)
         {
-            registration = new ClrAggregateRegistration(custom, isBuiltIn: false);
+            registration = custom.Registration;
             return true;
         }
 

@@ -23,6 +23,7 @@
  * disagree with every file written from it.
  */
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Threading;
 using H2Sharp.Command;
@@ -120,6 +121,22 @@ public sealed partial class Database : CastDataProvider
     private readonly Dictionary<string, Schemas.Schema> schemas;
 
     /// <summary>
+    /// The frozen lookup copy of <see cref="schemas"/>, rebuilt under the lock when the
+    /// mutable map changes.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads its schema map without taking the database lock: the map is a
+    /// ConcurrentHashMap and findSchema is a plain get, so a name resolution never waits for
+    /// a DDL write. The frozen copy gives this port the same reads — an immutable snapshot
+    /// published by a lone volatile reference — while the mutable dictionary keeps its
+    /// changes under the lock, as the reference's synchronized blocks do. A reader either
+    /// sees the snapshot before the change or the one after it, which is what the reference
+    /// answers too.
+    /// </remarks>
+    private volatile FrozenDictionary<string, Schemas.Schema> frozenSchemas =
+        FrozenDictionary<string, Schemas.Schema>.Empty;
+
+    /// <summary>
     /// The name of the schema of the metadata views.
     /// </summary>
     public const string InformationSchemaName = "INFORMATION_SCHEMA";
@@ -152,10 +169,7 @@ public sealed partial class Database : CastDataProvider
     public Schemas.Schema? FindSchema(string name)
     {
         ArgumentNullException.ThrowIfNull(name);
-        lock (syncRoot)
-        {
-            return schemas.TryGetValue(name, out Schemas.Schema? schema) ? schema : null;
-        }
+        return frozenSchemas.TryGetValue(name, out Schemas.Schema? schema) ? schema : null;
     }
 
     /// <summary>
@@ -178,6 +192,7 @@ public sealed partial class Database : CastDataProvider
         lock (syncRoot)
         {
             schemas[schema.GetName()] = schema;
+            PublishFrozenSchemas();
         }
     }
 
@@ -204,8 +219,20 @@ public sealed partial class Database : CastDataProvider
             string name = schema.GetName()!;
             schema.RemoveChildrenAndResources(session);
             _ = schemas.Remove(name);
+            PublishFrozenSchemas();
         }
     }
+
+    /// <summary>
+    /// Rebuilds the frozen schema lookup from the mutable map, under the lock.
+    /// </summary>
+    /// <remarks>
+    /// Called after every change to <see cref="schemas"/>: a read racing the rebuild sees
+    /// either the old snapshot or the new one, never a torn one, because the publication is
+    /// one reference write.
+    /// </remarks>
+    private void PublishFrozenSchemas()
+        => frozenSchemas = schemas.ToFrozenDictionary(identifierComparer);
 
     /// <summary>
     /// Gets the schema new objects go into, or null before there is one.
@@ -888,6 +915,7 @@ public sealed partial class Database : CastDataProvider
             _ = schemas.Remove(schema.GetName());
             schema.Rename(newName);
             schemas[newName] = schema;
+            PublishFrozenSchemas();
         }
 
         UpdateMeta(session, schema);

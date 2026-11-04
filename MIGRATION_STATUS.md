@@ -9698,3 +9698,36 @@ Engine 9, MvStore 152. Native полный параллельный прогон
 правок (документированная чувствительность к нагрузке); одиночный прогон
 затронутых классов зелёный, детерминированно остаются прежние два
 (`TestResultSetGetters`, `TestView`).
+
+### Frozen-реестры имён и registration агрегата без аллокации (2026-11-04)
+
+Пункт 4 аудита `docs/PERF_AUDIT_ALLOCATIONS.md` в названной в очереди объёме:
+`FunctionRegistry`, `DataType.TypesByName` и `Database.schemas` переведены на
+`FrozenDictionary` с сохранением их компареров (OrdinalIgnoreCase / Ordinal /
+identifierComparer). Реестры пишутся до первого запроса и только читаются;
+метод перехода — тот же, что в `Engine/Mode.cs`: сборка в обычный словарь,
+заморозка одним `ToFrozenDictionary(comparer)`.
+
+`Database.FindSchema` при этом перестал брать блокировку БД: эталон читает
+`schemas.get()` по `ConcurrentHashMap` без `synchronized`, а порт лочил каждое
+чтение. Неизменяемый снапшот публикуется одной volatile-записью ссылки,
+пересборка — в `AddSchema`/`RemoveSchema`/`RenameDatabaseObject` под тем же
+локом (`PublishFrozenSchemas`); читатель видит снапшот до или после изменения,
+как и эталон. Остальные проходы по схемам (GetSchemas, GetFirstUserTable,
+FindDependentTable) остались под локом, как были.
+
+Связанный дефект из того же пункта: `AggregateRegistry.TryGet` создавал
+`new ClrAggregateRegistration(...)` на каждое разрешение имени зарегистрированного
+агрегата. Регистрация — редкое событие, разрешение — на каждом операторе:
+`AggregateDefinition.Registration` теперь строится один раз при регистрации.
+
+Гейт `FrozenRegistryTests` — четыре теста: компареры и 0 аллокаций
+`FunctionRegistry.TryGet` и `DataType.GetTypeByName`; добавление/переименование/
+удаление схемы видны `FindSchema` и читаются без аллокаций; повторное
+разрешение зарегистрированного агрегата отдаёт тот же экземпляр (`Assert.Same` —
+на старом коде тест красный). Поведение SQL поверх этих реестров покрыто
+существующими оракулами (функции, типы, CREATE/DROP/RENAME SCHEMA, агрегаты),
+они остались зелёными без изменений.
+
+Проверено: `H2Sharp.Tests` 1876 зелёных (`Category!=BlockedByPort`), Data 717,
+Engine 9, MvStore 152.
