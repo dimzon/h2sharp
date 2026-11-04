@@ -86,6 +86,7 @@ public sealed class Select : Query
     /// the quick aggregate shortcut reads it, grouped execution still refuses below.
     /// </summary>
     private bool isGroupQuery;
+    private bool isGroupSortedQuery;
     private bool isWindowQuery;
     private bool isGroupWindowStage2;
     private Dictionary<string, Expressions.Analysis.Window>? windowClause;
@@ -513,6 +514,109 @@ public sealed class Select : Query
                 indexSortedColumns = 0;
             }
         }
+
+        // A grouped query whose groups are the leading columns of an index reads them in
+        // index order, one group at a time, instead of hashing every row into a map.
+        if (!isQuickAggregateQuery && isGroupQuery && topTableFilter is not null)
+        {
+            Indexes.Index? index = GetGroupSortedIndex();
+            if (index is not null)
+            {
+                Indexes.Index? current = topTableFilter.GetIndex();
+                if (current is not null
+                    && (current.GetIndexType()?.IsScan() == true || ReferenceEquals(current, index)))
+                {
+                    topTableFilter.SetIndex(index, false);
+                    isGroupSortedQuery = true;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets an index that can serve the GROUP BY, or null when there is none.
+    /// </summary>
+    /// <returns>the index, or null</returns>
+    private Indexes.Index? GetGroupSortedIndex()
+    {
+        if (groupIndex is null || groupByExpression is null || topTableFilter is null)
+        {
+            return null;
+        }
+
+        foreach (Indexes.Index index in topTableFilter.GetTable().GetIndexes())
+        {
+            Indexes.IndexType? indexType = index.GetIndexType();
+            if (indexType is not null && !indexType.IsScan() && !indexType.IsHash()
+                && IsGroupSortedIndex(topTableFilter, index))
+            {
+                return index;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks that all the GROUP BY expressions are part of the index, and that the index's
+    /// leading columns are grouped.
+    /// </summary>
+    /// <remarks>
+    /// The reference reads the resolved columns through <c>Index.getColumns()</c>; this
+    /// hierarchy keeps the index columns and resolves each one's column instead, which is the
+    /// same array after Index has mapped the names onto the table.
+    /// </remarks>
+    /// <param name="tableFilter">the filter the group expressions are read from</param>
+    /// <param name="index">the index</param>
+    /// <returns>true when the index serves the grouping</returns>
+    private bool IsGroupSortedIndex(TableFilter tableFilter, Indexes.Index index)
+    {
+        IndexColumn[] indexColumnList = index.GetColumns();
+        bool[] grouped = new bool[indexColumnList.Length];
+        for (int i = 0, size = expressions.Count; i < size; i++)
+        {
+            if (groupByExpression is null || !groupByExpression[i])
+            {
+                continue;
+            }
+
+            Expression expr = expressions[i].GetNonAliasExpression();
+            if (expr is not ExpressionColumn exprCol)
+            {
+                return false;
+            }
+
+            bool matched = false;
+            for (int j = 0; j < indexColumnList.Length; ++j)
+            {
+                if (ReferenceEquals(tableFilter, exprCol.GetTableFilter())
+                    && ReferenceEquals(indexColumnList[j].GetColumn(), exprCol.GetColumn()))
+                {
+                    grouped[j] = true;
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (!matched)
+            {
+                // We didn't find a matching index column for one group by expression.
+                return false;
+            }
+        }
+
+        // check that the first columns in the index are grouped
+        // good: index(a, b, c); group by b, a
+        // bad: index(a, b, c); group by a, c
+        for (int i = 1; i < grouped.Length; i++)
+        {
+            if (!grouped[i - 1] && grouped[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <inheritdoc/>
@@ -697,6 +801,10 @@ public sealed class Select : Query
             if (indexSortedColumns == Indexes.IndexSort.FullySorted) builder.Append("\n/* index sorted */");
             else if (indexSortedColumns > 0) builder.Append("\n/* index sorted: ").Append(indexSortedColumns).Append(" of ")
                 .Append(sort!.GetOrderList()!.Count).Append(" columns */");
+            if (isGroupQuery)
+            {
+                if (isGroupSortedQuery) builder.Append("\n/* group sorted */");
+            }
         }
         return builder;
     }
@@ -926,7 +1034,8 @@ public sealed class Select : Query
         // offset/fetch still need a LocalResult first.
         bool needResult = target is null
             || (sort is not null && indexSortedColumns != Indexes.IndexSort.FullySorted)
-            || distinct || distinctExpressions is not null || isWindowQuery || isGroupQuery
+            || distinct || distinctExpressions is not null || isWindowQuery
+            || isGroupQuery && !isGroupSortedQuery
             || fetch >= 0 || offset > 0;
         LocalResult? result = needResult
             ? new LocalResult(session, array, visibleColumnCount, resultWidth) : null;
@@ -969,10 +1078,23 @@ public sealed class Select : Query
         }
         else if (isGroupQuery)
         {
-            // Groups form after the walk, so the offset cannot be skipped up front: the
-            // result trims it after the sort, like the reference trims its own.
-            QueryGroup(to);
-            quickOffset = QuickOffset.No;
+            if (isGroupSortedQuery)
+            {
+                // The groups arrive one after another from the index, so the offset can be
+                // skipped while walking; when it was not, the result trims it afterwards.
+                _ = QueryGroupSorted(columnCount, to, offset, quickOffset == QuickOffset.Yes);
+                if (quickOffset == QuickOffset.Yes)
+                {
+                    offset = 0;
+                }
+            }
+            else
+            {
+                // Groups form after the walk, so the offset cannot be skipped up front: the
+                // result trims it after the sort, like the reference trims its own.
+                QueryGroup(to);
+                quickOffset = QuickOffset.No;
+            }
         }
         else
         {
@@ -1046,6 +1168,50 @@ public sealed class Select : Query
         {
             groupData!.Reset();
         }
+    }
+
+    /// <summary>
+    /// Reads the groups of a group-sorted query into the result.
+    /// </summary>
+    /// <param name="columnCount">the number of columns</param>
+    /// <param name="result">where the rows go, or null for a lazy walk</param>
+    /// <param name="offset">how many rows to skip</param>
+    /// <param name="quickOffset">whether skipping while walking is allowed</param>
+    /// <returns>the lazy walk, when no result was given</returns>
+    private LazyResult? QueryGroupSorted(
+        int columnCount, ResultTarget? result, long offset, bool quickOffset)
+    {
+        LazyResultGroupSorted lazyResult = new(
+            this, expressionArray ?? [.. expressions], columnCount);
+        SkipOffset(lazyResult, offset, quickOffset);
+        if (result is null)
+        {
+            return lazyResult;
+        }
+
+        while (lazyResult.Next())
+        {
+            result.AddRow(lazyResult.CurrentRow());
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Creates a row with the current values, for queries with group-sort.
+    /// </summary>
+    /// <param name="keyValues">the key values</param>
+    /// <param name="columnCount">the number of columns</param>
+    /// <returns>the row, or null when HAVING refuses it</returns>
+    private Value?[]? CreateGroupSortedRow(Value?[] keyValues, int columnCount)
+    {
+        Value?[] row = ConstructGroupResultRow(keyValues, columnCount);
+        if (IsHavingNullOrFalse(row))
+        {
+            return null;
+        }
+
+        return RowForResult(row);
     }
 
     /// <summary>
@@ -1460,6 +1626,108 @@ public sealed class Select : Query
             }
 
             return false;
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => Close();
+    }
+
+    /// <summary>
+    /// Lazy execution for a group sorted query: one group per key, read off the index.
+    /// </summary>
+    /// <remarks>
+    /// The previous group's key is remembered and compared with the row's, so a key met again
+    /// is a new group only when the index has moved past it. A row HAVING refuses is dropped
+    /// while the group is still counted, which is why the previous key advances even when the
+    /// built row is null.
+    /// </remarks>
+    private sealed class LazyResultGroupSorted : LazyResultSelect
+    {
+        private Value?[]? previousKeyValues;
+
+        internal LazyResultGroupSorted(Select select, Expression[] expressions, int columnCount)
+            : base(select, expressions, columnCount)
+        {
+            if (select.groupData is null)
+            {
+                select.SetGroupData(SelectGroups.GetInstance(
+                    select.GetSession(), [.. select.expressions], select.isGroupQuery, select.groupIndex));
+            }
+            else
+            {
+                select.UpdateAgg(columnCount, DataAnalysisOperation.StageReset);
+                select.groupData.ResetLazy();
+            }
+        }
+
+        /// <inheritdoc/>
+        public override void Reset()
+        {
+            base.Reset();
+            select.groupData!.ResetLazy();
+            previousKeyValues = null;
+        }
+
+        /// <inheritdoc/>
+        protected override Value?[]? FetchNextRow()
+        {
+            TableFilter top = select.topTableFilter!;
+            int[] groupIndex = select.groupIndex!;
+            while (top.Next())
+            {
+                select.SetCurrentRowNumber(rowNumber + 1);
+                // This method may lock rows
+                if (select.IsConditionMet())
+                {
+                    rowNumber++;
+                    int groupSize = groupIndex.Length;
+                    Value?[] keyValues = new Value?[groupSize];
+                    // update group
+                    for (int i = 0; i < groupSize; i++)
+                    {
+                        int idx = groupIndex[i];
+                        Expression expr = select.expressions[idx];
+                        keyValues[i] = expr.GetValue(select.GetSession());
+                    }
+
+                    Value?[]? row = null;
+                    if (previousKeyValues is null)
+                    {
+                        previousKeyValues = keyValues;
+                        select.groupData!.NextLazyGroup();
+                    }
+                    else
+                    {
+                        SessionLocal session = select.GetSession();
+                        for (int i = 0; i < groupSize; i++)
+                        {
+                            if (session.Compare(previousKeyValues[i]!, keyValues[i]!) != 0)
+                            {
+                                row = select.CreateGroupSortedRow(previousKeyValues, columnCount);
+                                previousKeyValues = keyValues;
+                                select.groupData!.NextLazyGroup();
+                                break;
+                            }
+                        }
+                    }
+
+                    select.groupData!.NextLazyRow();
+                    select.UpdateAgg(columnCount, DataAnalysisOperation.StageGroup);
+                    if (row is not null)
+                    {
+                        return row;
+                    }
+                }
+            }
+
+            Value?[]? last = null;
+            if (previousKeyValues is not null)
+            {
+                last = select.CreateGroupSortedRow(previousKeyValues, columnCount);
+                previousKeyValues = null;
+            }
+
+            return last;
         }
 
         /// <inheritdoc/>

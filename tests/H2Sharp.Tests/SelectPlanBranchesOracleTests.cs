@@ -82,13 +82,12 @@ public sealed class SelectPlanBranchesOracleTests
     }
 
     /// <summary>
-    /// A grouping answered by a sorted index prints a marker in the reference's plan, and
-    /// groups lazily from the index. The port has neither half: no group-sorted decision,
-    /// no lazy group result. The statement stays here so the gap is a recorded defect.
+    /// A grouping answered by a sorted index prints a marker in the reference's plan and
+    /// groups from the index: one group per key, the previous key compared with the row's,
+    /// and HAVING deciding each finished group.
     /// </summary>
-    [JavaOracleFact(Skip = "group-sorted lazy grouping is not ported")]
-    [Trait("Category", "BlockedByPort")]
-    public void GroupBySortedPlanIsBlockedByPort()
+    [JavaOracleFact]
+    public void GroupBySortedPlanMatchesJdbc()
     {
         ExplainOracleTests.Check([
             .. Tables,
