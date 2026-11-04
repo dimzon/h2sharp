@@ -977,19 +977,6 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
     /// </remarks>
     /// <returns>the search row</returns>
     public Result.SearchRow? GetSearchRow() => cursor?.GetSearchRow();
-
-    /// <summary>
-    /// Inserts a row through this cursor.
-    /// </summary>
-    /// <param name="row">the row</param>
-    public virtual void Add(Result.Row row)
-        => throw new TODOException("IndexCursor.add");
-
-    /// <summary>
-    /// Removes the current row through this cursor.
-    /// </summary>
-    public virtual void Remove()
-        => throw new TODOException("IndexCursor.remove");
 }
 
 /// <summary>

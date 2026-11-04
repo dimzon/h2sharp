@@ -118,7 +118,9 @@ public sealed class ConditionInList : ConditionIn
     {
         if (constant && allValuesConstant)
         {
-            return ValueExpression.Get(ValueBoolean.Get(GetValue(session).GetBoolean()));
+            // ValueExpression.getBoolean(Value) folds the NULL result to UNKNOWN; asking the
+            // value itself would demand a boolean from a NULL.
+            return ValueExpression.GetBoolean(GetValue(session));
         }
 
         if (valueList.Count == 1)
