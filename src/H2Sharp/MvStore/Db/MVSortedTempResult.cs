@@ -46,6 +46,29 @@ internal sealed class MVSortedTempResult : MVTempResult
     private readonly MVMap<object, object> map;
 
     /// <summary>
+    /// The counts 0..127 as boxed longs, mirroring the JVM's Long.valueOf cache that the
+    /// reference relies on: Java interns -128..127, so the reference's 1L and the small
+    /// increment results allocate nothing, while .NET would box on every call.
+    /// </summary>
+    private static readonly object[] SmallCounts = BuildSmallCounts();
+
+    private static object[] BuildSmallCounts()
+    {
+        object[] counts = new object[128];
+        for (long i = 0; i < 128; i++)
+        {
+            counts[i] = i;
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// Boxes a count the way the JVM would: the cached small values, a fresh box otherwise.
+    /// </summary>
+    private static object Box(long n) => (ulong)n <= 127 ? SmallCounts[n] : n;
+
+    /// <summary>
     /// Optional index used by DISTINCT with hidden columns, or by <see cref="Contains"/>.
     /// </summary>
     private MVMap<object, object>? index;
@@ -239,17 +262,17 @@ internal sealed class MVSortedTempResult : MVTempResult
                 }
             }
 
-            if (map.PutIfAbsent(key, 1L) is null)
+            if (map.PutIfAbsent(key, Box(1)) is null)
             {
                 rowCount++;
             }
         }
         else
         {
-            object? old = map.PutIfAbsent(key, 1L);
+            object? old = map.PutIfAbsent(key, Box(1));
             if (old is not null)
             {
-                map.Put(key, (long)old + 1L);
+                map.Put(key, Box((long)old + 1L));
             }
 
             rowCount++;
