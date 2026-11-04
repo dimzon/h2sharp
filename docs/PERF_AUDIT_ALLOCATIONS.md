@@ -609,6 +609,14 @@ public static void CopyString(TextReader source, Stream target)
 
 **Эффект.** Средний: −2 аллокации на вызов; в LOB-циклах — десятки тысяч вызовов.
 
+> **Развёрнуто с поправкой (2026-11-04).** В порте у `CopyString` пока нет
+> production-вызовов — только оракул-тест; «десятки тысяч вызовов» относится к
+> использованию в эталоне и придёт к порту с LOB/скриптовыми путями. Фикс
+> внесён: аренда char[]/byte[] на вызов, span-чтение и статический
+> `WriteStringWithoutLength(byte[], ReadOnlySpan<char>)`; инстансный
+> reference-метод сохранён. Гейт — 10 вызовов в одну пару аренд
+> (`DataCopyStringAllocationTests`, с учётом округления корзин пула).
+
 ### 2.7. `ScriptCommand`: аллокации на каждый LOB-блок — Средний (NEW)
 
 **Место:** `src/H2Sharp/Command/Dml/ScriptCommand.cs:456-470`

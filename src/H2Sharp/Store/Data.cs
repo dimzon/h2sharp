@@ -22,6 +22,7 @@
  * is a different allocation profile on the page-writing path.
  */
 using System;
+using System.Buffers;
 using System.IO;
 using H2Sharp.Engine;
 using H2Sharp.Util;
@@ -233,19 +234,61 @@ public class Data
     /// <param name="target">the output stream</param>
     public static void CopyString(TextReader source, Stream target)
     {
-        char[] buff = new char[Constants.IoBufferSize];
-        Data d = new(new byte[3 * Constants.IoBufferSize]);
-        while (true)
+        // The buffers rent rather than allocate: the loop below runs per block of the text,
+        // and the two buffers outlive every block.
+        char[] chars = ArrayPool<char>.Shared.Rent(Constants.IoBufferSize);
+        byte[] data = ArrayPool<byte>.Shared.Rent(3 * Constants.IoBufferSize);
+        try
         {
-            int l = source.Read(buff, 0, buff.Length);
-            if (l <= 0)
+            while (true)
             {
-                break;
-            }
+                int l = source.Read(chars.AsSpan(0, Constants.IoBufferSize));
+                if (l <= 0)
+                {
+                    break;
+                }
 
-            d.WriteStringWithoutLength(buff, l);
-            target.Write(d.data, 0, d.pos);
-            d.Reset();
+                int written = WriteStringWithoutLength(data, chars.AsSpan(0, l));
+                target.Write(data, 0, written);
+            }
         }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(chars);
+            ArrayPool<byte>.Shared.Return(data);
+        }
+    }
+
+    /// <summary>
+    /// Writes the characters as the reference's modified UTF-8 into the buffer, which the
+    /// caller has sized to three bytes per character, and answers how many bytes it took.
+    /// </summary>
+    /// <param name="buff">the output buffer</param>
+    /// <param name="chars">the characters to write</param>
+    /// <returns>how many bytes were written</returns>
+    private static int WriteStringWithoutLength(byte[] buff, ReadOnlySpan<char> chars)
+    {
+        int p = 0;
+        for (int i = 0; i < chars.Length; i++)
+        {
+            int c = chars[i];
+            if (c < 0x80)
+            {
+                buff[p++] = (byte)c;
+            }
+            else if (c >= 0x800)
+            {
+                buff[p++] = (byte)(0xe0 | (c >> 12));
+                buff[p++] = (byte)((c >> 6) & 0x3f);
+                buff[p++] = (byte)(c & 0x3f);
+            }
+            else
+            {
+                buff[p++] = (byte)(0xc0 | (c >> 6));
+                buff[p++] = (byte)(c & 0x3f);
+            }
+        }
+
+        return p;
     }
 }
