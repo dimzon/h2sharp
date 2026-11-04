@@ -420,6 +420,78 @@ public sealed class StringUtilsOracleTests
         }
     }
 
+    /// <summary>
+    /// The pairs of <c>RegionMatches</c> against the JVM: the ASCII case pairs the bitwise
+    /// fold answers, the ASCII near-misses the fold must refuse (0x5B '[' folds to 0x7B '{'
+    /// by the bit and is not a letter, and the same for the four characters after it), the
+    /// boundary pairs with one non-ASCII side, and the non-ASCII pairs that keep the full
+    /// fold. The case-insensitive form runs at several offsets, so the changed path is hit
+    /// with the offset arithmetic around it too.
+    /// </summary>
+    [JavaOracleFact]
+    public void RegionMatches_MatchesReferenceJvm()
+    {
+        (string A, string B)[] pairs =
+        [
+            ("abc", "ABC"), ("AbC", "aBc"), ("abc", "abc"), ("abc", "abd"),
+            ("a", "A"), ("z", "Z"), ("A", "a"),
+            ("@", "`"), ("[", "{"), ("\\", "|"), ("]", "}"), ("^", "~"),
+            ("_", "_"), ("0", "O"), ("1", "l"), ("a", "á"), ("A", "á"),
+            ("é", "É"), ("ü", "Ü"), ("Ω", "ω"), ("ß", "ẞ"), ("ss", "SS"),
+            ("𝄞", "𝄞"), ("a🎉b", "A🎉B"), ("café", "CAFÉ"),
+            ("日本", "日本"), ("", "a"), ("a", ""),
+        ];
+
+        List<string> payload = new();
+        foreach ((string a, string _) in pairs)
+        {
+            payload.Add(a);
+        }
+
+        foreach ((string _, string b) in pairs)
+        {
+            payload.Add(b);
+        }
+
+        string body = """
+                      int half = nums[0];
+                      for (int i = 0; i < half; i++) {
+                        String a = inputs[i];
+                        String b = inputs[half + i];
+                        int len = Math.min(a.length(), b.length());
+                        StringBuilder r = new StringBuilder();
+                        r.append(a.regionMatches(true, 0, b, 0, len));
+                        r.append('|').append(a.regionMatches(false, 0, b, 0, len));
+                        if (len > 0) {
+                          r.append('|').append(a.regionMatches(true, 1, b, 0, len - 1));
+                          r.append('|').append(a.regionMatches(true, 0, b, 1, len - 1));
+                        }
+                        System.out.println(hex(r.toString()));
+                      }
+            """;
+
+        List<string> java = OracleRunner.Run(payload, body, [pairs.Length]);
+        List<string> csharp = new(pairs.Length);
+        foreach ((string a, string b) in pairs)
+        {
+            int len = Math.Min(a.Length, b.Length);
+            StringBuilder r = new();
+            _ = r.Append(J(StringUtils.RegionMatches(a, true, 0, b, 0, len)));
+            _ = r.Append('|').Append(J(StringUtils.RegionMatches(a, false, 0, b, 0, len)));
+            if (len > 0)
+            {
+                _ = r.Append('|').Append(J(StringUtils.RegionMatches(a, true, 1, b, 0, len - 1)));
+                _ = r.Append('|').Append(J(StringUtils.RegionMatches(a, true, 0, b, 1, len - 1)));
+            }
+
+            csharp.Add(OracleRunner.Hex(r.ToString()));
+        }
+
+        AssertSame(java, csharp, "regionMatches");
+    }
+
+    private static string J(bool value) => value ? "true" : "false";
+
     // ------------------------------------------------------------------ slicing
 
     [JavaOracleFact]

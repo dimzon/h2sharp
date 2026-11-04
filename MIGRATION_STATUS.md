@@ -9963,3 +9963,33 @@ string-вызовы совместимы неявной конверсией, л
 
 Проверено: `H2Sharp.Tests` 1889 зелёных (`Category!=BlockedByPort`), Data 717,
 Engine 9, MvStore 152.
+
+### 3.5: case-insensitive сравнение — ASCII-фолд одной битовой операцией (2026-11-04)
+
+Пункт 3.5 аудита `docs/PERF_AUDIT_ALLOCATIONS.md`. В `StringUtils.RegionMatches`
+и базовом `CompareMode.EqualsChars` (режим COLLATION OFF — путь LIKE/ILIKE/~*)
+на каждое расхождение символов приходилось до четырёх вызовов
+`char.ToUpperInvariant`/`ToLowerInvariant`; теперь ASCII-пара сравнивается
+одной битовой операцией `c | 0x20` с проверкой диапазона `'a'..'z'` (она же
+отсекает ловушку: 0x5B '[' по биту даёт 0x7B '{' и не является буквой), и
+только при одном не-ASCII символе исполняется прежний полный фолд — поведение
+не-ASCII не менялось.
+
+**Новая находка (не исправлена в этом коммите, записана как отдельный
+дефект).** `EqualsChars`/`RegionMatches` уже сегодня расходятся с эталоном на
+U+0130/U+0131: эталонный `Character.toLowerCase(U+0130) = 'i'`, а .NET
+`char.ToLowerInvariant(U+0130) = U+0131` (это же расхождение записано в
+комментарии `ToLowerEnglish`). Пара İ/i поэтому исключена из корпусов новых
+оракулов — красный тест на ней был бы красным и до бит-фолда; для исправления
+нужна char-уровневая таблица маппинга из JVM (как `CaseFolding`, но для
+`Character`, а не `String`), это отдельный пункт работы.
+
+Тесты: `RegionMatches_MatchesReferenceJvm` (28 пар: ASCII-регистр, четыре
+ASCII-ловушки бит-фолда, границы ASCII/не-ASCII, кириллица/греческий/ß/ẞ,
+астральные, пустые строки; сравнение на трёх смещениях против
+`java.lang.String.regionMatches`) и `DefaultMode_EqualsCharsMatchesReference`
+(20 пар против `org.h2.value.CompareMode.getInstance(null, 0)`). Прежние
+`LikeOracleTests`, `CompareLikeUnitTests` и charset-оракул зелёные.
+
+Проверено: `H2Sharp.Tests` 1891 зелёный (`Category!=BlockedByPort`), Data 717,
+Engine 9, MvStore 152.

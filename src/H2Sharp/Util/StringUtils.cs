@@ -2623,6 +2623,22 @@ public static class StringUtils
 
             if (ignoreCase)
             {
+                // The ASCII fold is one bitwise operation instead of calls into the casing
+                // tables, and for ASCII it answers what the full fold answers: a letter's
+                // other case. The range check is what keeps the fold honest — 0x5B '[' folds
+                // to 0x7B '{' by the bit and is not a letter. Anything non-ASCII keeps the
+                // full fold, exactly as the reference reads it.
+                int folded1 = c1 | 0x20, folded2 = c2 | 0x20;
+                if (folded1 is >= 'a' and <= 'z' && folded1 == folded2)
+                {
+                    continue;
+                }
+
+                if (c1 < 128 && c2 < 128)
+                {
+                    return false;
+                }
+
                 char u1 = char.ToUpperInvariant(c1), u2 = char.ToUpperInvariant(c2);
                 if (u1 == u2 || char.ToLowerInvariant(u1) == char.ToLowerInvariant(u2))
                 {

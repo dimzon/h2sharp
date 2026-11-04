@@ -175,10 +175,23 @@ public class CompareMode
 
         if (ignoreCase)
         {
-            if (char.ToUpperInvariant(ca) == char.ToUpperInvariant(cb)
-                || char.ToLowerInvariant(ca) == char.ToLowerInvariant(cb))
+            // The ASCII fold is one bitwise operation instead of four calls into the casing
+            // tables, and for ASCII it answers what those calls answer: a letter's other
+            // case. The range check keeps the fold honest — 0x5B '[' folds to 0x7B '{' by
+            // the bit and is not a letter. Anything non-ASCII keeps the full fold.
+            int foldedA = ca | 0x20, foldedB = cb | 0x20;
+            if (foldedA is >= 'a' and <= 'z' && foldedA == foldedB)
             {
                 return true;
+            }
+
+            if (ca >= 128 || cb >= 128)
+            {
+                if (char.ToUpperInvariant(ca) == char.ToUpperInvariant(cb)
+                    || char.ToLowerInvariant(ca) == char.ToLowerInvariant(cb))
+                {
+                    return true;
+                }
             }
         }
 

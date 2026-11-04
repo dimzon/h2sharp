@@ -145,6 +145,63 @@ public sealed class ValueCharsetCollationOracleTests
         Compare(java, csharp);
     }
 
+    /// <summary>
+    /// The base compare mode — the one COLLATION OFF hands out — answers <c>equalsChars</c>
+    /// the way the reference does. The charset modes above override the member and run
+    /// through the collator; this one answers with the case fold, and the corpus is the one
+    /// that decides it: ASCII case pairs, the ASCII near-misses a bitwise fold tempts (0x5B
+    /// '[' folds to 0x7B '{' by the bit and is not a letter), and the non-ASCII pairs the
+    /// full fold keeps.
+    /// </summary>
+    /// <remarks>
+    /// The U+0130/U+0131 pairs are left out on purpose: .NET's invariant lowercase maps
+    /// U+0130 to U+0131 while Java's Character maps it to 'i', so this member already
+    /// disagrees with the reference on those two characters, and that is a defect of its own
+    /// (recorded in MIGRATION_STATUS.md) rather than something the ASCII fold decides.
+    /// </remarks>
+    [JavaOracleFact]
+    public void DefaultMode_EqualsCharsMatchesReference()
+    {
+        (string A, string B)[] pairs =
+        [
+            ("a", "A"), ("z", "Z"), ("abc", "ABC"), ("AbC", "aBc"), ("abc", "abd"),
+            ("@", "`"), ("[", "{"), ("\\", "|"), ("]", "}"), ("^", "~"), ("_", "_"),
+            ("0", "O"), ("1", "l"), ("a", "á"), ("A", "á"), ("é", "É"), ("ü", "Ü"),
+            ("Ω", "ω"), ("ß", "ẞ"), ("ss", "SS"), ("a", "b"),
+        ];
+
+        List<string> payload = [];
+        foreach ((string a, string _) in pairs)
+        {
+            payload.Add(a);
+        }
+
+        foreach ((string _, string b) in pairs)
+        {
+            payload.Add(b);
+        }
+
+        string body = """
+                      int half = nums[0];
+                      org.h2.value.CompareMode m = org.h2.value.CompareMode.getInstance(null, 0);
+                      for (int i = 0; i < half; i++) {
+                        String a = inputs[i];
+                        String b = inputs[half + i];
+                        System.out.println(hex(m.equalsChars(a, 0, b, 0, false) + "|"
+                            + m.equalsChars(a, 0, b, 0, true)));
+                      }
+            """;
+
+        List<string> java = OracleRunner.Run(payload, body, [pairs.Length]);
+        CompareMode mode = CompareMode.GetInstance(null, 0);
+        List<string> csharp = pairs
+            .Select(p => OracleRunner.Hex(
+                J(mode.EqualsChars(p.A, 0, p.B, 0, false)) + "|" + J(mode.EqualsChars(p.A, 0, p.B, 0, true))))
+            .ToList();
+
+        Compare(java, csharp);
+    }
+
     private static string Hex(byte[] bytes)
     {
         StringBuilder builder = new();
