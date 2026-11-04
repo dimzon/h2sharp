@@ -99,6 +99,12 @@ public sealed class H2ProviderFactory : DbProviderFactory
         => null;
 
     /// <summary>
+    /// Creates a new batch, unbound until its connection is assigned.
+    /// </summary>
+    public override DbBatch CreateBatch()
+        => new H2Batch();
+
+    /// <summary>
     /// Whether this provider can create a data source enumerator.
     /// </summary>
     public override bool CanCreateDataSourceEnumerator => false;
@@ -106,7 +112,7 @@ public sealed class H2ProviderFactory : DbProviderFactory
     /// <summary>
     /// Whether this provider can create a batch.
     /// </summary>
-    public override bool CanCreateBatch => false;
+    public override bool CanCreateBatch => true;
 
     /// <summary>
     /// Whether this provider can create a command builder.

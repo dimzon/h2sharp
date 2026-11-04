@@ -163,6 +163,27 @@ public sealed class H2BatchTests
         Assert.Equal("2", Scalar(connection, "SELECT COUNT(*) FROM T"));
     }
 
+    [Fact]
+    public void TheFactoryCreatesABatchThatRunsOnAnAssignedConnection()
+    {
+        using H2Connection connection = NewConnection();
+        connection.Open();
+        using (DbCommand command = connection.CreateCommand())
+        {
+            command.CommandText = "CREATE TABLE T(ID INT)";
+            command.ExecuteNonQuery();
+        }
+
+        Assert.True(H2ProviderFactory.Instance.CanCreateBatch);
+        using DbBatch batch = H2ProviderFactory.Instance.CreateBatch();
+        batch.Connection = connection;
+        DbBatchCommand item = batch.CreateBatchCommand();
+        item.CommandText = "INSERT INTO T VALUES(1)";
+
+        Assert.Equal(1, batch.ExecuteNonQuery());
+        Assert.Equal("1", Scalar(connection, "SELECT COUNT(*) FROM T"));
+    }
+
     private static H2Connection NewConnection()
         => new($"Data Source=batch_{Guid.NewGuid():N};IGNORE_UNKNOWN_SETTINGS=TRUE;Storage=Memory");
 
