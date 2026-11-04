@@ -527,6 +527,18 @@ int len = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header);
 bounds-проверки на заголовок. Поведение на усечённом файле обязательно сохраняется через
 `ReadAtLeast` и покрывается тестом.
 
+> **Развёрнуто с поправками (2026-11-04).** `ReadAtLeast` не потребовался — и
+> именно потому, что «прежняя реакция на усечение» в `LZFInputStream.ReadInt`
+> — это не исключение: неполный заголовок подставляет −1 в пропущенные
+> сдвиги (мусорное значение падает дальше по чтению), а пустое чтение — quirk
+> `decompress = null; return 0` (конец потока). Реализован один буферизованный
+> `Stream.Read` с точным воспроизведением этой арифметики; таблица всех 36
+> префиксов реального потока закреплена `LzfTruncationTests` (снята с кода до
+> изменения). В объём также вошли `WriteVarLong(Stream)`, `LZFOutputStream.
+> WriteInt` и заголовки `StreamStore`. Пропущено: `Store/DataReader` (в порте
+> пока не вызывается; `Read()` контрактом — один байт), `RangeInputStream.
+> ReadByte`/`CountingReaderInputStream.ReadByte` (перегрузки контракта).
+
 ### 2.5. 64 KiB буфер и `MemoryStream` на каждый stream-параметр — Средний (✓)
 
 **Место:** `src/H2Sharp/Data/H2ValueMapper.cs:226-243`

@@ -329,13 +329,13 @@ public static class DataUtils
     /// <param name="x">the value</param>
     public static void WriteVarInt(Stream @out, int x)
     {
-        while ((x & ~0x7f) != 0)
-        {
-            @out.WriteByte((byte)(x | 0x80));
-            x = (int)((uint)x >>> 7);
-        }
-
-        @out.WriteByte((byte)x);
+        // One write instead of up to five: the buffer form writes the same bytes, and the
+        // stream form is called per block header and per stored id, where each WriteByte is a
+        // virtual call of its own.
+        Span<byte> buff = stackalloc byte[5];
+        int position = 0;
+        WriteVarInt(buff, ref position, x);
+        @out.Write(buff[..position]);
     }
 
     /// <summary>
@@ -516,13 +516,11 @@ public static class DataUtils
     /// <param name="x">the value</param>
     public static void WriteVarLong(Stream @out, long x)
     {
-        while ((x & ~0x7fL) != 0)
-        {
-            @out.WriteByte((byte)(x | 0x80));
-            x = (long)((ulong)x >>> 7);
-        }
-
-        @out.WriteByte((byte)x);
+        // One write instead of up to ten, for the same reason as WriteVarInt above.
+        Span<byte> buff = stackalloc byte[10];
+        int position = 0;
+        WriteVarLong(buff, ref position, x);
+        @out.Write(buff[..position]);
     }
 
     /// <summary>

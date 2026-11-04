@@ -193,16 +193,23 @@ public sealed class StreamStore
         if (len < minBlockSize)
         {
             // in-place: 0, len (int), data
-            id.WriteByte(0);
-            DataUtils.WriteVarInt(id, len);
+            Span<byte> header = stackalloc byte[6];
+            header[0] = 0;
+            int position = 1;
+            DataUtils.WriteVarInt(header, ref position, len);
+            id.Write(header[..position]);
             id.Write(buff, 0, len);
         }
         else
         {
             // block: 1, len (int), blockId (long)
-            id.WriteByte(1);
-            DataUtils.WriteVarInt(id, len);
-            DataUtils.WriteVarLong(id, WriteBlock(buff));
+            long blockId = WriteBlock(buff);
+            Span<byte> header = stackalloc byte[16];
+            header[0] = 1;
+            int position = 1;
+            DataUtils.WriteVarInt(header, ref position, len);
+            DataUtils.WriteVarLong(header, ref position, blockId);
+            id.Write(header[..position]);
         }
 
         return eof;
@@ -247,9 +254,14 @@ public sealed class StreamStore
         MemoryStream result = new();
 
         // indirect: 2, total len (long), blockId (long)
-        result.WriteByte(2);
-        DataUtils.WriteVarLong(result, Length(data));
-        DataUtils.WriteVarLong(result, WriteBlock(data));
+        long total = Length(data);
+        long blockId = WriteBlock(data);
+        Span<byte> header = stackalloc byte[21];
+        header[0] = 2;
+        int position = 1;
+        DataUtils.WriteVarLong(header, ref position, total);
+        DataUtils.WriteVarLong(header, ref position, blockId);
+        result.Write(header[..position]);
         return result;
     }
 

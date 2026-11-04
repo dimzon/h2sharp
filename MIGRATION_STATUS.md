@@ -9880,3 +9880,37 @@ Engine 9, MvStore 152.
 
 Проверено: `H2Sharp.Tests` 1885 зелёных (`Category!=BlockedByPort`), Data 717,
 Engine 9, MvStore 152.
+
+### 2.4: по-байтовые Stream-операции собраны в один вызов (2026-11-04)
+
+Пункт 2.4 аудита `docs/PERF_AUDIT_ALLOCATIONS.md` в объёме, где замена не
+меняет наблюдаемого поведения. Сделано:
+
+* `DataUtils.WriteVarInt(Stream)` и `WriteVarLong(Stream)` — stackalloc +
+  делегирование span-перегрузке + один `Write` (было до 5 и до 10 виртуальных
+  `WriteByte`).
+* `LZFOutputStream.WriteInt` — stackalloc + один `Write` (было 4).
+* `LZFInputStream.ReadInt` — один буферизованный прогон `Stream.Read` с
+  точным воспроизведением эталонной семантики усечения: неполный заголовок
+  подставляет −1 в пропущенные сдвиги (получившееся значение затем падает
+  дальше по чтению, как и раньше), пустое чтение — тот же quirk
+  `decompress = null; return 0`. Закреплено таблицей
+  `LzfTruncationTests`: все 36 префиксов реального сжатого потока и их исход
+  (0–3 — «Not an LZFInputStream», 4 — чистый конец «OK:0», 5–34 — «Unexpected
+  end», 35 — payload) — запись, снятая с кода до изменения.
+* `StreamStore.Put` и `PutIndirectId` — заголовки id (0/1/2 + varint + varlong)
+  собираются в стек-буфере и пишутся одним `Write`.
+
+Пропущено с объяснением: `Store/DataReader` в порте пока никем не вызывается
+(выигрыш теоретический; `Read()` контрактом TextReader — один байт);
+`RangeInputStream.ReadByte` и `CountingReaderInputStream.ReadByte` —
+перегрузки контракта `Stream.ReadByte`, батчить их нельзя; skip-ветка
+RangeInputStream читает один байт, чтобы отличить конец.
+
+Тесты: `LzfTruncationTests` (обязательная по §7.4 проверка усечённого файла),
+`DataUtilsStreamWriteTests` — эквивалентность Stream- и span-форм varint/
+varlong на границах и отрицательных значениях. Поведение LZF целиком покрыто
+`LzfOracleTests` против JVM.
+
+Проверено: `H2Sharp.Tests` 1888 зелёных (`Category!=BlockedByPort`), Data 717,
+Engine 9, MvStore 152.

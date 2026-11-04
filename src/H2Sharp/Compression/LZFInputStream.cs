@@ -111,15 +111,50 @@ public sealed class LZFInputStream : Stream
 
     private int ReadInt()
     {
-        int x = input.ReadByte();
-        if (x < 0)
+        Span<byte> header = stackalloc byte[4];
+        int read = 0;
+        while (read < 4)
+        {
+            int n = input.Read(header[read..]);
+            if (n <= 0)
+            {
+                break;
+            }
+
+            read += n;
+        }
+
+        if (read == 0)
         {
             decompress = null;
             return 0;
         }
 
-        x = (x << 24) + (input.ReadByte() << 16) + (input.ReadByte() << 8) + input.ReadByte();
-        return x;
+        // The reference reads the header byte by byte, and a stream that ends mid-header
+        // hands -1 to the shifts for every byte it could not produce — the resulting value
+        // then fails further down the read, which is the only reaction a truncated block
+        // header has ever had here. The read above fetched what the stream had in one call,
+        // and the missing slots contribute what a -1 would have.
+        int x = header[0] << 24;
+        if (read > 1)
+        {
+            x += header[1] << 16;
+        }
+        else
+        {
+            x += -1 << 16;
+        }
+
+        if (read > 2)
+        {
+            x += header[2] << 8;
+        }
+        else
+        {
+            x += -1 << 8;
+        }
+
+        return x + (read > 3 ? header[3] : -1);
     }
 
     /// <inheritdoc/>

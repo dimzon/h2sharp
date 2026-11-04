@@ -147,10 +147,16 @@ public sealed class LZFOutputStream : Stream
 
     private void WriteInt(int x)
     {
-        output.WriteByte((byte)(x >> 24));
-        output.WriteByte((byte)(x >> 16));
-        output.WriteByte((byte)(x >> 8));
-        output.WriteByte((byte)x);
+        // One write instead of four: this runs per block, and each WriteByte is a virtual
+        // call of its own.
+        Span<byte> header = stackalloc byte[4]
+        {
+            (byte)(x >> 24),
+            (byte)(x >> 16),
+            (byte)(x >> 8),
+            (byte)x,
+        };
+        output.Write(header);
     }
 
     /// <inheritdoc/>
