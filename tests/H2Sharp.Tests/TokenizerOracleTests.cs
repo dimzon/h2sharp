@@ -488,7 +488,7 @@ public sealed class TokenizerOracleTests
             token.Start.ToString(CultureInfo.InvariantCulture),
             token.AsIdentifier ?? "-",
             token.IsQuoted ? "true" : "false",
-            token is Token.EndOfInputToken ? "-" : Escape(token.ToString() ?? string.Empty));
+            token.TokenType == Token.EndOfInput ? "-" : Escape(token.ToString() ?? string.Empty));
 
     /// <summary>
     /// Writes a statement so that a line of it cannot look like the end of it.
