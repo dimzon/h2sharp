@@ -1056,9 +1056,10 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
     protected abstract void AllocateChunkSpace(C chunk, WriteBuffer buff);
 
     /// <summary>
-    /// Writes a buffer at its chunk's allocated position.
+    /// Writes a chunk image at its chunk's allocated position. The image is the final chunk
+    /// bytes; for large chunks it lives in unmanaged memory so that it never touches the LOH.
     /// </summary>
-    protected abstract void WriteChunk(C chunk, WriteBuffer buffer);
+    protected abstract void WriteChunk(C chunk, ReadOnlyMemory<byte> image);
 
     /// <inheritdoc/>
     public virtual void Sync()
@@ -1373,7 +1374,12 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
             _ = buff.Put(c.GetFooterBytes());
             _ = buff.Position(0);
 
-            WriteChunk(c, buff);
+            // Copy the assembled chunk into an unmanaged image: chunk images are megabytes,
+            // and a managed array that size would sit on the LOH (D-039).
+            using NativeChunkImage image = NativeChunkImage.Create(buff.Limit());
+            buff.GetBuffer().AsSpan(0, buff.Limit()).CopyTo(image.GetSpan());
+
+            WriteChunk(c, image.Memory);
             lastChunk = c;
         }
         catch (MvStoreException e)

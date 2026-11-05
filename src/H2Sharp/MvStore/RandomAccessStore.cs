@@ -391,13 +391,13 @@ public abstract class RandomAccessStore : FileStore<Chunk>
     }
 
     /// <inheritdoc/>
-    protected override void WriteChunk(Chunk chunk, WriteBuffer buffer)
+    protected override void WriteChunk(Chunk chunk, ReadOnlyMemory<byte> image)
     {
         long filePos = chunk.Block * BlockSize;
-        WriteFully(chunk, filePos, new ReadOnlyMemory<byte>(buffer.GetBuffer(), 0, buffer.Limit()));
+        WriteFully(chunk, filePos, image);
 
         // end of the used space is not necessarily the end of the file
-        bool storeAtEndOfFile = filePos + buffer.Limit() >= Size();
+        bool storeAtEndOfFile = filePos + image.Length >= Size();
         bool shouldWriteStoreHeader = ShouldWriteStoreHeader(chunk, storeAtEndOfFile);
         if (shouldWriteStoreHeader)
         {
