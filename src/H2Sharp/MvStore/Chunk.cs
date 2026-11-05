@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Threading;
 using H2Sharp.Util;
@@ -184,6 +185,16 @@ public abstract class Chunk
     private int PinCount { get; set; }
 
     /// <summary>
+    /// Test seam for the header/footer byte-identity tests: pin count is otherwise written only
+    /// by the store's pinning logic.
+    /// </summary>
+    internal int PinCountForTest
+    {
+        get => PinCount;
+        set => PinCount = value;
+    }
+
+    /// <summary>
     /// This chunk's serialized content, before it goes to the file store. Holding it here lets the
     /// pages be released earlier, so that they can be collected.
     /// </summary>
@@ -295,8 +306,8 @@ public abstract class Chunk
     /// <returns>the size</returns>
     internal int EstimateHeaderSize()
     {
-        byte[] headerBytes = GetHeaderBytes();
-        int headerLength = headerBytes.Length;
+        Span<byte> header = stackalloc byte[256];
+        int headerLength = WriteHeader(header);
 
         // Initial chunk will look like (length-wise) something in between those two lines:
         // chunk:0,len:0,pages:0,max:0,map:0,root:0,time:0,version:0
@@ -319,8 +330,9 @@ public abstract class Chunk
     internal void WriteChunkHeader(WriteBuffer buff, int maxLength)
     {
         int terminatorPosition = buff.Position() + maxLength - 1;
-        byte[] headerBytes = GetHeaderBytes();
-        _ = buff.Put(headerBytes);
+        Span<byte> header = stackalloc byte[256];
+        int headerLength = WriteHeader(header);
+        _ = buff.Put(header[..headerLength]);
         while (buff.Position() < terminatorPosition)
         {
             _ = buff.Put((byte)' ');
@@ -450,31 +462,77 @@ public abstract class Chunk
     /// <returns>the bytes</returns>
     private byte[] GetHeaderBytes()
     {
-        StringBuilder buff = new(240);
-        DataUtils.AppendMap(buff, AttrChunk, Id);
-        DataUtils.AppendMap(buff, AttrLen, Len);
-        DataUtils.AppendMap(buff, AttrPages, PageCount);
+        Span<byte> header = stackalloc byte[256];
+        return header[..WriteHeader(header)].ToArray();
+    }
+
+    /// <summary>
+    /// Writes the header in Latin-1, in the reference's map format: comma-separated
+    /// <c>key:value</c> pairs with lowercase hexadecimal values.
+    /// </summary>
+    /// <param name="target">the destination</param>
+    /// <returns>the number of bytes written</returns>
+    internal int WriteHeader(Span<byte> target)
+    {
+        Span<char> text = stackalloc char[256];
+        int w = 0;
+        w = AppendMap(text, w, AttrChunk, Id);
+        w = AppendMap(text, w, AttrLen, Len);
+        w = AppendMap(text, w, AttrPages, PageCount);
         if (PinCount > 0)
         {
-            DataUtils.AppendMap(buff, AttrPinCount, PinCount);
+            w = AppendMap(text, w, AttrPinCount, PinCount);
         }
 
-        DataUtils.AppendMap(buff, AttrMax, MaxLen);
-        DataUtils.AppendMap(buff, AttrMap, MapId);
-        DataUtils.AppendMap(buff, AttrRoot, LayoutRootPos);
-        DataUtils.AppendMap(buff, AttrTime, Time);
-        DataUtils.AppendMap(buff, AttrVersion, Version);
+        w = AppendMap(text, w, AttrMax, MaxLen);
+        w = AppendMap(text, w, AttrMap, MapId);
+        w = AppendMap(text, w, AttrRoot, LayoutRootPos);
+        w = AppendMap(text, w, AttrTime, Time);
+        w = AppendMap(text, w, AttrVersion, Version);
         if (Next != 0)
         {
-            DataUtils.AppendMap(buff, AttrNext, Next);
+            w = AppendMap(text, w, AttrNext, Next);
         }
 
         if (TocPos > 0)
         {
-            DataUtils.AppendMap(buff, AttrToc, TocPos);
+            w = AppendMap(text, w, AttrToc, TocPos);
         }
 
-        return Encoding.Latin1.GetBytes(buff.ToString());
+        return Encoding.Latin1.GetBytes(text[..w], target);
+    }
+
+    /// <summary>
+    /// Appends one map entry the way DataUtils.AppendMap does: a comma before any entry but the
+    /// first, the key, a colon, and the lowercase hexadecimal value. The int overload writes an
+    /// int's width, as AppendMap(int) did; the long overload writes a long's.
+    /// </summary>
+    private static int AppendMap(Span<char> dest, int pos, string key, int value)
+    {
+        if (pos > 0)
+        {
+            dest[pos++] = ',';
+        }
+
+        key.AsSpan().CopyTo(dest[pos..]);
+        pos += key.Length;
+        dest[pos++] = ':';
+        value.TryFormat(dest[pos..], out int written, "x", CultureInfo.InvariantCulture);
+        return pos + written;
+    }
+
+    private static int AppendMap(Span<char> dest, int pos, string key, long value)
+    {
+        if (pos > 0)
+        {
+            dest[pos++] = ',';
+        }
+
+        key.AsSpan().CopyTo(dest[pos..]);
+        pos += key.Length;
+        dest[pos++] = ':';
+        value.TryFormat(dest[pos..], out int written, "x", CultureInfo.InvariantCulture);
+        return pos + written;
     }
 
     /// <summary>
@@ -484,20 +542,46 @@ public abstract class Chunk
     /// <returns>the bytes</returns>
     internal byte[] GetFooterBytes()
     {
-        StringBuilder buff = new(FooterLength);
-        DataUtils.AppendMap(buff, AttrChunk, Id);
-        DataUtils.AppendMap(buff, AttrLen, Len);
-        DataUtils.AppendMap(buff, AttrVersion, Version);
-        byte[] bytes = Encoding.Latin1.GetBytes(buff.ToString());
-        int checksum = DataUtils.GetFletcher32(bytes, 0, bytes.Length);
-        DataUtils.AppendMap(buff, AttrFletcher, checksum);
-        while (buff.Length < FooterLength - 1)
+        Span<byte> footer = stackalloc byte[FooterLength];
+        int n = WriteFooterFields(footer);
+        int checksum = DataUtils.GetFletcher32(footer[..n]);
+        n = WriteFooter(footer, checksum);
+        return footer[..n].ToArray();
+    }
+
+    /// <summary>
+    /// Writes the three footer fields in Latin-1, without the checksum and without the padding:
+    /// this is exactly the text the checksum is taken over.
+    /// </summary>
+    private int WriteFooterFields(Span<byte> target)
+    {
+        Span<char> text = stackalloc char[FooterLength];
+        int w = 0;
+        w = AppendMap(text, w, AttrChunk, Id);
+        w = AppendMap(text, w, AttrLen, Len);
+        w = AppendMap(text, w, AttrVersion, Version);
+        return Encoding.Latin1.GetBytes(text[..w], target);
+    }
+
+    /// <summary>
+    /// Writes the footer in Latin-1: chunk, len, version and the checksum, then spaces up to
+    /// <see cref="FooterLength"/> - 1 and a newline.
+    /// </summary>
+    private int WriteFooter(Span<byte> target, int checksum)
+    {
+        Span<char> text = stackalloc char[FooterLength];
+        int w = 0;
+        w = AppendMap(text, w, AttrChunk, Id);
+        w = AppendMap(text, w, AttrLen, Len);
+        w = AppendMap(text, w, AttrVersion, Version);
+        w = AppendMap(text, w, AttrFletcher, checksum);
+        while (w < FooterLength - 1)
         {
-            _ = buff.Append(' ');
+            text[w++] = ' ';
         }
 
-        _ = buff.Append('\n');
-        return Encoding.Latin1.GetBytes(buff.ToString());
+        text[w++] = '\n';
+        return Encoding.Latin1.GetBytes(text[..w], target);
     }
 
     /// <summary>
