@@ -72,6 +72,11 @@ public sealed class DerivedTable : QueryExpressionTable
     public override Query? GetTopQuery() => topQuery;
 
     /// <inheritdoc/>
+    public override bool IsQueryComparable()
+        => base.IsQueryComparable()
+            && (topQuery is null || topQuery.IsEverything(Expressions.ExpressionVisitor.QueryComparableVisitor));
+
+    /// <inheritdoc/>
     public override Index GetScanIndex(SessionLocal session) => index;
 
     /// <inheritdoc/>
