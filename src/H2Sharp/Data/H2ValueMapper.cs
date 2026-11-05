@@ -25,6 +25,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
+using System.IO;
 using System.Numerics;
 using System.Text.Json;
 
@@ -54,8 +55,10 @@ internal static class H2ValueMapper
     /// <param name="value">the caller value, possibly null</param>
     /// <param name="dbType">the type the caller declared, or null when it declared none</param>
     /// <param name="provider">the session used to promote and convert array elements</param>
+    /// <param name="handler">the data handler, for LOBs beyond the inline size</param>
     /// <returns>the engine value</returns>
-    internal static Value ToValue(object? value, DbType? dbType, Engine.CastDataProvider? provider = null)
+    internal static Value ToValue(object? value, DbType? dbType, Engine.CastDataProvider? provider = null,
+        Store.DataHandler? handler = null)
     {
         if (value is null or DBNull)
         {
@@ -103,10 +106,10 @@ internal static class H2ValueMapper
                 dto.TimeOfDay.Ticks * 100L,
                 (int)dto.Offset.TotalSeconds),
             Guid g => ValueUuid.Get(g),
-            System.IO.Stream stream => ReadStream(stream),
+            System.IO.Stream stream => ReadStream(stream, handler),
             // The ADO.NET spelling of the reference's setCharacterStream: a character
             // stream parameter is a CLOB, converted to the column type on assignment.
-            System.IO.TextReader reader => Values.ValueClob.CreateSmall(reader.ReadToEnd()),
+            System.IO.TextReader reader => ReadText(reader, handler),
             IEnumerable enumerable => ToArrayValue(enumerable, dbType, provider),
             _ => throw new InvalidOperationException(
                 "H2ValueMapper.ToValue: no engine value for " + value.GetType().Name),
@@ -202,7 +205,7 @@ internal static class H2ValueMapper
         };
     }
 
-    private static Value ReadStream(System.IO.Stream stream)
+    private static Value ReadStream(System.IO.Stream stream, Store.DataHandler? handler)
     {
         long length = -1;
         if (stream.CanSeek)
@@ -217,13 +220,20 @@ internal static class H2ValueMapper
         }
 
         // The reference maps a binary parameter stream to a BLOB, not to a VARBINARY.
-        // A stream that fits in memory is kept as a small BLOB; a stream beyond that
-        // goes to a temporary file so the value never has to be a single byte array.
-        if (length >= 0 && length <= Engine.Constants.MaxStringLength)
+        // A stream that fits in memory is kept as a small BLOB; a stream beyond that goes
+        // to the database's LOB storage when there is a database, and otherwise to a
+        // temporary file so the value never has to be a single byte array.
+        int inlineLimit = handler?.GetMaxLengthInplaceLob() ?? Engine.Constants.MaxStringLength;
+        if (length >= 0 && length <= inlineLimit)
         {
             using System.IO.MemoryStream copy = new();
             stream.CopyTo(copy);
             return Values.ValueBlob.CreateSmall(copy.ToArray());
+        }
+
+        if (handler is not null)
+        {
+            return handler.GetLobStorage().CreateBlob(stream, length);
         }
 
         string fileName = Store.FileSystem.FileUtils.CreateTempFile(
@@ -244,6 +254,40 @@ internal static class H2ValueMapper
 
             return new Values.ValueBlob(
                 new Values.Lobs.LobDataFile(fileName, written), written);
+        }
+        catch
+        {
+            System.IO.File.Delete(fileName);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Maps a character parameter stream to a CLOB: inline when it fits, otherwise through the
+    /// database's LOB storage or a temporary file.
+    /// </summary>
+    private static Value ReadText(System.IO.TextReader reader, Store.DataHandler? handler)
+    {
+        string text = reader.ReadToEnd();
+        int inlineLimit = handler?.GetMaxLengthInplaceLob() ?? Engine.Constants.MaxStringLength;
+        if (text.Length <= inlineLimit)
+        {
+            return Values.ValueClob.CreateSmall(text);
+        }
+
+        if (handler is not null)
+        {
+            return handler.GetLobStorage().CreateClob(new StringReader(text), text.Length);
+        }
+
+        string fileName = Store.FileSystem.FileUtils.CreateTempFile(
+            "h2lob", Engine.Constants.SuffixTempFile, true);
+        try
+        {
+            System.IO.File.WriteAllText(fileName, text);
+            return new Values.ValueClob(
+                new Values.Lobs.LobDataFile(fileName, System.Text.Encoding.UTF8.GetByteCount(text)),
+                System.Text.Encoding.UTF8.GetByteCount(text), text.Length);
         }
         catch
         {

@@ -1165,8 +1165,7 @@ public sealed class SessionLocal : Session
     /// Gets the data handler of this session's database.
     /// </summary>
     /// <returns>the data handler</returns>
-    public override H2Sharp.Store.DataHandler GetDataHandler()
-        => throw new TODOException("SessionLocal.getDataHandler: Database.getDataHandler is not ported");
+    public override H2Sharp.Store.DataHandler GetDataHandler() => GetDatabase();
 
     /// <summary>
     /// Gets the names of the cluster servers.

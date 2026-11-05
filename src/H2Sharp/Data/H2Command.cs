@@ -368,7 +368,7 @@ public sealed class H2Command : DbCommand
                 Values.Value?[] values = new Values.Value?[set.Length];
                 for (int i = 0; i < set.Length; i++)
                 {
-                    values[i] = H2ValueMapper.ToValue(set[i], null, current.CastDataProvider);
+                    values[i] = H2ValueMapper.ToValue(set[i], null, current.CastDataProvider, current.GetDataHandler());
                 }
 
                 engineSets.Add(values);
@@ -548,7 +548,8 @@ public sealed class H2Command : DbCommand
             // The declared type of the parameter goes with the value: a TimeSpan declared as a
             // time of day is a TIME, and the same value without that declaration is an
             // INTERVAL DAY TO SECOND.
-            parameter.SetValue(H2ValueMapper.ToValue(value, ordered[index].DbType, current), false);
+            parameter.SetValue(
+                H2ValueMapper.ToValue(value, ordered[index].DbType, current, current.GetDataHandler()), false);
         }
 
         return containers;

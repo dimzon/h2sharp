@@ -405,10 +405,9 @@ public sealed class RowDataType : BasicDataType<SearchRow>, StatefulDataType<Dat
             CompareMode compareMode = database is null
                 ? CompareMode.GetInstance(null, 0)
                 : database.GetCompareMode();
-            // Reference passes the database as both the provider and the data handler; the port
-            // has no DataHandler on the database yet, so the handler is null.
+            // The reference passes the database as both the provider and the data handler.
             RowFactory rowFactory = RowFactory.GetDefaultRowFactory().CreateRowFactory(
-                database, compareMode, null, sortTypes, indexes, null, columnCount, storeKeys);
+                database, compareMode, database, sortTypes, indexes, null, columnCount, storeKeys);
             return new Tx.ObjectMapDataType<SearchRow>(rowFactory.GetRowDataType());
         }
 

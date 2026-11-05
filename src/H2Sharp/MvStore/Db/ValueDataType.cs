@@ -596,6 +596,10 @@ public sealed class ValueDataType : BasicDataType<Value>
                         buff.PutVarInt(-1).PutVarLong(file.OctetLength);
                         WriteString(buff, file.FileName);
                     }
+                    else if (lobData is LobDataStore store)
+                    {
+                        buff.PutVarInt(-2).PutVarLong(store.LobId).PutVarInt(store.TableId);
+                    }
                     else
                     {
                         // A lob that lives in the database is written as a reference to it, and
@@ -621,6 +625,10 @@ public sealed class ValueDataType : BasicDataType<Value>
                     {
                         buff.PutVarInt(-1).PutVarLong(file.OctetLength);
                         WriteString(buff, file.FileName);
+                    }
+                    else if (lobData is LobDataStore store)
+                    {
+                        buff.PutVarInt(-2).PutVarLong(store.LobId).PutVarInt(store.TableId);
                     }
                     else
                     {
@@ -649,6 +657,34 @@ public sealed class ValueDataType : BasicDataType<Value>
     /// costs three bytes instead of five. The reversal is what makes that true, and it is not
     /// a byte swap: every bit moves, exactly what <see cref="Bits"/> reverses.
     /// </remarks>
+
+    /// <summary>
+    /// Reads a reference to a stored LOB and resolves it through the database's storage.
+    /// </summary>
+    private Value ReadStoredLob(Span<byte> buff, ref int position, bool clob)
+    {
+        long lobId = DataUtils.ReadVarLong(buff, ref position);
+        int tableId = DataUtils.ReadVarInt(buff, ref position);
+        if (handler is null)
+        {
+            throw new TODOException("ValueDataType.read: stored LOB without a data handler");
+        }
+
+        LobStorageMap storage = (LobStorageMap)handler.GetLobStorage();
+        LobStorageMap.BlobMeta? blobMeta = storage.GetLobMeta(lobId);
+        if (blobMeta is null)
+        {
+            throw DataUtils.NewMvStoreException(DataUtils.ErrorFileCorrupt, "Missing LOB " + lobId);
+        }
+
+        LobDataStore lobData = new(storage, lobId, blobMeta.ByteCount)
+        {
+            TableId = tableId,
+        };
+        return clob
+            ? new ValueClob(lobData, blobMeta.ByteCount, blobMeta.CharLength)
+            : new ValueBlob(lobData, blobMeta.ByteCount);
+    }
 
     /// <summary>
     /// Writes a long with the same tricks as the integer: negative gets its own tag, 0..7 inline.
@@ -875,6 +911,11 @@ public sealed class ValueDataType : BasicDataType<Value>
                         return ValueBlob.CreateSmall(small);
                     }
 
+                    if (smallLen == -2)
+                    {
+                        return ReadStoredLob(buff, ref position, clob: false);
+                    }
+
                     long octetLength = DataUtils.ReadVarLong(buff, ref position);
                     string fileName = ReadString(buff, ref position);
                     return new ValueBlob(new LobDataFile(fileName, octetLength), octetLength);
@@ -889,6 +930,11 @@ public sealed class ValueDataType : BasicDataType<Value>
                         position += smallLen;
                         long charLength = DataUtils.ReadVarLong(buff, ref position);
                         return ValueClob.CreateSmall(small, charLength);
+                    }
+
+                    if (smallLen == -2)
+                    {
+                        return ReadStoredLob(buff, ref position, clob: true);
                     }
 
                     long octetLength = DataUtils.ReadVarLong(buff, ref position);

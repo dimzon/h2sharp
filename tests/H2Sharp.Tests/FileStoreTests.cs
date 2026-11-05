@@ -320,6 +320,8 @@ public sealed class FileStoreTests : IDisposable
 
         public CompareMode GetCompareMode() => CompareMode.GetInstance(null, 0);
 
+        public LobStorageInterface GetLobStorage() => null!;
+
         private readonly object sync = new();
     }
 }

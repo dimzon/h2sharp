@@ -582,7 +582,7 @@ public sealed class MVTable : Table
         }
 
         return database!.GetRowFactory().CreateRowFactory(
-            database, database!.GetCompareMode(), null, typedColumns, null, false);
+            database, database!.GetCompareMode(), database, typedColumns, null, false);
     }
 
     /// <summary>
