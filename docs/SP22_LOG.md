@@ -7,7 +7,7 @@
 
 ## Спринт SP22.1 — негенерный доступ для undo/rollback (сделан)
 
-**Коммит:** `b5afefd`.
+**Коммит:** `5118900`.
 
 **Проблема.** Rollback и undo-лог оперируют стёртыми типами (`object`-ключ,
 `VersionedValue<object>`); `MVMap<K, VersionedValue<V>>` такой вызов не примет.
@@ -23,7 +23,7 @@ transaction/rollback 5/5 (+3 skip).
 
 ## Спринт SP22.2 — generic builder (сделан)
 
-**Коммит:** `a43b033`.
+**Коммит:** `b24b71a`.
 
 **Решение.** `TxMapBuilder<K>`/`TMVMap<K>`; `TransactionStore.OpenVersionedMap<K>`
 открывает `MVMap<K, VersionedValue<object>>` с настоящим `DataType<K>`; при reopen
@@ -77,7 +77,7 @@ RunScriptRoundTripsTheScript` — `RUNSCRIPT FROM …` отказывает па
 
 ## Спринт SP22.3b — бенчмарк ключевого пути (сделан)
 
-**Коммит:** `2e4e0b2`.
+**Коммит:** `273410e`.
 
 **Решение.** `tools/perf/H2Sharp.Benchmarks/TransactionMapBench`: карта на
 100 000 строк, `GetImmediate` для id 42 (малый, из кэша боксов) и id 99 999
