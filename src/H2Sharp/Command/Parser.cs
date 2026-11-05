@@ -840,6 +840,18 @@ public sealed partial class Parser
         {
             prepared = PrepareDropView(current);
         }
+        else if (IsWord("DEALLOCATE", consume: false)
+            && current.GetMode().Enum != Engine.Mode.ModeEnum.MsSqlServer)
+        {
+            // PostgreSQL-style DEALLOCATE is disabled in MSSQLServer mode because
+            // PostgreSQL-style EXECUTE is redefined in this mode; the word is not consumed
+            // there, so the dispatcher refuses the statement the way the reference does.
+            Read();
+            _ = IsWord("PLAN");
+            Ddl.DeallocateProcedure command = new(current);
+            command.SetProcedureName(ReadIdentifier());
+            prepared = command;
+        }
         else if (IsWord("REFRESH", consume: false))
         {
             prepared = PrepareRefreshMaterializedView(current);
@@ -877,6 +889,19 @@ public sealed partial class Parser
             Read();
             Read();
             prepared = new Dml.ExecuteImmediate(current, ReadExpression());
+        }
+        else if (IsWord("EXECUTE", consume: false))
+        {
+            Read();
+            if (current.GetMode().Enum == Engine.Mode.ModeEnum.MsSqlServer)
+            {
+                // The reference's parseExecuteSQLServer runs a CREATE ALIAS function, which
+                // this port does not have (D-037).
+                throw new TODOException(
+                    "Parser.parseExecuteSQLServer: FunctionAlias is not ported (D-037)");
+            }
+
+            prepared = ParseExecutePostgre();
         }
         else if (IsWord("SHOW", consume: false))
         {
@@ -1662,7 +1687,67 @@ public sealed partial class Parser
             return command;
         }
 
-        throw new TODOException("Parser.parsePrepare: PREPARE of a procedure is not ported");
+        return ParsePrepareProcedure();
+    }
+
+    /// <summary>
+    /// Reads PREPARE name(types) AS statement, as the reference's parsePrepareProcedure.
+    /// The type list is purely syntactic: the reference parses it and throws it away, the
+    /// statement keeps the parameters its own text holds. PostgreSQL-style PREPARE is
+    /// disabled in MSSQLServer mode because PostgreSQL-style EXECUTE is redefined there.
+    /// </summary>
+    private Prepared ParsePrepareProcedure()
+    {
+        if (session!.GetMode().Enum == Engine.Mode.ModeEnum.MsSqlServer)
+        {
+            throw DbException.GetSyntaxError(sql, Current.Start);
+        }
+
+        string procedureName = ReadIdentifier();
+        if (ReadIf(Token.OpenParen))
+        {
+            for (int i = 0; ; i++)
+            {
+                _ = ParseColumnForTable("C" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), true);
+                if (!ReadIfMore())
+                {
+                    break;
+                }
+            }
+        }
+
+        ExpectWord("AS");
+        Prepared prep = ParseOneStatement();
+        Ddl.PrepareProcedure command = new(session);
+        command.SetProcedureName(procedureName);
+        command.SetPrepared(prep);
+        return command;
+    }
+
+    /// <summary>
+    /// Reads EXECUTE name(args), as the reference's parseExecutePostgre: the procedure the
+    /// session prepared runs with the argument expressions bound to its parameters.
+    /// </summary>
+    private Prepared ParseExecutePostgre()
+    {
+        Dml.ExecuteProcedure command = new(session!);
+        string procedureName = ReadIdentifier();
+        Procedure p = session!.GetProcedure(procedureName)
+            ?? throw DbException.Get(Api.ErrorCode.FunctionAliasNotFound1, procedureName);
+        command.SetProcedure(p);
+        if (ReadIf(Token.OpenParen))
+        {
+            for (int i = 0; ; i++)
+            {
+                command.SetExpression(i, ReadExpression());
+                if (!ReadIfMore())
+                {
+                    break;
+                }
+            }
+        }
+
+        return command;
     }
 
     private Dml.TransactionCommand ParseRollback()

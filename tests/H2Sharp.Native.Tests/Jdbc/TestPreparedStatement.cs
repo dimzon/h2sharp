@@ -20,10 +20,7 @@
 // testSetObject2, testPreparedStatementWithAnyParameter — array gaps are issue #14),
 // java.time ZonedDateTime/Instant (no CLR counterpart), and the YEAR TO MONTH interval
 // parameter forms of testInterval/testInterval8 (the TIME-only TimeSpan parameter shape
-// carries DAY TO SECOND only). testExecuteUpdateCall is skipped: the CALL statement
-// is not parsed yet (issue #64), so the reference's DATA_CONVERSION_ERROR_1 is
-// unreachable. testPrepareExecute (PREPARE/EXECUTE session
-// statements) is skipped for the same parser gap (issue #64). testExecuteErrorTwice
+// carries DAY TO SECOND only). testExecuteErrorTwice
 // is skipped: CREATE TABLE ... AS SELECT is not parsed yet — the reference's
 // COLUMN_NOT_FOUND_1 on the missing column cannot be reached before the DDL form exists.
 // testArray is skipped: the array parameter form yields no rows (array gaps, issue #14).
@@ -54,11 +51,8 @@ public sealed class TestPreparedStatement : TestDb
         TestChangeType(conn);
         TestCallTablePrepared(conn);
         TestValues(conn);
-        // testExecuteUpdateCall: the CALL statement is not parsed yet (syntax error
-        // 42001 instead of the reference's DATA_CONVERSION_ERROR_1); see the header.
-        // testPrepareExecute: the PREPARE/EXECUTE session statements are not parsed
-        // yet; see the header.
-        _ = conn;
+        TestExecuteUpdateCall(conn);
+        TestPrepareExecute(conn);
         TestLobTempFiles(conn);
         // testExecuteErrorTwice: CREATE TABLE ... AS SELECT is not parsed yet (syntax
         // error instead of COLUMN_NOT_FOUND_1), see the header.
@@ -155,9 +149,14 @@ public sealed class TestPreparedStatement : TestDb
 
     private void TestExecuteUpdateCall(DbConnection conn)
     {
-        AssertThrows(ErrorCode.DataConversionError1,
-            () => Execute(conn.CreateCommand(),
-                "CALL HASH('SHA256', STRINGTOUTF8('Password'), 1000)"));
+        // The reference's Statement.executeUpdate runs even a query through update(), where
+        // the VARBINARY result of CALL refuses GetInt with DATA_CONVERSION_ERROR_1. The ADO
+        // ExecuteNonQuery drains a query instead of updating, so the statement runs and
+        // answers -1; the conversion error itself is the engine's VARBINARY→INTEGER rule,
+        // locked by the cast oracle.
+        using DbCommand command = conn.CreateCommand();
+        command.CommandText = "CALL HASH('SHA256', STRINGTOUTF8('Password'), 1000)";
+        AssertEquals(-1, command.ExecuteNonQuery());
     }
 
     private void TestPrepareExecute(DbConnection conn)

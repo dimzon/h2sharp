@@ -45,7 +45,11 @@ public abstract class Prepared
 
     private long modificationMetaId;
 
-    private List<Parameter>? parameters;
+    /// <summary>
+    /// The parameters of this statement, as the parser collected them. Protected because
+    /// the reference's PrepareProcedure hands this very list to the statement it stores.
+    /// </summary>
+    protected List<Parameter>? parameters;
 
     private string sql = string.Empty;
 
@@ -111,8 +115,12 @@ public abstract class Prepared
     /// <summary>
     /// Get the list of parameters.
     /// </summary>
+    /// <remarks>
+    /// Virtual because the reference's subclasses override it: PrepareProcedure answers an
+    /// empty list, its parameters belong to the statement it stores.
+    /// </remarks>
     /// <returns>the list of parameters</returns>
-    public List<Parameter>? GetParameters() => parameters;
+    public virtual List<Parameter>? GetParameters() => parameters;
 
     /// <summary>
     /// Set the list of parameters.

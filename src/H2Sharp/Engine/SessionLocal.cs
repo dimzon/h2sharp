@@ -1765,6 +1765,43 @@ public sealed class SessionLocal : Session
     }
 
     /// <summary>
+    /// The procedures this session prepared, by name. The map is built on first use, as
+    /// the reference's lazily allocated <c>procedures</c>. Keys compare without case, as
+    /// the reference's identifier-keyed session maps do.
+    /// </summary>
+    private Dictionary<string, Procedure>? procedures;
+
+    /// <summary>
+    /// Add a procedure to this session.
+    /// </summary>
+    /// <param name="procedure">the procedure to add</param>
+    public void AddProcedure(Procedure procedure)
+    {
+        procedures ??= new Dictionary<string, Procedure>(StringComparer.OrdinalIgnoreCase);
+        procedures[procedure.GetName()] = procedure;
+    }
+
+    /// <summary>
+    /// Remove a procedure from this session.
+    /// </summary>
+    /// <param name="name">the name of the procedure to remove</param>
+    public void RemoveProcedure(string name)
+    {
+        _ = procedures?.Remove(name);
+    }
+
+    /// <summary>
+    /// Get the procedure with the given name, or null
+    /// if none exists.
+    /// </summary>
+    /// <param name="name">the name of the procedure</param>
+    /// <returns>the procedure or null</returns>
+    public Procedure? GetProcedure(string name)
+    {
+        return procedures is null ? null : procedures.GetValueOrDefault(name);
+    }
+
+    /// <summary>
     /// Set the current time zone.
     /// </summary>
     /// <param name="timeZone">the time zone</param>

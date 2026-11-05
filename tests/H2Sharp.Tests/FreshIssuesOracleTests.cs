@@ -131,12 +131,14 @@ public sealed class FreshIssuesOracleTests
             try
             {
                 // JDBC's execute() reports a result set for every query command; the port's
-                // reader path has to be asked for those the same way.
+                // reader path has to be asked for those the same way. EXECUTE of a prepared
+                // query produces one, as the reference's Statement.execute answers.
                 bool query = statements[i].StartsWith("SELECT", StringComparison.Ordinal)
                     || statements[i].StartsWith("EXPLAIN", StringComparison.Ordinal)
                     || statements[i].StartsWith("WITH", StringComparison.Ordinal)
                     || statements[i].StartsWith("TABLE", StringComparison.Ordinal)
                     || statements[i].StartsWith("CALL", StringComparison.Ordinal)
+                    || statements[i].StartsWith("EXECUTE", StringComparison.Ordinal)
                     || statements[i].StartsWith('(');
                 if (!query) { port.Add(prefix + "U:" + command.ExecuteNonQuery()); continue; }
                 using DbDataReader rows = command.ExecuteReader();

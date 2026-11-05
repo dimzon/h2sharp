@@ -10251,3 +10251,36 @@ Issue #59 закрыт. `testExecuteUpdateCall` по-прежнему ждёт C
 
 Проверено: MvStore 152, `H2Sharp.Tests` 1961 зелёных (`Category!=BlockedByPort`).
 Issue #60 закрыт.
+
+### Issue #64: PREPARE / EXECUTE / DEALLOCATE (2026-11-05)
+
+`CHECKPOINT` и `CALL` уже разбирались; не хватало сессионных процедур
+PostgreSQL-совместимости. Перенесено из эталона дословно:
+
+* `Engine/Procedure.cs` (`org.h2.engine.Procedure`); `SessionLocal` держит карту
+  процедур (`AddProcedure`/`RemoveProcedure`/`GetProcedure`), ключи без учёта
+  регистра, как у остальных сессионных карт.
+* `Ddl/PrepareProcedure.cs` — хранит оператор под именем: поле `parameters`
+  эталона стало `protected` (эталон передаёт именно его сохраняемому оператору),
+  `GetParameters()` отвечает пустым списком; `Dml/ExecuteProcedure.cs` —
+  подставляет выражения в параметры по позиции и запускает сохранённый оператор;
+  `Ddl/DeallocateProcedure.cs` — удаляет имя.
+* Парсер: `PREPARE name(types) AS stmt` (список типов читается и выбрасывается,
+  как в эталоне; в MSSQLServer-режиме — отказ до чтения имени),
+  `EXECUTE name(args)` (в MSSQLServer-режиме — TODOException с именем
+  `parseExecuteSQLServer`/FunctionAlias, D-037), `DEALLOCATE [PLAN] name`
+  (в MSSQLServer-режиме слово не читается — диспетчер отказывает, как эталон).
+
+`TestPreparedStatement.testExecuteUpdateCall` и `testPrepareExecute` возвращены
+в набор; `TestCheckpoint` снят с `BlockedByPort` (CHECKPOINT уже работал).
+Адаптация `testExecuteUpdateCall`: JDBC `executeUpdate` гонит даже запрос через
+`update()`, где VARBINARY отказывает в `GetInt` (22018); ADO `ExecuteNonQuery`
+вычитывает запрос и отвечает -1 — сам отказ `VARBINARY → INTEGER` заперт
+оракулом CAST-матрицы.
+
+Оракулы: `SessionProcedureOracleTests` — PREPARE/EXECUTE/замена/DEALLOCATE/
+неизвестное имя/синтаксический список типов построчно с H2 2.5 JDBC; отказ
+PREPARE в MSSQLServer-режиме — факт порта (эталон отвечает 42001 с expected-списком
+двухпроходного парсера, порт — голым 42000, как и все синтаксические ошибки).
+
+Проверено: `H2Sharp.Tests` 1963 зелёных (`Category!=BlockedByPort`).
