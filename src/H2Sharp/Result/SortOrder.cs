@@ -93,6 +93,17 @@ public sealed class SortOrder
     private Comparison<Value?[]>? comparison;
 
     /// <summary>
+    /// The row comparison as a comparer, built once: a <c>Comparer.Create</c> per call would
+    /// otherwise allocate the comparer and its closure on every binary search.
+    /// </summary>
+    private Comparer<Value?[]>? rowComparer;
+
+    /// <summary>
+    /// The row comparer, built once.
+    /// </summary>
+    internal Comparer<Value?[]> RowComparer => rowComparer ??= Comparer<Value?[]>.Create(Compare);
+
+    /// <summary>
     /// Construct a new sort order object with specified sort types.
     /// </summary>
     /// <param name="session">the session</param>
@@ -428,13 +439,16 @@ public sealed class SortOrder
     }
 
     /// <summary>
-    /// Returns comparator for row values.
+    /// Returns comparator for row values, built once: the reference returns a fresh lambda and
+    /// the port did too, one closure per call in the row loop.
     /// </summary>
     /// <returns>comparator for row values</returns>
-    public Comparison<Value> GetRowValueComparator()
-    {
-        return (o1, o2) => Compare(
+    private Comparison<Value>? rowValueComparator;
+
+    public Comparison<Value> GetRowValueComparator() => rowValueComparator ??= CompareRowValues;
+
+    private int CompareRowValues(Value o1, Value o2)
+        => Compare(
             ((ValueRow)o1).GetList(),
             ((ValueRow)o2).GetList());
-    }
 }

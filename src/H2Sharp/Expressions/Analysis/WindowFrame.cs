@@ -197,7 +197,7 @@ public sealed class WindowFrame
                     case WindowFrameUnits.Range:
                         Value?[]? row = GetCompareRow(session, rows, sort!, currentRow, bound, false);
                         if (row is null) return -1;
-                        index = rows.BinarySearch(row, Comparer<Value?[]>.Create(sort!.Compare));
+                        index = rows.BinarySearch(row, sort!.RowComparer);
                         if (index >= 0)
                         {
                             if (!forFollowing) while (index > 0 && sort!.Compare(row, rows[index - 1]) == 0) index--;
@@ -234,7 +234,7 @@ public sealed class WindowFrame
                     case WindowFrameUnits.Range:
                         Value?[]? row = GetCompareRow(session, rows, sort!, currentRow, bound, true);
                         if (row is null) return size;
-                        index = rows.BinarySearch(row, Comparer<Value?[]>.Create(sort!.Compare));
+                        index = rows.BinarySearch(row, sort!.RowComparer);
                         if (index >= 0)
                         {
                             if (forFollowing) while (index < last && sort!.Compare(row, rows[index + 1]) == 0) index++;
