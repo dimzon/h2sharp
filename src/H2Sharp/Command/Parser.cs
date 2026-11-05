@@ -5895,6 +5895,9 @@ public sealed partial class Parser
 
             ExpectWord("REGEXP");
             Expressions.Expression b = ReadQuerySum(aggregateSelect);
+            // The reference sets recompileAlways here: a REGEXP with a parameter must be
+            // planned again at execution, when the parameter has a value.
+            recompileAlways = true;
             return new Expressions.Conditions.CompareLike(
                 session!.GetCompareMode(), left, not, whenOperand, b, escape: null,
                 Expressions.Conditions.CompareLike.LikeType.Regexp);
@@ -7605,6 +7608,9 @@ public sealed partial class Parser
     {
         Expressions.Expression right = ReadQueryConcat();
         Expressions.Expression? escape = IsWord("ESCAPE") ? ReadQueryConcat() : null;
+        // The reference sets recompileAlways for every LIKE: the plan depends on the
+        // pattern, so a prepared "LIKE ?" is planned again with the value bound.
+        recompileAlways = true;
         return new Expressions.Conditions.CompareLike(
             session!.GetCompareMode(), left, not, whenOperand, right, escape, likeType);
     }

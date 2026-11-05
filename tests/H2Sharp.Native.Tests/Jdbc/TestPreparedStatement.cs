@@ -27,12 +27,9 @@
 // statements) is skipped for the same parser gap (issue #64). testExecuteErrorTwice
 // is skipped: CREATE TABLE ... AS SELECT is not parsed yet — the reference's
 // COLUMN_NOT_FOUND_1 on the missing column cannot be reached before the DDL form exists.
-// testInsertFunction is skipped: HASH is not ported yet (issue #59). testUuid and
-// testLikeIndex are skipped: on a file database a secondary index built over a table
-// goes through MVTable.rebuildIndexBlockMerge, which is not ported (issue #62) — that
-// covers a UUID primary key and CREATE INDEX alike. testJson is skipped: a JSON column
-// written to a file database panics the MVStore writer (issue #60). testArray is
-// skipped: the array parameter form yields no rows (array gaps, issue #14).
+// testInsertFunction is skipped: HASH is not ported yet (issue #59). testJson is skipped:
+// a JSON column written to a file database panics the MVStore writer (issue #60).
+// testArray is skipped: the array parameter form yields no rows (array gaps, issue #14).
 // testPreparedSubquery and testMultipleStatements are skipped: the IDENTITY data type
 // is not parsed yet (issue #61). testParameterInSubquery is skipped: inline REFERENCES
 // without a column list fails with ColumnCountDoesNotMatch (issue #63).
@@ -76,8 +73,7 @@ public sealed class TestPreparedStatement : TestDb
         TestUnknownDataType(conn);
         TestCoalesce(conn);
         TestEnum(conn);
-        // testUuid: a UUID PRIMARY KEY table hits the unported
-        // MVTable.rebuildIndexBlockMerge (TODOException), see the header.
+        TestUuid(conn);
         TestBigDecimal(conn);
         TestDate(conn);
         TestTime(conn);
@@ -89,8 +85,7 @@ public sealed class TestPreparedStatement : TestDb
         // (array gaps, issue #14), see the header.
         // testPreparedSubquery, testMultipleStatements: IDENTITY data type is not
         // parsed yet, see the header.
-        // testLikeIndex: CREATE INDEX hits the unported MVTable.rebuildIndexBlockMerge
-        // (TODOException), see the header.
+        TestLikeIndex(conn);
         TestCasewhen(conn);
         TestSubquery(conn);
         TestDataTypes(conn);

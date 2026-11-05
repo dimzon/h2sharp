@@ -10061,3 +10061,30 @@ batch-паттерна бесплатен (`CloningATokenCostsNothing` — на 
 
 Проверено: `H2Sharp.Tests` 1891 зелёный (`Category!=BlockedByPort`), Data 717,
 Engine 9, MvStore 152. Обе целевые платформы собираются.
+
+### Issue #62: индексы на файловой БД и перепланирование `LIKE ?` (2026-11-05)
+
+`MVTable.rebuildIndexBlockMerge` уже перенесён (014b63e, 4c51414): `CREATE INDEX`,
+`UUID PRIMARY KEY` и `ALTER TABLE ... ADD CONSTRAINT` на файловой БД строятся
+блочным слиянием, как эталон. После этого открылись нативные
+`TestPreparedStatement.testUuid` и `testLikeIndex`; первый прошёл, второй выявил
+отдельный дефект парсера.
+
+`testLikeIndex` ждёт, что `EXPLAIN SELECT ... WHERE NAME LIKE ?` с `H%` покажет
+`IDXNAME`, а с `%orld` — tableScan. Эталон для этого выставляет
+`Parser.recompileAlways = true` в `readLikePredicate` (все LIKE/ILIKE) и в ветке
+`REGEXP`; при выполнении `CommandContainer.recompileIfRequired` заново разбирает
+и готовит оператор уже с привязанным значением. Порт этот флаг ставил только для
+параметра в `ORDER BY`. Добавлены обе эталонные установки (`Parser.cs`), без
+нового механизма: задействованы существующие `Prepared.prepareAlways`,
+`CommandContainer.RecompileIfRequired` и `Parser.SetSuppliedParameters`.
+
+`CSVREAD`, `LINK_SCHEMA` и недетерминированный `FunctionAlias` в эталоне тоже
+ставят `recompileAlways`, но они вне scope по D-005/D-030/D-037, поэтому
+соответствующие строки не переносились.
+
+Оракул: `PreparedLikePlanOracleTests.ALikeParameterIsPlannedAgainWithItsValue` —
+план для `%orld` и `H%` построчно совпадает с H2 2.5 JDBC.
+
+Проверено: `H2Sharp.Tests` 1949 зелёный (`Category!=BlockedByPort`), Data 719,
+Engine 9, MvStore 152, Native 98 passed / 23 skipped. Issue #62 закрыт.
