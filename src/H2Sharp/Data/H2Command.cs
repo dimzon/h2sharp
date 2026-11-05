@@ -311,19 +311,22 @@ public sealed class H2Command : DbCommand
     /// </remarks>
     protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
         CommandBehavior behavior, CancellationToken cancellationToken)
-        => SyncTask.Run(() => ExecuteDbDataReader(behavior), cancellationToken);
+        => SyncTask.Run(
+            (command: this, behavior),
+            static state => state.command.ExecuteDbDataReader(state.behavior),
+            cancellationToken);
 
     /// <summary>
     /// Runs the command and returns the rows it affected, asynchronously.
     /// </summary>
     public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
-        => SyncTask.Run(ExecuteNonQuery, cancellationToken);
+        => SyncTask.Run(this, static command => command.ExecuteNonQuery(), cancellationToken);
 
     /// <summary>
     /// Runs the command and returns the first column of the first row, asynchronously.
     /// </summary>
     public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
-        => SyncTask.Run(ExecuteScalar, cancellationToken);
+        => SyncTask.Run(this, static command => command.ExecuteScalar(), cancellationToken);
 
     /// <summary>
     /// Prepares the command.
