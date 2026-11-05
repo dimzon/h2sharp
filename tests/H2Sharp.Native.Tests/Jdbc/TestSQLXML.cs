@@ -8,10 +8,9 @@
 // StAX Source/Result transforms, FEATURE_NOT_SUPPORTED_1 refusals). The ADO.NET caller
 // reads and writes a CLOB as string/TextReader/bytes, so the same content ports as a
 // CLOB value round-trip: the getters read the column through GetString/GetTextReader,
-// the setters submit the value through a parameter as string and as bytes, and a null
-// parameter stores NULL. The reference's getBinaryStream/setCharacterStream legs are
-// the byte[]/TextReader shapes; TextReader parameters are not accepted by the engine
-// yet (issue #57), so that leg is the byte[] form.
+// the setters submit the value through a parameter as string, TextReader and bytes,
+// and a null parameter stores NULL. The reference's getBinaryStream/setCharacterStream
+// legs are the byte[]/TextReader shapes.
 using System.Text;
 using Xunit;
 
@@ -84,8 +83,18 @@ public sealed class TestSQLXML : TestDb
 
         using (DbCommand prep = conn.CreateCommand())
         {
-            // setCharacterStream() / setBinaryStream(): the character content as bytes,
-            // the ADO.NET caller's byte[]; TextReader parameters are issue #57
+            // setCharacterStream(): the character content through a TextReader, the
+            // ADO.NET shape of the reference's character stream.
+            prep.CommandText = "UPDATE TEST SET X = ? WHERE ID = 1";
+            prep.Parameters.Add(new H2Parameter());
+            prep.Parameters[0].Value = new StringReader(Xml);
+            AssertEquals(1, prep.ExecuteNonQuery());
+            AssertStored(stat);
+        }
+
+        using (DbCommand prep = conn.CreateCommand())
+        {
+            // setBinaryStream(): the character content as bytes.
             prep.CommandText = "UPDATE TEST SET X = ? WHERE ID = 1";
             prep.Parameters.Add(new H2Parameter());
             prep.Parameters[0].Value = Encoding.UTF8.GetBytes(Xml);

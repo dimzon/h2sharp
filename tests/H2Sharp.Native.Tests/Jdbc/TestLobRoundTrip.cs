@@ -5,12 +5,10 @@
 //
 // New test, per the discussion decision (see docs/NATIVE_TESTS_DISCUSSION.md): the
 // JDBC LOB object model (Blob/Clob/NClob handles, position/truncate) has no ADO.NET
-// shape, so the content half ports as a LOB-value round-trip test — byte[]/string
-// values submitted through parameters in all shapes (bytes, strings, Stream) and read
-// back through the reader, at lengths 0, 1, 100 and 100000. The reference's Reader
-// parameter forms (setCharacterStream/setAsciiStream) map to TextReader parameters,
-// which the engine does not accept yet (issue #57); until then they are the byte[] and
-// Stream shapes.
+// shape, so the content half ports as a LOB-value round-trip test — byte[]/string and
+// TextReader/Stream values submitted through parameters in all shapes and read back
+// through the reader, at lengths 0, 1, 100 and 100000. The reference's Reader parameter
+// forms (setCharacterStream/setAsciiStream) are the TextReader shape.
 using Xunit;
 
 namespace H2Sharp.Native.Tests.Jdbc;
@@ -132,10 +130,10 @@ public sealed class TestLobRoundTrip : TestDb
             prep.Parameters[1].Value = data;
             _ = prep.ExecuteNonQuery();
 
-            // bytes (UTF-8), the reference's setCharacterStream/setAsciiStream shape;
-            // TextReader parameters are issue #57
+            // setCharacterStream: the content through a TextReader, the ADO.NET shape of
+            // the reference's character stream.
             prep.Parameters[0].Value = 2;
-            prep.Parameters[1].Value = Encoding.UTF8.GetBytes(data);
+            prep.Parameters[1].Value = new StringReader(data);
             _ = prep.ExecuteNonQuery();
 
             // Stream with the same content

@@ -343,7 +343,16 @@ public sealed class H2ValueMapperBranchTests
         Assert.Equal(DbType.Decimal, H2ValueMapper.GetDbType(1m));
         Assert.Equal(DbType.String, H2ValueMapper.GetDbType('c'));
         Assert.Equal(DbType.String, H2ValueMapper.GetDbType("s"));
+        using (StringReader text = new("s"))
+        {
+            Assert.Equal(DbType.String, H2ValueMapper.GetDbType(text));
+        }
+
         Assert.Equal(DbType.Binary, H2ValueMapper.GetDbType(new byte[1]));
+        using (MemoryStream binary = new())
+        {
+            Assert.Equal(DbType.Binary, H2ValueMapper.GetDbType(binary));
+        }
         Assert.Equal(DbType.DateTime2, H2ValueMapper.GetDbType(DateTime.Now));
         Assert.Equal(DbType.Date, H2ValueMapper.GetDbType(DateOnly.MinValue));
         Assert.Equal(DbType.Time, H2ValueMapper.GetDbType(TimeOnly.MinValue));

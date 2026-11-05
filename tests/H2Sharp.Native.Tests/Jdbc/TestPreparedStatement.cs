@@ -188,16 +188,20 @@ public sealed class TestPreparedStatement : TestDb
         {
             prep.CommandText = "INSERT INTO TEST VALUES(?, ?)";
             Add(prep, 0, null);
+            // The reference sets the character stream on even rows and reuses the
+            // materialized CLOB on odd rows. An ADO parameter keeps the TextReader object
+            // itself, and the first execution consumes it, so every row gets a fresh
+            // reader with the content the reference reuses.
+            int last = 0;
             for (int i = 0; i < 5; i++)
             {
-                prep.Parameters[0].Value = i;
                 if (i % 2 == 0)
                 {
-                    // setCharacterStream: the content as bytes; TextReader parameters
-                    // are issue #57
-                    prep.Parameters[1].Value = Encoding.UTF8.GetBytes(GetString(i));
+                    last = i;
                 }
 
+                prep.Parameters[0].Value = i;
+                prep.Parameters[1].Value = new StringReader(GetString(last));
                 _ = prep.ExecuteNonQuery();
             }
 
@@ -225,7 +229,7 @@ public sealed class TestPreparedStatement : TestDb
             for (int i = 0; i < 3; i++)
             {
                 prep.Parameters[0].Value = i;
-                prep.Parameters[1].Value = Encoding.UTF8.GetBytes(GetString(i));
+                prep.Parameters[1].Value = new StringReader(GetString(i));
                 _ = prep.ExecuteNonQuery();
             }
 

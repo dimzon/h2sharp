@@ -10152,3 +10152,22 @@ Engine 9, MvStore 152, Native 98 passed / 23 skipped. Issue #93 закрыт.
 
 Проверено: `H2Sharp.Tests` 1957 зелёных (`Category!=BlockedByPort`), Native
 `TestMathUtils` зелёный. Issues #56 и #54 закрыты.
+
+### Issue #57: параметр-TextReader (CLOB) (2026-11-05)
+
+`H2ValueMapper.ToValue` уже переводил `TextReader` в CLOB (маленькое значение —
+`ValueClob.CreateSmall`, большое — через LOB-хранилище или временный файл), но
+`GetDbType` не знал эту форму. Добавлены `TextReader → DbType.String` и
+`Stream → DbType.Binary`.
+
+Нативные тесты вернулись к эталонным character-stream ножкам:
+`TestPreparedStatement.TestLobTempFiles`, `TestLobRoundTrip.TestClob`,
+`TestSQLXML.TestSetters` (добавлена TextReader-форма, byte[] оставлен как
+setBinaryStream) и `TestMultiThread` (пока пропущен из-за #61).
+`TestLobTempFiles` — адаптация под ADO: эталон задаёт поток на чётных строках и
+переиспользует материализованный CLOB на нечётных, а ADO-параметр хранит сам
+TextReader, который первый execute вычитывает до конца; тест даёт каждой строке
+свежий reader с тем же ожидаемым содержимым.
+
+Проверено: Data 719, три затронутых Native-теста зелёные, `TestMathUtils` не
+затронут. Issue #57 закрыт.

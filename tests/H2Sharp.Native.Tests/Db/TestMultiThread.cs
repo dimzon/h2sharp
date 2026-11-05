@@ -9,7 +9,7 @@
 // CancellationTokenSource, CountDownLatch is CountdownEvent and AtomicBoolean is a
 // shared flag set under Interlocked. The reference's DatabaseMetaData.getTables call is
 // the INFORMATION_SCHEMA.TABLES query through the ADO layer; setCharacterStream is a
-// string parameter (issue #57 tracks the TextReader form). The reference's main() entry
+// TextReader parameter. The reference's main() entry
 // is the runner; xUnit runs Test() directly.
 //
 // Blocked by the port: CREATE TABLE TEST(ID IDENTITY, ...) needs the IDENTITY column
@@ -102,9 +102,8 @@ public sealed class TestMultiThread : TestDb
                 p2.Parameters.Add(new H2Parameter());
                 while (!stopped.IsCancellationRequested)
                 {
-                    // setCharacterStream of the reference; a string parameter here
-                    // because TextReader parameters are issue #57
-                    p2.Parameters[0].Value = new string(new char[10 * 1024]);
+                    // setCharacterStream of the reference: a fresh TextReader per row.
+                    p2.Parameters[0].Value = new StringReader(new string(new char[10 * 1024]));
                     _ = p2.ExecuteNonQuery();
                 }
             }, stopped.Token);
