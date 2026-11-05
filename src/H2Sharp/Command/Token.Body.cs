@@ -11,10 +11,12 @@
  * Structural deviation from the reference (approved by the user, audit item 1.6): the
  * reference has one class per kind of token, and a tokenizer allocates one per lexeme -
  * forty to eighty small objects per parsed statement. This is one mutable struct per token
- * instead: the payload fields overlay each other because a token is only ever one kind, and
- * the whole statement's token list becomes one array. The member surface is what the
- * reference's classes offered, so the tokenizer and the parser read a token exactly as
- * before; the kind tests that were type tests are the Is... properties below.
+ * instead, and the whole statement's token list becomes one array. The payload fields are
+ * kept non-overlapping on purpose: .NET refuses an explicit layout where object references
+ * overlap other fields (TypeLoadException), so a true union of text/bytes/value is not
+ * expressible. The member surface is what the reference's classes offered, so the tokenizer
+ * and the parser read a token exactly as before; the kind tests that were type tests are
+ * the Is... properties below.
  */
 using H2Sharp.Engine;
 using H2Sharp.Message;

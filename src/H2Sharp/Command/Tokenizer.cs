@@ -122,7 +122,9 @@ public sealed class Tokenizer
     /// <returns>the tokens, the last of which is the end of input</returns>
     internal List<Token> Tokenize(string sql, bool stopOnCloseParen, BitSet parameters)
     {
-        List<Token> tokens = [];
+        // A token per few characters plus headroom: the default list growth would otherwise
+        // reallocate the backing array several times per statement.
+        List<Token> tokens = new(sql.Length / 8 + 16);
         int end = sql.Length - 1;
         bool foundUnicode = false;
         int lastParameter = 0;
