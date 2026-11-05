@@ -595,14 +595,18 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     /// before it starts. See OpenAsync for when this becomes real.
     /// </remarks>
     public override Task<bool> IsDBNullAsync(int ordinal, CancellationToken cancellationToken)
-        => SyncTask.Run(() => IsDBNull(ordinal), cancellationToken);
+        => SyncTask.Run(
+            (reader: this, ordinal), static state => state.reader.IsDBNull(state.ordinal), cancellationToken);
 
     /// <inheritdoc/>
     /// <remarks>
     /// Same synchronicity note as <see cref="IsDBNullAsync"/>.
     /// </remarks>
     public override Task<T> GetFieldValueAsync<T>(int ordinal, CancellationToken cancellationToken)
-        => SyncTask.Run(() => GetFieldValue<T>(ordinal), cancellationToken);
+        => SyncTask.Run(
+            (reader: this, ordinal),
+            static state => state.reader.GetFieldValue<T>(state.ordinal),
+            cancellationToken);
 
     /// <inheritdoc/>
     public override IEnumerator GetEnumerator()

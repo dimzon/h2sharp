@@ -49,4 +49,30 @@ internal static class SyncTask
             return Task.FromException<T>(e);
         }
     }
+
+    /// <summary>
+    /// Runs the work now with a state value, so the caller does not allocate a closure.
+    /// </summary>
+    /// <typeparam name="TState">the state type</typeparam>
+    /// <typeparam name="T">the result type</typeparam>
+    /// <param name="state">the state passed to the work</param>
+    /// <param name="work">the synchronous work</param>
+    /// <param name="cancellationToken">the caller's cancellation token</param>
+    /// <returns>the completed, cancelled or faulted task</returns>
+    internal static Task<T> Run<TState, T>(TState state, Func<TState, T> work, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled<T>(cancellationToken);
+        }
+
+        try
+        {
+            return Task.FromResult(work(state));
+        }
+        catch (Exception e)
+        {
+            return Task.FromException<T>(e);
+        }
+    }
 }
