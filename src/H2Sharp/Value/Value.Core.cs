@@ -107,7 +107,7 @@ public abstract partial class Value
         string value = GetString() ?? string.Empty;
         long zeroBasedOffset = oneBasedOffset - 1;
         RangeCheck(zeroBasedOffset, length, value.Length);
-        return new StringReader(value.Substring((int)zeroBasedOffset, (int)length));
+        return new CharSliceReader(value.AsMemory((int)zeroBasedOffset, (int)length));
     }
 
     /// <summary>
