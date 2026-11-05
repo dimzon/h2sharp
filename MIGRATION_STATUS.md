@@ -10306,3 +10306,21 @@ PREPARE в MSSQLServer-режиме — факт порта (эталон отв
 
 Проверено: `H2Sharp.Tests` 1963+ (Category!=BlockedByPort), оракул зелёный;
 полный Native по завершении прогона. Issue #61 закрыт.
+
+### Issues #72/#74/#75: AT TIME ZONE и TIME WITH TIME ZONE уже работают (2026-11-06)
+
+`TimeZoneOperation` (`AT { TIME ZONE | LOCAL }`) и разбор `TIME '...'` со
+смещением уже были перенесены; все три issue закрываются проверкой, без
+изменения кода:
+
+* #72: `expr AT TIME ZONE 'zone'` / `AT LOCAL` — постфикс в `ReadQueryTerm`,
+  `TimeZoneOperation` (включая интервальный offset и проверку левого типа).
+* #74: `TIME '10:00:00+02:00'` принимается и в константе, и в колонке
+  `TIME WITH TIME ZONE` (пересчёт в сессионную зону, как в эталоне).
+* #75: чтение `TIMESTAMP WITH TIME ZONE` возвращает `DateTimeOffset` с
+  сессионным смещением.
+
+Оракул: `TimeZoneOracleTests` — AT TIME ZONE/AT LOCAL над TIMESTAMP/TIME,
+интервальный offset, неизменность мгновения при LOCAL, типовая ошибка для DATE,
+и round-trip TIME WITH TIME ZONE (литералы +02:00 и Z), построчно против
+H2 2.5 JDBC.
