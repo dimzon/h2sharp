@@ -906,7 +906,8 @@ public sealed class ValueDataType : BasicDataType<Value>
                     int smallLen = DataUtils.ReadVarInt(buff, ref position);
                     if (smallLen >= 0)
                     {
-                        byte[] small = buff.Slice(position, smallLen).ToArray();
+                        byte[] small = GC.AllocateUninitializedArray<byte>(smallLen);
+                        buff.Slice(position, smallLen).CopyTo(small);
                         position += smallLen;
                         return ValueBlob.CreateSmall(small);
                     }
@@ -926,7 +927,8 @@ public sealed class ValueDataType : BasicDataType<Value>
                     int smallLen = DataUtils.ReadVarInt(buff, ref position);
                     if (smallLen >= 0)
                     {
-                        byte[] small = buff.Slice(position, smallLen).ToArray();
+                        byte[] small = GC.AllocateUninitializedArray<byte>(smallLen);
+                        buff.Slice(position, smallLen).CopyTo(small);
                         position += smallLen;
                         long charLength = DataUtils.ReadVarLong(buff, ref position);
                         return ValueClob.CreateSmall(small, charLength);
@@ -972,7 +974,8 @@ public sealed class ValueDataType : BasicDataType<Value>
                     if (type >= Varbinary0To31 && type < Varbinary0To31 + 32)
                     {
                         int len = type - Varbinary0To31;
-                        byte[] bytes = buff.Slice(position, len).ToArray();
+                        byte[] bytes = GC.AllocateUninitializedArray<byte>(len);
+                        buff.Slice(position, len).CopyTo(bytes);
                         position += len;
                         return ValueVarbinary.GetNoCopy(bytes);
                     }

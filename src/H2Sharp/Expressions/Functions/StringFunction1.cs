@@ -155,12 +155,8 @@ public sealed class StringFunction1 : Function1
                 v = ValueVarchar.Get(RawToHex(v, session.GetMode()), session);
                 break;
             case Space:
-                {
-                    byte[] chars = new byte[Math.Max(0, v.GetInt())];
-                    Array.Fill(chars, (byte)' ');
-                    v = ValueVarchar.Get(Encoding.Latin1.GetString(chars), session);
-                    break;
-                }
+                v = ValueVarchar.Get(new string(' ', Math.Max(0, v.GetInt())), session);
+                break;
 
             case QuoteIdent:
                 v = ValueVarchar.Get(StringUtils.QuoteIdentifier(v.GetString()!), session);

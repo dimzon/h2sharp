@@ -18,6 +18,7 @@
  * JavaCharacterType maps explicitly; see GetUnicodeCategory.
  */
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -37,7 +38,8 @@ public static class ErrorMessages
     private const string ResourcePrefix = "H2Sharp.Resources._messages_";
     private const string EnglishResource = ResourcePrefix + "en.prop";
 
-    private static readonly Dictionary<string, string> Messages = Load();
+    private static readonly FrozenDictionary<string, string> Messages =
+        Load().ToFrozenDictionary(StringComparer.Ordinal);
 
     /// <summary>
     /// Number of entries in the catalogue. Exposed for tests.
