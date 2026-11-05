@@ -706,10 +706,10 @@ public sealed class MVStore : IDisposable
                 break;
             }
 
-            string mapName = key.Substring(DataUtils.MetaName.Length);
+            ReadOnlySpan<char> mapName = key.AsSpan(DataUtils.MetaName.Length);
             int mapId = DataUtils.ParseHexInt(meta.Get(key)!);
             string? realMapName = GetMapName(mapId);
-            if (!mapName.Equals(realMapName, StringComparison.Ordinal))
+            if (realMapName is null || !mapName.SequenceEqual(realMapName))
             {
                 keysToRemove.Add(key);
             }
@@ -731,13 +731,14 @@ public sealed class MVStore : IDisposable
             }
 
             string mapName = DataUtils.GetMapName(meta.Get(key)!)!;
-            string mapIdStr = key.Substring(DataUtils.MetaMap.Length);
+            ReadOnlySpan<char> mapIdStr = key.AsSpan(DataUtils.MetaMap.Length);
             // ensure that last map id is not smaller than max of any existing map ids
             AdjustLastMapId(DataUtils.ParseHexInt(mapIdStr));
             // each map should have a proper name
-            if (!mapIdStr.Equals(meta.Get(DataUtils.MetaName + mapName), StringComparison.Ordinal))
+            string? existingId = meta.Get(DataUtils.MetaName + mapName);
+            if (existingId is null || !mapIdStr.SequenceEqual(existingId))
             {
-                meta.Put(DataUtils.MetaName + mapName, mapIdStr);
+                meta.Put(DataUtils.MetaName + mapName, mapIdStr.ToString());
                 MarkMetaChanged();
             }
         }

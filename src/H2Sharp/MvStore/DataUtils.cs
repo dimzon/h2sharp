@@ -1363,6 +1363,24 @@ public static class DataUtils
     }
 
     /// <summary>
+    /// Parse a hex int from a slice of a meta key, without materializing the slice.
+    /// </summary>
+    /// <param name="x">the text</param>
+    /// <returns>the value</returns>
+    public static int ParseHexInt(ReadOnlySpan<char> x)
+    {
+        try
+        {
+            // avoid problems with overflow
+            return (int)long.Parse(x, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        }
+        catch (FormatException e)
+        {
+            throw NewMvStoreException(ErrorFileCorrupt, "Error parsing the value {0}", x.ToString(), e);
+        }
+    }
+
+    /// <summary>
     /// Read a hex int out of a map of mixed values, supporting the unsigned range.
     /// </summary>
     /// <param name="map">the map</param>
