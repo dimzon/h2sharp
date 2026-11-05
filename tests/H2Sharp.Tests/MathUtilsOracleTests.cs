@@ -53,8 +53,21 @@ public sealed class MathUtilsOracleTests
     [Fact]
     public void NextPowerOf2_RejectsOutOfRange()
     {
-        // Java throws IllegalArgumentException for x > 0x40000000.
+        // Java throws IllegalArgumentException for x > 0x40000000, and its
+        // x + Integer.MIN_VALUE test also refuses int.MinValue and -1 through wraparound.
         Assert.Throws<ArgumentException>(() => MathUtils.NextPowerOf2(0x40000001));
+        Assert.Throws<ArgumentException>(() => MathUtils.NextPowerOf2(int.MaxValue));
+        Assert.Throws<ArgumentException>(() => MathUtils.NextPowerOf2(int.MinValue));
+        Assert.Throws<ArgumentException>(() => MathUtils.NextPowerOf2(-1));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void SecureRandomInt_RefusesNonPositiveBound(int lowerThan)
+    {
+        // java.util.Random.nextInt(bound) throws when bound is not positive.
+        Assert.ThrowsAny<ArgumentException>(() => MathUtils.SecureRandomInt(lowerThan));
     }
 
     [Theory]

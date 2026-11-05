@@ -10137,3 +10137,18 @@ Engine 9, MvStore 152, Native 98 passed / 23 skipped. Issue #58 закрыт.
 
 Проверено: `H2Sharp.Tests` 1955 зелёных (`Category!=BlockedByPort`), Data 719,
 Engine 9, MvStore 152, Native 98 passed / 23 skipped. Issue #93 закрыт.
+
+### Issues #56/#54: MathUtils NextPowerOf2 и SecureRandomInt (2026-11-05)
+
+`NextPowerOf2` теперь повторяет эталонное сравнение `x + Integer.MIN_VALUE >
+0x40000000 + Integer.MIN_VALUE` с явным `unchecked`: Java-wraparound отсекает
+`int.MinValue` и `-1`, которые прежняя проверка `x > 0x40000000` пропускала и
+округляла до 1.
+
+`SecureRandomInt` уже был переведён на `RandomNumberGenerator.GetInt32`, то есть
+возвращал `[0, lowerThan)` и отказывал на неположительной границе. Оставался
+устаревший обход в нативном `TestMathUtils` (`& 7` и комментарий о дефекте) —
+маска убрана, добавлены отказы для 0/-1 в core-тестах.
+
+Проверено: `H2Sharp.Tests` 1957 зелёных (`Category!=BlockedByPort`), Native
+`TestMathUtils` зелёный. Issues #56 и #54 закрыты.

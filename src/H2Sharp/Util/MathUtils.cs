@@ -171,8 +171,10 @@ public static class MathUtils
     /// <exception cref="ArgumentException">if x is negative or x &gt; 0x40000000</exception>
     public static int NextPowerOf2(int x)
     {
-        // Java: x + Integer.MIN_VALUE > (0x4000_0000 + Integer.MIN_VALUE) rejects x > 0x40000000
-        if (x > 0x40000000)
+        // The reference compares x + Integer.MIN_VALUE with 0x40000000 + Integer.MIN_VALUE
+        // and relies on Java's wraparound: int.MinValue and -1 both wrap positive there and
+        // are refused, not rounded to 1.
+        if (unchecked(x + int.MinValue) > unchecked(0x40000000 + int.MinValue))
         {
             throw new ArgumentException(
                 "Argument out of range [0x0-0x40000000]. Argument was: " + x);
