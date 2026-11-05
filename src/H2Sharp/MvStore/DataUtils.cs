@@ -6,6 +6,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Message;
@@ -1139,10 +1141,22 @@ public static class DataUtils
     /// <remarks>
     /// The sums are reduced every 360 words so that neither can overflow an int over a long file, and
     /// an odd length has a zero byte appended before the last reduction.
+    /// <para>
+    /// A vector path was attempted and withdrawn: the weighted accumulation needs 32-bit lanes
+    /// (weights up to 360 times 16-bit words exceed a 16-bit lane), and Vector256 widening is not
+    /// available on the supported targets, so no vector formulation could be proven
+    /// byte-identical to this scalar reference. The scalar implementation remains the contract.
+    /// </para>
     /// </remarks>
     /// <param name="bytes">the bytes</param>
     /// <returns>the checksum</returns>
     public static int GetFletcher32(ReadOnlySpan<byte> bytes)
+        => GetFletcher32Scalar(bytes);
+
+    /// <summary>
+    /// The scalar Fletcher-32.
+    /// </summary>
+    internal static int GetFletcher32Scalar(ReadOnlySpan<byte> bytes)
     {
         int length = bytes.Length;
         int s1 = 0xffff, s2 = 0xffff;
