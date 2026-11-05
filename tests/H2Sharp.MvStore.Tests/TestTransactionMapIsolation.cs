@@ -190,9 +190,7 @@ public sealed class TestTransactionMapIsolation : StoreTestBase
 
         TransactionMap<long, long> map = OpenMap(ts, IsolationLevel.ReadCommitted, "isolated", out Transaction tx);
         // A statement start is what collects the undo log roots.
-        HashSet<MVMap<object, VersionedValue<object>>> maps =
-            [ s.OpenMap<object, VersionedValue<object>>("isolated") ];
-        tx.MarkStatementStart(maps);
+        tx.MarkStatementStartTyped([map]);
 
         // Another transaction's uncommitted addition is invisible here. Its undo log entry
         // survives the sync (the buffer is flushed, the transaction is open), so the size
@@ -200,7 +198,7 @@ public sealed class TestTransactionMapIsolation : StoreTestBase
         Transaction other = ts.Begin();
         other.OpenMap<long, long>("isolated").Put(6L, 60L);
         s.Commit();
-        tx.MarkStatementStart(maps);
+        tx.MarkStatementStartTyped([map]);
 
         Assert.Equal(5, map.SizeAsLong());
         tx.Rollback();

@@ -56,11 +56,9 @@ internal sealed class Record<K, V>
             int result = Engine.Constants.MemoryObject + 4 + 3 * Engine.Constants.MemoryPointer;
             if (record.MapId >= 0)
             {
-                MVMap<K, VersionedValue<V>> map =
-                    (MVMap<K, VersionedValue<V>>)(object)transactionStore.GetVersionedMap(record.MapId);
-                System.Diagnostics.Debug.Assert(map is not null);
-                result += map!.GetKeyType().GetMemory(record.Key) +
-                        map.GetValueType().GetMemory(record.OldValue!);
+                IObjectMapAccess map = transactionStore.GetVersionedMap(record.MapId);
+                result += map.GetKeyMemory(record.Key) +
+                        map.GetValueMemory((VersionedValue<object>?)(object?)record.OldValue);
             }
 
             return result;
@@ -73,10 +71,8 @@ internal sealed class Record<K, V>
             _ = buff.PutVarInt(record.MapId);
             if (record.MapId >= 0)
             {
-                MVMap<K, VersionedValue<V>> map =
-                    (MVMap<K, VersionedValue<V>>)(object)transactionStore.GetVersionedMap(record.MapId);
-                System.Diagnostics.Debug.Assert(map is not null);
-                map!.GetKeyType().Write(buff, record.Key);
+                IObjectMapAccess map = transactionStore.GetVersionedMap(record.MapId);
+                map.WriteKey(buff, record.Key);
                 VersionedValue<V>? oldValue = record.OldValue;
                 if (oldValue is null)
                 {
@@ -85,7 +81,7 @@ internal sealed class Record<K, V>
                 else
                 {
                     _ = buff.Put((byte)1);
-                    map.GetValueType().Write(buff, oldValue);
+                    map.WriteValue(buff, (VersionedValue<object>?)(object?)oldValue);
                 }
             }
         }
@@ -98,17 +94,15 @@ internal sealed class Record<K, V>
                 return new Record<K, V>(mapId);
             }
 
-            MVMap<K, VersionedValue<V>> map =
-                (MVMap<K, VersionedValue<V>>)(object)transactionStore.GetVersionedMap(mapId);
-            System.Diagnostics.Debug.Assert(map is not null);
-            K key = map!.GetKeyType().Read(buff, ref position);
+            IObjectMapAccess map = transactionStore.GetVersionedMap(mapId);
+            object? key = map.ReadKey(buff, ref position);
             VersionedValue<V>? oldValue = null;
             if (buff[position++] == 1)
             {
-                oldValue = map.GetValueType().Read(buff, ref position);
+                oldValue = (VersionedValue<V>?)(object?)map.ReadValue(buff, ref position);
             }
 
-            return new Record<K, V>(mapId, key, oldValue);
+            return new Record<K, V>(mapId, (K)key!, oldValue);
         }
 
         public override Record<K, V>[] CreateStorage(int size) => new Record<K, V>[size];

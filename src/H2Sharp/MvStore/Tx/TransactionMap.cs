@@ -11,13 +11,13 @@ namespace H2Sharp.MvStore.Tx;
 /// <summary>
 /// The non-generic statement-snapshot surface of <see cref="TransactionMap{K,V}"/>.
 /// </summary>
-internal interface ITransactionMap
+public interface ITransactionMap
 {
     int GetMapId();
 
-    RootReference<object, VersionedValue<object>> FlushAndGetRoot();
+    object FlushAndGetRoot();
 
-    void SetStatementSnapshot(Snapshot<object, VersionedValue<object>>? snapshot);
+    void SetStatementSnapshot(Snapshot? snapshot);
 
     void PromoteSnapshot();
 }
@@ -30,15 +30,16 @@ internal interface ITransactionMap
 public sealed class TransactionMap<K, V> : ITransactionMap
 {
     /// <summary>
-    /// The map used for writing (the latest version).
+    /// The data plane of the transaction map: typed for the primary and secondary indexes,
+    /// object-keyed for the R-tree and the system maps.
     /// </summary>
-    public readonly MVMap<object, VersionedValue<object>> map;
+    private readonly ITransactionMapData<K> map;
 
     private readonly Transaction transaction;
 
-    private Snapshot<object, VersionedValue<object>>? snapshot;
+    private Snapshot? snapshot;
 
-    private Snapshot<object, VersionedValue<object>>? statementSnapshot;
+    private Snapshot? statementSnapshot;
 
     private bool hasChanges;
 
@@ -46,9 +47,11 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     private readonly TxDecisionMaker<K, V>.PutIfAbsentDecisionMaker ifAbsentDecisionMaker;
     private readonly TxDecisionMaker<K, V>.LockDecisionMaker lockDecisionMaker;
 
-    // Java's Long.valueOf interns -128..127, so the reference's Long-keyed maps reuse those
-    // boxes. This port stores transactional keys as objects (see ObjectMapDataType), so every
-    // row lookup would box its id; the same small range is cached here. Larger ids still box.
+    /// <summary>
+    /// The keys -128..127 as boxed longs, mirroring the JVM's Long.valueOf cache that the
+    /// reference relies on: Java interns that range, so its 1L and the small increment
+    /// results allocate nothing, while .NET would box on every call.
+    /// </summary>
     private static readonly object[] SmallKeys = BuildSmallKeys();
 
     private static object[] BuildSmallKeys()
@@ -78,7 +81,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         return key!;
     }
 
-    internal TransactionMap(Transaction transaction, MVMap<object, VersionedValue<object>> map)
+    internal TransactionMap(Transaction transaction, ITransactionMapData<K> map)
     {
         this.transaction = transaction;
         this.map = map;
@@ -94,12 +97,22 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// <summary>
     /// The underlying map, for the transaction store's commit and rollback passes.
     /// </summary>
-    internal MVMap<object, VersionedValue<object>> InnerMap => map;
+    public IAnyMap InnerMap => map.InnerMap;
 
     /// <summary>
     /// A clone of this map for the given transaction.
     /// </summary>
     public TransactionMap<K, V> GetInstance(Transaction transaction) => transaction.OpenMapX<K, V>(map);
+
+    /// <summary>
+    /// Marks the map volatile.
+    /// </summary>
+    public void SetVolatile(bool isVolatile) => map.SetVolatile(isVolatile);
+
+    /// <summary>
+    /// The disk space of the map's current root.
+    /// </summary>
+    public long GetDiskSpaceUsed(bool approximate) => map.GetDiskSpaceUsed(approximate);
 
     /// <summary>
     /// The number of entries, capped at int range.
@@ -129,7 +142,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         // getting coherent picture of the map, committing transactions, and undo logs
         // either from values stored in transaction (never loops in that case),
         // or current values from the transaction store (loops until moment of silence)
-        Snapshot<object, VersionedValue<object>> snapshot;
+        Snapshot snapshot;
         RootReference<long, Record<object, object>>[]? undoLogRootReferences;
         do
         {
@@ -137,8 +150,8 @@ public sealed class TransactionMap<K, V> : ITransactionMap
             undoLogRootReferences = transaction.GetUndoLogRootReferences();
         } while (!snapshot.Equals(GetSnapshot()));
 
-        RootReference<object, VersionedValue<object>> mapRootReference = snapshot.Root;
-        long size = mapRootReference.GetTotalCount();
+        object mapRootReference = snapshot.Root;
+        long size = map.GetTotalCount(mapRootReference);
         long undoLogsTotalSize = undoLogRootReferences is null ? size
                 : TransactionStore.CalculateUndoLogsTotalSize(undoLogRootReferences);
         // if we are looking at the map without any uncommitted values
@@ -153,7 +166,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     }
 
     private long AdjustSize(RootReference<long, Record<object, object>>[]? undoLogRootReferences,
-            RootReference<object, VersionedValue<object>> mapRootReference, long[]? committingTransactions,
+            object mapRootReference, long[]? committingTransactions,
             long size, long undoLogsTotalSize)
     {
         // Entries describing removals from the map by this transaction and all transactions,
@@ -163,7 +176,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         if (2 * undoLogsTotalSize > size)
         {
             // the undo log is larger than half of the map - scan the entries of the map directly
-            Cursor<object, VersionedValue<object>> cursor = map.Cursor(mapRootReference, null, null, false);
+            ITransactionCursor<K> cursor = map.Cursor(mapRootReference, null, null, false);
             while (cursor.HasNext())
             {
                 _ = cursor.Next();
@@ -195,7 +208,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
                         if (op!.MapId == map.GetId())
                         {
                             VersionedValue<object>? currentValue =
-                                map.Get(mapRootReference.root, (K)op.Key!);
+                                map.Get(mapRootReference, (K)op.Key!);
                             // If map entry is not there, then we never counted
                             // it, in the first place, so skip it.
                             // This is possible when undo entry exists because
@@ -287,9 +300,9 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public void Append(K key, V value)
     {
-        long undoKey = transaction.Log(map.GetId(), key, null);
+        long undoKey = transaction.Log(map.GetId(), BoxKey(key), null);
         long entryId = TransactionStore.GetLogId(undoKey);
-        map.Append(BoxKey(key), VersionedValueUncommitted<object>.GetInstance<object>(
+        map.Append(key, VersionedValueUncommitted<object>.GetInstance<object>(
             undoKey, (object?)value, null, entryId));
         hasChanges = true;
     }
@@ -315,7 +328,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     {
         DataUtils.CheckArgument(value is not null, "The value may not be null");
         VersionedValue<object>? newValue = VersionedValueCommitted<object>.GetInstance((object?)value);
-        VersionedValue<object>? oldValue = map.Put(BoxKey(key), newValue!);
+        VersionedValue<object>? oldValue = map.Put(key, newValue!);
         object? result = oldValue is null ? null : oldValue.GetCurrentValue();
         return TransactionStore.Unbox<V>(result);
     }
@@ -361,7 +374,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
             K k = (K)key!;
             // second parameter (value) is not really used,
             // since TxDecisionMaker has it embedded
-            result = map.Operate(BoxKey(k), null, decisionMaker);
+            result = map.Operate(k, null, decisionMaker);
 
             Decision? decision = decisionMaker.GetDecision();
             Debug.Assert(decision is not null);
@@ -437,8 +450,8 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         {
             case IsolationLevel.ReadUncommitted:
                 {
-                    Snapshot<object, VersionedValue<object>> snapshot = GetStatementSnapshot();
-                    VersionedValue<object>? data = map.Get(snapshot.Root.root, BoxKey(key));
+                    Snapshot snapshot = GetStatementSnapshot();
+                    VersionedValue<object>? data = map.Get(snapshot.Root, key);
                     if (data is not null)
                     {
                         return TransactionStore.Unbox<V>(data.GetCurrentValue());
@@ -452,8 +465,8 @@ public sealed class TransactionMap<K, V> : ITransactionMap
             case IsolationLevel.Serializable:
                 if (transaction.HasChanges())
                 {
-                    Snapshot<object, VersionedValue<object>> snapshot = GetStatementSnapshot();
-                    VersionedValue<object>? data = map.Get(snapshot.Root.root, BoxKey(key));
+                    Snapshot snapshot = GetStatementSnapshot();
+                    VersionedValue<object>? data = map.Get(snapshot.Root, key);
                     if (data is not null)
                     {
                         long id = data.GetOperationId();
@@ -469,20 +482,20 @@ public sealed class TransactionMap<K, V> : ITransactionMap
             case IsolationLevel.ReadCommitted:
             default:
                 {
-                    Snapshot<object, VersionedValue<object>> snapshot = GetSnapshot();
+                    Snapshot snapshot = GetSnapshot();
                     return GetFromSnapshot(snapshot.Root, snapshot.CommittingTransactions, key);
                 }
         }
     }
 
-    private V? GetFromSnapshot(RootReference<object, VersionedValue<object>> rootRef,
+    private V? GetFromSnapshot(object rootRef,
         long[] committingTransactions, K key)
         => TransactionStore.Unbox<V>(GetFromSnapshotObject(rootRef, committingTransactions, key));
 
-    private object? GetFromSnapshotObject(RootReference<object, VersionedValue<object>> rootRef,
+    private object? GetFromSnapshotObject(object rootRef,
         long[] committingTransactions, K key)
     {
-        VersionedValue<object>? data = map.Get(rootRef.root, BoxKey(key));
+        VersionedValue<object>? data = map.Get(rootRef, key);
         if (data is null)
         {
             // doesn't exist
@@ -515,28 +528,28 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </remarks>
     public V? GetImmediate(K key)
     {
-        (RootReference<object, VersionedValue<object>> rootReference, long[] committedTransactions) =
+        (object rootReference, long[] committedTransactions) =
             ReadSnapshotRoot();
         return TransactionStore.Unbox<V>(GetFromSnapshotObject(rootReference, committedTransactions, key));
     }
 
-    internal Snapshot<object, VersionedValue<object>> GetSnapshot()
+    internal Snapshot GetSnapshot()
         => transaction.AllowNonRepeatableRead()
             ? CreateSnapshot()
             : snapshot ??= CreateSnapshot();
 
-    internal Snapshot<object, VersionedValue<object>> GetStatementSnapshot()
+    internal Snapshot GetStatementSnapshot()
         => statementSnapshot ?? CreateSnapshot();
 
-    internal void SetStatementSnapshot(Snapshot<object, VersionedValue<object>>? snapshot)
+    internal void SetStatementSnapshot(Snapshot? snapshot)
         => statementSnapshot = snapshot;
 
     int ITransactionMap.GetMapId() => map.GetId();
 
-    RootReference<object, VersionedValue<object>> ITransactionMap.FlushAndGetRoot()
+    object ITransactionMap.FlushAndGetRoot()
         => map.FlushAndGetRoot();
 
-    void ITransactionMap.SetStatementSnapshot(Snapshot<object, VersionedValue<object>>? snapshot)
+    void ITransactionMap.SetStatementSnapshot(Snapshot? snapshot)
         => SetStatementSnapshot(snapshot);
 
     internal void PromoteSnapshot()
@@ -549,10 +562,10 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// <summary>
     /// A new snapshot of this map.
     /// </summary>
-    internal Snapshot<object, VersionedValue<object>> CreateSnapshot()
+    internal Snapshot CreateSnapshot()
     {
-        (RootReference<object, VersionedValue<object>> root, long[] committing) = ReadSnapshotRoot();
-        return new Snapshot<object, VersionedValue<object>>(root, committing);
+        (object root, long[] committing) = ReadSnapshotRoot();
+        return new Snapshot(root, committing);
     }
 
     /// <summary>
@@ -571,14 +584,14 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </para>
     /// </remarks>
     /// <returns>the root reference and the committing transactions of one moment</returns>
-    private (RootReference<object, VersionedValue<object>> Root, long[] Committing) ReadSnapshotRoot()
+    private (object Root, long[] Committing) ReadSnapshotRoot()
     {
         TransactionStore store = transaction.Store!;
         VersionedBitSet committingTransactions = store.CommittingTransactions;
         while (true)
         {
             VersionedBitSet prevCommittingTransactions = committingTransactions;
-            RootReference<object, VersionedValue<object>> root = map.GetRoot();
+            object root = map.GetRoot();
             committingTransactions = store.CommittingTransactions;
             if (ReferenceEquals(committingTransactions, prevCommittingTransactions))
             {
@@ -593,7 +606,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public bool ContainsKey(object? key)
     {
-        (RootReference<object, VersionedValue<object>> rootReference, long[] committedTransactions) =
+        (object rootReference, long[] committedTransactions) =
             ReadSnapshotRoot();
         return GetFromSnapshotObject(rootReference, committedTransactions, (K)key!) is not null;
     }
@@ -603,7 +616,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public bool IsDeletedByCurrentTransaction(K key)
     {
-        VersionedValue<object>? data = map.Get(BoxKey(key));
+        VersionedValue<object>? data = map.Get(key);
         if (data is not null)
         {
             long id = data.GetOperationId();
@@ -620,7 +633,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public bool IsSameTransaction(K key)
     {
-        VersionedValue<object>? data = map.Get(BoxKey(key));
+        VersionedValue<object>? data = map.Get(key);
         if (data is null)
         {
             // doesn't exist or deleted by a committed transaction
@@ -781,7 +794,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     {
         var it = ChooseIterator<KeyValuePair<K, V>>(BoxKey(key), null, lower);
         KeyValuePair<K, V>? result = TryFetchEntry(it);
-        if (result is not null && map.GetKeyType().Compare(BoxKey(key), (object?)result.Value.Key) == 0)
+        if (result is not null && map.CompareKeys(key, result.Value.Key) == 0)
         {
             result = TryFetchEntry(it);
         }
@@ -803,7 +816,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     {
         var it = ChooseIterator<K>(BoxKey(key), null, lower);
         K? result = it.TryFetchNext(out K first) ? first : default;
-        if (map.GetKeyType().Compare(BoxKey(key), (object?)result) == 0)
+        if (map.CompareKeys(key, result) == 0)
         {
             result = it.TryFetchNext(out K second) ? second : default;
         }
@@ -880,11 +893,6 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     public Transaction GetTransaction() => transaction;
 
     /// <summary>
-    /// The key type of the underlying map.
-    /// </summary>
-    public DataType<object> GetKeyType() => map.GetKeyType();
-
-    /// <summary>
     /// Reads at read-uncommitted: current values, skipping removals this iterator ignores.
     /// </summary>
     private class UncommittedIterator<KK, VV, X> : TMIterator<KK, VV, X>
@@ -896,7 +904,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         }
 
         internal UncommittedIterator(TransactionMap<KK, VV> transactionMap, object? from, object? to,
-            Snapshot<object, VersionedValue<object>> snapshot, bool reverse)
+            Snapshot snapshot, bool reverse)
             : base(transactionMap, from, to, snapshot, reverse)
         {
         }
@@ -905,7 +913,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         {
             while (cursor.HasNext())
             {
-                object key = cursor.Next();
+                KK key = cursor.Next();
                 VersionedValue<object>? data = cursor.GetValue();
                 if (data is not null)
                 {
@@ -958,7 +966,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         {
             while (cursor.HasNext())
             {
-                object key = cursor.Next();
+                KK key = cursor.Next();
                 VersionedValue<object>? data = cursor.GetValue();
                 // If value doesn't exist, or it was deleted by a committed transaction,
                 // or if value is a committed one, just return it.
@@ -978,7 +986,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
                                 continue;
                             }
 
-                            value = ToElement(key!, committedValue);
+                            value = ToElement(key, committedValue);
                             return true;
                         }
                     }
@@ -986,7 +994,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
                     object? currentValue = data.GetCurrentValue();
                     if (currentValue is not null)
                     {
-                        value = ToElement(key!, currentValue);
+                        value = ToElement(key, currentValue);
                         return true;
                     }
                 }
@@ -999,15 +1007,17 @@ public sealed class TransactionMap<K, V> : ITransactionMap
 
     private sealed class RepeatableIterator<KK, VV, X> : TMIterator<KK, VV, X>
     {
-        private readonly DataType<object> keyType;
+        private KK snapshotKey = default!;
 
-        private object? snapshotKey;
+        private bool hasSnapshotKey;
 
         private object? snapshotValue;
 
-        private readonly Cursor<object, VersionedValue<object>> uncommittedCursor;
+        private readonly ITransactionCursor<KK> uncommittedCursor;
 
-        private object? uncommittedKey;
+        private KK uncommittedKey = default!;
+
+        private bool hasUncommittedKey;
 
         private object? uncommittedValue;
 
@@ -1015,8 +1025,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
             bool reverse)
             : base(transactionMap, from, to, transactionMap.GetSnapshot(), reverse)
         {
-            keyType = transactionMap.map.GetKeyType();
-            Snapshot<object, VersionedValue<object>> snapshot = transactionMap.GetStatementSnapshot();
+            Snapshot snapshot = transactionMap.GetStatementSnapshot();
             uncommittedCursor = transactionMap.map.Cursor(snapshot.Root, from, to, reverse);
         }
 
@@ -1024,51 +1033,51 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         {
             while (true)
             {
-                if (snapshotKey is null)
+                if (!hasSnapshotKey)
                 {
                     FetchSnapshot();
                 }
 
-                if (uncommittedKey is null)
+                if (!hasUncommittedKey)
                 {
                     FetchUncommitted();
                 }
 
-                if (snapshotKey is null && uncommittedKey is null)
+                if (!hasSnapshotKey && !hasUncommittedKey)
                 {
                     break;
                 }
 
-                int cmp = snapshotKey is null ? 1 :
-                            uncommittedKey is null ? -1 :
-                            keyType.Compare(snapshotKey, uncommittedKey);
+                int cmp = !hasSnapshotKey ? 1 :
+                            !hasUncommittedKey ? -1 :
+                            transactionMap.map.CompareKeys(snapshotKey, uncommittedKey);
                 if (cmp < 0)
                 {
-                    value = ToElement(snapshotKey!, snapshotValue);
-                    snapshotKey = null;
+                    value = ToElement(snapshotKey, snapshotValue);
+                    hasSnapshotKey = false;
                     return true;
                 }
 
                 if (uncommittedValue is not null)
                 {
                     // This entry was added / updated by this transaction, use the new value
-                    value = ToElement(uncommittedKey!, uncommittedValue);
+                    value = ToElement(uncommittedKey, uncommittedValue);
                     if (cmp == 0)
                     {
                         // This entry was updated / deleted
-                        snapshotKey = null;
+                        hasSnapshotKey = false;
                     }
 
-                    uncommittedKey = null;
+                    hasUncommittedKey = false;
                     return true;
                 }
 
                 if (cmp == 0)
                 {
-                    snapshotKey = null;
+                    hasSnapshotKey = false;
                 }
 
-                uncommittedKey = null;
+                hasUncommittedKey = false;
             }
 
             value = default!;
@@ -1079,7 +1088,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         {
             while (cursor.HasNext())
             {
-                object key = cursor.Next();
+                KK key = cursor.Next();
                 VersionedValue<object>? data = cursor.GetValue();
                 // If value doesn't exist, or it was deleted by a committed transaction,
                 // or if value is a committed one, just return it.
@@ -1101,6 +1110,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
                     if (value is not null)
                     {
                         snapshotKey = key;
+                        hasSnapshotKey = true;
                         snapshotValue = value;
                         return;
                     }
@@ -1112,7 +1122,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         {
             while (uncommittedCursor.HasNext())
             {
-                object key = uncommittedCursor.Next();
+                KK key = uncommittedCursor.Next();
                 VersionedValue<object>? data = uncommittedCursor.GetValue();
                 if (data is not null)
                 {
@@ -1121,6 +1131,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
                         && transactionId == TransactionStore.GetTransactionId(id))
                     {
                         uncommittedKey = key;
+                        hasUncommittedKey = true;
                         uncommittedValue = data.GetCurrentValue();
                         return;
                     }
@@ -1139,9 +1150,14 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         internal readonly long[] committingTransactions;
 
         /// <summary>
+        /// The map the cursor walks; the repeatable-read merge needs its key order.
+        /// </summary>
+        protected readonly TransactionMap<KK, VV> transactionMap;
+
+        /// <summary>
         /// The cursor over the snapshot.
         /// </summary>
-        protected readonly Cursor<object, VersionedValue<object>> cursor;
+        protected readonly ITransactionCursor<KK> cursor;
 
         private readonly bool forEntries;
 
@@ -1150,8 +1166,9 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         private X? peeked;
 
         internal TMIterator(TransactionMap<KK, VV> transactionMap, object? from, object? to,
-            Snapshot<object, VersionedValue<object>> snapshot, bool reverse)
+            Snapshot snapshot, bool reverse)
         {
+            this.transactionMap = transactionMap;
             Transaction transaction = transactionMap.GetTransaction();
             transactionId = transaction.TransactionId;
             // Derived, not passed: an entries iterator always answers pairs, a keys iterator
@@ -1162,15 +1179,15 @@ public sealed class TransactionMap<K, V> : ITransactionMap
             committingTransactions = snapshot.CommittingTransactions;
         }
 
-        internal X ToElement(object key, object? value)
+        internal X ToElement(KK key, object? value)
         {
             if (forEntries)
             {
-                KeyValuePair<KK, VV> pair = new((KK)key!, (VV)value!);
+                KeyValuePair<KK, VV> pair = new(key, (VV)value!);
                 return Unsafe.As<KeyValuePair<KK, VV>, X>(ref pair);
             }
 
-            return (X)key;
+            return Unsafe.As<KK, X>(ref key);
         }
 
         /// <summary>
@@ -1208,6 +1225,3 @@ public sealed class TransactionMap<K, V> : ITransactionMap
         }
     }
 }
-
-
-

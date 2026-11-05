@@ -1,3 +1,8 @@
+/*
+ * Copyright 2026 H2Sharp contributors.
+ * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
+ */
+
 using System;
 using System.Runtime.CompilerServices;
 
@@ -5,15 +10,16 @@ namespace H2Sharp.MvStore.Tx;
 
 /// <summary>
 /// A map root plus the committing transactions seen with it: the coherent picture one read
-/// decides against.
+/// decides against. The root is held without its key type, because one transaction's
+/// snapshot set spans maps of different key types; the data plane casts it back.
 /// </summary>
-internal sealed class Snapshot<K, V> : IEquatable<Snapshot<K, V>?>
+public sealed class Snapshot
 {
-    internal readonly RootReference<K, V> Root;
+    internal readonly object Root;
 
     internal readonly long[] CommittingTransactions;
 
-    internal Snapshot(RootReference<K, V> root, long[] committingTransactions)
+    internal Snapshot(object root, long[] committingTransactions)
     {
         Root = root;
         CommittingTransactions = committingTransactions;
@@ -28,9 +34,9 @@ internal sealed class Snapshot<K, V> : IEquatable<Snapshot<K, V>?>
         return result;
     }
 
-    public override bool Equals(object? obj) => Equals(obj as Snapshot<K, V>);
+    public override bool Equals(object? obj) => Equals(obj as Snapshot);
 
-    public bool Equals(Snapshot<K, V>? obj)
+    public bool Equals(Snapshot? obj)
     {
         if (ReferenceEquals(this, obj))
         {

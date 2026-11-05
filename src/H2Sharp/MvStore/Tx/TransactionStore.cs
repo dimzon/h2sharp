@@ -582,7 +582,7 @@ public class TransactionStore : IDisposable
     /// <summary>
     /// Removes the map.
     /// </summary>
-    internal void RemoveMap(MVMap<object, VersionedValue<object>> map) => Store.RemoveMap(map);
+    internal void RemoveMap(IAnyMap map) => Store.RemoveMap(map);
 
     /// <summary>
     /// Commits a transaction: others see its changes, the undo log is marked, entries are
@@ -600,7 +600,7 @@ public class TransactionStore : IDisposable
 
             t.NotifyAllWaitingTransactions();
 
-            t.MarkStatementStart(null);
+            t.MarkStatementStart();
 
             // Now mark log as "committed".
             // It does not change the way this transaction is treated by others,
@@ -632,7 +632,7 @@ public class TransactionStore : IDisposable
 
                     if (!commitDecisionMaker.HaveSeenEntry((int)entryId))
                     {
-                        MVMap<object, VersionedValue<object>>? map = OpenMap(mapId);
+                        IObjectMapAccess? map = OpenMap(mapId);
                         if (map is not null && !map.IsClosed())
                         {
                             // might be null if map was removed later
@@ -640,7 +640,7 @@ public class TransactionStore : IDisposable
                             commitDecisionMaker.SetUndoKey(undoKey);
                             // second parameter (value) is not really
                             // used by CommitDecisionMaker
-                            _ = map.Operate(key!, null, commitDecisionMaker);
+                            _ = map.OperateObject(key!, null, commitDecisionMaker);
                         }
                     }
                 }
@@ -691,27 +691,32 @@ public class TransactionStore : IDisposable
     /// are registered, not built with.
     /// </summary>
     internal MVMap<object, VersionedValue<object>> OpenVersionedMap(string name)
-        => Store.OpenMap(name, new TxMapBuilder(TypeRegistry));
+        => OpenVersionedMap<object>(name, null, null);
 
     /// <summary>
     /// Opens a versioned data map by name with the given key and value types.
     /// </summary>
     /// <remarks>
-    /// The reference's <c>Transaction.openMap(name, keyType, valueType)</c> reaches here. The
-    /// types are object-typed only because this port's transactional maps are (see
-    /// <see cref="ObjectMapDataType{T}"/>); they are still used for comparison, which is what a
-    /// secondary index needs.
+    /// The reference's <c>Transaction.openMap(name, keyType, valueType)</c> reaches here.
     /// </remarks>
     internal MVMap<object, VersionedValue<object>> OpenVersionedMap(string name,
         DataType<object>? keyType, DataType<object>? valueType)
-        => Store.OpenMap(name, new TxMapBuilder(TypeRegistry, keyType, valueType));
+        => OpenVersionedMap<object>(name, keyType, valueType);
+
+    /// <summary>
+    /// Opens a versioned data map with a typed key. Values stay erased as
+    /// <see cref="VersionedValue{T}"/> over object, which is the map's on-disk form.
+    /// </summary>
+    internal MVMap<K, VersionedValue<object>> OpenVersionedMap<K>(string name,
+        DataType<K>? keyType, DataType<object>? valueType)
+        => Store.OpenMap(name, new TxMapBuilder<K>(TypeRegistry, keyType, valueType));
 
     /// <summary>
     /// Opens a versioned map by id, or null when it was removed later on.
     /// </summary>
-    internal MVMap<object, VersionedValue<object>>? OpenMap(int mapId)
+    internal IObjectMapAccess? OpenMap(int mapId)
     {
-        MVMap<object, VersionedValue<object>>? map = Store.GetMap<object, VersionedValue<object>>(mapId);
+        IAnyMap? map = Store.GetAnyMap(mapId);
         if (map is null)
         {
             string? mapName = Store.GetMapName(mapId);
@@ -721,18 +726,18 @@ public class TransactionStore : IDisposable
                 return null;
             }
 
-            map = Store.OpenMap(mapId, new TxMapBuilder(TypeRegistry));
+            map = Store.OpenMap(mapId, new TxMapBuilder<object>(TypeRegistry, null, null));
         }
 
-        return map;
+        return map as IObjectMapAccess;
     }
 
     /// <summary>
     /// The versioned map, opening it during initialization when it is not open yet.
     /// </summary>
-    internal MVMap<object, VersionedValue<object>> GetVersionedMap(int mapId)
+    internal IObjectMapAccess GetVersionedMap(int mapId)
     {
-        MVMap<object, VersionedValue<object>>? map = Store.GetMap<object, VersionedValue<object>>(mapId);
+        IObjectMapAccess? map = Store.GetAnyMap(mapId) as IObjectMapAccess;
         if (map is null)
         {
             bool initialized = Volatile.Read(ref state) >= Ready;
@@ -917,7 +922,7 @@ public class TransactionStore : IDisposable
             }
 
             int mapId = op.MapId;
-            MVMap<object, VersionedValue<object>>? m = OpenMap(mapId);
+            IObjectMapAccess? m = OpenMap(mapId);
             if (m is not null)
             {
                 // could be null if map was removed later on
@@ -968,13 +973,13 @@ public class TransactionStore : IDisposable
         /// <summary>
         /// One map change (add/update/remove) being compensated.
         /// </summary>
-        void OnRollback(MVMap<object, VersionedValue<object>> map, object? key,
+        void OnRollback(IObjectMapAccess map, object? key,
                         VersionedValue<object>? existingValue, VersionedValue<object>? restoredValue);
     }
 
     private sealed class NoneListener : RollbackListener
     {
-        public void OnRollback(MVMap<object, VersionedValue<object>> map, object? key,
+        public void OnRollback(IObjectMapAccess map, object? key,
             VersionedValue<object>? existingValue, VersionedValue<object>? restoredValue)
         {
         }
@@ -982,20 +987,15 @@ public class TransactionStore : IDisposable
 
     private static readonly RollbackListener None = new NoneListener();
 
-    private sealed class TxMapBuilder
-        : MVMap<object, VersionedValue<object>>.BasicBuilder<TMVMap, object, VersionedValue<object>>
+    private sealed class TxMapBuilder<K>
+        : MVMap<K, VersionedValue<object>>.BasicBuilder<TMVMap<K>, K, VersionedValue<object>>
     {
         private readonly MVMap<string, object> typeRegistry;
 
         private readonly DataType<object>? valueDataType;
 
-        internal TxMapBuilder(MVMap<string, object> typeRegistry)
-            : this(typeRegistry, null, null)
-        {
-        }
-
         internal TxMapBuilder(MVMap<string, object> typeRegistry,
-            DataType<object>? keyType, DataType<object>? valueType)
+            DataType<K>? keyType, DataType<object>? valueType)
         {
             this.typeRegistry = typeRegistry;
             valueDataType = valueType;
@@ -1016,20 +1016,24 @@ public class TransactionStore : IDisposable
             // TODO: ensure type consistency (reference)
         }
 
-        public override TMVMap Create(MVStore store, IDictionary<string, object?> config)
+        public override TMVMap<K> Create(MVStore store, IDictionary<string, object?> config)
         {
-            DataType<object>? keyType = GetKeyType();
+            DataType<K>? keyType = GetKeyType();
             if (keyType is null)
             {
                 if (config.Remove("key", out object? keyTypeKey) && keyTypeKey is string keyTypeName)
                 {
-                    keyType = typeRegistry.Get(keyTypeName) as DataType<object>;
-                    if (keyType is null)
+                    object? registered = typeRegistry.Get(keyTypeName);
+                    if (registered is null)
                     {
                         throw DataUtils.NewMvStoreException(DataUtils.ErrorUnknownDataType,
                                 "Data type with hash {0} can not be found", keyTypeName);
                     }
 
+                    object underlying = registered is IObjectMapDataType adapter
+                        ? adapter.UnderlyingDataType
+                        : registered;
+                    keyType = (DataType<K>)underlying;
                     SetKeyType(keyType);
                 }
             }
@@ -1063,7 +1067,7 @@ public class TransactionStore : IDisposable
 
             if (GetKeyType() is null)
             {
-                SetKeyType(new ObjectDataType<object>());
+                SetKeyType(new ObjectDataType<K>());
                 RegisterDataType(GetKeyType()!);
             }
 
@@ -1082,15 +1086,15 @@ public class TransactionStore : IDisposable
             return Create(config);
         }
 
-        protected override TMVMap Create(IDictionary<string, object?> config)
-            => new TMVMap(config, GetKeyType()!, GetValueType()!);
+        protected override TMVMap<K> Create(IDictionary<string, object?> config)
+            => new TMVMap<K>(config, GetKeyType()!, GetValueType()!);
     }
 
-    private sealed class TMVMap : MVMap<object, VersionedValue<object>>
+    private sealed class TMVMap<K> : MVMap<K, VersionedValue<object>>
     {
         private readonly string? type;
 
-        internal TMVMap(IDictionary<string, object?> config, DataType<object> keyType,
+        internal TMVMap(IDictionary<string, object?> config, DataType<K> keyType,
             DataType<VersionedValue<object>> valueType)
             : base(config, keyType, valueType)
         {
@@ -1098,13 +1102,13 @@ public class TransactionStore : IDisposable
             type = t as string;
         }
 
-        private TMVMap(TMVMap source)
+        private TMVMap(TMVMap<K> source)
             : base(source)
         {
             type = source.GetMapType();
         }
 
-        protected override MVMap<object, VersionedValue<object>> CloneIt() => new TMVMap(this);
+        protected override MVMap<K, VersionedValue<object>> CloneIt() => new TMVMap<K>(this);
 
         protected internal override string? GetMapType() => type;
 

@@ -42,11 +42,11 @@ internal sealed class RollbackDecisionMaker : DecisionMaker<Record<object, objec
                             && TransactionStore.GetLogId(operationId) < toLogId)
             {
                 int mapId = existingValue.MapId;
-                MVMap<object, VersionedValue<object>>? map = store.OpenMap(mapId);
+                IObjectMapAccess? map = store.OpenMap(mapId);
                 if (map is not null && !map.IsClosed())
                 {
                     object? key = existingValue.Key;
-                    VersionedValue<object>? previousValue = map.Operate(key!,
+                    VersionedValue<object>? previousValue = map.OperateObject(key!,
                         valueToRestore, DecisionMaker<VersionedValue<object>>.DefaultDecision());
                     listener.OnRollback(map, key, previousValue, valueToRestore);
                 }

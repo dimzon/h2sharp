@@ -72,7 +72,7 @@ public sealed class MVSecondaryIndex : MVIndex<SearchRow, Value>
         dataMap = t is null
             ? throw new TODOException("MVSecondaryIndex: the table has no transaction yet")
             : t.OpenMap(mapName, keyType, NullValueDataType.Instance);
-        dataMap.InnerMap.SetVolatile(!table.IsPersistData || indexType is null || !indexType.IsPersistent());
+        dataMap.SetVolatile(!table.IsPersistData || indexType is null || !indexType.IsPersistent());
         if (!db.IsStarting())
         {
             dataMap.Clear();
@@ -488,7 +488,7 @@ public sealed class MVSecondaryIndex : MVIndex<SearchRow, Value>
     /// <see cref="MVPrimaryIndex.GetDiskSpaceUsed(bool)"/>.
     /// </remarks>
     public override long GetDiskSpaceUsed(bool approximate)
-        => dataMap.InnerMap.GetRootPage().GetDiskSpaceUsed(approximate);
+        => dataMap.GetDiskSpaceUsed(approximate);
 
     private sealed class MVStoreCursor : Cursor
     {
