@@ -3079,6 +3079,13 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Whether the actual text is the expected ASCII keyword, matching the reference's case
+    /// handling without the allocation of an uppercased copy.
+    /// </summary>
+    private static bool KeywordEquals(string actual, string expected)
+        => string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Reads a literal with a type in front of it, as the reference's readTermWithIdentifier does.
     /// </summary>
     /// <remarks>
@@ -3092,177 +3099,172 @@ public sealed partial class Parser
     {
         int index = position;
         Read();
-        switch (name.ToUpperInvariant())
+        if (KeywordEquals(name, "E"))
         {
-            case "E":
-                {
-                    string? text = tokens[index].IsQuoted ? null : ReadStringLiteralValue();
-                    if (text is null) { position = index; return null; }
-                    // H2 readTermWithIdentifier: only doubled backslashes are reduced.
-                    return Expressions.ValueExpression.Get(ValueVarchar.Get(StringUtils.ReplaceAll(text, "\\\\", "\\")));
-                }
-            case "DATE":
-            case "D":
-                {
-                    string? text = ReadStringLiteralValue();
-                    if (text is null)
-                    {
-                        position = index;
-                        return null;
-                    }
+            string? text = tokens[index].IsQuoted ? null : ReadStringLiteralValue();
+            if (text is null) { position = index; return null; }
+            // H2 readTermWithIdentifier: only doubled backslashes are reduced.
+            return Expressions.ValueExpression.Get(ValueVarchar.Get(StringUtils.ReplaceAll(text, "\\\\", "\\")));
+        }
 
-                    return Expressions.ValueExpression.Get(Values.ValueDate.Parse(text));
-                }
-
-            case "TIME":
-                {
-                    bool withZone = IsWord("WITH") && IsWord("TIME") && IsWord("ZONE");
-                    if (!withZone)
-                    {
-                        position = index + 1;
-                    }
-
-                    if (withZone)
-                    {
-                        string? text = ReadStringLiteralValue()
-                            ?? throw DbException.GetSyntaxError(sql, Current.Start);
-                        return Expressions.ValueExpression.Get(
-                            Values.ValueTimeTimeZone.Parse(text, provider));
-                    }
-
-                    int withoutIndex = position;
-                    bool without = IsWord("WITHOUT") && IsWord("TIME") && IsWord("ZONE");
-                    if (!without)
-                    {
-                        position = withoutIndex;
-                    }
-
-                    string? time = ReadStringLiteralValue();
-                    if (time is not null)
-                    {
-                        return Expressions.ValueExpression.Get(Values.ValueTime.Parse(time, provider));
-                    }
-
-                    if (without)
-                    {
-                        throw DbException.GetSyntaxError(sql, Current.Start);
-                    }
-
-                    position = index;
-                    return null;
-                }
-
-            case "TIMESTAMP":
-                {
-                    bool withZone = IsWord("WITH") && IsWord("TIME") && IsWord("ZONE");
-                    if (!withZone)
-                    {
-                        position = index + 1;
-                    }
-
-                    if (withZone)
-                    {
-                        string? text = ReadStringLiteralValue()
-                            ?? throw DbException.GetSyntaxError(sql, Current.Start);
-                        return Expressions.ValueExpression.Get(
-                            Values.ValueTimestampTimeZone.Parse(text, provider));
-                    }
-
-                    int withoutIndex = position;
-                    bool without = IsWord("WITHOUT") && IsWord("TIME") && IsWord("ZONE");
-                    if (!without)
-                    {
-                        position = withoutIndex;
-                    }
-
-                    string? timestamp = ReadStringLiteralValue();
-                    if (timestamp is not null)
-                    {
-                        return Expressions.ValueExpression.Get(
-                            Values.ValueTimestamp.Parse(timestamp, provider));
-                    }
-
-                    if (without)
-                    {
-                        throw DbException.GetSyntaxError(sql, Current.Start);
-                    }
-
-                    position = index;
-                    return null;
-                }
-
-            case "T":
-            case "TS":
-                {
-                    string? text = ReadStringLiteralValue();
-                    if (text is null)
-                    {
-                        position = index;
-                        return null;
-                    }
-
-                    return name.Equals("T", StringComparison.OrdinalIgnoreCase)
-                        ? Expressions.ValueExpression.Get(Values.ValueTime.Parse(text, provider))
-                        : Expressions.ValueExpression.Get(Values.ValueTimestamp.Parse(text, provider));
-                }
-
-            case "GEOMETRY":
-                {
-                    // The reference reads both spellings: the EWKT text and the raw EWKB bytes.
-                    Values.Value? literal = Current.GetValue(provider);
-                    Values.Value? geometry = literal?.GetValueType() switch
-                    {
-                        Values.Value.Varchar => Values.ValueGeometry.Get(literal.GetString()!),
-                        Values.Value.Varbinary => Values.ValueGeometry.GetFromEWKB(literal.GetBytesNoCopy()!),
-                        _ => null,
-                    };
-                    if (geometry is null)
-                    {
-                        position = index;
-                        return null;
-                    }
-
-                    Read();
-                    return Expressions.ValueExpression.Get(geometry);
-                }
-
-            case "JSON":
-                {
-                    // The reference reads the document as text or as the bytes of one: the same
-                    // normalization takes either.
-                    Values.Value? literal = Current.GetValue(provider);
-                    Values.Value? json = literal?.GetValueType() switch
-                    {
-                        Values.Value.Varchar => Values.ValueJson.FromJson(literal.GetString()!),
-                        Values.Value.Varbinary => Values.ValueJson.FromJson(literal.GetBytesNoCopy()!),
-                        _ => null,
-                    };
-                    if (json is null)
-                    {
-                        position = index;
-                        return null;
-                    }
-
-                    Read();
-                    return Expressions.ValueExpression.Get(json);
-                }
-
-            case "UUID":
-                {
-                    string? uuid = ReadStringLiteralValue();
-                    if (uuid is null)
-                    {
-                        position = index;
-                        return null;
-                    }
-
-                    return Expressions.ValueExpression.Get(Values.ValueUuid.Get(uuid));
-                }
-
-            default:
+        if (KeywordEquals(name, "DATE") || KeywordEquals(name, "D"))
+        {
+            string? text = ReadStringLiteralValue();
+            if (text is null)
+            {
                 position = index;
                 return null;
+            }
+
+            return Expressions.ValueExpression.Get(Values.ValueDate.Parse(text));
         }
+
+        if (KeywordEquals(name, "TIME"))
+        {
+            bool withZone = IsWord("WITH") && IsWord("TIME") && IsWord("ZONE");
+            if (!withZone)
+            {
+                position = index + 1;
+            }
+
+            if (withZone)
+            {
+                string? text = ReadStringLiteralValue()
+                    ?? throw DbException.GetSyntaxError(sql, Current.Start);
+                return Expressions.ValueExpression.Get(
+                    Values.ValueTimeTimeZone.Parse(text, provider));
+            }
+
+            int withoutIndex = position;
+            bool without = IsWord("WITHOUT") && IsWord("TIME") && IsWord("ZONE");
+            if (!without)
+            {
+                position = withoutIndex;
+            }
+
+            string? time = ReadStringLiteralValue();
+            if (time is not null)
+            {
+                return Expressions.ValueExpression.Get(Values.ValueTime.Parse(time, provider));
+            }
+
+            if (without)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start);
+            }
+
+            position = index;
+            return null;
+        }
+
+        if (KeywordEquals(name, "TIMESTAMP"))
+        {
+            bool withZone = IsWord("WITH") && IsWord("TIME") && IsWord("ZONE");
+            if (!withZone)
+            {
+                position = index + 1;
+            }
+
+            if (withZone)
+            {
+                string? text = ReadStringLiteralValue()
+                    ?? throw DbException.GetSyntaxError(sql, Current.Start);
+                return Expressions.ValueExpression.Get(
+                    Values.ValueTimestampTimeZone.Parse(text, provider));
+            }
+
+            int withoutIndex = position;
+            bool without = IsWord("WITHOUT") && IsWord("TIME") && IsWord("ZONE");
+            if (!without)
+            {
+                position = withoutIndex;
+            }
+
+            string? timestamp = ReadStringLiteralValue();
+            if (timestamp is not null)
+            {
+                return Expressions.ValueExpression.Get(
+                    Values.ValueTimestamp.Parse(timestamp, provider));
+            }
+
+            if (without)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start);
+            }
+
+            position = index;
+            return null;
+        }
+
+        if (KeywordEquals(name, "T") || KeywordEquals(name, "TS"))
+        {
+            string? text = ReadStringLiteralValue();
+            if (text is null)
+            {
+                position = index;
+                return null;
+            }
+
+            return name.Equals("T", StringComparison.OrdinalIgnoreCase)
+                ? Expressions.ValueExpression.Get(Values.ValueTime.Parse(text, provider))
+                : Expressions.ValueExpression.Get(Values.ValueTimestamp.Parse(text, provider));
+        }
+
+        if (KeywordEquals(name, "GEOMETRY"))
+        {
+            // The reference reads both spellings: the EWKT text and the raw EWKB bytes.
+            Values.Value? literal = Current.GetValue(provider);
+            Values.Value? geometry = literal?.GetValueType() switch
+            {
+                Values.Value.Varchar => Values.ValueGeometry.Get(literal.GetString()!),
+                Values.Value.Varbinary => Values.ValueGeometry.GetFromEWKB(literal.GetBytesNoCopy()!),
+                _ => null,
+            };
+            if (geometry is null)
+            {
+                position = index;
+                return null;
+            }
+
+            Read();
+            return Expressions.ValueExpression.Get(geometry);
+        }
+
+        if (KeywordEquals(name, "JSON"))
+        {
+            // The reference reads the document as text or as the bytes of one: the same
+            // normalization takes either.
+            Values.Value? literal = Current.GetValue(provider);
+            Values.Value? json = literal?.GetValueType() switch
+            {
+                Values.Value.Varchar => Values.ValueJson.FromJson(literal.GetString()!),
+                Values.Value.Varbinary => Values.ValueJson.FromJson(literal.GetBytesNoCopy()!),
+                _ => null,
+            };
+            if (json is null)
+            {
+                position = index;
+                return null;
+            }
+
+            Read();
+            return Expressions.ValueExpression.Get(json);
+        }
+
+        if (KeywordEquals(name, "UUID"))
+        {
+            string? uuid = ReadStringLiteralValue();
+            if (uuid is null)
+            {
+                position = index;
+                return null;
+            }
+
+            return Expressions.ValueExpression.Get(Values.ValueUuid.Get(uuid));
+        }
+
+        position = index;
+        return null;
     }
 
     /// <summary>
@@ -3808,11 +3810,11 @@ public sealed partial class Parser
     private bool? ReadIfOverriding()
     {
         bool? overridingSystem = null;
-        if (ReadIfWords("OVERRIDING", "USER", "VALUE"))
+        if (ReadIfWords(WordsOverridingUserValue))
         {
             overridingSystem = false;
         }
-        else if (ReadIfWords("OVERRIDING", "SYSTEM", "VALUE"))
+        else if (ReadIfWords(WordsOverridingSystemValue))
         {
             overridingSystem = true;
         }
@@ -3872,7 +3874,7 @@ public sealed partial class Parser
     private Prepared PrepareCreateSynonym(SessionLocal session)
     {
         ExpectWord("CREATE");
-        bool orReplace = ReadIfWords("OR", "REPLACE");
+        bool orReplace = ReadIfWords(WordsOrReplace);
         ExpectWord("SYNONYM");
         bool ifNotExists = ReadIfNotExists();
         string name = ReadIdentifierWithSchema(session, out Schemas.Schema synonymSchema);
@@ -3966,7 +3968,7 @@ public sealed partial class Parser
             command.SetDefaultExpression(ReadExpression());
         }
 
-        if (ReadIfWords("ON", "UPDATE"))
+        if (ReadIfWords(WordsOnUpdate))
         {
             command.SetOnUpdateExpression(ReadExpression());
         }
@@ -4112,7 +4114,7 @@ public sealed partial class Parser
                 return command;
             }
 
-            if (ReadIfWords("ON", "UPDATE"))
+            if (ReadIfWords(WordsOnUpdate))
             {
                 Ddl.AlterDomainExpressions command = new(session, schema, CommandInterface.AlterDomainOnUpdate);
                 command.SetDomainName(domainName);
@@ -4166,7 +4168,7 @@ public sealed partial class Parser
                 return command;
             }
 
-            if (ReadIfWords("ON", "UPDATE"))
+            if (ReadIfWords(WordsOnUpdate))
             {
                 Ddl.AlterDomainExpressions command = new(session, schema, CommandInterface.AlterDomainOnUpdate);
                 command.SetDomainName(domainName);
@@ -4378,7 +4380,7 @@ public sealed partial class Parser
                 select.SetFetchPercent(true);
             }
 
-            if (ReadIfWords("WITH", "TIES"))
+            if (ReadIfWords(WordsWithTies))
             {
                 select.SetWithTies(true);
             }
@@ -4877,7 +4879,7 @@ public sealed partial class Parser
                     forUpdate = wait ?? throw DbException.GetSyntaxError(
                         sql, Current.Start, "timeout (0..2147483.647)");
                 }
-                else if (ReadIfWords("SKIP", "LOCKED"))
+                else if (ReadIfWords(WordsSkipLocked))
                 {
                     forUpdate = Query.ForUpdate.SkipLocked;
                 }
@@ -5343,12 +5345,12 @@ public sealed partial class Parser
     {
         bool result = false;
         int flags = function.GetFlags();
-        if (ReadIfWords("NULL", "ON", "NULL"))
+        if (ReadIfWords(WordsNullOnNull))
         {
             flags &= ~Util.Json.JsonConstructorUtils.JsonAbsentOnNull;
             result = true;
         }
-        else if (ReadIfWords("ABSENT", "ON", "NULL"))
+        else if (ReadIfWords(WordsAbsentOnNull))
         {
             flags |= Util.Json.JsonConstructorUtils.JsonAbsentOnNull;
             result = true;
@@ -5356,12 +5358,12 @@ public sealed partial class Parser
 
         if (!forArray)
         {
-            if (ReadIfWords("WITH", "UNIQUE", "KEYS"))
+            if (ReadIfWords(WordsWithUniqueKeys))
             {
                 flags |= Util.Json.JsonConstructorUtils.JsonWithUniqueKeys;
                 result = true;
             }
-            else if (ReadIfWords("WITHOUT", "UNIQUE", "KEYS"))
+            else if (ReadIfWords(WordsWithoutUniqueKeys))
             {
                 flags &= ~Util.Json.JsonConstructorUtils.JsonWithUniqueKeys;
                 result = true;
@@ -5376,11 +5378,42 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// The keyword runs ReadIfWords recognizes. Static arrays: the reference's callers pass a
+    /// fresh String[] per call, which is an allocation per keyword run in a DDL statement.
+    /// </summary>
+    private static readonly string[] WordsOnNull = ["ON", "NULL"];
+    private static readonly string[] WordsOnUpdate = ["ON", "UPDATE"];
+    private static readonly string[] WordsSetGenerated = ["SET", "GENERATED"];
+    private static readonly string[] WordsDataType = ["DATA", "TYPE"];
+    private static readonly string[] WordsNotNull = ["NOT", "NULL"];
+    private static readonly string[] WordsValidate = ["VALIDATE"];
+    private static readonly string[] WordsNoValidate = ["NOVALIDATE"];
+    private static readonly string[] WordsDefaultOnNull = ["DEFAULT", "ON", "NULL"];
+    private static readonly string[] WordsPrimaryKey = ["PRIMARY", "KEY"];
+    private static readonly string[] WordsDefaultValues = ["DEFAULT", "VALUES"];
+    private static readonly string[] WordsOnDuplicateKeyUpdate = ["ON", "DUPLICATE", "KEY", "UPDATE"];
+    private static readonly string[] WordsOverridingUserValue = ["OVERRIDING", "USER", "VALUE"];
+    private static readonly string[] WordsOverridingSystemValue = ["OVERRIDING", "SYSTEM", "VALUE"];
+    private static readonly string[] WordsOrReplace = ["OR", "REPLACE"];
+    private static readonly string[] WordsWithTies = ["WITH", "TIES"];
+    private static readonly string[] WordsSkipLocked = ["SKIP", "LOCKED"];
+    private static readonly string[] WordsNullOnNull = ["NULL", "ON", "NULL"];
+    private static readonly string[] WordsAbsentOnNull = ["ABSENT", "ON", "NULL"];
+    private static readonly string[] WordsWithUniqueKeys = ["WITH", "UNIQUE", "KEYS"];
+    private static readonly string[] WordsWithoutUniqueKeys = ["WITHOUT", "UNIQUE", "KEYS"];
+    private static readonly string[] WordsWithUnique = ["WITH", "UNIQUE"];
+    private static readonly string[] WordsWithoutUnique = ["WITHOUT", "UNIQUE"];
+    private static readonly string[] WordsTimeZone = ["TIME", "ZONE"];
+    private static readonly string[] WordsFormatJson = ["FORMAT", "JSON"];
+    private static readonly string[] WordsIgnoreNulls = ["IGNORE", "NULLS"];
+    private static readonly string[] WordsRespectNulls = ["RESPECT", "NULLS"];
+
+    /// <summary>
     /// Reads a run of keyword words in order, consuming them only when the whole run matches.
     /// </summary>
     /// <param name="words">the words, in order</param>
     /// <returns>whether the run matched</returns>
-    private bool ReadIfWords(params string[] words)
+    private bool ReadIfWords(ReadOnlySpan<string> words)
     {
         // The peek walks forward: each word is checked at its own position, and a quoted
         // name never matches, as in the reference's testToken.
@@ -5949,12 +5982,12 @@ public sealed partial class Parser
         }
 
         bool unique = false;
-        if (ReadIfWords("WITH", "UNIQUE"))
+        if (ReadIfWords(WordsWithUnique))
         {
             _ = IsWord("KEYS");
             unique = true;
         }
-        else if (ReadIfWords("WITHOUT", "UNIQUE"))
+        else if (ReadIfWords(WordsWithoutUnique))
         {
             _ = IsWord("KEYS");
         }
@@ -5994,7 +6027,7 @@ public sealed partial class Parser
             int timeZoneIndex = position;
             if (IsWord("AT"))
             {
-                if (ReadIfWords("TIME", "ZONE"))
+                if (ReadIfWords(WordsTimeZone))
                 {
                     expression = new Expressions.TimeZoneOperation(
                         expression, ReadQueryOr(aggregateSelect));
@@ -6011,7 +6044,7 @@ public sealed partial class Parser
             }
 
             // Parser.readTerm: FORMAT JSON is a postfix over any expression shape.
-            if (ReadIfWords("FORMAT", "JSON"))
+            if (ReadIfWords(WordsFormatJson))
             {
                 expression = new Expressions.Format(expression, Expressions.Format.FormatEnum.Json);
                 continue;
@@ -7532,12 +7565,12 @@ public sealed partial class Parser
 
     private bool ReadIgnoreNulls(bool ignoreNulls)
     {
-        if (ReadIfWords("IGNORE", "NULLS"))
+        if (ReadIfWords(WordsIgnoreNulls))
         {
             return true;
         }
 
-        if (ReadIfWords("RESPECT", "NULLS"))
+        if (ReadIfWords(WordsRespectNulls))
         {
             return false;
         }

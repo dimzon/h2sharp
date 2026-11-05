@@ -110,126 +110,139 @@ public sealed partial class Parser
             return null;
         }
 
-        string original = originalCase.ToUpperInvariant();
-        switch (original)
+        string original = originalCase;
+        if (KeywordEquals(original, "BINARY"))
         {
-            case "BINARY":
+            if (IsWord("VARYING"))
+            {
+                original = "BINARY VARYING";
+            }
+            else if (IsWord("LARGE"))
+            {
+                ExpectWord("OBJECT");
+                original = "BINARY LARGE OBJECT";
+            }
+        }
+        else if (KeywordEquals(original, "CHAR"))
+        {
+            if (IsWord("VARYING"))
+            {
+                original = "CHAR VARYING";
+            }
+            else if (IsWord("LARGE"))
+            {
+                ExpectWord("OBJECT");
+                original = "CHAR LARGE OBJECT";
+            }
+        }
+        else if (KeywordEquals(original, "CHARACTER"))
+        {
+            if (IsWord("VARYING"))
+            {
+                original = "CHARACTER VARYING";
+            }
+            else if (IsWord("LARGE"))
+            {
+                ExpectWord("OBJECT");
+                original = "CHARACTER LARGE OBJECT";
+            }
+        }
+        else if (KeywordEquals(original, "DATE"))
+        {
+            return TypeInfo.TypeDate;
+        }
+        else if (KeywordEquals(original, "DEC") || KeywordEquals(original, "DECIMAL"))
+        {
+            return ParseNumericType(isDecimal: true);
+        }
+        else if (KeywordEquals(original, "DECFLOAT"))
+        {
+            return ParseDecfloatType();
+        }
+        else if (KeywordEquals(original, "DOUBLE"))
+        {
+            if (IsWord("PRECISION"))
+            {
+                original = "DOUBLE PRECISION";
+            }
+        }
+        else if (KeywordEquals(original, "ENUM"))
+        {
+            return ParseEnumType();
+        }
+        else if (KeywordEquals(original, "FLOAT"))
+        {
+            return ParseFloatType();
+        }
+        else if (KeywordEquals(original, "GEOMETRY"))
+        {
+            return ParseGeometryType();
+        }
+        else if (KeywordEquals(original, "LONG"))
+        {
+            if (IsWord("RAW"))
+            {
+                original = "LONG RAW";
+            }
+        }
+        else if (KeywordEquals(original, "NATIONAL"))
+        {
+            if (IsWord("CHARACTER"))
+            {
                 if (IsWord("VARYING"))
                 {
-                    original = "BINARY VARYING";
+                    original = "NATIONAL CHARACTER VARYING";
                 }
                 else if (IsWord("LARGE"))
                 {
                     ExpectWord("OBJECT");
-                    original = "BINARY LARGE OBJECT";
-                }
-
-                break;
-            case "CHAR":
-                if (IsWord("VARYING"))
-                {
-                    original = "CHAR VARYING";
-                }
-                else if (IsWord("LARGE"))
-                {
-                    ExpectWord("OBJECT");
-                    original = "CHAR LARGE OBJECT";
-                }
-
-                break;
-            case "CHARACTER":
-                if (IsWord("VARYING"))
-                {
-                    original = "CHARACTER VARYING";
-                }
-                else if (IsWord("LARGE"))
-                {
-                    ExpectWord("OBJECT");
-                    original = "CHARACTER LARGE OBJECT";
-                }
-
-                break;
-            case "DATE":
-                return TypeInfo.TypeDate;
-            case "DEC":
-            case "DECIMAL":
-                return ParseNumericType(isDecimal: true);
-            case "DECFLOAT":
-                return ParseDecfloatType();
-            case "DOUBLE":
-                if (IsWord("PRECISION"))
-                {
-                    original = "DOUBLE PRECISION";
-                }
-
-                break;
-            case "ENUM":
-                return ParseEnumType();
-            case "FLOAT":
-                return ParseFloatType();
-            case "GEOMETRY":
-                return ParseGeometryType();
-            case "LONG":
-                if (IsWord("RAW"))
-                {
-                    original = "LONG RAW";
-                }
-
-                break;
-            case "NATIONAL":
-                if (IsWord("CHARACTER"))
-                {
-                    if (IsWord("VARYING"))
-                    {
-                        original = "NATIONAL CHARACTER VARYING";
-                    }
-                    else if (IsWord("LARGE"))
-                    {
-                        ExpectWord("OBJECT");
-                        original = "NATIONAL CHARACTER LARGE OBJECT";
-                    }
-                    else
-                    {
-                        original = "NATIONAL CHARACTER";
-                    }
+                    original = "NATIONAL CHARACTER LARGE OBJECT";
                 }
                 else
                 {
-                    ExpectWord("CHAR");
-                    if (IsWord("VARYING"))
-                    {
-                        original = "NATIONAL CHAR VARYING";
-                    }
-                    else
-                    {
-                        original = "NATIONAL CHAR";
-                    }
+                    original = "NATIONAL CHARACTER";
                 }
-
-                break;
-            case "NCHAR":
+            }
+            else
+            {
+                ExpectWord("CHAR");
                 if (IsWord("VARYING"))
                 {
-                    original = "NCHAR VARYING";
-                }
-                else if (IsWord("LARGE"))
-                {
-                    ExpectWord("OBJECT");
-                    original = "NCHAR LARGE OBJECT";
+                    original = "NATIONAL CHAR VARYING";
                 }
                 else
                 {
-                    original = "NCHAR";
+                    original = "NATIONAL CHAR";
                 }
-
-                break;
-            case "NUMBER":
-            case "NUMERIC":
-                return ParseNumericType(isDecimal: false);
-            case "TIME":
-                return ParseTimeType();
-            case "TIMESTAMP":
-                return ParseTimestampType();
+            }
+        }
+        else if (KeywordEquals(original, "NCHAR"))
+        {
+            if (IsWord("VARYING"))
+            {
+                original = "NCHAR VARYING";
+            }
+            else if (IsWord("LARGE"))
+            {
+                ExpectWord("OBJECT");
+                original = "NCHAR LARGE OBJECT";
+            }
+            else
+            {
+                original = "NCHAR";
+            }
+        }
+        else if (KeywordEquals(original, "NUMBER") || KeywordEquals(original, "NUMERIC"))
+        {
+            return ParseNumericType(isDecimal: false);
+        }
+        else if (KeywordEquals(original, "TIME"))
+        {
+            return ParseTimeType();
+        }
+        else if (KeywordEquals(original, "TIMESTAMP"))
+        {
+            return ParseTimestampType();
         }
 
         // A domain of the current schema wins over a built-in type of the same name, as in
