@@ -59,14 +59,24 @@ public sealed class MergeOracleTests
             "CREATE TABLE TEST(ID INT, G INT GENERATED ALWAYS AS (ID + 1))",
             "MERGE INTO TEST(G) KEY(ID) VALUES (1)",
             "DROP TABLE TEST",
-            // The boolean primary key is not comparable to INTEGER in Regular mode, but is
-            // in MySQL mode.
+            // The boolean primary key is not comparable to INTEGER in Regular mode; the
+            // MySQL-mode success runs over a connection opened with Mode=MySQL below.
             "CREATE TABLE T(ID BOOLEAN PRIMARY KEY)",
             "INSERT INTO T(ID) VALUES (TRUE)",
             "MERGE INTO T(ID) VALUES 2",
-            "SET MODE MySQL",
+            "DROP TABLE T",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void MergeBooleanKeyInMySqlModeMatchesJdbc()
+    {
+        // D-029: SET MODE does not switch a running database, so the mode comes from the URL.
+        DatabaseSettingsOracleTests.Compare("MODE=MySQL", [
+            "CREATE TABLE T(ID BOOLEAN PRIMARY KEY)",
+            "INSERT INTO T(ID) VALUES (TRUE)",
             "MERGE INTO T(ID) VALUES 2",
-            "SET MODE Regular",
+            "SELECT * FROM T",
             "DROP TABLE T",
         ]);
     }
@@ -76,17 +86,11 @@ public sealed class MergeOracleTests
     {
         FreshIssuesOracleTests.Compare([
             "CREATE TABLE PARENT(ID INT, NAME VARCHAR, PRIMARY KEY(ID))",
-            // The qualified SET column is Oracle syntax.
+            // The qualified SET column is Oracle syntax; the success case runs in the
+            // Oracle-mode test below.
             "MERGE INTO PARENT AS P USING (SELECT X AS ID, 'Coco'||X AS NAME FROM SYSTEM_RANGE(1,2)) AS S "
                 + "ON (P.ID = S.ID AND 1=1 AND S.ID = P.ID) "
                 + "WHEN MATCHED THEN UPDATE SET P.NAME = S.NAME WHERE 2 = 2",
-            "SET MODE Oracle",
-            "MERGE INTO PARENT AS P USING (SELECT X AS ID, 'Coco'||X AS NAME FROM SYSTEM_RANGE(1,2)) AS S "
-                + "ON (P.ID = S.ID AND 1=1 AND S.ID = P.ID) "
-                + "WHEN MATCHED THEN UPDATE SET P.NAME = S.NAME WHERE 2 = 2 "
-                + "WHEN NOT MATCHED THEN INSERT (ID, NAME) VALUES (S.ID, S.NAME)",
-            "SELECT * FROM PARENT",
-            "SET MODE Regular",
             "DROP TABLE PARENT",
             // Schema-qualified source and target.
             "CREATE SCHEMA SOURCESCHEMA",
@@ -171,10 +175,6 @@ public sealed class MergeOracleTests
                 + "WHEN MATCHED THEN UPDATE SET \"VALUE\" = 60 WHERE ID = 3 DELETE WHERE ID = 2",
             "MERGE INTO TEST USING (SELECT 1 A) ON 1 = 1 "
                 + "WHEN MATCHED THEN DELETE WHERE ID = 2",
-            "SET MODE Oracle",
-            "MERGE INTO TEST USING (SELECT 1 A) ON 1 = 1 "
-                + "WHEN MATCHED THEN DELETE WHERE ID = 2",
-            "SET MODE Regular",
             "SELECT * FROM TEST",
             "DROP TABLE TEST",
             // WHEN MATCHED AND / WHEN NOT MATCHED AND.
@@ -279,14 +279,6 @@ public sealed class MergeOracleTests
             "EXPLAIN MERGE INTO TEST VALUES(1, 'Hello')",
             "EXPLAIN MERGE INTO TEST(ID, NAME) VALUES(3, 'How are you')",
             "EXPLAIN MERGE INTO TEST(ID, NAME) KEY(NAME) VALUES(3, 'Fine')",
-            "CREATE TABLE PARENT(ID INT, NAME VARCHAR, PRIMARY KEY(ID))",
-            "SET MODE Oracle",
-            "EXPLAIN PLAN MERGE INTO PARENT AS P "
-                + "USING (SELECT X AS ID, 'Coco'||X AS NAME FROM SYSTEM_RANGE(1,2)) AS S "
-                + "ON (P.ID = S.ID AND 1=1 AND S.ID = P.ID) "
-                + "WHEN MATCHED THEN UPDATE SET P.NAME = S.NAME WHERE 2 = 2 "
-                + "WHEN NOT MATCHED THEN INSERT (ID, NAME) VALUES (S.ID, S.NAME)",
-            "SET MODE Regular",
             "CREATE TABLE T(ID INT, V INT)",
             "EXPLAIN MERGE INTO T USING (VALUES (1, 2)) S(ID, V) ON T.ID = S.ID "
                 + "WHEN NOT MATCHED AND T.ID = 1 THEN INSERT VALUES (S.ID, S.V) "
@@ -298,5 +290,45 @@ public sealed class MergeOracleTests
                 + "WHEN MATCHED THEN DELETE",
             "DROP TABLE T",
         ]);
+    }
+
+    [JavaOracleFact]
+    public void MergeUsingOracleSyntaxMatchesJdbc()
+    {
+        DatabaseSettingsOracleTests.Compare("MODE=Oracle", [
+            "CREATE TABLE PARENT(ID INT, NAME VARCHAR, PRIMARY KEY(ID))",
+            "MERGE INTO PARENT AS P USING (SELECT X AS ID, 'Coco'||X AS NAME FROM SYSTEM_RANGE(1,2)) AS S "
+                + "ON (P.ID = S.ID AND 1=1 AND S.ID = P.ID) "
+                + "WHEN MATCHED THEN UPDATE SET P.NAME = S.NAME WHERE 2 = 2 "
+                + "WHEN NOT MATCHED THEN INSERT (ID, NAME) VALUES (S.ID, S.NAME)",
+            "SELECT * FROM PARENT",
+            "DROP TABLE PARENT",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void MergeUsingDeleteWhereInOracleModeMatchesJdbc()
+    {
+        DatabaseSettingsOracleTests.Compare("MODE=Oracle", [
+            "CREATE TABLE TEST(ID INT PRIMARY KEY, \"VALUE\" INT)",
+            "INSERT INTO TEST VALUES (1, 10), (2, 20)",
+            "MERGE INTO TEST USING (SELECT 1 A) ON 1 = 1 "
+                + "WHEN MATCHED THEN DELETE WHERE ID = 2",
+            "SELECT * FROM TEST",
+            "DROP TABLE TEST",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void TheOracleMergePlanMatchesJdbc()
+    {
+        ExplainOracleTests.Check([
+            "CREATE TABLE PARENT(ID INT, NAME VARCHAR, PRIMARY KEY(ID))",
+            "EXPLAIN PLAN MERGE INTO PARENT AS P "
+                + "USING (SELECT X AS ID, 'Coco'||X AS NAME FROM SYSTEM_RANGE(1,2)) AS S "
+                + "ON (P.ID = S.ID AND 1=1 AND S.ID = P.ID) "
+                + "WHEN MATCHED THEN UPDATE SET P.NAME = S.NAME WHERE 2 = 2 "
+                + "WHEN NOT MATCHED THEN INSERT (ID, NAME) VALUES (S.ID, S.NAME)",
+        ], "MODE=Oracle");
     }
 }

@@ -45,10 +45,18 @@ public sealed class ExplainOracleTests
         ]);
     }
 
-    internal static void Check(string[] statements)
+    internal static void Check(string[] statements, string urlSuffix = "")
     {
         List<string> port = [];
-        using H2Connection connection = new("Data Source=explain_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
+        string portUrl = "Data Source=explain_" + Guid.NewGuid().ToString("N") + ";Storage=Memory";
+        string javaUrl = "jdbc:h2:mem:explain";
+        if (urlSuffix.Length > 0)
+        {
+            portUrl += ";" + urlSuffix;
+            javaUrl += ";" + urlSuffix;
+        }
+
+        using H2Connection connection = new(portUrl);
         connection.Open();
         for (int i = 0; i < statements.Length; i++)
         {
@@ -99,7 +107,7 @@ public sealed class ExplainOracleTests
                 }
               }
             }
-            """);
+            """.Replace("jdbc:h2:mem:explain", javaUrl));
         // Line by line: xUnit truncates a long Assert.Equal diff, and the plans are long.
         Assert.True(java.Count == port.Count,
             "lines: jvm=" + java.Count + " port=" + port.Count);

@@ -9498,7 +9498,7 @@ NUMERIC, NULL-scale, REAL/DOUBLE/DECFLOAT, граничные double-значе�
 
 ### MERGE: эталонные merge.sql и mergeUsing.sql (2026-11-04)
 
-`MergeOracleTests` (6 оракульных тестов) проходит reference-скрипты
+`MergeOracleTests` (10 оракульных тестов) проходит reference-скрипты
 `dml/merge.sql` и `dml/mergeUsing.sql`: VALUES/KEY/DEFAULT и generated-колонки,
 SELECT-источник, MySQL-преобразование BOOLEAN, USING с DUAL/VALUES/таблицей,
 WHEN ... AND, DELETE, FINAL TABLE, identity с OVERRIDING и планы.
@@ -9513,11 +9513,13 @@ WHEN ... AND, DELETE, FINAL TABLE, identity с OVERRIDING и планы.
 * **`parseValuesForCommand`** не был портирован: VALUES понимал только
   скобочные строки, а голое `VALUES 2` эталона — нет. Helper портирован
   дословно (ROW(...), скобки, голое выражение) и подключён к MERGE.
-* **`SET MODE`** в порте отказывал («режим фиксирован при открытии»), тогда как
-  эталон присваивает режим (`Database.setMode`, без bump remoteSettingsId —
-  удалённые сессии не портированы). Отказ убран; тест `H2ConnectionModeTests`
-  теперь проверяет смену режима, а строка подключения по-прежнему выбирает
-  базу.
+* **`SET MODE`** — здесь эталон расходится с утверждённым отклонением D-029:
+  порт фиксирует режим при открытии и отвечает `FEATURE_NOT_SUPPORTED_1` на
+  другой режим. Отказ сохранён (это не дефект порта); mode-зависимые случаи
+  MERGE (BOOLEAN-ключ в MySQL, Oracle-синтаксис и DELETE WHERE, Oracle-план)
+  выполняются через строку подключения `MODE=...`
+  (`DatabaseSettingsOracleTests.Compare` и
+  `ExplainOracleTests.Check(..., urlSuffix)`), а не через `SET MODE`.
 * **`numericWithBooleanComparison`** отсутствовал: добавлен в `Mode` (Legacy,
   DB2, HSQLDB, SQL Server, MariaDB, MySQL) и проверяется в `Merge` и
   `Comparison` эталонным условием. `MERGE ... VALUES 2` по BOOLEAN-ключу в
@@ -9544,6 +9546,13 @@ Native 96 (два прежних дефекта Native — `TestResultSetGetters
 воспроизводятся на HEAD). Покрытие union: 87.93% → **88.05% строк**
 (83.65% → 83.9% веток); `Merge.cs` 46.1% → 81.9%, `TableValueConstructorTable`
 78.6%, `TruncateTable` 88.9%.
+
+**Поправка (2026-11-05):** запись выше о `SET MODE` была ошибкой — она
+отменяла утверждённое D-029. Отказ `SET MODE` на другой режим восстановлен,
+`H2ConnectionModeTests` снова ждёт `FEATURE_NOT_SUPPORTED_1`, а четыре
+mode-зависимых MERGE-случая вынесены в отдельные тесты на соединениях с
+`MODE=MySQL`/`MODE=Oracle` (включая `EXPLAIN PLAN` через новый параметр
+`ExplainOracleTests.Check`). `MergeOracleTests` — 10 тестов, все зелёные.
 
 ### Агрегаты: типы результатов, окна и SQL-рендеринг (2026-11-04)
 

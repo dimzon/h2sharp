@@ -375,9 +375,13 @@ public sealed partial class Database
 
     public void SetMode(Mode newMode)
     {
-        mode = newMode;
-        // The reference also bumps remoteSettingsId here, so remote sessions drop cached
-        // settings; remote sessions are not ported, so there is no id to bump.
+        // D-029 (approved): the mode is chosen when the database is opened and never changes
+        // afterwards. The reference reassigns it here; this port deliberately refuses.
+        if (!ReferenceEquals(mode, newMode))
+        {
+            throw DbException.GetUnsupportedException(
+                "SET MODE: the mode is fixed when the database is opened");
+        }
     }
 
     public Mode GetMode()
