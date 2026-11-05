@@ -13,6 +13,7 @@ using System.Text.RegularExpressions;
 using H2Sharp.Api;
 using H2Sharp.Engine;
 using H2Sharp.Message;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Expressions.Functions;
@@ -45,7 +46,7 @@ public sealed class RegexpFunction : FunctionN
                 string regexp = v2.GetString()!;
                 string? regexpMode = v3?.GetString();
                 RegexOptions flags = MakeRegexpFlags(regexpMode, false);
-                try { v1 = ValueBoolean.Get(new Regex(regexp, flags).IsMatch(v1.GetString()!)); }
+                try { v1 = ValueBoolean.Get(GetCompiledRegex(regexp, flags).IsMatch(v1.GetString()!)); }
                 catch (ArgumentException e) { throw DbException.Get(ErrorCode.LikeEscapeError1, e, regexp); }
                 break;
             }
@@ -82,6 +83,40 @@ public sealed class RegexpFunction : FunctionN
         return v1;
     }
 
+    /// <summary>
+    /// Compiled patterns, cached. The reference compiles on every call for these three
+    /// functions (a parity baseline, not a deviation); caching is a recorded improvement,
+    /// see APPROVED_DEVIATIONS.md. The pattern is passed to the BCL as received (D-001,
+    /// D-019).
+    /// </summary>
+    private static readonly SmallLRUCache<(RegexOptions Flags, string Pattern), Regex> RegexCache =
+        SmallLRUCache<(RegexOptions Flags, string Pattern), Regex>.NewInstance(100);
+
+    private static Regex GetCompiledRegex(string regexp, RegexOptions flags)
+    {
+        (RegexOptions, string) key = (flags, regexp);
+        lock (RegexCache)
+        {
+            if (RegexCache.TryGetValue(key, out Regex? cached))
+            {
+                return cached;
+            }
+
+            Regex regex;
+            try
+            {
+                regex = new Regex(regexp, flags);
+            }
+            catch (ArgumentException e)
+            {
+                throw DbException.Get(ErrorCode.LikeEscapeError1, e, regexp);
+            }
+
+            RegexCache.Put(key, regex);
+            return regex;
+        }
+    }
+
     private static Value RegexpReplace(SessionLocal session, string input, string regexp, string replacement,
         int position, int occurrence, string? regexpMode)
     {
@@ -89,9 +124,7 @@ public sealed class RegexpFunction : FunctionN
         bool postgres = session.GetMode().Enum == Mode.ModeEnum.PostgreSql;
         RegexOptions flags = MakeRegexpFlags(regexpMode, postgres);
         if (postgres && (regexpMode is null || regexpMode.Length == 0 || !regexpMode.Contains('g'))) occurrence = 1;
-        Regex regex;
-        try { regex = new Regex(regexp, flags); } // D-001: regexp is passed as received.
-        catch (ArgumentException e) { throw DbException.Get(ErrorCode.LikeEscapeError1, e, regexp); }
+        Regex regex = GetCompiledRegex(regexp, flags); // D-001: regexp is passed as received.
         try
         {
             if (position < 1 || position - 1 > input.Length) throw new ArgumentOutOfRangeException(nameof(position));
@@ -119,9 +152,7 @@ public sealed class RegexpFunction : FunctionN
         string? regexpMode = regexpModeArg?.GetString();
         int subexpression = subexpressionArg?.GetInt() ?? 0;
         RegexOptions flags = MakeRegexpFlags(regexpMode, false);
-        Regex regex;
-        try { regex = new Regex(regexp, flags); }
-        catch (ArgumentException e) { throw DbException.Get(ErrorCode.LikeEscapeError1, e, regexp); }
+        Regex regex = GetCompiledRegex(regexp, flags);
         string input = inputString.GetString()!;
         if (position < 0 || position > input.Length) return ValueNull.Instance;
         Match match = regex.Match(input, position);
