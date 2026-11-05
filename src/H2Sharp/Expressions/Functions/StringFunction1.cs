@@ -186,16 +186,22 @@ public sealed class StringFunction1 : Function1
         }
 
         StringBuilder builder = new(len / 4);
+        ReadOnlySpan<char> span = s.AsSpan();
         for (int i = 0; i < len; i += 4)
         {
-            try
-            {
-                _ = builder.Append((char)Convert.ToInt32(s.Substring(i, 4), 16));
-            }
-            catch (FormatException)
+            // The reference parses a four-character substring with Integer.parseInt(..., 16);
+            // the span overload parses the same four characters without materializing them.
+            // AllowHexSpecifier is the exact subset: no sign, no whitespace, ASCII digits only.
+            if (!int.TryParse(
+                    span.Slice(i, 4),
+                    NumberStyles.AllowHexSpecifier,
+                    CultureInfo.InvariantCulture,
+                    out int value))
             {
                 throw DbException.Get(ErrorCode.DataConversionError1, s);
             }
+
+            _ = builder.Append((char)value);
         }
 
         return ValueVarchar.Get(builder.ToString(), session);
