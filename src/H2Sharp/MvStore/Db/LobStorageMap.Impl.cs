@@ -25,9 +25,10 @@ namespace H2Sharp.MvStore.Db;
 public sealed partial class LobStorageMap : LobStorageInterface
 {
     /// <summary>
-    /// The block size of a stored LOB.
+    /// The block size of a stored LOB. The reference uses 256 KiB, which would put every
+    /// block on the LOH; 64 KiB keeps blocks under the large-object threshold (D-042).
     /// </summary>
-    internal const int BlockSize = 256 * 1024;
+    internal const int BlockSize = 64 * 1024;
 
     private readonly Database database;
 
@@ -60,16 +61,17 @@ public sealed partial class LobStorageMap : LobStorageInterface
     {
         string text = maxLength > 0 ? ReadLimited(reader, maxLength) : reader.ReadToEnd();
         byte[] bytes = Encoding.UTF8.GetBytes(text);
-        long lobId = StoreBytes(bytes, text.Length);
-        return new ValueClob(new LobDataStore(this, lobId, bytes.Length), bytes.Length, text.Length);
+        long lobId = GenerateLobId();
+        long octetLength = StoreStream(new MemoryStream(bytes), lobId, bytes.Length, text.Length);
+        return new ValueClob(new LobDataStore(this, lobId, octetLength), octetLength, text.Length);
     }
 
     /// <inheritdoc/>
     public ValueBlob CreateBlob(Stream input, long maxLength)
     {
-        byte[] bytes = ReadLimited(input, maxLength);
-        long lobId = StoreBytes(bytes);
-        return new ValueBlob(new LobDataStore(this, lobId, bytes.Length), bytes.Length);
+        long lobId = GenerateLobId();
+        long octetLength = StoreStream(input, lobId, maxLength);
+        return new ValueBlob(new LobDataStore(this, lobId, octetLength), octetLength);
     }
 
     private static string ReadLimited(TextReader reader, long maxLength)
@@ -94,47 +96,37 @@ public sealed partial class LobStorageMap : LobStorageInterface
         }
     }
 
-    private static byte[] ReadLimited(Stream input, long maxLength)
+    /// <summary>
+    /// Streams the input into blocks, without materializing the whole LOB.
+    /// </summary>
+    private long StoreStream(Stream input, long lobId, long maxLength, long charLength = 0)
     {
-        using var memory = new MemoryStream();
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(BlockSize);
+        long total = 0;
+        long index = 0;
         try
         {
-            long total = 0;
             int read;
             while ((read = input.Read(buffer, 0, (int)Math.Min(buffer.Length, maxLength > 0 ? maxLength - total : buffer.Length))) > 0)
             {
-                memory.Write(buffer, 0, read);
+                byte[] block = new byte[read];
+                Array.Copy(buffer, block, read);
+                blocks.Put((lobId << 20) | index, block);
+                index++;
                 total += read;
                 if (maxLength > 0 && total >= maxLength)
                 {
                     break;
                 }
             }
-
-            return memory.ToArray();
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
-    }
 
-    private long StoreBytes(byte[] bytes, long charLength = 0)
-    {
-        long lobId = GenerateLobId();
-        long index = 0;
-        for (int offset = 0; offset < bytes.Length; offset += BlockSize)
-        {
-            int len = Math.Min(BlockSize, bytes.Length - offset);
-            byte[] block = new byte[len];
-            Array.Copy(bytes, offset, block, 0, len);
-            blocks.Put((lobId << 20) | index, block);
-            index++;
-        }
-
-        meta.Put(lobId, new BlobMeta(new byte[0], tableId: 0, bytes.Length, 0, charLength));
-        return lobId;
+        meta.Put(lobId, new BlobMeta(new byte[0], tableId: 0, total, 0, charLength));
+        return total;
     }
 
     /// <summary>
