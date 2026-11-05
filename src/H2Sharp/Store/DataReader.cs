@@ -40,7 +40,8 @@ public class DataReader : TextReader
     /// <param name="stream">the input stream</param>
     public DataReader(Stream stream)
     {
-        this.stream = stream ?? throw new ArgumentNullException(nameof(stream));
+        ArgumentNullException.ThrowIfNull(stream);
+        this.stream = stream;
     }
 
     /// <summary>

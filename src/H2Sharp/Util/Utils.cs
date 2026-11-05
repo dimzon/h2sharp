@@ -615,10 +615,7 @@ public static class Utils
     /// <returns>the value, or <paramref name="defaultValue"/></returns>
     public static string GetPropertyOrDefault(string key, string defaultValue)
     {
-        if (defaultValue is null)
-        {
-            throw new ArgumentNullException(nameof(defaultValue));
-        }
+        ArgumentNullException.ThrowIfNull(defaultValue);
 
         return GetProperty(key, (string?)defaultValue) ?? defaultValue;
     }

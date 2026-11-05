@@ -89,17 +89,14 @@ public sealed class H2Transaction : DbTransaction
     }
     private void CheckActive()
     {
-        if (disposed) throw new ObjectDisposedException(nameof(H2Transaction));
+        ObjectDisposedException.ThrowIf(disposed, this);
         if (completed) throw new InvalidOperationException("The transaction is already completed");
     }
 
     /// <inheritdoc/>
     public override void Commit()
     {
-        if (disposed)
-        {
-            throw new ObjectDisposedException(nameof(H2Transaction));
-        }
+        ObjectDisposedException.ThrowIf(disposed, this);
 
         if (completed)
         {
@@ -120,10 +117,7 @@ public sealed class H2Transaction : DbTransaction
     /// <inheritdoc/>
     public override void Rollback()
     {
-        if (disposed)
-        {
-            throw new ObjectDisposedException(nameof(H2Transaction));
-        }
+        ObjectDisposedException.ThrowIf(disposed, this);
 
         if (completed)
         {

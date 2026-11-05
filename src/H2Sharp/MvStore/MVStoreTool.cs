@@ -61,8 +61,8 @@ public static class MVStoreTool
         }
 
         long size = FilePath.Get(fileName).Size();
-        writer.WriteLine(string.Format(CultureInfo.InvariantCulture,
-            "File {0}, {1} bytes, {2} MB", fileName, size, size / 1024 / 1024));
+        writer.WriteLine(string.Create(CultureInfo.InvariantCulture,
+            $"File {fileName}, {size} bytes, {size / 1024 / 1024} MB"));
         int blockSize = FileStore.BlockSize;
         var mapSizesTotal = new SortedDictionary<int, long>();
         long pageSizeTotal = 0;
@@ -87,8 +87,8 @@ public static class MVStoreTool
                     or IOException)
                 {
                     pos += blockSize;
-                    writer.WriteLine(string.Format(CultureInfo.InvariantCulture,
-                        "ERROR illegal position {0}", pos));
+                    writer.WriteLine(string.Create(
+                        CultureInfo.InvariantCulture, $"ERROR illegal position {pos}"));
                     continue;
                 }
 
