@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 /*
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
@@ -75,7 +76,7 @@ internal sealed class ClrAggregateRegistration : AggregateRegistration
 /// </summary>
 internal static class AggregateRegistry
 {
-    private static readonly Dictionary<string, AggregateRegistration> BuiltIns = CreateBuiltIns();
+    private static readonly FrozenDictionary<string, AggregateRegistration> BuiltIns = CreateBuiltIns();
 
     internal static bool TryGet(
         SessionLocal? session, string name, out AggregateRegistration? registration)
@@ -89,7 +90,7 @@ internal static class AggregateRegistry
         return BuiltIns.TryGetValue(name, out registration);
     }
 
-    private static Dictionary<string, AggregateRegistration> CreateBuiltIns()
+    private static FrozenDictionary<string, AggregateRegistration> CreateBuiltIns()
     {
         Dictionary<string, AggregateRegistration> registrations = new(StringComparer.OrdinalIgnoreCase);
         foreach ((string name, AggregateType type) in Aggregate.GetAggregateTypes())
@@ -104,6 +105,6 @@ internal static class AggregateRegistry
                 : new BuiltInAggregateRegistration(name, type);
         }
 
-        return registrations;
+        return registrations.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
 }

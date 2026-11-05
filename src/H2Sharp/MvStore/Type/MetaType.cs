@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Message;
+using System.Collections.Frozen;
 
 namespace H2Sharp.MvStore.Type;
 
@@ -33,7 +34,8 @@ public sealed class MetaType<D> : BasicDataType<object>
     /// name is looked up here. A type that is not in the table refuses by name rather than writing a
     /// name the reference cannot load.
     /// </remarks>
-    private static readonly Dictionary<System.Type, string> JavaNames = new()
+    private static readonly FrozenDictionary<System.Type, string> JavaNames =
+        new Dictionary<System.Type, string>
     {
         [typeof(LongDataType)] = "org.h2.mvstore.type.LongDataType",
         [typeof(IntegerDataType)] = "org.h2.mvstore.type.IntegerDataType",
@@ -52,11 +54,11 @@ public sealed class MetaType<D> : BasicDataType<object>
             "org.h2.mvstore.db.LobStorageMap$BlobReference$Type",
         [typeof(Db.LobStorageMap.BlobMeta.Type)] =
             "org.h2.mvstore.db.LobStorageMap$BlobMeta$Type",
-    };
+    }.ToFrozenDictionary();
 
-    private static readonly Dictionary<string, System.Type> ClrTypes = BuildClrTypes();
+    private static readonly FrozenDictionary<string, System.Type> ClrTypes = BuildClrTypes();
 
-    private static Dictionary<string, System.Type> BuildClrTypes()
+    private static FrozenDictionary<string, System.Type> BuildClrTypes()
     {
         Dictionary<string, System.Type> map = new(StringComparer.Ordinal);
         foreach (KeyValuePair<System.Type, string> entry in JavaNames)
@@ -64,7 +66,7 @@ public sealed class MetaType<D> : BasicDataType<object>
             _ = map.TryAdd(entry.Value, entry.Key);
         }
 
-        return map;
+        return map.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
     private readonly D database;

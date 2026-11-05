@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 /*
  * Copyright 2026 H2Sharp contributors.
  * Ported from none (new file for H2Sharp).
@@ -37,7 +38,8 @@ internal static class CaseFolding
     /// Maps a code point to its full uppercase expansion, when it differs from the
     /// invariant mapping.
     /// </summary>
-    internal static readonly Dictionary<int, string> UpperTable = new()
+    internal static readonly FrozenDictionary<int, string> UpperTable =
+        new Dictionary<int, string>
     {
 
         [0x00df] = "SS",
@@ -430,13 +432,14 @@ internal static class CaseFolding
         [0x1e941] = "\ud83a\udd1f",
         [0x1e942] = "\ud83a\udd20",
         [0x1e943] = "\ud83a\udd21",
-    };
+    }.ToFrozenDictionary();
 
     /// <summary>
     /// Maps a code point to its full lowercase expansion, when it differs from the
     /// invariant mapping.
     /// </summary>
-    internal static readonly Dictionary<int, string> LowerTable = new()
+    internal static readonly FrozenDictionary<int, string> LowerTable =
+        new Dictionary<int, string>
     {
 
         [0x0130] = "i̇",
@@ -729,7 +732,7 @@ internal static class CaseFolding
         [0x1e921] = "\ud83a\udd43",
 
 
-    };
+    }.ToFrozenDictionary();
 
     /// <summary>
     /// Returns the uppercase expansion of a code point, or null when the invariant

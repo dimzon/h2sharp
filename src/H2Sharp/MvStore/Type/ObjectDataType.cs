@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using H2Sharp.Util;
+using System.Collections.Frozen;
 
 namespace H2Sharp.MvStore.Type;
 
@@ -101,9 +102,9 @@ public class ObjectDataType : BasicDataType<object?>
     /// type, so the table keeps the first id for it, which is the primitive one: the table is read
     /// for array component types, and those are the primitive ones.
     /// </remarks>
-    private static readonly Dictionary<System.Type, int> CommonClassesMap = BuildCommonClassesMap();
+    private static readonly FrozenDictionary<System.Type, int> CommonClassesMap = BuildCommonClassesMap();
 
-    private static Dictionary<System.Type, int> BuildCommonClassesMap()
+    private static FrozenDictionary<System.Type, int> BuildCommonClassesMap()
     {
         Dictionary<System.Type, int> map = new();
         for (int i = 0; i < CommonClasses.Length; i++)
@@ -111,7 +112,7 @@ public class ObjectDataType : BasicDataType<object?>
             map.TryAdd(CommonClasses[i], i);
         }
 
-        return map;
+        return map.ToFrozenDictionary();
     }
 
     /// <summary>

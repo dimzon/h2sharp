@@ -282,7 +282,7 @@ public sealed class StringUtilsAllocationTests
     {
         const int UpperThreshold = 0x00DF;
 
-        foreach ((string Name, Dictionary<int, string> Table, int Threshold) table in new[]
+        foreach ((string Name, System.Collections.Frozen.FrozenDictionary<int, string> Table, int Threshold) table in new[]
                  {
                      ("UpperExtras", CaseFolding.UpperTable, UpperThreshold),
                      ("LowerExtras", CaseFolding.LowerTable, StringUtils.LowerOverrideThreshold),
