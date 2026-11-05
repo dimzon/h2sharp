@@ -939,12 +939,9 @@ public static class DateTimeUtils
     /// <exception cref="ArgumentException">if the text is not a timestamp</exception>
     public static Values.Value ParseTimestamp(string s, Engine.CastDataProvider? provider, bool withTimeZone)
     {
-        int dateEnd = s.IndexOf(' ');
-        if (dateEnd < 0)
-        {
-            dateEnd = s.IndexOf('T');
-        }
-
+        // The reference scans for a space and then a 'T'; one IndexOfAny finds the earlier
+        // of the two, which is the same index either way.
+        int dateEnd = s.AsSpan().IndexOfAny(' ', 'T');
         int timeStart;
         if (dateEnd < 0)
         {
@@ -969,12 +966,8 @@ public static class DateTimeUtils
             }
             else
             {
-                int timeZoneStart = s.IndexOf('+', timeStart);
-                if (timeZoneStart < 0)
-                {
-                    timeZoneStart = s.IndexOf('-', timeStart);
-                }
-
+                int relPlusMinus = s.AsSpan(timeStart).IndexOfAny('+', '-');
+                int timeZoneStart = relPlusMinus < 0 ? -1 : timeStart + relPlusMinus;
                 if (timeZoneStart >= 0)
                 {
                     // Allow a [timeZoneName] part after the offset.

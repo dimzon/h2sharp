@@ -295,15 +295,33 @@ internal static class H2ValueMapper
     /// </summary>
     private static Value ReadText(System.IO.TextReader reader, Store.DataHandler? handler)
     {
-        string text = reader.ReadToEnd();
         int inlineLimit = handler?.GetMaxLengthInplaceLob() ?? Engine.Constants.MaxStringLength;
-        if (text.Length <= inlineLimit)
+        // Read the head into a fixed buffer: if the text fits the inline limit, that is
+        // the whole value and no big-array or temp file is ever touched. The buffer is
+        // inlineLimit + 1 so the single read below also tells the size is bigger.
+        char[] head = new char[inlineLimit + 1];
+        int headLen = 0;
+        while (headLen <= inlineLimit)
         {
-            return Values.ValueClob.CreateSmall(text);
+            int n = reader.Read(head, headLen, head.Length - headLen);
+            if (n == 0)
+            {
+                break;
+            }
+
+            headLen += n;
+        }
+
+        if (headLen <= inlineLimit)
+        {
+            return Values.ValueClob.CreateSmall(new string(head, 0, headLen));
         }
 
         if (handler is not null)
         {
+            // The LOB storage needs the character length before it writes; such readers are
+            // rare here, so the full read is the fallback for that path.
+            string text = new string(head, 0, headLen) + reader.ReadToEnd();
             return handler.GetLobStorage().CreateClob(new StringReader(text), text.Length);
         }
 
@@ -311,10 +329,28 @@ internal static class H2ValueMapper
             "h2lob", Engine.Constants.SuffixTempFile, true);
         try
         {
-            System.IO.File.WriteAllText(fileName, text);
-            int byteCount = System.Text.Encoding.UTF8.GetByteCount(text);
+            // Stream the rest into the file in one pass, counting characters; the byte count
+            // is the file's own length after the writer flushed, so UTF-8 is never counted
+            // separately.
+            long charCount = headLen;
+            using (System.IO.StreamWriter writer = new(
+                fileName, append: false, new System.Text.UTF8Encoding(false)))
+            {
+                writer.Write(head, 0, headLen);
+                char[] tail = new char[4096];
+                int n;
+                while ((n = reader.Read(tail, 0, tail.Length)) > 0)
+                {
+                    writer.Write(tail, 0, n);
+                    charCount += n;
+                }
+
+                writer.Flush();
+            }
+
+            int byteCount = (int)new System.IO.FileInfo(fileName).Length;
             return new Values.ValueClob(
-                new Values.Lobs.LobDataFile(fileName, byteCount), byteCount, text.Length);
+                new Values.Lobs.LobDataFile(fileName, byteCount), byteCount, charCount);
         }
         catch
         {

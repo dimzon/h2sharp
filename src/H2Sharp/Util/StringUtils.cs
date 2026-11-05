@@ -1139,7 +1139,34 @@ public static class StringUtils
     public static string UrlDecode(string encoded)
     {
         int length = encoded.Length;
-        byte[] buff = new byte[length];
+        if (length <= 256)
+        {
+            Span<byte> buff = stackalloc byte[length];
+            int j = UrlDecodeInto(encoded, buff);
+            return Encoding.UTF8.GetString(buff[..j]);
+        }
+
+        byte[] rented = ArrayPool<byte>.Shared.Rent(length);
+        try
+        {
+            int j = UrlDecodeInto(encoded, rented);
+            return Encoding.UTF8.GetString(rented.AsSpan(0, j));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    /// <summary>
+    /// Fills the buffer with the decoded bytes of the URL, returning the used length.
+    /// </summary>
+    /// <param name="encoded">the encoded URL</param>
+    /// <param name="buff">the buffer to fill</param>
+    /// <returns>the number of bytes written</returns>
+    private static int UrlDecodeInto(string encoded, Span<byte> buff)
+    {
+        int length = encoded.Length;
         int j = 0;
         for (int i = 0; i < length; i++)
         {
@@ -1168,7 +1195,7 @@ public static class StringUtils
             }
         }
 
-        return Encoding.UTF8.GetString(buff, 0, j);
+        return j;
     }
 
     /// <summary>

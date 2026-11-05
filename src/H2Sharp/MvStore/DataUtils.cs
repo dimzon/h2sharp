@@ -867,7 +867,7 @@ public static class DataUtils
     public static void AppendMap(StringBuilder buff, string key, string value)
     {
         _ = AppendMapKey(buff, key);
-        if (value.IndexOf(',') < 0 && value.IndexOf('"') < 0)
+        if (!value.AsSpan().ContainsAny(',', '"'))
         {
             _ = buff.Append(value);
         }
@@ -936,43 +936,47 @@ public static class DataUtils
 
     private static int ParseMapValue(StringBuilder buff, string s, int i, int size)
     {
-        while (i < size)
+        for (;;)
         {
-            char c = s[i++];
+            // Skip the plain characters up to the next special: a comma ends the value,
+            // a quote opens a quoted span.
+            int rel = s.AsSpan(i, size - i).IndexOfAny(',', '"');
+            if (rel < 0)
+            {
+                _ = buff.Append(s, i, size - i);
+                return size;
+            }
+
+            int next = i + rel;
+            char c = s[next];
             if (c == ',')
             {
-                break;
+                _ = buff.Append(s, i, rel);
+                return next + 1;
             }
 
-            if (c == '"')
+            _ = buff.Append(s, i, rel);
+            i = next + 1;
+            while (i < size)
             {
-                while (i < size)
+                c = s[i++];
+                if (c == '\\')
                 {
+                    if (i == size)
+                    {
+                        throw NewMvStoreException(ErrorFileCorrupt, "Not a map: {0}", s);
+                    }
+
                     c = s[i++];
-                    if (c == '\\')
-                    {
-                        if (i == size)
-                        {
-                            throw NewMvStoreException(ErrorFileCorrupt, "Not a map: {0}", s);
-                        }
-
-                        c = s[i++];
-                    }
-                    else if (c == '"')
-                    {
-                        break;
-                    }
-
-                    _ = buff.Append(c);
                 }
-            }
-            else
-            {
+                else if (c == '"')
+                {
+                    break;
+                }
+
                 _ = buff.Append(c);
             }
         }
-
-        return i;
     }
 
     /// <summary>
