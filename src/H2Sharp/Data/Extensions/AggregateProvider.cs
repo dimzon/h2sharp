@@ -20,7 +20,8 @@ public sealed class AggregateProvider : IH2AggregateProvider
     /// <param name="options">optimizer metadata, or null for the conservative defaults</param>
     public AggregateProvider(Func<IH2Aggregate> factory, AggregateOptions? options = null)
     {
-        this.factory = factory ?? throw new ArgumentNullException(nameof(factory));
+        ArgumentNullException.ThrowIfNull(factory);
+        this.factory = factory;
         Options = options ?? AggregateOptions.Default;
     }
 

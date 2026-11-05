@@ -514,6 +514,24 @@ public sealed class DataUtilsOracleTests
         yield return "[" + string.Join(", ", except.Select(static v => v?.ToString(CultureInfo.InvariantCulture) ?? "null")) + "]";
     }
 
+    /// <summary>
+    /// The span overload exists only so the meta scan does not materialize a substring; its
+    /// answers, including the refusal, must be the string overload's.
+    /// </summary>
+    [Fact]
+    public void SpanHexIntMatchesTheStringOverload()
+    {
+        string[] corpus = ["0", "2a", "7fffffff", "00000001", "ffffffff", "zz", ""];
+        foreach (string text in corpus)
+        {
+            string viaString = Try(
+                () => DataUtils.ParseHexInt(text).ToString(CultureInfo.InvariantCulture), "THROWS");
+            string viaSpan = Try(
+                () => DataUtils.ParseHexInt(text.AsSpan()).ToString(CultureInfo.InvariantCulture), "THROWS");
+            Assert.Equal(viaString, viaSpan);
+        }
+    }
+
     private static string Try(Func<string> body, string onThrow)
     {
         try

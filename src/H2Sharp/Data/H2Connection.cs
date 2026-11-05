@@ -124,7 +124,8 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// <param name="connectionString">the connection string</param>
     public H2Connection(string connectionString)
     {
-        this.connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        ArgumentNullException.ThrowIfNull(connectionString);
+        this.connectionString = connectionString;
     }
 
     internal H2Connection(H2DataSource dataSource, string connectionString)
@@ -338,10 +339,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
 
     private void EnsureCanRegister()
     {
-        if (disposed)
-        {
-            throw new ObjectDisposedException(nameof(H2Connection));
-        }
+        ObjectDisposedException.ThrowIf(disposed, this);
 
         if (State != ConnectionState.Closed)
         {
@@ -405,13 +403,15 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     void IH2Extensions.RegisterRandomGenerator(Func<long?, Random> factory)
     {
         EnsureCanRegister();
-        extensionConfiguration.SetRandomGenerator(factory ?? throw new ArgumentNullException(nameof(factory)));
+        ArgumentNullException.ThrowIfNull(factory);
+        extensionConfiguration.SetRandomGenerator(factory);
     }
 
     void IH2Extensions.RegisterUuidGenerator(Func<int, Guid> factory)
     {
         EnsureCanRegister();
-        extensionConfiguration.SetUuidGenerator(factory ?? throw new ArgumentNullException(nameof(factory)));
+        ArgumentNullException.ThrowIfNull(factory);
+        extensionConfiguration.SetUuidGenerator(factory);
     }
 
     private static string SqlName(string name)
@@ -829,10 +829,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// <param name="transaction">the transaction to enlist in, or null</param>
     public override void EnlistTransaction(Transaction? transaction)
     {
-        if (disposed)
-        {
-            throw new ObjectDisposedException(nameof(H2Connection));
-        }
+        ObjectDisposedException.ThrowIf(disposed, this);
 
         if (transaction is null)
         {

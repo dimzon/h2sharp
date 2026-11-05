@@ -879,8 +879,8 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
                 break;
             }
 
-            string mapIdStr = key.Substring(key.LastIndexOf('.') + 1);
-            if (!meta.ContainsKey(DataUtils.MetaMap + mapIdStr)
+            ReadOnlySpan<char> mapIdStr = key.AsSpan(key.LastIndexOf('.') + 1);
+            if (!meta.ContainsKey(string.Concat(DataUtils.MetaMap, mapIdStr))
                 && DataUtils.ParseHexInt(mapIdStr) != meta.GetId())
             {
                 _ = keysToRemove.Add(key);

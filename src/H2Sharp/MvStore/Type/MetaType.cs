@@ -96,10 +96,7 @@ public sealed class MetaType<D> : BasicDataType<object>
     /// <inheritdoc/>
     public override void Write(WriteBuffer buff, object obj)
     {
-        if (obj is null)
-        {
-            throw new ArgumentNullException(nameof(obj));
-        }
+        ArgumentNullException.ThrowIfNull(obj);
 
         if (obj is Tx.IObjectMapDataType adapter)
         {

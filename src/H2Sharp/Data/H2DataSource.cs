@@ -89,10 +89,7 @@ public sealed class H2DataSource : DbDataSource
         ArgumentNullException.ThrowIfNull(factory);
         lock (sync)
         {
-            if (disposed)
-            {
-                throw new ObjectDisposedException(nameof(H2DataSource));
-            }
+            ObjectDisposedException.ThrowIf(disposed, this);
 
             if (triggerRegistrations.ContainsKey(name))
             {
@@ -169,10 +166,7 @@ public sealed class H2DataSource : DbDataSource
     {
         lock (sync)
         {
-            if (disposed)
-            {
-                throw new ObjectDisposedException(nameof(H2DataSource));
-            }
+            ObjectDisposedException.ThrowIf(disposed, this);
 
             H2Connection connection = new(this, connectionString);
             try
@@ -203,10 +197,7 @@ public sealed class H2DataSource : DbDataSource
         Database current;
         lock (sync)
         {
-            if (disposed)
-            {
-                throw new ObjectDisposedException(nameof(H2DataSource));
-            }
+            ObjectDisposedException.ThrowIf(disposed, this);
 
             if (database is null)
             {

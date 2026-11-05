@@ -226,9 +226,29 @@ internal static class H2ValueMapper
         int inlineLimit = handler?.GetMaxLengthInplaceLob() ?? Engine.Constants.MaxStringLength;
         if (length >= 0 && length <= inlineLimit)
         {
-            using System.IO.MemoryStream copy = new();
-            stream.CopyTo(copy);
-            return Values.ValueBlob.CreateSmall(copy.ToArray());
+            // The value owns its bytes, so the array is allocated once at the stream's
+            // advertised length and read into directly: the reference's
+            // setBinaryStream(index, in, length) reads no more than the length either.
+            // A stream that ends early shrinks the array to what it actually produced.
+            byte[] bytes = GC.AllocateUninitializedArray<byte>((int)length);
+            int read = 0;
+            while (read < bytes.Length)
+            {
+                int n = stream.Read(bytes, read, bytes.Length - read);
+                if (n == 0)
+                {
+                    break;
+                }
+
+                read += n;
+            }
+
+            if (read != bytes.Length)
+            {
+                Array.Resize(ref bytes, read);
+            }
+
+            return Values.ValueBlob.CreateSmall(bytes);
         }
 
         if (handler is not null)
@@ -243,12 +263,19 @@ internal static class H2ValueMapper
         {
             using (System.IO.FileStream output = new(fileName, System.IO.FileMode.Create))
             {
-                byte[] buffer = new byte[64 * 1024];
-                int read;
-                while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                byte[] buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(64 * 1024);
+                try
                 {
-                    output.Write(buffer, 0, read);
-                    written += read;
+                    int read;
+                    while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        output.Write(buffer, 0, read);
+                        written += read;
+                    }
+                }
+                finally
+                {
+                    System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
                 }
             }
 
@@ -285,9 +312,9 @@ internal static class H2ValueMapper
         try
         {
             System.IO.File.WriteAllText(fileName, text);
+            int byteCount = System.Text.Encoding.UTF8.GetByteCount(text);
             return new Values.ValueClob(
-                new Values.Lobs.LobDataFile(fileName, System.Text.Encoding.UTF8.GetByteCount(text)),
-                System.Text.Encoding.UTF8.GetByteCount(text), text.Length);
+                new Values.Lobs.LobDataFile(fileName, byteCount), byteCount, text.Length);
         }
         catch
         {

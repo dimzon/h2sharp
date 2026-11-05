@@ -80,10 +80,7 @@ public class JavaRandom : Random
     /// <inheritdoc/>
     public override int Next(int maxValue)
     {
-        if (maxValue < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxValue));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(maxValue);
 
         if (maxValue == 0)
         {
@@ -96,10 +93,7 @@ public class JavaRandom : Random
     /// <inheritdoc/>
     public override int Next(int minValue, int maxValue)
     {
-        if (minValue > maxValue)
-        {
-            throw new ArgumentOutOfRangeException(nameof(minValue));
-        }
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(minValue, maxValue);
 
         if (minValue == maxValue)
         {
@@ -154,10 +148,7 @@ public class JavaRandom : Random
     /// <inheritdoc/>
     public override long NextInt64(long maxValue)
     {
-        if (maxValue < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxValue));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(maxValue);
 
         if (maxValue == 0)
         {
@@ -170,10 +161,7 @@ public class JavaRandom : Random
     /// <inheritdoc/>
     public override long NextInt64(long minValue, long maxValue)
     {
-        if (minValue > maxValue)
-        {
-            throw new ArgumentOutOfRangeException(nameof(minValue));
-        }
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(minValue, maxValue);
 
         if (minValue == maxValue)
         {
