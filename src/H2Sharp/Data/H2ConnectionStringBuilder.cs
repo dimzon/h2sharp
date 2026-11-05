@@ -6,6 +6,7 @@
  * DbConnectionStringBuilder; this type only maps the known keys to typed values.
  */
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Globalization;
@@ -23,19 +24,19 @@ namespace H2Sharp.Data;
 /// </summary>
 public sealed class H2ConnectionStringBuilder : DbConnectionStringBuilder
 {
-    private static readonly HashSet<string> KnownKeys = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> KnownKeys = new[]
     {
         "Data Source", "DataSource", "Storage", "Mode",
         "ACCESS_MODE_DATA", "AUTO_SERVER", "CASE_INSENSITIVE_IDENTIFIERS", "CIPHER",
         "DATABASE_TO_LOWER", "DATABASE_TO_UPPER", "FILE_LOCK",
         "FORBID_CREATION", "IFEXISTS", "IGNORE_CATALOGS", "IGNORE_UNKNOWN_SETTINGS", "INIT",
         "LOCK_MODE", "OPEN_NEW", "PAGE_SIZE",
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> CredentialKeys = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> CredentialKeys = new[]
     {
         "User ID", "UserId", "Password", "USER", "PASSWORD",
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether a name is a setting understood by this builder.

@@ -471,7 +471,7 @@ public sealed class H2Command : DbCommand
 
         string text = commandText;
         List<H2Parameter> ordered = NoParameters;
-        if (parameters.Count > 0 || commandText.IndexOf('$') >= 0)
+        if (parameters.Count > 0 || commandText.AsSpan().IndexOf('$') >= 0)
         {
             (text, ordered) = H2ParameterRewriter.Rewrite(
                 commandText, parameterCollection, current);
