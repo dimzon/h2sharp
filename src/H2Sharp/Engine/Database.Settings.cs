@@ -380,7 +380,9 @@ public sealed partial class Database
         if (!ReferenceEquals(mode, newMode))
         {
             throw DbException.GetUnsupportedException(
-                "SET MODE: the mode is fixed when the database is opened");
+                "SET MODE: the mode is fixed when the database is opened "
+                + "(D-029, approved by the user; see docs/APPROVED_DEVIATIONS.md — "
+                + "do not align with the reference without a new user decision)");
         }
     }
 

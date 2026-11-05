@@ -30,6 +30,8 @@ public sealed class H2ConnectionModeTests
             command.CommandText = "SET MODE Regular";
             H2SharpException error = Assert.Throws<H2SharpException>(() => command.ExecuteNonQuery());
             Assert.Equal(ErrorCode.FeatureNotSupported1, error.H2ErrorCode);
+            Assert.Contains("D-029", error.Message, StringComparison.Ordinal);
+            Assert.Contains("APPROVED_DEVIATIONS.md", error.Message, StringComparison.Ordinal);
         }
 
         using H2Connection conflicting = new(
