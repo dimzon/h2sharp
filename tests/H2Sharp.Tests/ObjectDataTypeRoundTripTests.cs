@@ -120,4 +120,14 @@ public sealed class ObjectDataTypeRoundTripTests
         Assert.Equal(written.Length, position);
         Assert.Equal(new sbyte[] { 0, 1, -1 }, back);
     }
+
+    [Fact]
+    public void SerializedObjectMemoryTerminatesAtTheAverageSize()
+    {
+        // An object with no typed home goes through SerializedObjectType. Its owner has to be
+        // the same ObjectDataType: a fresh owner makes every type switch produce another
+        // instance, so "t == this" never holds and GetMemory recurses until the process dies.
+        ObjectDataType type = new();
+        Assert.Equal(10_000, type.GetMemory(new object()));
+    }
 }

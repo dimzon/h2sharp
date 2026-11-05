@@ -121,7 +121,15 @@ public class ObjectDataType : BasicDataType<object?>
     internal static int? GetCommonClassId(System.Type clazz)
         => CommonClassesMap.TryGetValue(clazz, out int id) ? id : null;
 
-    private AutoDetectDataType last = SelectDataType(TypeNull);
+    private AutoDetectDataType last;
+
+    /// <summary>
+    /// Creates the type.
+    /// </summary>
+    public ObjectDataType()
+    {
+        last = SelectDataType(TypeNull);
+    }
 
     /// <inheritdoc/>
     public override object?[] CreateStorage(int size) => new object?[size];
@@ -155,7 +163,7 @@ public class ObjectDataType : BasicDataType<object?>
         return SelectDataType(typeId);
     }
 
-    private static AutoDetectDataType SelectDataType(int typeId) => typeId switch
+    private AutoDetectDataType SelectDataType(int typeId) => typeId switch
     {
         TypeNull => NullType.Instance,
         TypeBoolean => BooleanType.Instance,
@@ -172,7 +180,7 @@ public class ObjectDataType : BasicDataType<object?>
         TypeUuid => UuidType.Instance,
         TypeDate => DateType.Instance,
         TypeArray => new ObjectArrayType(),
-        TypeSerializedObject => new SerializedObjectType(new ObjectDataType()),
+        TypeSerializedObject => new SerializedObjectType(this),
         _ => throw DataUtils.NewMvStoreException(
             DataUtils.ErrorInternal, "Unsupported type {0}", typeId),
     };
