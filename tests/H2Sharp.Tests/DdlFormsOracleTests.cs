@@ -43,4 +43,18 @@ public sealed class DdlFormsOracleTests
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME IN ('DA', 'DB2')",
         ]);
     }
+
+    [JavaOracleFact]
+    public void CreateTypeAsEnumMatchesJdbc()
+    {
+        FreshIssuesOracleTests.Compare([
+            "CREATE TYPE Mood AS ENUM ('Happy', 'Sad')",
+            "CREATE TABLE T(ID INT PRIMARY KEY, M Mood)",
+            "INSERT INTO T VALUES (1, 'Happy'), (2, 'Sad')",
+            "SELECT M FROM T ORDER BY ID",
+            // Enum labels are case-sensitive and a label outside the list is refused.
+            "INSERT INTO T VALUES (3, 'happy')",
+            "SELECT ID, M FROM T ORDER BY ID",
+        ]);
+    }
 }
