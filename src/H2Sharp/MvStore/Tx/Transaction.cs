@@ -279,47 +279,14 @@ public sealed class Transaction
     public bool AllowNonRepeatableRead() => isolationLevel?.AllowNonRepeatableRead() ?? false;
 
     /// <summary>
-    /// Marks the start of a statement: snapshots the maps it will touch.
+    /// Marks the start of a statement.
     /// </summary>
-    public void MarkStatementStart(HashSet<MVMap<object, VersionedValue<object>>>? maps)
+    public void MarkStatementStart()
     {
         MarkStatementEnd();
         if (txCounter is null && Store!.Store.IsVersioningRequired())
         {
             txCounter = Store.Store.RegisterVersionUsage();
-        }
-
-        if (maps is not null && maps.Count != 0)
-        {
-            // The purpose of the following loop is to get a coherent picture
-            // In order to get such a "snapshot", we wait for a moment of silence,
-            // when no new transaction were committed / closed.
-            VersionedBitSet committingTransactions;
-            do
-            {
-                committingTransactions = Store.CommittingTransactions;
-                foreach (MVMap<object, VersionedValue<object>> map in maps)
-                {
-                    TransactionMap<object, object> txMap = OpenMapX<object, object>(map);
-                    txMap.SetStatementSnapshot(new Snapshot<object, VersionedValue<object>>(
-                        map.FlushAndGetRoot(), committingTransactions.Bits));
-                }
-
-                if (IsReadCommitted())
-                {
-                    undoLogRootReferences = Store.CollectUndoLogRootReferences();
-                }
-            } while (!ReferenceEquals(committingTransactions, Store.CommittingTransactions));
-            // Now we have a snapshot, where each map RootReference point to state of the map,
-            // undoLogRootReferences captures the state of undo logs
-            // and committingTransactions mask tells us which of seemingly uncommitted changes
-            // should be considered as committed.
-            // Subsequent processing uses this snapshot info only.
-            foreach (MVMap<object, VersionedValue<object>> map in maps)
-            {
-                TransactionMap<object, object> txMap = OpenMapX<object, object>(map);
-                txMap.PromoteSnapshot();
-            }
         }
     }
 
@@ -332,7 +299,7 @@ public sealed class Transaction
     /// generic and object-keyed internally, so the caller supplies the typed maps it opened;
     /// creating one here with the wrong type would make the later typed OpenMapX cast fail.
     /// </remarks>
-    internal void MarkStatementStartTyped(HashSet<ITransactionMap> maps)
+    public void MarkStatementStartTyped(HashSet<ITransactionMap> maps)
     {
         MarkStatementEnd();
         if (txCounter is null && Store!.Store.IsVersioningRequired())
@@ -356,7 +323,7 @@ public sealed class Transaction
                 committingTransactions = Store.CommittingTransactions;
                 foreach (ITransactionMap map in maps)
                 {
-                    map.SetStatementSnapshot(new Snapshot<object, VersionedValue<object>>(
+                    map.SetStatementSnapshot(new Snapshot(
                         map.FlushAndGetRoot(), committingTransactions.Bits));
                 }
 
@@ -466,22 +433,30 @@ public sealed class Transaction
     /// </remarks>
     public TransactionMap<K, V> OpenMap<K, V>(string name, DataType<K>? keyType, DataType<V>? valueType)
     {
-        MVMap<object, VersionedValue<object>> map = Store!.OpenVersionedMap(name,
-            keyType is null ? null : new ObjectMapDataType<K>(keyType),
-            valueType is null ? null : new ObjectMapDataType<V>(valueType));
-        return OpenMapX<K, V>(map);
+        DataType<object>? valueDataType =
+            valueType is null ? null : new ObjectMapDataType<V>(valueType);
+        if (keyType is not null)
+        {
+            MVMap<K, VersionedValue<object>> map =
+                Store!.OpenVersionedMap(name, keyType, valueDataType);
+            return OpenMapX<K, V>(new TypedMapData<K>(map));
+        }
+
+        MVMap<object, VersionedValue<object>> objectMap =
+            Store!.OpenVersionedMap(name, null, valueDataType);
+        return OpenMapX<K, V>(new ObjectMapData<K>(objectMap));
     }
 
     /// <summary>
     /// Opens the transactional version of the given map.
     /// </summary>
-    public TransactionMap<K, V> OpenMapX<K, V>(MVMap<object, VersionedValue<object>> map)
+    public TransactionMap<K, V> OpenMapX<K, V>(ITransactionMapData<K> mapData)
     {
         CheckNotClosed();
-        int id = map.GetId();
+        int id = mapData.GetId();
         if (!transactionMaps.TryGetValue(id, out object? transactionMap))
         {
-            transactionMap = new TransactionMap<K, V>(this, map);
+            transactionMap = new TransactionMap<K, V>(this, mapData);
             transactionMaps[id] = transactionMap;
         }
 

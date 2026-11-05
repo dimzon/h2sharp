@@ -13,6 +13,7 @@ using System.Linq;
 using H2Sharp.Engine;
 using H2Sharp.MvStore;
 using H2Sharp.MvStore.Db;
+using H2Sharp.MvStore.Type;
 using H2Sharp.MvStore.Tx;
 using H2Sharp.Result;
 using H2Sharp.Tables;
@@ -134,6 +135,27 @@ public sealed class TransactionMapAllocationTests : IDisposable
             // an object (the reference's containsKey(Object)), so its caller boxes; this
             // measures the key-typed lookup path.
             Assert.Equal(0, Measure(() => map.GetImmediate(1L)));
+        }
+        finally
+        {
+            transaction.Rollback();
+        }
+    }
+
+    [Fact]
+    public void LargeLongKeyLookupsDoNotBox()
+    {
+        // The small-long cache covers 0..127; the typed map data plane must answer a large
+        // row id without boxing either. (The undo log still boxes once on a modification -
+        // the reference's Long.valueOf does the same.)
+        Transaction transaction = transactions.Begin();
+        try
+        {
+            TransactionMap<long, string> map = transaction.OpenMap<long, string>(
+                "alloc_long_large", LongDataType.Instance, null);
+            map.Put(1_000_000L, "value");
+            Assert.Equal("value", map.GetImmediate(1_000_000L));
+            Assert.Equal(0, Measure(() => map.GetImmediate(1_000_000L)));
         }
         finally
         {

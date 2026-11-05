@@ -68,7 +68,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
         dataMap = t is null
             ? throw new TODOException("MVPrimaryIndex: the table has no transaction yet")
             : t.OpenMap(mapName, LongDataType.Instance, valueType);
-        dataMap.InnerMap.SetVolatile(!table.IsPersistData || indexType?.IsPersistent() != true);
+        dataMap.SetVolatile(!table.IsPersistData || indexType?.IsPersistent() != true);
         if (!database.IsStarting())
         {
             // Reference: a primary index created on a running database starts empty. Opening an
@@ -80,7 +80,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
 
         // include uncommitted keys as well: the map's last key is where the counter resumes,
         // and a key that is still in flight is a key that will be taken.
-        long? k = LastKeyOf(dataMap.InnerMap);
+        long? k = LastKeyOf(dataMap.LastKey());
         lastKey.Set(k ?? 0);
     }
 
@@ -323,7 +323,7 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// page the same way that method would.
     /// </remarks>
     public override long GetDiskSpaceUsed(bool approximate)
-        => dataMap.InnerMap.GetRootPage().GetDiskSpaceUsed(approximate);
+        => dataMap.GetDiskSpaceUsed(approximate);
 
     /// <inheritdoc/>
     public override void AddRowsToBuffer(List<Row> rows, string bufferName)
@@ -717,9 +717,13 @@ public sealed class MVPrimaryIndex : MVIndex<long, SearchRow>
     /// objects, so the key arrives boxed and has to be asked what it is; the counter resumes
     /// from it because a key that is still in flight is a key that will be taken.
     /// </summary>
-    private static long? LastKeyOf(MVMap<object, VersionedValue<object>> map)
+    /// <summary>
+    /// The last key of the underlying map, whatever version it belongs to. The map stores
+    /// objects, so the key arrives boxed and has to be asked what it is; the counter resumes
+    /// from it because a key that is still in flight is a key that will be taken.
+    /// </summary>
+    private static long? LastKeyOf(object? last)
     {
-        object? last = map.LastKey();
         return last switch
         {
             null => null,

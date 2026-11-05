@@ -582,7 +582,7 @@ public class TransactionStore : IDisposable
     /// <summary>
     /// Removes the map.
     /// </summary>
-    internal void RemoveMap(MVMap<object, VersionedValue<object>> map) => Store.RemoveMap(map);
+    internal void RemoveMap(IAnyMap map) => Store.RemoveMap(map);
 
     /// <summary>
     /// Commits a transaction: others see its changes, the undo log is marked, entries are
@@ -600,7 +600,7 @@ public class TransactionStore : IDisposable
 
             t.NotifyAllWaitingTransactions();
 
-            t.MarkStatementStart(null);
+            t.MarkStatementStart();
 
             // Now mark log as "committed".
             // It does not change the way this transaction is treated by others,

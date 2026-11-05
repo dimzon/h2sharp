@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using H2Sharp.Values;
 
 namespace H2Sharp.MvStore;
 
@@ -23,7 +24,7 @@ namespace H2Sharp.MvStore;
 /// </remarks>
 /// <typeparam name="K">the key type</typeparam>
 /// <typeparam name="V">the value type</typeparam>
-public sealed class Cursor<K, V> : IEnumerator<K>
+public sealed class Cursor<K, V> : IEnumerator<K>, ITransactionCursor<K>
 {
     private readonly bool reverse;
 
@@ -154,10 +155,18 @@ public sealed class Cursor<K, V> : IEnumerator<K>
     /// </summary>
     public K GetKey() => last;
 
+    bool ITransactionCursor<K>.HasNext() => HasNext();
+
+    K ITransactionCursor<K>.Next() => Next();
+
+    K ITransactionCursor<K>.GetKey() => GetKey();
+
     /// <summary>
     /// The value of the last key seen.
     /// </summary>
     public V GetValue() => lastValue!;
+
+    VersionedValue<object> ITransactionCursor<K>.GetValue() => (VersionedValue<object>)(object)GetValue()!;
 
     /// <summary>
     /// The page the last key came from.

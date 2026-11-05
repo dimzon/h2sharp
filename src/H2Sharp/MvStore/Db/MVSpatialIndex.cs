@@ -98,8 +98,8 @@ public sealed class MVSpatialIndex : MVIndex<Spatial, Value>, Indexes.SpatialInd
         Transaction? t = mvTable.GetTransactionBegin();
         dataMap = t is null
             ? throw new TODOException("MVSpatialIndex: the table has no transaction yet")
-            : t.OpenMapX<Spatial, Value>(spatialMap);
-        dataMap.InnerMap.SetVolatile(!table.IsPersistData || indexType is null || !indexType.IsPersistent());
+            : t.OpenMapX<Spatial, Value>(new ObjectMapData<Spatial>(spatialMap));
+        dataMap.SetVolatile(!table.IsPersistData || indexType is null || !indexType.IsPersistent());
         t.Commit();
     }
 
