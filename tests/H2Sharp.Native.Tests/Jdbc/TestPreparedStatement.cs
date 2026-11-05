@@ -24,10 +24,6 @@
 // is skipped: CREATE TABLE ... AS SELECT is not parsed yet — the reference's
 // COLUMN_NOT_FOUND_1 on the missing column cannot be reached before the DDL form exists.
 // testArray is skipped: the array parameter form yields no rows (array gaps, issue #14).
-// testPreparedSubquery and testMultipleStatements are skipped: the IDENTITY data type
-// is not parsed yet (issue #61).
-// testDateTimeWithParameter is skipped: CREATE TABLE ... AS VALUES is not parsed yet
-// (issue #61).
 using System.Numerics;
 using System.Text.Json;
 using H2Sharp.Api;
@@ -71,16 +67,15 @@ public sealed class TestPreparedStatement : TestDb
         TestJson(conn);
         // testArray: the array parameter into table(x int = ?) yields no rows
         // (array gaps, issue #14), see the header.
-        // testPreparedSubquery, testMultipleStatements: IDENTITY data type is not
-        // parsed yet, see the header.
+        TestPreparedSubquery(conn);
+        TestMultipleStatements(conn);
         TestLikeIndex(conn);
         TestCasewhen(conn);
         TestSubquery(conn);
         TestDataTypes(conn);
         TestParameterInSubquery(conn);
         TestAfterRollback(conn);
-        // testDateTimeWithParameter: CREATE TABLE ... AS VALUES is not parsed yet, see
-        // the header and issue #61.
+        TestDateTimeWithParameter(conn);
         TestUnnestWithArrayParameter(conn);
         conn.Close();
         TestPreparedStatementWithLiteralsNone();

@@ -30,7 +30,6 @@ public sealed class TestTempTables : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
-    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         DeleteDb("tempTables");

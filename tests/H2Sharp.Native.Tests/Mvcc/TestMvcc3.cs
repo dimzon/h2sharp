@@ -78,10 +78,8 @@ public sealed class TestMvcc3 : TestDb
         DbCommand s2 = c2.CreateCommand();
         s2.Transaction = t2;
 
-        // The reference's CREATE TABLE ... AS SELECT; the port's parser does not read
-        // that form yet (issue #61), so the same rows come from a VALUES list.
-        Execute(s1, "create table test(id int primary key, name varchar)");
-        Execute(s1, "insert into test values (1, '1'), (2, '2')");
+        Execute(s1, "create table test(id int primary key, name varchar) as "
+            + "select x, x from system_range(1, 2)");
         Execute(s1, "create unique index on test(name)");
         _ = ExecuteUpdate(s1, "update test set name = 100 where id = 1");
 
@@ -121,9 +119,7 @@ public sealed class TestMvcc3 : TestDb
         using DbConnection c2 = GetConnection("mvcc3");
         DbCommand s2 = c2.CreateCommand();
 
-        // The reference's CREATE TABLE ... AS SELECT; see the header and issue #61.
-        Execute(s1, "create table test(id int primary key, name varchar)");
-        Execute(s1, "insert into test values (0, 'Hello')");
+        Execute(s1, "create table test(id int primary key, name varchar) as select 0, 'Hello'");
         using DbTransaction transaction = c1.BeginTransaction();
         s1.Transaction = transaction;
         _ = ExecuteUpdate(s1, "update test set name = 'World'");

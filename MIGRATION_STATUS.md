@@ -10284,3 +10284,25 @@ PREPARE в MSSQLServer-режиме — факт порта (эталон отв
 двухпроходного парсера, порт — голым 42000, как и все синтаксические ошибки).
 
 Проверено: `H2Sharp.Tests` 1963 зелёных (`Category!=BlockedByPort`).
+
+### Issue #61: формы DDL/DML уже разбираются, тесты возвращены (2026-11-06)
+
+Все восемь форм из issue (IDENTITY как тип, LOCAL/GLOBAL TEMPORARY, CTAS без и со
+скобками, CTAS VALUES, INSERT ... SELECT, DROP TABLE a, b) уже работают на
+текущем main — дефект был закрыт в процессе прошлых спринтов, но issue оставался
+открытым, а нативные тесты — выключенными.
+
+Сделано:
+
+* `TestPreparedStatement.testPreparedSubquery`, `testMultipleStatements`,
+  `testDateTimeWithParameter` возвращены в набор.
+* `TestTempTables` и `TestMultiThread` сняты с `BlockedByPort` (оба зелёные).
+* Обходы #61 в `TestMvcc2` (INSERT ... SELECT через system_range), `TestMvcc3`
+  (CREATE TABLE AS SELECT в двух местах) и `TestIndex` (мультитабличный
+  DROP TABLE PARENT, CHILD) заменены на эталонные тексты.
+* Оракул: `DdlFormsOracleTests` — все восемь форм построчно против H2 2.5 JDBC,
+  включая IDENTITY-генерацию, временные таблицы и DROP двух таблиц одним
+  оператором.
+
+Проверено: `H2Sharp.Tests` 1963+ (Category!=BlockedByPort), оракул зелёный;
+полный Native по завершении прогона. Issue #61 закрыт.

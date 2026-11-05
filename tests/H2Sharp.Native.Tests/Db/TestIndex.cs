@@ -695,9 +695,7 @@ public sealed class TestIndex : TestDb
         Execute(stat, "CREATE TABLE CHILD(ID INT PRIMARY KEY, "
             + "PID INT, FOREIGN KEY(PID) REFERENCES PARENT(ID))");
         Reconnect();
-        // the reference's single DROP TABLE PARENT, CHILD (issue #61)
-        Execute(stat, "DROP TABLE CHILD");
-        Execute(stat, "DROP TABLE PARENT");
+        Execute(stat, "DROP TABLE PARENT, CHILD");
     }
 
     private void TestLargeIndex()

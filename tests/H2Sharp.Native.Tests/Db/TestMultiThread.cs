@@ -11,9 +11,6 @@
 // the INFORMATION_SCHEMA.TABLES query through the ADO layer; setCharacterStream is a
 // TextReader parameter. The reference's main() entry
 // is the runner; xUnit runs Test() directly.
-//
-// Blocked by the port: CREATE TABLE TEST(ID IDENTITY, ...) needs the IDENTITY column
-// type, which the parser does not read yet (issue #61).
 using H2Sharp.Api;
 using Xunit;
 
@@ -28,7 +25,6 @@ public sealed class TestMultiThread : TestDb
     /// Run just this test.
     /// </summary>
     [H2Fact]
-    [Trait("Category", "BlockedByPort")]
     public override void Test()
     {
         TestConcurrentSchemaChange();
