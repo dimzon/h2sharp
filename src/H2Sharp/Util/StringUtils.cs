@@ -689,28 +689,44 @@ public static class StringUtils
     /// <param name="s">the text to convert</param>
     /// <param name="buff">the Java representation to append to</param>
     /// <param name="forSql">true if we embed this inside a STRINGDECODE SQL command</param>
+    private static readonly SearchValues<char> JavaEncodePlain = SearchValues.Create(BuildJavaEncodePlain());
+
+    private static char[] BuildJavaEncodePlain()
+    {
+        char[] chars = new char[0x80 - ' ' - 3];
+        int index = 0;
+        for (char c = ' '; c < 0x80; c++)
+        {
+            if (c is not ('"' or '\'' or '\\'))
+            {
+                chars[index++] = c;
+            }
+        }
+
+        return chars;
+    }
+
     public static void JavaEncode(string s, StringBuilder buff, bool forSql)
     {
-        int length = s.Length;
-        int runStart = 0;
-
-        for (int i = 0; i < length; i++)
+        ReadOnlySpan<char> span = s.AsSpan();
+        int position = 0;
+        while (position < span.Length)
         {
-            char c = s[i];
-            if (c is >= ' ' and < (char)0x80 && c is not ('\t' or '\n' or '\f' or '\r'
-                or '"' or '\'' or '\\'))
+            int run = span[position..].IndexOfAnyExcept(JavaEncodePlain);
+            if (run < 0)
             {
-                // Plain ASCII: stay in the run and let the span append below copy it in
-                // one go instead of one Append(char) call per character.
-                continue;
+                buff.Append(span[position..]);
+                break;
             }
 
-            if (i > runStart)
+            int index = position + run;
+            if (index > position)
             {
-                buff.Append(s.AsSpan(runStart, i - runStart));
+                buff.Append(span[position..index]);
             }
 
-            runStart = i + 1;
+            char c = span[index];
+            position = index + 1;
             switch (c)
             {
                 case '\t':
@@ -767,11 +783,6 @@ public static class StringUtils
 
                     break;
             }
-        }
-
-        if (length > runStart)
-        {
-            buff.Append(s.AsSpan(runStart, length - runStart));
         }
     }
 
@@ -1490,13 +1501,45 @@ public static class StringUtils
     /// <param name="text">the text data</param>
     /// <param name="escapeNewline">whether to escape newlines</param>
     /// <returns>the escaped text</returns>
+    private static readonly SearchValues<char> XmlPlain = SearchValues.Create(BuildXmlPlain());
+
+    private static char[] BuildXmlPlain()
+    {
+        char[] chars = new char[0x80 - ' ' - 5];
+        int index = 0;
+        for (char c = ' '; c < 0x80; c++)
+        {
+            if (c is not ('<' or '>' or '&' or '\'' or '"'))
+            {
+                chars[index++] = c;
+            }
+        }
+
+        return chars;
+    }
+
     public static string XmlText(string text, bool escapeNewline)
     {
-        int length = text.Length;
-        StringBuilder buff = new(length);
-        for (int i = 0; i < length; i++)
+        ReadOnlySpan<char> span = text.AsSpan();
+        StringBuilder buff = new(text.Length);
+        int position = 0;
+        while (position < span.Length)
         {
-            char ch = text[i];
+            int run = span[position..].IndexOfAnyExcept(XmlPlain);
+            if (run < 0)
+            {
+                buff.Append(span[position..]);
+                break;
+            }
+
+            int index = position + run;
+            if (index > position)
+            {
+                buff.Append(span[position..index]);
+            }
+
+            char ch = span[index];
+            position = index + 1;
             switch (ch)
             {
                 case '<':
