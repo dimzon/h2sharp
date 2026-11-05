@@ -130,13 +130,16 @@ public class TableFilter : ColumnResolver
         currentSearchRow = current;
         if (nestedJoin is not null)
         {
-            nestedJoin.Visit(new NullRowVisitor());
+            nestedJoin.Visit(NullRowVisitorInstance);
         }
     }
 
     /// <summary>
-    /// Marks every filter of a join as holding the null row.
+    /// Marks every filter of a join as holding the null row. The visitor is stateless, so one
+    /// instance serves every unmatched outer-join row instead of an allocation per row.
     /// </summary>
+    private static readonly NullRowVisitor NullRowVisitorInstance = new();
+
     private sealed class NullRowVisitor : TableFilterVisitor
     {
         public void Accept(TableFilter f)
