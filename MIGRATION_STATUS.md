@@ -10210,3 +10210,20 @@ power-off seam, а не слушателем.
 
 Проверено: Native `TestPreparedStatement` зелёный, оракул зелёный.
 Issue #63 закрыт.
+
+### Issue #59: HASH уже перенесён, возвращён нативный тест (2026-11-05)
+
+`HashFunction` в ядре уже работает (`Expressions/Functions/HashFunction.cs`,
+фабрики через `session.Extensions.CreateHashAlgorithm` по ADR-001/D-020);
+`ORA_HASH` — UDF в `H2Sharp.JavaLegacy` (D-021), уже покрыт тестами с эталонными
+константами. SHA-224/SHA3-224 — опциональный пакет `H2Sharp.Hashes`, тоже с
+эталонными константами (`OptionalHashesProvideSha224AndSha3224`).
+
+Сделано: `TestInsertFunction` (`HASH('SHA256', STRINGTOUTF8(?), 5)` +
+`COUNT(DISTINCT H)`) возвращён в нативный набор; добавлен JVM-оракул
+`HashFunctionOracleTests` — константы из issue (`SHA256/'Password'/1000`,
+`SHA256/'One'/5`), MD5/SHA-1/SHA-512, бинарный вход, NULL-вход, отказы
+`iterations <= 0` и неизвестного алгоритма (90008), построчно против H2 2.5 JDBC.
+
+Проверено: Native `TestPreparedStatement` зелёный, оракул зелёный.
+Issue #59 закрыт. `testExecuteUpdateCall` по-прежнему ждёт CALL (#64).

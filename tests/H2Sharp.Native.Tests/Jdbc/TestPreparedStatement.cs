@@ -26,8 +26,8 @@
 // statements) is skipped for the same parser gap (issue #64). testExecuteErrorTwice
 // is skipped: CREATE TABLE ... AS SELECT is not parsed yet — the reference's
 // COLUMN_NOT_FOUND_1 on the missing column cannot be reached before the DDL form exists.
-// testInsertFunction is skipped: HASH is not ported yet (issue #59). testJson is skipped:
-// a JSON column written to a file database panics the MVStore writer (issue #60).
+// testJson is skipped: a JSON column written to a file database panics the MVStore writer
+// (issue #60).
 // testArray is skipped: the array parameter form yields no rows (array gaps, issue #14).
 // testPreparedSubquery and testMultipleStatements are skipped: the IDENTITY data type
 // is not parsed yet (issue #61).
@@ -65,8 +65,7 @@ public sealed class TestPreparedStatement : TestDb
         // testExecuteErrorTwice: CREATE TABLE ... AS SELECT is not parsed yet (syntax
         // error instead of COLUMN_NOT_FOUND_1), see the header.
         TestTempView(conn);
-        // testInsertFunction: HASH is not ported yet (TODOException in the parser),
-        // see the header.
+        TestInsertFunction(conn);
         TestPrepareRecompile(conn);
         TestUnknownDataType(conn);
         TestCoalesce(conn);
