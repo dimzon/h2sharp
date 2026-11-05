@@ -16,6 +16,7 @@ using System.Buffers;
 using System.IO;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.MvStore.Type;
 using H2Sharp.Store;
 using H2Sharp.Values;
 using H2Sharp.Values.Lobs;
@@ -34,7 +35,9 @@ public sealed partial class LobStorageMap : LobStorageInterface
 
     private readonly MVMap<long, object> blocks;
 
-    private readonly MVMap<long, object> meta;
+    // The reference opens its LOB map with LongDataType and BlobMeta.Type; an object-typed
+    // map would route BlobMeta through the Java serializer, which this port refuses.
+    private readonly MVMap<long, BlobMeta> meta;
 
     private long nextLobId;
 
@@ -47,7 +50,9 @@ public sealed partial class LobStorageMap : LobStorageInterface
         this.database = database;
         MVStore store = database.GetMvStore();
         blocks = store.OpenMap<long, object>("lobBlocks");
-        meta = store.OpenMap<long, object>("lobMeta");
+        MVMap<long, BlobMeta>.Builder<long, BlobMeta> metaBuilder = new();
+        metaBuilder.KeyType(LongDataType.Instance).ValueType(BlobMeta.Type.Instance);
+        meta = store.OpenMap("lobMeta", metaBuilder);
         foreach (long key in meta.KeySet())
         {
             nextLobId = Math.Max(nextLobId, key + 1);
