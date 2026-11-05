@@ -665,7 +665,7 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
             DataRow row = table.NewRow();
             row["ColumnName"] = column.ColumnName;
             row["ColumnOrdinal"] = column.ColumnOrdinal;
-            row["ColumnSize"] = column.NumericPrecision ?? -1;
+            row["ColumnSize"] = column.ColumnSize ?? -1;
             row["NumericPrecision"] = column.NumericPrecision ?? (object)DBNull.Value;
             row["NumericScale"] = column.NumericScale ?? (object)DBNull.Value;
             row["DataType"] = column.DataType;

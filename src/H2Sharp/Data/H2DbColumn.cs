@@ -39,6 +39,10 @@ internal sealed class H2DbColumn : DbColumn
         ColumnOrdinal = ordinal;
         DataType = fieldType;
         DataTypeName = dataTypeName;
+        // ADO.NET's ColumnSize is the maximum number of characters or digits the column can
+        // hold; the engine's precision is exactly that for strings and numerics, and it stays
+        // null when the engine does not know it.
+        ColumnSize = precision >= 0 ? precision : null;
         NumericPrecision = precision >= 0 ? precision : null;
         NumericScale = scale >= 0 ? scale : null;
         AllowDBNull = allowNull;
