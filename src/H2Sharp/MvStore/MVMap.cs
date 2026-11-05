@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using H2Sharp.MvStore.Type;
 using H2Sharp.Util;
+using H2Sharp.Values;
 
 namespace H2Sharp.MvStore;
 
@@ -56,7 +57,7 @@ public interface ICursorLink
 /// </remarks>
 /// <typeparam name="K">the key type</typeparam>
 /// <typeparam name="V">the value type</typeparam>
-public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
+public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap, IObjectMapAccess
 {
     /// <summary>
     /// The store this map lives in.
@@ -852,6 +853,37 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap
 
         return rootReference;
     }
+
+    VersionedValue<object>? IObjectMapAccess.GetObject(object? key)
+        => (VersionedValue<object>?)(object?)Get((K)key!);
+
+    VersionedValue<object>? IObjectMapAccess.OperateObject(
+        object? key, VersionedValue<object>? value, DecisionMaker<VersionedValue<object>> decisionMaker)
+        => (VersionedValue<object>?)(object?)Operate(
+            (K)key!, value is null ? default! : (V)(object)value, (DecisionMaker<V>)(object)decisionMaker);
+
+    void IObjectMapAccess.WriteKey(WriteBuffer buff, object? key)
+        => GetKeyType().Write(buff, (K)key!);
+
+    object? IObjectMapAccess.ReadKey(Span<byte> buff, ref int position)
+        => GetKeyType().Read(buff, ref position);
+
+    void IObjectMapAccess.WriteValue(WriteBuffer buff, VersionedValue<object>? value)
+        => GetValueType().Write(buff, (V)(object)value!);
+
+    VersionedValue<object>? IObjectMapAccess.ReadValue(Span<byte> buff, ref int position)
+        => (VersionedValue<object>?)(object?)GetValueType().Read(buff, ref position);
+
+    int IObjectMapAccess.GetKeyMemory(object? key) => GetKeyType().GetMemory((K)key!);
+
+    int IObjectMapAccess.GetValueMemory(VersionedValue<object>? value)
+        => value is null ? 0 : GetValueType().GetMemory((V)(object)value);
+
+    int IObjectMapAccess.MapId => GetId();
+
+    bool IObjectMapAccess.IsClosed() => IsClosed();
+
+    string? IObjectMapAccess.GetName() => GetName();
 
     /// <summary>
     /// Sets the very first root.

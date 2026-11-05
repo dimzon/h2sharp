@@ -632,7 +632,7 @@ public class TransactionStore : IDisposable
 
                     if (!commitDecisionMaker.HaveSeenEntry((int)entryId))
                     {
-                        MVMap<object, VersionedValue<object>>? map = OpenMap(mapId);
+                        IObjectMapAccess? map = OpenMap(mapId);
                         if (map is not null && !map.IsClosed())
                         {
                             // might be null if map was removed later
@@ -640,7 +640,7 @@ public class TransactionStore : IDisposable
                             commitDecisionMaker.SetUndoKey(undoKey);
                             // second parameter (value) is not really
                             // used by CommitDecisionMaker
-                            _ = map.Operate(key!, null, commitDecisionMaker);
+                            _ = map.OperateObject(key!, null, commitDecisionMaker);
                         }
                     }
                 }
@@ -709,9 +709,9 @@ public class TransactionStore : IDisposable
     /// <summary>
     /// Opens a versioned map by id, or null when it was removed later on.
     /// </summary>
-    internal MVMap<object, VersionedValue<object>>? OpenMap(int mapId)
+    internal IObjectMapAccess? OpenMap(int mapId)
     {
-        MVMap<object, VersionedValue<object>>? map = Store.GetMap<object, VersionedValue<object>>(mapId);
+        IAnyMap? map = Store.GetAnyMap(mapId);
         if (map is null)
         {
             string? mapName = Store.GetMapName(mapId);
@@ -724,15 +724,15 @@ public class TransactionStore : IDisposable
             map = Store.OpenMap(mapId, new TxMapBuilder(TypeRegistry));
         }
 
-        return map;
+        return map as IObjectMapAccess;
     }
 
     /// <summary>
     /// The versioned map, opening it during initialization when it is not open yet.
     /// </summary>
-    internal MVMap<object, VersionedValue<object>> GetVersionedMap(int mapId)
+    internal IObjectMapAccess GetVersionedMap(int mapId)
     {
-        MVMap<object, VersionedValue<object>>? map = Store.GetMap<object, VersionedValue<object>>(mapId);
+        IObjectMapAccess? map = Store.GetAnyMap(mapId) as IObjectMapAccess;
         if (map is null)
         {
             bool initialized = Volatile.Read(ref state) >= Ready;
@@ -917,7 +917,7 @@ public class TransactionStore : IDisposable
             }
 
             int mapId = op.MapId;
-            MVMap<object, VersionedValue<object>>? m = OpenMap(mapId);
+            IObjectMapAccess? m = OpenMap(mapId);
             if (m is not null)
             {
                 // could be null if map was removed later on
@@ -968,13 +968,13 @@ public class TransactionStore : IDisposable
         /// <summary>
         /// One map change (add/update/remove) being compensated.
         /// </summary>
-        void OnRollback(MVMap<object, VersionedValue<object>> map, object? key,
+        void OnRollback(IObjectMapAccess map, object? key,
                         VersionedValue<object>? existingValue, VersionedValue<object>? restoredValue);
     }
 
     private sealed class NoneListener : RollbackListener
     {
-        public void OnRollback(MVMap<object, VersionedValue<object>> map, object? key,
+        public void OnRollback(IObjectMapAccess map, object? key,
             VersionedValue<object>? existingValue, VersionedValue<object>? restoredValue)
         {
         }
