@@ -4515,7 +4515,14 @@ public sealed partial class Parser
             return item;
         }
 
-        if (star is null)
+        // The reference's parseSelectExpressions accepts an empty list when the next token
+        // already belongs to another clause: SELECT;, SELECT FROM DUAL, SELECT WHERE ...
+        bool emptySelectList = CurrentType is ParserUtil.From or ParserUtil.Where
+            or ParserUtil.Group or ParserUtil.Having or ParserUtil.Window or ParserUtil.Qualify
+            or ParserUtil.Order or ParserUtil.Offset or ParserUtil.Fetch
+            or Token.CloseParen or Token.Semicolon or Token.EndOfInput;
+
+        if (star is null && !emptySelectList)
         {
             do
             {

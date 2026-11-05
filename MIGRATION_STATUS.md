@@ -10119,3 +10119,21 @@ Engine 9, MvStore 152, Native 98 passed / 23 skipped. Issue #62 закрыт.
 
 Проверено: `H2Sharp.Tests` 1954 зелёных (`Category!=BlockedByPort`), Data 719,
 Engine 9, MvStore 152, Native 98 passed / 23 skipped. Issue #58 закрыт.
+
+### Issue #93: SELECT с пустым списком колонок (2026-11-05)
+
+Эталонный `parseSelectExpressions` начинает список выражений только тогда, когда
+следующий токен не относится к другой части запроса; на `FROM`, `WHERE`, `GROUP`,
+`HAVING`, `WINDOW`, `QUALIFY`, `ORDER`, `OFFSET`, `FETCH`, `)`, `;` или конце
+ввода список остаётся пустым. Порт этот switch не переносил и требовал хотя бы
+одно выражение, поэтому `SELECT;` и `SELECT FROM DUAL` падали с 42001.
+
+Добавлено то же условие в `Parser.ParseSelect`. Результат — строка без колонок:
+`SELECT;`, `SELECT FROM DUAL`, `SELECT WHERE FALSE`, `SELECT DISTINCT FROM DUAL`;
+планы `EXPLAIN` совпадают с эталоном.
+
+Оракулы: `DualOracleTests` расширен строками пустого списка и отдельным
+`TheEmptySelectPlansMatchJdbc` (4 EXPLAIN построчно против H2 2.5 JDBC).
+
+Проверено: `H2Sharp.Tests` 1955 зелёных (`Category!=BlockedByPort`), Data 719,
+Engine 9, MvStore 152, Native 98 passed / 23 skipped. Issue #93 закрыт.

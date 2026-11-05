@@ -21,6 +21,12 @@ public sealed class DualOracleTests
             "SELECT * FROM DUAL",
             "SELECT 1 FROM DUAL",
             "SELECT 1 FROM SYS.DUAL",
+            // Empty select lists: one row with no columns, as the reference's
+            // parseSelectExpressions accepts FROM/WHERE/... right after SELECT.
+            "SELECT;",
+            "SELECT FROM DUAL",
+            "SELECT WHERE FALSE",
+            "SELECT DISTINCT FROM DUAL",
             "SELECT * FROM DUAL JOIN (SELECT * FROM DUAL) ON 1 = 1",
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'DUAL'",
             // A real table of the same name is resolved first, as in the reference's
@@ -36,6 +42,17 @@ public sealed class DualOracleTests
             "SELECT 1 FROM DUAL",
             // SYSIBM.SYSDUMMY1 is only available in DB2 and Derby modes.
             "SELECT * FROM SYSIBM.SYSDUMMY1",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void TheEmptySelectPlansMatchJdbc()
+    {
+        ExplainOracleTests.Check([
+            "EXPLAIN SELECT *",
+            "EXPLAIN SELECT * FROM DUAL",
+            "EXPLAIN SELECT FROM DUAL",
+            "EXPLAIN SELECT WHERE FALSE",
         ]);
     }
 
