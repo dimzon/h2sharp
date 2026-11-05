@@ -52,10 +52,10 @@
 1. **Stage 1 (сделано).** `IObjectMapAccess`; `MVMap<K,V>` реализует его;
    `RollbackDecisionMaker`, `RollbackListener`, `Record.Type`, commit-путь
    `TransactionStore` переведены на интерфейс. Поведение и формат не меняются.
-2. **Stage 2.** `TxMapBuilder<K>`/`TMVMap<K>`, `TransactionStore.OpenVersionedMap<K>`
-   и `OpenMap(int)` через `IObjectMapAccess`; primary index открывает
-   `MVMap<long, VersionedValue<object>>` с `LongDataType`. Замер: `Get/Put` на
-   id > 127 (было 24 B/op).
+2. **Stage 2 (сделано).** `TxMapBuilder<K>`/`TMVMap<K>`,
+   `TransactionStore.OpenVersionedMap<K>`; регистр разворачивает
+   `ObjectMapDataType` обратно в реальный тип и кастует его к K. Object-перегрузки
+   сохранены; typed-путь пока никем не вызывается — это Stage 3.
 3. **Stage 3.** `ITransactionMapData<K>` и `TransactionMap` на нём; итераторы
    получают типизированный cursor/root. Secondary index — `MVMap<SearchRow,…>`.
 4. **Stage 4.** R-tree: либо `MVRTreeMap<V> : MVMap<Spatial,V>` (механическая
