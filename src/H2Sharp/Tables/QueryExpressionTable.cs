@@ -18,6 +18,7 @@ using H2Sharp.Expressions;
 using H2Sharp.Indexes;
 using H2Sharp.Message;
 using H2Sharp.Schemas;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Tables;
@@ -153,7 +154,16 @@ public abstract class QueryExpressionTable : Table
                 type = expr.GetTypeInfo();
             }
 
-            list.Add(new Column(columnName, type, this, i));
+            Column column = new(columnName, type, this, i);
+            // The reference's Table.setColumns refuses a column whose type is still unknown;
+            // these tables install their array here rather than through setColumns.
+            if (type.GetValueType() == Value.Unknown)
+            {
+                throw DbException.Get(
+                    H2Sharp.Api.ErrorCode.UnknownDataType1, column.GetSql(HasSql.TraceSqlFlags));
+            }
+
+            list.Add(column);
         }
 
         return [.. list];

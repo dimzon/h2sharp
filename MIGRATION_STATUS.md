@@ -10088,3 +10088,34 @@ Engine 9, MvStore 152. Обе целевые платформы собирают
 
 Проверено: `H2Sharp.Tests` 1949 зелёный (`Category!=BlockedByPort`), Data 719,
 Engine 9, MvStore 152, Native 98 passed / 23 skipped. Issue #62 закрыт.
+
+### Issue #58: DUAL и SYSIBM.SYSDUMMY1 (2026-11-05)
+
+Порт уже умел `SELECT ... FROM DUAL`, но разрешал DUAL раньше реальной таблицы и не
+знал `SYSIBM.SYSDUMMY1`. Перенесено по эталону:
+
+- `Parser.schemaName` снова хранит схему последнего прочитанного имени (как поле
+  эталонного парсера); `ReadTableOrView` после поиска по схеме/CTE/search path и
+  перед ошибкой «таблицы нет» отдаёт `DualTable` по `isDualTable`: `DUAL` для
+  `SYS`/без схемы, `SYSIBM.SYSDUMMY1` — только при `Mode.SysDummy1`.
+- В `Mode` добавлен `SysDummy1`, включён для DB2 и Derby, как в эталоне.
+- Существующая таблица `DUAL`/`SYSDUMMY1` выигрывает у псевдотаблицы: сначала
+  обычное разрешение имени, затем fallback. Это восстанавливает сценарий
+  эталонного `Scripts/dual.sql`.
+- `QueryExpressionTable.InitColumns` теперь отвергает колонку с неизвестным типом,
+  как `Table.setColumns` в эталоне: `SELECT * FROM (SELECT ? FROM DUAL)` даёт
+  `UNKNOWN_DATA_TYPE_1` на подготовке, а не `PARAMETER_NOT_SET_1` при выполнении.
+  Дефект нашёлся при возврате эталонной ветки `TestUnknownDataType`.
+
+Нативные `TestPreparedStatement.TestPrepareRecompile` и `TestUnknownDataType`
+вернулись к эталонным `FROM DUAL`; `TestChangeType` — к `select (...) from dual`.
+
+Оракулы: `DualOracleTests` — три `JavaOracleFact`: псевдотаблица (0 колонок,
+1 строка), `SYS.DUAL`, JOIN двух DUAL, реальная таблица с тем же именем,
+`INFORMATION_SCHEMA.TABLES`, DB2 и Derby с `SYSIBM.SYSDUMMY1`.
+
+Не входит в этот коммит: `SELECT;` и `SELECT FROM DUAL` (пустой список колонок)
+порт пока отвергает синтаксической ошибкой — отдельный дефект парсера.
+
+Проверено: `H2Sharp.Tests` 1954 зелёных (`Category!=BlockedByPort`), Data 719,
+Engine 9, MvStore 152, Native 98 passed / 23 skipped. Issue #58 закрыт.

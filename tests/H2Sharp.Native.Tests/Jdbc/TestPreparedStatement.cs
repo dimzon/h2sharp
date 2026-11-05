@@ -22,8 +22,7 @@
 // parameter forms of testInterval/testInterval8 (the TIME-only TimeSpan parameter shape
 // carries DAY TO SECOND only). testExecuteUpdateCall is skipped: the CALL statement
 // is not parsed yet (issue #64), so the reference's DATA_CONVERSION_ERROR_1 is
-// unreachable; the DUAL table is also absent (issue #58) — the FROM-less SELECT form
-// is the documented equivalent used here. testPrepareExecute (PREPARE/EXECUTE session
+// unreachable. testPrepareExecute (PREPARE/EXECUTE session
 // statements) is skipped for the same parser gap (issue #64). testExecuteErrorTwice
 // is skipped: CREATE TABLE ... AS SELECT is not parsed yet — the reference's
 // COLUMN_NOT_FOUND_1 on the missing column cannot be reached before the DDL form exists.
@@ -104,9 +103,7 @@ public sealed class TestPreparedStatement : TestDb
     private void TestChangeType(DbConnection conn)
     {
         using DbCommand prep = conn.CreateCommand();
-        // the reference's "from dual": the engine has no DUAL table yet (issue #58),
-        // and a SELECT without FROM is the documented equivalent
-        prep.CommandText = "select (? || ? || ?)";
+        prep.CommandText = "select (? || ? || ?) from dual";
         Add(prep, "a", "b", "c");
         ExecuteQuery(prep);
         prep.Parameters[0].Value = 1;
@@ -322,9 +319,7 @@ public sealed class TestPreparedStatement : TestDb
         DbCommand stat = conn.CreateCommand();
         using (DbCommand prep = conn.CreateCommand())
         {
-            // "FROM DUAL" is not needed: a SELECT without FROM is the documented
-            // equivalent while the engine has no DUAL table (issue #58)
-            prep.CommandText = "SELECT COUNT(*) WHERE ? IS NULL";
+            prep.CommandText = "SELECT COUNT(*) FROM DUAL WHERE ? IS NULL";
             prep.Parameters.Add(new H2Parameter { Value = DBNull.Value });
             ExecuteQuery(prep);
             Execute(stat, "CREATE TABLE TEST(ID INT)");
@@ -371,10 +366,13 @@ public sealed class TestPreparedStatement : TestDb
 
     private void TestUnknownDataType(DbConnection conn)
     {
-        // The reference's first case ("SELECT * FROM (SELECT ? FROM DUAL)") needs the
-        // DUAL table (issue #58), and the FROM-less form does not hit the unknown-type
-        // error, so it is dropped here; the BITAND case below still exercises the same
-        // error.
+        // The reference's first case: a parameter of unknown type in a derived table.
+        using (DbCommand prep = conn.CreateCommand())
+        {
+            prep.CommandText = "SELECT * FROM (SELECT ? FROM DUAL)";
+            AssertThrows(ErrorCode.UnknownDataType1, () => prep.ExecuteReader());
+        }
+
         using (DbCommand prep = conn.CreateCommand())
         {
             prep.CommandText = "VALUES BITAND(?, ?)";

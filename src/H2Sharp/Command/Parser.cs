@@ -453,6 +453,12 @@ public sealed partial class Parser
     private bool recompileAlways;
 
     /// <summary>
+    /// The schema the last read name named, or null when it was not schema-qualified, as the
+    /// reference's <c>schemaName</c>. DUAL's special names are decided from it.
+    /// </summary>
+    private string? schemaName;
+
+    /// <summary>
     /// The select being read, as the reference's <c>currentSelect</c>.
     /// </summary>
     private Query.Select? currentSelect;
@@ -2430,45 +2436,51 @@ public sealed partial class Parser
         else
         {
             tableName = ReadIdentifier();
+            this.schemaName = null;
             Schemas.Schema schema = session.GetCurrentSchema();
             bool schemaExplicit = false;
-            string? tableSchemaName = null;
+            bool dualByMissingSchema = false;
             if (ReadIf(Token.Dot))
             {
                 // The reference reads the schema of the name and looks the table up in it.
                 string first = tableName;
                 tableName = ReadIdentifier();
-                string schemaName;
+                string qualifiedSchema;
                 if (CurrentType == Token.Dot
                     && first.Equals(session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase))
                 {
                     Read();
-                    schemaName = tableName;
+                    qualifiedSchema = tableName;
                     tableName = ReadIdentifier();
                 }
                 else
                 {
-                    schemaName = first;
+                    qualifiedSchema = first;
                 }
 
-                Schemas.Schema? foundSchema = session.GetDatabase().FindSchema(schemaName);
+                this.schemaName = qualifiedSchema;
+                Schemas.Schema? foundSchema = session.GetDatabase().FindSchema(qualifiedSchema);
                 if (foundSchema is null)
                 {
-                    if (!("SYS".Equals(schemaName, StringComparison.OrdinalIgnoreCase)
-                        && "DUAL".Equals(tableName, StringComparison.OrdinalIgnoreCase)))
+                    if (!IsDualTable(tableName))
                     {
-                        throw DbException.Get(Api.ErrorCode.SchemaNotFound1, schemaName);
+                        throw DbException.Get(Api.ErrorCode.SchemaNotFound1, qualifiedSchema);
                     }
 
+                    // A DUAL name under a missing SYS/SYSIBM schema is still the pseudo-table.
+                    dualByMissingSchema = true;
                     foundSchema = session.GetCurrentSchema();
                 }
 
                 schema = foundSchema;
                 schemaExplicit = true;
-                tableSchemaName = schemaName;
             }
 
-            if (CurrentType == Token.OpenParen
+            if (dualByMissingSchema)
+            {
+                fromTable = new Tables.DualTable(session.GetDatabase());
+            }
+            else if (CurrentType == Token.OpenParen
                 && (tableName.Equals(Tables.RangeTable.Name, StringComparison.OrdinalIgnoreCase)
                     || tableName.Equals(Tables.RangeTable.Alias, StringComparison.OrdinalIgnoreCase)))
             {
@@ -2487,13 +2499,6 @@ public sealed partial class Parser
                 fromTable = step is null
                     ? new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max)
                     : new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max, step);
-            }
-            else if ((!schemaExplicit || "SYS".Equals(tableSchemaName, StringComparison.OrdinalIgnoreCase))
-                && "DUAL".Equals(tableName, StringComparison.OrdinalIgnoreCase))
-            {
-                // Parser.isDualTable: DUAL is a table of SYS, but H2 also answers it in the
-                // current schema when the name was not qualified.
-                fromTable = new Tables.DualTable(session.GetDatabase());
             }
             else if (IsWord("TABLE"))
             {
@@ -2898,6 +2903,7 @@ public sealed partial class Parser
         schemaName = null;
         if (!ReadIf(Token.Dot))
         {
+            this.schemaName = null;
             return name;
         }
 
@@ -2941,6 +2947,7 @@ public sealed partial class Parser
             schemaName = first;
         }
 
+        this.schemaName = schemaName;
         return name;
     }
 
@@ -2974,6 +2981,7 @@ public sealed partial class Parser
         schema = session.GetDatabase().GetSchema(defaultSchemaName);
         if (!ReadIf(Token.Dot))
         {
+            schemaName = null;
             return name;
         }
 
@@ -2986,11 +2994,13 @@ public sealed partial class Parser
                     || database.IsIgnoreCatalogs())
                 {
                     schema = CurrentSchema(session);
+                    schemaName = null;
                     name = ReadIdentifier();
                 }
                 else
                 {
                     schema = database.GetSchema(first);
+                    schemaName = first;
                 }
             }
             else
@@ -3007,11 +3017,13 @@ public sealed partial class Parser
                 {
                     Read();
                     schema = database.GetSchema(name);
+                    schemaName = name;
                     name = ReadIdentifier();
                 }
                 else
                 {
                     schema = database.GetSchema(first);
+                    schemaName = first;
                 }
             }
 
@@ -8363,6 +8375,20 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Whether a table name is the DUAL pseudo-table, as the reference's <c>isDualTable</c>.
+    /// </summary>
+    /// <param name="tableName">the table name</param>
+    /// <returns>true if it is DUAL or the DB2/Derby SYSIBM.SYSDUMMY1</returns>
+    private bool IsDualTable(string tableName)
+    {
+        bool schemaMatches(string name)
+            => schemaName is null || schemaName.Equals(name, StringComparison.Ordinal);
+        return (schemaMatches("SYS") && tableName.Equals("DUAL", StringComparison.Ordinal))
+            || (session!.GetMode().SysDummy1 && schemaMatches("SYSIBM")
+                && tableName.Equals("SYSDUMMY1", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Resolves a table or view by name, telling an empty database from a missing table
     /// the way the reference does: no user tables at all is its own error code.
     /// </summary>
@@ -8403,6 +8429,11 @@ public sealed partial class Parser
                     schemas.Add(pathSchema);
                 }
             }
+        }
+
+        if (IsDualTable(tableName))
+        {
+            return new Tables.DualTable(session.GetDatabase());
         }
 
         if (session.GetDatabase().GetFirstUserTable() is null)

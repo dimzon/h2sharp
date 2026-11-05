@@ -229,6 +229,11 @@ public sealed class Mode
     public bool MergeWhere { get; }
 
     /// <summary>
+    /// Whether the pseudo-table SYSIBM.SYSDUMMY1 is available, as it is in DB2 and Derby modes.
+    /// </summary>
+    public bool SysDummy1 { get; }
+
+    /// <summary>
     /// Whether every numeric type may carry a precision and an UNSIGNED suffix, as the MySQL
     /// and MariaDB modes allow. The precision is accepted and ignored, as in the reference.
     /// </summary>
@@ -333,6 +338,7 @@ public sealed class Mode
         bool discardWithTableHints = false,
         bool alterTableModifyColumn = false,
         bool alterTableModifyColumnPreserveNullability = false,
+        bool sysDummy1 = false,
         IReadOnlySet<string>? disallowedTypes = null)
     {
         Enum = modeEnum;
@@ -353,6 +359,7 @@ public sealed class Mode
         LogIsLogBase10 = logIsLogBase10;
         AcceptsCommaAsJsonKeyValueSeparator = acceptsCommaAsJsonKeyValueSeparator;
         MergeWhere = mergeWhere;
+        SysDummy1 = sysDummy1;
         AllNumericTypesHavePrecision = allNumericTypesHavePrecision;
         OnDuplicateKeyUpdate = onDuplicateKeyUpdate;
         NumericWithBooleanComparison = numericWithBooleanComparison;
@@ -419,8 +426,8 @@ public sealed class Mode
                 identityDataType: true, serialDataTypes: true, autoIncrementClause: true,
                 identityClause: true, allowEmptyInPredicate: true, numericWithBooleanComparison: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true,
-                numericWithBooleanComparison: true),
-            ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false),
+                numericWithBooleanComparison: true, sysDummy1: true),
+            ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false, sysDummy1: true),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true,
                 allowPlusForStringConcat: true, topInSelect: true, numericWithBooleanComparison: true),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
