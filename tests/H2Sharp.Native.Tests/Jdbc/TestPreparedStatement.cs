@@ -30,8 +30,7 @@
 // a JSON column written to a file database panics the MVStore writer (issue #60).
 // testArray is skipped: the array parameter form yields no rows (array gaps, issue #14).
 // testPreparedSubquery and testMultipleStatements are skipped: the IDENTITY data type
-// is not parsed yet (issue #61). testParameterInSubquery is skipped: inline REFERENCES
-// without a column list fails with ColumnCountDoesNotMatch (issue #63).
+// is not parsed yet (issue #61).
 // testDateTimeWithParameter is skipped: CREATE TABLE ... AS VALUES is not parsed yet
 // (issue #61).
 using System.Numerics;
@@ -88,8 +87,7 @@ public sealed class TestPreparedStatement : TestDb
         TestCasewhen(conn);
         TestSubquery(conn);
         TestDataTypes(conn);
-        // testParameterInSubquery: inline REFERENCES without a column list is
-        // ColumnCountDoesNotMatch, see the header and issue #63.
+        TestParameterInSubquery(conn);
         TestAfterRollback(conn);
         // testDateTimeWithParameter: CREATE TABLE ... AS VALUES is not parsed yet, see
         // the header and issue #61.
