@@ -1634,8 +1634,52 @@ public sealed class Tokenizer
     /// string literal as well as from the main loop, where it skips the gap between the pieces of a
     /// literal written in several.
     /// </remarks>
+    /// <summary>
+    /// The ASCII whitespace JavaCharacter.IsWhitespace accepts: space, tab, line feed,
+    /// vertical tab, form feed, carriage return.
+    /// </summary>
+    private static readonly SearchValues<char> AsciiWhitespace = SearchValues.Create(" \t\n\v\f\r");
+
+    /// <summary>
+    /// The hexadecimal digits of a 0x… binary string.
+    /// </summary>
+    private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdefABCDEF");
+
+    /// <summary>
+    /// Skips whitespace and comments. ASCII whitespace is jumped in one vectorized sweep; the
+    /// per-character Java check remains for the non-ASCII characters the sweep does not know.
+    /// </summary>
     private static int SkipWhitespace(string sql, int end, int i)
     {
+        if (i <= end)
+        {
+            int skip = sql.AsSpan(i, end + 1 - i).IndexOfAnyExcept(AsciiWhitespace);
+            if (skip < 0)
+            {
+                return end + 1;
+            }
+
+            i += skip;
+            if (sql[i] < 0x80)
+            {
+                if (sql[i] == '/' && i < end)
+                {
+                    char c2 = sql[i + 1];
+                    if (c2 == '*')
+                    {
+                        return SkipWhitespace(sql, end, SkipBracketedComment(sql, end, i));
+                    }
+
+                    if (c2 == '/')
+                    {
+                        return SkipWhitespace(sql, end, SkipSimpleComment(sql, end, i));
+                    }
+                }
+
+                return i;
+            }
+        }
+
         while (i <= end)
         {
             // Same split as the identifier scan: a high surrogate is the only character whose
@@ -1684,11 +1728,8 @@ public sealed class Tokenizer
     private static int Read0xBinaryString(string sql, int end, int i, List<Token> tokens)
     {
         int start = i;
-        for (char c; i <= end && (((c = sql[i]) is >= '0' and <= '9') || ((c = (char)(c & 0xFFDF)) is >= 'A' and <= 'F'));)
-        {
-            i++;
-        }
-
+        int stop = sql.AsSpan(i, end + 1 - i).IndexOfAnyExcept(HexDigits);
+        i = stop < 0 ? end + 1 : i + stop;
         if (i <= end && JavaCharacter.IsJavaIdentifierPart(JavaCharacter.CodePointAt(sql, i)))
         {
             throw DbException.Get(ErrorCode.HexStringWrong1, sql[start..(i + 1)]);
@@ -2138,28 +2179,34 @@ public sealed class Tokenizer
         i += 2;
         for (int level = 1; level > 0;)
         {
-            for (; ; )
+            int rel = sql.AsSpan(i, end - i).IndexOfAny('*', '/');
+            if (rel < 0)
             {
-                if (i >= end)
-                {
-                    throw DbException.GetSyntaxError(sql, tokenStart);
-                }
+                throw DbException.GetSyntaxError(sql, tokenStart);
+            }
 
-                char c = sql[i++];
-                if (c == '*')
+            int p = i + rel;
+            char c = sql[p];
+            if (c == '*')
+            {
+                if (p + 1 <= end && sql[p + 1] == '/')
                 {
-                    if (sql[i] == '/')
-                    {
-                        level--;
-                        i++;
-                        break;
-                    }
+                    level--;
+                    i = p + 2;
                 }
-                else if (c == '/' && sql[i] == '*')
+                else
                 {
-                    level++;
-                    i++;
+                    i = p + 1;
                 }
+            }
+            else if (p + 1 <= end && sql[p + 1] == '*')
+            {
+                level++;
+                i = p + 2;
+            }
+            else
+            {
+                i = p + 1;
             }
         }
 
@@ -2169,12 +2216,8 @@ public sealed class Tokenizer
     private static int SkipSimpleComment(string sql, int end, int i)
     {
         i += 2;
-        for (char c; i <= end && (c = sql[i]) != '\n' && c != '\r'; i++)
-        {
-            //
-        }
-
-        return i;
+        int stop = sql.AsSpan(i, end + 1 - i).IndexOfAny('\r', '\n');
+        return stop < 0 ? end + 1 : i + stop;
     }
 
     private static int ParseParameterIndex(string sql, int end, int i, List<Token> tokens)

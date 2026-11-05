@@ -1610,6 +1610,12 @@ public static class StringUtils
     public static StringBuilder QuoteIdentifier(StringBuilder builder, string s)
         => QuoteIdentifierOrLiteral(builder, s.AsSpan(), '"');
 
+    /// <summary>
+    /// The printable ASCII range of the quoting plain case: space through 126.
+    /// </summary>
+    private static readonly SearchValues<char> PrintableAscii = SearchValues.Create(
+        new string(Enumerable.Range(' ', 127 - ' ').Select(c => (char)c).ToArray()));
+
     private static StringBuilder QuoteIdentifierOrLiteral(StringBuilder builder, ReadOnlySpan<char> s, char q)
     {
         int l = s.Length;
@@ -1617,20 +1623,11 @@ public static class StringUtils
         // The common case is a string with nothing to escape in it, and there the loop below does
         // one code point read and one append call per character. In a CPU profile that quoting was
         // the single most expensive thing the value layer did, which is not where quoting belongs.
-        // A single pass says whether the fast case applies, and the text then goes in one append.
-        // The test is the same condition the loop itself applies: a character below a space or
-        // above 127 needs the U& form, and the quote character has to be doubled. A surrogate is
-        // above 127, so a string holding one cannot slip through here.
-        bool plain = true;
-        for (int i = 0; i < l; i++)
-        {
-            char c = s[i];
-            if (c < ' ' || c > 127 || c == q)
-            {
-                plain = false;
-                break;
-            }
-        }
+        // Two vectorized sweeps say whether the fast case applies, and the text then goes in one
+        // append. The test is the same condition the loop itself applies: a character below a
+        // space or above 127 needs the U& form, and the quote character has to be doubled. A
+        // surrogate is above 127, so a string holding one cannot slip through here.
+        bool plain = s.IndexOfAnyExcept(PrintableAscii) < 0 && s.IndexOf(q) < 0;
 
         if (plain)
         {
