@@ -46,6 +46,38 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     private readonly TxDecisionMaker<K, V>.PutIfAbsentDecisionMaker ifAbsentDecisionMaker;
     private readonly TxDecisionMaker<K, V>.LockDecisionMaker lockDecisionMaker;
 
+    // Java's Long.valueOf interns -128..127, so the reference's Long-keyed maps reuse those
+    // boxes. This port stores transactional keys as objects (see ObjectMapDataType), so every
+    // row lookup would box its id; the same small range is cached here. Larger ids still box.
+    private static readonly object[] SmallKeys = BuildSmallKeys();
+
+    private static object[] BuildSmallKeys()
+    {
+        object[] keys = new object[128];
+        for (int i = 0; i < keys.Length; i++)
+        {
+            keys[i] = (long)i;
+        }
+
+        return keys;
+    }
+
+    private static object BoxKey(K key)
+    {
+        if (typeof(K) == typeof(long))
+        {
+            long value = Unsafe.As<K, long>(ref key);
+            if ((ulong)value < (ulong)SmallKeys.Length)
+            {
+                return SmallKeys[(int)value];
+            }
+
+            return value;
+        }
+
+        return key!;
+    }
+
     internal TransactionMap(Transaction transaction, MVMap<object, VersionedValue<object>> map)
     {
         this.transaction = transaction;
@@ -257,7 +289,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     {
         long undoKey = transaction.Log(map.GetId(), key, null);
         long entryId = TransactionStore.GetLogId(undoKey);
-        map.Append((object)key!, VersionedValueUncommitted<object>.GetInstance<object>(
+        map.Append(BoxKey(key), VersionedValueUncommitted<object>.GetInstance<object>(
             undoKey, (object?)value, null, entryId));
         hasChanges = true;
     }
@@ -283,7 +315,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     {
         DataUtils.CheckArgument(value is not null, "The value may not be null");
         VersionedValue<object>? newValue = VersionedValueCommitted<object>.GetInstance((object?)value);
-        VersionedValue<object>? oldValue = map.Put((object)key!, newValue!);
+        VersionedValue<object>? oldValue = map.Put(BoxKey(key), newValue!);
         object? result = oldValue is null ? null : oldValue.GetCurrentValue();
         return TransactionStore.Unbox<V>(result);
     }
@@ -329,7 +361,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
             K k = (K)key!;
             // second parameter (value) is not really used,
             // since TxDecisionMaker has it embedded
-            result = map.Operate((object)k!, null, decisionMaker);
+            result = map.Operate(BoxKey(k), null, decisionMaker);
 
             Decision? decision = decisionMaker.GetDecision();
             Debug.Assert(decision is not null);
@@ -406,7 +438,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
             case IsolationLevel.ReadUncommitted:
                 {
                     Snapshot<object, VersionedValue<object>> snapshot = GetStatementSnapshot();
-                    VersionedValue<object>? data = map.Get(snapshot.Root.root, (object)key!);
+                    VersionedValue<object>? data = map.Get(snapshot.Root.root, BoxKey(key));
                     if (data is not null)
                     {
                         return TransactionStore.Unbox<V>(data.GetCurrentValue());
@@ -421,7 +453,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
                 if (transaction.HasChanges())
                 {
                     Snapshot<object, VersionedValue<object>> snapshot = GetStatementSnapshot();
-                    VersionedValue<object>? data = map.Get(snapshot.Root.root, (object)key!);
+                    VersionedValue<object>? data = map.Get(snapshot.Root.root, BoxKey(key));
                     if (data is not null)
                     {
                         long id = data.GetOperationId();
@@ -450,7 +482,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     private object? GetFromSnapshotObject(RootReference<object, VersionedValue<object>> rootRef,
         long[] committingTransactions, K key)
     {
-        VersionedValue<object>? data = map.Get(rootRef.root, (object)key!);
+        VersionedValue<object>? data = map.Get(rootRef.root, BoxKey(key));
         if (data is null)
         {
             // doesn't exist
@@ -571,7 +603,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public bool IsDeletedByCurrentTransaction(K key)
     {
-        VersionedValue<object>? data = map.Get((object)key!);
+        VersionedValue<object>? data = map.Get(BoxKey(key));
         if (data is not null)
         {
             long id = data.GetOperationId();
@@ -588,7 +620,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public bool IsSameTransaction(K key)
     {
-        VersionedValue<object>? data = map.Get((object)key!);
+        VersionedValue<object>? data = map.Get(BoxKey(key));
         if (data is null)
         {
             // doesn't exist or deleted by a committed transaction
@@ -694,7 +726,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public KeyValuePair<K, V>? CeilingEntry(K key)
     {
-        var it = ChooseIterator<KeyValuePair<K, V>>((object?)key, null, false);
+        var it = ChooseIterator<KeyValuePair<K, V>>(BoxKey(key), null, false);
         if (it.TryFetchNext(out KeyValuePair<K, V> value))
         {
             return value;
@@ -708,7 +740,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public K? CeilingKey(K key)
     {
-        var it = ChooseIterator<K>((object?)key, null, false);
+        var it = ChooseIterator<K>(BoxKey(key), null, false);
         return it.TryFetchNext(out K value) ? value : default;
     }
 
@@ -717,7 +749,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public KeyValuePair<K, V>? FloorEntry(K key)
     {
-        var it = ChooseIterator<KeyValuePair<K, V>>((object?)key, null, true);
+        var it = ChooseIterator<KeyValuePair<K, V>>(BoxKey(key), null, true);
         if (it.TryFetchNext(out KeyValuePair<K, V> value))
         {
             return value;
@@ -731,7 +763,7 @@ public sealed class TransactionMap<K, V> : ITransactionMap
     /// </summary>
     public K? FloorKey(K key)
     {
-        var it = ChooseIterator<K>((object?)key, null, true);
+        var it = ChooseIterator<K>(BoxKey(key), null, true);
         return it.TryFetchNext(out K value) ? value : default;
     }
 
@@ -747,9 +779,9 @@ public sealed class TransactionMap<K, V> : ITransactionMap
 
     private KeyValuePair<K, V>? HigherLowerEntry(K key, bool lower)
     {
-        var it = ChooseIterator<KeyValuePair<K, V>>((object?)key, null, lower);
+        var it = ChooseIterator<KeyValuePair<K, V>>(BoxKey(key), null, lower);
         KeyValuePair<K, V>? result = TryFetchEntry(it);
-        if (result is not null && map.GetKeyType().Compare((object?)key, (object?)result.Value.Key) == 0)
+        if (result is not null && map.GetKeyType().Compare(BoxKey(key), (object?)result.Value.Key) == 0)
         {
             result = TryFetchEntry(it);
         }
@@ -769,9 +801,9 @@ public sealed class TransactionMap<K, V> : ITransactionMap
 
     private K? HigherLowerKey(K key, bool lower)
     {
-        var it = ChooseIterator<K>((object?)key, null, lower);
+        var it = ChooseIterator<K>(BoxKey(key), null, lower);
         K? result = it.TryFetchNext(out K first) ? first : default;
-        if (map.GetKeyType().Compare((object?)key, (object?)result) == 0)
+        if (map.GetKeyType().Compare(BoxKey(key), (object?)result) == 0)
         {
             result = it.TryFetchNext(out K second) ? second : default;
         }

@@ -119,6 +119,28 @@ public sealed class TransactionMapAllocationTests : IDisposable
         }
     }
 
+    [Fact]
+    public void SmallLongKeyLookupsDoNotBox()
+    {
+        Transaction transaction = transactions.Begin();
+        try
+        {
+            TransactionMap<long, string> map = transaction.OpenMap<long, string>("alloc_long");
+            map.Put(1L, "value");
+            Assert.Equal("value", map.GetImmediate(1L));
+
+            // Java's Long.valueOf reuses -128..127, and the reference's row ids are Longs.
+            // Without the same cache every lookup allocated a boxed long. ContainsKey takes
+            // an object (the reference's containsKey(Object)), so its caller boxes; this
+            // measures the key-typed lookup path.
+            Assert.Equal(0, Measure(() => map.GetImmediate(1L)));
+        }
+        finally
+        {
+            transaction.Rollback();
+        }
+    }
+
     /// <summary>
     /// Runs the action a few times for the JIT and the lazy statics, then takes the smallest
     /// allocation figure of five measured runs, so a tiered recompilation or a background
