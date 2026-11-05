@@ -236,4 +236,10 @@ public sealed class TestFile : DataHandler
     {
         return CompareMode.GetInstance(null, 0);
     }
+
+    /// <inheritdoc/>
+    LobStorageInterface DataHandler.GetLobStorage()
+    {
+        return null!;
+    }
 }

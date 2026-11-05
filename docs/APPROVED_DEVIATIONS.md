@@ -541,6 +541,23 @@ unmanaged-образ, и на диск пишется из него.
   сохранены (покрыто тестами `FileSystemTests`);
 * формат файла и наблюдаемое поведение `FilePath` не меняются.
 
+### D-041. Хранилище LOB (`LobStorageMap`) — упрощённая форма
+
+Указание пользователя (ветка `lob-storage-native`): подключить хранилище LOB в
+упрощённой форме по сравнению с эталоном:
+
+* LOB хранятся в двух картах MVStore: `lobBlocks` (long → byte[] фиксированного
+  размера 256 КБ) и `lobMeta` (long → BlobMeta, включая charLength для CLOB);
+* удаление синхронное, без cleanup-executor и reference counting эталона;
+* `copyLob` только перенацеливает tableId;
+* значение в строке хранит ссылку: маркер −2, lobId, tableId (сериализация в
+  `ValueDataType`); чтение идёт через `DataHandler.GetLobStorage()`;
+* `Database` реализует `DataHandler` (включая `GetLobStorage`), `SessionLocal`
+  отдаёт БД как handler; RowFactory таблиц получает database как handler.
+
+Открыто: native-арена для блоков (SP15) поверх этой схемы, персистентность
+временных LOB и потоковость создания (без материализации всего потока).
+
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 
 ### P-007. `ROWNUM` в DML — текущей команды нет

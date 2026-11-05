@@ -30,8 +30,8 @@ public interface DataHandler
     /// <summary>
     /// Where the database lives.
     /// </summary>
-    /// <returns>the path</returns>
-    string GetDatabasePath();
+    /// <returns>the path, or null when there is no single path</returns>
+    string? GetDatabasePath();
 
     /// <summary>
     /// Open a file at the given place.
@@ -84,4 +84,12 @@ public interface DataHandler
     /// </summary>
     /// <returns>the compare mode</returns>
     CompareMode GetCompareMode();
+
+    /// <summary>
+    /// The LOB storage of this database. A LOB larger than
+    /// <see cref="GetMaxLengthInplaceLob"/> is written through it, and the value keeps a
+    /// reference instead of the bytes.
+    /// </summary>
+    /// <returns>the storage</returns>
+    LobStorageInterface GetLobStorage();
 }

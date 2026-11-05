@@ -214,7 +214,7 @@ public sealed partial class Parser
         {
             if (IsWord("DEFAULT"))
             {
-                if (ReadIfWords("ON", "NULL"))
+                if (ReadIfWords(WordsOnNull))
                 {
                     AlterTableAlterColumn command = GetAlterTableAlterColumnDropDefaultExpression(schema, tableName, ifTableExists, column,
                         CommandInterface.AlterTableAlterColumnDefaultOnNull);
@@ -230,7 +230,7 @@ public sealed partial class Parser
             if (IsWord("IDENTITY"))
                 return GetAlterTableAlterColumnDropDefaultExpression(schema, tableName, ifTableExists, column,
                     CommandInterface.AlterTableAlterColumnDropIdentity);
-            if (ReadIfWords("ON", "UPDATE"))
+            if (ReadIfWords(WordsOnUpdate))
                 return GetAlterTableAlterColumnDropDefaultExpression(schema, tableName, ifTableExists, column,
                     CommandInterface.AlterTableAlterColumnOnUpdate);
             ExpectWord("NOT");
@@ -270,7 +270,7 @@ public sealed partial class Parser
     private Prepared? ParseAlterTableAlterColumnIdentity(Schema schema, string tableName, bool ifTableExists, Column? column)
     {
         bool? always = null;
-        if (ReadIfWords("SET", "GENERATED"))
+        if (ReadIfWords(WordsSetGenerated))
         {
             if (IsWord("ALWAYS")) always = true;
             else { ExpectWord("BY"); ExpectWord("DEFAULT"); always = false; }
@@ -300,7 +300,7 @@ public sealed partial class Parser
     private Prepared ParseAlterTableAlterColumnSet(Schema schema, string tableName, bool ifTableExists,
         bool ifExists, string columnName, Column? column)
     {
-        if (ReadIfWords("DATA", "TYPE"))
+        if (ReadIfWords(WordsDataType))
             return ParseAlterTableAlterColumnDataType(schema, tableName, columnName, ifTableExists, ifExists);
         AlterTableAlterColumn command = new(session!, schema);
         command.SetTableName(tableName);
@@ -311,7 +311,7 @@ public sealed partial class Parser
         else if (nullConstraint == NullConstraintType.NullIsNotAllowed) command.SetType(CommandInterface.AlterTableAlterColumnNotNull);
         else if (IsWord("DEFAULT"))
         {
-            if (ReadIfWords("ON", "NULL"))
+            if (ReadIfWords(WordsOnNull))
             {
                 command.SetType(CommandInterface.AlterTableAlterColumnDefaultOnNull);
                 command.SetBooleanFlag(true);
@@ -322,7 +322,7 @@ public sealed partial class Parser
                 command.SetDefaultExpression(ReadExpression());
             }
         }
-        else if (ReadIfWords("ON", "UPDATE"))
+        else if (ReadIfWords(WordsOnUpdate))
         {
             command.SetType(CommandInterface.AlterTableAlterColumnOnUpdate);
             command.SetDefaultExpression(ReadExpression());
@@ -406,7 +406,7 @@ public sealed partial class Parser
     private NullConstraintType ParseNotNullConstraint()
     {
         NullConstraintType nullConstraint;
-        if (ReadIfWords("NOT", "NULL")) nullConstraint = NullConstraintType.NullIsNotAllowed;
+        if (ReadIfWords(WordsNotNull)) nullConstraint = NullConstraintType.NullIsNotAllowed;
         else if (ReadIfCompat("NULL")) nullConstraint = NullConstraintType.NullIsAllowed;
         else return NullConstraintType.NoNullConstraintFound;
 
@@ -423,7 +423,7 @@ public sealed partial class Parser
     {
         if (ReadIfCompat("ENABLE"))
         {
-            if (!ReadIfWords("VALIDATE") && ReadIfWords("NOVALIDATE"))
+            if (!ReadIfWords(WordsValidate) && ReadIfWords(WordsNoValidate))
             {
                 // Turn off constraint, allow NULLs
                 nullConstraint = NullConstraintType.NullIsAllowed;
@@ -433,9 +433,9 @@ public sealed partial class Parser
         {
             // Turn off constraint, allow NULLs
             nullConstraint = NullConstraintType.NullIsAllowed;
-            if (!ReadIfWords("VALIDATE"))
+            if (!ReadIfWords(WordsValidate))
             {
-                ReadIfWords("NOVALIDATE");
+                ReadIfWords(WordsNoValidate);
             }
         }
 
@@ -529,7 +529,7 @@ public sealed partial class Parser
         if (IsWord("AS")) column.SetGeneratedExpression(ReadExpression());
         else if (IsWord("DEFAULT"))
         {
-            if (ReadIfWords("ON", "NULL")) defaultOnNull = true;
+            if (ReadIfWords(WordsOnNull)) defaultOnNull = true;
             else column.SetDefaultExpression(session!, ReadExpression());
         }
         else if (IsWord("GENERATED"))
@@ -550,7 +550,7 @@ public sealed partial class Parser
             else if (always) column.SetGeneratedExpression(ReadExpression());
             else throw DbException.GetSyntaxError(sql, Current.Start);
         }
-        if (!column.IsIdentity() && !column.IsGenerated() && ReadIfWords("ON", "UPDATE"))
+        if (!column.IsIdentity() && !column.IsGenerated() && ReadIfWords(WordsOnUpdate))
             column.SetOnUpdateExpression(session!, ReadExpression());
         if (!column.IsIdentity())
         {
@@ -567,7 +567,7 @@ public sealed partial class Parser
         }
         else if (nullConstraint == NullConstraintType.NullIsNotAllowed) column.SetNullable(false);
         else if (!column.IsIdentity()) column.SetNullable(defaultNullable);
-        if (!defaultOnNull && ReadIfWords("DEFAULT", "ON", "NULL")) defaultOnNull = true;
+        if (!defaultOnNull && ReadIfWords(WordsDefaultOnNull)) defaultOnNull = true;
         column.SetDefaultOnNull(defaultOnNull);
         if (!column.IsGenerated() && IsWord("SEQUENCE"))
         {
@@ -691,7 +691,7 @@ public sealed partial class Parser
         while (true)
         {
             string? constraintName = IsWord("CONSTRAINT") ? ReadIdentifier() : null;
-            if (ReadIfWords("PRIMARY", "KEY"))
+            if (ReadIfWords(WordsPrimaryKey))
             {
                 AlterTableAddConstraint pk = NewPrimaryKeyConstraintCommand(session!, schema, tableName, column);
                 if (constraintName is not null) pk.SetConstraintName(constraintName);
@@ -723,7 +723,7 @@ public sealed partial class Parser
                     CommandInterface.AlterTableAddConstraintCheck, CheckExpression: checkExpression);
                 command.AddConstraintCommand(CreateAddConstraintCommand(session!, schema, tableName, false, definition));
             }
-            else if (ReadIfWords("NOT", "NULL")) column.SetNullable(false);
+            else if (ReadIfWords(WordsNotNull)) column.SetNullable(false);
             else if (IsWord("NULL")) column.SetNullable(true);
             else if (IsWord("COMMENT")) { IsWord("IS"); column.SetComment(ReadString()); }
             else if (constraintName is null && !column.IsIdentity()
@@ -810,7 +810,7 @@ public sealed partial class Parser
             requireQuery = true;
         }
 
-        if (!requireQuery && overridingSystem is null && ReadIfWords("DEFAULT", "VALUES"))
+        if (!requireQuery && overridingSystem is null && ReadIfWords(WordsDefaultValues))
         {
             command.AddRow(System.Array.Empty<Expression>());
         }
@@ -874,7 +874,7 @@ public sealed partial class Parser
         else command.SetQuery(ParseQueryExpression(prepare: false));
 
         if (provider.GetMode().OnDuplicateKeyUpdate
-            && ReadIfWords("ON", "DUPLICATE", "KEY", "UPDATE"))
+            && ReadIfWords(WordsOnDuplicateKeyUpdate))
         {
             do
             {

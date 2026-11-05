@@ -129,18 +129,25 @@ public sealed partial class LobStorageMap
         internal readonly long Hash;
 
         /// <summary>
+        /// The number of UTF-16 units, for CLOBs; 0 for BLOBs.
+        /// </summary>
+        internal readonly long CharLength;
+
+        /// <summary>
         /// Creates LOB meta data.
         /// </summary>
         /// <param name="streamStoreId">the stream identifier</param>
         /// <param name="tableId">the table id</param>
         /// <param name="byteCount">the number of bytes</param>
         /// <param name="hash">the hash</param>
-        public BlobMeta(byte[] streamStoreId, int tableId, long byteCount, long hash)
+        /// <param name="charLength">the number of UTF-16 units, 0 for BLOBs</param>
+        public BlobMeta(byte[] streamStoreId, int tableId, long byteCount, long hash, long charLength = 0)
         {
             StreamStoreId = streamStoreId;
             TableId = tableId;
             ByteCount = byteCount;
             Hash = hash;
+            CharLength = charLength;
         }
 
         /// <summary>
@@ -168,6 +175,7 @@ public sealed partial class LobStorageMap
                 _ = buff.PutVarInt(obj.TableId);
                 _ = buff.PutVarLong(obj.ByteCount);
                 _ = buff.PutLong(obj.Hash);
+                _ = buff.PutVarLong(obj.CharLength);
             }
 
             /// <inheritdoc/>
@@ -179,7 +187,8 @@ public sealed partial class LobStorageMap
                 int tableId = DataUtils.ReadVarInt(buff, ref position);
                 long byteCount = DataUtils.ReadVarLong(buff, ref position);
                 long hash = DataUtils.ReadFixedLong(buff, ref position);
-                return new BlobMeta(streamStoreId, tableId, byteCount, hash);
+                long charLength = DataUtils.ReadVarLong(buff, ref position);
+                return new BlobMeta(streamStoreId, tableId, byteCount, hash, charLength);
             }
 
             /// <inheritdoc/>
