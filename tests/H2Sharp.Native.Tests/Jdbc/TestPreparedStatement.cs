@@ -26,8 +26,6 @@
 // statements) is skipped for the same parser gap (issue #64). testExecuteErrorTwice
 // is skipped: CREATE TABLE ... AS SELECT is not parsed yet — the reference's
 // COLUMN_NOT_FOUND_1 on the missing column cannot be reached before the DDL form exists.
-// testJson is skipped: a JSON column written to a file database panics the MVStore writer
-// (issue #60).
 // testArray is skipped: the array parameter form yields no rows (array gaps, issue #14).
 // testPreparedSubquery and testMultipleStatements are skipped: the IDENTITY data type
 // is not parsed yet (issue #61).
@@ -76,8 +74,7 @@ public sealed class TestPreparedStatement : TestDb
         TestTime(conn);
         TestDateTime(conn);
         TestOffsetDateTime(conn);
-        // testJson: a JSON column's create/insert panics the MVStore writer
-        // ("Unsupported value type 38"), see the header and issue #60.
+        TestJson(conn);
         // testArray: the array parameter into table(x int = ?) yields no rows
         // (array gaps, issue #14), see the header.
         // testPreparedSubquery, testMultipleStatements: IDENTITY data type is not
@@ -578,7 +575,23 @@ public sealed class TestPreparedStatement : TestDb
             prep.CommandText = "INSERT INTO TEST VALUES (?, ?)";
             Add(prep, 1, "[1]");
             _ = prep.ExecuteNonQuery();
-            // BISECT: rest of TestJson inserts disabled
+            // The reference's ? FORMAT JSON parameter: the string is the document itself.
+            prep.CommandText = "INSERT INTO TEST VALUES (?, ? FORMAT JSON)";
+            prep.Parameters[0].Value = 2;
+            prep.Parameters[1].Value = "[1]";
+            _ = prep.ExecuteNonQuery();
+            prep.Parameters[0].Value = 3;
+            prep.Parameters[1].Value = DBNull.Value;
+            _ = prep.ExecuteNonQuery();
+            // The reference's setObject(index, value, H2Type.JSON): the ADO.NET caller passes
+            // a JSON document, which maps to ValueJson directly.
+            prep.CommandText = "INSERT INTO TEST VALUES (?, ?)";
+            prep.Parameters[0].Value = 4;
+            prep.Parameters[1].Value = JsonDocument.Parse("[1]");
+            _ = prep.ExecuteNonQuery();
+            prep.Parameters[0].Value = 5;
+            prep.Parameters[1].Value = DBNull.Value;
+            _ = prep.ExecuteNonQuery();
         }
 
         stat.CommandText = "SELECT J FROM TEST ORDER BY ID";
@@ -589,7 +602,7 @@ public sealed class TestPreparedStatement : TestDb
             for (int i = 0; i < 2; i++)
             {
                 AssertTrue(rs.Read());
-                AssertEquals("[1]", Encoding.UTF8.GetString(rs.GetFieldValue<byte[]>(0)));
+                AssertEquals("[1]", rs.GetString(0));
                 AssertTrue(rs.Read());
                 AssertTrue(rs.IsDBNull(0));
             }

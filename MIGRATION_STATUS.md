@@ -10227,3 +10227,27 @@ Issue #63 закрыт.
 
 Проверено: Native `TestPreparedStatement` зелёный, оракул зелёный.
 Issue #59 закрыт. `testExecuteUpdateCall` по-прежнему ждёт CALL (#64).
+
+### Issue #60: JSON и DECFLOAT в хранилище MVStore (2026-11-05)
+
+`ValueDataType` не умел писать/читать два типа, которые создаёт движок:
+`Value.Json` (паника `Unsupported value type 38` на файловой БД) и
+`Value.Decfloat` — оба до этого падали в `default`. Перенесено из эталона
+`ValueDataType.java` дословно:
+
+* JSON — `writeBinary(JSON)`: тег 18, длина, байты документа; чтение —
+  `ValueJson.GetInternal(ReadBytes)`.
+* DECFLOAT — тег 138: конечное значение как scale + unscaled big-endian
+  (тот же `Bits.ToBigEndian`, что и у NUMERIC); `-Infinity`/`Infinity`/`NaN`
+  как `len = -3/-2/-1` после нулевого scale.
+
+Нативный `TestJson` возвращён в набор целиком (был усечён до «BISECT»):
+строковый JSON (`"[1]"`), `? FORMAT JSON`-документ (`[1]`), NULL, параметр
+`JsonDocument` (форма `setObject(x, H2Type.JSON)`) — на файловой БД.
+
+Оракул: `FileStorageOracleTests` — каждая сторона пишет в свою временную файловую
+БД, `CHECKPOINT`, закрытие, переоткрытие; сравнивается только текст выборки
+(JSON-строка/документ/NULL, DECFLOAT 1.5/±Infinity/NaN/NULL) построчно с JVM.
+
+Проверено: MvStore 152, `H2Sharp.Tests` 1961 зелёных (`Category!=BlockedByPort`).
+Issue #60 закрыт.

@@ -66,6 +66,7 @@ public sealed class ValueDataType : BasicDataType<Value>
     private const byte Blob = 15;
     private const byte Clob = 16;
     private const byte Array = 17;
+    private const byte Json = 18;
     private const byte JavaObject = 19;
     private const byte Uuid = 20;
     private const byte Char = 21;
@@ -84,6 +85,8 @@ public sealed class ValueDataType : BasicDataType<Value>
     private const int TimeTz = 136;
 
     private const int Binary = 137;
+
+    private const int Decfloat = 138;
 
     private const byte Int0To15 = 32;
     private const byte Bigint0To7 = 48;
@@ -581,6 +584,49 @@ public sealed class ValueDataType : BasicDataType<Value>
                     break;
                 }
 
+            case Value.Decfloat:
+                {
+                    ValueDecfloat d = (ValueDecfloat)v;
+                    buff.Put((byte)Decfloat);
+                    if (d.IsFinite())
+                    {
+                        BigDecimal x = d.GetBigDecimal();
+                        byte[] bytes = Bits.ToBigEndian(x.UnscaledValue);
+                        _ = buff.PutVarInt(x.Scale)
+                            .PutVarInt(bytes.Length)
+                            .Put(bytes, 0, bytes.Length);
+                    }
+                    else
+                    {
+                        int c;
+                        if (ReferenceEquals(d, ValueDecfloat.NegativeInfinity))
+                        {
+                            c = -3;
+                        }
+                        else if (ReferenceEquals(d, ValueDecfloat.PositiveInfinity))
+                        {
+                            c = -2;
+                        }
+                        else
+                        {
+                            c = -1;
+                        }
+
+                        _ = buff.PutVarInt(0).PutVarInt(c);
+                    }
+
+                    break;
+                }
+
+            case Value.Json:
+                {
+                    // A JSON value is its raw document bytes, as the reference's
+                    // writeBinary(JSON) writes it.
+                    byte[] bytes = v.GetBytesNoCopy() ?? [];
+                    buff.Put(Json).PutVarInt(bytes.Length).Put(bytes, 0, bytes.Length);
+                    break;
+                }
+
             case Value.Blob:
                 {
                     buff.Put(Blob);
@@ -837,6 +883,30 @@ public sealed class ValueDataType : BasicDataType<Value>
 
             case Binary:
                 return ValueBinary.GetNoCopy(ReadBytes(buff, ref position));
+
+            case Decfloat:
+                {
+                    int scale = DataUtils.ReadVarInt(buff, ref position);
+                    int len = DataUtils.ReadVarInt(buff, ref position);
+                    switch (len)
+                    {
+                        case -3:
+                            return ValueDecfloat.NegativeInfinity;
+                        case -2:
+                            return ValueDecfloat.PositiveInfinity;
+                        case -1:
+                            return ValueDecfloat.NotANumber;
+                        default:
+                            {
+                                BigInteger b = Bits.FromBigEndian(buff.Slice(position, len));
+                                position += len;
+                                return ValueDecfloat.Get(new BigDecimal(b, scale));
+                            }
+                    }
+                }
+
+            case Json:
+                return ValueJson.GetInternal(ReadBytes(buff, ref position));
 
             case Char:
                 return ValueChar.Get(ReadString(buff, ref position));
