@@ -41,13 +41,17 @@ internal static class H2ParameterRewriter
     internal static (string Text, List<H2Parameter> Ordered) Rewrite(
         string text, H2ParameterCollection parameters, CastDataProvider provider)
     {
-        if (text.IndexOf('$') < 0)
+        if (text.AsSpan().IndexOf('$') < 0)
         {
-            if (text.IndexOf('?') < 0)
+            if (parameters.Count == 0)
             {
                 return (text, []);
             }
 
+            // No '$' anywhere means there are no named parameters: the engine's own "?"
+            // positions take the values in collection order. The binding walk only indexes
+            // this list for the parameters the engine created, so the text does not have to
+            // be scanned for '?' — a command without placeholders simply leaves it unused.
             List<H2Parameter> positional = [];
             foreach (H2Parameter parameter in parameters)
             {
