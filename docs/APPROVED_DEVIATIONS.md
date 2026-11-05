@@ -579,6 +579,28 @@ unmanaged-образ, и на диск пишется из него.
 (включая суррогатные пары). Отклонение внутреннее: тип `internal`, публичный
 контракт `Value.GetReader` не меняется.
 
+### D-044. `SET DATABASE_EVENT_LISTENER` по имени класса — вне scope
+
+Указание пользователя (2026-11-05): форма `SET DATABASE_EVENT_LISTENER 'тип'`
+(и одноимённая URL-опция) не реализуется. Эталон загружает класс по строке через
+`Class.forName`; в .NET слушатель передаётся объектом через принятую точку
+расширения `H2DataSource.SetDatabaseEventListener` (`IH2DatabaseEventListener`,
+ADR-001/D-020/D-021).
+
+Границы:
+
+* `SET DATABASE_EVENT_LISTENER '...'` с непустым именем отказывает
+  `ERROR_SETTING_DATABASE_EVENT_LISTENER_2` (90099); причина называет D-044 и
+  указывает на `H2DataSource.SetDatabaseEventListener`.
+* `SET DATABASE_EVENT_LISTENER NULL`/`''` по-прежнему снимает слушателя, как в
+  эталоне.
+* События `Init`/`Opened`/`ClosingDatabase`/`SetProgress`/`ExceptionThrown` для
+  объектного слушателя работают; это не отступление, а принятая .NET-граница.
+* `DATABASE_EVENT_LISTENER` в строке подключения остаётся неизвестной настройкой
+  и не загружает тип.
+* Reflection-загрузка произвольного типа по имени из SQL не входит в
+  SQL-поверхность порта; регистрация — explicit API на data source.
+
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 
 ### P-007. `ROWNUM` в DML — текущей команды нет

@@ -412,29 +412,28 @@ public sealed partial class Database
     public string? GetJavaObjectSerializerName() => javaObjectSerializerName;
 
     /// <summary>
-    /// Sets the database event listener, loading the class it names.
+    /// Sets the database event listener, or clears it.
     /// </summary>
-    /// <param name="className">the class name</param>
+    /// <param name="className">the class name, or null/empty to clear the listener</param>
     public void SetEventListenerClass(string? className)
     {
         if (string.IsNullOrEmpty(className))
         {
+            // The reference clears the listener on null or an empty name; the object supplied
+            // through H2DataSource.SetDatabaseEventListener is detached the same way.
+            eventListener = null;
             return;
         }
 
-        try
-        {
-            // The reference loads a Java class and casts it to DatabaseEventListener. The
-            // embedder supplies the listener as an object instead: H2DataSource
-            // .SetDatabaseEventListener. A class name from the connection string still fails,
-            // exactly as it does in the reference without the class on the classpath.
-            throw new InvalidOperationException("Class \"" + className + "\" not found");
-        }
-        catch (Exception e)
-        {
-            throw DbException.Get(
-                ErrorCode.ErrorSettingDatabaseEventListener2, e, className, e.ToString());
-        }
+        // D-044 (approved): loading a listener by class name is not implemented. The .NET
+        // listener is an object provided through H2DataSource.SetDatabaseEventListener, so
+        // the name form refuses explicitly instead of pretending to load a class.
+        NotSupportedException cause = new(
+            "SET DATABASE_EVENT_LISTENER: loading a listener by class name is not supported "
+            + "(D-044, approved by the user; see docs/APPROVED_DEVIATIONS.md — provide an "
+            + "IH2DatabaseEventListener through H2DataSource.SetDatabaseEventListener)");
+        throw DbException.Get(
+            ErrorCode.ErrorSettingDatabaseEventListener2, cause, className, cause.Message);
     }
 
     /// <summary>

@@ -8,10 +8,11 @@
 // which is what getClass().getName() answers in the reference. The listener interface
 // is the ADO-level IH2DatabaseEventListener.
 //
-// Modified (port gap, named): the engine does not read the database_event_listener URL
-// option yet, and crash(conn) is the power-off seam of TestBase, which refuses; the
-// test stops there until both are ported. The reference's main() entry is the runner;
-// xUnit runs Test() directly.
+// Modified (port decision, D-044): the engine does not load a listener class named in
+// the database_event_listener URL option; the .NET listener is an object provided to
+// the data source. crash(conn) is the power-off seam of TestBase, which refuses; the
+// test stops there until that seam is ported. The reference's main() entry is the
+// runner; xUnit runs Test() directly.
 using System.Diagnostics;
 using H2Sharp.Data;
 using Xunit;

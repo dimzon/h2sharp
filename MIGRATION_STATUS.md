@@ -10171,3 +10171,25 @@ TextReader, который первый execute вычитывает до кон
 
 Проверено: Data 719, три затронутых Native-теста зелёные, `TestMathUtils` не
 затронут. Issue #57 закрыт.
+
+### D-044: `SET DATABASE_EVENT_LISTENER` по имени класса — не реализуется (2026-11-05)
+
+Указание пользователя: форма `SET DATABASE_EVENT_LISTENER 'тип'` (и URL-опция)
+не реализуется. Запись добавлена в `docs/APPROVED_DEVIATIONS.md` как D-044;
+слушатель в .NET передаётся объектом через
+`H2DataSource.SetDatabaseEventListener` (`IH2DatabaseEventListener`).
+
+Код: `Database.SetEventListenerClass` очищает слушателя на `NULL`/пустом имени
+(как эталон) и на непустом имени отказывает
+`ERROR_SETTING_DATABASE_EVENT_LISTENER_2` (90099) с причиной, называющей D-044 и
+точку регистрации на data source. События `Init/Opened/ClosingDatabase/
+SetProgress/ExceptionThrown` для объектного слушателя уже работали —
+`TestDatabaseEventListener` зелёный; `TestListener` остаётся заблокирован
+power-off seam, а не слушателем.
+
+Тесты: `SetCommandOracleTests` по-прежнему сверяет 90099 с JDBC (эталон отвечает
+тем же кодом на незагружаемый класс); Specs-тест переименован в
+`SetDatabaseEventListener_RefusesClassNameForm` и проверяет D-044 в сообщении.
+
+Проверено: Specs-тест и `SetCommandOracleTests` зелёные. Issue #65 закрыт как
+«не планируется» в части загрузки класса.

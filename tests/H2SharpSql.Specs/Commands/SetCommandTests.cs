@@ -2,6 +2,7 @@
 // Licensed under the MPL 2.0 or the EPL 1.0.
 //
 // docs/commands.html — SET statements, one test per checklist row.
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
@@ -142,15 +143,18 @@ public sealed class SetCommandTests
 
     /// <summary>docs/commands.html:2722 — SET DATABASE_EVENT_LISTENER classNameString</summary>
     [Fact]
-    public void SetDatabaseEventListener_IsAccepted() // CMD-2722
+    public void SetDatabaseEventListener_RefusesClassNameForm() // CMD-2722
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        // A listener class nobody can provide fails the SET, in the reference as well
-        // as here (verified against H2 2.5.259: ERROR_SETTING_DATABASE_EVENT_LISTENER_2).
+        // D-044: the class-name form is not implemented. The reference also refuses a class
+        // it cannot load with ERROR_SETTING_DATABASE_EVENT_LISTENER_2, so the code matches;
+        // the cause names the approved deviation and the .NET registration point.
         H2Sharp.H2SharpException e = Assert.Throws<H2Sharp.H2SharpException>(
             () => connection.Execute("SET DATABASE_EVENT_LISTENER 'sample.MyListener'"));
         Assert.Equal(H2Sharp.Api.ErrorCode.ErrorSettingDatabaseEventListener2, e.H2ErrorCode);
+        Assert.Contains("D-044", e.Message, StringComparison.Ordinal);
+        Assert.Contains("SetDatabaseEventListener", e.Message, StringComparison.Ordinal);
     }
 
     /// <summary>docs/commands.html:2741 — SET DB_CLOSE_DELAY int</summary>

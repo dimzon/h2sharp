@@ -74,6 +74,8 @@ public sealed class SetCommandOracleTests
             "SET BUILTIN_ALIAS_OVERRIDE 1",
             "SET DEFAULT_NULL_ORDERING HIGH",
             "SET DEFAULT_NULL_ORDERING LOW",
+            // D-044: the port refuses every class-name listener; the reference answers the
+            // same 90099 for a class it cannot load, so the oracle still lines up.
             "SET DATABASE_EVENT_LISTENER 'x.y.Z'",
             "SET IGNORECASE FALSE",
             "SET LOCK_MODE 3",
