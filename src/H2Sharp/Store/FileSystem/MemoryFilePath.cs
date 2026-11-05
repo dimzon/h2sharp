@@ -131,7 +131,10 @@ public sealed class MemoryFilePath : FilePath
 
         lock (Sync)
         {
-            _ = Files.Remove(Name);
+            if (Files.Remove(Name, out MemoryFile? file))
+            {
+                file.Dispose();
+            }
         }
     }
 
@@ -244,16 +247,23 @@ public sealed class MemoryFilePath : FilePath
     {
         lock (Sync)
         {
+            foreach (MemoryFile file in Files.Values)
+            {
+                file.Dispose();
+            }
+
             Files.Clear();
         }
     }
 
     /// <summary>
-    /// The bytes of one in-memory file. Growable, and shared by every handle open on it.
+    /// The bytes of one in-memory file. Growable, and shared by every handle open on it. The
+    /// backing store is unmanaged (D-040): an in-memory database can grow past the LOH
+    /// threshold, and a managed single array would hold all of it there.
     /// </summary>
-    private sealed class MemoryFile
+    private sealed class MemoryFile : IDisposable
     {
-        private byte[] buffer = new byte[64];
+        private readonly NativeGrowBuffer buffer = new(64);
 
         /// <summary>
         /// Whether a handle holds the file, as the reference's FileMemData lock counter does.
@@ -283,16 +293,18 @@ public sealed class MemoryFilePath : FilePath
                 throw new ArgumentOutOfRangeException(nameof(value));
             }
 
-            if (value > buffer.Length)
+            Span<byte> span = buffer.GetSpan();
+            if (value > span.Length)
             {
-                Grow((int)value);
+                buffer.EnsureCapacity((int)value);
+                span = buffer.GetSpan();
             }
 
             if (value < Length)
             {
                 // A shorter file zeroes what it gave back, which a disk file does as well and which
                 // is what a store relies on when it reads a page it has just cut.
-                Array.Clear(buffer, (int)value, Length - (int)value);
+                span.Slice((int)value, Length - (int)value).Clear();
             }
 
             Length = (int)value;
@@ -307,7 +319,7 @@ public sealed class MemoryFilePath : FilePath
             }
 
             int count = (int)Math.Min(available, destination.Length);
-            buffer.AsSpan((int)position, count).CopyTo(destination);
+            buffer.GetSpan().Slice((int)position, count).CopyTo(destination);
             return count;
         }
 
@@ -319,28 +331,89 @@ public sealed class MemoryFilePath : FilePath
                 throw new IOException("In-memory file too large: " + end);
             }
 
+            Span<byte> span = buffer.GetSpan();
+            if (end > span.Length)
+            {
+                buffer.EnsureCapacity((int)end);
+                span = buffer.GetSpan();
+            }
+
+            // A disk file reads the gap between writes as zeros; a managed array was zero on
+            // arrival, so the unmanaged backing has to say so explicitly.
+            if (position > Length)
+            {
+                span.Slice(Length, (int)position - Length).Clear();
+            }
+
             if (end > Length)
             {
-                if (end > buffer.Length)
-                {
-                    Grow((int)end);
-                }
-
                 Length = (int)end;
             }
 
-            source.CopyTo(buffer.AsSpan((int)position, source.Length));
+            source.CopyTo(span.Slice((int)position, source.Length));
         }
 
-        private void Grow(int needed)
+        /// <inheritdoc/>
+        public void Dispose() => ((IDisposable)buffer).Dispose();
+    }
+
+    /// <summary>
+    /// A growable unmanaged byte buffer. Freed when the object is collected; the in-memory
+    /// file system owns these until the maps that reference them are gone.
+    /// </summary>
+    private sealed unsafe class NativeGrowBuffer : System.Buffers.MemoryManager<byte>
+    {
+        private void* ptr;
+
+        private int capacity;
+
+        internal NativeGrowBuffer(int initialCapacity)
         {
-            int size = buffer.Length;
+            capacity = initialCapacity;
+            ptr = NativeMemory.Alloc((nuint)capacity);
+        }
+
+        internal void EnsureCapacity(int needed)
+        {
+            if (needed <= capacity)
+            {
+                return;
+            }
+
+            int size = capacity;
             while (size < needed)
             {
                 size *= 2;
             }
 
-            Array.Resize(ref buffer, size);
+            void* grown = NativeMemory.Alloc((nuint)size);
+            NativeMemory.Copy(ptr, grown, (nuint)capacity);
+            NativeMemory.Free(ptr);
+            ptr = grown;
+            capacity = size;
+        }
+
+        /// <inheritdoc/>
+        public override Span<byte> GetSpan() => new(ptr, capacity);
+
+        /// <inheritdoc/>
+        public override System.Buffers.MemoryHandle Pin(int elementIndex = 0) => new((byte*)ptr + elementIndex);
+
+        /// <inheritdoc/>
+        public override void Unpin()
+        {
+        }
+
+        /// <inheritdoc/>
+        protected override void Dispose(bool disposing) => Free();
+
+        private void Free()
+        {
+            if (ptr is not null)
+            {
+                NativeMemory.Free(ptr);
+                ptr = null;
+            }
         }
     }
 
