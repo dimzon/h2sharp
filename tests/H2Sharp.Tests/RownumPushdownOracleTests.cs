@@ -44,6 +44,44 @@ public sealed class RownumPushdownOracleTests
     }
 
     [JavaOracleFact]
+    public void JoiningAWindowSubqueryMatchesJdbc()
+    {
+        // Issue #71: the join condition must not be pushed into a derived table that
+        // computes a window function. With the reference's QUERY_COMPARABLE rule the
+        // derived table refuses index conditions and the join stays outside.
+        FreshIssuesOracleTests.Compare([
+            "CREATE TABLE Posts(Id INT PRIMARY KEY, TopicId INT, CreatedAt TIMESTAMP)",
+            "INSERT INTO Posts VALUES (1, 1, TIMESTAMP '2024-01-01 10:00:00')",
+            "INSERT INTO Posts VALUES (2, 1, TIMESTAMP '2024-01-02 10:00:00')",
+            "INSERT INTO Posts VALUES (3, 2, TIMESTAMP '2024-01-03 10:00:00')",
+            "SELECT p1.Id, p1.Rank FROM Posts p "
+                + "INNER JOIN (SELECT p0.Id, ROW_NUMBER() OVER(ORDER BY p0.Id) AS Rank "
+                + "FROM Posts p0) p1 ON p.Id = p1.Id",
+            "SELECT p.Id, p1.Rank FROM Posts p "
+                + "INNER JOIN (SELECT p0.Id, ROW_NUMBER() OVER(ORDER BY p0.Id) AS Rank "
+                + "FROM Posts p0) p1 ON p.Id = p1.Id WHERE p1.Rank = 2",
+            // A plain derived table has no window function and still takes the condition.
+            "SELECT p.Id, q.Id FROM Posts p "
+                + "INNER JOIN (SELECT Id FROM Posts) q ON p.Id = q.Id ORDER BY p.Id",
+            "DROP TABLE Posts",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void TheWindowJoinPlanMatchesJdbc()
+    {
+        ExplainOracleTests.Check([
+            "CREATE TABLE Posts(Id INT PRIMARY KEY, TopicId INT, CreatedAt TIMESTAMP)",
+            "INSERT INTO Posts VALUES (1, 1, TIMESTAMP '2024-01-01 10:00:00')",
+            "INSERT INTO Posts VALUES (2, 1, TIMESTAMP '2024-01-02 10:00:00')",
+            "INSERT INTO Posts VALUES (3, 2, TIMESTAMP '2024-01-03 10:00:00')",
+            "EXPLAIN SELECT p1.Id, p1.Rank FROM Posts p "
+                + "INNER JOIN (SELECT p0.Id, ROW_NUMBER() OVER(ORDER BY p0.Id) AS Rank "
+                + "FROM Posts p0) p1 ON p.Id = p1.Id",
+        ]);
+    }
+
+    [JavaOracleFact]
     public void TheRownumPlansKeepTheConditionOutside()
     {
         ExplainOracleTests.Check([
