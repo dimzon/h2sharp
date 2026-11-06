@@ -7,6 +7,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 
 namespace H2Sharp.Command.Dml;
@@ -213,7 +214,23 @@ public static class SetTypes
     /// <param name="name">the set type name</param>
     /// <returns>the number, or -1 when the name is not a setting</returns>
     public static int GetType(string name)
-        => Array.IndexOf(Types, name);
+        => TypeByName.TryGetValue(name, out int index) ? index : -1;
+
+    /// <summary>
+    /// The reverse index, frozen once (round-4 audit, §2.2).
+    /// </summary>
+    private static readonly FrozenDictionary<string, int> TypeByName = BuildTypeByName();
+
+    private static FrozenDictionary<string, int> BuildTypeByName()
+    {
+        Dictionary<string, int> byName = new(Types.Length, StringComparer.Ordinal);
+        for (int i = 0; i < Types.Length; i++)
+        {
+            byName.TryAdd(Types[i], i);
+        }
+
+        return byName.ToFrozenDictionary(StringComparer.Ordinal);
+    }
 
     /// <summary>
     /// Get the set type name.

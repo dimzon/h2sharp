@@ -10596,3 +10596,17 @@ per-op накладных самого дерева (виртуальные вы
   виртуальный вызов и клонирует лишние массивы (keys при SetValue / keys при
   SetChild). Замер: update 0.89 → 1.28 мс (общий флаг) и 1.34 мс (по-массивные
   флаги) — регресс, откачено.
+
+### SP-38: Frozen для Aggregate и SetTypes (2026-11-06)
+
+* `Aggregate.Aggregates` — последний мутабельный hot-path словарь (имена
+  агрегатов читаются из парсера): теперь `FrozenDictionary<string, AggregateType>`
+  (Ordinal); заполнение идёт через локальный Builder и замораживается в конце
+  статического конструктора. Тест реестра (`BuiltinSprintOracleTests`) переведён
+  на `IReadOnlyDictionary`.
+* `SetTypes.GetType` — был `Array.IndexOf` по 48 строкам на каждый SET; теперь
+  параллельный `FrozenDictionary<string,int>` (Ordinal).
+* Эффект на `parse_prepare` не измерим (парсер уже 15–18 мкс против 470 у Java);
+  правка снимает мутабельное статическое состояние и O(48) поиск.
+* Проверено: MvStore 152/152, Data 719/719, агрегатные/парсерные 32/32,
+  H2Sharp.Tests 1973/1973.

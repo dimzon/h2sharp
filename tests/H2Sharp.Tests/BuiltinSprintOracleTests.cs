@@ -38,7 +38,9 @@ public sealed class BuiltinSprintOracleTests
             System.out.println("=UNKNOWN:" + (org.h2.expression.aggregate.Aggregate.getAggregateType("NOT_AN_AGGREGATE") == null));
             """);
         FieldInfo field = typeof(Aggregate).GetField("Aggregates", BindingFlags.NonPublic | BindingFlags.Static)!;
-        Dictionary<string, AggregateType> registry = (Dictionary<string, AggregateType>)field.GetValue(null)!;
+        // The registry is frozen now (round-4 audit, §2.2): read it through the interface.
+        IReadOnlyDictionary<string, AggregateType> registry =
+            (IReadOnlyDictionary<string, AggregateType>)field.GetValue(null)!;
         List<string> port = [.. registry.Keys.OrderBy(name => name, StringComparer.Ordinal)
             .Select(name => "=" + name + ":" + ((int)Aggregate.GetAggregateType(name)!).ToString(CultureInfo.InvariantCulture))];
         port.Add("=UNKNOWN:" + (Aggregate.GetAggregateType("NOT_AN_AGGREGATE") is null).ToString().ToLowerInvariant());

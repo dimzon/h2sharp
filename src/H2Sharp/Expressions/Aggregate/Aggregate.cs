@@ -19,6 +19,7 @@
  * not change with the port's progress.
  */
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
@@ -97,7 +98,7 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
     /// <returns>if distinct is used</returns>
     public bool IsDistinct() => distinct;
 
-    private static readonly Dictionary<string, AggregateType> Aggregates = new(128);
+    private static readonly FrozenDictionary<string, AggregateType> Aggregates;
 
     static Aggregate()
     {
@@ -174,11 +175,16 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
 
         AddAggregate("GCD_AGG", AggregateType.GcdAgg);
         AddAggregate("LCM_AGG", AggregateType.LcmAgg);
+
+        Aggregates = Builder.ToFrozenDictionary(StringComparer.Ordinal);
+        Builder.Clear();
     }
+
+    private static readonly Dictionary<string, AggregateType> Builder = new(128);
 
     private static void AddAggregate(string name, AggregateType type)
     {
-        Aggregates.Add(name, type);
+        Builder.Add(name, type);
     }
 
     /// <summary>
