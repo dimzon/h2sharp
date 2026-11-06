@@ -10863,3 +10863,16 @@ per-op накладных самого дерева (виртуальные вы
 * Проверено: H2Sharp.Tests 2011/2012 (`Category!=BlockedByPort`; один
   красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
   Engine 9.
+
+### Покрытие-спринт 9: границы курсора первичного ключа (2026-11-07)
+
+* `PrimaryKeyBoundsOracleTests` — оракул против JVM: диапазонные предикаты
+  по BIGINT-ключу с границами numeric (в диапазоне, выше MaxLong, ниже
+  MinLong), double (2.0E0, 1E50), DECFLOAT (конечные, ±Infinity, NaN) и
+  NULL-границей — все ветви Min/Max-пересчёта курсора в
+  `MvStore/Db/MVPrimaryIndex.cs` (441–540: Empty на вне-диапазонных,
+  min/max=null на бесконечностях и NaN, LongValue внутри) — ответы
+  совпали с эталоном полностью.
+* Проверено: H2Sharp.Tests — новый тест зелёный (полный прогон см.
+  спринт 8: 2011/2012), Native 97/97 после фикса системных имён
+  (`GetNextSystemIdentifier`).
