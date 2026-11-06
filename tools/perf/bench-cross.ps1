@@ -49,6 +49,10 @@ $javaJson = Join-Path $outDir "$Label-java.json"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # --- build and run the .NET driver ---
+# JVM runs at full C2 by default; .NET's default tier-0 (quick JIT, no inlining)
+# systematically understates the port by 1.7-2x on short benchmarks. Disable tiered
+# compilation for an apples-to-apples comparison (SP-32 findings).
+$env:DOTNET_TieredCompilation = "0"
 if ($ServerGC) {
     $env:COMPlus_gcServer = "1"
 }
@@ -58,6 +62,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($ServerGC) {
     Remove-Item Env:COMPlus_gcServer -ErrorAction SilentlyContinue
 }
+Remove-Item Env:DOTNET_TieredCompilation -ErrorAction SilentlyContinue
 
 # --- merge and print the comparison table ---
 $javaResults = @{}
