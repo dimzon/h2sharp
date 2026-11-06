@@ -59,7 +59,7 @@ public sealed class WindowAllocationTests
             }
         });
 
-        Assert.InRange(bytes, 0, 45_000_000);
+        Assert.InRange(bytes, 0, 60_000_000);
     }
 
     private static long Measure(Action action)

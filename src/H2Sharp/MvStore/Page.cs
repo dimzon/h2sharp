@@ -916,7 +916,12 @@ public abstract class Page<K, V> : IPage
     /// field would let the two drift apart across threads, and the position a reader then used would
     /// belong to a page that is already gone.
     /// </remarks>
-    public sealed class PageReference
+    /// <remarks>
+    /// A struct, not a class: every written edge allocates one object today, and the write path
+    /// touches one edge per tree level per put. Array elements are mutated in place
+    /// (children[i].ResetPos(), children[i].ClearPageReference()); copies are read-only.
+    /// </remarks>
+    public struct PageReference
     {
         /// <summary>
         /// What an array of references starts out holding before it is filled.
@@ -1312,12 +1317,11 @@ public abstract class Page<K, V> : IPage
             int len = GetRawChildPageCount();
             for (int i = 0; i < len; i++)
             {
-                PageReference reference = children[i];
-                Page<K, V>? page = reference.GetPage();
+                Page<K, V>? page = children[i].GetPage();
                 if (page is not null)
                 {
                     page.WriteUnsavedRecursive(manager);
-                    reference.ResetPos();
+                    children[i].ResetPos();
                 }
             }
         }
