@@ -5,12 +5,19 @@
 # tools/perf/H2Sharp.CrossBench) and prints a markdown comparison table:
 #
 #   powershell tools/perf/bench-cross.ps1 -Label first
+#   powershell tools/perf/bench-cross.ps1 -Label servergc -ServerGC
 #
 # Requirements: JDK (javac/java on PATH), the reference jar built
 # (cd reference/h2/h2 && mvn -B -q -DskipTests package), and the .NET SDK.
 # Results land in artifacts/perf/cross/<label>-java.json and <label>-dotnet.json.
+#
+# -ServerGC runs the .NET side with the server GC (COMPlus_gcServer=1). The JVM
+# default is G1 (~server), and the .NET default is workstation, so for an
+# apples-to-apples comparison use -ServerGC; without it the .NET side is
+# measured with its default GC.
 param(
-    [string]$Label = "cross"
+    [string]$Label = "cross",
+    [switch]$ServerGC
 )
 
 # Decimal point in the table regardless of the thread locale (JSON inputs are invariant).
@@ -42,9 +49,15 @@ $javaJson = Join-Path $outDir "$Label-java.json"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # --- build and run the .NET driver ---
+if ($ServerGC) {
+    $env:COMPlus_gcServer = "1"
+}
 $dotnetJson = Join-Path $outDir "$Label-dotnet.json"
 dotnet run -c Release --project $crossProj | Set-Content -Encoding utf8 $dotnetJson
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($ServerGC) {
+    Remove-Item Env:COMPlus_gcServer -ErrorAction SilentlyContinue
+}
 
 # --- merge and print the comparison table ---
 $javaResults = @{}
