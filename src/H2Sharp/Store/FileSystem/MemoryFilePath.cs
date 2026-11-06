@@ -203,11 +203,6 @@ public sealed class MemoryFilePath : FilePath
         ArgumentNullException.ThrowIfNull(newName);
         lock (Sync)
         {
-            if (!Files.TryGetValue(Name, out MemoryFile? file))
-            {
-                throw new FileNotFoundException("File not found: " + Name, Name);
-            }
-
             // The reference's own error for a move onto a name that is taken, and moving onto
             // itself is not a move at all.
             if (!atomicReplace
@@ -217,8 +212,16 @@ public sealed class MemoryFilePath : FilePath
                 throw DbException.Get(ErrorCode.FileRenameFailed2, Name, newName + " (exists)");
             }
 
+            // A missing file is created by the move, as the reference's getMemoryFile does,
+            // and the old name is dropped before the new one is written so a move onto
+            // itself keeps the file.
+            if (!Files.TryGetValue(Name, out MemoryFile? file))
+            {
+                file = new MemoryFile();
+            }
+
+            Files.Remove(Name);
             Files[newName.Name] = file;
-            _ = Files.Remove(Name);
         }
     }
 

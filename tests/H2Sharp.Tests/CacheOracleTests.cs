@@ -107,6 +107,14 @@ public sealed class CacheOracleTests
           }
         }
 
+        static String safeLabel(String label, java.util.function.Supplier<String> body) {
+          try {
+            return label + "|" + body.get();
+          } catch (RuntimeException e) {
+            return label + "|THROWS";
+          }
+        }
+
         static String put(org.h2.util.Cache c, int pos, int mem, boolean changed, boolean removable) {
           try {
             c.put(new Rec(pos, mem, changed, removable));
@@ -169,6 +177,36 @@ public sealed class CacheOracleTests
         System.out.println("allchanged|" + upd.getAllChanged().size());
         upd.setMaxMemory(128);
         System.out.println("maxmem|" + upd.getMaxMemory());
+
+        // A read of a non-head record moves it to the front, so the eviction takes another one.
+        org.h2.util.Cache lru2 = org.h2.util.CacheLRU.getCache(w, "LRU", 5);
+        w.log.clear();
+        for (int i = 1; i <= 4; i++) {
+          R.put(lru2, i, 100, false, true);
+        }
+        lru2.get(1);
+        R.put(lru2, 5, 100, false, true);
+        System.out.println("lruread|" + R.show(lru2, 1) + "|" + R.show(lru2, 2) + "|" + lru2.getMemory());
+
+        // The same position twice refuses instead of silently overwriting (the put helper
+        // swallows the exception, the observable answer is what stays in the cache).
+        System.out.println(R.safeLabel("reput", () -> { R.put(lru2, 5, 100, false, true); return R.show(lru2, 5); }));
+
+        // An unknown cache type refuses.
+        System.out.println(R.safeLabel("badtype", () -> org.h2.util.CacheLRU.getCache(w, "BAD", 16).toString()));
+
+        // An unremovable record blocks the eviction: the removable ones are written back and
+        // dropped, the scan reorders the stuck one, and after the retry the writer's log is
+        // flushed once and the cache gives up, keeping the record.
+        org.h2.util.Cache stuck = org.h2.util.CacheLRU.getCache(w, "LRU", 4);
+        w.log.clear();
+        R.put(stuck, 1, 100, false, false);
+        for (int i = 2; i <= 4; i++) {
+          R.put(stuck, i, 100, false, true);
+        }
+        R.put(stuck, 5, 100, false, true);
+        System.out.println("stuck|" + w.log + "|" + R.show(stuck, 1) + "|" + R.show(stuck, 2) + "|"
+            + R.show(stuck, 5) + "|" + stuck.getMemory());
 
         Trace t = new Trace(nw, "cache");
         System.out.println("trace|" + t.isInfoEnabled() + "|" + t.isDebugEnabled());
@@ -243,6 +281,44 @@ public sealed class CacheOracleTests
         yield return "allchanged|" + upd.GetAllChanged().Count;
         upd.SetMaxMemory(128);
         yield return "maxmem|" + upd.GetMaxMemory();
+
+        // A read of a non-head record moves it to the front, so the eviction takes another one.
+        Cache lru2 = CacheLRU.GetCache(w, "LRU", 5);
+        w.Log.Clear();
+        for (int i = 1; i <= 4; i++)
+        {
+            _ = Put(lru2, i, 100, false, true);
+        }
+
+        _ = lru2.Get(1);
+        _ = Put(lru2, 5, 100, false, true);
+        yield return "lruread|" + Show(lru2, 1) + "|" + Show(lru2, 2) + "|" + lru2.GetMemory();
+
+        // The same position twice refuses instead of silently overwriting (the put helper
+        // swallows the exception, the observable answer is what stays in the cache).
+        yield return Try(
+            () => "reput|" + Show(lru2, 5),
+            "reput|THROWS");
+
+        // An unknown cache type refuses.
+        yield return Try(
+            () => "badtype|" + CacheLRU.GetCache(w, "BAD", 16)!.ToString(),
+            "badtype|THROWS");
+
+        // An unremovable record blocks the eviction: the removable ones are written back and
+        // dropped, the scan reorders the stuck one, and after the retry the writer's log is
+        // flushed once and the cache gives up, keeping the record.
+        Cache stuck = CacheLRU.GetCache(w, "LRU", 4);
+        w.Log.Clear();
+        _ = Put(stuck, 1, 100, false, false);
+        for (int i = 2; i <= 4; i++)
+        {
+            _ = Put(stuck, i, 100, false, true);
+        }
+
+        _ = Put(stuck, 5, 100, false, true);
+        yield return "stuck|" + LogOf(w.Log) + "|" + Show(stuck, 1) + "|" + Show(stuck, 2) + "|"
+            + Show(stuck, 5) + "|" + stuck.GetMemory();
 
         Trace t = new(nullWriter, "cache");
         yield return "trace|" + J(t.IsInfoEnabled()) + "|" + J(t.IsDebugEnabled());
