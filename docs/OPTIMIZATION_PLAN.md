@@ -135,8 +135,8 @@ A3 перепроверен построчно по текущему коду и
 | # | Пункт | Причина визы |
 |---|---|---|
 | SP13 | §2.9 regex-кэш (`RegexpFunction`) | улучшение поверх эталона (паритет, не расхождение) |
-| SP14 | §1.1 off-heap `WriteBuffer`/`Chunk.Buffer` | меняется модель учёта памяти MVStore |
-| SP15 | §1.2 native-арена LOB | только в момент подключения блочного хранилища (LOB_STORE_PLAN) |
+| SP14 | §1.1 off-heap `WriteBuffer`/`Chunk.Buffer` | закрыт SP-29 (native WriteBuffer, без образа) |
+| SP15 | §1.2 native-арена LOB | закрыт SP-28 (NativeLobBlock, 256 КБ) |
 | SP16 | `MemoryFilePath` (из моего аудита, в документе отсутствует) | меняется модель памяти in-memory файла |
 | SP22 | A3 §4.1 typed `MVMap<long,…>` / `TransactionMap` без `object` | структурное отклонение от `MVMap<Object, VersionedValue<Object>>` эталона; нужен бенчмарк, доказывающий эффект, и запись в APPROVED_DEVIATIONS.md |
 | SP23 | A3 §1.1 `CharSliceReader` | новый тип вне `org.h2`; эталон делает тот же `Substring` (`Value.java:795-801`) |
