@@ -10750,3 +10750,29 @@ per-op накладных самого дерева (виртуальные вы
 * Проверено: H2Sharp.Tests 1998/1999 (`Category!=BlockedByPort`; один
   красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
   Engine 9.
+
+### Покрытие-спринт 5: LOB в памяти, trace-писатель, memory-поток, command builder (2026-11-06)
+
+Только тесты, код движка не менялся.
+
+* `LobInMemoryOracleTests` — оракул против JVM: CLOB/BLOB в in-memory БД
+  (весь LOB-путь идёт через `MvStore/Db/LobStorageMap.cs`): короткие
+  значения, длина, подстроки, конкатенация через UPDATE, крупное значение
+  200k через несколько блоков (64 КБ, D-042), чтение BLOB и удаление
+  (26/72 → расширен).
+* `SmallApiPortTests` — 4 порт-теста классов без SQL-поверхности:
+  `TraceListenerWriter` (прокол модуля/уровня в слушатель, вопрос
+  IsEnabled, SetName), `ReadOnlyMemoryStream` (чтение вперёд, исчерпание,
+  отказы Seek/Write/Position), `H2CommandBuilder` (проводка DataAdapter,
+  отказы генерации команд — NotSupported вместо правдоподобного ответа).
+* Найденный вопрос отложен для отдельного движкового спринта (не покрытия):
+  `Select.GetGroupDataIfCurrent(window)` игнорирует параметр `window` —
+  эталон отдаёт groupData для окон и без `IsCurrentGroup()`;
+  `DataAnalysisOperation.GetValue`→`GetWindowResult` и
+  `Expressions/Analysis/PooledRowList.cs` (7 строк) не покрываются ни одной
+  сюитой — результат окна читается иначе, а пул арендованных строк
+  `Dispose`-ится только через `SelectGroups.Reset()`, который для
+  window-запросов в измерениях не вызывается ни разу.
+* Проверено: H2Sharp.Tests 2003/2004 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт), Native 97 (прогон
+  спринта 4 после правки DateTimeFormat).
