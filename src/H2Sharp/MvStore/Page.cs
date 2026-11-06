@@ -966,11 +966,11 @@ public abstract class Page<K, V> : IPage
     /// belong to a page that is already gone.
     /// </remarks>
     /// <remarks>
-    /// A struct, not a class: every written edge allocates one object today, and the write path
-    /// touches one edge per tree level per put. Array elements are mutated in place
-    /// (children[i].ResetPos(), children[i].ClearPageReference()); copies are read-only.
+    /// A class, like the reference: cloning a children array then copies references (4 bytes
+    /// with compressed oops in Java, 8 here) instead of whole structs, and only the changed
+    /// edge allocates an object.
     /// </remarks>
-    public struct PageReference
+    public sealed class PageReference
     {
         /// <summary>
         /// What an array of references starts out holding before it is filled.
