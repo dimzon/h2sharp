@@ -85,7 +85,12 @@ public abstract class Page<K, V> : IPage
     /// A page that shares the keys of another one.
     /// </summary>
     internal Page(MVMap<K, V> map, Page<K, V> source)
-        : this(map, source.keys) => memory = source.memory;
+        : this(map, source.keys)
+    {
+        cachedCompare = source.cachedCompare;
+        diskSpaceUsed = source.diskSpaceUsed;
+        memory = source.memory;
+    }
 
     /// <summary>
     /// A page over the given keys.
@@ -295,11 +300,18 @@ public abstract class Page<K, V> : IPage
     /// </summary>
     public Page<K, V> Copy()
     {
-        Page<K, V> newPage = (Page<K, V>)MemberwiseClone();
+        // Explicit field copies, not MemberwiseClone: the runtime clone is reflective and
+        // does not inline, while the page copy sits on every level of every write (SP-32).
+        Page<K, V> newPage = CopySelf();
         Volatile.Write(ref newPage.pos, 0);
         newPage.pageNo = -1;
         return newPage;
     }
+
+    /// <summary>
+    /// A fresh page with the same contents; the caller stamps pos and pageNo.
+    /// </summary>
+    private protected abstract Page<K, V> CopySelf();
 
     /// <summary>
     /// Where a key would land: its index, or the complement of where it would go.
@@ -339,7 +351,7 @@ public abstract class Page<K, V> : IPage
             }
 
             int resultIndex = ~low;
-            cachedCompare = low + 1;
+            cachedCompare = ~resultIndex;
             return resultIndex;
         }
 
@@ -1072,6 +1084,15 @@ public abstract class Page<K, V> : IPage
             children = [];
         }
 
+        internal NonLeaf(MVMap<K, V> map, NonLeaf source)
+            : base(map, source)
+        {
+            children = source.children;
+            totalCount = source.totalCount;
+        }
+
+        private protected override Page<K, V> CopySelf() => new NonLeaf(map, this);
+
         internal NonLeaf(MVMap<K, V> map, NonLeaf source, PageReference[] children, long totalCount)
             : base(map, source)
         {
@@ -1456,6 +1477,8 @@ public abstract class Page<K, V> : IPage
 
         internal Leaf(MVMap<K, V> map, K[] keys, V[]? values)
             : base(map, keys) => this.values = values;
+
+        private protected override Page<K, V> CopySelf() => new Leaf(map, this);
 
         public override int GetNodeType() => DataUtils.PageTypeLeaf;
 
