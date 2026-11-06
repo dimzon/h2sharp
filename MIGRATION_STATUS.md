@@ -10610,3 +10610,48 @@ per-op накладных самого дерева (виртуальные вы
   правка снимает мутабельное статическое состояние и O(48) поиск.
 * Проверено: MvStore 152/152, Data 719/719, агрегатные/парсерные 32/32,
   H2Sharp.Tests 1973/1973.
+
+### Покрытие-спринт 1: мелкие непокрытые операторы (2026-11-06)
+
+Цель — самые дешёвые по усилиям непокрытые куски. Добавлены тесты, код движка
+не менялся.
+
+* `SmallStatementsOracleTests` — 6 оракул-тестов против JVM (одна матрица
+  стейтментов на оба движка):
+  * `EXECUTE IMMEDIATE` — INSERT через литерал и через конкатенацию, DDL,
+    отказ на запросе (`<not a query>`), отказ на непарсящемся тексте, отказ
+    на NULL-стейтменте (`Command/Dml/ExecuteImmediate.cs` 0/16 → покрыт);
+  * `CREATE/DROP CONSTANT` — выборка константы, использование в DML,
+    дубликат, `IF NOT EXISTS`, повторный дроп, `IF EXISTS`
+    (`Command/Ddl/DropConstant.cs` 0/20 → покрыт);
+  * `ALTER DOMAIN DROP CONSTRAINT` — дроп, повторный дроп, `IF EXISTS`,
+    чужой констрейнт таблицы (`Command/Ddl/AlterDomainDropConstraint.cs`
+    0/18 → покрыт);
+  * `IS [NOT] TRUE/FALSE/UNKNOWN` — полная матрица по nullable-колонке,
+    when-операнд простого CASE, NOT-проталкивание, индексные условия по
+    индексированной BOOLEAN (`Expressions/Conditions/BooleanTest.cs`
+    10/51 → покрыт);
+  * ссылка на поле ROW/JSON — неименованные поля C1/C2, NULL-ROW, члены
+    JSON-объекта, отсутствие члена, не-объект (`Expressions/FieldReference.cs`
+    0/49 → покрыт);
+  * `BACKUP TO` в памяти — оба движка отказывают
+    (`DatabaseIsNotPersistent`, `Command/Dml/BackupCommand.cs` 0/14 →
+    покрыта неперсистентная ветка).
+* `ToCharAndBackupPortTests` — 4 порт-теста без общей части с эталоном:
+  `TO_CHAR` с .NET-шаблоном (утверждённое отклонение), NULL-значение и
+  NULL-формат, отказ на не-datetime, персистентная ветка `BACKUP TO` —
+  заглушка обязана отказывать по имени (`TODOException`), а не притворяться.
+* Замер пяти сюит (Debug, coverlet, merge
+  `tools/coverage/merge_cov.py`): **88.71% строк / 84.51% ветвей**
+  (75463/85071, 30801/36446). До спринта — срез пяти наборов вчерашней
+  ревизии 88.43/84.24.
+* Проверено: H2Sharp.Tests 1982/1984 + 2 предсуществующих красных на HEAD
+  (см. ниже), Data 719/719, MvStore 152/152, Engine 9/9, Native 98/98
+  (+23 skipped).
+* Предсуществующие красные на HEAD (не этого спринта): 
+  `MvMapPutAllocationTests.UpdateAllRowsOver10kAllocatesWithinCeiling` —
+  аллокационный гейт UPDATE 10k: минимум из 5 прогонов 104.9 МБ при
+  потолке 60 МБ, воспроизводится и изолированно на HEAD e3396b2 (вчера
+  был зелёным; зона MVStore-оптимизаций — к покрытию отношения не имеет);
+  `ScriptCommandOracleTests.RunScriptRoundTripsTheScript` —
+  `BlockedByPort` (RUNSCRIPT не в фильтре зелёного прогона).
