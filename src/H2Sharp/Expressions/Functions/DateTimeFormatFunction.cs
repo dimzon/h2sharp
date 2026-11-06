@@ -111,9 +111,13 @@ public sealed class DateTimeFormatFunction : FunctionN
         try
         {
             DateTime parsed = DateTime.ParseExact(text, format, culture, DateTimeStyles.None);
+            // The parsed value carries Kind=Local, and GetUtcOffset answers the machine's rules
+            // for a Local value; the offset must come from the requested zone, so the kind is
+            // cleared first.
             int offset = timeZone is null
                 ? 0
-                : (int)GetTimeZone(timeZone).GetUtcOffset(parsed).TotalSeconds;
+                : (int)GetTimeZone(timeZone).GetUtcOffset(
+                    DateTime.SpecifyKind(parsed, DateTimeKind.Unspecified)).TotalSeconds;
             return ValueTimestampTimeZone.FromDateValueAndNanos(
                 DateTimeUtils.DateValue(parsed.Year, parsed.Month, parsed.Day),
                 parsed.TimeOfDay.Ticks * 100L,

@@ -10728,3 +10728,25 @@ per-op накладных самого дерева (виртуальные вы
 * Проверено: H2Sharp.Tests 1992/1993 (`Category!=BlockedByPort`; один
   красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
   Engine 9.
+
+### Покрытие-спринт 4: DUAL/SYSTEM_RANGE/VIEW/CTE, FORMATDATETIME/PARSEDATETIME (2026-11-06)
+
+* `DualRangeViewOracleTests` — оракул против JVM: DUAL, `SELECT 1`,
+  SYSTEM_RANGE (пустой диапазон, условия), планы EXPLAIN с range/dual
+  индексами, view с query expression index, рекурсивные CTE через
+  shadow table (`Tables/DualTable.cs`, `Indexes/DualIndex.cs`,
+  `Indexes/RangeIndex.cs`, `Indexes/QueryExpressionIndex.cs`,
+  `Tables/ShadowTable.cs` → покрыты).
+* `DateTimeFormatPortTests` — 5 порт-тестов FORMATDATETIME/PARSEDATETIME
+  (.NET-шаблоны — утверждённое решение, оракул-сравнение недостижимо):
+  шаблоны, NULL-аргументы, локаль ('MMMM' в 'de'), сдвиг зоны у
+  TIMESTAMPTZ, коды отказов (`Expressions/Functions/
+  DateTimeFormatFunction.cs` 29/69 → покрыт).
+* Оракул нашёл дефект и он исправлен: `DateTimeFormatFunction.Parse`
+  передавал в `TimeZoneInfo.GetUtcOffset` значение с Kind=Local, и offset
+  считался по правилам машины, а не запрошенной зоны. Явно
+  `DateTime.SpecifyKind(..., Unspecified)` — «Europe/Athens» в январе
+  даёт +02, как и должно. Кодировано тестом.
+* Проверено: H2Sharp.Tests 1998/1999 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
+  Engine 9.
