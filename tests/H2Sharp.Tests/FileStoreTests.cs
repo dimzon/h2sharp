@@ -97,6 +97,49 @@ public sealed class FileStoreTests : IDisposable
     }
 
     [Fact]
+    public void AFileWhoseEncryptedHeaderCopyIsLostIsRefusedByName()
+    {
+        // The third block is the header again: a store written whole and damaged in that one
+        // block opens, but refuses the check with its own code.
+        FileStore store = FileStore.Open(handler, Disk("broken3rd.db"), "rw");
+        store.Init();
+        store.Seek(2 * Constants.FileBlockSize);
+        store.Write(new byte[Constants.FileBlockSize], 0, Constants.FileBlockSize);
+        store.Close();
+
+        FileStore reopened = FileStore.Open(handler, Disk("broken3rd.db"), "rw");
+        H2SharpException e = Assert.Throws<H2SharpException>(reopened.Init);
+        Assert.Equal(H2Sharp.Api.ErrorCode.FileEncryptionError1, e.H2ErrorCode);
+        reopened.Close();
+    }
+
+    [Fact]
+    public void CloseAnswersTwiceAndSilently()
+    {
+        FileStore store = FileStore.Open(handler, Disk("twice.db"), "rw");
+        store.Init();
+        store.Close();
+        // The second close has no file to close and is not an error, the silent forms too.
+        store.Close();
+        store.CloseSilently();
+        store.CloseAndDeleteSilently();
+        store.CloseAndDeleteSilently();
+    }
+
+    [Fact]
+    public void OpeningAFileAnotherHandleHoldsRefusesWithItsName()
+    {
+        string path = Disk("locked.db");
+        using (System.IO.FileStream lockHandle = System.IO.File.Open(
+            path, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+        {
+            H2SharpException e = Assert.ThrowsAny<H2SharpException>(
+                () => FileStore.Open(handler, path, "rw"));
+            Assert.Contains("locked.db", e.Message);
+        }
+    }
+
+    [Fact]
     public void BlocksAreWrittenAndReadBack()
     {
         FileStore store = FileStore.Open(handler, Disk("blocks.db"), "rw");
