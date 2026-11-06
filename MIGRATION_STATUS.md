@@ -10696,3 +10696,35 @@ per-op накладных самого дерева (виртуальные вы
   `getSyntaxError()` при непустом `expectedList` даёт 42001, у порта
   expectedList нет — все такие ошибки 42000 (найдено на
   `ALTER TYPE E1 RENAME TO X`).
+
+### Покрытие-спринт 3: JavaRandom против JDK, ALTER DOMAIN DEFAULT/ON UPDATE (2026-11-06)
+
+* `JavaRandomOracleTests` — дифференциальный оракул против JVM:
+  * прямой: `java.util.Random` против `JavaRandom` на одних семенах —
+    `nextInt(bound)`, диапазонный `nextInt`, `nextDouble`/`nextFloat`
+    (сравнение по сырым битам), `nextBytes`, `setSeed` после отбора
+    (`H2Sharp.JavaLegacy/JavaRandom.cs` 40/101 → покрыт);
+  * SQL: `RAND(seed)` через соединение с `UseJavaLegacy()` —
+    задокументированный путь JDK-последовательности; без opt-in дефолт
+    порта — .NET `Random` (записанное решение, оракул-сравнение
+    недостижимо).
+* Оракул нашёл дефект и он исправлен: `JavaRandom.FillBytes` писал байты
+  32-битного отбора старшим вперёд, JDK (`java.util.Random.nextBytes`)
+  пишет младшим вперёд — `bytes[i++] = (byte)rnd; rnd >>= 8`. Прежний
+  порядок противоречил и собственной записи здесь («`NextBytes()` —
+  прежние [JDK] последовательности»). Данные компрессионных
+  roundtrip-тестов самосогласованны, их ожидания не меняются.
+* `AlterDomainDefaultOnUpdateOracleTests` — оракул-матрица `SET/DROP
+  DEFAULT` (копия на колонки и зависимые домены, NULL после DROP) и
+  `SET/DROP ON UPDATE` (`Command/Ddl/AlterDomainExpressions.cs` 24/58 →
+  покрыт).
+* Замер пяти сюит после спринта 2 (Debug, merge): **88.59% строк /
+  82.68% ветвей** (76642/86513, 32194/38937). Нюанс методики: свежий
+  Tests-отчёт добавляет 1442 уникальные строки к union (строки, которых
+  достигает только Tests-сюита); прежний Tests-отчёт уникальных строк не
+  добавлял, поэтому знаменатель вырос с 85071 до 86513 и цифры соседних
+  срезов напрямую сопоставлять нельзя — ориентир только свежий полный
+  замер.
+* Проверено: H2Sharp.Tests 1992/1993 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
+  Engine 9.

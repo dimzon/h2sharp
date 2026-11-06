@@ -220,6 +220,8 @@ public class JavaRandom : Random
 
     private void FillBytes(Span<byte> bytes)
     {
+        // The JDK writes the low byte of each 32-bit draw first: bytes[i++] = (byte)rnd
+        // with rnd >>= 8 per byte (java.util.Random.nextBytes).
         int i = 0;
         while (i < bytes.Length)
         {
@@ -227,7 +229,7 @@ public class JavaRandom : Random
             int n = Math.Min(bytes.Length - i, 4);
             for (int k = 0; k < n; k++)
             {
-                bytes[i + k] = (byte)(word >> (24 - (8 * k)));
+                bytes[i + k] = (byte)(word >> (8 * k));
             }
 
             i += n;
