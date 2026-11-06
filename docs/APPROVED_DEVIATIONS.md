@@ -513,18 +513,22 @@ regex-функций (`RegexpFunction`) в `SmallLRUCache` (100 записей),
 * невалидный шаблон по-прежнему даёт `LikeEscapeError1` на каждом вызове;
 * поведение на невалидном шаблоне и семантика замены не меняются.
 
-### D-039. Образ чанка — в unmanaged памяти (`NativeChunkImage`)
+### D-039. Образ чанка — в unmanaged памяти (`WriteBuffer`, обновлено SP-29/SP-37)
 
-Указание пользователя (вариант B): хранение окончательного образа чанка
-(несколько мегабайт для крупных чанков) переводится в `NativeMemory` через
-`NativeChunkImage` (MemoryManager). Сборка чанка остаётся в пулированном
-`WriteBuffer`; после дописывания заголовка/подвала байты копируются в
-unmanaged-образ, и на диск пишется из него.
+Указание пользователя (вариант B): окончательный образ чанка (несколько
+мегабайт для крупных чанков) пишется на диск из unmanaged-памяти.
+
+Текущая реализация (SP-29 заменила `NativeChunkImage` на native-режим самого
+`WriteBuffer`): буфер ≥85 КБ живёт в `NativeMemory` (`NativeThreshold`), сборка
+чанка, заголовка и подвала идёт прямо в native-регионе, и `WriteChunk` пишет на
+диск из него — промежуточного образа и копии нет. После записи буфер
+переиспользуется из пула; `Clear()` для буфера, переросшего 4 МБ, откатывается на
+managed stub **64 КБ** (ниже порога LOH), а не на 1-МБ LOH-объект (SP-37,
+аудит раунда 4 §1.2).
 
 Границы:
 
-* `WriteChunk` принимает `ReadOnlyMemory<byte>` вместо `WriteBuffer`;
-* образ освобождается сразу после записи (using);
+* `WriteChunk` принимает `ReadOnlyMemory<byte>` (регион буфера);
 * наблюдаемая SQL-семантика и формат файла не меняются.
 
 ### D-040. In-memory файл (`MemoryFilePath`) — unmanaged бэкенд
@@ -571,6 +575,13 @@ SP-28: блоки переведены в native-память (`NativeLobBlock`,
 той же tagged-array форме, что и раньше (формат карты `lobBlocks` не менялся).
 Освобождение: синхронно при удалении LOB и целиком при закрытии БД
 (`Database.Close` → `LobStorageMap.Dispose`).
+
+SP-36/SP-37 (аудит раунда 3 §1.1–1.2, раунда 4 §1.1): staging убран — запись
+`NativeLobBlock.ReadFrom(Stream, int)` читает прямо в неуправляемый буфер (без
+`byte[256 КБ]` и `Array.Resize`), на EOF для seekable-потока не аллоцирует, при
+коротом чтении регион подрезается `NativeMemory.Realloc`; чтение
+`LobBlockDataType.Read` отдаёт срез спана в `FromSpan` — одна копия вместо двух.
+blob_insert: 422 → 305 мкс.
 
 ### D-043. `CharSliceReader` для оконного чтения значения
 
@@ -647,3 +658,41 @@ read-only и exclusive для read-write, поэтому несколько пр
   `MVIndex` — корень мапы (как в эталоне).
 * `readIfWords` — пик со сдвигом, кавычки не совпадают (как `testToken`).
 * `SupportsPrecision` для `TRUNCATE_VALUE` — `{NUMERIC, DECFLOAT, ARRAY}`.
+
+### D-045. Оконные агрегаты: пул строк (`PooledRowList`)
+
+SP-25/SP-36: массивы `Value?[]` строк упорядоченных окон арендуются из
+`ArrayPool<Value?>.Shared` и возвращаются после материализации результата
+партиции (`PartitionData.SetOrderedResult` → dispose через `disposables`).
+Эталон аллоцирует новый `Value[]` на строку и удерживает список; здесь данные
+после материализации недостижимы, поэтому возврат в пул не меняет наблюдаемую
+семантику (оракул-тесты окон зелёные).
+
+Границы:
+
+* пул только для `UpdateOrderedAggregate`; групповые/плоские пути не затронуты;
+* возврат — только после `SetOrderedResult`, когда строки недостижимы.
+
+### D-046. Write-путь MVStore — fast lanes (SP-30/SP-32/SP-34)
+
+Внутренние оптимизации write-пути без смены наблюдаемой семантики (формат
+файла и `GetMemory()` не меняются; сплиты и COW-границыа — как в эталоне):
+
+* `Page.BinarySearch`: быстрый полоса для `long`-ключей — прямой цикл по
+  `long[]` вместо интерфейсного `DataType.BinarySearch` (SP-30); `cachedCompare`
+  обновляется в той же семантике (`low + 1`).
+* `Page.Copy` — явные copy-конструкторы (`Leaf(map, source)` /
+  `NonLeaf(map, source)`), копирующие скалярное состояние, вместо
+  `MemberwiseClone` (SP-32; −23% update / −15% insert).
+* `SetKey`/`SetValue`/`SetChild` — `GC.AllocateUninitializedArray` +
+  `Array.Copy` вместо `Array.Clone()`: клон массива ссылочных элементов в
+  CoreCLR идёт через MemberwiseClone (23% CPU write-пути) (SP-34).
+* `PageReference` — класс (как в эталоне); struct-вариант замерён и отклонён.
+
+### D-047. Парсер: замороженные реестры имён (SP-38)
+
+`Aggregate.Aggregates` (последний мутабельный hot-path словарь) и обратный
+индекс `SetTypes.TypeByName` (был `Array.IndexOf` по 48 строкам) заморожены в
+`FrozenDictionary(Ordinal)`. Эталон держит `HashMap`/массив; наблюдаемая
+семантика не меняется, тест реестра агрегатов переведён на
+`IReadOnlyDictionary`.

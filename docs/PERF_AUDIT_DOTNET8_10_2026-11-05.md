@@ -1,48 +1,54 @@
 # Перф-аудит H2Sharp (.NET 8 / .NET 10)
 
-Дата: 2026-11-05.
+Дата: 2026-11-05. Перепроверка по исходникам: тот же день.
 Область: `src/H2Sharp` — 595 файлов, `net8.0;net10.0`.
-Проверено по исходникам. Хороший задел уже есть: `Tokenizer.cs:51,1641,1646` — `SearchValues`, `Value/DataType.cs:186`, `Engine/Database.cs:136`, `FunctionRegistry` — `FrozenDictionary/Set`. Ниже — то, что осталось.
+Статус перепроверки: 6 пунктов исходного аудита уже исправлены в коде — они помечены `[ИСПРАВЛЕНО]`. Остальное подтверждено чтением файлов.
 
 Формат каждой находки: место / проблема и влияние / современное решение / эффект.
 
+## 0. Уже исправлено — снять из работы
+
+- `[ИСПРАВЛЕНО] 1.1 Value.Core.cs:110` — сейчас `new CharSliceReader(value.AsMemory(...))`, `Substring` нет. Остаток: сам `GetString()` материализует CLOB, но это семантика `Value`, не аллокация среза.
+- `[ИСПРАВЛЕНО] 1.2-hex StringFunction1.cs:188-199 HexToRaw` — сейчас `s.AsSpan()` + `int.TryParse(span.Slice(i,4), AllowHexSpecifier)`, `Substring(i,4)` нет. Остался только `Space` (см. 1.2 ниже).
+- `[ИСПРАВЛЕНО] 1.3-бинарный путь H2ValueMapper.cs:233-279` — сейчас `GC.AllocateUninitializedArray` + прямое чтение в целевой массив, файловый fallback через `ArrayPool.Shared.Rent/Return`. Двойного `GetByteCount` нет.
+- `[ИСПРАВЛЕНО] 1.5 MVStore.cs:709,734 + FileStore.cs:882` — сейчас `key.AsSpan(...)` + `DataUtils.ParseHexInt(ReadOnlySpan<char>)` + `SequenceEqual`. `Substring` на горячем мета-скане убран.
+- `[ИСПРАВЛЕНО] DataType.cs:327-328` — `TypesByName = builder.ToFrozenDictionary(...); typesByNameBuilder = null;` — статическое поле-билдер уже освобождается.
+- `[ИСПРАВЛЕНО] H2ParameterRewriter.cs:44` — сейчас `text.AsSpan().IndexOf('$')`, сканирования на `'?'` нет. Остаток: `H2Command.cs:474` все еще `commandText.IndexOf('$')` строковой перегрузкой (см. 2.4).
+- `[ИСПРАВЛЕНО] H2Connection.cs:127` — сейчас `ArgumentNullException.ThrowIfNull(connectionString)`.
+
 ## 1. Span / Memory вместо Substring / ToArray / new byte[]
 
-### 1.1 Value.Core.cs:105-110 — GetReader() делает двойную копию CLOB
+### 1.1 [ИСПРАВЛЕНО] Value.Core.cs:105-110 — GetReader() — Substring убран
 
-- **Уязвимое место:** `src/H2Sharp/Value/Value.Core.cs:110`:
+- **Было:** `new StringReader(value.Substring(...))`.
+- **Стало (проверено):** `Value.Core.cs:110` — `return new CharSliceReader(value.AsMemory((int)zeroBasedOffset, (int)length));`.
+- **Остаток:** сам `GetString()` материализует значение — это семантика `Value`, не правится спанами.
+- **Ожидаемый эффект:** — (снять).
+
+### 1.2 [ЧАСТИЧНО] Expressions/Functions/StringFunction1.cs:157-163 Space — new byte[] остался
+
+- **Уязвимое место:** `src/H2Sharp/Expressions/Functions/StringFunction1.cs:159-161`:
 ```csharp
-string value = GetString() ?? string.Empty;
-return new StringReader(value.Substring((int)zeroBasedOffset, (int)length));
+byte[] chars = new byte[Math.Max(0, v.GetInt())];
+Array.Fill(chars, (byte)' ');
+v = ValueVarchar.Get(Encoding.Latin1.GetString(chars), session);
 ```
-- **Проблема и влияние:** `GetString()` материализует весь CLOB + `Substring` копирует срез. На больших CLOB — 2 аллокации размером документа, давление на LOH/GC.
+Hex-ветка (`HexToRaw`, `StringFunction1.cs:188-199`) уже на спане — не трогать.
+- **Проблема и влияние:** временный `byte[]` размером `n` + декод Latin1 только ради строки из пробелов. `SPACE(n)` с большим `n` кладет массив в LOH.
 - **Современное решение (.NET 8/10):**
 ```csharp
-return new CharSliceReader(GetString().AsMemory((int)zeroBasedOffset, (int)length));
-// CharSliceReader : TextReader поверх ReadOnlyMemory<char>, без Substring
+v = ValueVarchar.Get(new string(' ', Math.Max(0, v.GetInt())), session);
+// или string.Create(n, ..., static (sp, _) => sp.Fill(' '))
 ```
-- **Ожидаемый эффект:** Высокий для CLOB-чтения.
+- **Ожидаемый эффект:** Средний.
 
-### 1.2 Expressions/Functions/StringFunction1.cs:193 — Substring(i,4) в цикле HEX
+### 1.3 [ПОДТВЕРЖДЕНО ЧАСТИЧНО] Data/H2ValueMapper.cs — остался ReadText через string
 
-- **Уязвимое место:** `src/H2Sharp/Expressions/Functions/StringFunction1.cs:193`:
-```csharp
-_ = builder.Append((char)Convert.ToInt32(s.Substring(i, 4), 16));
-```
-- **Проблема и влияние:** аллокация `string` на каждые 4 hex-символа в цикле `HEXTORAW`. O(n) временных строк.
-- **Современное решение:**
-```csharp
-ReadOnlySpan<char> h = s.AsSpan(i, 4);
-// ручной nibble-парсинг или int.Parse(h, NumberStyles.HexNumber, CultureInfo.InvariantCulture)
-```
-- **Ожидаемый эффект:** Высокий, hot path строковых функций.
-
-### 1.3 Data/H2ValueMapper.cs:229-231,246 — MemoryStream.ToArray() + new byte[64K]
-
-- **Уязвимое место:** `src/H2Sharp/Data/H2ValueMapper.cs:246` `byte[] buffer = new byte[64*1024];` + `copy.ToArray()` для BLOB-параметров.
-- **Проблема и влияние:** весь стрим параметра копируется; буфер 64К на каждый файловый fallback; `GetByteCount(text)` считается дважды.
-- **Современное решение:** `ArrayPool<byte>.Shared.Rent(64<<10)` + `try/finally Return`; писать в `ArrayBufferWriter<byte>` и отдать `WrittenSpan` в `ValueBlob.CreateSmall(span)`; `GetByteCount` — один раз в локальную.
-- **Ожидаемый эффект:** Критический для bulk INSERT BLOB/CLOB.
+- **Уязвимое место:** `src/H2Sharp/Data/H2ValueMapper.cs:296-317` `ReadText`: `string text = reader.ReadToEnd(); ... File.WriteAllText(fileName, text); GetByteCount(text)`.
+- **Что уже исправлено:** бинарный путь `226-279` — `GC.AllocateUninitializedArray` + `ArrayPool.Shared.Rent(64*1024)` с `Return` (проверено).
+- **Проблема и влияние:** текстовый путь дважды материализует CLOB (string + файл) и считает байты отдельно.
+- **Современное решение:** стримить `TextReader` через `Encoder`/`StreamWriter` в файл за один проход с подсчетом байтов на лету; inline-ветку оставить.
+- **Ожидаемый эффект:** Высокий для больших CLOB-параметров; бинарный путь — снять.
 
 ### 1.4 MvStore/Db/ValueDataType.cs:909,929,975 — buff.Slice(...).ToArray() при чтении страниц
 
@@ -51,16 +57,11 @@ ReadOnlySpan<char> h = s.AsSpan(i, 4);
 - **Современное решение:** не копировать если потребитель умеет `ReadOnlySpan<byte>`; иначе `GC.AllocateUninitializedArray<byte>(len)` + `buff.Slice(...).CopyTo(bytes)` вместо `ToArray()`.
 - **Ожидаемый эффект:** Критический.
 
-### 1.5 MvStore/MVStore.cs:709,734, FileStore.cs:882 — Substring на мета-скане
+### 1.5 [ИСПРАВЛЕНО] MvStore/MVStore.cs:709,734, FileStore.cs:882 — Substring убран
 
-- **Уязвимое место:** `MVStore.cs:709` `key.Substring(DataUtils.MetaName.Length)`, `FileStore.cs:882` `key.Substring(key.LastIndexOf('.')+1)`.
-- **Проблема и влияние:** `Substring` на каждом ключе `meta` при open/repair.
-- **Современное решение:**
-```csharp
-ReadOnlySpan<char> rest = key.AsSpan(DataUtils.MetaName.Length);
-int id = DataUtils.ParseHexInt(rest);
-```
-- **Ожидаемый эффект:** Средний, холодный, но тривиальный.
+- **Проверено:** `MVStore.cs:709` `ReadOnlySpan<char> mapName = key.AsSpan(...)`, `:734` `ReadOnlySpan<char> mapIdStr = key.AsSpan(...)`, `FileStore.cs:882` `ReadOnlySpan<char> mapIdStr = key.AsSpan(...)` + `ParseHexInt(span)`.
+- **Остаток (низкий):** `MVStore.cs:928` `set.Add(x.Substring(DataUtils.MetaName.Length))`, `FileStore.cs:2039` `entry.Key.Substring(DataUtils.LayoutChunk.Length)`, `MVStoreTool.cs:451`, `TimeZoneProvider.cs:236,241`, `CompareModeDefault.cs:56`, `CacheLRU.cs:89` — холодные пути, править по случаю через `AsSpan`.
+- **Ожидаемый эффект:** — (горячее снято).
 
 ### 1.6 Util/StringUtils.cs:1131-1160,2199 — new byte[length] + GetString(byte[],0,j)
 
@@ -98,12 +99,12 @@ int rel = s.AsSpan(i).IndexOfAny(S); // один SIMD-проход, zero-alloc
 - **Современное решение:** `SearchValues.Create("\t\n\f\r\"'\\")`, `SearchValues.Create("<>&'\"\r\n\t")`, `s.AsSpan(i).IndexOfAny(separatorChar,'\\')`.
 - **Ожидаемый эффект:** Высокий для XmlText/JavaEncode, средний для ArraySplit.
 
-### 2.4 Data/H2ParameterRewriter.cs:44-46, Data/H2Command.cs:474
+### 2.4 [ЧАСТИЧНО] Data/H2Command.cs:474 — строковой IndexOf('$') остался
 
-- **Уязвимое место:** `if(text.IndexOf('$')<0){ if(text.IndexOf('?')<0) return (text,[]);}`
-- **Проблема и влияние:** двойной скан всего SQL-текста до токенизации на каждую команду.
-- **Современное решение:** `private static readonly SearchValues<char> ParamMarks = SearchValues.Create("$?"); if(text.AsSpan().IndexOfAny(ParamMarks)<0)...`
-- **Ожидаемый эффект:** Высокий, gate парсера.
+- **Проверено:** `H2ParameterRewriter.cs:44` уже `text.AsSpan().IndexOf('$')`, сканирования `'?'` нет — снимать.
+- **Уязвимое место:** `src/H2Sharp/Data/H2Command.cs:474` `commandText.IndexOf('$')` — строковая перегрузка вместо спановой.
+- **Современное решение:** `commandText.AsSpan().IndexOf('$')`; при желании `SearchValues.Create("$?")` не нужен — `'?'` уже не ищется.
+- **Ожидаемый эффект:** Низкий (одна проверка на команду).
 
 ## 3. FrozenDictionary / FrozenSet
 
@@ -125,18 +126,18 @@ private static readonly FrozenDictionary<string,AggregateType> Aggregates = Crea
 - **Современное решение:** `.ToFrozenDictionary(StringComparer.Ordinal)` / `.ToFrozenSet(StringComparer.OrdinalIgnoreCase)`.
 - **Ожидаемый эффект:** Низкий — пути холодные (исключения, connection string), но конверсия бесплатна.
 
-### 3.3 Value/DataType.cs:184 — убрать поле-билдер
+### 3.3 [ИСПРАВЛЕНО] Value/DataType.cs:184,327-328 — билдер уже освобождается
 
-- **Уязвимое место:** `private static readonly Dictionary<...> typesByNameBuilder` живет вечно после `static` ctor, все лукапы идут в `TypesByName:186` (`FrozenDictionary`).
-- **Проблема и влияние:** минус один долгоживущий объект без изменения поведения.
-- **Современное решение:** сделать билдер локальной переменной `static` ctor.
-- **Ожидаемый эффект:** Низкий.
+- **Проверено:** `TypesByName = typesByNameBuilder!.ToFrozenDictionary(StringComparer.Ordinal); typesByNameBuilder = null;`
+- **Ожидаемый эффект:** — (снять).
 
 ### 3.4 НЕ трогать
 
 - `Store/FileSystem/MemoryFilePath.cs:29`, `FilePath.cs:43`, `MvStore/SingleFileStore.cs:27`, `DateTimeFunction.cs:223` — мутабельные под `lock`/`ConcurrentDictionary`.
 - `Command/Parser.cs:5384-5409` `Words*` — позиционный матчинг 1-4 токенов, `FrozenSet.Contains` бессмысленен.
 - `*Function.Names[]`, `SetTypes/Comparison/Trace` — индекс→имя, диспетчеризация уже через `FunctionRegistry.Functions` (`Frozen`).
+
+## 4. Скрытые аллокации / JIT / GC (все подтверждены чтением)
 
 ## 4. Скрытые аллокации / JIT / GC
 
@@ -168,22 +169,15 @@ private static readonly FrozenDictionary<string,AggregateType> Aggregates = Crea
 - **Современное решение:** итерировать напрямую если нет мутации; второй проход для удалений через арендованный `List<string>`; `AddRow(List<Expression>)`-перегрузка / `CollectionsMarshal.AsSpan` + кэш `VisibleColumns` с инвалидацией по DDL; пул строк `ArrayPool<Value?>`.
 - **Ожидаемый эффект:** Высокий для bulk INSERT / SELECT.
 
-### 4.5 ?? throw new ArgumentNullException / if(disposed) throw вместо ThrowIf*
+### 4.5 [ЧАСТИЧНО] ThrowIf* — H2Connection.cs:127 уже исправлен
 
-- **Уязвимое место:** `Data/H2Connection.cs:127`, `Store/DataReader.cs:43`, `Indexes/Index.cs:125`, `Data/H2Transaction.cs:92,101,125`, `JavaLegacy/JavaRandom.cs:85,101`, `MvStore/MVStoreTool.cs:64,90` (`string.Format` с боксингом).
-- **Проблема и влияние:** больше IL в hot-конструкторах, хуже инлайнинг; `string.Format("{0}",int)` боксит + `params object[]`.
-- **Современное решение:**
-```csharp
-ArgumentNullException.ThrowIfNull(connectionString);
-ObjectDisposedException.ThrowIf(disposed, this);
-ArgumentOutOfRangeException.ThrowIfNegative(maxValue);
-// диагностика: интерполяция + CultureInfo.InvariantCulture вместо string.Format
-```
-Паттерн уже используется в `CommandContainer.cs:44`, `H2DataSourceBuilder.cs:28` — распространить.
-- **Ожидаемый эффект:** Низкий-средний по каждой точке, суммарно заметный в ADO hot path.
+- **Проверено:** `Data/H2Connection.cs:127` уже `ArgumentNullException.ThrowIfNull(connectionString)`. Паттерн также есть в `CommandContainer.cs:44`, `H2DataSourceBuilder.cs:28`.
+- **Остаток (подтвержден):** `Data/H2Transaction.cs:92,101,125` `if(disposed) throw` → `ObjectDisposedException.ThrowIf(disposed, this)`; `JavaLegacy/JavaRandom.cs:85,101` → `ThrowIfNegative`; `MvStore/MVStoreTool.cs:64,90` `string.Format` → интерполяция + `InvariantCulture`.
+- **Ожидаемый эффект:** Низкий-средний, суммарно заметный в ADO hot path.
 
-## Приоритет внедрения
+## Приоритет внедрения (после перепроверки)
 
-1. Критический: 1.3, 1.4, 4.1.
-2. Высокий: 1.1, 1.2, 2.1, 2.2, 2.4, 3.1, 4.2, 4.4.
-3. Средний/низкий: остальное — дешево, делать пакетом.
+1. Критический: 4.1 (боксинг TransactionMap), 1.4 (ValueDataType Slice.ToArray — подтвержден `ValueDataType.cs:909,929,975`).
+2. Высокий: 2.1, 2.2, 2.3, 3.1, 4.2, 4.4 (все подтверждены: `DataUtils.cs:870`, `DateTimeUtils.cs:942-945,972`, `Aggregate.cs:100`, `IndexCondition.cs:220,230`, `H2DataReader.cs:564`, `SessionLocal.cs:397,1614`, `Select.cs:731`).
+3. Средний/низкий: 1.2-Space, 1.6-UrlDecode (`StringUtils.cs:1131,1160` подтвержден), 3.2, остаток 4.5, холодные `Substring` (`MVStore.cs:928`, `FileStore.cs:2039`).
+4. Снято: 1.1, 1.2-hex, 1.3-бинарный, 1.5-горячий, 3.3, H2ParameterRewriter-двойной скан, H2Connection-ThrowIfNull.
