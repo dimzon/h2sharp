@@ -106,28 +106,32 @@ public sealed partial class LobStorageMap : LobStorageInterface
     /// </summary>
     private long StoreStream(Stream input, long lobId, long maxLength, long charLength = 0)
     {
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(BlockSize);
         long total = 0;
         long index = 0;
-        try
+        while (true)
         {
-            int read;
-            while ((read = input.Read(buffer, 0, (int)Math.Min(buffer.Length, maxLength > 0 ? maxLength - total : buffer.Length))) > 0)
+            int requested = maxLength > 0
+                ? (int)Math.Min(BlockSize, maxLength - total)
+                : BlockSize;
+            byte[] block = new byte[requested];
+            int read = input.Read(block, 0, requested);
+            if (read <= 0)
             {
-                byte[] block = new byte[read];
-                Array.Copy(buffer, block, read);
-                blocks.Put((lobId << 20) | index, block);
-                index++;
-                total += read;
-                if (maxLength > 0 && total >= maxLength)
-                {
-                    break;
-                }
+                break;
             }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
+
+            if (read < requested)
+            {
+                Array.Resize(ref block, read);
+            }
+
+            blocks.Put((lobId << 20) | index, block);
+            index++;
+            total += read;
+            if (maxLength > 0 && total >= maxLength)
+            {
+                break;
+            }
         }
 
         meta.Put(lobId, new BlobMeta(new byte[0], tableId: 0, total, 0, charLength));
