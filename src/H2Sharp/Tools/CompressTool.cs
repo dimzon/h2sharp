@@ -82,7 +82,7 @@ public sealed class CompressTool
     {
         output[0] = (byte)compressor.GetAlgorithm();
         int start = 1 + WriteVariableInt(output, 1, len);
-        int newLen = compressor.Compress(input, 0, len, output, start);
+        int newLen = compressor.Compress(input.AsSpan(), 0, len, output.AsSpan(), start);
         if (newLen > len + start || newLen <= 0)
         {
             output[0] = Compressors.No;
@@ -112,7 +112,7 @@ public sealed class CompressTool
             int len = ReadVariableInt(input, 1);
             int start = 1 + GetVariableIntLength(len);
             byte[] buff = Utils.NewBytes(len);
-            compressor.Expand(input, start, input.Length - start, buff, 0, len);
+            compressor.Expand(new ReadOnlyMemory<byte>(input, start, input.Length - start), buff.AsSpan(0, len));
             return buff;
         }
         catch (Exception e)
@@ -135,7 +135,7 @@ public sealed class CompressTool
         {
             int len = ReadVariableInt(input, 1);
             int start = 1 + GetVariableIntLength(len);
-            compressor.Expand(input, start, input.Length - start, output, outPos, len);
+            compressor.Expand(new ReadOnlyMemory<byte>(input, start, input.Length - start), output.AsSpan(outPos, len));
         }
         catch (Exception e)
         {
