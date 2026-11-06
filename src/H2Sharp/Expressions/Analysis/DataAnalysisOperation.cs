@@ -11,6 +11,7 @@
  * aggregates, partitions, remembered expressions) refuses until OVER is read, and the
  * OVER branch of optimize with it: no OVER clause can reach here yet.
  */
+using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Command.Query;
@@ -321,7 +322,7 @@ public abstract class DataAnalysisOperation : Expression
         object? data;
         if (partition is null)
         {
-            data = ordered ? new List<Value?[]>() : CreateAggregateData();
+            data = ordered ? new PooledRowList() : CreateAggregateData();
             groupData.RegisterDisposable(data);
             partition = new PartitionData(data);
             groupData.SetWindowExprData(this, key, partition);
@@ -372,7 +373,7 @@ public abstract class DataAnalysisOperation : Expression
         SessionLocal session, SelectGroups groupData, int groupRowId, List<QueryOrderBy>? orderBy)
     {
         int ne = GetNumExpressions(), size = orderBy?.Count ?? 0;
-        Value?[] array = new Value?[ne + size + numFrameExpressions + 1];
+        Value?[] array = ArrayPool<Value?>.Shared.Rent(ne + size + numFrameExpressions + 1);
         RememberExpressions(session, array);
         for (int i = 0; i < size; i++) array[ne++] = orderBy![i].expression!.GetValue(session);
         if (numFrameExpressions > 0)
