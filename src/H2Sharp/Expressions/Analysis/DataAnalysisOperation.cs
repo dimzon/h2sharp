@@ -254,7 +254,7 @@ public abstract class DataAnalysisOperation : Expression
         PartitionData? partition = groupData.GetWindowExprData(this, key);
         if (partition is null)
         {
-            object data = forOrderBy ? new List<Value?[]>() : CreateAggregateData();
+            object data = forOrderBy ? new PooledRowList() : CreateAggregateData();
             groupData.RegisterDisposable(data);
             groupData.SetWindowExprData(this, key, new PartitionData(data));
             return data;
@@ -322,7 +322,7 @@ public abstract class DataAnalysisOperation : Expression
         object? data;
         if (partition is null)
         {
-            data = ordered ? new PooledRowList() : CreateAggregateData();
+            data = ordered ? new List<Value?[]>() : CreateAggregateData();
             groupData.RegisterDisposable(data);
             partition = new PartitionData(data);
             groupData.SetWindowExprData(this, key, partition);
@@ -373,7 +373,7 @@ public abstract class DataAnalysisOperation : Expression
         SessionLocal session, SelectGroups groupData, int groupRowId, List<QueryOrderBy>? orderBy)
     {
         int ne = GetNumExpressions(), size = orderBy?.Count ?? 0;
-        Value?[] array = ArrayPool<Value?>.Shared.Rent(ne + size + numFrameExpressions + 1);
+        Value?[] array = new Value?[ne + size + numFrameExpressions + 1];
         RememberExpressions(session, array);
         for (int i = 0; i < size; i++) array[ne++] = orderBy![i].expression!.GetValue(session);
         if (numFrameExpressions > 0)
