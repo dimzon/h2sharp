@@ -14,6 +14,7 @@
 using System;
 using System.Buffers;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.MvStore.Type;
@@ -217,7 +218,7 @@ public sealed partial class LobStorageMap : LobStorageInterface
 
         private long position;
 
-        private byte[]? currentBlock;
+        private object? currentBlock;
 
         private int blockOffset;
 
@@ -227,6 +228,19 @@ public sealed partial class LobStorageMap : LobStorageInterface
             this.lobId = lobId;
             this.byteCount = byteCount;
         }
+
+        /// <summary>
+        /// Reads a stored block value as bytes. Blocks live in an ObjectDataType map, whose
+        /// array slot is Java's signed byte: deserialized blocks come back as sbyte[] while
+        /// resident ones are byte[] — both are the same bytes, so both are accepted.
+        /// </summary>
+        private static ReadOnlySpan<byte> AsBlockBytes(object? block)
+            => block switch
+            {
+                byte[] bytes => bytes,
+                sbyte[] sbytes => MemoryMarshal.Cast<sbyte, byte>(sbytes),
+                _ => default,
+            };
 
         public override bool CanRead => true;
 
@@ -252,10 +266,10 @@ public sealed partial class LobStorageMap : LobStorageInterface
             int total = 0;
             while (total < count && position < byteCount)
             {
-                if (currentBlock is null || blockOffset >= currentBlock.Length)
+                if (currentBlock is null || blockOffset >= AsBlockBytes(currentBlock).Length)
                 {
                     long blockIndex = position / BlockSize;
-                    currentBlock = (byte[]?)storage.blocks.Get((lobId << 20) | blockIndex);
+                    currentBlock = storage.blocks.Get((lobId << 20) | blockIndex);
                     blockOffset = 0;
                     if (currentBlock is null)
                     {
@@ -263,8 +277,9 @@ public sealed partial class LobStorageMap : LobStorageInterface
                     }
                 }
 
-                int take = (int)Math.Min(count - total, currentBlock.Length - blockOffset);
-                Array.Copy(currentBlock, blockOffset, buffer, offset + total, take);
+                ReadOnlySpan<byte> block = AsBlockBytes(currentBlock);
+                int take = (int)Math.Min(count - total, block.Length - blockOffset);
+                block.Slice(blockOffset, take).CopyTo(buffer.AsSpan(offset + total));
                 blockOffset += take;
                 position += take;
                 total += take;
