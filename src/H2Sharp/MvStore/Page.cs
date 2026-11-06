@@ -306,6 +306,43 @@ public abstract class Page<K, V> : IPage
     /// </summary>
     internal int BinarySearch(K key)
     {
+        // Fast lane for the long-keyed maps (SP-30): the search is two long compares
+        // per step without the interface dispatch through DataType<long>.
+        if (keys is long[] longs && key is long k && map.KeyType is Type.LongDataType)
+        {
+            int low = 0;
+            int high = GetKeyCount() - 1;
+            int x = cachedCompare - 1;
+            if (x < 0 || x > high)
+            {
+                x = high >> 1;
+            }
+
+            while (low <= high)
+            {
+                long mid = longs[x];
+                if (k > mid)
+                {
+                    low = x + 1;
+                }
+                else if (k < mid)
+                {
+                    high = x - 1;
+                }
+                else
+                {
+                    cachedCompare = x + 1;
+                    return x;
+                }
+
+                x = (low + high) >> 1;
+            }
+
+            int resultIndex = ~low;
+            cachedCompare = ~resultIndex;
+            return resultIndex;
+        }
+
         int res = map.KeyType.BinarySearch(key, keys, GetKeyCount(), cachedCompare);
         cachedCompare = res < 0 ? ~res : res + 1;
         return res;
