@@ -42,6 +42,9 @@ public class CrossBench {
         runScenario("inner_join", new InnerJoin());
         runScenario("window_sum", new WindowSum());
         runScenario("blob_insert", new BlobInsert());
+        runScenario("raw_put", new RawPut());
+        runScenario("raw_mapput", new RawMapPut());
+        runScenario("raw_mapupdate", new RawMapUpdate());
     }
 
     interface Scenario {
@@ -302,6 +305,71 @@ public class CrossBench {
                 }
             }
             return sum;
+        }
+    }
+
+    /** TransactionMap.put of 10 000 long keys: the engine write path, no SQL. */
+    static final class RawPut implements Scenario {
+        private org.h2.mvstore.MVStore store;
+        private org.h2.mvstore.tx.TransactionStore transactionStore;
+
+        @Override
+        public void setup(Connection conn) {
+            store = org.h2.mvstore.MVStore.open(null);
+            transactionStore = new org.h2.mvstore.tx.TransactionStore(store);
+            transactionStore.init();
+        }
+
+        @Override
+        public long runOnce(Connection conn) {
+            org.h2.mvstore.tx.Transaction t = transactionStore.begin();
+            org.h2.mvstore.tx.TransactionMap<Long, Long> map = t.openMap("m");
+            for (long i = 0; i < 10_000; i++) {
+                map.put(i, i);
+            }
+            t.commit();
+            return 10_000L;
+        }
+    }
+
+    /** Plain MVMap.put of 10 000 long keys: the tree write path, no transactions. */
+    static final class RawMapPut implements Scenario {
+        private org.h2.mvstore.MVStore store;
+        private org.h2.mvstore.MVMap<Long, Long> map;
+
+        @Override
+        public void setup(Connection conn) {
+            store = org.h2.mvstore.MVStore.open(null);
+            map = store.openMap("m");
+        }
+
+        @Override
+        public long runOnce(Connection conn) {
+            for (long i = 0; i < 10_000; i++) {
+                map.put(i, i);
+            }
+            return 10_000L;
+        }
+    }
+
+    /** Repeated put of the same long key: only the leaf values are cloned. */
+    static final class RawMapUpdate implements Scenario {
+        private org.h2.mvstore.MVStore store;
+        private org.h2.mvstore.MVMap<Long, Long> map;
+
+        @Override
+        public void setup(Connection conn) {
+            store = org.h2.mvstore.MVStore.open(null);
+            map = store.openMap("m");
+            map.put(1L, 0L);
+        }
+
+        @Override
+        public long runOnce(Connection conn) {
+            for (long i = 0; i < 10_000; i++) {
+                map.put(1L, i);
+            }
+            return 10_000L;
         }
     }
 

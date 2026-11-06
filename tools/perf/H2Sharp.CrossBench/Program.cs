@@ -59,6 +59,10 @@ internal static class Program
             ("inner_join", new InnerJoin()),
             ("window_sum", new WindowSum()),
             ("blob_insert", new BlobInsert()),
+            ("raw_put", new RawPut()),
+            ("raw_mapput", new RawMapPut()),
+            ("raw_mapupdate", new RawMapUpdate()),
+            ("raw_mapput16", new RawMapPut16()),
         ];
 
         foreach ((string name, IScenario scenario) in scenarios)
@@ -357,6 +361,104 @@ internal static class Program
             }
 
             return sum;
+        }
+    }
+
+    /// <summary>TransactionMap.Put of 10 000 long keys: the engine write path, no SQL.</summary>
+    private sealed class RawPut : IScenario
+    {
+        private H2Sharp.MvStore.MVStore store = null!;
+        private H2Sharp.MvStore.Tx.TransactionStore transactionStore = null!;
+
+        public void Setup(H2Connection connection)
+        {
+            store = new H2Sharp.MvStore.MVStore.Builder().Open();
+            transactionStore = new H2Sharp.MvStore.Tx.TransactionStore(store);
+            transactionStore.Init();
+        }
+
+        public long RunOnce(H2Connection connection)
+        {
+            H2Sharp.MvStore.Tx.Transaction transaction = transactionStore.Begin();
+            H2Sharp.MvStore.Tx.TransactionMap<long, long> map = transaction.OpenMap(
+                "m", H2Sharp.MvStore.Type.LongDataType.Instance, H2Sharp.MvStore.Type.LongDataType.Instance);
+            for (long i = 0; i < 10_000; i++)
+            {
+                map.Put(i, i);
+            }
+
+            transaction.Commit();
+            return 10_000;
+        }
+    }
+
+    /// <summary>Plain MVMap.Put of 10 000 long keys: the tree write path, no transactions.</summary>
+    private sealed class RawMapPut : IScenario
+    {
+        private H2Sharp.MvStore.MVStore store = null!;
+        private H2Sharp.MvStore.MVMap<long, long> map = null!;
+
+        public void Setup(H2Connection connection)
+        {
+            store = new H2Sharp.MvStore.MVStore.Builder().Open();
+            map = store.OpenMap<long, long>("m");
+        }
+
+        public long RunOnce(H2Connection connection)
+        {
+            for (long i = 0; i < 10_000; i++)
+            {
+                map.Put(i, i);
+            }
+
+            return 10_000;
+        }
+    }
+
+    /// <summary>Repeated Put of the same long key: only the leaf values are cloned.</summary>
+    private sealed class RawMapUpdate : IScenario
+    {
+        private H2Sharp.MvStore.MVStore store = null!;
+        private H2Sharp.MvStore.MVMap<long, long> map = null!;
+
+        public void Setup(H2Connection connection)
+        {
+            store = new H2Sharp.MvStore.MVStore.Builder().Open();
+            map = store.OpenMap<long, long>("m");
+            map.Put(1L, 0L);
+        }
+
+        public long RunOnce(H2Connection connection)
+        {
+            for (long i = 0; i < 10_000; i++)
+            {
+                map.Put(1L, i);
+            }
+
+            return 10_000;
+        }
+    }
+
+    /// <summary>Plain MVMap.Put with a smaller page (16 keys): smaller array clones.</summary>
+    private sealed class RawMapPut16 : IScenario
+    {
+        private H2Sharp.MvStore.MVStore store = null!;
+        private H2Sharp.MvStore.MVMap<long, long> map = null!;
+
+        public void Setup(H2Connection connection)
+        {
+            store = new H2Sharp.MvStore.MVStore.Builder().KeysPerPage(16).Open();
+            map = store.OpenMap<long, long>("m");
+        }
+
+        public long RunOnce(H2Connection connection)
+        {
+            for (long i = 0; i < 10_000; i++)
+            {
+                map.Put(i, i);
+            }
+
+            return 10_000;
         }
     }
 
