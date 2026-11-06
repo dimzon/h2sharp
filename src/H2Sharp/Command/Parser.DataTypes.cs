@@ -232,7 +232,23 @@ public sealed partial class Parser
                 original = "NCHAR";
             }
         }
-        else if (KeywordEquals(original, "NUMBER") || KeywordEquals(original, "NUMERIC"))
+        else if (KeywordEquals(original, "NUMBER"))
+        {
+            if (provider.GetMode().DisallowedTypes.Contains(original))
+            {
+                throw DbException.Get(ErrorCode.UnknownDataType1, original);
+            }
+
+            // The Oracle-compatibility NUMBER is DECFLOAT(40) without parameters and an
+            // ordinary NUMERIC with them, exactly as the reference reads it.
+            if (CurrentType != Token.OpenParen)
+            {
+                return TypeInfo.GetTypeInfo(Value.Decfloat, 40, -1, null);
+            }
+
+            return ParseNumericType(isDecimal: false);
+        }
+        else if (KeywordEquals(original, "NUMERIC"))
         {
             return ParseNumericType(isDecimal: false);
         }
