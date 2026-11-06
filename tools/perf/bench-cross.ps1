@@ -17,6 +17,9 @@
 # measured with its default GC.
 param(
     [string]$Label = "cross",
+    # Server GC is opt-in: it speeds allocation-heavy SQL paths (update_rows 44 -> 26 ms)
+    # but inflates per-core heaps in a single process running every scenario, which hurts
+    # the small raw_* maps. Measure both when the GC mode matters.
     [switch]$ServerGC
 )
 
@@ -54,13 +57,13 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # compilation for an apples-to-apples comparison (SP-32 findings).
 $env:DOTNET_TieredCompilation = "0"
 if ($ServerGC) {
-    $env:COMPlus_gcServer = "1"
+    $env:DOTNET_gcServer = "1"
 }
 $dotnetJson = Join-Path $outDir "$Label-dotnet.json"
 dotnet run -c Release --project $crossProj | Set-Content -Encoding utf8 $dotnetJson
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($ServerGC) {
-    Remove-Item Env:COMPlus_gcServer -ErrorAction SilentlyContinue
+    Remove-Item Env:DOTNET_gcServer -ErrorAction SilentlyContinue
 }
 Remove-Item Env:DOTNET_TieredCompilation -ErrorAction SilentlyContinue
 
