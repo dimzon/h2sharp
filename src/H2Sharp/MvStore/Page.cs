@@ -339,7 +339,7 @@ public abstract class Page<K, V> : IPage
             }
 
             int resultIndex = ~low;
-            cachedCompare = ~resultIndex;
+            cachedCompare = low + 1;
             return resultIndex;
         }
 

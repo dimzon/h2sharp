@@ -1,9 +1,49 @@
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace H2Sharp.MvStore;
+
+/// <summary>
+/// A small pool per closed generic type (SP-30): a put allocates one link per tree
+/// level, and sequential puts reuse the objects. Only <see cref="Acquire"/> is pooled;
+/// chains are never returned, so no link leaves the pool while still in use.
+/// </summary>
+internal static class CursorPosPool<K, V>
+{
+    private const int Cap = 256;
+
+    private static readonly ConcurrentBag<CursorPos<K, V>> Bag = new();
+
+    internal static CursorPos<K, V> Acquire(
+        Page<K, V> page, int index, CursorPos<K, V>? parent)
+    {
+        if (Bag.TryTake(out CursorPos<K, V>? link))
+        {
+            link.page = page;
+            link.index = index;
+            link.parent = parent;
+            return link;
+        }
+
+        return new CursorPos<K, V>(page, index, parent);
+    }
+
+    internal static void Release(CursorPos<K, V> link)
+    {
+        if (Bag.Count >= Cap)
+        {
+            return;
+        }
+
+        link.page = null!;
+        link.index = 0;
+        link.parent = null;
+        Bag.Add(link);
+    }
+}
 
 /// <summary>
 /// A cursor position: a path from the root of the tree down to a page, one link per level.
@@ -67,7 +107,7 @@ public sealed class CursorPos<K, V> : ICursorLink
             if (existing is null)
             {
                 index = page.CalculateTraversalIndex(key);
-                cursorPos = new CursorPos<K, V>(page, index, cursorPos);
+                cursorPos = CursorPosPool<K, V>.Acquire(page, index, cursorPos);
             }
             else
             {
