@@ -30,10 +30,10 @@ public sealed class CompressSpanTests
         foreach (Compressor compressor in compressors)
         {
             byte[] packed = new byte[Text.Length * 2];
-            int end = compressor.Compress(Text, 0, Text.Length, packed, 0);
+            int end = compressor.Compress(Text.AsSpan(), 0, Text.Length, packed.AsSpan(), 0);
 
             byte[] fromArray = new byte[Text.Length];
-            compressor.Expand(packed, 0, end, fromArray, 0, Text.Length);
+            compressor.Expand(new ReadOnlyMemory<byte>(packed, 0, end), fromArray.AsSpan(0, Text.Length));
 
             byte[] fromSpan = new byte[Text.Length];
             compressor.Expand(new ReadOnlyMemory<byte>(packed, 0, end), fromSpan);
@@ -61,7 +61,7 @@ public sealed class CompressSpanTests
 
         CompressDeflate deflate = new();
         byte[] packed = new byte[random.Length * 2];
-        int end = deflate.Compress(random, 0, random.Length, packed, 0);
+        int end = deflate.Compress(random.AsSpan(), 0, random.Length, packed.AsSpan(), 0);
 
         byte[] back = new byte[random.Length];
         deflate.Expand(new ReadOnlyMemory<byte>(packed, 0, end), back);

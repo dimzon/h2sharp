@@ -78,7 +78,7 @@ public sealed class LZFInputStream : Stream
             buffer = EnsureSize(buffer, size);
             try
             {
-                decompress.Expand(inBuffer, 0, len, buffer, 0, size);
+                CompressLZF.Expand(inBuffer.AsSpan(0, len), buffer.AsSpan(0, size));
             }
             catch (IndexOutOfRangeException e)
             {

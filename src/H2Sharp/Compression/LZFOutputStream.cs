@@ -131,7 +131,7 @@ public sealed class LZFOutputStream : Stream
         }
 
         EnsureOutput(len);
-        int compressed = compress.Compress(buffer, 0, len, outBuffer!, 0);
+        int compressed = compress.Compress(buffer.AsSpan(), 0, len, outBuffer!.AsSpan(), 0);
         if (compressed > len)
         {
             WriteInt(-len);

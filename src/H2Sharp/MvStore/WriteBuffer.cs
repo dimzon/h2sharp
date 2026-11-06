@@ -1,6 +1,9 @@
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using H2Sharp.Util;
 
 namespace H2Sharp.MvStore;
@@ -20,8 +23,14 @@ namespace H2Sharp.MvStore;
 /// <see cref="Clear"/> keeps the buffer for reuse when it is not absurdly large, which is the whole
 /// point of a separate <c>reuse</c> field: the steady state is that nothing is allocated at all.
 /// </para>
+/// <para>
+/// Since SP-29 the buffer is native-backed once it grows past <see cref="NativeThreshold"/>: chunk
+/// serialization then lives in native memory and the chunk image is handed to the file channel
+/// straight from it, without the extra managed-array copy (D-039's image step). Small buffers stay
+/// managed.
+/// </para>
 /// </remarks>
-public sealed class WriteBuffer
+public sealed unsafe class WriteBuffer : IDisposable
 {
     /// <summary>
     /// The maximum size of the buffer in order to be re-used after a clear operation.
@@ -34,18 +43,48 @@ public sealed class WriteBuffer
     internal const int MinGrow = 1024 * 1024;
 
     /// <summary>
-    /// The buffer that is used after a clear operation.
+    /// Buffers at least this large are allocated in native memory.
+    /// </summary>
+    internal const int NativeThreshold = 85 * 1024;
+
+    /// <summary>
+    /// The buffer that is used after a clear operation (managed form).
     /// </summary>
     private byte[]? reuse;
 
     /// <summary>
-    /// The current buffer (might be replaced if it is too small).
+    /// The current managed buffer, when not native.
     /// </summary>
-    private byte[] buffer;
+    private byte[]? managed;
+
+    /// <summary>
+    /// The current native buffer, when native.
+    /// </summary>
+    private void* native;
+
+    /// <summary>
+    /// The current capacity (managed length or native allocation size).
+    /// </summary>
+    private int capacity;
+
+    /// <summary>
+    /// Whether the current buffer is native.
+    /// </summary>
+    private bool isNative;
+
+    /// <summary>
+    /// A lightweight memory view over the native buffer, created lazily.
+    /// </summary>
+    private NativeView? view;
 
     private int position;
 
     private int limit;
+
+    /// <summary>
+    /// Live native allocations, for the off-heap gate tests.
+    /// </summary>
+    private static long liveAllocations;
 
     /// <summary>
     /// A buffer of the given size.
@@ -53,8 +92,19 @@ public sealed class WriteBuffer
     /// <param name="initialSize">how many bytes to start with</param>
     public WriteBuffer(int initialSize)
     {
-        reuse = new byte[initialSize];
-        buffer = reuse;
+        if (initialSize >= NativeThreshold)
+        {
+            native = NativeMemory.Alloc((nuint)initialSize);
+            isNative = true;
+            Interlocked.Increment(ref liveAllocations);
+        }
+        else
+        {
+            reuse = new byte[initialSize];
+            managed = reuse;
+        }
+
+        capacity = initialSize;
         limit = initialSize;
     }
 
@@ -65,6 +115,11 @@ public sealed class WriteBuffer
         : this(MinGrow)
     {
     }
+
+    /// <summary>
+    /// How many write buffers are currently allocated in native memory.
+    /// </summary>
+    internal static long LiveAllocations => Interlocked.Read(ref liveAllocations);
 
     /// <summary>
     /// Write a variable size integer.
@@ -118,7 +173,7 @@ public sealed class WriteBuffer
     /// <returns>this</returns>
     public WriteBuffer PutChar(char x)
     {
-        BinaryPrimitives.WriteUInt16BigEndian(EnsureCapacity(2).AsSpan(position, 2), (ushort)x);
+        BinaryPrimitives.WriteUInt16BigEndian(EnsureCapacity(2).Slice(position, 2), (ushort)x);
         position += 2;
         return this;
     }
@@ -130,7 +185,7 @@ public sealed class WriteBuffer
     /// <returns>this</returns>
     public WriteBuffer PutShort(short x)
     {
-        BinaryPrimitives.WriteUInt16BigEndian(EnsureCapacity(2).AsSpan(position, 2), (ushort)x);
+        BinaryPrimitives.WriteUInt16BigEndian(EnsureCapacity(2).Slice(position, 2), (ushort)x);
         position += 2;
         return this;
     }
@@ -142,7 +197,7 @@ public sealed class WriteBuffer
     /// <returns>this</returns>
     public WriteBuffer PutInt(int x)
     {
-        BinaryPrimitives.WriteInt32BigEndian(EnsureCapacity(4).AsSpan(position, 4), x);
+        BinaryPrimitives.WriteInt32BigEndian(EnsureCapacity(4).Slice(position, 4), x);
         position += 4;
         return this;
     }
@@ -154,7 +209,7 @@ public sealed class WriteBuffer
     /// <returns>this</returns>
     public WriteBuffer PutLong(long x)
     {
-        BinaryPrimitives.WriteInt64BigEndian(EnsureCapacity(8).AsSpan(position, 8), x);
+        BinaryPrimitives.WriteInt64BigEndian(EnsureCapacity(8).Slice(position, 8), x);
         position += 8;
         return this;
     }
@@ -189,7 +244,7 @@ public sealed class WriteBuffer
     /// <returns>this</returns>
     public WriteBuffer Put(byte[] bytes, int offset, int length)
     {
-        bytes.AsSpan(offset, length).CopyTo(EnsureCapacity(length).AsSpan(position, length));
+        bytes.AsSpan(offset, length).CopyTo(EnsureCapacity(length).Slice(position, length));
         position += length;
         return this;
     }
@@ -201,7 +256,7 @@ public sealed class WriteBuffer
     /// <returns>this</returns>
     public WriteBuffer Put(ReadOnlySpan<byte> src)
     {
-        src.CopyTo(EnsureCapacity(src.Length).AsSpan(position, src.Length));
+        src.CopyTo(EnsureCapacity(src.Length).Slice(position, src.Length));
         position += src.Length;
         return this;
     }
@@ -222,7 +277,7 @@ public sealed class WriteBuffer
     /// Get the capacity.
     /// </summary>
     /// <returns>the capacity</returns>
-    public int Capacity() => buffer.Length;
+    public int Capacity() => capacity;
 
     /// <summary>
     /// Set the position.
@@ -254,7 +309,7 @@ public sealed class WriteBuffer
     /// <returns>this</returns>
     public WriteBuffer Get(byte[] dst)
     {
-        buffer.AsSpan(position, dst.Length).CopyTo(dst);
+        CurrentSpan.Slice(position, dst.Length).CopyTo(dst);
         position += dst.Length;
         return this;
     }
@@ -267,7 +322,7 @@ public sealed class WriteBuffer
     /// <returns>this</returns>
     public WriteBuffer PutInt(int index, int value)
     {
-        BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(index, 4), value);
+        BinaryPrimitives.WriteInt32BigEndian(CurrentSpan.Slice(index, 4), value);
         return this;
     }
 
@@ -279,7 +334,7 @@ public sealed class WriteBuffer
     /// <returns>this</returns>
     public WriteBuffer PutShort(int index, short value)
     {
-        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(index, 2), (ushort)value);
+        BinaryPrimitives.WriteUInt16BigEndian(CurrentSpan.Slice(index, 2), (ushort)value);
         return this;
     }
 
@@ -296,14 +351,20 @@ public sealed class WriteBuffer
     {
         if (limit > MaxReuseCapacity)
         {
-            buffer = reuse!;
+            DropStorage();
+            if (managed is null)
+            {
+                managed = reuse ?? new byte[MinGrow];
+                isNative = false;
+                capacity = managed.Length;
+            }
         }
-        else if (!ReferenceEquals(buffer, reuse))
+        else if (!ReferenceEquals(CurrentRef(), reuse))
         {
-            reuse = buffer;
+            reuse = CurrentRef();
         }
 
-        limit = buffer.Length;
+        limit = capacity;
         position = 0;
         return this;
     }
@@ -312,24 +373,49 @@ public sealed class WriteBuffer
     /// The bytes written so far.
     /// </summary>
     /// <returns>what was written</returns>
-    public byte[] ToArray() => buffer[..position];
+    public byte[] ToArray() => CurrentSpan[..position].ToArray();
 
     /// <summary>
-    /// The live backing array, not a copy. The chunk image is patched in place after
-    /// serialization (header at the front, footer at the back), so the store keeps this array
-    /// rather than a snapshot of it.
+    /// A view over the written region, for writing the chunk straight to the file channel.
     /// </summary>
-    /// <returns>the backing array; only <c>[0, Limit())</c> holds the chunk</returns>
-    internal byte[] GetBuffer() => buffer;
+    /// <param name="length">how many bytes of the buffer to expose</param>
+    /// <returns>the region</returns>
+    internal ReadOnlyMemory<byte> GetRegion(int length)
+        => isNative
+            ? (view ??= new NativeView(native, capacity)).Memory.Slice(0, length)
+            : managed!.AsMemory(0, length);
 
-    private byte[] EnsureCapacity(int len)
+    /// <summary>
+    /// A slice of the current backing memory.
+    /// </summary>
+    internal ReadOnlySpan<byte> Slice(int start, int length) => CurrentSpan.Slice(start, length);
+
+    /// <summary>
+    /// Releases native storage, if any. Idempotent.
+    /// </summary>
+    public void Dispose()
+    {
+        DropStorage();
+    }
+
+    /// <summary>
+    /// The current backing span.
+    /// </summary>
+    private Span<byte> CurrentSpan => isNative ? new Span<byte>(native, capacity) : managed!;
+
+    /// <summary>
+    /// The current backing reference (managed form only meaningful when managed).
+    /// </summary>
+    private byte[]? CurrentRef() => isNative ? null : managed;
+
+    private Span<byte> EnsureCapacity(int len)
     {
         if (limit - position < len)
         {
             Grow(len);
         }
 
-        return buffer;
+        return CurrentSpan;
     }
 
     private void Grow(int additional)
@@ -340,10 +426,10 @@ public sealed class WriteBuffer
         long grow = Math.Max(needed, MinGrow);
 
         // grow at least 50% of the current size
-        grow = Math.Max(buffer.Length / 2, grow);
+        grow = Math.Max(capacity / 2, grow);
 
         // the new capacity is at most int.MaxValue
-        int newCapacity = (int)Math.Min(int.MaxValue, (long)buffer.Length + grow);
+        int newCapacity = (int)Math.Min(int.MaxValue, (long)capacity + grow);
         if (newCapacity < needed)
         {
             throw new OutOfMemoryException(
@@ -351,23 +437,93 @@ public sealed class WriteBuffer
                 + " needed: " + needed.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
-        byte[] grown;
-        try
+        Span<byte> oldSpan = CurrentSpan;
+        void* newNative = null;
+        byte[]? newManaged = null;
+        bool targetNative = newCapacity >= NativeThreshold;
+        if (targetNative)
         {
-            grown = new byte[newCapacity];
+            try
+            {
+                newNative = NativeMemory.Alloc((nuint)newCapacity);
+            }
+            catch (OutOfMemoryException)
+            {
+                throw new OutOfMemoryException(
+                    "Capacity: " + newCapacity.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+
+            Interlocked.Increment(ref liveAllocations);
+            oldSpan.Slice(0, position).CopyTo(new Span<byte>(newNative, newCapacity));
         }
-        catch (OutOfMemoryException)
+        else
         {
-            throw new OutOfMemoryException(
-                "Capacity: " + newCapacity.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            try
+            {
+                newManaged = new byte[newCapacity];
+            }
+            catch (OutOfMemoryException)
+            {
+                throw new OutOfMemoryException(
+                    "Capacity: " + newCapacity.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+
+            oldSpan.Slice(0, position).CopyTo(newManaged);
         }
 
-        buffer.AsSpan(0, position).CopyTo(grown);
-        buffer = grown;
+        DropStorage();
+        native = newNative;
+        managed = newManaged;
+        isNative = targetNative;
+        capacity = newCapacity;
         limit = newCapacity;
-        if (newCapacity <= MaxReuseCapacity)
+        if (!targetNative && newCapacity <= MaxReuseCapacity)
         {
-            reuse = buffer;
+            reuse = newManaged;
+        }
+    }
+
+    /// <summary>
+    /// Frees the current native storage, if any.
+    /// </summary>
+    private void DropStorage()
+    {
+        if (isNative && native is not null)
+        {
+            NativeMemory.Free(native);
+            native = null;
+            isNative = false;
+            Interlocked.Decrement(ref liveAllocations);
+        }
+
+        view = null;
+    }
+
+    /// <summary>
+    /// A memory view over a foreign native buffer; does not own the memory.
+    /// </summary>
+    private sealed unsafe class NativeView : MemoryManager<byte>
+    {
+        private readonly void* ptr;
+
+        private readonly int length;
+
+        internal NativeView(void* ptr, int length)
+        {
+            this.ptr = ptr;
+            this.length = length;
+        }
+
+        public override Span<byte> GetSpan() => new(ptr, length);
+
+        public override MemoryHandle Pin(int elementIndex = 0) => new((byte*)ptr + elementIndex);
+
+        public override void Unpin()
+        {
+        }
+
+        protected override void Dispose(bool disposing)
+        {
         }
     }
 }

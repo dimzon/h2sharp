@@ -23,15 +23,11 @@ public class CompressNo : Compressor
     }
 
     /// <inheritdoc/>
-    public int Compress(byte[] @in, int inPos, int inLen, byte[] @out, int outPos)
+    public int Compress(ReadOnlySpan<byte> input, int inPos, int inLen, Span<byte> output, int outPos)
     {
-        Array.Copy(@in, inPos, @out, outPos, inLen);
+        input.Slice(inPos, inLen).CopyTo(output.Slice(outPos));
         return outPos + inLen;
     }
-
-    /// <inheritdoc/>
-    public void Expand(byte[] @in, int inPos, int inLen, byte[] @out, int outPos, int outLen)
-        => Array.Copy(@in, inPos, @out, outPos, outLen);
 
     /// <inheritdoc/>
     public void Expand(ReadOnlyMemory<byte> input, Span<byte> output)

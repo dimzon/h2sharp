@@ -78,12 +78,12 @@ public class CompressDeflate : Compressor
     }
 
     /// <inheritdoc/>
-    public int Compress(byte[] input, int inPos, int inLen, byte[] output, int outPos)
+    public int Compress(ReadOnlySpan<byte> input, int inPos, int inLen, Span<byte> output, int outPos)
     {
         // Compressed output is usually shorter than its input, so a buffer of the input's
-        // size holds it; the rare expansion falls back to a growing one. Either way no
-        // exact-sized copy is built just to copy a prefix of it into the caller's buffer.
+        // size holds it; the rare expansion falls back to a growing one.
         byte[] rented = ArrayPool<byte>.Shared.Rent(Math.Max(inLen, 1));
+        ReadOnlySpan<byte> slice = input.Slice(inPos, inLen);
         try
         {
             int written;
@@ -93,7 +93,7 @@ public class CompressDeflate : Compressor
                 {
                     using (var zlib = new ZLibStream(buffer, MapLevel(level), leaveOpen: true))
                     {
-                        zlib.Write(input, inPos, inLen);
+                        zlib.Write(slice);
                     }
 
                     written = (int)buffer.Position;
@@ -104,7 +104,7 @@ public class CompressDeflate : Compressor
                 // The fixed buffer did not hold the answer: incompressible input can come
                 // out longer than it went in. A real write error retries below and surfaces
                 // from there.
-                return CompressGrowing(input, inPos, inLen, output, outPos);
+                return CompressGrowing(slice, output, outPos);
             }
 
             if (written == 0 && inLen > 0)
@@ -121,7 +121,7 @@ public class CompressDeflate : Compressor
             // stream, which carries no trailer — only a complete stream does. The caller only keeps
             // the answer when it is shorter than the input, so a prefix is never read.
             int body = Math.Min(written, output.Length - outPos);
-            Buffer.BlockCopy(rented, 0, output, outPos, body);
+            rented.AsSpan(0, body).CopyTo(output.Slice(outPos));
             return outPos + body;
         }
         finally
@@ -130,30 +130,26 @@ public class CompressDeflate : Compressor
         }
     }
 
-    private int CompressGrowing(byte[] input, int inPos, int inLen, byte[] output, int outPos)
+    private int CompressGrowing(ReadOnlySpan<byte> input, Span<byte> output, int outPos)
     {
         byte[] full;
         using (var buffer = new MemoryStream())
         {
             using (var zlib = new ZLibStream(buffer, MapLevel(level), true))
             {
-                zlib.Write(input, inPos, inLen);
+                zlib.Write(input);
             }
 
             full = buffer.ToArray();
         }
 
         int body = Math.Min(full.Length, output.Length - outPos);
-        Buffer.BlockCopy(full, 0, output, outPos, body);
+        full.AsSpan(0, body).CopyTo(output.Slice(outPos));
         return outPos + body;
     }
 
     /// <inheritdoc/>
     public int GetAlgorithm() => Compressors.Deflate;
-
-    /// <inheritdoc/>
-    public void Expand(byte[] input, int inPos, int inLen, byte[] output, int outPos, int outLen)
-        => Expand(new ReadOnlyMemory<byte>(input, inPos, inLen), output.AsSpan(outPos, outLen));
 
     /// <inheritdoc/>
     public void Expand(ReadOnlyMemory<byte> input, Span<byte> output)

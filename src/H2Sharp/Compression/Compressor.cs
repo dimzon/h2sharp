@@ -52,29 +52,19 @@ public interface Compressor
     int GetAlgorithm();
 
     /// <summary>
-    /// Compresses a number of bytes.
+    /// Compresses a number of bytes. The whole API is span-based: callers compress
+    /// straight out of native or pooled buffers without materializing byte[] slices.
     /// </summary>
-    /// <param name="in">the input</param>
+    /// <param name="input">the input</param>
     /// <param name="inPos">where to start reading</param>
     /// <param name="inLen">how many bytes to read</param>
-    /// <param name="out">where to write</param>
+    /// <param name="output">where to write</param>
     /// <param name="outPos">where to start writing</param>
     /// <returns>where the writing ended</returns>
-    int Compress(byte[] @in, int inPos, int inLen, byte[] @out, int outPos);
+    int Compress(ReadOnlySpan<byte> input, int inPos, int inLen, Span<byte> output, int outPos);
 
     /// <summary>
-    /// Expands a number of compressed bytes.
-    /// </summary>
-    /// <param name="in">the compressed data</param>
-    /// <param name="inPos">where to start reading</param>
-    /// <param name="inLen">how many bytes to read</param>
-    /// <param name="out">where to write</param>
-    /// <param name="outPos">where to start writing</param>
-    /// <param name="outLen">how many bytes the answer has</param>
-    void Expand(byte[] @in, int inPos, int inLen, byte[] @out, int outPos, int outLen);
-
-    /// <summary>
-    /// Expands compressed bytes into a span.
+    /// Expands compressed bytes.
     /// </summary>
     /// <remarks>
     /// The input is a view, not a copy: the caller hands the slice it already holds, and a

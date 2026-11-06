@@ -38,13 +38,13 @@ public sealed class OffHeapMemoryGateTests
                 // Warm up (JIT, pools, caches).
                 WriteBatches(connection, 10);
 
-                // Many chunk writes: the chunk-image pool must keep native allocations bounded
+                // Many chunk writes: the native write buffers (SP-29) must stay bounded
                 // (pool cap + in-flight), not grow per chunk.
                 long maxLive = 0;
                 for (int b = 0; b < 60; b++)
                 {
                     WriteBatches(connection, 1);
-                    maxLive = Math.Max(maxLive, NativeChunkImage.LiveAllocations);
+                    maxLive = Math.Max(maxLive, WriteBuffer.LiveAllocations);
                 }
 
                 Assert.InRange(maxLive, 0, 16);

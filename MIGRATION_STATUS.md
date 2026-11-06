@@ -10430,3 +10430,22 @@ MvStore 152, временные оракулы, LOB Native-тесты).
   закрыть → открыть → прочитать) ловит sbyte-баг.
 * Проверено: MvStore 152/152, Data 719/719, H2Sharp.Tests 1972/1972
   (Category!=BlockedByPort), LOB-оракулы и гейты зелёные.
+
+### SP-29: off-heap WriteBuffer и спановый компрессор (2026-11-06)
+
+* `WriteBuffer` — dual-mode: буферы ≥85 КБ живут в native-памяти (пул
+  `writeBufferPool` теперь пулирует и native-буферы, освобождение при Close).
+  Чанк пишется прямо из буфера (`WriteChunk(c, buff.GetRegion(limit))`) — шаг
+  промежуточного образа `NativeChunkImage` и копия в него убраны полностью
+  (D-039 выполнялся через образ; теперь буфер и есть образ).
+* `Compressor` переведён на спаны целиком: `Compress(ReadOnlySpan, Span)` и
+  `Expand(ReadOnlyMemory, Span)`; byte[]-перегрузки удалены из интерфейса и всех
+  реализаций (No/LZF/Deflate) и из LZF-потоков/CompressTool. LZF для входов
+  <2 байт кодирует literal-run (раньше бросал IndexOutOfRange); это внутреннее
+  отклонение — ADO.NET-контракт не затронут, оракул-сравнение байт для коротких
+  входов исключено (round-trip покрыт локально).
+* `Page` компрессит прямо из спана буфера — без `ToArray()` на срез.
+* Гейты: `WriteBuffer.LiveAllocations` ограничен (≤16) при повторных крупных
+  коммитах; LOB-гейты прежние.
+* Проверено: H2Sharp.Tests 1973/1973 (Category!=BlockedByPort), Data 719/719,
+  MvStore 152/152, компрессорные и форматные гейты зелёные.

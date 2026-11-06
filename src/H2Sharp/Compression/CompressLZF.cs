@@ -85,8 +85,6 @@ public sealed class CompressLZF : Compressor
     /// <remarks>
     /// A call-through: the span overload below holds the logic, so the two cannot drift.
     /// </remarks>
-    private static int First(byte[] @in, int inPos) => First(@in.AsSpan(), inPos);
-
     /// <summary>
     /// The two bytes at the place, as an integer with the first one in the high half.
     /// </summary>
@@ -98,8 +96,6 @@ public sealed class CompressLZF : Compressor
     /// <remarks>
     /// A call-through, same reason as <see cref="First(byte[], int)"/>.
     /// </remarks>
-    private static int Next(int v, byte[] @in, int inPos) => Next(v, @in.AsSpan(), inPos);
-
     /// <summary>
     /// The value moved one byte left, with the byte at <paramref name="inPos"/> + 2 added.
     /// </summary>
@@ -115,20 +111,6 @@ public sealed class CompressLZF : Compressor
     /// </summary>
     /// <remarks>
     /// A call-through: the span overload below holds the logic, so the two cannot drift.
-    /// </remarks>
-    private static int EqualFrom(byte[] left, int leftPos, byte[] right, int rightPos, int max)
-        => EqualFrom(left.AsSpan(), leftPos, right.AsSpan(), rightPos, max);
-
-    /// <summary>
-    /// How many bytes from the two places are equal, up to <paramref name="max"/>.
-    /// </summary>
-    /// <remarks>
-    /// The reference walks a match one byte at a time. A match can be up to 263 bytes long, and
-    /// walking it that way is most of the work of compressing text, which is mostly matches: the
-    /// bytes are compared eight at a time here instead, and the first pair that differs is found by
-    /// the count of the trailing zeroes of the difference — which is exactly the index of the first
-    /// byte that differs, because a little-endian read puts the earlier byte in the lower half. So
-    /// the length comes out the same as it did one byte at a time.
     /// </remarks>
     private static int EqualFrom(ReadOnlySpan<byte> left, int leftPos, ReadOnlySpan<byte> right, int rightPos, int max)
     {
@@ -154,116 +136,12 @@ public sealed class CompressLZF : Compressor
     }
 
     /// <inheritdoc/>
-    public int Compress(byte[] @in, int inPos, int inLen, byte[] @out, int outPos)
-    {
-        int offset = inPos;
-        inLen += inPos;
-        int[] hashTab = cachedHashTable ??= new int[HashSize];
-        int literals = 0;
-        outPos++;
-        int future = First(@in, inPos);
-        while (inPos < inLen - 4)
-        {
-            byte p2 = @in[inPos + 2];
-            future = (future << 8) + (p2 & 255);
-            int off = Hash(future);
-            int reference = hashTab[off];
-            hashTab[off] = inPos;
-            if (reference < inPos
-                && reference > offset
-                && (off = inPos - reference - 1) < MaxOff
-                && @in[reference + 2] == p2
-                && @in[reference + 1] == (byte)(future >> 8)
-                && @in[reference] == (byte)(future >> 16))
-            {
-                // A match.
-                int maxLen = inLen - inPos - 2;
-                if (maxLen > MaxRef)
-                {
-                    maxLen = MaxRef;
-                }
+    /// <inheritdoc/>
+    public int Compress(ReadOnlySpan<byte> input, int inPos, int inLen, Span<byte> output, int outPos)
+        // The slice is the whole window: nothing before it may be referred back to, which
+        // is exactly what the window compressor below assumes.
+        => Compress(input.Slice(inPos, inLen), output, outPos);
 
-                if (literals == 0)
-                {
-                    // Back-references in a row, so there is no control byte for a literal run.
-                    outPos--;
-                }
-                else
-                {
-                    // The control byte at the start of the literal run holds its length.
-                    @out[outPos - literals - 1] = (byte)(literals - 1);
-                    literals = 0;
-                }
-
-                // The three bytes of the match are already known to be equal, and maxLen is never
-                // below three, so the count starts where the match does.
-                int len = EqualFrom(@in, inPos, @in, reference, maxLen);
-
-                len -= 2;
-                if (len < 7)
-                {
-                    @out[outPos++] = (byte)((off >> 8) + (len << 5));
-                }
-                else
-                {
-                    @out[outPos++] = (byte)((off >> 8) + (7 << 5));
-                    @out[outPos++] = (byte)(len - 7);
-                }
-
-                @out[outPos++] = (byte)off;
-
-                // One byte along, to leave room for the control byte of a literal run.
-                outPos++;
-                inPos += len;
-
-                // The future is built again and the last two places go into the table: hashing them
-                // compresses a little better and costs a little speed.
-                future = First(@in, inPos);
-                future = Next(future, @in, inPos);
-                hashTab[Hash(future)] = inPos++;
-                future = Next(future, @in, inPos);
-                hashTab[Hash(future)] = inPos++;
-            }
-            else
-            {
-                // One byte to the output as part of a literal run.
-                @out[outPos++] = @in[inPos++];
-                literals++;
-                if (literals == MaxLiteral)
-                {
-                    @out[outPos - literals - 1] = (byte)(literals - 1);
-                    literals = 0;
-
-                    // One byte along, to leave room for the control byte of a literal run.
-                    outPos++;
-                }
-            }
-        }
-
-        // What is left is too few bytes to look for a match in, so it goes out as literals.
-        while (inPos < inLen)
-        {
-            @out[outPos++] = @in[inPos++];
-            literals++;
-            if (literals == MaxLiteral)
-            {
-                @out[outPos - literals - 1] = (byte)(literals - 1);
-                literals = 0;
-                outPos++;
-            }
-        }
-
-        // The length of the last literal run goes into its control byte.
-        @out[outPos - literals - 1] = (byte)(literals - 1);
-        if (literals == 0)
-        {
-            outPos--;
-        }
-
-        return outPos;
-    }
-
-    /// <summary>
     /// Compresses a window of bytes, which is what the reference compresses out of a
     /// <c>ByteBuffer</c>: the whole window, with nothing before it to refer back to.
     /// </summary>
@@ -275,6 +153,20 @@ public sealed class CompressLZF : Compressor
     {
         const int offset = 0;
         int inLen = @in.Length;
+        if (inLen < 2)
+        {
+            // No two bytes to start a hash chain with: encode the input as a literal run,
+            // the same shape the tail of the main loop produces.
+            if (inLen == 0)
+            {
+                return outPos;
+            }
+
+            @out[outPos] = 0;
+            @in.CopyTo(@out.Slice(outPos + 1));
+            return outPos + 1 + inLen;
+        }
+
         int[] hashTab = cachedHashTable ??= new int[HashSize];
         int inPos = 0;
         int literals = 0;
@@ -367,18 +259,6 @@ public sealed class CompressLZF : Compressor
     }
 
     /// <inheritdoc/>
-    public void Expand(byte[] @in, int inPos, int inLen, byte[] @out, int outPos, int outLen)
-    {
-        if (inPos < 0 || outPos < 0 || outLen < 0)
-        {
-            throw new ArgumentException();
-        }
-
-        ExpandCore(new ReadOnlySpan<byte>(@in, inPos, @in.Length - inPos), new Span<byte>(@out, outPos, outLen), outLen);
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>
     /// Explicit, because the static span form below already owns this signature.
     /// </remarks>
     void Compressor.Expand(ReadOnlyMemory<byte> input, Span<byte> output) => Expand(input.Span, output);

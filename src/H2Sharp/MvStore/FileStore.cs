@@ -368,18 +368,6 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
     private readonly ConcurrentQueue<WriteBuffer> writeBufferPool = new();
 
     /// <summary>
-    /// Pool of unmanaged chunk images (SP-27). The image is reused instead of being
-    /// Alloc/Free'd per chunk; the pool is bounded by the same cap and length as the
-    /// managed write-buffer pool.
-    /// </summary>
-    private readonly ConcurrentQueue<NativeChunkImage> chunkImagePool = new();
-
-    /// <summary>
-    /// The largest image the pool keeps: mirrors the write-buffer reuse cap.
-    /// </summary>
-    private const int ChunkImageMaxReuseCapacity = 4 * 1024 * 1024;
-
-    /// <summary>
     /// The layout map: chunk metadata and root locations for all maps.
     /// </summary>
     private MVMap<string, string>? layout;
@@ -553,9 +541,9 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
         layout?.Close();
         closed = true;
         chunks.Clear();
-        while (chunkImagePool.TryDequeue(out NativeChunkImage? image))
+        while (writeBufferPool.TryDequeue(out WriteBuffer? buff))
         {
-            image.Free();
+            buff.Dispose();
         }
     }
 
@@ -1352,8 +1340,10 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
         // add the store header and round to the next block
         int length = MathUtils.RoundUpInt(chunkLength + Chunk.FooterLength, BlockSize);
         _ = buff.Limit(length);
+        // The chunk lives in the write buffer until StoreBuffer writes it; no separate
+        // array is kept on the chunk (the buffer is native for chunk sizes, SP-29).
+        c.Buffer = null;
         c.Len = buff.Limit() / BlockSize;
-        c.Buffer = buff.GetBuffer();
     }
 
     private void SaveRecentChunksInLayout(long currentVersion)
@@ -1390,23 +1380,11 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
             _ = buff.Put(c.GetFooterBytes());
             _ = buff.Position(0);
 
-            // Copy the assembled chunk into an unmanaged image: chunk images are megabytes,
-            // and a managed array that size would sit on the LOH (D-039). Images are pooled
-            // (SP-27) so the per-chunk Alloc/Free churn is replaced by reuse.
-            NativeChunkImage image = RentChunkImage(buff.Limit());
-            try
-            {
-                buff.GetBuffer().AsSpan(0, buff.Limit()).CopyTo(image.GetSpan());
-
-                // A pooled image may have more capacity than this chunk; only the assembled
-                // length is written.
-                WriteChunk(c, image.Memory.Slice(0, buff.Limit()));
-                lastChunk = c;
-            }
-            finally
-            {
-                ReleaseChunkImage(image);
-            }
+            // Write the assembled chunk straight from the write buffer. Chunk-size buffers are
+            // native since SP-29, so there is no managed LOH array and no image copy (D-039's
+            // native image step built on the managed buffer; the buffer is the image now).
+            WriteChunk(c, buff.GetRegion(buff.Limit()));
+            lastChunk = c;
         }
         catch (MvStoreException e)
         {
@@ -2564,40 +2542,9 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
         {
             writeBufferPool.Enqueue(buff);
         }
-    }
-
-    /// <summary>
-    /// Rents a chunk image of at least the given length, reusing a pooled one when it
-    /// has enough capacity. Called under the save-chunk lock.
-    /// </summary>
-    private NativeChunkImage RentChunkImage(int length)
-    {
-        while (chunkImagePool.TryDequeue(out NativeChunkImage? image))
-        {
-            if (image.Capacity >= length)
-            {
-                return image;
-            }
-
-            image.Free();
-        }
-
-        return NativeChunkImage.Create(length);
-    }
-
-    /// <summary>
-    /// Returns a chunk image to the pool, or frees it when it exceeds the reuse cap or the
-    /// pool is full.
-    /// </summary>
-    private void ReleaseChunkImage(NativeChunkImage image)
-    {
-        if (image.Capacity <= ChunkImageMaxReuseCapacity && chunkImagePool.Count <= PipeLength)
-        {
-            chunkImagePool.Enqueue(image);
-        }
         else
         {
-            image.Free();
+            buff.Dispose();
         }
     }
 

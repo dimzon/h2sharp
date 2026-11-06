@@ -271,20 +271,27 @@ public sealed class CompressReferenceTests
 
         if (b.Length < 2)
         {
-            Assert.Throws<IndexOutOfRangeException>(() =>
+            // Short inputs are encoded as a literal run by the span compressor, not
+            // rejected: the round-trip must still come back intact.
+            byte[] rawShort = new byte[(b.Length * 2) + 128];
+            int endShort = new CompressLZF().Compress(b.AsSpan(), 0, b.Length, rawShort.AsSpan(), 0);
+            Assert.Equal(b.Length == 0 ? 0 : b.Length + 1, endShort);
+            if (b.Length == 0)
             {
-                byte[] raw = new byte[(b.Length * 2) + 128];
-                _ = new CompressLZF().Compress(b, 0, b.Length, raw, 0);
-            });
+                return;
+            }
 
+            byte[] zeroedShort = new byte[b.Length];
+            CompressLZF.Expand(rawShort.AsSpan(0, endShort), zeroedShort.AsSpan(0, b.Length));
+            Assert.True(Hex.BytesToHex(b) == Hex.BytesToHex(zeroedShort[..b.Length]), what);
             return;
         }
 
         byte[] zeroed = new byte[b.Length + 64];
         byte[] raw = new byte[(b.Length * 2) + 128];
         CompressLZF compress = new();
-        int end = compress.Compress(b, 0, b.Length, raw, 0);
-        compress.Expand(raw, 0, end, zeroed, 0, b.Length);
+        int end = compress.Compress(b.AsSpan(), 0, b.Length, raw.AsSpan(), 0);
+        CompressLZF.Expand(raw.AsSpan(0, end), zeroed.AsSpan(0, b.Length));
         Assert.True(Hex.BytesToHex(b) == Hex.BytesToHex(zeroed[..b.Length]), what);
         Assert.True(AllZero(zeroed[b.Length..]), what);
     }
