@@ -10412,3 +10412,21 @@ MvStore 152, временные оракулы, LOB Native-тесты).
 * Гейты после SP-25: потолки без изменений.
 * Проверено: MvStore 152/152, H2Sharp.Tests 1972/1972 (Category!=BlockedByPort),
   Data 719/719, LOB-интеграция и гейты зелёные.
+
+### SP-28: LOB-блоки в native-памяти, 256 КБ (2026-11-06)
+
+* Новые `NativeLobBlock` + `LobBlockDataType`: значение карты `lobBlocks` теперь
+  native-буфер; на диске та же tagged-array форма (короткие/длинные массивы,
+  sbyte-класс-ид), формат карты не менялся.
+* `LobStorageMap` стал `IDisposable`: живые блоки регистрируются в реестре,
+  освобождаются при `DeleteLob` (sync) и при `Database.Close` после закрытия
+  стора. Undo-карты блоков не держат (карты нетранзакционные) — синхронный
+  free безопасен к откату (откат LOB и так не восстанавливает).
+* `BlockSize` 64 → 256 КБ (D-042 обновлено): блоки на арене, LOH не растёт;
+  ключей в 4 раза меньше. `LobInputStream` читает и byte[], и sbyte[], и
+  NativeLobBlock.
+* Гейты: `StoredLobBlocksAreNativeAndFreedOnClose` (пик > базового, после
+  удаления/закрытия возврат к базовому); reopen-тест LOB 300 КБ (файловая БД,
+  закрыть → открыть → прочитать) ловит sbyte-баг.
+* Проверено: MvStore 152/152, Data 719/719, H2Sharp.Tests 1972/1972
+  (Category!=BlockedByPort), LOB-оракулы и гейты зелёные.

@@ -13,6 +13,8 @@ using System.Data.Common;
 using System.IO;
 using H2Sharp.Data;
 using H2Sharp.MvStore;
+using H2Sharp.MvStore.Db;
+using H2Sharp.Values;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -95,6 +97,42 @@ public sealed class OffHeapMemoryGateTests
                 }
 
                 Assert.Equal(payload, stream.ToArray());
+            }
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+
+    [Fact]
+    public void StoredLobBlocksAreNativeAndFreedOnClose()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "h2sharp-lob-native-" + Guid.NewGuid().ToString("N"));
+        byte[] payload = new byte[1024 * 1024];
+        new Random(42).NextBytes(payload);
+        long baseline = NativeLobBlock.LiveAllocations;
+        long peak = baseline;
+        try
+        {
+            H2Sharp.Engine.Database database = new(H2Sharp.Engine.ConnectionInfo.File(path));
+            try
+            {
+                LobStorageMap storage = (LobStorageMap)database.GetLobStorage();
+                for (int i = 0; i < 5; i++)
+                {
+                    ValueBlob blob = storage.CreateBlob(new MemoryStream(payload), payload.Length);
+                    peak = Math.Max(peak, NativeLobBlock.LiveAllocations);
+                    storage.RemoveLob(blob);
+                }
+
+                // Remove frees blocks synchronously; nothing should stay alive in this test.
+                Assert.InRange(NativeLobBlock.LiveAllocations, 0, baseline + 2);
+                Assert.True(peak > baseline, "LOB blocks should live in native memory");
+            }
+            finally
+            {
+                database.Close();
             }
         }
         finally

@@ -1817,6 +1817,13 @@ public sealed partial class Database : CastDataProvider
             // Reference: store.close(allowedCompactionTime). Nothing in the port asks for
             // compaction on close, so the store is closed immediately.
             store.Close(0);
+
+            // The LOB storage holds native blocks (SP-28); the store is closed, so no
+            // reader can reach them any more and they are freed here.
+            if (lobStorage is MvStore.Db.LobStorageMap lobMap)
+            {
+                lobMap.Dispose();
+            }
         }
     }
 

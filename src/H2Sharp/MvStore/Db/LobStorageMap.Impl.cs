@@ -13,6 +13,7 @@
  */
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -24,13 +25,21 @@ using H2Sharp.Values.Lobs;
 
 namespace H2Sharp.MvStore.Db;
 
-public sealed partial class LobStorageMap : LobStorageInterface
+public sealed partial class LobStorageMap : LobStorageInterface, IDisposable
 {
     /// <summary>
-    /// The block size of a stored LOB. The reference uses 256 KiB, which would put every
-    /// block on the LOH; 64 KiB keeps blocks under the large-object threshold (D-042).
+    /// Live native blocks, so the storage can free them when it closes (SP-28). Blocks
+    /// are also freed individually on LOB removal.
     /// </summary>
-    internal const int BlockSize = 64 * 1024;
+    private readonly List<NativeLobBlock> liveBlocks = [];
+
+    private readonly object liveLock = new();
+    /// <summary>
+    /// The block size of a stored LOB. The reference uses 256 KiB; the original deviation
+    /// D-042 lowered it to 64 KiB so managed blocks would stay off the large object heap.
+    /// Blocks are native since SP-28, so the reference size is used again (D-042 updated).
+    /// </summary>
+    internal const int BlockSize = 256 * 1024;
 
     private readonly Database database;
 
@@ -50,7 +59,9 @@ public sealed partial class LobStorageMap : LobStorageInterface
     {
         this.database = database;
         MVStore store = database.GetMvStore();
-        blocks = store.OpenMap<long, object>("lobBlocks");
+        MVMap<long, object>.Builder<long, object> blockBuilder = new();
+        blockBuilder.KeyType(LongDataType.Instance).ValueType(LobBlockDataType.Instance);
+        blocks = store.OpenMap("lobBlocks", blockBuilder);
         MVMap<long, BlobMeta>.Builder<long, BlobMeta> metaBuilder = new();
         metaBuilder.KeyType(LongDataType.Instance).ValueType(BlobMeta.Type.Instance);
         meta = store.OpenMap("lobMeta", metaBuilder);
@@ -126,7 +137,13 @@ public sealed partial class LobStorageMap : LobStorageInterface
                 Array.Resize(ref block, read);
             }
 
-            blocks.Put((lobId << 20) | index, block);
+            NativeLobBlock native = NativeLobBlock.FromBytes(block);
+            lock (liveLock)
+            {
+                liveBlocks.Add(native);
+            }
+
+            blocks.Put((lobId << 20) | index, native);
             index++;
             total += read;
             if (maxLength > 0 && total >= maxLength)
@@ -197,13 +214,38 @@ public sealed partial class LobStorageMap : LobStorageInterface
             long blockCount = (removed.ByteCount + BlockSize - 1) / BlockSize;
             for (long i = 0; i < blockCount; i++)
             {
-                blocks.Remove((lobId << 20) | i);
+                if (blocks.Remove((lobId << 20) | i) is NativeLobBlock block)
+                {
+                    lock (liveLock)
+                    {
+                        liveBlocks.Remove(block);
+                    }
+
+                    block.Free();
+                }
             }
         }
     }
 
     /// <inheritdoc/>
     public bool IsReadOnly => false;
+
+    /// <summary>
+    /// Frees every live native block. Called when the database closes, after the store
+    /// has closed and no reader can reach the blocks any more.
+    /// </summary>
+    public void Dispose()
+    {
+        lock (liveLock)
+        {
+            foreach (NativeLobBlock block in liveBlocks)
+            {
+                block.Free();
+            }
+
+            liveBlocks.Clear();
+        }
+    }
 
     /// <summary>
     /// Reads a stored LOB block by block.
@@ -239,6 +281,7 @@ public sealed partial class LobStorageMap : LobStorageInterface
             {
                 byte[] bytes => bytes,
                 sbyte[] sbytes => MemoryMarshal.Cast<sbyte, byte>(sbytes),
+                NativeLobBlock native => native.Bytes,
                 _ => default,
             };
 
