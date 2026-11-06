@@ -10876,3 +10876,17 @@ per-op накладных самого дерева (виртуальные вы
 * Проверено: H2Sharp.Tests — новый тест зелёный (полный прогон см.
   спринт 8: 2011/2012), Native 97/97 после фикса системных имён
   (`GetNextSystemIdentifier`).
+
+### Покрытие-спринт 10: MAX_MEMORY_ROWS и спец-даты (2026-11-07)
+
+* `MaxMemoryRowsOracleTests` — оракул против JVM: SET MAX_MEMORY_ROWS с
+  маленьким потолком — сортированный/DISTINCT/агрегатный результат
+  проливается, ответы те же; `SET MAX_MEMORY_ROWS 0` снимает потолок
+  (`Result/LocalResult.cs` 756–788 spill, 162–164 int.MaxValue); кап
+  — посессионный.
+* `SpecialDateLiteralsOracleTests` — оракул: ±Infinity для DATE/
+  TIMESTAMP/TIMESTAMP WITH TIME ZONE — значения, сравнения, план через
+  литеральный писатель (`Data/Dialect.cs` Infinity-ветви), сортировка
+  ставит бесконечности по краям.
+* Проверено: оба теста зелёные с первого прогона (полные прогоны см.
+  спринты 8–9; Native 97/97 после фикса имён derived-таблиц).
