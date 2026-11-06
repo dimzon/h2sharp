@@ -2242,7 +2242,7 @@ public sealed partial class Parser
         {
             // The reference gives a table without an alias a name of its own, so that the
             // columns of the table can be told apart from the columns of the query above.
-            tableAlias = "_DERIVED_TABLE_" + Current.Start;
+            tableAlias = session.GetNextSystemIdentifier(sql);
         }
 
         Tables.Table table = query.ToTable(

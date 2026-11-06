@@ -10840,3 +10840,26 @@ per-op накладных самого дерева (виртуальные вы
 * Проверено: H2Sharp.Tests 2010/2011 (`Category!=BlockedByPort`; один
   красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
   Engine 9.
+
+### Покрытие-спринт 8: формы VALUES, derived-имена (2026-11-07)
+
+* `ValuesFormsOracleTests` — оракул по `queries/values.sql`: EXPLAIN
+  SELECT из derived-VALUES с ORDER BY, выборка из конструктора с
+  переименованием колонок, отказ `WITH TIES` без ORDER BY (90122 у обоих).
+* Оракул нашёл дефект и он исправлен: безымянная derived-таблица у порта
+  звалась `_DERIVED_TABLE_<позиция>`; эталон даёт системный идентификатор
+  сессии через `SessionLocal.getNextSystemIdentifier` — «_0», «_1», …,
+  пропуская занятые в тексте стейтмента. Портировано 1:1
+  (`SessionLocal.GetNextSystemIdentifier`, парсер зовёт его).
+* Отложено как неперенесённая функция (`BlockedByPort`, тест хранит
+  эталонную матрицу): **ORDER BY на верхнеуровневом VALUES** — порт
+  отказывает 90068 (ORDER_BY_NOT_IN_RESULT) на любом исполняемом и
+  EXPLAIN-запросе; в порте есть InitOrder/PrepareOrder в
+  TableValueConstructor, но Init() зовёт их с неверными аргументами
+  (`null`-SQL, mustBeInResult=true) и в копию массива, скрытые ORDER BY
+  колонки не дописываются, resultColumnCount/hidden-вычисление в Run и
+  TableValueColumnResolver не портированы. Объём — отдельный движковый
+  спринт.
+* Проверено: H2Sharp.Tests 2011/2012 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
+  Engine 9.

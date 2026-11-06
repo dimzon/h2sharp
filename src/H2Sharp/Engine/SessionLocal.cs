@@ -138,6 +138,28 @@ public sealed class SessionLocal : Session
 
     private int objectId;
 
+    private int systemIdentifier;
+
+    private const string SystemIdentifierPrefix = "_";
+
+    /// <summary>
+    /// Gets a new system identifier for a query that runs on the same statement: an
+    /// unquoted-name-shaped identifier that the statement text does not use, so the engine's
+    /// own names cannot clash with the user's ones.
+    /// </summary>
+    /// <param name="sql">the statement text the identifier must stay out of</param>
+    /// <returns>the new identifier</returns>
+    public string GetNextSystemIdentifier(string sql)
+    {
+        string identifier;
+        do
+        {
+            identifier = SystemIdentifierPrefix + systemIdentifier++;
+        }
+        while (sql.Contains(identifier, StringComparison.Ordinal));
+        return identifier;
+    }
+
     private Result.SearchRow? currentRow;
 
     private readonly Dictionary<string, Values.Value> parameters = [];
