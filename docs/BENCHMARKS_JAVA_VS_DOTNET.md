@@ -1,0 +1,150 @@
+# Бенчмарки Java vs .NET (эталон H2 2.5.x против порта H2Sharp)
+
+Набор кросс-языковых бенчмарков: одна и та же нагрузка исполняется против
+эталонной H2 на JVM (`reference/h2`, v2.5.x) и против порта H2Sharp на .NET.
+Это инструментарий измерения, а не код движка: он не участвует в портировании
+и не подпадает под правило «не изобретай» из AGENTS.md.
+
+## Быстрый старт
+
+```powershell
+# один раз: собрать эталонный jar
+(cd reference/h2/h2 && mvn -B -q -DskipTests package)
+
+# прогнать обе стороны и напечатать таблицу
+powershell tools/perf/bench-cross.ps1 -Label first
+```
+
+Требования: JDK (`javac`/`java` на PATH), .NET SDK, эталонный jar.
+Результаты сохраняются в `artifacts/perf/cross/<label>-java.json` и
+`<label>-dotnet.json`.
+
+## Методология
+
+Обе стороны измеряются **одним и тем же протоколом** — поэтому в измерениях нет
+BenchmarkDotNet (он остаётся в `tools/perf/H2Sharp.Benchmarks` для регрессионного
+гейта .NET-против-.NET).
+
+Протокол на сценарий:
+
+1. Открыть in-memory БД (`jdbc:h2:mem:` на Java, `Data Source=...;Storage=Memory`
+   на .NET).
+2. Setup вне тайминга: `CREATE TABLE`, наполнение данными.
+3. 3 warmup-итерации.
+4. 10 измеренных итераций, `System.nanoTime` / `Stopwatch.GetTimestamp`.
+5. Вывод одной JSON-строки: `{"benchmark":"...","meanNs":...,"opsPerSec":...,"allocBytesPerOp":...}`
+   (аллокации — только на .NET-стороне, `GC.GetAllocatedBytesForCurrentThread`).
+
+Сценарий определён **парой драйверов с одинаковым SQL-текстом**: Java —
+`tools/perf/java-bench/CrossBench.java`, C# — `tools/perf/H2Sharp.CrossBench`.
+Тела сценариев — транслитерации существующих BenchmarkDotNet-бенчмарков
+(`BulkInsertBench`, `SelectRowsBench`, `LikeBench`, `ParsePrepareBench`).
+
+## Сценарии
+
+| Сценарий | Нагрузка | Источник-эталон в BDN |
+|---|---|---|
+| `bulk_insert` | вставка 1000 строк в `TEST(A INT, B INT, C VARCHAR(50))` батчами по 500 | `BulkInsertBench` |
+| `select_scan` | полный скан `SELECT A, B, C FROM TEST` по 10 000 строк с полным дренажем | `SelectRowsBench` |
+| `like_filter` | `SELECT A FROM TEST WHERE C LIKE 'name1%'` по 10 000 строк | `LikeBench` |
+| `parse_prepare` | разбор+план 16 вращающихся запросов без чтения строк | `ParsePrepareBench` |
+
+| `select_order_by` | `SELECT A, B, C FROM TEST ORDER BY C` по 10 000 строк (LocalResult + сортировка) | `SelectRowsBench` |
+| `update_rows` | `UPDATE TEST SET B = B + 1` по всем 10 000 строкам (перезапись с undo-логом) | — (новый) |
+| `inner_join` | `SELECT J1.A FROM J1 JOIN J2 ON J1.A = J2.A WHERE J2.B > 50` по двум таблицам по 10 000 строк | — (новый) |
+| `window_sum` | `SELECT ID, SUM(VAL) OVER (ORDER BY ID ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM W` по 100 000 строк | — (новый; сценарий из OFFHEAP-аудита §7) |
+| `blob_insert` | вставка BLOB 1 MiB как параметра в `LOB_T(B BLOB)` | `BlobInsertBench` |
+
+## Как добавить сценарий
+
+1. Добавить класс-сценарий в `CrossBench.java` и в `Program.cs` (.NET): `setup`
+   (вне тайминга) и `runOnce` (измеряемая операция, возвращает контрольную сумму).
+2. Зарегистрировать его в `main`/`Main` рядом с остальными.
+3. SQL-тексты и размеры данных должны совпадать на обеих сторонах.
+4. Прогнать `bench-cross.ps1` и убедиться, что новый сценарий появился в таблице.
+
+## Результаты прогона расширенного набора (2026-11-06, label `ext`)
+
+Машина: Windows 11 x64, JDK 25 (Adoptium), .NET 10, дефолтные настройки обеих сред.
+
+| Сценарий | Java, ns/op | .NET, ns/op | Отношение Java/.NET |
+|---|---|---:---|
+| `bulk_insert` | 8 567 000 | 10 858 000 | 0.79x |
+| `select_scan` | 1 304 000 | 319 000 | 4.08x |
+| `select_order_by` | 834 000 | 512 000 | 1.63x |
+| `like_filter` | 2 998 000 | 5 057 000 | 0.59x |
+| `parse_prepare` | 797 000 | 156 000 | 5.10x |
+| `inner_join` | 417 000 | 218 000 | 1.91x |
+| `update_rows` | 19 707 000 | 78 524 000 | 0.25x |
+| `window_sum` | 32 252 000 | 123 941 000 | 0.26x |
+| `blob_insert` | 141 000 | 300 000 | 0.47x |
+
+Цифры информационные: между прогонами разброс заметный (например, `like_filter`
+на .NET в соседних прогонах давал 3.3 и 4.8 ms), поэтому выводы делать только по
+нескольким устойчивым прогонам.
+
+Направления по первому прогону:
+
+- **Порт быстрее эталона:** `select_scan` (~4x), `parse_prepare` (~5x),
+  `inner_join` (~1.9x), `select_order_by` (~1.6x) — трассы чтения/разбора.
+- **Порт медленнее эталона:** `update_rows` и `window_sum` (~4x), `bulk_insert`
+  (~1.3x), `like_filter` (~1.7x), `blob_insert` (~2.1x) — трассы записи,
+  сортировки/агрегации с материализацией и LOB. `update_rows`/`window_sum` —
+  кандидаты на следующий разбор (undo-лог и оконная материализация).
+- Расхождение `parse_prepare` отчасти объясняется разными транзакционными
+  протоколами по умолчанию (JDBC-автокоммит на каждое выполнение против поведения
+  порта в in-memory режиме) — это семантика среды, а не дефект.
+
+## Горячие пути: профиль .NET-стороны (2026-11-06)
+
+Профилирование (`dotnet-trace`, CPU-sampling) сценариев, где порт медленнее
+эталона, показало: **доминирует аллокационный хрун и GC, а не алгоритмы** (пути
+структурно повторяют Java).
+
+| Сценарий | Доля GC (PollGC+Finalizers+MemberwiseClone) | Топ методов |
+|---|---|---|
+| `update_rows` | ~40% | `CursorPos.Decide` (23%), `MVMap.Operate` (13%), `Monitor.Enter_Slowpath` (14%), `GC.PollGC`/`RunFinalizers` |
+| `bulk_insert` | ~30% | `DynamicResolver+DestroyScout.Finalize` (20%), `Page.Copy`/`MemberwiseClone` (19%), `Monitor.Enter_Slowpath` (11%) |
+| `like_filter` | ~25% | `GC.PollGC` (18%), `MemberwiseClone` (6%), `CursorPos.Decide`/`Operate` |
+| `window_sum` | ~18% | `GC.PollGC`+`GetMemoryPressure` (20%), `SortOrder.Sort` (6%), `UpdateOrderedAggregate` (4%) |
+| `blob_insert` | низкая | `AllocateUninitializedArray` (4%), `MethodBaseInvoker` (4%), парсер |
+
+Аллокации/op (из `allocBytesPerOp`): `update_rows` ~36 МБ на 10k строк
+(3.6 КБ/строка), `window_sum` ~33 МБ на 100k строк, `bulk_insert` ~3.8 МБ на
+1000 строк. Точечные источники: `PageLeaf.SetValue` клонирует массив значений на
+каждое обновление (`MvStore/Page.cs:1507-1517`), `PageLeaf.InsertLeaf` пересоздаёт
+массивы на каждую вставку (`Page.cs:1526-1542`), копии страниц на пути COW
+(`Page.Copy`, `MvMap.ReplacePage`), двойная запись (undo-карта + карта данных)
+как в Java.
+
+**Разгон среды:** дефолтный .NET GC — workstation; дефолтный JVM GC — G1.
+Прогон `update_rows` под ServerGC (`COMPlus_gcServer=1`) даёт ~60→24.5 мс
+(аллокации те же 36 МБ), что почти закрывает разрыв с Java (~16.7 мс).
+Для честного сравнения с JVM запускать .NET-сторону под ServerGC, либо
+фиксировать режим обеих сторон в протоколе.
+
+**Спринт-1 (код):** убран временный буфер и лишняя копия при записи LOB-блоков
+(`MvStore/Db/LobStorageMap.Impl.cs`, `StoreStream`) — прямой ввод в целевой массив
+блока. Семантика не менялась: `H2Sharp.Data.Tests` 719/719, `H2Sharp.MvStore.Tests`
+152/152, аллокационные гейты 86/86 зелёные. Эффект на этой шкале — в пределах
+шума (см. ниже); настоящий выигрыш — в сокращении аллокаций страничного слоя
+(`SetValue`/`InsertLeaf`), это следующий спринт.
+
+**Шум машины:** BDN-прогоны одного и того же baseline в разные моменты дня дают
+разброс +10…60% на CPU-бенчмарках (parse/like/transactionmap), при идентичных
+аллокациях и плане питания, — сравнения «было/стало» BDN на этой машине требуют
+прогона обеих сторон в одной сессии.
+
+## Оговорки честности
+
+- **Дефолтные настройки сред:** JVM и .NET работают с дефолтными GC
+  (на .NET — Concurrent Workstation). Если цель — сравнить конкретные режимы,
+  запускать обе стороны с одинаковыми явными флагами.
+- **Шум измерений:** 10 итераций достаточно для относительного сравнения на одной
+  машине, но не для абсолютных цифр. Прогонять несколько раз (`-Label run1`,
+  `run2`, ...) и смотреть на устойчивость.
+- **Не сравнивать абсолютные числа между машинами** — только прогоны на одной
+  машине в одном состоянии.
+- **Это не гейт:** `bench-cross.ps1` не завершается с ошибкой при регрессе
+  (в отличие от `compare.ps1`). Гейт по кросс-языковому соотношению можно добавить
+  позже, если он понадобится.
