@@ -125,19 +125,20 @@ public sealed partial class LobStorageMap : LobStorageInterface, IDisposable
             int requested = maxLength > 0
                 ? (int)Math.Min(BlockSize, maxLength - total)
                 : BlockSize;
-            byte[] block = new byte[requested];
-            int read = input.Read(block, 0, requested);
-            if (read <= 0)
+            if (requested <= 0)
             {
                 break;
             }
 
-            if (read < requested)
+            // Straight into native memory: no managed staging array (which used to be a
+            // 256 KiB LOH object per block) and no second copy (round-3 audit, §1.1).
+            NativeLobBlock? native = NativeLobBlock.ReadFrom(input, requested);
+            if (native is null)
             {
-                Array.Resize(ref block, read);
+                break;
             }
 
-            NativeLobBlock native = NativeLobBlock.FromBytes(block);
+            int read = native.Length;
             lock (liveLock)
             {
                 liveBlocks.Add(native);

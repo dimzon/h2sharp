@@ -10563,3 +10563,18 @@ per-op накладных самого дерева (виртуальные вы
 * В одном процессе со всеми сценариями ServerGC раздувает per-core кучи и портит
   маленькие raw-карты (raw_mapput 6.4 → 18.7 мс): оставлен опцией `-ServerGC`,
   по умолчанию workstation. Оба режима зафиксированы в BENCHMARKS_JAVA_VS_DOTNET.md.
+
+### SP-36: LOB staging — чтение и запись прямо в native (2026-11-06)
+
+По аудиту раунда 3 (§1.1–1.2) устранены собственные регрессии SP-28:
+
+* Запись: `StoreStream` больше не создаёт `byte[256 КБ]` (LOH) на блок и не делает
+  `Array.Resize` + memcpy. `NativeLobBlock.ReadFrom(Stream, int)` читает прямо в
+  неуправляемый буфер (`Stream.Read(Span<byte>)`), фактическая длина пишется в
+  блок.
+* Чтение: `LobBlockDataType.Read` отдаёт срез спана в `NativeLobBlock.FromSpan`
+  вместо `new byte[len]` + `FromBytes` — одна копия вместо двух и ни одного
+  LOH-объекта на блок. `FromBytes` теперь просто вызывает `FromSpan`.
+* Эффект (blob_insert 1 МиБ): 422 → **327 мкс** (−22%).
+* Проверено: LOB-оракулы/интеграция и off-heap гейты 27/27, MvStore 152/152,
+  Data 719/719, H2Sharp.Tests 1973/1973.

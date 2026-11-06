@@ -4,6 +4,7 @@
  * disk keep the same tagged-array form ObjectDataType used, so the store format is
  * unchanged by the move off the managed heap. */
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using H2Sharp.MvStore.Type;
@@ -42,12 +43,7 @@ internal sealed unsafe class NativeLobBlock
     /// <summary>
     /// Copies bytes into a fresh native block.
     /// </summary>
-    internal static NativeLobBlock FromBytes(byte[] data)
-    {
-        NativeLobBlock block = new(data.Length);
-        data.CopyTo(new Span<byte>(block.ptr, block.length));
-        return block;
-    }
+    internal static NativeLobBlock FromBytes(byte[] data) => FromSpan(data);
 
     /// <summary>
     /// Copies bytes into a fresh native block.
@@ -58,6 +54,32 @@ internal sealed unsafe class NativeLobBlock
         data.CopyTo(new Span<byte>(block.ptr, block.length));
         return block;
     }
+
+    /// <summary>
+    /// Reads up to <paramref name="maxLength"/> bytes straight from the stream into native
+    /// memory: no managed staging array and no copy (round-3 audit, §1.1).
+    /// </summary>
+    /// <param name="input">the source stream</param>
+    /// <param name="maxLength">how many bytes may be read</param>
+    /// <returns>the block, or null at end of stream</returns>
+    internal static NativeLobBlock? ReadFrom(Stream input, int maxLength)
+    {
+        NativeLobBlock block = new(maxLength);
+        int read = input.Read(new Span<byte>(block.ptr, maxLength));
+        if (read <= 0)
+        {
+            block.Free();
+            return null;
+        }
+
+        block.length = read;
+        return block;
+    }
+
+    /// <summary>
+    /// The writable span, for reading into the block directly.
+    /// </summary>
+    internal Span<byte> WritableSpan => new(ptr, length);
 
     /// <summary>
     /// The block length in bytes.
@@ -127,24 +149,21 @@ internal sealed class LobBlockDataType : BasicDataType<object>
     /// <inheritdoc/>
     public override object Read(Span<byte> buff, ref int position)
     {
+        // One copy, span -> native. The intermediate byte[]+copy here was a 256 KiB LOH
+        // object per block on every LOB page read (round-3 audit, §1.2).
         int tag = buff[position++];
         if (tag != ObjectDataType.TypeArray)
         {
-            byte[] raw = ReadBytes(buff, ref position, tag - ObjectDataType.TagByteArray015);
-            return NativeLobBlock.FromBytes(raw);
+            int shortLen = tag - ObjectDataType.TagByteArray015;
+            NativeLobBlock shortBlock = NativeLobBlock.FromSpan(buff.Slice(position, shortLen));
+            position += shortLen;
+            return shortBlock;
         }
 
         _ = (sbyte)buff[position++]; // class id: sbyte (1), same as ObjectDataType's arrays
         int len = DataUtils.ReadVarInt(buff, ref position);
-        byte[] bytes = ReadBytes(buff, ref position, len);
-        return NativeLobBlock.FromBytes(bytes);
-    }
-
-    private static byte[] ReadBytes(Span<byte> buff, ref int position, int len)
-    {
-        byte[] result = new byte[len];
-        buff.Slice(position, len).CopyTo(result);
+        NativeLobBlock block = NativeLobBlock.FromSpan(buff.Slice(position, len));
         position += len;
-        return result;
+        return block;
     }
 }
