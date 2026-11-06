@@ -1,0 +1,11 @@
+H2Sharp — Embeddable SQL engine for .NET, ported from H2 Database.
+
+This is a derivative work of H2 Database (https://github.com/h2database/h2database).
+Copyright 2004-2026 H2 Group.
+
+H2Sharp is offered under the same dual-license terms as the original H2 Database:
+Mozilla Public License Version 2.0 (MPL-2.0) OR Eclipse Public License Version 1.0 (EPL-1.0).
+
+The full text of both licenses is in [LICENSE-H2.txt](LICENSE-H2.txt).
+
+Copyright 2026 H2Sharp contributors.
