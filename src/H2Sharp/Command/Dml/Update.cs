@@ -20,6 +20,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
+using H2Sharp.Expressions;
 using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Tables;
@@ -173,7 +174,29 @@ public sealed class Update : FilteredDataChangeStatement
 
     /// <inheritdoc/>
     public override void CollectDependencies(HashSet<DbObject> dependencies)
-        => throw new TODOException("Update.collectDependencies: not ported");
+    {
+        // The reference walks the condition and the set clauses with the dependencies
+        // visitor; the visitor collects objects of its own, and the ones that are database
+        // objects join this statement's dependencies.
+        HashSet<object> found = [];
+        ExpressionVisitor visitor = ExpressionVisitor.GetDependenciesVisitor(found);
+        Expressions.Expression? condition = GetCondition();
+        if (condition is not null)
+        {
+            condition.IsEverything(visitor);
+        }
+
+        SetClauseList assignments = setClauseList
+            ?? throw Message.DbException.GetInternalError("UPDATE without assignments");
+        _ = assignments.IsEverything(visitor);
+        foreach (object dependency in found)
+        {
+            if (dependency is DbObject dbObject)
+            {
+                _ = dependencies.Add(dbObject);
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the insert used when a duplicate key turns this statement into an insert.
