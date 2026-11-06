@@ -48,6 +48,12 @@ public sealed unsafe class WriteBuffer : IDisposable
     internal const int NativeThreshold = 85 * 1024;
 
     /// <summary>
+    /// The managed stub a cleared oversized buffer falls back to: below the LOH threshold,
+    /// so the next Grow promotes it to native without a 1 MiB LOH object first.
+    /// </summary>
+    private const int ColdStartCapacity = 64 * 1024;
+
+    /// <summary>
     /// The buffer that is used after a clear operation (managed form).
     /// </summary>
     private byte[]? reuse;
@@ -354,7 +360,9 @@ public sealed unsafe class WriteBuffer : IDisposable
             DropStorage();
             if (managed is null)
             {
-                managed = reuse ?? new byte[MinGrow];
+                // A small managed stub, not MinGrow: a 1 MiB array would be an LOH object,
+                // and the next Grow goes to native anyway (round-4 audit, §1.2).
+                managed = reuse ?? GC.AllocateUninitializedArray<byte>(ColdStartCapacity);
                 isNative = false;
                 capacity = managed.Length;
             }

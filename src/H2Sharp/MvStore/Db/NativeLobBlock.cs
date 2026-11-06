@@ -17,9 +17,11 @@ namespace H2Sharp.MvStore.Db;
 /// </summary>
 internal sealed unsafe class NativeLobBlock
 {
-    private readonly void* ptr;
+    private void* ptr;
 
     private int length;
+
+    private int capacity;
 
     private bool freed;
 
@@ -31,6 +33,7 @@ internal sealed unsafe class NativeLobBlock
     private NativeLobBlock(int length)
     {
         this.length = length;
+        capacity = length;
         ptr = NativeMemory.Alloc((nuint)length);
         Interlocked.Increment(ref liveAllocations);
     }
@@ -57,19 +60,35 @@ internal sealed unsafe class NativeLobBlock
 
     /// <summary>
     /// Reads up to <paramref name="maxLength"/> bytes straight from the stream into native
-    /// memory: no managed staging array and no copy (round-3 audit, §1.1).
+    /// memory: no managed staging array and no copy (round-3 audit, §1.1). The region is
+    /// shrunk to what was actually read, so a short last block does not hold a full
+    /// BlockSize reservation, and a seekable stream at EOF allocates nothing at all
+    /// (round-4 audit, §1.1).
     /// </summary>
     /// <param name="input">the source stream</param>
     /// <param name="maxLength">how many bytes may be read</param>
     /// <returns>the block, or null at end of stream</returns>
     internal static NativeLobBlock? ReadFrom(Stream input, int maxLength)
     {
+        if (input.CanSeek && input.Position >= input.Length)
+        {
+            return null;
+        }
+
         NativeLobBlock block = new(maxLength);
         int read = input.Read(new Span<byte>(block.ptr, maxLength));
         if (read <= 0)
         {
             block.Free();
             return null;
+        }
+
+        if (read < maxLength)
+        {
+            // Shrinking Realloc is usually in place; when the platform copies, this is
+            // still no worse than the old fixed reservation.
+            block.ptr = NativeMemory.Realloc(block.ptr, (nuint)read);
+            block.capacity = read;
         }
 
         block.length = read;
