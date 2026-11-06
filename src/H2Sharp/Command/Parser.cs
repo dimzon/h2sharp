@@ -4992,13 +4992,7 @@ public sealed partial class Parser
                     forUpdate = Query.ForUpdate.Default;
                 }
 
-                if (select is null)
-                {
-                    throw new TODOException(
-                        "Parser.parseEndOfQuery: FOR UPDATE on a set operation is not ported");
-                }
-
-                select.SetForUpdate(forUpdate);
+                query.SetForUpdate(forUpdate);
             }
             else if (ReadIfCompat("READ") || ReadIfCompat("FETCH"))
             {

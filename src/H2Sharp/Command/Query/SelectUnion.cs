@@ -22,11 +22,24 @@ public sealed class SelectUnion : Query
     // These are inherited Query fields in Java, retained locally by this Query port.
     private Expression[] expressions = [];
     private Expression[] expressionArray = [];
+    private ForUpdate? forUpdate;
 
     public SelectUnion(SessionLocal session, UnionType unionType, Query left, Query right) : base(session, string.Empty)
     { this.unionType = unionType; this.left = left; this.right = right; }
 
     public override bool IsUnion() => true;
+
+    /// <inheritdoc/>
+    public override ForUpdate? GetForUpdate() => forUpdate;
+
+    /// <inheritdoc/>
+    public override void SetForUpdate(ForUpdate forUpdate)
+    {
+        left.SetForUpdate(forUpdate);
+        right.SetForUpdate(forUpdate);
+        this.forUpdate = forUpdate;
+    }
+
     public override void AddGlobalCondition(Parameter param, int columnId, int comparisonType)
     {
         AddParameter(param);
@@ -163,6 +176,7 @@ public sealed class SelectUnion : Query
         });
         right.GetPlanSql(builder.Append('('), sqlFlags).Append(')');
         AppendEndOfQueryToSql(builder, sqlFlags, expressions);
+        if (forUpdate is not null) _ = forUpdate.GetSql(builder);
         return builder;
     }
     public override int GetCommandType() => CommandInterface.Select;

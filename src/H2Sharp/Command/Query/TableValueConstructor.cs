@@ -113,6 +113,11 @@ public sealed class TableValueConstructor : Query
     /// <inheritdoc/>
     public override bool IsTransactional() => true;
 
+    /// <summary>Sets the FOR UPDATE clause: a VALUES query is read-only.</summary>
+    /// <param name="forUpdate">the FOR UPDATE clause</param>
+    public override void SetForUpdate(ForUpdate forUpdate)
+        => throw DbException.Get(ErrorCode.ResultSetReadonly);
+
     /// <inheritdoc/>
     public override void Init()
     {

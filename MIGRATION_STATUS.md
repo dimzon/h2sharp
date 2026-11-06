@@ -10655,3 +10655,44 @@ per-op накладных самого дерева (виртуальные вы
   был зелёным; зона MVStore-оптимизаций — к покрытию отношения не имеет);
   `ScriptCommandOracleTests.RunScriptRoundTripsTheScript` —
   `BlockedByPort` (RUNSCRIPT не в фильтре зелёного прогона).
+
+### Покрытие-спринт 2: MergedResult, IS OF, TRIM, FOR UPDATE, CURRENT_*, ALTER TYPE (2026-11-06)
+
+Тесты + допортирование FOR UPDATE на set-операциях (по указанию пользователя).
+
+* `MergedResultOracleTests` — оракул против JVM: слияние результатов с
+  разными наборами колонок (порядок по первому появлению), одно-колоночный
+  быстрый путь, пустой результат (`Result/MergedResult.cs` 0/55 → покрыт).
+* `TypeAndTrimOracleTests` — 6 оракул/порт-тестов:
+  * предикат `IS [NOT] OF` — матрица эталонного `predicates/type.sql`,
+    включая EXPLAIN (`Expressions/Conditions/TypePredicate.cs` 19/56 →
+    покрыт);
+  * семейство `TRIM` — LTRIM/RTRIM/BTRIM, BOTH/LEADING/TRAILING,
+    многосимвольный набор (`Expressions/Functions/TrimFunction.cs` 25/64 →
+    покрыт);
+  * `FOR UPDATE` / NOWAIT / SKIP LOCKED / WAIT, план, set-операция, отказ
+    VALUES (`Command/Query/ForUpdate.cs` 13/35 → покрыт);
+  * `CURRENT_SCHEMA/ROLE/PATH` + `SET SCHEMA_SEARCH_PATH`
+    (`Expressions/Functions/CurrentGeneralValueSpecification.cs` 18/50 →
+    покрыт); `CURRENT_USER/SESSION_USER/SYSTEM_USER` — порт-тест по D-004
+    (фиксированный principal «sa», оракул-сравнение с эталоном
+    невозможно);
+  * `ALTER TYPE ADD VALUE` — расширение enum-домена, использование нового
+    значения, отказы (`Command/Ddl/AlterType.cs` 0/28 → покрыт).
+* **Допортировано FOR UPDATE на set-операциях** (была заглушка
+  TODOException): по эталону `Query.getForUpdate()`/`setForUpdate` —
+  база (`null`/abstract), `Select` (геттер + сеттер), `SelectUnion`
+  (своё поле, сеттер распространяет на обе стороны, план дописывает
+  FOR UPDATE), `TableValueConstructor` (сеттер отказывает
+  `RESULT_SET_READONLY`), парсер зовёт `query.SetForUpdate` без ветки на
+  select. Заодно оракул нашёл и поправлено: план `Select` дописывал `\n`
+  перед `FOR UPDATE` (у эталона пробел), у `SelectUnion` план FOR UPDATE
+  не дописывался вовсе.
+* Проверено: H2Sharp.Tests 1989/1990 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт
+  `MvMapPutAllocationTests`, воспроизводится на чистом HEAD), Data 719,
+  MvStore 152, Engine 9, Native 97 (+8 skipped).
+* Известный пробел парсера (не этого спринта): у эталона
+  `getSyntaxError()` при непустом `expectedList` даёт 42001, у порта
+  expectedList нет — все такие ошибки 42000 (найдено на
+  `ALTER TYPE E1 RENAME TO X`).

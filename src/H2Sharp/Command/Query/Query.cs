@@ -297,6 +297,18 @@ public abstract class Query : Prepared
     public abstract int GetColumnCount();
 
     /// <summary>
+    /// Returns FOR UPDATE clause, if any.
+    /// </summary>
+    /// <returns>FOR UPDATE clause or <c>null</c></returns>
+    public virtual ForUpdate? GetForUpdate() => null;
+
+    /// <summary>
+    /// Set the FOR UPDATE clause.
+    /// </summary>
+    /// <param name="forUpdate">the new FOR UPDATE clause</param>
+    public abstract void SetForUpdate(ForUpdate forUpdate);
+
+    /// <summary>
     /// Gets the row width of this query's results: the visible columns plus the hidden
     /// ORDER BY ones, but not the GROUP BY or HAVING expressions appended later.
     /// </summary>

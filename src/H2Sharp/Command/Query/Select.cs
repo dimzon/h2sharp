@@ -793,7 +793,7 @@ public sealed class Select : Query
         Expression? qualifyExpression = qualify ?? (qualifyIndex >= 0 ? exprList[qualifyIndex] : null);
         if (qualifyExpression is not null) qualifyExpression.GetNonAliasExpression().GetUnenclosedSql(builder.Append("\nQUALIFY "), sqlFlags);
         AppendEndOfQueryToSql(builder, sqlFlags, exprList, withTies);
-        if (forUpdate is not null) _ = forUpdate.GetSql(builder.Append('\n'));
+        if (forUpdate is not null) _ = forUpdate.GetSql(builder);
         if ((sqlFlags & HasSql.AddPlanInformation) != 0)
         {
             if (isQuickAggregateQuery) builder.Append("\n/* direct lookup */");
@@ -1830,7 +1830,10 @@ public sealed class Select : Query
 
     /// <summary>Sets the table this statement locks.</summary>
     /// <param name="forUpdate">the table name</param>
-    public void SetForUpdate(ForUpdate? forUpdate) => this.forUpdate = forUpdate;
+    public override void SetForUpdate(ForUpdate forUpdate) => this.forUpdate = forUpdate;
+
+    /// <inheritdoc/>
+    public override ForUpdate? GetForUpdate() => forUpdate;
 
     /// <summary>Sets the table filters of the plan.</summary>
     /// <param name="filters">the filters</param>
