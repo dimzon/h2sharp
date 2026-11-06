@@ -377,12 +377,16 @@ internal static class Program
             transactionStore.Init();
         }
 
+        private long offset;
+
         public long RunOnce(H2Connection connection)
         {
+            long start = offset;
+            offset += 10_000;
             H2Sharp.MvStore.Tx.Transaction transaction = transactionStore.Begin();
             H2Sharp.MvStore.Tx.TransactionMap<long, long> map = transaction.OpenMap(
                 "m", H2Sharp.MvStore.Type.LongDataType.Instance, H2Sharp.MvStore.Type.LongDataType.Instance);
-            for (long i = 0; i < 10_000; i++)
+            for (long i = start; i < start + 10_000; i++)
             {
                 map.Put(i, i);
             }
@@ -404,9 +408,15 @@ internal static class Program
             map = store.OpenMap<long, long>("m");
         }
 
+        private long offset;
+
         public long RunOnce(H2Connection connection)
         {
-            for (long i = 0; i < 10_000; i++)
+            // Fresh keys on every run: with a fixed range the measured runs would be
+            // updates, not inserts (found the hard way).
+            long start = offset;
+            offset += 10_000;
+            for (long i = start; i < start + 10_000; i++)
             {
                 map.Put(i, i);
             }

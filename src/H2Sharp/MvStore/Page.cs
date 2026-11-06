@@ -427,7 +427,11 @@ public abstract class Page<K, V> : IPage
     /// </summary>
     public void SetKey(int index, K key)
     {
-        keys = (K[])keys.Clone();
+        // Array.Copy, not Clone(): for reference-element arrays Clone goes through
+        // MemberwiseClone, which showed up as ~23% of the write path (SP-34).
+        K[] newKeys = GC.AllocateUninitializedArray<K>(keys.Length);
+        Array.Copy(keys, newKeys, keys.Length);
+        keys = newKeys;
         if (IsPersistent())
         {
             K old = keys[index];
@@ -1209,7 +1213,10 @@ public abstract class Page<K, V> : IPage
             if (child != reference.GetPage() || child.GetPos() != reference.GetPos())
             {
                 totalCount += child.GetTotalCount() - reference.count;
-                children = (PageReference[])children.Clone();
+                // Array.Copy, not Clone(): see the SetKey note (SP-34).
+                PageReference[] newChildren = GC.AllocateUninitializedArray<PageReference>(children.Length);
+                Array.Copy(children, newChildren, children.Length);
+                children = newChildren;
                 children[index] = new PageReference(child);
             }
         }
@@ -1570,7 +1577,10 @@ public abstract class Page<K, V> : IPage
 
         public override V? SetValue(int index, V value)
         {
-            values = (V[])values!.Clone();
+            // Array.Copy, not Clone(): see the SetKey note (SP-34).
+            V[] newValues = GC.AllocateUninitializedArray<V>(values!.Length);
+            Array.Copy(values, newValues, values.Length);
+            values = newValues;
             V old = SetValueInternal(index, value);
             if (IsPersistent() && !map.IsMemoryEstimationAllowed())
             {

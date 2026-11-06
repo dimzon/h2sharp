@@ -320,11 +320,15 @@ public class CrossBench {
             transactionStore.init();
         }
 
+        private long offset;
+
         @Override
         public long runOnce(Connection conn) {
+            long start = offset;
+            offset += 10_000;
             org.h2.mvstore.tx.Transaction t = transactionStore.begin();
             org.h2.mvstore.tx.TransactionMap<Long, Long> map = t.openMap("m");
-            for (long i = 0; i < 10_000; i++) {
+            for (long i = start; i < start + 10_000; i++) {
                 map.put(i, i);
             }
             t.commit();
@@ -343,9 +347,15 @@ public class CrossBench {
             map = store.openMap("m");
         }
 
+        private long offset;
+
         @Override
         public long runOnce(Connection conn) {
-            for (long i = 0; i < 10_000; i++) {
+            // Fresh keys on every run: with a fixed range the measured runs would be
+            // updates, not inserts (found the hard way).
+            long start = offset;
+            offset += 10_000;
+            for (long i = start; i < start + 10_000; i++) {
                 map.put(i, i);
             }
             return 10_000L;
