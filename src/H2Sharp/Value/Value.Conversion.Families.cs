@@ -2057,32 +2057,29 @@ public abstract partial class Value
                 throw GetDataConversionErrorException(targetType);
             }
 
-            // One iterator beside the values, as the reference walks the entry set beside the
-            // value array: the component type comes from the iterator, and past the first
-            // changed element the rest convert against that same type rather than their own.
+            // D-048 (approved deviation from the reference): every field converts against its
+            // own declared type. The reference's convertToRow stops advancing the field
+            // iterator after the first changed field, so its tail converts against that
+            // field's type — CAST(ROW(1,'x') AS ROW(BIGINT, VARCHAR)) refuses 'x' as a
+            // BIGINT. Treated as a defect of the original and fixed here by the user's
+            // instruction.
             using IEnumerator<KeyValuePair<string, TypeInfo>> iter = ext.GetFields().GetEnumerator();
+            Value[]? newValues = null;
             for (int i = 0; i < length; i++)
             {
-                Value v1 = values[i];
                 iter.MoveNext();
                 TypeInfo componentType = iter.Current.Value;
-                Value v2 = v1.ConvertToValue(componentType, provider, conversionMode, column);
-                if (!ReferenceEquals(v1, v2))
+                Value v2 = values[i].ConvertToValue(componentType, provider, conversionMode, column);
+                if (!ReferenceEquals(values[i], v2))
                 {
-                    // Same walk as the array's: the first element that changed is replaced and
-                    // the rest are converted against the changed element's type.
-                    Value[] newValues = new Value[length];
-                    System.Array.Copy(values, newValues, i);
+                    newValues ??= [.. values];
                     newValues[i] = v2;
-                    while (++i < length)
-                    {
-                        newValues[i] = values[i].ConvertToValue(
-                            componentType, provider, conversionMode, column);
-                    }
-
-                    v = ValueRow.Get(targetType, newValues);
-                    break;
                 }
+            }
+
+            if (newValues is not null)
+            {
+                v = ValueRow.Get(targetType, newValues);
             }
         }
 

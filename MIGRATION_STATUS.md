@@ -11121,3 +11121,28 @@ Parser.parse(String, List)):
   полей, несовпадение степени. Все ответы совпали.
 * Находка №7 снята: дефекта нет, особенность эталона закреплена тестом.
 * Проверено: тест зелёный.
+
+### Спринт 24: D-048 применён — ROW→ROW каст лечит дефект эталона (2026-11-07)
+
+По указанию пользователя дефект оригинала исправлен в порте
+(`Value.Conversion.Families.cs ConvertToRow`): каждое поле ROW конвертируется
+против своего объявленного типа позиционно; поведение намеренно расходится с
+эталоном (D-048 в APPROVED_DEVIATIONS.md).
+
+* Тесты переведены с пиннинга особенности эталона на D-048:
+  * `RowCastOracleTests` — совпадающие случаи (первое поле не меняется,
+    несовпадение степени) остались оракулом; изменённые случаи — порт-тесты
+    (`ROW(1,'x')::ROW(BIGINT, VARCHAR)` → `ROW (1, x)`, честный
+    DataConversionError для `ROW(BIGINT, INT)` на 'x', изменённое поле в
+    хвосте `ROW(1,'2')::ROW(INT, INT)` → `ROW (1, 2)`);
+  * `ExtTypeInfoRowOracleTests` — pinned-оракул
+    `RowConversionUsesTheChangedFieldsTypeForTheRest_MatchReference`
+    (JVM: 22018) заменён на порт-тест D-048: `ROW(5,'x')` →
+    `ROW(BIGINT, VARCHAR)` отвечает `ROW (5, x)`;
+  * `PostfixCastOracleTests` — `ROW('3','ab')::ROW(INTEGER, VARCHAR)`
+    выведен из оракула (намеренное расхождение) с комментарием.
+* Проверено: H2Sharp.Tests 2042/2043 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
+  Engine 9.
+
+Спринт 24 дополнение: Native 97/97 после D-048.

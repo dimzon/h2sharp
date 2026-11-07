@@ -60,7 +60,10 @@ public sealed class PostfixCastOracleTests
         "SELECT ARRAY['10', '20']::INTEGER ARRAY[2]",
         "SELECT (ARRAY['10', '20']::INTEGER ARRAY)[2]::VARCHAR",
         "SELECT ARRAY[ARRAY['10', '20']]::INTEGER ARRAY ARRAY[1][2]::VARCHAR",
-        "SELECT ROW('3', 'ab')::ROW(A INTEGER, B VARCHAR(5))",
+        // D-048: ROW('3', 'ab')::ROW(INTEGER, VARCHAR) intentionally diverges from the
+        // reference (the port converts each field against its own type and answers (3, 'ab');
+        // the reference converts the tail against INTEGER and refuses 'ab') — pinned by
+        // RowCastOracleTests.
         "SELECT ?::INTEGER + 1, ?::INTEGER::VARCHAR",
         "SELECT X::INTEGER + 1 FROM (VALUES ('2'), ('3')) T(X) ORDER BY X::INTEGER",
         "SELECT SUM(X)::VARCHAR FROM (VALUES (1), (2)) T(X)",
