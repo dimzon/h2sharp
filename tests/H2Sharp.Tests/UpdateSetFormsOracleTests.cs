@@ -91,9 +91,10 @@ public sealed class UpdateSetFormsOracleTests
             "SELECT A, B FROM TEST ORDER BY ID",
             "INSERT INTO TEST(A) VALUES NULL",
             "UPDATE TEST SET A[1] = 0",
-            // The reference refuses SET A[1] = DEFAULT at parse time (42001); the port parses
-            // DEFAULT as a name and answers COLUMN_NOT_FOUND — see the parser gap in
-            // MIGRATION_STATUS, left for an engine sprint.
+            // DEFAULT in an expression position refuses as a syntax error on both sides,
+            // but the code differs (the reference 42001 with the expected-token list, the
+            // port 42000 — the parse structure clears the list before the refusal; see
+            // MIGRATION_STATUS) — pinned port-side in UpdateSetDefaultRefusalTests.
             "DELETE FROM TEST",
             "DROP TABLE TEST",
             "CREATE TABLE TEST(ID BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, A INTEGER ARRAY ARRAY)",
@@ -219,4 +220,43 @@ public sealed class UpdateSetFormsOracleTests
             conn.close();
             """,
             extraJavaArgs: ["-Duser.language=en"]);
+}
+
+/// <summary>
+/// The port-side pin of the DEFAULT-in-expression refusal: a keyword is not a column name,
+/// the refusal points at the keyword. The code differs from the reference (42000 vs 42001 —
+/// the parse structure clears the expected-token list before the refusal), see
+/// MIGRATION_STATUS.
+/// </summary>
+public sealed class UpdateSetDefaultRefusalTests
+{
+    [Fact]
+    public void DefaultInExpressionPositionRefusesAsSyntaxError()
+    {
+        using H2Sharp.Data.H2Connection connection = new(
+            "Data Source=default_refusal_" + Guid.NewGuid().ToString("N"));
+        connection.Open();
+        using (var create = connection.CreateCommand())
+        {
+            create.CommandText = "CREATE TABLE T(A INT ARRAY, B INT)";
+            _ = create.ExecuteNonQuery();
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE T SET A[1] = DEFAULT";
+            H2Sharp.H2SharpException e = Assert.Throws<H2Sharp.H2SharpException>(
+                () => _ = command.ExecuteNonQuery());
+            // The refusal points at the keyword, not at the statement start.
+            Assert.Contains("[*]DEFAULT", e.Message, StringComparison.Ordinal);
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT DEFAULT FROM T";
+            H2Sharp.H2SharpException e = Assert.Throws<H2Sharp.H2SharpException>(
+                () => _ = command.ExecuteScalar());
+            Assert.Contains("[*]DEFAULT", e.Message, StringComparison.Ordinal);
+        }
+    }
 }

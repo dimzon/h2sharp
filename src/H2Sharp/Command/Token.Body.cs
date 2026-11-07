@@ -98,6 +98,13 @@ public partial struct Token
     internal void SubtractFromStart(int offset) => start -= offset;
 
     /// <summary>
+    /// Whether this token can be read as an unquoted identifier: a plain identifier, or a
+    /// keyword that the NON_KEYWORDS setting un-reserved. This is the reference's
+    /// ParserBase.isIdentifier, which expression reading checks before it reads a name.
+    /// </summary>
+    internal bool IsIdentifier => kind is Kind.Identifier or Kind.KeywordOrIdentifier;
+
+    /// <summary>
     /// The kind of this token, one of the numbers in Token.cs.
     /// </summary>
     internal int TokenType => kind switch

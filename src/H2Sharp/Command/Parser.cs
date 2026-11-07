@@ -810,6 +810,7 @@ public sealed partial class Parser
         {
             position = statementStart;
             expectedList = [];
+            Console.Error.WriteLine("second pass: pos=" + position + " current=" + Current.AsIdentifier);
             prepared = ParseOneStatementInner();
         }
 
@@ -5713,6 +5714,11 @@ public sealed partial class Parser
     // H2 readConcat: concatenation binds less tightly than arithmetic.
     private Expressions.Expression ReadQueryConcat(Query.Select? aggregateSelect = null)
     {
+        if (sql.Contains("A[1]") && Current.AsIdentifier == "DEFAULT")
+        {
+            Console.Error.WriteLine("ReadQueryConcat at DEFAULT");
+        }
+
         Expression op1 = ReadQuerySum(aggregateSelect);
         while (true)
         {
@@ -5822,6 +5828,11 @@ public sealed partial class Parser
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     private Expressions.Expression ReadQueryComparison(Query.Select? aggregateSelect = null)
     {
+        if (sql.Contains("A[1]") && Current.AsIdentifier == "DEFAULT")
+        {
+            Console.Error.WriteLine("ReadQueryComparison at DEFAULT");
+        }
+
         // NOT belongs to the condition level, as in the reference: "NOT x = y" negates the
         // whole comparison, not just the operand before it.
         if (CurrentType == ParserUtil.Not)
@@ -5830,9 +5841,11 @@ public sealed partial class Parser
             return new Expressions.Conditions.ConditionNot(ReadQueryComparison(aggregateSelect));
         }
 
-        // H2 readCondition: EXISTS is a predicate, parsed before readConcat.
-        if (ReadIf(ParserUtil.Exists))
+        // H2 readCondition: EXISTS is a predicate, parsed before readConcat. A switch case
+        // there, not a readIf: a failed check adds nothing to the expected-token list.
+        if (CurrentType == ParserUtil.Exists)
         {
+            Read();
             Expect(Token.OpenParen, "(");
             Query.Query query = ParseQueryExpression(prepare: false);
             // Preserve the query shape (including UNION / DISTINCT), as in Java.
@@ -5851,9 +5864,16 @@ public sealed partial class Parser
             return new Expressions.Conditions.UniquePredicate(subquery, nullsDistinct);
         }
 
-        // H2 readCondition: INTERSECTS(operand, operand) is a spatial comparison, not a call.
-        if (IsWord("INTERSECTS", consume: false)
-            && position + 1 < tokens.Count && tokens[position + 1].TokenType == Token.OpenParen)
+        // H2 readCondition's default: INTERSECTS(operand, operand) is a spatial comparison,
+        // not a call; the failed readIf("INTERSECTS", OPEN_PAREN) joins the expected-token
+        // list.
+        bool intersects = IsWord("INTERSECTS", consume: false)
+            && position + 1 < tokens.Count && tokens[position + 1].TokenType == Token.OpenParen;
+        if (!intersects)
+        {
+            AddExpected("INTERSECTS (");
+        }
+        else
         {
             Read();
             Expect(Token.OpenParen, "(");
@@ -5863,6 +5883,16 @@ public sealed partial class Parser
             Expect(Token.CloseParen, ")");
             return new Expressions.Conditions.Comparison(
                 Expressions.Conditions.Comparison.SpatialIntersects, first, second, false);
+        }
+
+        // The same default case, before it falls through to the comparison operand: a
+        // condition position could have been NOT, EXISTS, UNIQUE or INTERSECTS instead.
+        if (expectedList is not null)
+        {
+            AddExpected("NOT");
+            AddExpected("EXISTS");
+            AddExpected("UNIQUE");
+            AddExpected("INTERSECTS");
         }
 
         Expressions.Expression left = ReadQueryConcat(aggregateSelect);
@@ -6591,6 +6621,17 @@ public sealed partial class Parser
                         throw new TODOException(
                             "Parser.readTerm: the keyword function " + Current.AsIdentifier + " is not ported");
                 }
+            }
+
+            // Reference readTermWithoutIdentifier's default: only an identifier (a plain one,
+            // or a keyword the NON_KEYWORDS setting un-reserved) can be a column reference;
+            // a reserved keyword here refuses with the expected-token list.
+            if (!Current.IsIdentifier)
+            {
+                Console.Error.WriteLine("term-reader refuse: current=" + Current.AsIdentifier
+                    + " | list=" + (expectedList is null ? "null" : string.Join(",", expectedList))
+                    + " | pos=" + position);
+                throw GetSyntaxError();
             }
 
             string columnName = ReadQueryColumnName(out string? schemaName, out string? tableAlias);
@@ -8666,12 +8707,30 @@ public sealed partial class Parser
     /// </summary>
     /// <returns>the exception</returns>
     private H2SharpException GetSyntaxError()
-        => expectedList is null || expectedList.Count == 0
+    {
+        H2SharpException e = expectedList is null || expectedList.Count == 0
             ? DbException.GetSyntaxError(sql, Current.Start)
             : DbException.GetSyntaxError(sql, Current.Start, string.Join(", ", expectedList));
+        if (sql.Contains("A[1]"))
+        {
+            Console.Error.WriteLine("GetSyntaxError: list=" + (expectedList is null ? "null" : string.Join(",", expectedList)));
+            foreach (var frame in new System.Diagnostics.StackTrace(e).GetFrames())
+            {
+                var m = frame.GetMethod();
+                Console.Error.WriteLine("  frame: " + m?.DeclaringType?.Name + "." + m?.Name + " IL=" + frame.GetILOffset());
+            }
+        }
+
+        return e;
+    }
 
     private void AddExpected(string token)
     {
+        if (sql.Contains("A[1]") && expectedList is not null)
+        {
+            Console.Error.WriteLine("AddExpected(" + token + ") list-before=" + expectedList.Count);
+        }
+
         expectedList?.Add(token);
     }
 
