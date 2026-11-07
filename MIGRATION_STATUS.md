@@ -11027,3 +11027,24 @@ per-op накладных самого дерева (виртуальные вы
   RANGE с ключом без арифметики — отказ (118–121). Все ответы совпали с
   эталоном.
 * Проверено: тест зелёный; состояние сюит см. спринты 8–12.
+
+### Покрытие-спринт 20: CLR-поверхность маппера значений (2026-11-07)
+
+Построчный анализ `uncovered.py` по `Data/H2ValueMapper.cs` (394/478):
+перечисления в коробке, byte → SMALLINT, BigInteger, Stream/TextReader с
+проливом во временный LOB-файл, CLR-массивы (jagged, nullable, enum),
+ValueRow → object[].
+
+* `ValueMapperClrSurfaceTests` — 6 тестов: enum → underlying type (byte и
+  long), BigInteger → ValueNumeric, byte 255 → SMALLINT, Stream 200 КБ →
+  временный файл и те же байты назад, TextReader 300 КБ без handler →
+  временный файл и тот же текст, jagged-массивы с nullable-элементами
+  (NULL → `Nullable<T>`, не ноль), многомерный CLR-массив отказывает,
+  ValueRow → object[].
+* Попутно зафиксированы два вопроса для обсуждения (тесты утверждают
+  текущее поведение):
+  1. `Color[]` (enum : byte) маппится в VARBINARY, а не в ARRAY;
+  2. чтение ROW-колонки через ADO-слой кастует поля строки по типу первого
+     поля (`SELECT ROW(1, 'x')` → 'x' не читается как INT);
+     `CAST(ROW(1,'x') AS ROW(A INT, B VARCHAR))` также отказывает.
+* Проверено: 6/6 зелёные; состояние сюит см. спринты 8–12.
