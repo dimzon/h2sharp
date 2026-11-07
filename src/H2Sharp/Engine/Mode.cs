@@ -245,6 +245,19 @@ public sealed class Mode
     public bool OnDuplicateKeyUpdate { get; }
 
     /// <summary>
+    /// Whether the MySQL <c>REPLACE INTO</c> statement is read, as the reference's
+    /// <c>replaceInto</c> flag says for MariaDB and MySQL.
+    /// </summary>
+    public bool ReplaceInto { get; }
+
+    /// <summary>
+    /// Whether an insert that names an identity value advances the identity sequence to it,
+    /// as the reference's <c>updateSequenceOnManualIdentityInsertion</c> says for Legacy,
+    /// MariaDB and MySQL.
+    /// </summary>
+    public bool UpdateSequenceOnManualIdentityInsertion { get; }
+
+    /// <summary>
     /// Whether a numeric value and a BOOLEAN may be compared with EQUAL / NOT EQUAL, as the
     /// reference allows in Legacy, DB2, HSQLDB, SQL Server, MariaDB and MySQL.
     /// </summary>
@@ -324,6 +337,8 @@ public sealed class Mode
         bool mergeWhere = false,
         bool allNumericTypesHavePrecision = false,
         bool onDuplicateKeyUpdate = false,
+        bool replaceInto = false,
+        bool updateSequenceOnManualIdentityInsertion = false,
         bool numericWithBooleanComparison = false,
         bool decimalSequences = false,
         bool groupByColumnIndex = false,
@@ -362,6 +377,8 @@ public sealed class Mode
         SysDummy1 = sysDummy1;
         AllNumericTypesHavePrecision = allNumericTypesHavePrecision;
         OnDuplicateKeyUpdate = onDuplicateKeyUpdate;
+        ReplaceInto = replaceInto;
+        UpdateSequenceOnManualIdentityInsertion = updateSequenceOnManualIdentityInsertion;
         NumericWithBooleanComparison = numericWithBooleanComparison;
         DecimalSequences = decimalSequences;
         GroupByColumnIndex = groupByColumnIndex;
@@ -424,7 +441,8 @@ public sealed class Mode
             ["LEGACY"] = new(ModeEnum.Legacy, false, false, false, true, true,
                 greatestLeastIgnoreNulls: true, mergeWhere: true, topInSelect: true, topInDml: true,
                 identityDataType: true, serialDataTypes: true, autoIncrementClause: true,
-                identityClause: true, allowEmptyInPredicate: true, numericWithBooleanComparison: true),
+                identityClause: true, allowEmptyInPredicate: true, numericWithBooleanComparison: true,
+                updateSequenceOnManualIdentityInsertion: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true,
                 numericWithBooleanComparison: true, sysDummy1: true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false, sysDummy1: true),
@@ -438,13 +456,13 @@ public sealed class Mode
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
-                autoIncrementClause: true, alterTableModifyColumn: true,
-                numericWithBooleanComparison: true),
+                replaceInto: true, autoIncrementClause: true, alterTableModifyColumn: true,
+                numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
-                autoIncrementClause: true, alterTableModifyColumn: true,
-                numericWithBooleanComparison: true),
+                replaceInto: true, autoIncrementClause: true, alterTableModifyColumn: true,
+                numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, charAndByteLengthUnits: true,

@@ -11266,3 +11266,26 @@ INDEX_NOT_FOUND_1 (42112) — эталон спрашивает `Table.getPrimar
   достигается: строки фильтра переиспользуются, ReferenceEquals всегда true.
 * REPLACE INTO (MySQL) не портирован вообще: в Parser нет dispatch, в Mode
   нет флага replaceInto; эталон поддерживает (dml/replace.sql).
+
+### Спринт 28: REPLACE INTO и ручная идентичность (2026-11-07)
+
+Замер (Debug, пять сюит, только свежие отчёты): строки 76369/85251 = 89.58%
+(было 89.49), ветви 31198/36534 = 85.39% (было 85.28).
+
+* REPLACE INTO (MySQL/MariaDB) не было в порту вообще: ни dispatch в Parser, ни флага
+  Mode.replaceInto. Портировано по эталону: Mode.ReplaceInto (LEGACY/MYSQL/MARIADB),
+  Parser: REPLACE → PrepareReplace (Merge(session, isReplace: true), без KEY — первичный
+  ключ решает, какую строку заменяет), эталонный dml/replace.sql оракулом
+  (`ReplaceMySqlOracleTests`: MySQL-режим через D-029 при открытии + отказ в Regular).
+* Второй дефект, найденный тем же оракулом: после явного значения IDENTITY последовательность
+  не двигалась (следующая авто-строка коллидировала, 23505). Причина — не портированные
+  `Mode.updateSequenceOnManualIdentityInsertion` (Legacy/MySQL/MariaDB) и
+  `Column.updateSequenceIfRequired`; портированы 1:1 в
+  `Column.ValidateConvertUpdateSequence`.
+* `SetFormsOracleTests` — матрица SET из непокрытых строк Parser.Set.cs: слова типа таблицы,
+  оба написания транзакционного режима и все уровни изоляции, режимы сравнения, отказы
+  (LOG, неизвестное имя, не-булево), no-op настройки из строки соединения, выражение вместо
+  идентификатора.
+* `ScriptCommandOracleTests.TheLobScriptMatchesJdbc` — SCRIPT с LOB за пределами in-place:
+  строки SYSTEM_LOB_STREAM / SYSTEM_COMBINE_BLOB, аренда/возврат буфера ArrayPool и полное чтение потока.
+* Временный зонд-пробник (проверка последовательности) удалён, в коммит не вошёл.

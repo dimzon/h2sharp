@@ -42,6 +42,23 @@ public sealed class ScriptCommandOracleTests
     ];
 
     [JavaOracleFact]
+    public void TheLobScriptMatchesJdbc()
+    {
+        // Values beyond the in-place size live in the LOB storage, and the script prints the
+        // SYSTEM_LOB_STREAM / SYSTEM_COMBINE_BLOB round trip for them.
+        string hex = new('0', 200_000);
+        string text = new('x', 200_000);
+        List<string> statements =
+        [
+            "CREATE TABLE L(ID INT PRIMARY KEY, B BLOB, C CLOB)",
+            "INSERT INTO L VALUES (1, X'" + hex + "', '" + text + "')",
+            "SCRIPT NOPASSWORDS NOSETTINGS NOVERSION",
+            "DROP TABLE L",
+        ];
+        CompareStatements(statements);
+    }
+
+    [JavaOracleFact]
     public void TheDefaultScriptMatchesJdbc() => CompareScript("NOPASSWORDS NOSETTINGS NOVERSION");
 
     [JavaOracleFact]
@@ -92,10 +109,10 @@ public sealed class ScriptCommandOracleTests
     }
 
     private static void CompareScript(string options)
-    {
-        List<string> statements = [.. SchemaStatements];
-        statements.Add("SCRIPT " + options);
+        => CompareStatements([.. SchemaStatements, "SCRIPT " + options]);
 
+    private static void CompareStatements(List<string> statements)
+    {
         // The port returns one row per statement and a statement may span lines; the Java
         // side captures the physical lines the reference prints, so both are flattened the
         // same way before they are compared.

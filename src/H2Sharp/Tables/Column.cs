@@ -800,12 +800,60 @@ public bool IsIdentity()
             // of the column is in the message when the value does not fit.
             Value converted = v.ConvertForAssignTo(type, session, name);
             domain?.CheckConstraints(session, converted);
+            if (sequence is not null && session.GetMode().UpdateSequenceOnManualIdentityInsertion)
+            {
+                UpdateSequenceIfRequired(session, converted.GetLong());
+            }
+
             return converted;
         }
         catch (H2SharpException e) when (e.H2ErrorCode == ErrorCode.DataConversionError1)
         {
             throw GetDataConversionError(v, e);
         }
+    }
+
+    /// <summary>
+    /// Advances the identity sequence when a manual insert names a value beyond its current
+    /// one, as the modes that allow manual identity insertions require
+    /// (Legacy, MySQL, MariaDB).
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="value">the value the row carries</param>
+    private void UpdateSequenceIfRequired(Engine.SessionLocal session, long value)
+    {
+        lock (sequence!)
+        {
+            if (sequence.GetCycle() == Schemas.Sequence.Cycle.EXHAUSTED)
+            {
+                return;
+            }
+
+            long current = sequence.GetCurrentValue();
+            long inc = sequence.GetIncrement();
+            if (inc > 0)
+            {
+                if (value <= current)
+                {
+                    return;
+                }
+            }
+            else if (value >= current)
+            {
+                return;
+            }
+
+            try
+            {
+                sequence.Modify(value + inc, null, null, null, null, null, null);
+            }
+            catch (H2SharpException ex) when (ex.H2ErrorCode == ErrorCode.SequenceAttributesInvalid7)
+            {
+                return;
+            }
+        }
+
+        sequence.Flush(session);
     }
 
     /// <summary>

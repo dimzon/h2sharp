@@ -1099,6 +1099,10 @@ public sealed partial class Parser
         {
             prepared = PrepareMerge(current);
         }
+        else if (IsWord("REPLACE", consume: false) && current.GetMode().ReplaceInto)
+        {
+            prepared = PrepareReplace(current);
+        }
         else if (IsWord("COMMENT", consume: false))
         {
             prepared = PrepareComment(current);
@@ -3615,6 +3619,47 @@ public sealed partial class Parser
             Read();
             Expect(Token.OpenParen, "(");
             command.SetKeys(ReadColumnList(table));
+        }
+
+        if (IsWord("VALUES"))
+        {
+            ParseValuesForCommand(command);
+        }
+        else
+        {
+            command.SetQuery(ParseQueryExpression(prepare: false));
+        }
+
+        command.SetSql(sql, null);
+        return command;
+    }
+
+    /// <summary>
+    /// Builds the command of a MySQL REPLACE INTO ... statement, as the reference's
+    /// parseReplace does: no KEY clause, the primary key of the table decides which row a
+    /// source row replaces.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the prepared statement</returns>
+    private Prepared PrepareReplace(SessionLocal session)
+    {
+        ExpectWord("REPLACE");
+        ExpectWord("INTO");
+        Tables.TableFilter targetTableFilter = ReadSimpleTableFilter(session);
+        Tables.Table table = targetTableFilter.GetTable()!;
+        Dml.Merge command = new(session, isReplace: true);
+        command.SetTable(table);
+        if (ReadIf(Token.OpenParen))
+        {
+            if (IsDirectQuery(position))
+            {
+                command.SetQuery(ParseQueryExpression(prepare: false));
+                Expect(Token.CloseParen, ")");
+                command.SetSql(sql, null);
+                return command;
+            }
+
+            command.SetColumns(ReadColumnList(table));
         }
 
         if (IsWord("VALUES"))
