@@ -11223,3 +11223,46 @@ Parser.parse(String, List)):
   оконные тесты 44/44, Data 719, Engine 9, Native 97/97. MvStore 152/152 —
   в одном составном прогоне был одиночный красный, повторный прогон сюиты
   зелёный (флак, не связанный с правкой; перепроверяется общим замером).
+
+### Спринт 27: оракулы окон, CASE, сравнений и MERGE-краёв (2026-11-07)
+
+Замер (Debug, пять сюит, только свежие отчёты): строки 76247/85200 = 89.49%
+(было 89.36), ветви 31159/36538 = 85.28% (было 85.10). H2Sharp.Tests
+2057/2058 (`Category!=BlockedByPort`; один красный — предсуществующий
+аллокационный гейт `MvMapPutAllocationTests`).
+
+Новые тесты (все построены по построчному анализу uncovered.py):
+* `WindowAggregateValidationOracleTests` — отказы RANGE/GROUPS по ключу
+  сортировки, окно внутри агрегата, агрегат внутри агрегата
+  (DataAnalysisOperation 110-122, 181-188).
+* `CaseOperandOracleTests` (+ расширение) — простой CASE с операндом-
+  сравнением, константный и неконстантный (Comparison.GetWhenValue).
+* `ComparisonEdgesOracleTests` — отрицание типа для every relational
+  оператора в ANY/ALL-массивных предикатах, обратный тип для списка строк
+  справа, MySQL-режим: BOOLEAN↔число (булево сравнение).
+* `WindowFrameEdgeOracleTests` — GROUPS с противоположным видом границы и
+  нулевыми смещениями, RANGE со значением ровно на-peer, EXCLUDE TIES внутри
+  группы равных (вперёд и назад), переполнение RANGE и отказ без арифметики
+  у ключа сортировки.
+* `ValueMapperClrSurfaceTests` — пустые массивы сохраняют тип элемента
+  (вся карта TypeCode), бинарный поток неизвестной длины — во временный файл
+  (forward-only и отказ Length).
+* `MergeUsingClauseRemovalOracleTests` — WHEN с константой FALSE/TRUE.
+* `MergeUsingApiPortTests` — геттеры, SQL и зависимости WHEN-клауз.
+* `MergeEdgesOracleTests` — отказы MERGE и вырожденные формы.
+
+Дефект, найденный оракулом и исправленный 1:1: MERGE без KEY на таблице
+без ПК отвечал CONSTRAINT_NOT_FOUND_1 (90057) вместо эталонных
+INDEX_NOT_FOUND_1 (42112) — эталон спрашивает `Table.getPrimaryKey()`,
+который сам отказывает; порт теперь тоже вызывает GetPrimaryKey()
+(Merge.cs).
+
+Находки (не в этом спринте):
+* `sbyte[]`/массивы enum с базовым byte отвечают VARBINARY: массив байт —
+  это бинарные данные в .NET, а CLR-совместимость массивов делает sbyte[]
+  «byte[]»; с пользователем согласовано — закреплено тестом как поведение,
+  а не «починка».
+* Промежуточный сброс пропущенного источника в MergeUsing (116-128) не
+  достигается: строки фильтра переиспользуются, ReferenceEquals всегда true.
+* REPLACE INTO (MySQL) не портирован вообще: в Parser нет dispatch, в Mode
+  нет флага replaceInto; эталон поддерживает (dml/replace.sql).

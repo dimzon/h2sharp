@@ -157,4 +157,150 @@ public sealed class ValueMapperClrSurfaceTests
         Assert.Equal(1, back[0]!);
         Assert.Equal("x", back[1]!);
     }
+
+    /// <summary>
+    /// An empty array carries no element to infer the SQL type from, so the CLR element type
+    /// is asked instead: every TypeCode the mapper knows, enums through their underlying type,
+    /// jagged arrays through their element, and the unknown ones staying NULL.
+    /// </summary>
+    [Fact]
+    public void EmptyArraysPreserveTheirElementTypes()
+    {
+        AssertComponent(Array.Empty<bool>(), Value.Boolean);
+        AssertComponent(Array.Empty<short>(), Value.Smallint);
+        AssertComponent(Array.Empty<long>(), Value.Bigint);
+        AssertComponent(Array.Empty<float>(), Value.Real);
+        AssertComponent(Array.Empty<double>(), Value.Double);
+        AssertComponent(Array.Empty<decimal>(), Value.Numeric);
+        AssertComponent(Array.Empty<char>(), Value.Char);
+        AssertComponent(Array.Empty<string>(), Value.Varchar);
+        AssertComponent(Array.Empty<DateTime>(), Value.Timestamp);
+        AssertComponent(Array.Empty<Guid>(), Value.Uuid);
+        AssertComponent(Array.Empty<DateTimeOffset>(), Value.TimestampTz);
+        AssertComponent(Array.Empty<DateOnly>(), Value.Date);
+        AssertComponent(Array.Empty<TimeOnly>(), Value.Time);
+        AssertComponent(Array.Empty<TimeSpan>(), Value.IntervalDayToSecond);
+        AssertComponent(Array.Empty<BigInteger>(), Value.Numeric);
+        // An enum goes through its underlying type, and Nullable<enum> through the enum.
+        AssertComponent(Array.Empty<BigColor>(), Value.Bigint);
+        AssertComponent(Array.Empty<Color?>(), Value.Smallint);
+        // A byte-backed enum array stands for the same bytes under the CLR's array
+        // compatibility, so it is binary data too (as ClrArraysGoInAndOut pins for a
+        // filled one).
+        Assert.Equal(Value.Varbinary, H2ValueMapper.ToValue(Array.Empty<Color>(), null).GetValueType());
+        // A byte array is binary data, not an array of TINYINT: byte[] is the .NET binary
+        // type, and the CLR lets sbyte[] (Java's signed byte) stand for the same bytes, so
+        // both answer VARBINARY.
+        Assert.Equal(Value.Varbinary, H2ValueMapper.ToValue(Array.Empty<byte>(), null).GetValueType());
+        Assert.Equal(Value.Varbinary, H2ValueMapper.ToValue(Array.Empty<sbyte>(), null).GetValueType());
+        // An array whose elements are byte arrays is an ARRAY of VARBINARY.
+        AssertComponent(Array.Empty<byte[]>(), Value.Varbinary);
+        AssertComponent(Array.Empty<int[]>(), Value.Array);
+        // An element the mapper has no SQL type for stays NULL.
+        AssertComponent(Array.Empty<object>(), Value.Null);
+        AssertComponent(Array.Empty<IntPtr>(), Value.Null);
+    }
+
+    /// <summary>
+    /// A binary stream whose length is unknown cannot be kept inline: without a data handler
+    /// it is streamed into a temporary file, and the catch path of the length probe leaves the
+    /// length unknown.
+    /// </summary>
+    [Fact]
+    public void AnUnknownLengthStreamSpillsToATemporaryFile()
+    {
+        byte[] payload = new byte[200 * 1024];
+        for (int i = 0; i < payload.Length; i++)
+        {
+            payload[i] = (byte)(i * 17);
+        }
+
+        // Forward-only: CanSeek is false, so the length is never asked.
+        AssertSpilledBlob(new ForwardOnlyStream(payload), payload);
+        // Seekable, but the length probe itself is refused (the NotSupportedException catch).
+        AssertSpilledBlob(new ThrowingLengthStream(payload), payload);
+    }
+
+    private static void AssertComponent<T>(T[] array, int expectedType)
+    {
+        Value value = H2ValueMapper.ToValue(array, null);
+        ValueArray arrayValue = Assert.IsType<ValueArray>(value);
+        Assert.Equal(expectedType, arrayValue.GetComponentType().GetValueType());
+    }
+
+    private static void AssertSpilledBlob(Stream stream, byte[] payload)
+    {
+        ValueBlob blob = (ValueBlob)H2ValueMapper.ToValue(stream, null);
+        try
+        {
+            Assert.Equal(payload.Length, blob.OctetLength());
+            Assert.Equal(payload, blob.GetBytes()!);
+        }
+        finally
+        {
+            blob.Remove();
+        }
+    }
+
+    /// <summary>A readable stream that answers no length and cannot seek.</summary>
+    private sealed class ForwardOnlyStream(byte[] data) : Stream
+    {
+        private int position;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => position;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            int available = Math.Min(count, data.Length - position);
+            if (available <= 0)
+            {
+                return 0;
+            }
+
+            Array.Copy(data, position, buffer, offset, available);
+            position += available;
+            return available;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    /// <summary>A seekable stream whose length probe refuses, as some wrapped streams do.</summary>
+    private sealed class ThrowingLengthStream(byte[] data) : Stream
+    {
+        private readonly MemoryStream inner = new(data);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => true;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => inner.Position;
+            set => inner.Position = value;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => inner.Seek(offset, origin);
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }

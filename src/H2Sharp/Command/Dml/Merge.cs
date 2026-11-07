@@ -441,12 +441,9 @@ public sealed class Merge : CommandWithValues
 
         if (keys is null)
         {
-            Indexes.Index? primary = target.FindPrimaryKey();
-            if (primary is null)
-            {
-                throw DbException.Get(ErrorCode.ConstraintNotFound1, "PRIMARY KEY");
-            }
-
+            // The reference asks the table for its primary key, and the table's own answer
+            // refuses a table without one (INDEX_NOT_FOUND_1, "PRIMARY_KEY_").
+            Indexes.Index primary = target.GetPrimaryKey();
             List<Column> keyList = [];
             foreach (Tables.IndexColumn indexColumn in primary.GetColumns())
             {
