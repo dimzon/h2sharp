@@ -43,6 +43,20 @@ breakdowns. Reports disagree on the relative root (`H2Sharp\...` vs bare
 `...`); both spellings are normalized so the same file unions instead of
 doubling. Standard library only.
 
+## Uncovered lines of one file
+
+```powershell
+py -3 tools/coverage/uncovered.py [--results-dir artifacts/TestResults/coverage-sprint] FILE
+```
+
+`FILE` is a case-insensitive substring of the source path, e.g.
+`SetClauseList` or `Store\FileStore.cs`. The script unions the line data of
+every report under the results directory (the same normalization as
+`merge_cov.py`), then prints the lines of the file that no report covers,
+with their source text and the partial-branch counts. This is the tool the
+coverage sprints start from: pick the file, read the exact uncovered lines,
+build the test for those lines.
+
 ## Current baseline (2026-10-30, commit 9e801f6)
 
 Tests: Data 577/577, MvStore 87/87, Engine 4/9 (5 known red), Core 1471/1471,
