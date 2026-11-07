@@ -11289,3 +11289,21 @@ INDEX_NOT_FOUND_1 (42112) — эталон спрашивает `Table.getPrimar
 * `ScriptCommandOracleTests.TheLobScriptMatchesJdbc` — SCRIPT с LOB за пределами in-place:
   строки SYSTEM_LOB_STREAM / SYSTEM_COMBINE_BLOB, аренда/возврат буфера ArrayPool и полное чтение потока.
 * Временный зонд-пробник (проверка последовательности) удалён, в коммит не вошёл.
+
+### Спринт 29: края ALTER TABLE ADD CONSTRAINT (2026-11-07)
+
+Замер (Debug, пять сюит, только свежие отчёты): строки 76397/85251 = 89.61%
+(было 89.58), ветви 31204/36534 = 85.41% (было 85.39).
+
+* `AlterTableAddConstraintEdgeOracleTests` — матрица из непокрытых строк
+  AlterTableAddConstraint.cs (332→267 непокрытых у файла): второй PRIMARY KEY
+  (SecondPrimaryKey), FOREIGN KEY по генерируемой колонке с ON DELETE SET NULL и
+  ON UPDATE CASCADE (GeneratedColumnCannotBeUpdatableByConstraint2), FOREIGN KEY по
+  несопоставимым колонкам (UncomparableReferencedColumn2), голый UNIQUE без списка
+  колонок (все видимые), повторное использование существующего уникального индекса,
+  FOREIGN KEY, владеющий найденным индексом (isOwner).
+* Проверено: H2Sharp.Tests 2062/2063 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
+* Следующие дешёвые строки того же файла названы на спринт 30: IF NOT EXISTS
+  (парсер читает `CONSTRAINT IF NOT EXISTS`, ветка 147-150 не ходит), дубли имени
+  (ConstraintAlreadyExists1), SetComment.
