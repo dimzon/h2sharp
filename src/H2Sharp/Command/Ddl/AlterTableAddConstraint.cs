@@ -133,9 +133,9 @@ public class AlterTableAddConstraint : AlterTable
     /// Try to execute the statement.
     /// </summary>
     /// <remarks>
-    /// The primary key and the foreign key run; UNIQUE and CHECK need the constraint machinery
-    /// that has not been ported, so the switch answers them the way the reference answers an
-    /// unknown type — internally. The primary key creates its index and then the ConstraintUnique
+    /// The primary key, the foreign key, UNIQUE and CHECK run; the constraint-edge oracle
+    /// walks the branches the parser can produce. The primary
+    /// key creates its index and then the ConstraintUnique
     /// that owns it, and the pair is what the schema registers: the index enforces uniqueness, the
     /// constraint carries the name that the duplicate-key message prints and DROP releases.
     /// </remarks>

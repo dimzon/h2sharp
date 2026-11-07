@@ -11324,3 +11324,26 @@ H2Sharp.Tests перезамерян): строки 76421/85251 = 89.64% (был
 * Проверено: H2Sharp.Tests 2063/2064 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт, воспроизводится на чистом HEAD), Data 719,
   Engine 9, MvStore 152, Native 97.
+
+### Спринт 31: поверхность команды (2026-11-07)
+
+Замер (Debug; четыре сюиты не менялись — правки только тесты и комментарий, их отчёты
+спринта 29, H2Sharp.Tests перезамерян): строки 76440/85251 = 89.66% (было 89.64),
+ветви 31219/36534 = 85.45% (было 85.44).
+
+* `CommandApiPortTests` (новый): ADO-свойства CommandTimeout/DesignTimeVisible и
+  внутренний H2Connection, ExecuteScalar для DDL и для мульти-инструкции
+  (RunRemaining + lazyRemaining), ToString команды с параметром, GetMetaData запроса,
+  коммит не-транзакционного SET при выключенном автокоммите (Session.Begin),
+  IsRetryableForList для DML. Command 171→178, H2Command 242→250.
+* Устранён устаревший комментарий в AlterTableAddConstraint («UNIQUE и CHECK не
+  портированы» — оракулы спринта 29 ходят по этим веткам).
+* Находка (отложена, не спринтовая): Command.Cancel ставит флаг, но Command.CheckCanceled
+  никто не вызывает — Prepared.CheckCanceled в порту пустая заглушка, в эталоне проверка
+  встаёт в row-scan каждые 128 строк. Пользовательский ADO-путь отмены идёт через
+  Session.Cancel и работает; командный путь требует проводки и отдельного решения.
+* Остаются недостижимыми: Start/медленный запрос при trace Level.Info (142-144, 190-198),
+  CheckCanceled (164-170), защищённый GetDatabase (517-519), H2Command 528-529
+  (не-runnable команда).
+* Проверено: H2Sharp.Tests 2064/2065 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт).
