@@ -10975,3 +10975,15 @@ per-op накладных самого дерева (виртуальные вы
   fileLength при выровненном fileLength) и обёртки `Open`/удаления,
   требующие отказа при создании.
 * Проверено: 27/27 FileStore*-тестов зелёные.
+
+### Покрытие-спринт 16: BCL-литеральные писатели Dialect (2026-11-07)
+
+Построчный анализ: непокрытый хвост `Data/Dialect.cs` — это BCL-поверхность
+(ADR-001/D-020): аппендеры над `DateOnly?`/`TimeOnly?`/`DateTime?`/
+`DateTimeOffset?`/`char?`/`JsonDocument`, которых движок не зовёт.
+
+* `DialectLiteralPortTests` — 4 теста: NULL-касты всех типов
+  (CHAR(1)/DATE/TIME/INTERVAL/TIMESTAMP/TSTZ/TIME WITH TIME ZONE/VARCHAR),
+  ±Infinity для дат и таймстампов, `E'…'`-строка, JSON-литерал
+  (`JSON '…'`), numeric-путь мантиссы (широкий decimal), UUID-литерал.
+* Проверено: 4/4 зелёные.
