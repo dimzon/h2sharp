@@ -28,8 +28,9 @@ public sealed class MergeUsingNotMatchedOracleTests
     {
         string[] statements =
         [
-            // The reference runs this matrix in Oracle mode; the port does not have that mode
-            // yet (50100), and every form here is the regular grammar.
+            // The reference runs this first matrix in Oracle mode (SET MODE Oracle in
+            // mergeUsing.sql); D-029 puts the mode into the open, so both sides open with
+            // MODE=Oracle and the statements themselves are the same.
             "CREATE TABLE PARENT(ID INT PRIMARY KEY, NAME VARCHAR(20))",
             // Every source row misses: the insert branch fills the target.
             "MERGE INTO PARENT AS P USING (SELECT X AS ID, 'Coco'||X AS NAME FROM SYSTEM_RANGE(1,2)) AS S ON (P.ID = S.ID AND 1=1 AND S.ID = P.ID) WHEN MATCHED THEN UPDATE SET P.NAME = S.NAME WHERE 2 = 2 WHEN NOT MATCHED THEN INSERT (ID, NAME) VALUES (S.ID, S.NAME)",
@@ -55,7 +56,7 @@ public sealed class MergeUsingNotMatchedOracleTests
             "DROP SCHEMA SOURCESCHEMA CASCADE",
             "DROP SCHEMA DESTSCHEMA CASCADE",
         ];
-        RunBoth(statements);
+        RunBoth(statements, Mode.GetInstance("Oracle"));
     }
 
     /// <summary>
@@ -63,10 +64,10 @@ public sealed class MergeUsingNotMatchedOracleTests
     /// of the error.
     /// </summary>
     /// <param name="statements">the statements</param>
-    private static void RunBoth(IReadOnlyList<string> statements)
+    private static void RunBoth(IReadOnlyList<string> statements, Mode? mode = null)
     {
-        List<string> port = RunPort(statements);
-        List<string> java = RunJava(statements);
+        List<string> port = RunPort(statements, mode);
+        List<string> java = RunJava(statements, mode);
         Assert.True(
             java.Count == port.Count && java.SequenceEqual(port),
             "java:\n  " + string.Join("\n  ", java) + "\nport:\n  " + string.Join("\n  ", port));
@@ -78,14 +79,17 @@ public sealed class MergeUsingNotMatchedOracleTests
     /// </summary>
     /// <param name="statements">the statements</param>
     /// <returns>the lines</returns>
-    private static List<string> RunPort(IReadOnlyList<string> statements)
+    private static List<string> RunPort(IReadOnlyList<string> statements, Mode? mode)
     {
-        SessionLocal session = new(
-            new Database(ConnectionInfo.Memory("merge_nm_oracle")), "sa")
+        Database database = new(ConnectionInfo.Memory("merge_nm_oracle", mode));
+        SessionLocal session = new(database, "sa")
         {
-            CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
         };
+
+        // The provider must answer the database's mode (SessionCastDataProvider): the tests'
+        // own TestCastDataProvider always answers Regular.
+        session.CastDataProvider = new SessionCastDataProvider(session, DefaultCastDataProvider.Instance);
         List<string> lines = [];
         foreach (string sql in statements)
         {
@@ -136,11 +140,11 @@ public sealed class MergeUsingNotMatchedOracleTests
     /// </summary>
     /// <param name="statements">the statements</param>
     /// <returns>the lines</returns>
-    private static List<string> RunJava(IReadOnlyList<string> statements)
+    private static List<string> RunJava(IReadOnlyList<string> statements, Mode? mode)
         => OracleRunner.Run(
             statements,
             """
-            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:merge_nm_oracle", "sa", "");
+            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:MERGE_NM_URL", "sa", "");
             java.sql.Statement stat = conn.createStatement();
             for (int i = 0; i < inputs.length; i++) {
               try {
@@ -167,6 +171,6 @@ public sealed class MergeUsingNotMatchedOracleTests
               }
             }
             conn.close();
-            """,
+            """.Replace("MERGE_NM_URL", "jdbc:h2:mem:merge_nm_oracle" + (mode is null ? "" : ";MODE=" + mode)),
             extraJavaArgs: ["-Duser.language=en"]);
 }

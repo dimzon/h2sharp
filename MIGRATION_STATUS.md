@@ -11079,3 +11079,25 @@ Parser.parse(String, List)):
 * Проверено: H2Sharp.Tests 2039/2040 (`Category!=BlockedByPort`; один
   красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
   Engine 9, Native 97.
+
+### Спринт 22: режимы совместимости — D-029, не BlockedByPort (2026-11-07)
+
+Уточнение по указанию пользователя: режимы совместимости — задокументированное
+отступление D-029 (`MODE` ставится при открытии базы, в строке подключения;
+`SET MODE` с тем же режимом — no-op, с другим — 50100 «так и должно»), а не
+непортированная функция. Тесты переписаны:
+
+* `InsertFormsOracleTests`: `INSERT IGNORE` выведен из `BlockedByPort` —
+  обе стороны открывают базу с `MODE=MySQL` (JDBC URL / `ConnectionInfo`),
+  дубликат пропускается, счётчики совпали. Попутно: порт-сторона режима
+  требует `SessionCastDataProvider` (тестовый `TestCastDataProvider`
+  всегда отвечает Regular — на это наступают прямые SessionLocal-тесты).
+* `MergeUsingNotMatchedOracleTests`: первая матрица открыта с
+  `MODE=Oracle` на обеих сторонах (как `SET MODE Oracle` в эталонном
+  mergeUsing.sql), ответы совпали.
+* `SET MODE` с другим режимом = 50100 — документированное поведение
+  (D-029), покрыто `H2ConnectionModeTests` (Data.Tests) и
+  `SetCommandOracleTests`; строка «режимы не портированы» из заметок
+  спринтов 13–14 снята.
+* Проверено: H2Sharp.Tests 2040/2041 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт).

@@ -4,7 +4,8 @@
  *
  * INSERT forms, checked against the reference running the same text: the plan of the VALUES
  * form, and INSERT IGNORE in the mode that has it — a duplicate key is skipped instead of
- * refused, and the row that lands is counted.
+ * refused, and the row that lands is counted. D-029: a compatibility mode is part of the
+ * database open (the connection string / JDBC URL), not SET MODE.
  */
 using System;
 using System.Collections.Generic;
@@ -37,16 +38,14 @@ public sealed class InsertFormsOracleTests
     }
 
     /// <summary>
-    /// INSERT IGNORE lives in the MySQL mode, and the port has no compatibility modes yet
-    /// (SET MODE answers 50100); the reference matrix waits for the port of the modes.
+    /// INSERT IGNORE lives in the MySQL mode; both sides open their database with MODE=MySQL
+    /// and the duplicate key is skipped instead of refused.
     /// </summary>
     [JavaOracleFact]
-    [Trait("Category", "BlockedByPort")]
-    public void InsertIgnoreWaitsForTheModes()
+    public void InsertIgnoreAnswerTheReference()
     {
         string[] statements =
         [
-            "SET MODE MySQL",
             "CREATE TABLE TEST(ID INT PRIMARY KEY, NAME VARCHAR(20))",
             "INSERT INTO TEST VALUES (1, 'a')",
             "INSERT IGNORE INTO TEST VALUES (1, 'b')",
@@ -55,9 +54,8 @@ public sealed class InsertFormsOracleTests
             "SELECT ID, NAME FROM TEST ORDER BY ID",
             "INSERT INTO TEST VALUES (1, 'x')",
             "DROP TABLE TEST",
-            "SET MODE Regular",
         ];
-        RunBoth(statements);
+        RunBoth(statements, Mode.GetInstance("MySQL"));
     }
 
     /// <summary>
@@ -65,10 +63,11 @@ public sealed class InsertFormsOracleTests
     /// of the error.
     /// </summary>
     /// <param name="statements">the statements</param>
-    private static void RunBoth(IReadOnlyList<string> statements)
+    /// <param name="mode">the compatibility mode both sides open with, or null for regular</param>
+    private static void RunBoth(IReadOnlyList<string> statements, Mode? mode = null)
     {
-        List<string> port = RunPort(statements);
-        List<string> java = RunJava(statements);
+        List<string> port = RunPort(statements, mode);
+        List<string> java = RunJava(statements, mode);
         Assert.True(
             java.Count == port.Count && java.SequenceEqual(port),
             "java:\n  " + string.Join("\n  ", java) + "\nport:\n  " + string.Join("\n  ", port));
@@ -79,15 +78,19 @@ public sealed class InsertFormsOracleTests
     /// the error.
     /// </summary>
     /// <param name="statements">the statements</param>
+    /// <param name="mode">the compatibility mode of the opened database</param>
     /// <returns>the lines</returns>
-    private static List<string> RunPort(IReadOnlyList<string> statements)
+    private static List<string> RunPort(IReadOnlyList<string> statements, Mode? mode)
     {
-        SessionLocal session = new(
-            new Database(ConnectionInfo.Memory("insert_forms_oracle")), "sa")
+        Database database = new(ConnectionInfo.Memory("insert_forms_oracle", mode));
+        SessionLocal session = new(database, "sa")
         {
-            CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
         };
+
+        // The provider must answer the database's mode (SessionCastDataProvider): the tests'
+        // own TestCastDataProvider always answers Regular.
+        session.CastDataProvider = new SessionCastDataProvider(session, DefaultCastDataProvider.Instance);
         List<string> lines = [];
         foreach (string sql in statements)
         {
@@ -137,12 +140,13 @@ public sealed class InsertFormsOracleTests
     /// Runs the statements on the reference and writes what the question answered.
     /// </summary>
     /// <param name="statements">the statements</param>
+    /// <param name="mode">the compatibility mode of the opened database</param>
     /// <returns>the lines</returns>
-    private static List<string> RunJava(IReadOnlyList<string> statements)
+    private static List<string> RunJava(IReadOnlyList<string> statements, Mode? mode)
         => OracleRunner.Run(
             statements,
             """
-            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:insert_forms_oracle", "sa", "");
+            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:INSERT_FORMS_URL", "sa", "");
             java.sql.Statement stat = conn.createStatement();
             for (int i = 0; i < inputs.length; i++) {
               try {
@@ -169,6 +173,6 @@ public sealed class InsertFormsOracleTests
               }
             }
             conn.close();
-            """,
+            """.Replace("INSERT_FORMS_URL", "jdbc:h2:mem:insert_forms_oracle" + (mode is null ? "" : ";MODE=" + mode)),
             extraJavaArgs: ["-Duser.language=en"]);
 }
