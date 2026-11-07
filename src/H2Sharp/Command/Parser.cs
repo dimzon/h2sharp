@@ -439,6 +439,14 @@ public sealed partial class Parser
     private int position;
 
     /// <summary>
+    /// The tokens the current position was expected to carry, or null while the fast parse
+    /// runs. The reference parses every statement twice: once without the list, and, when that
+    /// fails with SYNTAX_ERROR_1, again with the list, so a failure can name everything the
+    /// position could have taken (SYNTAX_ERROR_2).
+    /// </summary>
+    private List<string>? expectedList;
+
+    /// <summary>
     /// The parameters read so far, in the order their placeholders appear.
     /// </summary>
     private List<Expressions.Parameter> parameterList = [];
@@ -653,12 +661,13 @@ public sealed partial class Parser
                 next = parser.ParseOneStatement();
 
                 // The reference's prepareCommand: a statement ends at a semicolon or at the end
-                // of the input, and anything else is a plain syntax error. The expected-token
-                // list is empty on this path, so the reference's addExpected(SEMICOLON) adds
-                // nothing and the failure is the one-argument form.
+                // of the input, and anything else adds SEMICOLON to the expected-token list
+                // (empty, and so a no-op, when the statement parsed in the fast pass) and
+                // throws the syntax error for the position.
                 if (parser.CurrentType != Token.Semicolon && parser.CurrentType != Token.EndOfInput)
                 {
-                    throw DbException.GetSyntaxError(sql, parser.Current.Start);
+                    parser.AddExpected(Token.Semicolon);
+                    throw parser.GetSyntaxError();
                 }
 
                 next.Prepare();
@@ -786,6 +795,28 @@ public sealed partial class Parser
     /// </summary>
     /// <returns>the prepared statement</returns>
     private Prepared ParseOneStatement()
+    {
+        // Reference parse(String, List): the statement is parsed without the expected-token
+        // list first, and when that fails with SYNTAX_ERROR_1 it is parsed again with the
+        // list, so the failure can name everything the failing position expected.
+        int statementStart = position;
+        expectedList = null;
+        Prepared prepared;
+        try
+        {
+            prepared = ParseOneStatementInner();
+        }
+        catch (H2SharpException e) when (e.H2ErrorCode == Api.ErrorCode.SyntaxError1)
+        {
+            position = statementStart;
+            expectedList = [];
+            prepared = ParseOneStatementInner();
+        }
+
+        return prepared;
+    }
+
+    private Prepared ParseOneStatementInner()
     {
         SessionLocal current = session ?? throw new TODOException("Parser.parsePrepared: this parser has no session");
         // Reference parse(): currentSelect and currentPrepared belong to one statement.
@@ -1086,11 +1117,11 @@ public sealed partial class Parser
                 int index = (int)ReadLong() - 1;
                 if (index < 0 || index >= parameterList.Count)
                 {
-                    throw DbException.GetSyntaxError(sql, Current.Start);
+                    throw GetSyntaxError();
                 }
 
                 Expressions.Parameter parameter = parameterList[index]
-                    ?? throw DbException.GetSyntaxError(sql, Current.Start);
+                    ?? throw GetSyntaxError();
                 Expect(Token.Colon, ":");
                 Expressions.Expression value = ReadExpression().Optimize(current);
                 parameter.SetValue(value.GetValue(current));
@@ -1700,7 +1731,7 @@ public sealed partial class Parser
     {
         if (session!.GetMode().Enum == Engine.Mode.ModeEnum.MsSqlServer)
         {
-            throw DbException.GetSyntaxError(sql, Current.Start);
+            throw GetSyntaxError();
         }
 
         string procedureName = ReadIdentifier();
@@ -3227,7 +3258,7 @@ public sealed partial class Parser
             if (withZone)
             {
                 string? text = ReadStringLiteralValue()
-                    ?? throw DbException.GetSyntaxError(sql, Current.Start);
+                    ?? throw GetSyntaxError();
                 return Expressions.ValueExpression.Get(
                     Values.ValueTimeTimeZone.Parse(text, provider));
             }
@@ -3247,7 +3278,7 @@ public sealed partial class Parser
 
             if (without)
             {
-                throw DbException.GetSyntaxError(sql, Current.Start);
+                throw GetSyntaxError();
             }
 
             position = index;
@@ -3265,7 +3296,7 @@ public sealed partial class Parser
             if (withZone)
             {
                 string? text = ReadStringLiteralValue()
-                    ?? throw DbException.GetSyntaxError(sql, Current.Start);
+                    ?? throw GetSyntaxError();
                 return Expressions.ValueExpression.Get(
                     Values.ValueTimestampTimeZone.Parse(text, provider));
             }
@@ -3286,7 +3317,7 @@ public sealed partial class Parser
 
             if (without)
             {
-                throw DbException.GetSyntaxError(sql, Current.Start);
+                throw GetSyntaxError();
             }
 
             position = index;
@@ -3450,7 +3481,7 @@ public sealed partial class Parser
         }
         else
         {
-            throw DbException.GetSyntaxError(sql, Current.Start);
+            throw GetSyntaxError();
         }
 
         Ddl.SetComment command = new(session);
@@ -4128,7 +4159,7 @@ public sealed partial class Parser
             return command;
         }
 
-        throw DbException.GetSyntaxError(sql, Current.Start);
+        throw GetSyntaxError();
     }
 
     /// <summary>
@@ -4275,7 +4306,7 @@ public sealed partial class Parser
             }
         }
 
-        throw DbException.GetSyntaxError(sql, Current.Start);
+        throw GetSyntaxError();
     }
 
     /// <summary>
@@ -8618,11 +8649,35 @@ public sealed partial class Parser
 
     private void Read()
     {
+        // A new position takes new expectations: everything collected at the previous one
+        // cannot be part of this position's answer any more.
+        expectedList?.Clear();
         if (position < tokens.Count - 1)
         {
             position++;
             CheckLiterals();
         }
+    }
+
+    /// <summary>
+    /// The syntax error for the current position: with the expected-token list the failure
+    /// names everything the position could have taken (SYNTAX_ERROR_2), without it the plain
+    /// one-argument form (SYNTAX_ERROR_1).
+    /// </summary>
+    /// <returns>the exception</returns>
+    private H2SharpException GetSyntaxError()
+        => expectedList is null || expectedList.Count == 0
+            ? DbException.GetSyntaxError(sql, Current.Start)
+            : DbException.GetSyntaxError(sql, Current.Start, string.Join(", ", expectedList));
+
+    private void AddExpected(string token)
+    {
+        expectedList?.Add(token);
+    }
+
+    private void AddExpected(int tokenType)
+    {
+        expectedList?.Add(Token.Tokens[tokenType] ?? tokenType.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     /// <summary>
@@ -8662,21 +8717,26 @@ public sealed partial class Parser
             return true;
         }
 
+        AddExpected(Token.Tokens[tokenType] ?? tokenType.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return false;
     }
 
-    // ParserBase.readIfCompat(String): compatibility words never match quoted identifiers.
+    // ParserBase.readIfCompat(String): compatibility words never match quoted identifiers,
+    // and never join the expected-token list.
     private bool ReadIfCompat(string tokenName)
     {
-        return !Current.IsQuoted && IsWord(tokenName);
+        return !Current.IsQuoted && IsWord(tokenName, consume: true, addExpected: false);
     }
 
     private void Expect(int tokenType, string what)
     {
-        if (!ReadIf(tokenType))
+        if (CurrentType != tokenType)
         {
-            throw DbException.GetSyntaxError(sql, Current.Start, what);
+            AddExpected(what);
+            throw GetSyntaxError();
         }
+
+        Read();
     }
 
     /// <summary>
@@ -8684,11 +8744,16 @@ public sealed partial class Parser
     /// text) and for a plain identifier alike, which is what makes one method enough for both
     /// the tokenizer's words and the statement words.
     /// </summary>
-    private bool IsWord(string word, bool consume = true)
+    private bool IsWord(string word, bool consume = true, bool addExpected = true)
     {
         string? name = Current.AsIdentifier;
         if (name is null || !name.Equals(word, StringComparison.OrdinalIgnoreCase))
         {
+            if (consume && addExpected)
+            {
+                AddExpected(word);
+            }
+
             return false;
         }
 
@@ -8702,10 +8767,13 @@ public sealed partial class Parser
 
     private void ExpectWord(string word)
     {
-        if (!IsWord(word))
+        if (!IsWord(word, consume: false, addExpected: false))
         {
-            throw DbException.GetSyntaxError(sql, Current.Start, word);
+            AddExpected(word);
+            throw GetSyntaxError();
         }
+
+        Read();
     }
 
     private Statement ReadStatement()
@@ -9418,7 +9486,7 @@ public sealed partial class Parser
                 // name — are not ported yet, and the port says so the way the database says
                 // that it does not read a statement: a syntax error. The list of what is
                 // missing is in MIGRATION_STATUS.md and in issue #13 of the repository.
-                throw DbException.GetSyntaxError(sql, Current.Start);
+                throw GetSyntaxError();
             }
 
             statement.AlterColumn = new AlterTableAlterColumnDefinition
@@ -9441,7 +9509,7 @@ public sealed partial class Parser
 
             // Adding a column is not ported yet; the port refuses it the way the database
             // refuses a statement it does not read.
-            throw DbException.GetSyntaxError(sql, Current.Start);
+            throw GetSyntaxError();
         }
 
         if (IsWord("DROP"))
@@ -9487,7 +9555,7 @@ public sealed partial class Parser
 
         // The other changes of a table are not ported yet; the port refuses them the way the
         // database refuses a statement it does not read.
-        throw DbException.GetSyntaxError(sql, Current.Start);
+        throw GetSyntaxError();
     }
 
     /// <summary>
@@ -9735,7 +9803,7 @@ public sealed partial class Parser
             return NullsDistinct.AllDistinct;
         }
 
-        throw DbException.GetSyntaxError(sql, Current.Start);
+        throw GetSyntaxError();
     }
 
     /// <summary>
@@ -9820,7 +9888,7 @@ public sealed partial class Parser
         {
             if (statement.Columns.Count > 0)
             {
-                throw DbException.GetSyntaxError(sql, Current.Start);
+                throw GetSyntaxError();
             }
 
             Read();

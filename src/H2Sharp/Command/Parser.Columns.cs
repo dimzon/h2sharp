@@ -548,7 +548,7 @@ public sealed partial class Parser
                 column.SetIdentityOptions(options, always);
             }
             else if (always) column.SetGeneratedExpression(ReadExpression());
-            else throw DbException.GetSyntaxError(sql, Current.Start);
+            else throw GetSyntaxError();
         }
         if (!column.IsIdentity() && !column.IsGenerated() && ReadIfWords(WordsOnUpdate))
             column.SetOnUpdateExpression(session!, ReadExpression());
@@ -740,7 +740,7 @@ public sealed partial class Parser
             }
             else
             {
-                if (constraintName is not null) throw DbException.GetSyntaxError(sql, Current.Start);
+                if (constraintName is not null) throw GetSyntaxError();
                 return;
             }
         }
@@ -854,7 +854,7 @@ public sealed partial class Parser
         {
             if (columns is not null)
             {
-                throw DbException.GetSyntaxError(sql, Current.Start);
+                throw GetSyntaxError();
             }
 
             Read();

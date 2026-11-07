@@ -41,9 +41,8 @@ public sealed class SessionProcedureOracleTests
     public void PrepareIsRejectedInSqlServerMode()
     {
         // PostgreSQL-style PREPARE is disabled in MSSQLServer mode, as the reference's
-        // parsePrepareProcedure refuses before reading anything. The reference's two-pass
-        // parser answers 42001 "expected COMMIT"; this port's single-pass parser answers
-        // the bare 42000, the same gap every syntax error here has.
+        // parsePrepareProcedure refuses before reading anything: the two-pass parser names
+        // what the position expected (SYNTAX_ERROR_2).
         using H2Sharp.Data.H2Connection connection = new(
             "Data Source=prepare_mssql_" + Guid.NewGuid().ToString("N") + ";Storage=Memory;MODE=MSSQLServer");
         connection.Open();
@@ -51,6 +50,6 @@ public sealed class SessionProcedureOracleTests
         command.CommandText = "PREPARE test AS SELECT 1";
         H2Sharp.H2SharpException error = Assert.Throws<H2Sharp.H2SharpException>(
             () => _ = command.ExecuteNonQuery());
-        Assert.Equal(H2Sharp.Api.ErrorCode.SyntaxError1, error.H2ErrorCode);
+        Assert.Equal(H2Sharp.Api.ErrorCode.SyntaxError2, error.H2ErrorCode);
     }
 }

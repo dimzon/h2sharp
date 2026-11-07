@@ -601,7 +601,7 @@ public sealed partial class Parser
             {
                 // The reference throws the bare getSyntaxError() here, before readIf has put
                 // an expectation into its list: code 42000.
-                throw DbException.GetSyntaxError(sql, Current.Start);
+                throw GetSyntaxError();
             }
 
             if (!IsWord("GEOMETRY"))
@@ -882,7 +882,7 @@ public sealed partial class Parser
                 default:
                     // The reference throws the bare getSyntaxError(), which is the syntax
                     // error without an expected-token list.
-                    throw DbException.GetSyntaxError(sql, Current.Start);
+                    throw GetSyntaxError();
             }
 
             if (p > long.MaxValue / mul)

@@ -11048,3 +11048,34 @@ ValueRow → object[].
      поля (`SELECT ROW(1, 'x')` → 'x' не читается как INT);
      `CAST(ROW(1,'x') AS ROW(A INT, B VARCHAR))` также отказывает.
 * Проверено: 6/6 зелёные; состояние сюит см. спринты 8–12.
+
+### Спринт 21: expectedList — двухпроходный парсер (2026-11-07)
+
+Портирован механизм ожидаемых токенов эталона (ParserBase.expectedList +
+Parser.parse(String, List)):
+
+* `Parser.parse` эталона гоняет стейтмент дважды: быстрый проход без
+  списка (`expectedList = null`, все отказы дают SYNTAX_ERROR_1 = 42000),
+  и при 42000 — второй проход с живым списком, где неудача может назвать
+  всё, что позиция ожидала (SYNTAX_ERROR_2 = 42001).
+* Порт: поле `expectedList`; `Read()` очищает список (новая позиция —
+  новые ожидания, как `read()` эталона); `IsWord(consume: true)` /
+  `ReadIf(int)` при неудаче добавляют ожидание (readIf эталона);
+  `ReadIfCompat` — не добавляет (readIfCompat); `Expect`/`ExpectWord`
+  добавляют своё слово и бросают `GetSyntaxError()` (read(word) эталона);
+  `GetSyntaxError()` — одноаргументная форма при пустом списке, иначе
+  SYNTAX_ERROR_2 со списком через запятую; `ParseOneStatement` —
+  двухпроходная обёртка с сбросом позиции; проверка `;` в prepareCommand
+  добавляет SEMICOLON в список, как prepareCommand эталона.
+* Оракул подтвердил: `ALTER TYPE E1 RENAME TO X` — 42001 «expected ADD» у
+  обоих (строка возвращена в тест); `PREPARE` в MSSQLServer-режиме —
+  42001 (тест SessionProcedureOracleTests переведён с пиннившего старый
+  пробел 42000 на эталонное поведение).
+* Осталось из этой семьи (для обсуждения): `SET A[1] = DEFAULT` — эталон
+  отказывает на readExpression (42001), порт читает DEFAULT как имя
+  колонки (42122 ColumnNotFound) — нужен отказ на ключевых словах в
+  пути идентификаторов (ReadIdentifier/AsIdentifier пропускает
+  KEYWORD-токены).
+* Проверено: H2Sharp.Tests 2039/2040 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
+  Engine 9, Native 97.

@@ -128,10 +128,12 @@ public sealed class TypeAndTrimOracleTests
             "ALTER TYPE E1 ADD VALUE 'c'",
             "INSERT INTO ET VALUES ('c')",
             "SELECT V FROM ET ORDER BY V",
-            // The not-a-domain and missing-domain refusals, then the syntax of anything else.
+            // The not-a-domain and missing-domain refusals, then the syntax of anything else:
+            // the expected-token list names ADD.
             "CREATE DOMAIN I1 AS INT",
             "ALTER TYPE I1 ADD VALUE 'x'",
             "ALTER TYPE E2 ADD VALUE 'x'",
+            "ALTER TYPE E1 RENAME TO X",
             "DROP TABLE ET",
             "DROP DOMAIN E1",
             "DROP DOMAIN I1",
