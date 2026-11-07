@@ -11165,3 +11165,22 @@ Parser.parse(String, List)):
 Тесты: строки убраны из оракула (код расходится), добавлен порт-тест
 `UpdateSetDefaultRefusalTests`, пиннящий отказ с указателем на DEFAULT.
 * Проверено: UpdateSet-тесты 2/2; полный прогон см. спринт 24.
+
+### Спринт 25 дополнение: отказы агрегатов и memFS-флак (2026-11-07)
+
+* Тесты, пиннившие код отказа 42001 в местах, где порт даёт 42000 (тот же
+  класс недостроенного expectedList), переведены с JavaOracle-сверки на
+  порт-тесты `AggregateSyntaxRefusalTests` (HISTOGRAM DISTINCT/ALL, MODE
+  DISTINCT, GCD(12)/GCD(), NOT_AN_AGGREGATE): обе стороны отказывают,
+  соглашение о коде оставлено за MIGRATION_STATUS. Строки убраны из
+  `AggregateExtraOracleTests` и `BuiltinSprintOracleTests` с комментарием.
+* `FileSystemTests.AStreamIsTheSameBytesWithLessBookkeeping(memFS)` падал
+  только в полном прогоне: тестовый `MemoryFilePath.Clear()` (глобальная
+  очистка реестра из Dispose) конфликтовал с параллельными memFS-тестами.
+  Clear удалён вовсе (это было test-only API), тесты переведены на
+  уникальные ветки `memFS:/t_<guid>/…`.
+* Проверено: H2Sharp.Tests 2047/2048 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт), Data 719, MvStore 152,
+  Engine 9.
+
+Спринт 25 финал: Native 97/97 после всех правок.

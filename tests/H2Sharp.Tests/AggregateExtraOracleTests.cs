@@ -38,7 +38,8 @@ public sealed class AggregateExtraOracleTests
             "SELECT RANK(3) WITHIN GROUP (ORDER BY V) FROM T WHERE FALSE",
             // MODE: the plain form, the order tie-break, a filter, and the Oracle spelling.
             "SELECT MODE(V) FROM T",
-            "SELECT MODE(DISTINCT V) FROM T",
+            // MODE(DISTINCT V) refuses on both sides, but the code differs (42001 vs 42000)
+            // — pinned in AggregateSyntaxRefusalTests.
             "SELECT MODE(V), MODE() WITHIN GROUP (ORDER BY V DESC) FROM T",
             "SELECT MODE(V) FILTER (WHERE V > 1), MODE(V) FILTER (WHERE V < 0) FROM T",
             "SELECT STATS_MODE(V) FROM T",
@@ -58,8 +59,8 @@ public sealed class AggregateExtraOracleTests
             "SELECT HISTOGRAM(X) FROM (VALUES (1), (2), (3), (1), (2), (NULL), (5)) T(X)",
             "SELECT HISTOGRAM(X) FILTER (WHERE X > 1) FROM (VALUES (1), (2), (3), (1), (2), (NULL), (5)) T(X)",
             "SELECT HISTOGRAM(X) FILTER (WHERE X > 0) FROM (VALUES (0)) T(X)",
-            "SELECT HISTOGRAM(DISTINCT X) FROM (VALUES (0)) T(X)",
-            "SELECT HISTOGRAM(ALL X) FROM (VALUES (0)) T(X)",
+            // HISTOGRAM(DISTINCT/ALL X) refuses on both sides, but the code differs —
+            // pinned in AggregateSyntaxRefusalTests.
             "CREATE TABLE TS(V VARCHAR)",
             "INSERT INTO TS VALUES ('1'), ('2'), ('3'), ('4'), ('5'), ('6'), ('7'), ('8'), ('9')",
             "SELECT ARRAY_AGG(V ORDER BY V), ARRAY_AGG(V ORDER BY V DESC) FILTER (WHERE V >= '4') "

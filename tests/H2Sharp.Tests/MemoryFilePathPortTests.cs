@@ -4,7 +4,9 @@
  *
  * The in-memory file system has no SQL of its own; the database reaches it through the file
  * store. These tests pin the paths the database itself does not walk: the directory listing,
- * the read-only and timestamp answers of the root, and the refusals.
+ * the read-only and timestamp answers of the root, and the refusals. Every test writes under
+ * its own unique branch, so several test classes can use the shared in-memory file system at
+ * once.
  */
 using System;
 using System.IO;
@@ -13,14 +15,16 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
-public sealed class MemoryFilePathPortTests : IDisposable
+public sealed class MemoryFilePathPortTests
 {
-    public void Dispose() => MemoryFilePath.Clear();
+    private readonly string root = "memFS:/t_" + Guid.NewGuid().ToString("N");
+
+    private string At(string name) => root + "/" + name;
 
     [Fact]
     public void FilesAreCreatedAndDeletedByName()
     {
-        FilePath path = FilePath.Get("memFS:/test/one");
+        FilePath path = FilePath.Get(At("one"));
         Assert.False(path.Exists());
         Assert.True(path.CreateFile());
         // Creating again answers false instead of truncating.
@@ -40,18 +44,18 @@ public sealed class MemoryFilePathPortTests : IDisposable
     [Fact]
     public void DirectoryListsItsOwnPrefix()
     {
-        _ = FilePath.Get("memFS:/dir/a").CreateFile();
-        _ = FilePath.Get("memFS:/dir/b").CreateFile();
-        _ = FilePath.Get("memFS:/other").CreateFile();
+        _ = FilePath.Get(At("dir/a")).CreateFile();
+        _ = FilePath.Get(At("dir/b")).CreateFile();
+        _ = FilePath.Get(At("other")).CreateFile();
 
         // A directory in memory is only a name prefix; listing returns the files under it.
         System.Collections.Generic.IReadOnlyList<FilePath> entries =
-            FilePath.Get("memFS:/dir").NewDirectoryStream();
+            FilePath.Get(At("dir")).NewDirectoryStream();
         Assert.Equal(2, entries.Count);
-        Assert.All(entries, e => Assert.StartsWith("memFS:/dir/", e.Name));
+        Assert.All(entries, e => Assert.StartsWith(At("dir/"), e.Name));
 
         // The trailing-slash form lists the same entries.
-        Assert.Equal(2, FilePath.Get("memFS:/dir/").NewDirectoryStream().Count);
+        Assert.Equal(2, FilePath.Get(At("dir/")).NewDirectoryStream().Count);
     }
 
     [Fact]
@@ -71,9 +75,9 @@ public sealed class MemoryFilePathPortTests : IDisposable
     [Fact]
     public void MoveRefusesATakenNameAndMovesOntoItselfKeepsTheFile()
     {
-        FilePath source = FilePath.Get("memFS:/move/me");
+        FilePath source = FilePath.Get(At("move/me"));
         _ = source.CreateFile();
-        FilePath target = FilePath.Get("memFS:/move/other");
+        FilePath target = FilePath.Get(At("move/other"));
         _ = target.CreateFile();
 
         // A taken name refuses without replace.

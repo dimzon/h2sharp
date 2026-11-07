@@ -243,23 +243,6 @@ public sealed class MemoryFilePath : FilePath
     }
 
     /// <summary>
-    /// Forget every in-memory file. The reference has no such call and neither should a database
-    /// have one, so this is for tests that want a clean slate.
-    /// </summary>
-    internal static void Clear()
-    {
-        lock (Sync)
-        {
-            foreach (MemoryFile file in Files.Values)
-            {
-                file.Dispose();
-            }
-
-            Files.Clear();
-        }
-    }
-
-    /// <summary>
     /// The bytes of one in-memory file. Growable, and shared by every handle open on it. The
     /// backing store is unmanaged (D-040): an in-memory database can grow past the LOH
     /// threshold, and a managed single array would hold all of it there.
