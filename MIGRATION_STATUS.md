@@ -11014,3 +11014,16 @@ per-op накладных самого дерева (виртуальные вы
   `(1, FALSE) < (A, B)` (`GetReversedCompareType` 398–406/484–487),
   geometry-пересечение с NULL (350). Все ответы совпали с эталоном.
 * Проверено: тест зелёный; состояние сюит см. спринты 8–12.
+
+### Покрытие-спринт 19: строки WindowFrame (2026-11-07)
+
+Построчный анализ `uncovered.py` по `Expressions/Analysis/WindowFrame.cs`
+(182/221): GROUPS-оффсеты, EXCLUDE-итераторы, отказ RANGE по нечисловому
+ключу → одна оракул-матрица.
+
+* `WindowFrameLinesOracleTests` — GROUPS CURRENT ROW / N PRECEDING /
+  N FOLLOWING / UNBOUNDED (обход границ peer-групп 190–232), EXCLUDE
+  GROUP/TIES/CURRENT ROW/NO OTHERS над ROWS и RANGE (итераторы 54–76),
+  RANGE с ключом без арифметики — отказ (118–121). Все ответы совпали с
+  эталоном.
+* Проверено: тест зелёный; состояние сюит см. спринты 8–12.
