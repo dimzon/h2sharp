@@ -77,8 +77,6 @@ public sealed class Select : Query
 
     private List<Expression>? groupBy;
 
-    private List<Expression>? windows;
-
     private bool isOrderByTop;
 
     /// <summary>
@@ -1001,21 +999,16 @@ public sealed class Select : Query
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Flat, quick aggregate and grouped queries run; windowed and locking shapes refuse
-    /// below, each waiting for its own machinery. What runs here is the reference's flat
-    /// path — skip the offset, fill the result, trim it — with lazy execution left out:
-    /// every result here is materialized, and a lazy one would hand back a walk over tables
-    /// the caller may close. Plain DISTINCT and DISTINCT ON run: the result itself drops
-    /// duplicates as rows arrive. The index fast path that would walk them in order waits
-    /// for secondary indexes, which are still a stub.
+    /// Flat, quick aggregate, grouped and windowed queries run. What runs here is the
+    /// reference's path — skip the offset, fill the result, trim it — with lazy execution
+    /// left out: every result here is materialized, and a lazy one would hand back a walk
+    /// over tables the caller may close. Plain DISTINCT and DISTINCT ON run: the result
+    /// itself drops duplicates as rows arrive. The index fast path that would walk them in
+    /// order waits for secondary indexes, which are still a stub.
     /// </remarks>
     public override ResultInterface? Run(long limit, ResultTarget? target)
     {
         DisableLazyForJoinSubqueries(topTableFilter!);
-        if (windows is not null)
-        {
-            throw new TODOException("Select.query: windowed queries are not ported");
-        }
 
         long offset;
         long fetch;
@@ -1815,10 +1808,6 @@ public sealed class Select : Query
     /// </summary>
     public void SetGroupQuery() => isGroupQuery = true;
 
-    /// <summary>Sets the window functions.</summary>
-    /// <param name="windows">the expressions</param>
-    public void SetWindows(List<Expression>? windows) => this.windows = windows;
-
     /// <summary>Sets whether this is ORDER BY ... TOP.</summary>
     /// <param name="isOrderByTop">true for ORDER BY ... TOP</param>
     public void SetOrderByTop(bool isOrderByTop) => this.isOrderByTop = isOrderByTop;
@@ -1882,21 +1871,14 @@ public sealed class Select : Query
     /// Get the group data if there is currently a group-by active.
     /// </summary>
     /// <remarks>
-    /// Grouped execution is not ported, and only the quick aggregate path runs, which never
-    /// touches group data: this refuses with the missing piece named.
+    /// A window function is answered off the group data even when the walk is between
+    /// groups (the reference's <c>window ||</c>), so <paramref name="window"/> skips the
+    /// current-group check that plain aggregates need.
     /// </remarks>
     /// <param name="window">is this a window function</param>
     /// <returns>the grouped data</returns>
     public SelectGroups? GetGroupDataIfCurrent(bool window)
-    {
-        SelectGroups? data = groupData;
-        if (data is not null && data.IsCurrentGroup())
-        {
-            return data;
-        }
-
-        return null;
-    }
+        => groupData is not null && (window || groupData.IsCurrentGroup()) ? groupData : null;
 
     /// <summary>Set the distinct flag.</summary>
     public void SetDistinct()

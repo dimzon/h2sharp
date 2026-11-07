@@ -13,12 +13,12 @@
  * - done().
  * - next() is invoked inside a loop until it returns null.
  *
- * Two deviations, both recorded. The group map is a SortedDictionary over the shared
- * session row comparer (the one DISTINCT already sorts by) instead of a TreeMap over
- * the session itself: C# cannot hand a session as a comparer, and two comparers that
- * disagreed on row equality would split groups DISTINCT merges. Window maps and lazy
- * group walking wait for OVER; remove() refuses with them, since only the window path
- * removes groups mid-walk.
+ * Two deviations. The group map is a SortedDictionary over the shared session row
+ * comparer (the one DISTINCT already sorts by) instead of a TreeMap over the session
+ * itself: C# cannot hand a session as a comparer, and two comparers that disagreed on
+ * row equality would split groups DISTINCT merges. And the group cursor snapshots the
+ * keys instead of removing through the iterator: a C# enumerator cannot remove while
+ * iterating the way Java's iterator does.
  */
 using System;
 using System.Collections.Generic;
@@ -429,14 +429,11 @@ public abstract class SelectGroups
     /// Removes the data for the current key.
     /// </summary>
     /// <remarks>
-    /// Only the window path removes groups mid-walk, so this refuses with the missing
-    /// machinery named. A C# enumerator cannot remove through the walk the way Java's
-    /// iterator does, which is one more reason this waits for windows.
+    /// The reference's base method throws UnsupportedOperationException: only the grouped
+    /// implementation removes groups mid-walk. The exception is kept as the framework's
+    /// NotSupportedException, as elsewhere in the port.
     /// </remarks>
-    public virtual void Remove()
-    {
-        throw new TODOException("SelectGroups.remove: windowed execution is not ported");
-    }
+    public virtual void Remove() => throw new NotSupportedException();
 
     /// <summary>
     /// Resets this group data for reuse in lazy mode.

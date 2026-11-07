@@ -373,7 +373,10 @@ public abstract class DataAnalysisOperation : Expression
         SessionLocal session, SelectGroups groupData, int groupRowId, List<QueryOrderBy>? orderBy)
     {
         int ne = GetNumExpressions(), size = orderBy?.Count ?? 0;
-        Value?[] array = new Value?[ne + size + numFrameExpressions + 1];
+        // D-045: the row is rented from PooledRowList; SetOrderedResult (and the group-data
+        // reset behind it) returns it. Every slot below is written before the row joins the
+        // list, so a reused array never carries a stale value.
+        Value?[] array = PooledRowList.Rent(ne + size + numFrameExpressions + 1);
         RememberExpressions(session, array);
         for (int i = 0; i < size; i++) array[ne++] = orderBy![i].expression!.GetValue(session);
         if (numFrameExpressions > 0)

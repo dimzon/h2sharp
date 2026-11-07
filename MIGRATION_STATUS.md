@@ -11184,3 +11184,42 @@ Parser.parse(String, List)):
   Engine 9.
 
 Спринт 25 финал: Native 97/97 после всех правок.
+
+### Спринт 26: находка №1 — окна, пул строк и мёртвый стаб (2026-11-07)
+
+* `Select.GetGroupDataIfCurrent(bool window)` приведён к эталону 1:1:
+  `groupData is not null && (window || groupData.IsCurrentGroup())`. Порт
+  игнорировал `window` и требовал `IsCurrentGroup()`, хотя эталон для окна
+  отдаёт данные группы и между группами (`currentGroupByExprData` пуст в
+  ленивом обходе групп и в групповых окнах). Заглушка-комментарий
+  «grouped execution is not ported» удалён: групповое и оконное исполнение
+  в порте есть.
+* Удалён port-изобретённый мёртвый стаб в `Select`: поле `windows` типа
+  `List<Expression>`, сеттер `SetWindows` и ложный
+  `TODOException("Select.query: windowed queries are not ported")`. Вызовов
+  у `SetWindows` не было ни одного (grep по src/tests), оконные запросы идут
+  через `isWindowQuery` → `QueryWindow`/`QueryGroupWindow` и давно работают;
+  в эталоне `windows` — это `HashMap<String, Window>`, и в порте для него уже
+  есть `windowClause` (`AddWindow`/`GetWindow`).
+* D-045 (пул строк упорядоченных окон) был подключён наполовину: партиция
+  создавалась как `PooledRowList`, но `Rent` не вызывался нигде —
+  `UpdateOrderedAggregate` аллоцировал `new Value?[...]`, поэтому пул только
+  наполнялся (Dispose возвращал массивы) и никогда их не отдавал. Теперь
+  строка арендуется `PooledRowList.Rent(...)`; все слоты строки
+  (RememberExpressions + ORDER BY окна + переменные границы + rowId)
+  записываются до добавления в список, поэтому повторно использованный
+  массив не приносит старое значение. Все строки возвращаются в
+  `PartitionData.SetOrderedResult` (и повторно — в `SelectGroups.Reset`,
+  Dispose идемпотентен).
+* `SelectGroups.Remove()` в базовом классе: эталон кидает
+  `UnsupportedOperationException` без сообщения; порт кидал
+  `TODOException("windowed execution is not ported")` с неверным текстом.
+  Приведено к конвенции порта для UOE — `NotSupportedException`.
+  Комментарий класса про «window maps and lazy group walking wait for OVER»
+  устарел (оба механизма в порте есть) — переписан на фактические два
+  отклонения контейнера групп.
+* Проверено: H2Sharp.Tests 2047/2048 (`Category!=BlockedByPort`; один
+  красный — предсуществующий аллокационный гейт `MvMapPutAllocationTests`),
+  оконные тесты 44/44, Data 719, Engine 9, Native 97/97. MvStore 152/152 —
+  в одном составном прогоне был одиночный красный, повторный прогон сюиты
+  зелёный (флак, не связанный с правкой; перепроверяется общим замером).
