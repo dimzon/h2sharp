@@ -44,6 +44,18 @@ public sealed class SetFormsOracleTests
             // Where an identifier may stand, an expression may too.
             "SET SCHEMA (SELECT 'MAIN' FROM SYSTEM_RANGE(1, 1))",
             "SET DEFAULT_NULL_ORDERING HIGH",
+            // The boolean settings, both spellings and the numeric literal.
+            "SET @VAR1 = 1",
+            "SET AUTOCOMMIT TRUE",
+            "SET AUTOCOMMIT FALSE",
+            "SET AUTOCOMMIT TRUE",
+            "SET EXCLUSIVE 0",
+            "SET IGNORECASE TRUE",
+            "SET IGNORECASE FALSE",
+            "SET IGNORECASE ON",
+            "SET IGNORECASE OFF",
+            "SET IGNORECASE 1",
+            "SET SCHEMA MAIN",
             "DROP TABLE T",
         ]);
     }

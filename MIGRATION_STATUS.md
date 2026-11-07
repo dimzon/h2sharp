@@ -11307,3 +11307,20 @@ INDEX_NOT_FOUND_1 (42112) — эталон спрашивает `Table.getPrimar
 * Следующие дешёвые строки того же файла названы на спринт 30: IF NOT EXISTS
   (парсер читает `CONSTRAINT IF NOT EXISTS`, ветка 147-150 не ходит), дубли имени
   (ConstraintAlreadyExists1), SetComment.
+
+### Спринт 30: SET-формы, имена ограничений, голый BOOLEAN (2026-11-07)
+
+Замер (Debug; четыре сюиты не менялись — правки только тесты, их отчёты спринта 29,
+H2Sharp.Tests перезамерян): строки 76421/85251 = 89.64% (было 89.61), ветви
+31214/36534 = 85.44% (было 85.41).
+
+* `SetFormsOracleTests` расширен: SET @VARIABLE, AUTOCOMMIT TRUE/FALSE (обратно в TRUE
+  перед DROP), EXCLUSIVE, IGNORECASE всеми тремя написаниями (TRUE/FALSE/ON/OFF/1)
+  и голый идентификатор в SET SCHEMA.
+* `AlterTableAddConstraintEdgeOracleTests` расширен: дубли имени ограничения
+  (ConstraintAlreadyExists1), та же форма с IF NOT EXISTS (ответ 0), COMMENT ограничения.
+* `ExpressionColumnBooleanOracleTests` (новый): голый BOOLEAN-столбец как условие
+  поиска — CreateIndexConditions отвечает «= TRUE» (179→188 у файла).
+* Проверено: H2Sharp.Tests 2063/2064 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт, воспроизводится на чистом HEAD), Data 719,
+  Engine 9, MvStore 152, Native 97.

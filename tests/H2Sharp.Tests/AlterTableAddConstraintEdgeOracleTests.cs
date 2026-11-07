@@ -43,6 +43,12 @@ public sealed class AlterTableAddConstraintEdgeOracleTests
             "CREATE TABLE C4(ID INT)",
             "CREATE INDEX IDX ON C4(ID)",
             "ALTER TABLE C4 ADD CONSTRAINT FK4 FOREIGN KEY (ID) REFERENCES P(ID) ON DELETE CASCADE",
+            // A duplicate constraint name, and the same form with IF NOT EXISTS.
+            "ALTER TABLE T2 ADD CONSTRAINT U UNIQUE(A)",
+            "ALTER TABLE T2 ADD CONSTRAINT U UNIQUE(B)",
+            "ALTER TABLE T2 ADD CONSTRAINT IF NOT EXISTS U UNIQUE(B)",
+            // The comment the statement may carry.
+            "ALTER TABLE T3 ADD CONSTRAINT C3 COMMENT 'dup key' UNIQUE(A)",
             "DROP TABLE T",
             "DROP TABLE G1",
             "DROP TABLE G2",
