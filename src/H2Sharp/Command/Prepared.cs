@@ -67,6 +67,10 @@ public abstract class Prepared
 
     private long currentRowNumber;
 
+    // The reference's rowScanCount: every 128th call to SetCurrentRowNumber checks the
+    // session for cancellation, so a long scan stops where it stands.
+    private long rowScanCount;
+
     /// <summary>
     /// Creates a prepared statement.
     /// </summary>
@@ -295,6 +299,11 @@ public abstract class Prepared
     /// </summary>
     public virtual void CheckCanceled()
     {
+        // Reference Prepared.checkCanceled: the session's cancellation deadline first, then
+        // the running command's own flag (a JDBC Statement.cancel marks the command).
+        GetSession().CheckCanceled();
+        Command? current = command ?? GetSession().GetCurrentCommand();
+        current?.CheckCanceled();
     }
 
     /// <summary>
@@ -319,8 +328,34 @@ public abstract class Prepared
     /// <summary>
     /// Set the current row number.
     /// </summary>
+    /// <remarks>
+    /// The reference checks for cancellation every 128th scanned row and reports progress on
+    /// every multiple of 128, so a long scan can be stopped and the database event listener
+    /// sees where the statement stands.
+    /// </remarks>
     /// <param name="rowNumber">the row number</param>
-    public void SetCurrentRowNumber(long rowNumber) => currentRowNumber = rowNumber;
+    public void SetCurrentRowNumber(long rowNumber)
+    {
+        if ((++rowScanCount & 127) == 0)
+        {
+            CheckCanceled();
+        }
+
+        currentRowNumber = rowNumber;
+        SetProgress();
+    }
+
+    /// <summary>
+    /// Notifies the database event listener of the statement's progress.
+    /// </summary>
+    private void SetProgress()
+    {
+        if ((currentRowNumber & 127) == 0)
+        {
+            GetSession().GetDatabase().SetProgress(
+                Data.H2DatabaseEventState.StatementProgress, GetSql(), currentRowNumber, 0L);
+        }
+    }
 
     /// <summary>
     /// Get the current row number.

@@ -159,8 +159,12 @@ public abstract class Command : CommandInterface
     /// <summary>
     /// Check if this command has been canceled, and throw an exception if yes.
     /// </summary>
+    /// <remarks>
+    /// The reference declares this protected; Prepared, which calls it, is in the same Java
+    /// package, so the C# equivalent is protected internal rather than protected alone.
+    /// </remarks>
     /// <exception cref="H2SharpException">if the statement has been canceled</exception>
-    protected void CheckCanceled()
+    protected internal void CheckCanceled()
     {
         if (cancel)
         {

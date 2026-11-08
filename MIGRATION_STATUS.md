@@ -11546,6 +11546,7 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   каждые 128 строк (`SetCurrentRowNumber`); порт не вызывает. ADO-отмена
   работает через `Session.Cancel` → `TableFilter.CheckTimeout`, командный путь
   (JDBC `Statement.cancel`) — нет. Записано в спринте 31 (строка 11341).
+  Закрыто в спринте 48.
 * **`missedSource` flush в `MergeUsing` (116-128)**: не достигается из-за
   переиспользования Row-объектов фильтром. Записано в спринте 27
   (строка 11231).
@@ -11661,5 +11662,29 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   идёт без query scope, поэтому CTE, ссылающийся на CTE соседнего/внешнего
   WITH при перекомпиляции, может не найти имя. Отдельная находка.
 * Проверено: H2Sharp.Tests 2088/2089 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
+  Native 97 (+8 skipped).
+
+### Спринт 48: отмена и прогресс на строковом скане (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `Prepared.SetCurrentRowNumber` портирован с эталона: счётчик `rowScanCount`,
+  каждый 128-й вызов — `CheckCanceled()`, затем установка номера и
+  `SetProgress()`; `SetProgress` на каждом кратном 128 номере шлёт
+  `STATE_STATEMENT_PROGRESS` с SQL и номером строки в `Database.SetProgress`.
+* `Prepared.CheckCanceled` больше не заглушка: `SessionLocal.CheckCanceled()`
+  (дедлайн `Session.Cancel`) и `Command.CheckCanceled()` текущей команды.
+  `Command.CheckCanceled` стал `protected internal` — эталон объявляет его
+  protected, а `Prepared` лежит в том же Java-пакете.
+* `SessionLocal` помнит текущую команду (`currentCommand`,
+  `GetCurrentCommand`/`SetCurrentCommand`), выставляется в
+  `StartStatementWithinTransaction` и снимается в `EndStatement`, как
+  `setCurrentCommand` эталона.
+* `PreparedCancellationTests` (новый): 128-я строка после `Session.Cancel()`
+  бросает 57014; на 128-й строке приходит одно событие `StatementProgress`
+  с SQL, номером 128 и max 0.
+* Проверено: H2Sharp.Tests 2090/2091 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
   Native 97 (+8 skipped).

@@ -343,6 +343,10 @@ public sealed class SessionLocal : Session
 
         statementModificationDataId = database.GetModificationDataId();
         transaction.MarkStatementStartTyped(maps);
+        if (command is not null)
+        {
+            SetCurrentCommand(command);
+        }
     }
 
     private static void CollectDependencies(H2Sharp.Command.Command command, HashSet<object> dependencies)
@@ -382,9 +386,22 @@ public sealed class SessionLocal : Session
     /// </summary>
     public void EndStatement()
     {
+        SetCurrentCommand(null);
         Transaction?.MarkStatementEnd();
         statementModificationDataId = 0L;
     }
+
+    /// <summary>
+    /// Remembers the command being run, as the reference's setCurrentCommand.
+    /// </summary>
+    /// <param name="command">the command, or null</param>
+    private void SetCurrentCommand(H2Sharp.Command.Command? command) => currentCommand = command;
+
+    /// <summary>
+    /// Gets the command being run, as the reference's getCurrentCommand.
+    /// </summary>
+    /// <returns>the command, or null</returns>
+    public H2Sharp.Command.Command? GetCurrentCommand() => currentCommand;
 
     /// <summary>Gets the database data modification id at the start of this statement.</summary>
     public long GetStatementModificationDataId()
@@ -1477,6 +1494,8 @@ public sealed class SessionLocal : Session
     private bool allowLiterals;
 
     private long cancelAtTicks;
+
+    private H2Sharp.Command.Command? currentCommand;
 
     private System.Collections.BitArray? nonKeywords;
 
