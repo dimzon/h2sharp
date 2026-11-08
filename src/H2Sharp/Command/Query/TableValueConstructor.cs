@@ -17,6 +17,7 @@ using H2Sharp.Expressions.Functions;
 using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Tables;
+using H2Sharp.Util;
 using H2Sharp.Values;
 
 namespace H2Sharp.Command.Query;
@@ -36,11 +37,17 @@ public sealed class TableValueConstructor : Query
 
     private readonly int visibleColumnCount;
 
+    private int resultColumnCount;
+
     private Column[] columns = [];
 
-    private Expression[] expressions = [];
+    private List<Expression> expressions = [];
+
+    private Expression[] expressionArray = [];
 
     private TableValueConstructorTable? table;
+
+    private TableValueColumnResolver? columnResolver;
 
     private double cost;
 
@@ -128,37 +135,54 @@ public sealed class TableValueConstructor : Query
 
         checkInit = true;
 
-        if (orderList is not null && expressions.Length > 0)
+        if (IsWithTies() && !HasOrder())
         {
-            _ = InitOrder(null, true, null, [.. expressions]);
+            throw DbException.Get(Api.ErrorCode.WithTiesWithoutOrderBy);
         }
     }
 
     /// <inheritdoc/>
     public override void PrepareExpressions()
     {
-        if (table is null)
+        if (columnResolver is null)
         {
             CreateTable();
         }
 
-        if (orderList is not null && sort is null)
+        if (orderList is not null)
         {
-            PrepareOrder(orderList, expressions.Length);
-        }
-
-        if (IsWithTies() && sort is null)
-        {
-            throw DbException.Get(Api.ErrorCode.WithTiesWithoutOrderBy);
-        }
-
-        foreach (List<Expression> row in rows)
-        {
-            for (int i = 0; i < visibleColumnCount; i++)
+            // The reference resolves ORDER BY against the expression columns C1..Cn with
+            // mustBeInResult = false: an expression the rows do not show becomes a hidden
+            // result column that is evaluated per row, not a refusal.
+            List<string> expressionSQL = new(expressions.Count);
+            foreach (Expression e in expressions)
             {
-                row[i] = row[i].Optimize(GetSession());
+                expressionSQL.Add(e.GetSql(HasSql.DefaultSqlFlags, Expression.WithoutParentheses));
+            }
+
+            if (InitOrder(expressionSQL, mustBeInResult: false, filters: null, expressions))
+            {
+                PrepareOrder(orderList!, expressions.Count);
             }
         }
+
+        resultColumnCount = expressions.Count;
+        for (int i = 0; i < resultColumnCount; i++)
+        {
+            expressions[i].MapColumns(columnResolver!, 0, Expression.MapInitial);
+        }
+
+        for (int i = visibleColumnCount; i < resultColumnCount; i++)
+        {
+            expressions[i] = expressions[i].Optimize(GetSession());
+        }
+
+        if (sort is not null)
+        {
+            CleanupOrder(expressions);
+        }
+
+        expressionArray = [.. expressions];
     }
 
     /// <inheritdoc/>
@@ -218,14 +242,11 @@ public sealed class TableValueConstructor : Query
     public override bool IsEverything(ExpressionVisitor visitor)
     {
         ExpressionVisitor nested = visitor.IncrementQueryLevel(1);
-        foreach (List<Expression> row in rows)
+        foreach (Expression expression in expressionArray)
         {
-            foreach (Expression expression in row)
+            if (!expression.IsEverything(nested))
             {
-                if (!expression.IsEverything(nested))
-                {
-                    return false;
-                }
+                return false;
             }
         }
 
@@ -233,7 +254,8 @@ public sealed class TableValueConstructor : Query
     }
 
     /// <inheritdoc/>
-    public override Expression[] GetExpressions() => expressions;
+    public override Expression[] GetExpressions()
+        => expressionArray.Length > 0 ? expressionArray : [.. expressions];
 
     /// <inheritdoc/>
     public override int GetColumnCount() => visibleColumnCount;
@@ -253,7 +275,8 @@ public sealed class TableValueConstructor : Query
     {
         SessionLocal current = GetSession();
         OffsetFetch offsetFetch = GetOffsetFetch(limit);
-        LocalResult result = new(current, expressions, visibleColumnCount, visibleColumnCount);
+        int visible = visibleColumnCount, resultWidth = resultColumnCount;
+        LocalResult result = new(current, expressionArray, visible, resultWidth);
         if (distinct)
         {
             result.SetDistinct();
@@ -264,18 +287,59 @@ public sealed class TableValueConstructor : Query
             result.SetSortOrder(sort);
         }
 
+        if (visible == resultWidth)
+        {
+            GetVisibleResult(current, result, columns, rows);
+        }
+        else
+        {
+            // Hidden ORDER BY columns: the visible values are read from the rows, and the
+            // hidden expressions read them back through the column resolver.
+            foreach (List<Expression> row in rows)
+            {
+                Value?[] values = new Value?[resultWidth];
+                for (int i = 0; i < visible; i++)
+                {
+                    values[i] = row[i].GetValue(current).ConvertToType(columns[i].GetTypeInfo());
+                }
+
+                columnResolver!.CurrentRow = values;
+                for (int i = visible; i < resultWidth; i++)
+                {
+                    values[i] = expressionArray[i].GetValue(current);
+                }
+
+                result.AddRow(values);
+            }
+
+            columnResolver!.CurrentRow = null;
+        }
+
+        return FinishResult(result, offsetFetch.Offset, offsetFetch.Fetch, offsetFetch.FetchPercent, target);
+    }
+
+    /// <summary>
+    /// Appends the visible columns of all rows to the result, as the reference's
+    /// getVisibleResult does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="result">the result</param>
+    /// <param name="columns">the columns</param>
+    /// <param name="rows">the rows</param>
+    public static void GetVisibleResult(
+        SessionLocal session, ResultTarget result, Column[] columns, List<List<Expression>> rows)
+    {
+        int count = columns.Length;
         foreach (List<Expression> row in rows)
         {
-            Value?[] values = new Value?[visibleColumnCount];
-            for (int i = 0; i < visibleColumnCount; i++)
+            Value?[] values = new Value?[count];
+            for (int i = 0; i < count; i++)
             {
-                values[i] = row[i].GetValue(current).ConvertToType(columns[i].GetTypeInfo());
+                values[i] = row[i].GetValue(session).ConvertToType(columns[i].GetTypeInfo());
             }
 
             result.AddRow(values);
         }
-
-        return FinishResult(result, offsetFetch.Offset, offsetFetch.Fetch, offsetFetch.FetchPercent, target);
     }
 
     /// <inheritdoc/>
@@ -325,32 +389,59 @@ public sealed class TableValueConstructor : Query
         }
 
         Column[] newColumns = new Column[columnCount];
-        List<Expression> columnExpressions = [];
         for (int c = 0; c < columnCount; c++)
         {
-            string name = "C" + (c + 1).ToString(CultureInfo.InvariantCulture);
-            newColumns[c] = new Column(name, types[c]);
-
-            // The reference names the columns with an expression column, which knows no type
-            // of its own; this port names them with an alias over the first value, so that
-            // the name and the type of the column are both there. The alias takes the type of
-            // the first row, and the column's type is the higher type over every row, so a
-            // cast keeps the name and gives the column the type it has in the table — without
-            // it a column whose first row is NULL would report NULL as its type.
-            Expression columnValue = row[c];
-            if (columnValue.GetTypeInfo().GetValueType() != types[c].GetValueType()
-                || columnValue.GetTypeInfo().GetScale() != types[c].GetScale())
-            {
-                columnValue = new CastSpecification(columnValue, types[c]);
-            }
-
-            columnExpressions.Add(new Alias(columnValue, name, aliasColumnName: true));
+            newColumns[c] = new Column(
+                "C" + (c + 1).ToString(CultureInfo.InvariantCulture), types[c]);
         }
 
         columns = newColumns;
-        expressions = [.. columnExpressions];
+        List<Expression> columnExpressions = new(columnCount);
+        for (int c = 0; c < columnCount; c++)
+        {
+            // The reference names the columns with an expression column; mapColumns binds it
+            // to the table's column and the column resolver reads the value from the row.
+            columnExpressions.Add(new ExpressionColumn(newColumns[c].GetName(), null, null, 0));
+        }
+
+        expressions = columnExpressions;
         table = new TableValueConstructorTable(
-            GetSession().GetDatabase().GetMainSchema(), GetSession(), columns, expressions, rows);
+            GetSession().GetDatabase().GetMainSchema(), GetSession(), columns, rows);
+        columnResolver = new TableValueColumnResolver(this, table);
+    }
+
+    /// <summary>
+    /// Resolves the expression columns of the constructor to the values of the row being
+    /// evaluated, as the reference's TableValueColumnResolver does.
+    /// </summary>
+    private sealed class TableValueColumnResolver : ColumnResolver
+    {
+        private readonly TableValueConstructor owner;
+
+        private readonly TableValueConstructorTable table;
+
+        internal TableValueColumnResolver(TableValueConstructor owner, TableValueConstructorTable table)
+        {
+            this.owner = owner;
+            this.table = table;
+        }
+
+        /// <summary>The values of the row being evaluated, or null.</summary>
+        internal Value?[]? CurrentRow { get; set; }
+
+        /// <inheritdoc/>
+        public Column[] GetColumns() => table.GetColumns();
+
+        /// <inheritdoc/>
+        public Column? FindColumn(string name) => table.FindColumn(name);
+
+        /// <inheritdoc/>
+        public Value? GetValue(Column column)
+            => CurrentRow is null ? null : CurrentRow[column.GetColumnId()];
+
+        /// <inheritdoc/>
+        public Expression Optimize(ExpressionColumn expressionColumn, Column column)
+            => owner.expressions[column.GetColumnId()];
     }
 
     /// <inheritdoc/>

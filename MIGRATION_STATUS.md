@@ -11529,7 +11529,7 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   `VALUES (1), (2) ORDER BY ...`; порт в `TableValueConstructor` не перенёс
   `InitOrder` (вызывается с неверными аргументами) и отбрасывает скрытые
   колонки. Матрица `ValuesFormsOracleTests` помечена `BlockedByPort`
-  (строка 44). Отдельный движковой спринт.
+  (строка 44). Закрыто в спринте 45.
 * **Дельта-таблицы (`DataChangeDeltaTable`)** — `SetForDataChangeDeltaTable`
   не имеет вызовов; строки 483-485 `LocalResult` недостижимы в замерах.
   FINAL/OLD TABLE над DML (dml/with.sql, строки 32-34) ждут этого
@@ -11586,5 +11586,27 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   в `DeleteScriptOracleTests` (была убрана в спринте 36).
 * `docs/APPROVED_DEVIATIONS.md`: кандидат P-007 удалён (дефект закрыт).
 * Проверено: H2Sharp.Tests 2083/2084 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
+  Native 97 (+8 skipped).
+
+### Спринт 45: VALUES с ORDER BY — скрытые колонки (2026-11-08)
+
+Замер на входе (спринт 44, Debug, пять сюит): строки 76769/85453 = 89.84%,
+ветви 31380/36626 = 85.68%. Пост-замер не снимался: правки — порт эталонных
+методов, покрытых новым/разблокированным оракулом.
+
+* `TableValueConstructor` портирован 1:1 с эталона: `expressions` — это
+  `ExpressionColumn` C1..Cn, а не alias/cast над первой строкой; добавлен
+  `TableValueColumnResolver` (чтение значения из текущей строки); `initOrder`
+  вызывается в `PrepareExpressions` с `mustBeInResult = false` и своим
+  `expressionSQL`; появились `resultColumnCount` и `expressionArray`; `Run`
+  считает видимые значения и дочитывает скрытые колонки через резолвер;
+  `IsEverything`/`GetPlanSql` идут по `expressionArray`. `TableValueConstructorTable`
+  отдаёт `SimpleResult` с именами/типами колонок, как эталон.
+* `ValuesFormsOracleTests`: с `ValuesWithOrderWaitsForThePort` снят
+  `BlockedByPort`, тест переименован в `ValuesWithOrderAnswersTheReference`;
+  пять инструкций (ORDER BY 1 + 75% FETCH, `C1 + C2`, два выражения,
+  OFFSET/FETCH, EXPLAIN) построчно совпадают с jar.
+* Проверено: H2Sharp.Tests 2084/2085 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
   Native 97 (+8 skipped).

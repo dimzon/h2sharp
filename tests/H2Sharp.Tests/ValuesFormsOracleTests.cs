@@ -36,13 +36,11 @@ public sealed class ValuesFormsOracleTests
     }
 
     /// <summary>
-    /// The top-level VALUES query with its own ORDER BY: the reference sorts the rows, the port
-    /// refuses every one of these with ORDER_BY_NOT_IN_RESULT. Waits for the constructor's own
-    /// order port (see MIGRATION_STATUS, the coverage sprints).
+    /// The top-level VALUES query with its own ORDER BY: the reference sorts the rows and turns
+    /// an expression the rows do not show into a hidden result column.
     /// </summary>
     [JavaOracleFact]
-    [Trait("Category", "BlockedByPort")]
-    public void ValuesWithOrderWaitsForThePort()
+    public void ValuesWithOrderAnswersTheReference()
     {
         string[] statements =
         [

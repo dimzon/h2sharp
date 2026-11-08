@@ -29,8 +29,6 @@ public sealed class TableValueConstructorTable : VirtualConstructedTable
 
     private readonly Column[] columns;
 
-    private readonly Expression[] columnExpressions;
-
     private readonly Schema? schema;
 
     /// <summary>
@@ -39,18 +37,15 @@ public sealed class TableValueConstructorTable : VirtualConstructedTable
     /// <param name="schema">the schema the table belongs to</param>
     /// <param name="session">the session</param>
     /// <param name="columns">the columns of the table</param>
-    /// <param name="columnExpressions">the expressions that name the columns</param>
     /// <param name="rows">the rows of the table</param>
     public TableValueConstructorTable(
         Schema? schema,
         SessionLocal session,
         Column[] columns,
-        Expression[] columnExpressions,
         List<List<Expression>> rows)
     {
         this.schema = schema;
         this.columns = columns;
-        this.columnExpressions = columnExpressions;
         this.rows = rows;
         // The table is used directly when it is a FROM source, so its columns have to know
         // which table they belong to, as the reference's setColumns makes them.
@@ -63,20 +58,14 @@ public sealed class TableValueConstructorTable : VirtualConstructedTable
     /// <inheritdoc/>
     public override ResultInterface GetResult(SessionLocal session)
     {
+        SimpleResult result = new();
         int columnCount = columns.Length;
-        LocalResult result = new(session, columnExpressions, columnCount, columnCount);
-        for (int r = 0; r < rows.Count; r++)
+        for (int i = 0; i < columnCount; i++)
         {
-            List<Expression> row = rows[r];
-            Value?[] values = new Value?[columnCount];
-            for (int i = 0; i < columnCount; i++)
-            {
-                values[i] = row[i].GetValue(session).ConvertToType(columns[i].GetTypeInfo());
-            }
-
-            result.AddRow(values);
+            result.AddColumn(columns[i].GetName(), columns[i].GetTypeInfo());
         }
 
+        Command.Query.TableValueConstructor.GetVisibleResult(session, result, columns, rows);
         return result;
     }
 
