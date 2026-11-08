@@ -11819,3 +11819,26 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   зелёный впервые за много спринтов.
 * Проверено: H2Sharp.Tests 2098/2098, Data 719, MvStore 152, Engine 9,
   Native 97 (+8 skipped).
+
+### Спринт 54: покрытие — Database.Settings и CacheLRU (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%. Пост-замер не снимался.
+
+* `DatabaseSettingsCoverageTests` (новый) — прямой порт-тест поверхности
+  Database.Settings: добавление и дубликат, переименование (отказ
+  `RENAME`), удаление, неверный lock mode (22003), `SetMode` с тем же
+  режимом (no-op), `GetAllSettings`, геттеры/сеттеры (max operation memory,
+  query statistics, alias override, java serializer, write delay, lock mode,
+  default table type, cluster), `SetEventListenerClass(null)` и с именем
+  класса (D-044, 90099), `IsInExclusiveMode`, `UnsetExclusiveSession`.
+  Покрыто 27 из 43 непокрытых строк файла (остальные — тела, которые
+  выполняются только при Rename, не поддерживаемом для Setting).
+* `UtilCoverageTests.CacheLruEdgePaths` (новый) — прямые пути CacheLRU:
+  повторный `Put` той же позиции (InternalError), `Update` с новой записью,
+  `Update` с тем же экземпляром на LRU (move to front), `GetAllChanged` со
+  changed-записью, `Remove` несуществующей позиции. Покрыто 18 из 45
+  непокрытых строк (остальные — защитные `throw InternalError` на
+  повреждённом состоянии, недостижимые без коррупции).
+* Проверено: H2Sharp.Tests 2100/2100 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).

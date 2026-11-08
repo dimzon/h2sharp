@@ -5,7 +5,10 @@
  * Direct unit coverage for utility classes: SmallMap, CacheTQ, PropertiesFile,
  * DateTimeTemplate.
  */
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using H2Sharp.Message;
 using H2Sharp.Util;
 using Xunit;
 
@@ -63,6 +66,50 @@ public sealed class UtilCoverageTests
     }
 
     [Fact]
+    public void CacheLruEdgePaths()
+    {
+        var writer = new TracedCacheWriter();
+        Cache cache = CacheLRU.GetCache(writer, "LRU", 1000);
+
+        // Put twice: the second refuses instead of overwriting.
+        CacheObj a = new(1) { Memory = 64 };
+        cache.Put(a);
+        Assert.Throws<Exception>(() => cache.Put(new CacheObj(1) { Memory = 64 }));
+
+        // Update with a record that is not in the cache: the old one is null, so it is put.
+        CacheObj fresh = new(2) { Memory = 64 };
+        Assert.Null(cache.Update(2, fresh));
+
+        // Update with the same instance on an LRU cache moves it to the front.
+        _ = cache.Update(1, a);
+
+        // GetAllChanged collects the changed records.
+        CacheObj changed = new(3) { Memory = 64 };
+        changed.SetChanged(true);
+        cache.Put(changed);
+        Assert.Contains(changed, cache.GetAllChanged());
+
+        // Removing a position that is not there answers false.
+        Assert.False(cache.Remove(9999));
+        Assert.False(cache.Remove(10000));
+
+        // An unremovable record blocks eviction: the removable ones are written back and
+        // dropped, the scan reorders the stuck one, the writer's log is flushed once, and
+        // the cache gives up, keeping the record. Needs more records than CacheMinRecords
+        // (16) and a cache too small to hold them all.
+        var smallWriter = new TracedCacheWriter();
+        Cache stuck = CacheLRU.GetCache(smallWriter, "LRU", 4);
+        CacheObj pinned = new(1) { Memory = 100, Removable = false };
+        stuck.Put(pinned);
+        for (int i = 2; i <= 20; i++)
+        {
+            stuck.Put(new CacheObj(i) { Memory = 100, Removable = true });
+        }
+
+        stuck.Put(new CacheObj(21) { Memory = 100, Removable = true });
+    }
+
+    [Fact]
     public void PropertiesFileLoadsJavaAndPlainContent()
     {
         const string java = "# comment\nname=value\nwith.dots = spaced\n";
@@ -103,12 +150,46 @@ public sealed class UtilCoverageTests
         public Message.Trace GetTrace() => null!;
     }
 
+    private sealed class TracedCacheWriter : CacheWriter
+    {
+        public void WriteBack(CacheObject entry)
+        {
+        }
+
+        public void FlushLog()
+        {
+        }
+
+        public Message.Trace GetTrace() => new(new NullTraceWriter(), "cache");
+    }
+
+    private sealed class NullTraceWriter : Message.TraceWriter
+    {
+        public void SetName(string n)
+        {
+        }
+
+        public void Write(int level, string module, string s, Exception? t)
+        {
+        }
+
+        public void Write(int level, int moduleId, string s, Exception? t)
+        {
+        }
+
+        public bool IsEnabled(int level) => false;
+    }
+
     private sealed class CacheObj : CacheObject
     {
         internal CacheObj(int pos) => SetPos(pos);
 
-        public override int GetMemory() => 64;
+        public int Memory { get; set; } = 64;
 
-        public override bool CanRemove() => true;
+        public bool Removable { get; set; } = true;
+
+        public override int GetMemory() => Memory;
+
+        public override bool CanRemove() => Removable;
     }
 }
