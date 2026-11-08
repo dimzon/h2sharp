@@ -2,14 +2,14 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * Syntax refusals that the reference answers with 42001 and the port with 42000: the
- * expected-token list of the port does not survive the dispatch chains it collects on (see
- * MIGRATION_STATUS). Both sides refuse these forms; the semantic agreement ends at the error
- * code, so the refusals are pinned here instead of under the Java oracle.
+ * Aggregate and function syntax refusals. The port answers them with the reference's 42001
+ * once the term reader stops consuming a reserved keyword before it refuses it (see
+ * MIGRATION_STATUS, sprint 52); the refusals are also compared with the jar below.
  */
 using System;
 using H2Sharp.Data;
 using H2Sharp.Engine;
+using H2Sharp.Tests.Oracle;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -64,7 +64,29 @@ public sealed class AggregateSyntaxRefusalTests
 }
 
 /// <summary>
-/// The same 42001/42000 class: an unknown aggregate function refuses on both sides.
+/// The same refusals against the reference: the codes are 42001, and an unknown aggregate is
+/// 90022 on both sides.
+/// </summary>
+[Collection(OracleCollection.Name)]
+public sealed class AggregateSyntaxRefusalOracleTests
+{
+    [JavaOracleFact]
+    public void TheRefusalCodesAnswerTheReference()
+    {
+        FreshIssuesOracleTests.Compare([
+            "SELECT HISTOGRAM(DISTINCT X) FROM (VALUES (0)) T(X)",
+            "SELECT HISTOGRAM(ALL X) FROM (VALUES (0)) T(X)",
+            "SELECT MODE(DISTINCT V) FROM (VALUES (1)) T(V)",
+            "SELECT GCD(12)",
+            "SELECT GCD()",
+            "SELECT NOT_AN_AGGREGATE(ID) FROM (VALUES (1)) T(ID)",
+            "SET A[1] = DEFAULT",
+        ]);
+    }
+}
+
+/// <summary>
+/// The same class: an unknown aggregate function refuses on both sides.
 /// </summary>
 public sealed class UnknownAggregateRefusalTests
 {

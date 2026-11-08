@@ -851,7 +851,6 @@ public sealed partial class Parser
         {
             position = statementStart;
             expectedList = [];
-            Console.Error.WriteLine("second pass: pos=" + position + " current=" + Current.AsIdentifier);
             prepared = ParseOneStatementInner();
         }
 
@@ -6015,11 +6014,6 @@ public sealed partial class Parser
     // H2 readConcat: concatenation binds less tightly than arithmetic.
     private Expressions.Expression ReadQueryConcat(Query.Select? aggregateSelect = null)
     {
-        if (sql.Contains("A[1]") && Current.AsIdentifier == "DEFAULT")
-        {
-            Console.Error.WriteLine("ReadQueryConcat at DEFAULT");
-        }
-
         Expression op1 = ReadQuerySum(aggregateSelect);
         while (true)
         {
@@ -6129,11 +6123,6 @@ public sealed partial class Parser
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     private Expressions.Expression ReadQueryComparison(Query.Select? aggregateSelect = null)
     {
-        if (sql.Contains("A[1]") && Current.AsIdentifier == "DEFAULT")
-        {
-            Console.Error.WriteLine("ReadQueryComparison at DEFAULT");
-        }
-
         // NOT belongs to the condition level, as in the reference: "NOT x = y" negates the
         // whole comparison, not just the operand before it.
         if (CurrentType == ParserUtil.Not)
@@ -6812,36 +6801,44 @@ public sealed partial class Parser
 
         if (Current.AsIdentifier is not null)
         {
-            int index = position;
-            string? name = Current.AsIdentifier;
-            if (name is not null
-                && (name.Equals("NEXT", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("CURRENT", StringComparison.OrdinalIgnoreCase)))
+            // The reference's readTermWithIdentifier runs only for identifier tokens: the
+            // sequence names and the typed literals are names there, while a reserved keyword
+            // (DISTINCT, ALL, ...) falls through to the default that refuses it. Reading the
+            // keyword first would consume it and clear the expected-token list the refusal
+            // must name, which is the difference between 42001 and 42000.
+            if (Current.IsIdentifier)
             {
-                // The reference reads the value of a sequence in its term reader: NEXT VALUE
-                // FOR takes the next value of the sequence, CURRENT VALUE FOR the one it
-                // handed out last in this session.
-                bool current = name.Equals("CURRENT", StringComparison.OrdinalIgnoreCase);
-                Read();
-                if (IsWord("VALUE") && IsWord("FOR"))
+                int index = position;
+                string? name = Current.AsIdentifier;
+                if (name is not null
+                    && (name.Equals("NEXT", StringComparison.OrdinalIgnoreCase)
+                        || name.Equals("CURRENT", StringComparison.OrdinalIgnoreCase)))
                 {
-                    Schemas.Sequence sequence = ReadSequence(
-                        session ?? throw new TODOException(
-                            "Parser.readTerm: this parser has no session"));
-                    return current
-                        ? new Expressions.SequenceValue(sequence)
-                        : new Expressions.SequenceValue(sequence, null);
+                    // The reference reads the value of a sequence in its term reader: NEXT VALUE
+                    // FOR takes the next value of the sequence, CURRENT VALUE FOR the one it
+                    // handed out last in this session.
+                    bool current = name.Equals("CURRENT", StringComparison.OrdinalIgnoreCase);
+                    Read();
+                    if (IsWord("VALUE") && IsWord("FOR"))
+                    {
+                        Schemas.Sequence sequence = ReadSequence(
+                            session ?? throw new TODOException(
+                                "Parser.readTerm: this parser has no session"));
+                        return current
+                            ? new Expressions.SequenceValue(sequence)
+                            : new Expressions.SequenceValue(sequence, null);
+                    }
+
+                    position = index;
                 }
 
-                position = index;
-            }
-
-            // The reference reads a literal with a type in front of it in the same place: the
-            // name says the type and the string that follows says the value.
-            Expressions.Expression? typed = ReadTypedLiteral(name!);
-            if (typed is not null)
-            {
-                return typed;
+                // The reference reads a literal with a type in front of it in the same place:
+                // the name says the type and the string that follows says the value.
+                Expressions.Expression? typed = ReadTypedLiteral(name!);
+                if (typed is not null)
+                {
+                    return typed;
+                }
             }
 
             if (tokens[position + 1].TokenType == Token.OpenParen)
@@ -6921,9 +6918,6 @@ public sealed partial class Parser
             // a reserved keyword here refuses with the expected-token list.
             if (!Current.IsIdentifier)
             {
-                Console.Error.WriteLine("term-reader refuse: current=" + Current.AsIdentifier
-                    + " | list=" + (expectedList is null ? "null" : string.Join(",", expectedList))
-                    + " | pos=" + position);
                 throw GetSyntaxError();
             }
 
@@ -9058,31 +9052,12 @@ public sealed partial class Parser
     /// <returns>the exception</returns>
     private H2SharpException GetSyntaxError()
     {
-        H2SharpException e = expectedList is null || expectedList.Count == 0
+        return expectedList is null || expectedList.Count == 0
             ? DbException.GetSyntaxError(sql, Current.Start)
             : DbException.GetSyntaxError(sql, Current.Start, string.Join(", ", expectedList));
-        if (sql.Contains("A[1]"))
-        {
-            Console.Error.WriteLine("GetSyntaxError: list=" + (expectedList is null ? "null" : string.Join(",", expectedList)));
-            foreach (var frame in new System.Diagnostics.StackTrace(e).GetFrames())
-            {
-                var m = frame.GetMethod();
-                Console.Error.WriteLine("  frame: " + m?.DeclaringType?.Name + "." + m?.Name + " IL=" + frame.GetILOffset());
-            }
-        }
-
-        return e;
     }
 
-    private void AddExpected(string token)
-    {
-        if (sql.Contains("A[1]") && expectedList is not null)
-        {
-            Console.Error.WriteLine("AddExpected(" + token + ") list-before=" + expectedList.Count);
-        }
-
-        expectedList?.Add(token);
-    }
+    private void AddExpected(string token) => expectedList?.Add(token);
 
     private void AddExpected(int tokenType)
     {
