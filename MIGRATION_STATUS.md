@@ -11969,3 +11969,16 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   без trim-set).
 * Проверено: H2Sharp.Tests 2115/2115 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 65: покрытие — Command (2026-11-09)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `CommandCoverageTests` (новый): trace-gated `Start` (уровень INFO),
+  slow-query log (backdate `StartTimeNanos` на 200 мс), `CheckCanceled` после
+  `Cancel()` → 57014, non-transactional commit path (CREATE TABLE с
+  auto-commit off).
+* `TypeAndTrimOracleTests`: добавлены EXPLAIN-формы TRIM (select list и WHERE).
+* Проверено: H2Sharp.Tests 2115/2115 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).

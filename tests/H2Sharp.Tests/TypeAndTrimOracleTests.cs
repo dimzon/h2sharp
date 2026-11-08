@@ -63,6 +63,19 @@ public sealed class TypeAndTrimOracleTests
             "SELECT TRIM(LEADING FROM '  x')",
             "SELECT TRIM('')",
             "SELECT TRIM(NULL)",
+            "EXPLAIN SELECT TRIM('  x  ')",
+            "EXPLAIN SELECT LTRIM('  x')",
+            "EXPLAIN SELECT RTRIM('x  ')",
+            "EXPLAIN SELECT BTRIM('  x  ')",
+            "EXPLAIN SELECT TRIM(BOTH 'x' FROM 'xxaxx')",
+            "EXPLAIN SELECT TRIM(LEADING 'x' FROM 'xxaxx')",
+            "EXPLAIN SELECT TRIM(TRAILING 'x' FROM 'xxaxx')",
+            "EXPLAIN SELECT TRIM(TRAILING 'xy' FROM 'xxyayx')",
+            "EXPLAIN SELECT TRIM(LEADING 'xy' FROM 'xyxaxy')",
+            "EXPLAIN SELECT TRIM(LEADING FROM '  x')",
+            "EXPLAIN SELECT ID FROM (VALUES (1)) T(ID) WHERE TRIM(BOTH 'x' FROM 'xxaxx') = 'a'",
+            "EXPLAIN SELECT ID FROM (VALUES (1)) T(ID) WHERE TRIM(LEADING 'xy' FROM 'xyxaxy') = 'a'",
+            "EXPLAIN SELECT ID FROM (VALUES (1)) T(ID) WHERE TRIM(TRAILING 'xy' FROM 'xxyayx') = 'a'",
         ];
         RunBoth(statements);
     }
