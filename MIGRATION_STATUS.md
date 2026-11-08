@@ -11517,3 +11517,35 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   неправильный порядок NOT. Все инструкции совпадают с JVM.
 * Проверено: H2Sharp.Tests 2078/2079 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
+
+### Отложенные находки, ранее не записанные (2026-11-07)
+
+Три пункта из старого плана спринтов, которые всплыли в ходе работы, но не
+были оформлены в этом файле (упоминались только в резюме сессии). Фиксируются
+здесь, чтобы не потерялись:
+
+* **VALUES с ORDER BY (`TableValueConstructor`)** — эталон принимает
+  `VALUES (1), (2) ORDER BY ...`; порт в `TableValueConstructor` не перенёс
+  `InitOrder` (вызывается с неверными аргументами) и отбрасывает скрытые
+  колонки. Матрица `ValuesFormsOracleTests` помечена `BlockedByPort`
+  (строка 44). Отдельный движковой спринт.
+* **Дельта-таблицы (`DataChangeDeltaTable`)** — `SetForDataChangeDeltaTable`
+  не имеет вызовов; строки 483-485 `LocalResult` недостижимы в замерах.
+  FINAL/OLD TABLE над DML (dml/with.sql, строки 32-34) ждут этого
+  механизма; тест `WithCteBlockedPortTests` содержит одну такую инструкцию.
+* **`enum[]` → VARBINARY** в `H2ValueMapper.ToValue`: массив enum с базовым
+  byte (например, `Color[]`) отвечает VARBINARY вместо ARRAY, потому что
+  CLR-совместимость массивов делает `Color[]` приводимым к `byte[]`, и ветка
+  `byte[] bytes => ValueVarbinary.Get(bytes)` перехватывает его раньше
+  `IEnumerable`. Согласовано с пользователем как .NET-идиома (бинарные
+  данные), поведение закреплено тестами `ValueMapperClrSurfaceTests`.
+* **`Prepared.CheckCanceled` — пустая заглушка**: эталон встаёт в проверку
+  каждые 128 строк (`SetCurrentRowNumber`); порт не вызывает. ADO-отмена
+  работает через `Session.Cancel` → `TableFilter.CheckTimeout`, командный путь
+  (JDBC `Statement.cancel`) — нет. Записано в спринте 31 (строка 11341).
+* **`missedSource` flush в `MergeUsing` (116-128)**: не достигается из-за
+  переиспользования Row-объектов фильтром. Записано в спринте 27
+  (строка 11231).
+* **expectedList полное выравнивание (42000 vs 42001)**: требует
+  switch-формы диспетчера `parsePrepared` вместо цепочек `IsWord`.
+  Записано в спринте 21 (строка 11046).
