@@ -11885,3 +11885,16 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   61-83); `TheRowCountApproximationAnswers` — `GetRowCountApproximation`.
 * Проверено: H2Sharp.Tests 2104/2104 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 58: покрытие — MemoryFilePath (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `MemoryFilePathCoverageTests` (новый): удаление корня (no-op), `MoveTo` несуществующего
+  файла (создание), двойной `TryLock` (второй false), отрицательный `SetLength`,
+  рост файла, `Stream`-представление, чтение за концом (0). Строки 386 (`Pin`) и
+  390-391 (`Unpin`) недостижимы снаружи — методы принадлежат вложенному
+  `NativeGrowBuffer`.
+* Проверено: H2Sharp.Tests 2105/2105 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
