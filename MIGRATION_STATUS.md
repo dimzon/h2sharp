@@ -11854,3 +11854,22 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   `TryLock`/`ReleaseLock` на первой части.
 * Проверено: H2Sharp.Tests 2101/2101 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 56: покрытие — Database.Settings, CacheLRU, RowDataType (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `DatabaseSettingsCoverageTests` (новый) — прямой порт-тест поверхности
+  Database.Settings: добавление и дубликат, переименование (отказ RENAME),
+  удаление, неверный lock mode (22003), `SetMode` с тем же режимом (no-op),
+  `GetAllSettings`, геттеры/сеттеры, `SetEventListenerClass(null)` и с именем
+  класса (D-044, 90099), `IsInExclusiveMode`, `UnsetExclusiveSession`.
+* `UtilCoverageTests.CacheLruEdgePaths` (расширение) — прямые пути CacheLRU:
+  повторный `Put` той же позиции, `Update` с новой записью, `Update` с тем же
+  экземпляром на LRU (move to front), `GetAllChanged` со changed-записью,
+  `Remove` несуществующей позиции.
+* `RowDataTypeCoverageTests` (новый) — RowDataType: геттеры, сравнение с null,
+  равенство (одинаковый/разный тип/разные колонки/разные индексы), GetHashCode.
+* Проверено: H2Sharp.Tests 2102/2102 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
