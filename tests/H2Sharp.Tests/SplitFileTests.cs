@@ -330,4 +330,31 @@ public sealed class SplitFileTests : IDisposable
         FilePath path = FilePath.Get(Split("odd.mv.db"));
         Assert.ThrowsAny<IOException>(() => path.Open("rw").Dispose());
     }
+
+    [Fact]
+    public void SparseWritesAndLocksAndStreamsAreSupported()
+    {
+        using FileChannel channel = FileUtils.Open(Split("gap.bin"), "rw");
+
+        // A negative offset refuses.
+        Assert.Throws<ArgumentOutOfRangeException>(() => channel.ReadAt(-1, new byte[4]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => channel.WriteAt(-1, new byte[4]));
+
+        // A write far past the end creates the gap parts.
+        byte[] payload = [1, 2, 3, 4];
+        channel.WriteAt(PartLength * 3 + 10, payload);
+        Assert.True(channel.Length >= PartLength * 3 + 14);
+        byte[] back = new byte[payload.Length];
+        Assert.Equal(payload.Length, channel.ReadAt(PartLength * 3 + 10, back));
+        Assert.Equal(payload, back);
+
+        // The stream view reads and writes through the channel.
+        using Stream stream = channel.Stream;
+        stream.Position = PartLength * 3 + 10;
+        Assert.Equal(1, stream.ReadByte());
+
+        // Locking is taken and released on the first part.
+        Assert.True(channel.TryLock());
+        channel.ReleaseLock();
+    }
 }

@@ -11842,3 +11842,15 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   повреждённом состоянии, недостижимые без коррупции).
 * Проверено: H2Sharp.Tests 2100/2100 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 55: покрытие — SplitFileChannel (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `SplitFileTests.SparseWritesAndLocksAndStreamsAreSupported` (новый):
+  отрицательный offset в `ReadAt`/`WriteAt` (22003), запись далеко за конец
+  с созданием gap-частей и чтение её обратно, `Stream`-представление,
+  `TryLock`/`ReleaseLock` на первой части.
+* Проверено: H2Sharp.Tests 2101/2101 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
