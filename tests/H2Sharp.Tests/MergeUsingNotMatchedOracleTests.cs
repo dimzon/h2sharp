@@ -60,6 +60,30 @@ public sealed class MergeUsingNotMatchedOracleTests
     }
 
     /// <summary>
+    /// Two source rows for one target row where the first deletes it: the second source row
+    /// matches nothing on the recheck and must be inserted, not dropped. This is the
+    /// missed-source flush of the reference's MergeUsing.update.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheDuplicateSourceRowsAfterDeleteAnswerTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE T(ID INT PRIMARY KEY, V INT)",
+            "INSERT INTO T VALUES (1, 10)",
+            "CREATE TABLE S(ID INT, V INT)",
+            "INSERT INTO S VALUES (1, 100), (1, 200), (2, 300)",
+            "MERGE INTO T USING S ON T.ID = S.ID "
+                + "WHEN MATCHED THEN DELETE "
+                + "WHEN NOT MATCHED THEN INSERT (ID, V) VALUES (S.ID, S.V)",
+            "SELECT ID, V FROM T ORDER BY ID",
+            "DROP TABLE S",
+            "DROP TABLE T",
+        ];
+        RunBoth(statements);
+    }
+
+    /// <summary>
     /// Runs the statements on both sides and asserts the same answers: the rows, or the code
     /// of the error.
     /// </summary>
