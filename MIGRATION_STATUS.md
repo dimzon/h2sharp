@@ -11873,3 +11873,15 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   равенство (одинаковый/разный тип/разные колонки/разные индексы), GetHashCode.
 * Проверено: H2Sharp.Tests 2102/2102 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 57: покрытие — MVSpatialIndex (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `SpatialIndexDirectTests` расширен двумя фактами:
+  `TheUnsupportedConfigurationsAreRefused` — CREATE SPATIAL INDEX с несколькими
+  колонками, DESC, NULLS FIRST/LAST, на не-геометрической колонке (линии
+  61-83); `TheRowCountApproximationAnswers` — `GetRowCountApproximation`.
+* Проверено: H2Sharp.Tests 2104/2104 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).

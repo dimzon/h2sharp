@@ -160,6 +160,28 @@ public sealed class SpatialIndexDirectTests
         _ = container.ExecuteUpdate(false);
     }
 
+    [Fact]
+    public void TheUnsupportedConfigurationsAreRefused()
+    {
+        Execute("CREATE TABLE BAD(ID INT PRIMARY KEY, G GEOMETRY, H GEOMETRY)");
+        Assert.Throws<H2SharpException>(
+            () => Execute("CREATE SPATIAL INDEX IDX_BAD ON BAD(G, H)"));
+        Assert.Throws<H2SharpException>(
+            () => Execute("CREATE SPATIAL INDEX IDX_DESC ON G(THE_GEOM DESC)"));
+        Assert.Throws<H2SharpException>(
+            () => Execute("CREATE SPATIAL INDEX IDX_NF ON G(THE_GEOM NULLS FIRST)"));
+        Assert.Throws<H2SharpException>(
+            () => Execute("CREATE SPATIAL INDEX IDX_NL ON G(THE_GEOM NULLS LAST)"));
+        Assert.Throws<H2SharpException>(
+            () => Execute("CREATE SPATIAL INDEX IDX_NG ON G(ID)"));
+    }
+
+    [Fact]
+    public void TheRowCountApproximationAnswers()
+    {
+        Assert.True(index.GetRowCountApproximation(session) >= 2L);
+    }
+
     private void Execute(string sql)
     {
         CommandContainer container = Assert.IsType<CommandContainer>(session.PrepareCommand(sql));
