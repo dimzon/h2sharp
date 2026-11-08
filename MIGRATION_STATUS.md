@@ -11507,3 +11507,13 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   Портирован 1:1: referencingDomains + known + цикл. Иначе скрипт не воспроизводился.
 * Проверено: H2Sharp.Tests 2077/2078 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
+
+### Спринт 42: зеркало dml/error_reporting.sql (2026-11-07)
+
+Замер (Debug, пять сюит): строки 76738/85435 = 89.82%, ветви 31393/36698 = 85.54%.
+
+* `ErrorReportingOracleTests` (новый) — эталонный dml/error_reporting.sql: malformed
+  hex-литералы, неправильные предикаты, row-value сравнения, NOT без операнда,
+  неправильный порядок NOT. Все инструкции совпадают с JVM.
+* Проверено: H2Sharp.Tests 2078/2079 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
