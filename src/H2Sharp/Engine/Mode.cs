@@ -258,6 +258,19 @@ public sealed class Mode
     public bool UpdateSequenceOnManualIdentityInsertion { get; }
 
     /// <summary>
+    /// Whether an insert takes the identity of the inserted row as the session's last
+    /// identity, as the reference's <c>takeInsertedIdentity</c> says for Legacy, DB2, Derby,
+    /// SQL Server, MariaDB and MySQL.
+    /// </summary>
+    public bool TakeInsertedIdentity { get; }
+
+    /// <summary>
+    /// Whether generating a sequence value takes it as the session's last identity, as the
+    /// reference's <c>takeGeneratedSequenceValue</c> says for PostgreSQL.
+    /// </summary>
+    public bool TakeGeneratedSequenceValue { get; }
+
+    /// <summary>
     /// Whether a numeric value and a BOOLEAN may be compared with EQUAL / NOT EQUAL, as the
     /// reference allows in Legacy, DB2, HSQLDB, SQL Server, MariaDB and MySQL.
     /// </summary>
@@ -339,6 +352,8 @@ public sealed class Mode
         bool onDuplicateKeyUpdate = false,
         bool replaceInto = false,
         bool updateSequenceOnManualIdentityInsertion = false,
+        bool takeInsertedIdentity = false,
+        bool takeGeneratedSequenceValue = false,
         bool numericWithBooleanComparison = false,
         bool decimalSequences = false,
         bool groupByColumnIndex = false,
@@ -379,6 +394,8 @@ public sealed class Mode
         OnDuplicateKeyUpdate = onDuplicateKeyUpdate;
         ReplaceInto = replaceInto;
         UpdateSequenceOnManualIdentityInsertion = updateSequenceOnManualIdentityInsertion;
+        TakeInsertedIdentity = takeInsertedIdentity;
+        TakeGeneratedSequenceValue = takeGeneratedSequenceValue;
         NumericWithBooleanComparison = numericWithBooleanComparison;
         DecimalSequences = decimalSequences;
         GroupByColumnIndex = groupByColumnIndex;
@@ -442,27 +459,31 @@ public sealed class Mode
                 greatestLeastIgnoreNulls: true, mergeWhere: true, topInSelect: true, topInDml: true,
                 identityDataType: true, serialDataTypes: true, autoIncrementClause: true,
                 identityClause: true, allowEmptyInPredicate: true, numericWithBooleanComparison: true,
-                updateSequenceOnManualIdentityInsertion: true),
+                updateSequenceOnManualIdentityInsertion: true, takeInsertedIdentity: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true,
-                numericWithBooleanComparison: true, sysDummy1: true),
-            ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false, sysDummy1: true),
+                numericWithBooleanComparison: true, sysDummy1: true, takeInsertedIdentity: true),
+            ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false, sysDummy1: true,
+                takeInsertedIdentity: true),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true,
                 allowPlusForStringConcat: true, topInSelect: true, numericWithBooleanComparison: true),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
                 greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true,
                 allowPlusForStringConcat: true, topInSelect: true, topInDml: true,
                 identityClause: true, allowEmptySchemaValuesAsDefaultSchema: true,
-                discardWithTableHints: true, numericWithBooleanComparison: true),
+                discardWithTableHints: true, numericWithBooleanComparison: true,
+                takeInsertedIdentity: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
                 replaceInto: true, autoIncrementClause: true, alterTableModifyColumn: true,
-                numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true),
+                numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true,
+                takeInsertedIdentity: true),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
                 replaceInto: true, autoIncrementClause: true, alterTableModifyColumn: true,
-                numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true),
+                numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true,
+                takeInsertedIdentity: true),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, charAndByteLengthUnits: true,
@@ -471,6 +492,7 @@ public sealed class Mode
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
                 logIsLogBase10: true, groupByColumnIndex: true, serialDataTypes: true,
+                takeGeneratedSequenceValue: true,
                 disallowedTypes: new HashSet<string>(StringComparer.Ordinal)
                 {
                     "NUMBER", "TINYINT", "BLOB", "VARCHAR_IGNORECASE",

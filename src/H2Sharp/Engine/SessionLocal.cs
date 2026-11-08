@@ -169,6 +169,10 @@ public sealed class SessionLocal : Session
     /// </summary>
     private readonly Dictionary<H2Sharp.Schemas.Sequence, Value> currentValueFor = [];
 
+    // The reference's lastIdentity: the identity an insert or a sequence value left in this
+    // session, read by the compatibility-mode functions (LAST_INSERT_ID and friends).
+    private Value lastIdentity = ValueNull.Instance;
+
     private Random? random;
 
     /// <summary>
@@ -1320,8 +1324,25 @@ public sealed class SessionLocal : Session
         _ = prepared;
         Value value = sequence.GetNext(this);
         currentValueFor[sequence] = value;
+        if (GetMode().TakeGeneratedSequenceValue)
+        {
+            lastIdentity = value;
+        }
+
         return value;
     }
+
+    /// <summary>
+    /// Sets the identity this session saw last, as the reference's setLastIdentity.
+    /// </summary>
+    /// <param name="last">the identity value</param>
+    public void SetLastIdentity(Value last) => lastIdentity = last;
+
+    /// <summary>
+    /// Gets the identity this session saw last, as the reference's getLastIdentity.
+    /// </summary>
+    /// <returns>the identity value, or NULL when there is none</returns>
+    public Value GetLastIdentity() => lastIdentity;
 
     /// <summary>
     /// The value a sequence handed out last in this session.

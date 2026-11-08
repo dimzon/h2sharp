@@ -1991,6 +1991,24 @@ public abstract class Table
     public abstract Column[] GetColumns();
 
     /// <summary>
+    /// Gets the identity column, or null when the table has none, as the reference's
+    /// getIdentityColumn.
+    /// </summary>
+    /// <returns>the identity column, or null</returns>
+    public Column? GetIdentityColumn()
+    {
+        foreach (Column column in GetColumns())
+        {
+            if (column.IsIdentity())
+            {
+                return column;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Gets the column with the given name.
     /// </summary>
     /// <remarks>

@@ -107,8 +107,18 @@ public sealed class DataChangeDeltaTable : VirtualConstructedTable
         ResultOption? deltaChangeCollectionMode,
         Row newRow)
     {
-        _ = session;
-        _ = table;
+        // Reference collectInsertedFinalRow: the modes that take the inserted identity make
+        // the row's identity column the session's last identity.
+        if (session.GetMode().TakeInsertedIdentity)
+        {
+            Column? identity = table.GetIdentityColumn();
+            if (identity is not null)
+            {
+                session.SetLastIdentity(
+                    newRow.GetValue(identity.GetColumnId()) ?? ValueNull.Instance);
+            }
+        }
+
         if (deltaChangeCollectionMode == ResultOption.FINAL)
         {
             deltaChangeCollector?.AddRow(newRow.GetValueList());

@@ -11634,6 +11634,7 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   опциях, REPLACE в MySQL-режиме (OLD/NEW/FINAL). Семь фактов, построчно с jar.
 * Остаток: `CollectForInsert` с `takeInsertedIdentity` — нужен session
   last-identity, которого в порте нет (отдельная фича `LAST_INSERT_ID`).
+  Закрыто в спринте 50 (само состояние; SQL-функции — отдельная фича).
   Полная матрица эталонного `other/data-change-delta-table.sql` с триггерами и
   представлениями не зеркалится: триггеры эталона — Java-классы.
 * Проверено: H2Sharp.Tests 2087/2088 (`Category!=BlockedByPort`; один красный —
@@ -11706,3 +11707,28 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
 * Проверено: H2Sharp.Tests 2091/2092 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт). Остальные сюиты не перезапускались:
   изменение только тестовое.
+
+### Спринт 50: session last identity (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `Mode`: добавлены `TakeInsertedIdentity` (Legacy, DB2, Derby, MSSQLServer,
+  MariaDB, MySQL) и `TakeGeneratedSequenceValue` (PostgreSQL) — те же флаги и
+  тот же набор режимов, что в `Mode.java`.
+* `SessionLocal`: `lastIdentity` (Value, по умолчанию NULL),
+  `SetLastIdentity`/`GetLastIdentity`; `GetNextValueFor` кладёт значение в
+  lastIdentity при `TakeGeneratedSequenceValue`.
+* `Table.GetIdentityColumn()` — эталонный `getIdentityColumn`;
+  `DataChangeDeltaTable.CollectForInsert` при `TakeInsertedIdentity` пишет
+  идентичность вставленной строки в сессию.
+* `SessionLastIdentityTests` (5): матрица флагов режимов; INSERT в MySQL
+  ставит identity 1, в Regular остаётся NULL; `NEXT VALUE FOR` в PostgreSQL
+  ставит 7, в Regular — нет.
+* Остаток: SQL-функции, читающие last identity (MySQL `LAST_INSERT_ID`,
+  MSSQL `SCOPE_IDENTITY`/`@@IDENTITY`, PostgreSQL `LASTVAL`, DB2/Derby
+  `IDENTITY_VAL_LOCAL`, Legacy `IDENTITY`), — это непортированный каркас
+  compatibility-mode функций (`FunctionsMySQL` и остальные); отдельная фича.
+* Проверено: H2Sharp.Tests 2096/2097 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
+  Native 97 (+8 skipped).
