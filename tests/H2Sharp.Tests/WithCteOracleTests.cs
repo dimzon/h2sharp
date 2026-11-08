@@ -4,9 +4,9 @@
  *
  * The reference's dml/with.sql, statement by statement: recursive and plain CTEs, the
  * TABLE form, CTEs over DML-free sources, nested CTEs, a CTE in a subquery and in a view,
- * and the refusals (a duplicate CTE name, a CTE the query never defined). The EXPLAIN forms,
- * the four statements the port answers differently (WithCteBlockedPortTests) and the
- * in-script SET MODE block are left out; the mode is fixed at the open (D-029).
+ * and the refusals (a duplicate CTE name, a CTE the query never defined). The EXPLAIN forms
+ * and the in-script SET MODE block are left out; the mode is fixed at the open (D-029).
+ * The tail forms live in WithCteEdgeOracleTests.
  */
 using System;
 using System.Collections.Generic;

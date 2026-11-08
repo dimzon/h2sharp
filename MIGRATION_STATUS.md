@@ -11636,3 +11636,30 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
 * Проверено: H2Sharp.Tests 2087/2088 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
   Native 97 (+8 skipped).
+
+### Спринт 47: CTE scoping и нуль-колоночный CTE (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* Парсер: плоский словарь `ctes` заменён цепочкой `QueryScope` (родитель +
+  `OrderedStringMap`), как `queryScope` эталона. `ParseQueryExpression`
+  открывает scope на каждый WITH, прикрепляет к запросу только CTE этого
+  clause (`SetWithClause`), ставит `SetNeverLazy(true)` и восстанавливает
+  внешний scope; `ReadWith` стал `ReadSingleCommonTableExpression`
+  (`isPotentiallyRecursive`); поиск имени идёт по цепочке (`GetWithSubquery`).
+  Добавлен `parsingRecursiveWithList`: вложенный `RECURSIVE` внутри тела
+  другого CTE не читается как ключевое слово и отказывает 42001, как эталон.
+  Пустой список колонок CTE (`"A"() AS (...)`) теперь допустим — план SQL
+  нуль-колоночного CTE именно так и выглядит, и вид из него компилируется.
+* Результат: `WithCteBlockedPortTests` снят с `BlockedByPort`, переименован в
+  `WithCteEdgeOracleTests` и отвечает эталону целиком: вложенное затенение
+  (`1:2`), отказ вложенного RECURSIVE (`42001`), `TABLE V` над нуль-колоночным
+  CTE (одна пустая строка), `FINAL TABLE` (21002).
+* Остаток: `Query.setOuterQueryScope`/`CTE.getQueryScope` не перенесены;
+  повторная подготовка тела CTE из его plan SQL (`RegularQueryExpressionIndex`)
+  идёт без query scope, поэтому CTE, ссылающийся на CTE соседнего/внешнего
+  WITH при перекомпиляции, может не найти имя. Отдельная находка.
+* Проверено: H2Sharp.Tests 2088/2089 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
+  Native 97 (+8 skipped).

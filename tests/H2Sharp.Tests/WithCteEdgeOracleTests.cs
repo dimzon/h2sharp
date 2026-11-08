@@ -2,14 +2,9 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * The dml/with.sql forms the port answers differently from the reference, kept red on
- * purpose (the BlockedByPort list is the defect list, see MIGRATION_STATUS):
- * a nested CTE must shadow the outer name only inside its own body (the port's flat
- * cte dictionary leaks it out, so the outer query loses its column: 42101 instead of
- * the row), a RECURSIVE CTE nested in another CTE body is refused by the reference with
- * 42001 (the port answers 42101), a view over a zero-column CTE answers TABLE V with one
- * empty row in the reference and VIEW_IS_INVALID_2 here, and FINAL TABLE over INSERT is
- * refused by the reference with 21002 where the port answers 42001.
+ * The tail of dml/with.sql: a nested CTE shadows the outer name only inside its own body,
+ * a RECURSIVE CTE nested in another CTE body is a syntax error, a view over a zero-column
+ * CTE answers one empty row, and FINAL TABLE over INSERT is refused with 21002.
  */
 using System;
 using System.Collections.Generic;
@@ -25,11 +20,10 @@ using Xunit;
 namespace H2Sharp.Tests;
 
 [Collection(OracleCollection.Name)]
-[Trait("Category", "BlockedByPort")]
-public sealed class WithCteBlockedPortTests
+public sealed class WithCteEdgeOracleTests
 {
     [JavaOracleFact]
-    public void WithFormsThePortStillAnswersDifferently()
+    public void WithEdgeFormsAnswerTheReference()
     {
         string[] statements =
         [
@@ -41,7 +35,7 @@ public sealed class WithCteBlockedPortTests
             // A view over a zero-column CTE answers one empty row.
             "CREATE VIEW V AS WITH A AS (SELECT) TABLE A",
             "TABLE V",
-            // FINAL TABLE over DML waits for the delta change tables.
+            // Two single-column rows into a two-column table: the column count does not match.
             "WITH W AS (SELECT NULL FROM FINAL TABLE (INSERT INTO TEST VALUES 1, 2)) SELECT COUNT (*) FROM W",
             "DROP TABLE TEST",
             "DROP VIEW V",

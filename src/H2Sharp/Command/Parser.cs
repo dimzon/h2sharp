@@ -499,9 +499,31 @@ public sealed partial class Parser
     private bool parseDomainConstraint;
 
     /// <summary>
-    /// The common table expressions this statement names, by name.
+    /// The common table expressions of the WITH clause being read, as the reference's
+    /// <c>queryScope</c> chain: a nested WITH shadows an outer name only inside its own body.
     /// </summary>
-    private readonly Dictionary<string, Tables.Table> ctes = [];
+    private QueryScope? queryScope;
+
+    /// <summary>
+    /// Whether the WITH list being read is RECURSIVE, as the reference's
+    /// <c>parsingRecursiveWithList</c>: a RECURSIVE keyword nested in another CTE body is not
+    /// a keyword there and the reference refuses it as a syntax error.
+    /// </summary>
+    private bool parsingRecursiveWithList;
+
+    /// <summary>
+    /// One level of common table expression names, with the scope it is nested in.
+    /// </summary>
+    private sealed class QueryScope
+    {
+        internal QueryScope(QueryScope? parent) => Parent = parent;
+
+        /// <summary>The scope this one is nested in, or null.</summary>
+        internal QueryScope? Parent { get; }
+
+        /// <summary>The tables this WITH clause names, in the order they were read.</summary>
+        internal Util.OrderedStringMap<Tables.Table> TableSubqueries { get; } = new();
+    }
 
     private Parser(string sql, CastDataProvider provider, List<Token> tokens, SessionLocal? session)
     {
@@ -2039,24 +2061,49 @@ public sealed partial class Parser
 
     private Query.Query ParseQueryExpression(bool prepare = true)
     {
-        bool hasWith = IsWord("WITH", consume: false);
-        if (hasWith)
+        // Reference parseQueryExpression: a WITH clause opens a query scope of its own, so a
+        // nested WITH shadows an outer name only inside its body, and the names of this
+        // clause are attached to this query alone.
+        QueryScope? outerQueryScope = queryScope;
+        Query.Query query;
+        if (IsWord("WITH", consume: false))
         {
-            ReadWith();
-        }
-
-        Query.Query query = ParseQueryExpressionBody();
-        if (hasWith)
-        {
-            // The reference attaches the WITH's tables to the query: the plan prints them, and
-            // a view compiled from the plan keeps its common table expressions re-parseable.
-            Util.OrderedStringMap<Tables.Table> withClause = new();
-            foreach (KeyValuePair<string, Tables.Table> cte in ctes)
+            Read();
+            bool oldRecursive = parsingRecursiveWithList;
+            bool isPotentiallyRecursive = !oldRecursive && IsWord("RECURSIVE");
+            queryScope = new QueryScope(outerQueryScope);
+            try
             {
-                withClause.Put(cte.Key, cte.Value);
-            }
+                if (isPotentiallyRecursive)
+                {
+                    parsingRecursiveWithList = true;
+                }
 
-            query.SetWithClause(withClause);
+                try
+                {
+                    do
+                    {
+                        ReadSingleCommonTableExpression(isPotentiallyRecursive);
+                    }
+                    while (ReadIf(Token.Comma));
+                }
+                finally
+                {
+                    parsingRecursiveWithList = oldRecursive;
+                }
+
+                query = ParseQueryExpressionBody();
+                query.SetNeverLazy(true);
+                query.SetWithClause(queryScope.TableSubqueries);
+            }
+            finally
+            {
+                queryScope = outerQueryScope;
+            }
+        }
+        else
+        {
+            query = ParseQueryExpressionBody();
         }
 
         ParseEndOfQuery(query);
@@ -2130,40 +2177,41 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Reads the common table expressions of a WITH clause, as the reference's
+    /// Reads one common table expression of a WITH clause, as the reference's
     /// parseSingleCommonTableExpression does.
     /// </summary>
     /// <remarks>
-    /// The tables the clause names are the tables of this statement: a query that follows the
-    /// clause may read them, and a query inside a table of this statement may read them too.
-    /// The reference keeps them in a chain of query scopes, one per WITH clause; this port
-    /// keeps them in the parser, which reads one statement.
+    /// The tables the clause names live in the query scope the WITH clause opened: a nested
+    /// WITH shadows an outer name only inside its own body, and the names are attached to the
+    /// query that owns the clause.
     /// </remarks>
-    private void ReadWith()
+    /// <param name="isPotentiallyRecursive">whether the WITH clause said RECURSIVE</param>
+    private void ReadSingleCommonTableExpression(bool isPotentiallyRecursive)
     {
         SessionLocal current = session
             ?? throw new TODOException("Parser.parseWith: this parser has no session");
-        ExpectWord("WITH");
-        bool recursive = IsWord("RECURSIVE");
-
-        do
+        QueryScope scope = queryScope
+            ?? throw DbException.GetInternalError("WITH without a query scope");
+        string name = ReadIdentifier();
+        List<string>? columnNames = null;
+        bool hasColumns;
+        if (isPotentiallyRecursive)
         {
-            string name = ReadIdentifier();
-            List<string>? columnNames = null;
-            bool hasColumns;
-            if (recursive)
-            {
-                Expect(Token.OpenParen, "(");
-                hasColumns = true;
-            }
-            else
-            {
-                hasColumns = ReadIf(Token.OpenParen);
-            }
+            Expect(Token.OpenParen, "(");
+            hasColumns = true;
+        }
+        else
+        {
+            hasColumns = ReadIf(Token.OpenParen);
+        }
 
-            if (hasColumns)
+        if (hasColumns)
+        {
+            // Reference parseColumnList allows an empty list: the plan SQL of a zero-column
+            // CTE is written as "A"() AS (...), and the view recompiles from that text.
+            columnNames = [];
+            if (!ReadIf(Token.CloseParen))
             {
-                columnNames = [];
                 do
                 {
                     columnNames.Add(ReadIdentifier());
@@ -2172,60 +2220,59 @@ public sealed partial class Parser
 
                 Expect(Token.CloseParen, ")");
             }
-
-            ExpectWord("AS");
-            Expect(Token.OpenParen, "(");
-            if (ctes.ContainsKey(name))
-            {
-                throw DbException.Get(Api.ErrorCode.TableOrViewAlreadyExists1, name);
-            }
-
-            if (recursive)
-            {
-                Column[] shadowColumns = new Column[columnNames!.Count];
-                for (int i = 0; i < shadowColumns.Length; i++)
-                {
-                    shadowColumns[i] = new Column(columnNames[i], TypeInfo.TypeVarchar);
-                }
-
-                Tables.ShadowTable shadow = new(
-                    current.GetDatabase().GetMainSchema()!, name, shadowColumns);
-                ctes[name] = shadow;
-                int queryStart = position;
-                Query.Query firstQuery = ParseQueryExpression(prepare: false);
-                Tables.Column[] templates = CreateQueryColumnTemplateList(columnNames, firstQuery, cte: true);
-                Tables.CTE cte = new(
-                    current.GetDatabase().GetMainSchema(), name, templates, firstQuery, current, true);
-                Column[] resolutionColumns = new Column[columnNames.Count];
-                for (int i = 0; i < resolutionColumns.Length; i++)
-                {
-                    resolutionColumns[i] = new Column(columnNames[i], TypeInfo.TypeUnknown, cte, i);
-                }
-
-                cte.SetColumnsForResolution(resolutionColumns);
-                ctes[name] = cte;
-
-                position = queryStart;
-                Query.Query query = ParseQueryExpression();
-                bool selfReferenced = query.GetTables().Contains(cte);
-                Tables.Column[]? finalTemplates = CreateQueryColumnTemplateList(columnNames, query, cte: true);
-                cte.Initialize(current, finalTemplates, query, selfReferenced,
-                    query.GetPlanSql(HasSql.DefaultSqlFlags));
-            }
-            else
-            {
-                Query.Query query = ParseQueryExpression();
-                Tables.Column[]? columnTemplates = columnNames is null
-                    ? null
-                    : CreateQueryColumnTemplateList(columnNames, query, cte: true);
-                ctes[name] = new Tables.CTE(
-                    current.GetDatabase().GetMainSchema(), name, columnTemplates, query, current,
-                    querySQL: query.GetPlanSql(HasSql.DefaultSqlFlags));
-            }
-
-            Expect(Token.CloseParen, ")");
         }
-        while (ReadIf(Token.Comma));
+
+        if (scope.TableSubqueries.ContainsKey(name))
+        {
+            throw DbException.Get(Api.ErrorCode.TableOrViewAlreadyExists1, name);
+        }
+
+        ExpectWord("AS");
+        Expect(Token.OpenParen, "(");
+        if (isPotentiallyRecursive)
+        {
+            Column[] shadowColumns = new Column[columnNames!.Count];
+            for (int i = 0; i < shadowColumns.Length; i++)
+            {
+                shadowColumns[i] = new Column(columnNames[i], TypeInfo.TypeVarchar);
+            }
+
+            Tables.ShadowTable shadow = new(
+                current.GetDatabase().GetMainSchema()!, name, shadowColumns);
+            scope.TableSubqueries.Put(name, shadow);
+            int queryStart = position;
+            Query.Query firstQuery = ParseQueryExpression(prepare: false);
+            Tables.Column[] templates = CreateQueryColumnTemplateList(columnNames, firstQuery, cte: true);
+            Tables.CTE cte = new(
+                current.GetDatabase().GetMainSchema(), name, templates, firstQuery, current, true);
+            Column[] resolutionColumns = new Column[columnNames.Count];
+            for (int i = 0; i < resolutionColumns.Length; i++)
+            {
+                resolutionColumns[i] = new Column(columnNames[i], TypeInfo.TypeUnknown, cte, i);
+            }
+
+            cte.SetColumnsForResolution(resolutionColumns);
+            scope.TableSubqueries.Put(name, cte);
+
+            position = queryStart;
+            Query.Query query = ParseQueryExpression();
+            bool selfReferenced = query.GetTables().Contains(cte);
+            Tables.Column[]? finalTemplates = CreateQueryColumnTemplateList(columnNames, query, cte: true);
+            cte.Initialize(current, finalTemplates, query, selfReferenced,
+                query.GetPlanSql(HasSql.DefaultSqlFlags));
+        }
+        else
+        {
+            Query.Query query = ParseQueryExpression();
+            Tables.Column[]? columnTemplates = columnNames is null
+                ? null
+                : CreateQueryColumnTemplateList(columnNames, query, cte: true);
+            scope.TableSubqueries.Put(name, new Tables.CTE(
+                current.GetDatabase().GetMainSchema(), name, columnTemplates, query, current,
+                querySQL: query.GetPlanSql(HasSql.DefaultSqlFlags)));
+        }
+
+        Expect(Token.CloseParen, ")");
     }
 
     /// <summary>
@@ -8831,6 +8878,25 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Finds a common table expression by name in the current query scope or an enclosing
+    /// one, as the reference's getWithSubquery does.
+    /// </summary>
+    /// <param name="name">the table name</param>
+    /// <returns>the table, or null</returns>
+    private Tables.Table? GetWithSubquery(string name)
+    {
+        for (QueryScope? scope = queryScope; scope is not null; scope = scope.Parent)
+        {
+            if (scope.TableSubqueries.TryGetValue(name, out Tables.Table? table))
+            {
+                return table;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Resolves a table or view by name, telling an empty database from a missing table
     /// the way the reference does: no user tables at all is its own error code.
     /// </summary>
@@ -8848,8 +8914,8 @@ public sealed partial class Parser
         }
 
         // The reference asks the query scope for a table of a common table expression after
-        // the schema has not answered.
-        if (ctes.TryGetValue(tableName, out Tables.Table? cte))
+        // the schema has not answered; the innermost scope wins.
+        if (GetWithSubquery(tableName) is { } cte)
         {
             return cte;
         }
