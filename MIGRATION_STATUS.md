@@ -11492,3 +11492,18 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   NUMERIC(20) identity, OVERRIDING USER/SYSTEM VALUE.
 * Проверено: H2Sharp.Tests 2076/2077 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
+
+### Спринт 41: зеркало dml/script.sql (2026-11-07)
+
+Замер (Debug, пять сюит): строки 76734/85435 = 89.82% (было 89.84), ветви
+31383/36698 = 85.52% (было 85.64). Падение ветвей — добавленный топологический
+обход доменов в ScriptCommand (~100 строк), большая часть покрыта.
+
+* `ScriptSqlOracleTests` (новый) — эталонный dml/script.sql: STRINGDECODE с
+  юникодом, char(22222), домены с цепочкой зависимостей, схемы и крос-схемные
+  домены, SCRIPT с фильтром SCHEMA.
+* Движок: `ScriptCommand` печатал домены в алфавитном порядке; эталон —
+  топологически (родитель прежде зависимого, dumpDomains через TreeMap/TreeSet).
+  Портирован 1:1: referencingDomains + known + цикл. Иначе скрипт не воспроизводился.
+* Проверено: H2Sharp.Tests 2077/2078 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.

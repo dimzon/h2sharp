@@ -157,19 +157,67 @@ public sealed class ScriptCommand : Prepared
 
         // Reference order: the domain dictation (drop and create) comes before the table drop
         // pass, then the table drops, then the sequences with their drops and creates.
+        // The reference topologically sorts the domains: a domain that another one builds
+        // on is printed first, so the script can be replayed in order (dumpDomains).
+        Comparer<Domain> domainComparer = Comparer<Domain>.Create(static (a, b)
+            => string.CompareOrdinal(a.GetName(), b.GetName()));
+        SortedDictionary<Domain, SortedSet<Domain>> referencingDomains =
+            new(domainComparer);
+        SortedSet<Domain> known = new(domainComparer);
         foreach (Schema schema in schemas)
         {
             List<Domain> domains = schema.GetAllDomains();
             domains.Sort(static (a, b) => string.CompareOrdinal(a.GetName(), b.GetName()));
             foreach (Domain domain in domains)
             {
-                if (drop)
+                Domain? parent = domain.GetDomain();
+                if (parent is null)
                 {
-                    Add(domain.GetDropSql());
-                }
+                    if (drop)
+                    {
+                        Add(domain.GetDropSql());
+                    }
 
-                Add(domain.GetCreateSql());
+                    Add(domain.GetCreateSql());
+                }
+                else
+                {
+                    if (!referencingDomains.TryGetValue(parent, out SortedSet<Domain>? set))
+                    {
+                        set = new SortedSet<Domain>(domainComparer);
+                        referencingDomains[parent] = set;
+                    }
+
+                    set.Add(domain);
+                    if (parent.GetDomain() is null || !schemas.Contains(parent.GetSchema()))
+                    {
+                        known.Add(parent);
+                    }
+                }
             }
+        }
+
+        while (referencingDomains.Count > 0)
+        {
+            SortedSet<Domain> known2 = new(domainComparer);
+            foreach (Domain d in known)
+            {
+                if (referencingDomains.Remove(d, out SortedSet<Domain>? set))
+                {
+                    foreach (Domain d2 in set)
+                    {
+                        if (drop)
+                        {
+                            Add(d2.GetDropSql());
+                        }
+
+                        Add(d2.GetCreateSql());
+                        known2.Add(d2);
+                    }
+                }
+            }
+
+            known = known2;
         }
 
         if (drop)
