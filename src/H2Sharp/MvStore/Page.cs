@@ -471,7 +471,7 @@ public abstract class Page<K, V> : IPage
     internal void InsertKey(int index, K key)
     {
         int keyCount = GetKeyCount();
-        Debug.Assert(index <= keyCount, index + " > " + keyCount);
+        Debug.Assert(index <= keyCount);
         K[] newKeys = CreateKeyStorage(keyCount + 1);
         DataUtils.CopyWithGap(keys, newKeys, keyCount, index);
         keys = newKeys;
@@ -647,7 +647,7 @@ public abstract class Page<K, V> : IPage
 
     private bool MarkAsRemoved()
     {
-        Debug.Assert(GetTotalCount() > 0, ToString());
+        Debug.Assert(GetTotalCount() > 0);
         long pagePos;
         do
         {
@@ -1036,7 +1036,7 @@ public abstract class Page<K, V> : IPage
                 if (p.IsSaved())
                 {
                     Debug.Assert(pos == p.GetPos());
-                    Debug.Assert(count == p.GetTotalCount(), count + " != " + p.GetTotalCount());
+                    Debug.Assert(count == p.GetTotalCount());
 
                     // 'pos' was stamped by resetPos() earlier on this thread; the release
                     // write below publishes it to any reader that observes the cleared page
@@ -1185,9 +1185,25 @@ public abstract class Page<K, V> : IPage
 
         public override long GetTotalCount()
         {
-            Debug.Assert(!IsComplete() || totalCount == CalculateTotalCount(),
-                "Total count: " + totalCount + " != " + CalculateTotalCount());
+            CheckTotalCount();
             return totalCount;
+        }
+
+        /// <summary>
+        /// Checks the total count against its children, in Debug only.
+        /// </summary>
+        /// <remarks>
+        /// The check walks every child; its eager message made every traversal allocate in
+        /// Debug, while Release paid nothing. Conditional keeps that: the walk runs only in
+        /// Debug, and the message only when the count is wrong.
+        /// </remarks>
+        [Conditional("DEBUG")]
+        private void CheckTotalCount()
+        {
+            if (IsComplete() && totalCount != CalculateTotalCount())
+            {
+                Debug.Fail("Total count: " + totalCount + " != " + CalculateTotalCount());
+            }
         }
 
         private long CalculateTotalCount()

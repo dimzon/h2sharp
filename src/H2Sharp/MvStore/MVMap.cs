@@ -945,11 +945,28 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap, IObjectMapA
     public bool IsVolatile() => isVolatile;
 
     /// <summary>
+    /// Checks the root is not held by this thread; the message is built only when it is.
+    /// </summary>
+    /// <remarks>
+    /// A page dump is kilobytes, and the eager message of a Debug.Assert here made every
+    /// write allocate it in Debug (the allocation gate saw ~7 KB per updated row that
+    /// Release does not pay). Conditional keeps Release at zero cost, as the assert was.
+    /// </remarks>
+    [Conditional("DEBUG")]
+    private void CheckRootNotLockedByCurrentThread()
+    {
+        if (GetRoot().IsLockedByCurrentThread())
+        {
+            Debug.Fail("Root is locked by the current thread: " + GetRoot());
+        }
+    }
+
+    /// <summary>
     /// Checks a write may happen: the map is open, writable, and the root is not held.
     /// </summary>
     protected internal void BeforeWrite()
     {
-        Debug.Assert(!GetRoot().IsLockedByCurrentThread(), GetRoot().ToString());
+        CheckRootNotLockedByCurrentThread();
         if (closed)
         {
             string? mapName = Store.GetMapName(id);
@@ -1504,7 +1521,7 @@ public class MVMap<K, V> : IEnumerable<KeyValuePair<K, V>>, IAnyMap, IObjectMapA
         {
             RootReference<K, V> rootReference = FlushAndGetRoot();
             bool locked = rootReference.IsLockedByCurrentThread();
-            Debug.Assert(attempt > 0 || !locked, attempt.ToString(CultureInfo.InvariantCulture) + " " + rootReference);
+            Debug.Assert(attempt > 0 || !locked);
             if (!locked)
             {
                 if (attempt++ == 0)

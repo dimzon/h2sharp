@@ -89,8 +89,7 @@ public sealed class RootReference<K, V> : IRootView
         previous = source.previous;
         updateCounter = source.updateCounter + 1;
         updateAttemptCounter = source.updateAttemptCounter + attempt;
-        Debug.Assert(source.holdCount == 0 || source.ownerId == Environment.CurrentManagedThreadId,
-            Environment.CurrentManagedThreadId + " " + source);
+        Debug.Assert(source.holdCount == 0 || source.ownerId == Environment.CurrentManagedThreadId);
         holdCount = (byte)(source.holdCount + 1);
         ownerId = Environment.CurrentManagedThreadId;
         appendCounter = source.appendCounter;
@@ -106,8 +105,7 @@ public sealed class RootReference<K, V> : IRootView
         previous = source.previous;
         updateCounter = source.updateCounter;
         updateAttemptCounter = source.updateAttemptCounter;
-        Debug.Assert(source.holdCount > 0 && source.ownerId == Environment.CurrentManagedThreadId,
-            Environment.CurrentManagedThreadId + " " + source);
+        Debug.Assert(source.holdCount > 0 && source.ownerId == Environment.CurrentManagedThreadId);
         holdCount = (byte)(source.holdCount - (keepLocked ? 0 : 1));
         ownerId = holdCount == 0 ? 0 : Environment.CurrentManagedThreadId;
         this.appendCounter = (byte)appendCounter;

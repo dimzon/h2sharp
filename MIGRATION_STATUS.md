@@ -11792,3 +11792,30 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
 * Проверено: H2Sharp.Tests 2097/2098 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
   Native 97 (+8 skipped).
+
+### Спринт 53: аллокационный гейт UPDATE 10k — зелёный (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* Разбор «предсуществующего красного» `MvMapPutAllocationTests`: в этом
+  окружении гейт красный **с рождения**, а не из-за позднего регресса —
+  worktree на SP-25 (0ac4cb3) и SP-33 (1294f1e) дают те же 104.97 МБ, что
+  HEAD; 36–43.5 МБ из коммитов — замер Release/другой среды. Release здесь
+  даёт 36.02 МБ, Debug — 104.97 МБ: разница целиком в Debug-диагностике.
+* Причина: жадные сообщения `Debug.Assert` в горячем пути записи. Главное —
+  `MVMap.BeforeWrite`: `Debug.Assert(cond, GetRoot().ToString())` строил
+  дамп страницы (килобайты) на **каждую** запись; далее
+  `NonLeaf.GetTotalCount` (`CalculateTotalCount()` + строка на каждый обход),
+  `MarkAsRemoved` (`ToString()`), конструкторы `RootReference`,
+  `ClearPageReference`, `InsertKey`, `MVMap.Operate`.
+* Исправление: дорогие проверки вынесены в `[Conditional("DEBUG")]`-хелперы
+  (`CheckRootNotLockedByCurrentThread`, `CheckTotalCount`) — сообщение
+  строится только при отказе, в Release вызова нет вовсе; у остальных
+  убраны жадные сообщения (простые `Debug.Assert(cond)` компилируются в
+  Release в ничто). Потолок 60 МБ не менялся.
+* Результат: Debug UPDATE 10k — **36.05 МБ** (Release 36.02), гейт зелёный
+  с запасом; H2Sharp.Tests **2098/2098** — фильтрованный прогон полностью
+  зелёный впервые за много спринтов.
+* Проверено: H2Sharp.Tests 2098/2098, Data 719, MvStore 152, Engine 9,
+  Native 97 (+8 skipped).
