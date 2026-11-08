@@ -11412,3 +11412,18 @@ H2Sharp.Tests перезамерян): строки 76464/85251 = 89.69% (был
   список колонок, refusals. Все строки совпадают с JVM (индексы 3/106/130/185/190/
   195/196/202 закрыты правками движка).
 * Проверено: Data 719, Engine 9, MvStore 152, Native 97, H2Sharp.Tests 2067/2068.
+
+### Спринт 35: зеркало dml/update.sql (2026-11-07)
+
+Замер (Debug, пять сюит): строки 76609/85331 = 89.78% (было 89.69), ветви
+31302/36578 = 85.58% (было 85.46).
+
+* `UpdateScriptOracleTests` (новый) — эталонный dml/update.sql: row-конструкторы,
+  row-значные обновления, генерируемые колонки, DEFAULT, identity, LIMIT/FETCH/TOP,
+  EXPLAIN плана UPDATE. 107 инструкций (одна — `UPDATE TEST SET A[1] = DEFAULT` —
+  убрана: известное расхождение 42000/42001, пинится порт-тестом
+  `UpdateSetDefaultRefusalTests`).
+* Движок: Parser.ReadQuerySelect теперь читает список EXCEPT по `parseWildcard` эталона
+  (квалифицированные имена schema.table.column); раньше `T1.A` ломал парсер.
+* Проверено: H2Sharp.Tests 2067/2068 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
