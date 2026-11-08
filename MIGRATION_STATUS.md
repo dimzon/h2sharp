@@ -11549,3 +11549,11 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
 * **expectedList полное выравнивание (42000 vs 42001)**: требует
   switch-формы диспетчера `parsePrepared` вместо цепочек `IsWord`.
   Записано в спринте 21 (строка 11046).
+
+### Спринт 43: зеркало predicates/quantified-comparison-with-array.sql (2026-11-07)
+
+* `QuantifiedComparisonWithArrayOracleTests` (новый) — эталонный
+  predicates/quantified-comparison-with-array.sql: квантифицированное сравнение
+  скаляра с массивом (равенство, неравенство, порядковые, IS [NOT] DISTINCT FROM),
+  с NULL-элементами и пустыми массивами. 17 инструкций (EXPLAIN-формы убраны).
+* Проверено: H2Sharp.Tests зелёный.
