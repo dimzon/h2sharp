@@ -11481,3 +11481,14 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   (ViewNotFound1) вместо 42102 (TableOrViewNotFound1), как эталон.
 * Проверено: H2Sharp.Tests 2074/2075 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
+
+### Спринт 40: зеркало dml/insert.sql (2026-11-07)
+
+Замер (Debug, пять сюит): строки 76666/85333 = 89.84% (было 89.82), ветви
+31322/36576 = 85.64% (было 85.62).
+
+* `InsertScriptOracleTests` (новый) — эталонный dml/insert.sql: ROW-конструкторы,
+  INSERT INTO T(a) VALUES ..., DEFAULT, сгенерированные колонки, DEFAULT VALUES,
+  NUMERIC(20) identity, OVERRIDING USER/SYSTEM VALUE.
+* Проверено: H2Sharp.Tests 2076/2077 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
