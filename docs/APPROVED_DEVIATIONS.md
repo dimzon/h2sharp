@@ -621,15 +621,6 @@ ADR-001/D-020/D-021).
 
 ## B. Кандидаты (НЕ утверждено — код с такой пометкой остаётся дефектом)
 
-### P-007. `ROWNUM` в DML — текущей команды нет
-
-Поля `currentSelect`/`currentPrepared` заведены, и `ROWNUM` читает
-`aggregateSelect ?? currentSelect ?? currentPrepared`, как
-`getCurrentPreparedOrSelect`. Остаток: parse-only слой DML (`INSERT ... VALUES`,
-`UPDATE ... SET`) строит запись команды без `Prepared`, поэтому `ROWNUM`
-там бросает `TODOException` с именем недостающего. В эталоне это работает.
-Дописать, когда parse-only слой будет создавать команду до чтения выражений.
-
 ### P-008. `DbSettings` (таблица h2.*-свойств) не портирована
 
 `INFORMATION_SCHEMA.SETTINGS` показывает только именованные настройки.

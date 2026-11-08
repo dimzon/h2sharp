@@ -171,8 +171,12 @@ public sealed class Insert : CommandWithValues, ResultTarget
         Column[] targetColumns = columns
             ?? throw Message.DbException.GetInternalError("INSERT without columns");
         rowNumber = 0;
+        // The reference numbers each row before its values are evaluated, so ROWNUM() in a
+        // VALUES expression reads the row's own number.
+        SetCurrentRowNumber(0);
         foreach (Expression[] expr in ValuesExpressionList)
         {
+            SetCurrentRowNumber(rowNumber + 1);
             Row newRow = target.GetTemplateRow();
             for (int i = 0; i < targetColumns.Length; i++)
             {

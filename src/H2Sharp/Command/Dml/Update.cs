@@ -82,6 +82,11 @@ public sealed class Update : FilteredDataChangeStatement
         table.Fire(session, (int)H2Sharp.Data.H2TriggerEvent.Update, beforeAction: true);
         List<(Result.Row OldRow, Result.Row NewRow)> staged = [];
         Expressions.Expression? condition = GetCondition();
+        // The reference's FilteredDataChangeStatement.nextRow numbers every scanned row
+        // with the count of rows matched so far plus one, before the condition is
+        // evaluated; ROWNUM() in the condition and in the SET list reads that number.
+        // Update.update sets it before FETCH is evaluated, as the reference does.
+        SetCurrentRowNumber(0);
         long limitRows = -1;
         if (fetchExpr is not null)
         {
@@ -102,6 +107,7 @@ public sealed class Update : FilteredDataChangeStatement
 
             Result.Row? row = filter.Get();
             session.SetCurrentRow(row);
+            SetCurrentRowNumber(count + 1);
             if (row is null || (condition is not null && !condition.GetBooleanValue(session)))
             {
                 continue;

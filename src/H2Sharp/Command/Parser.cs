@@ -58,6 +58,18 @@ public abstract class Statement
     /// <summary>The text this statement was written as.</summary>
     public string Sql { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The command built while the statement was read, when the parser had a session, or null.
+    /// </summary>
+    /// <remarks>
+    /// The reference builds a data change command before it reads the statement's expressions,
+    /// so ROWNUM() in them reads the row number of the statement that later runs. This port
+    /// reads a statement into this record and builds the command from it, which would leave
+    /// ROWNUM() without a command while the expressions are read. The record therefore keeps
+    /// the instance created in the read phase, and Prepare* completes that same instance.
+    /// </remarks>
+    public Prepared? Command { get; set; }
+
     /// <summary>The kind of this statement, one of <see cref="CommandInterface"/>.</summary>
     public abstract int GetCommandType();
 }
@@ -3613,6 +3625,9 @@ public sealed partial class Parser
     {
         Tables.Table table = targetTableFilter.GetTable()!;
         Dml.Merge command = new(session, isReplace: false);
+        // Reference parseMergeInto: the command exists before its values or query are read,
+        // so ROWNUM() in them belongs to the statement that runs.
+        currentPrepared = command;
         command.SetTable(table);
         if (ReadIf(Token.OpenParen))
         {
@@ -3662,6 +3677,9 @@ public sealed partial class Parser
         Tables.TableFilter targetTableFilter = ReadSimpleTableFilter(session);
         Tables.Table table = targetTableFilter.GetTable()!;
         Dml.Merge command = new(session, isReplace: true);
+        // Reference parseReplace: the command exists before its values or query are read,
+        // so ROWNUM() in them belongs to the statement that runs.
+        currentPrepared = command;
         command.SetTable(table);
         if (ReadIf(Token.OpenParen))
         {
@@ -3745,6 +3763,9 @@ public sealed partial class Parser
     private Prepared PrepareMergeUsing(SessionLocal session, Tables.TableFilter targetTableFilter)
     {
         Dml.MergeUsing command = new(session, targetTableFilter);
+        // Reference parseMergeUsing: the command exists before its source and conditions are
+        // read, so ROWNUM() in them belongs to the statement that runs.
+        currentPrepared = command;
         command.SetSourceTableFilter(ReadTableReference(session, select: null));
         ExpectWord("ON");
         command.SetOnCondition(ReadQueryOr());
@@ -6645,17 +6666,9 @@ public sealed partial class Parser
             Prepared? context = aggregateSelect ?? currentSelect ?? currentPrepared;
             if (context is null)
             {
-                if (session is not null)
-                {
-                    // The reference would have currentPrepared here (it sets it inside
-                    // parseInsert/parseUpdate and the rest). This port's parse-only layer
-                    // builds those statement records without a command, so there is
-                    // nothing to read the row number from yet.
-                    throw new TODOException(
-                        "Parser.readTerm: ROWNUM needs currentPrepared, which the DML parse-only layer does not set");
-                }
-
-                throw DbException.GetSyntaxError(sql, Current.Start, "SELECT");
+                // Reference: outside a select and a data change statement ROWNUM() has no
+                // row to number, and the reference refuses it as a syntax error.
+                throw GetSyntaxError();
             }
 
             return new Expressions.Rownum(context);
@@ -8476,13 +8489,28 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareInsert(SessionLocal session, InsertStatement statement)
     {
-        Schemas.Schema schema = statement.Schema is null
-            ? CurrentSchema(session)
-            : session.GetDatabase().GetSchema(statement.Schema);
-        Tables.Table table = ReadTableOrView(session, schema, statement.Name);
-        Dml.Insert insert = new(session);
-        insert.SetSql(statement.Sql, null);
-        insert.SetTable(table);
+        Dml.Insert insert;
+        Tables.Table table;
+        if (statement.Command is Dml.Insert existing)
+        {
+            // ReadInsert built this instance before the values were read, so ROWNUM() in
+            // them belongs to it; completing it here keeps that binding.
+            insert = existing;
+            table = existing.GetTable()
+                ?? throw DbException.GetInternalError("INSERT without a table");
+            insert.SetSql(statement.Sql, null);
+        }
+        else
+        {
+            Schemas.Schema schema = statement.Schema is null
+                ? CurrentSchema(session)
+                : session.GetDatabase().GetSchema(statement.Schema);
+            table = ReadTableOrView(session, schema, statement.Name);
+            insert = new(session);
+            insert.SetSql(statement.Sql, null);
+            insert.SetTable(table);
+        }
+
         Tables.Column[] tableColumns = table.GetColumns();
         Tables.Column[] columns;
         if (statement.Columns.Count == 0)
@@ -8608,15 +8636,30 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareUpdate(SessionLocal session, UpdateStatement statement)
     {
-        Schemas.Schema schema = statement.Schema is null
-            ? CurrentSchema(session)
-            : session.GetDatabase().GetSchema(statement.Schema);
-        Tables.Table table = ReadTableOrView(session, schema, statement.Name);
-        Dml.Update update = new(session);
-        update.SetSql(statement.Sql, null);
-        update.SetTableFilter(new Tables.TableFilter(
-            session, table, statement.Alias,
-            rightsChecked: true, select: null, 0, null));
+        Dml.Update update;
+        Tables.Table table;
+        if (statement.Command is Dml.Update existing)
+        {
+            // ReadUpdate built this instance before the SET list and the condition were
+            // read, so ROWNUM() in them belongs to it; completing it here keeps that binding.
+            update = existing;
+            table = existing.GetTableFilter().GetTable()
+                ?? throw DbException.GetInternalError("UPDATE without a table");
+            update.SetSql(statement.Sql, null);
+        }
+        else
+        {
+            Schemas.Schema schema = statement.Schema is null
+                ? CurrentSchema(session)
+                : session.GetDatabase().GetSchema(statement.Schema);
+            table = ReadTableOrView(session, schema, statement.Name);
+            update = new(session);
+            update.SetSql(statement.Sql, null);
+            update.SetTableFilter(new Tables.TableFilter(
+                session, table, statement.Alias,
+                rightsChecked: true, select: null, 0, null));
+        }
+
         Dml.SetClauseList assignments = new(table);
         foreach ((string name, Expression[]? indexes, Expression value) in statement.Assignments)
         {
@@ -8686,6 +8729,14 @@ public sealed partial class Parser
     /// <returns>the prepared statement</returns>
     private Prepared PrepareDelete(SessionLocal session, DeleteStatement statement)
     {
+        if (statement.Command is Dml.Delete existing)
+        {
+            // ReadDelete built this instance before the condition was read, so ROWNUM() in
+            // it belongs to it; it already carries the filter, the condition and the fetch.
+            existing.SetSql(statement.Sql, null);
+            return existing;
+        }
+
         Schemas.Schema schema = statement.Schema is null
             ? CurrentSchema(session)
             : session.GetDatabase().GetSchema(statement.Schema);
@@ -10090,9 +10141,29 @@ public sealed partial class Parser
 
     private InsertStatement ReadInsert()
     {
+        InsertStatement statement = new();
+        // Reference parseInsert: the command exists before its values are read, so ROWNUM()
+        // in them belongs to the statement that runs. The record keeps the instance for
+        // PrepareInsert to complete.
+        Dml.Insert? command = null;
+        if (session is not null)
+        {
+            command = new Dml.Insert(session);
+            currentPrepared = command;
+        }
+
+        statement.Command = command;
         ExpectWord("INTO");
-        InsertStatement statement = new() { Name = ReadIdentifierWithSchemaName(out string? insertSchema) };
+        statement.Name = ReadIdentifierWithSchemaName(out string? insertSchema);
         statement.Schema = insertSchema;
+        if (command is not null)
+        {
+            Schemas.Schema schema = insertSchema is null
+                ? CurrentSchema(session!)
+                : session!.GetDatabase().GetSchema(insertSchema);
+            command.SetTable(ReadTableOrView(session!, schema, statement.Name));
+        }
+
         if (CurrentType == Token.OpenParen)
         {
             Read();
@@ -10161,29 +10232,46 @@ public sealed partial class Parser
 
     private UpdateStatement ReadUpdate()
     {
+        UpdateStatement statement = new();
+        // Reference parseUpdate: the command exists before the SET list and the condition
+        // are read, so ROWNUM() in them belongs to the statement that runs. The record
+        // keeps the instance for PrepareUpdate to complete.
+        Dml.Update? command = null;
+        if (session is not null)
+        {
+            command = new Dml.Update(session);
+            currentPrepared = command;
+        }
+
+        statement.Command = command;
         Expression? fetch = null;
         if ((session?.GetMode() ?? provider.GetMode()).TopInDml && ReadIfCompat("TOP"))
         {
             fetch = ReadQueryTerm();
         }
 
-        UpdateStatement statement = new()
-        {
-            Name = ReadIdentifierWithSchemaName(out string? updateSchema),
-            Fetch = fetch,
-        };
+        statement.Fetch = fetch;
+        statement.Name = ReadIdentifierWithSchemaName(out string? updateSchema);
         statement.Schema = updateSchema;
         // The reference resolves the target before it reads SET; doing it here keeps the
         // error of a missing table ahead of a syntax error in the rest of the statement.
+        Tables.Table? targetTable = null;
         if (session is not null)
         {
             Schemas.Schema schema = updateSchema is null
                 ? CurrentSchema(session)
                 : session.GetDatabase().GetSchema(updateSchema);
-            _ = ReadTableOrView(session, schema, statement.Name);
+            targetTable = ReadTableOrView(session, schema, statement.Name);
         }
 
         statement.Alias = ReadFromAlias();
+        if (command is not null)
+        {
+            command.SetTableFilter(new Tables.TableFilter(
+                session!, targetTable!, statement.Alias,
+                rightsChecked: true, select: null, 0, null));
+        }
+
         ExpectWord("SET");
         do
         {
@@ -10253,24 +10341,58 @@ public sealed partial class Parser
 
     private DeleteStatement ReadDelete()
     {
+        DeleteStatement statement = new();
+        // Reference parseDelete: the command exists before the table filter and the
+        // condition are read, so ROWNUM() in the condition belongs to the statement that
+        // runs. The record keeps the instance for PrepareDelete to complete.
+        Dml.Delete? command = null;
+        if (session is not null)
+        {
+            command = new Dml.Delete(session);
+        }
+
+        statement.Command = command;
         Expression? fetch = null;
         if ((session?.GetMode() ?? provider.GetMode()).TopInDml && ReadIfCompat("TOP"))
         {
             fetch = ReadQueryTerm();
         }
 
+        // Reference parseDelete sets currentPrepared after TOP, before the table filter.
+        currentPrepared = command;
+        statement.Fetch = fetch;
         ExpectWord("FROM");
-        DeleteStatement statement = new()
-        {
-            Name = ReadIdentifierWithSchemaName(out string? deleteSchema),
-            Fetch = fetch,
-        };
+        statement.Name = ReadIdentifierWithSchemaName(out string? deleteSchema);
         statement.Schema = deleteSchema;
+        // Reference readSimpleTableFilter: the table is resolved before the alias and the
+        // condition are read.
+        Tables.Table? targetTable = null;
+        if (command is not null)
+        {
+            Schemas.Schema schema = deleteSchema is null
+                ? CurrentSchema(session!)
+                : session!.GetDatabase().GetSchema(deleteSchema);
+            targetTable = ReadTableOrView(session!, schema, statement.Name);
+        }
+
         statement.Alias = ReadFromAlias();
+        if (command is not null)
+        {
+            command.SetTableFilter(new Tables.TableFilter(
+                session!, targetTable!, statement.Alias,
+                rightsChecked: true, select: null, 0, null));
+        }
+
         statement.Where = ReadWhere();
+        command?.SetCondition(statement.Where);
         if (statement.Fetch is null)
         {
             statement.Fetch = ReadFetchOrLimit();
+        }
+
+        if (command is not null && statement.Fetch is not null)
+        {
+            command.SetFetch(statement.Fetch);
         }
 
         return statement;

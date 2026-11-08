@@ -30,6 +30,8 @@ public sealed class DeleteScriptOracleTests
         [
             "CREATE TABLE TEST(ID INT)",
             "INSERT INTO TEST VALUES (1), (2), (3)",
+            "DELETE FROM TEST WHERE EXISTS (SELECT X FROM SYSTEM_RANGE(1, 3) WHERE X = ID) AND ROWNUM() = 1",
+            "SELECT ID FROM TEST",
             "DROP TABLE TEST",
             "CREATE TABLE TEST(ID INT PRIMARY KEY) AS SELECT * FROM SYSTEM_RANGE(1, 13)",
             "DELETE FROM TEST WHERE ID <= 12 FETCH FIRST ROW ONLY",

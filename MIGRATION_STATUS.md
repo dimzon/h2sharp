@@ -7974,7 +7974,8 @@ LOCK_MODE/LOCK_TIMEOUT дефолты; NextIs-костыли убраны в п�
 `ReadIfWords`; `ValueVarchar.Get` с `CastDataProvider` в новых местах;
 `ROWNUM` читает `aggregateSelect ?? currentSelect ?? currentPrepared`
 (поля заведены, сброс на границе оператора как в `parse()`); остаток —
-DML parse-only слой не создаёт `Prepared` до чтения выражений (P-007).
+DML parse-only слой не создаёт `Prepared` до чтения выражений (P-007,
+закрыт в спринте 44).
 `CURRENT_ROLE` — константа `'PUBLIC'` (D-007).
 
 Прогоны: H2Sharp.Tests 1259/1259, Data 467/467, MvStore 86/86, Specs
@@ -11435,13 +11436,13 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
 (без изменений: DELETE-формы уже покрывались DeleteLimitOracleTests).
 
 * `DeleteScriptOracleTests` (новый) — эталонный dml/delete.sql: DELETE с ROWNUM (убран —
-  ROWNUM() не портирован; это отдельная находка), FETCH FIRST/NEXT ROW[S] ONLY,
-  FETCH FIRST/NEXT n ROW[S] ONLY, LIMIT с подзапросом и с параметром (обе стороны
-  отказывают 90012), EXPLAIN плана DELETE, TOP 10 в MSSQLServer-режиме (отдельный факт,
-  D-029 при открытии).
-* Находка (отложена): ROWNUM() — парсер бросает TODOException
+  ROWNUM() не портирован; это отдельная находка, закрыта в спринте 44), FETCH FIRST/NEXT
+  ROW[S] ONLY, FETCH FIRST/NEXT n ROW[S] ONLY, LIMIT с подзапросом и с параметром (обе
+  стороны отказывают 90012), EXPLAIN плана DELETE, TOP 10 в MSSQLServer-режиме
+  (отдельный факт, D-029 при открытии).
+* Находка (отложена, закрыта в спринте 44): ROWNUM() — парсер бросал TODOException
   ("ROWNUM needs currentPrepared, which the DML parse-only layer does not set"); эталон
-  поддерживает. Требует отдельного движкового спринта (проводка currentPrepared в DML
+  поддерживает. Требовала отдельного движкового спринта (проводка currentPrepared в DML
   парсере).
 * Проверено: H2Sharp.Tests 2070/2071 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
@@ -11557,3 +11558,33 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   скаляра с массивом (равенство, неравенство, порядковые, IS [NOT] DISTINCT FROM),
   с NULL-элементами и пустыми массивами. 17 инструкций (EXPLAIN-формы убраны).
 * Проверено: H2Sharp.Tests зелёный.
+
+### Спринт 44: ROWNUM в DML — P-007 закрыт (2026-11-08)
+
+Замер (Debug, пять сюит: Data, MvStore, Engine, H2Sharp.Tests, Native): строки
+76769/85453 = 89.84% (было 89.82), ветви 31380/36626 = 85.68% (было 85.54).
+Полный прогон скрипта замера (шесть отчётов, включая SQL Specs): строки
+77220/85453 = 90.37%, ветви 31577/36626 = 86.21%.
+
+* Смоктест `RownumSmokeTests` (новый): SELECT-формы ROWNUM работали и раньше —
+  `ROWNUM()`, `ROWNUM` без скобок, над таблицей, без FROM (DUAL), из
+  SYSTEM_RANGE, в WHERE (`ROWNUM() <= 2`). Запись «ROWNUM() не портирован»
+  относилась только к DML.
+* Движок: parse-only слой DML теперь создаёт команду до чтения выражений, как
+  эталон (`parseInsert`/`parseUpdate`/`parseDelete`): `Statement.Command` хранит
+  экземпляр, `PrepareInsert`/`PrepareUpdate`/`PrepareDelete` его же достраивают,
+  а не создают новый; `currentPrepared` выставляется в `ReadInsert`/`ReadUpdate`/
+  `ReadDelete` и в `PrepareMergeInto`/`PrepareMergeUsing`/`PrepareReplace`.
+* Нумерация строк как в `FilteredDataChangeStatement.nextRow`: `Delete.Run` и
+  `Update.Run` ставят `SetCurrentRowNumber(0)` перед сканом и `count + 1` на
+  каждой просмотренной строке до вычисления условия (`Update` — до FETCH, как
+  эталон); `Insert.InsertRows` — `x + 1` до вычисления VALUES. Без этого ROWNUM
+  в DML вернул бы 0.
+* `RownumDmlOracleTests` (новый): DELETE (включая строку dml/delete.sql), UPDATE
+  SET/WHERE (включая «ROWNUM() = 2 не совпадает ни разу»), INSERT VALUES и MERGE
+  VALUES — построчно совпадает с jar. Строка `DELETE ... ROWNUM() = 1` возвращена
+  в `DeleteScriptOracleTests` (была убрана в спринте 36).
+* `docs/APPROVED_DEVIATIONS.md`: кандидат P-007 удалён (дефект закрыт).
+* Проверено: H2Sharp.Tests 2083/2084 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
+  Native 97 (+8 skipped).

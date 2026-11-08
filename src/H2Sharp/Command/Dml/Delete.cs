@@ -70,6 +70,10 @@ public sealed class Delete : FilteredDataChangeStatement
             }
         }
 
+        // The reference's FilteredDataChangeStatement.nextRow numbers every scanned row
+        // with the count of rows matched so far plus one, before the condition is
+        // evaluated; ROWNUM() in the condition reads that number.
+        SetCurrentRowNumber(0);
         while (filter.Next())
         {
             if (limitRows >= 0 && matched.Count >= limitRows)
@@ -79,6 +83,7 @@ public sealed class Delete : FilteredDataChangeStatement
 
             Result.Row? row = filter.Get();
             session.SetCurrentRow(row);
+            SetCurrentRowNumber(matched.Count + 1);
             if (row is not null && (condition is null || condition.GetBooleanValue(session)))
             {
                 row = LockAndRecheckCondition(filter, condition);
