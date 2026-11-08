@@ -11534,6 +11534,8 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   не имеет вызовов; строки 483-485 `LocalResult` недостижимы в замерах.
   FINAL/OLD TABLE над DML (dml/with.sql, строки 32-34) ждут этого
   механизма; тест `WithCteBlockedPortTests` содержит одну такую инструкцию.
+  Закрыто в спринте 46 (остаток — `takeInsertedIdentity`, нужен session
+  last-identity).
 * **`enum[]` → VARBINARY** в `H2ValueMapper.ToValue`: массив enum с базовым
   byte (например, `Color[]`) отвечает VARBINARY вместо ARRAY, потому что
   CLR-совместимость массивов делает `Color[]` приводимым к `byte[]`, и ветка
@@ -11608,5 +11610,29 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   пять инструкций (ORDER BY 1 + 75% FETCH, `C1 + C2`, два выражения,
   OFFSET/FETCH, EXPLAIN) построчно совпадают с jar.
 * Проверено: H2Sharp.Tests 2084/2085 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
+  Native 97 (+8 skipped).
+
+### Спринт 46: дельта-таблицы — OLD/NEW/FINAL TABLE (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* Парсер `ReadDataChangeDeltaTable` приведён к эталону: OLD принимает
+  UPDATE/DELETE/MERGE/REPLACE, NEW и FINAL — INSERT/UPDATE/MERGE/REPLACE;
+  INSERT в OLD и DELETE в NEW/FINAL отказывают 42001 через expectedList
+  (раньше — 42000), неизвестное имя опции — 42001. INSERT внутри дельта-таблицы
+  читается прямым `ParseInsert`, поэтому голая форма `VALUES 1, 2` даёт 21002,
+  как эталон, а не 42001. Добавлены `SetSql` и `currentSelect.setNeverLazy(true)`.
+* `DataChangeDeltaTable.GetResult` вызывает `LocalResult.SetForDataChangeDeltaTable()`:
+  LOB-значения изменённых строк не копируются, как в эталоне.
+* `DataChangeDeltaTableOracleTests` расширен: допустимые виды операторов и
+  отказы, MERGE USING (matched update/delete, not-matched insert) во всех трёх
+  опциях, REPLACE в MySQL-режиме (OLD/NEW/FINAL). Семь фактов, построчно с jar.
+* Остаток: `CollectForInsert` с `takeInsertedIdentity` — нужен session
+  last-identity, которого в порте нет (отдельная фича `LAST_INSERT_ID`).
+  Полная матрица эталонного `other/data-change-delta-table.sql` с триггерами и
+  представлениями не зеркалится: триггеры эталона — Java-классы.
+* Проверено: H2Sharp.Tests 2087/2088 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, MvStore 152, Engine 9,
   Native 97 (+8 skipped).

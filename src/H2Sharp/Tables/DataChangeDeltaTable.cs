@@ -121,6 +121,9 @@ public sealed class DataChangeDeltaTable : VirtualConstructedTable
         statement.Prepare();
         int columnCount = expressions.Length;
         LocalResult result = new(session, expressions, columnCount, columnCount);
+        // The reference keeps the LOBs of the changed rows as they are instead of copying
+        // them to the result: the delta table reads the rows the statement just wrote.
+        result.SetForDataChangeDeltaTable();
         statement.Run(result, resultOption);
         return result;
     }

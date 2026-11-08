@@ -3197,6 +3197,7 @@ public sealed partial class Parser
     private Tables.Table ReadDataChangeDeltaTable(
         SessionLocal session, Schemas.Schema schema, string resultOptionName)
     {
+        int start = position;
         Tables.DataChangeDeltaTable.ResultOption resultOption;
         switch (resultOptionName.ToUpperInvariant())
         {
@@ -3215,24 +3216,80 @@ public sealed partial class Parser
 
         Expect(Token.OpenParen, "(");
 
+        // Reference readDataChangeDeltaTable: OLD accepts UPDATE, DELETE, MERGE and
+        // REPLACE; NEW and FINAL accept INSERT, UPDATE, MERGE and REPLACE. Any other
+        // combination is a syntax error, not a statement that runs and collects nothing.
         Prepared prepared;
-        if (IsWord("MERGE", consume: false))
+        if (resultOption == Tables.DataChangeDeltaTable.ResultOption.OLD)
         {
-            prepared = PrepareMerge(session);
+            if (IsWord("UPDATE", consume: false))
+            {
+                Read();
+                prepared = PrepareUpdate(session, ReadUpdate());
+            }
+            else if (IsWord("DELETE", consume: false))
+            {
+                Read();
+                prepared = PrepareDelete(session, ReadDelete());
+            }
+            else if (IsWord("MERGE", consume: false))
+            {
+                prepared = PrepareMerge(session);
+            }
+            else if (session.GetMode().ReplaceInto && IsWord("REPLACE", consume: false))
+            {
+                prepared = PrepareReplace(session);
+            }
+            else
+            {
+                AddExpected("UPDATE");
+                AddExpected("DELETE");
+                AddExpected("MERGE");
+                if (session.GetMode().ReplaceInto)
+                {
+                    AddExpected("REPLACE");
+                }
+
+                throw GetSyntaxError();
+            }
         }
         else
         {
-            Statement statement = ReadStatement();
-            prepared = statement switch
+            if (IsWord("INSERT", consume: false))
             {
-                InsertStatement insert => PrepareInsert(session, insert),
-                UpdateStatement update => PrepareUpdate(session, update),
-                DeleteStatement delete => PrepareDelete(session, delete),
-                _ => throw DbException.GetSyntaxError(sql, Current.Start, "INSERT"),
-            };
+                Read();
+                prepared = ParseInsert(start);
+            }
+            else if (IsWord("UPDATE", consume: false))
+            {
+                Read();
+                prepared = PrepareUpdate(session, ReadUpdate());
+            }
+            else if (IsWord("MERGE", consume: false))
+            {
+                prepared = PrepareMerge(session);
+            }
+            else if (session.GetMode().ReplaceInto && IsWord("REPLACE", consume: false))
+            {
+                prepared = PrepareReplace(session);
+            }
+            else
+            {
+                AddExpected("INSERT");
+                AddExpected("UPDATE");
+                AddExpected("MERGE");
+                if (session.GetMode().ReplaceInto)
+                {
+                    AddExpected("REPLACE");
+                }
+
+                throw GetSyntaxError();
+            }
         }
 
+        SetSql(prepared, start);
         Expect(Token.CloseParen, ")");
+        currentSelect?.SetNeverLazy(true);
         return new Tables.DataChangeDeltaTable(
             schema, (Dml.DataChangeStatement)prepared, resultOption);
     }

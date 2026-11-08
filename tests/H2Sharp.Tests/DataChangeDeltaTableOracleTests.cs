@@ -38,8 +38,8 @@ public sealed class DataChangeDeltaTableOracleTests
             "SELECT ID, NAME FROM FINAL TABLE (INSERT INTO T(NAME) VALUES('b'))",
             "SELECT ID, NAME FROM T ORDER BY ID",
         ];
-        List<string> port = RunPort(statements);
-        List<string> java = RunJava(statements);
+        List<string> port = RunPort(statements, mode: null);
+        List<string> java = RunJava(statements, mode: null);
         AssertSame(java, port);
     }
 
@@ -57,8 +57,8 @@ public sealed class DataChangeDeltaTableOracleTests
             "SELECT ID, NAME FROM OLD TABLE (UPDATE T SET NAME = 'c' WHERE ID = 2)",
             "SELECT ID, NAME FROM T ORDER BY ID",
         ];
-        List<string> port = RunPort(statements);
-        List<string> java = RunJava(statements);
+        List<string> port = RunPort(statements, mode: null);
+        List<string> java = RunJava(statements, mode: null);
         AssertSame(java, port);
     }
 
@@ -74,8 +74,8 @@ public sealed class DataChangeDeltaTableOracleTests
             "SELECT ID FROM MIDDLE TABLE (INSERT INTO T(NAME) VALUES('a'))",
             "SELECT ID FROM FINAL TABLE (INSERT INTO T(NAME) VALUES('b'))",
         ];
-        List<string> port = RunPort(statements);
-        List<string> java = RunJava(statements);
+        List<string> port = RunPort(statements, mode: null);
+        List<string> java = RunJava(statements, mode: null);
         AssertSame(java, port);
     }
 
@@ -92,8 +92,89 @@ public sealed class DataChangeDeltaTableOracleTests
             "SELECT ID, NAME FROM OLD TABLE (DELETE FROM T WHERE ID = 2)",
             "SELECT ID, NAME FROM T ORDER BY ID",
         ];
-        List<string> port = RunPort(statements);
-        List<string> java = RunJava(statements);
+        List<string> port = RunPort(statements, mode: null);
+        List<string> java = RunJava(statements, mode: null);
+        AssertSame(java, port);
+    }
+
+    /// <summary>
+    /// The statement kinds each option allows, the same on both sides: OLD is not allowed
+    /// over INSERT, NEW and FINAL are not allowed over DELETE, and the wrong option name is
+    /// refused.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheAllowedStatementKindsAreTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE T(ID BIGINT AUTO_INCREMENT PRIMARY KEY, A INT, B INT)",
+            "SELECT * FROM OLD TABLE (INSERT INTO T(A, B) VALUES (100, 100))",
+            "SELECT * FROM NEW TABLE (INSERT INTO T(A, B) VALUES (1, 2))",
+            "SELECT * FROM FINAL TABLE (INSERT INTO T(A, B) VALUES (2, 3))",
+            "SELECT * FROM OLD TABLE (UPDATE T SET B = 3 WHERE ID = 1)",
+            "SELECT * FROM NEW TABLE (UPDATE T SET B = 3 WHERE ID = 1)",
+            "SELECT * FROM FINAL TABLE (UPDATE T SET B = 3 WHERE ID = 1)",
+            "SELECT * FROM OLD TABLE (DELETE FROM T WHERE ID = 1)",
+            "SELECT * FROM NEW TABLE (DELETE FROM T)",
+            "SELECT * FROM FINAL TABLE (DELETE FROM T)",
+            "SELECT * FROM TEST TABLE (DELETE FROM T)",
+            "SELECT * FROM OLD TABLE (REPLACE INTO T VALUES (1, 1, 1))",
+            "SELECT ID, A, B FROM T ORDER BY ID",
+            "DROP TABLE T",
+        ];
+        List<string> port = RunPort(statements, mode: null);
+        List<string> java = RunJava(statements, mode: null);
+        AssertSame(java, port);
+    }
+
+    /// <summary>
+    /// MERGE INTO ... USING inside the three options: the matched update, the matched delete
+    /// and the not-matched insert all feed the collector.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheMergeUsingFormsAreTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE T(ID INT PRIMARY KEY, A INT, B INT)",
+            "INSERT INTO T VALUES (1, 1, 1), (2, 2, 2)",
+            "SELECT * FROM OLD TABLE (MERGE INTO T USING (VALUES (2, 2, 20), (3, 3, 30)) S(ID, A, B) "
+                + "ON T.ID = S.ID WHEN MATCHED THEN UPDATE SET B = S.B "
+                + "WHEN NOT MATCHED THEN INSERT VALUES (S.ID, S.A, S.B))",
+            "SELECT * FROM NEW TABLE (MERGE INTO T USING (VALUES (1, 1, 10), (4, 4, 40)) S(ID, A, B) "
+                + "ON T.ID = S.ID WHEN MATCHED THEN UPDATE SET B = S.B "
+                + "WHEN NOT MATCHED THEN INSERT VALUES (S.ID, S.A, S.B))",
+            "SELECT * FROM FINAL TABLE (MERGE INTO T USING (VALUES (3, 3, 33), (5, 5, 50)) S(ID, A, B) "
+                + "ON T.ID = S.ID WHEN MATCHED THEN DELETE "
+                + "WHEN NOT MATCHED THEN INSERT VALUES (S.ID, S.A, S.B))",
+            "SELECT ID, A, B FROM T ORDER BY ID",
+            "DROP TABLE T",
+        ];
+        List<string> port = RunPort(statements, mode: null);
+        List<string> java = RunJava(statements, mode: null);
+        AssertSame(java, port);
+    }
+
+    /// <summary>
+    /// REPLACE in MySQL mode, where the mode allows it: the old row, the new rows and the
+    /// final rows.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheReplaceFormsInMySqlModeAreTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE T(ID INT PRIMARY KEY, A INT, B INT)",
+            "INSERT INTO T VALUES (1, 1, 1), (2, 2, 2)",
+            "SELECT * FROM OLD TABLE (REPLACE INTO T VALUES (2, 2, 20), (3, 3, 30))",
+            "SELECT * FROM NEW TABLE (REPLACE INTO T VALUES (2, 2, 21), (4, 4, 40))",
+            "SELECT * FROM FINAL TABLE (REPLACE INTO T VALUES (3, 3, 31), (5, 5, 50))",
+            "SELECT ID, A, B FROM T ORDER BY ID",
+            "DROP TABLE T",
+        ];
+        Mode? mode = Mode.GetInstance("MySQL");
+        List<string> port = RunPort(statements, mode);
+        List<string> java = RunJava(statements, mode);
         AssertSame(java, port);
     }
 
@@ -113,11 +194,12 @@ public sealed class DataChangeDeltaTableOracleTests
     /// Runs the statements here and writes what the question answered.
     /// </summary>
     /// <param name="statements">the statements</param>
+    /// <param name="mode">the mode both sides open with, or null</param>
     /// <returns>the lines</returns>
-    private static List<string> RunPort(IReadOnlyList<string> statements)
+    private static List<string> RunPort(IReadOnlyList<string> statements, Mode? mode)
     {
         SessionLocal session = new(
-            new Database(ConnectionInfo.Memory("delta_oracle")), "sa")
+            new Database(ConnectionInfo.Memory("delta_oracle", mode)), "sa")
         {
             CastDataProvider = new TestCastDataProvider(),
             CompareMode = CompareMode.GetInstance(null, 0),
@@ -167,12 +249,13 @@ public sealed class DataChangeDeltaTableOracleTests
     /// Runs the statements on the reference and writes what the question answered.
     /// </summary>
     /// <param name="statements">the statements</param>
+    /// <param name="mode">the mode both sides open with, or null</param>
     /// <returns>the lines</returns>
-    private static List<string> RunJava(IReadOnlyList<string> statements)
+    private static List<string> RunJava(IReadOnlyList<string> statements, Mode? mode)
         => OracleRunner.Run(
             statements,
             """
-            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:delta_oracle");
+            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:delta_oracleMODE");
             java.sql.Statement stat = conn.createStatement();
             for (int i = 0; i < inputs.length; i++) {
               try {
@@ -197,6 +280,8 @@ public sealed class DataChangeDeltaTableOracleTests
               }
             }
             conn.close();
-            """,
+            """.Replace(
+                "delta_oracleMODE",
+                "delta_oracle" + (mode is null ? "" : ";MODE=" + mode)),
             extraJavaArgs: ["-Duser.language=en"]);
 }
