@@ -132,4 +132,35 @@ public sealed class BitSetTests
 
         s.Clear(1000);
         Assert.Equal(0, s.Length);
-    }}
+    }
+
+    [Fact]
+    public void EdgePathsCoverTheRest()
+    {
+        // Clear(int) with a negative index refuses, and past the end returns.
+        BitSet s = new();
+        Assert.Throws<IndexOutOfRangeException>(() => s.Clear(-1));
+        s.Clear(1000);
+
+        // ClearRange: empty range, past the end, and a single word.
+        s.ClearRange(5, 5);
+        s.ClearRange(0, 1000);
+        s.SetRange(0, 128);
+        s.ClearRange(63, 65);
+
+        // NextSetBit/NextClearBit with a negative start clamp to zero.
+        Assert.Equal(0, s.NextSetBit(-1));
+        Assert.Equal(63, s.NextClearBit(-1));
+
+        // PreviousSetBit with a negative start.
+        Assert.Equal(-1, s.PreviousSetBit(-1));
+
+        // AndNot shrinking a trailing zero word.
+        BitSet a = new();
+        BitSet b = new();
+        a.SetRange(0, 128);
+        b.SetRange(0, 128);
+        a.AndNot(b);
+        Assert.Equal(0, a.Length);
+    }
+}
