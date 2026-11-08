@@ -27,16 +27,22 @@ public sealed class IndexIncludeAndNullsOracleTests
         [
             "CREATE TABLE U(A INT, B INT, C INT)",
             // NULLS NOT DISTINCT: two NULL keys may live together.
-            "CREATE UNIQUE NULLS NOT DISTINCT INDEX UX ON U(A)",
+            "CREATE UNIQUE INDEX UX ON U(A) NULLS NOT DISTINCT",
             "INSERT INTO U VALUES (NULL, 1, 1), (NULL, 2, 2)",
+            // A non-NULL key under NULLS NOT DISTINCT also has to be checked.
+            "INSERT INTO U VALUES (3, 3, 5)",
             // NULLS DISTINCT: the same, on another column.
-            "CREATE UNIQUE NULLS DISTINCT INDEX UY ON U(B)",
+            "CREATE UNIQUE INDEX UY ON U(B) NULLS DISTINCT",
             "INSERT INTO U VALUES (1, NULL, 3), (2, NULL, 4)",
             // INCLUDE: the index keeps the key column and carries the rest.
             "CREATE UNIQUE INDEX UZ ON U(C) INCLUDE (A, B)",
             "SCRIPT NOPASSWORDS NOSETTINGS NOVERSION",
             "SELECT A, B, C FROM U WHERE C = 1 ORDER BY C",
             "DROP TABLE U",
+            // An index on a LOB column is refused on both sides.
+            "CREATE TABLE L(ID INT PRIMARY KEY, B BLOB)",
+            "CREATE INDEX IX ON L(B)",
+            "DROP TABLE L",
         ];
         RunBoth(statements);
     }

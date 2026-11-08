@@ -11445,3 +11445,13 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   парсере).
 * Проверено: H2Sharp.Tests 2070/2071 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
+
+### Спринт 37: INCLUDE-индексы и NULLS DISTINCT (2026-11-07)
+
+Замер (Debug, пять сюит): строки 76612/85331 = 89.78%, ветви 31305/36578 = 85.58%.
+
+* `IndexIncludeAndNullsOracleTests` расширен: индекс на LOB-колонке отказывается на
+  обеих сторонах (50-52), и вставка не-NULL ключа в NULLS NOT DISTINCT индекс
+  проходит через NeedsUniqueCheck (508-513).
+* Проверено: H2Sharp.Tests 2070/2071 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
