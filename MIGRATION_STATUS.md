@@ -11910,3 +11910,15 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   для эпохи ниже `MinUnixSeconds` (ветка shortage).
 * Проверено: H2Sharp.Tests 2106/2106 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 60: покрытие — SpatialDataType (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `SpatialDataTypeCoverageTests` (новый, MvStore.Tests): прямой порт-тест
+  SpatialDataType: `CreateStorage`, null-ветки `IsOverlap`/`IncreaseBounds`/
+  `GetAreaIncrease`/`Contains`/`IsInside`, `GetExtremes` на пустом списке и
+  списке с null-пространственным объектом.
+* Проверено: H2Sharp.Tests 2106/2106, MvStore 153/153, Data 719, Engine 9,
+  Native 97 (+8 skipped).
