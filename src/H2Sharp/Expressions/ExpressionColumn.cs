@@ -157,7 +157,14 @@ public sealed class ExpressionColumn : Expression
                 if (groupData.GetCurrentGroupExprData(this) is Value value) return value;
                 if (select!.IsGroupWindowStage2()) throw DbException.Get(Api.ErrorCode.MustGroupByColumn1, GetTraceSql());
             }
-            return columnResolver.GetValue(column)!;
+
+            // The reference answers the null the resolver gave with the group-by refusal
+            // (or NULL_NOT_ALLOWED without a select), never with a null of its own.
+            return columnResolver.GetValue(column) is Value resolved
+                ? resolved
+                : throw DbException.Get(
+                    select is null ? Api.ErrorCode.NullNotAllowed : Api.ErrorCode.MustGroupByColumn1,
+                    GetTraceSql());
         }
 
         if (tableAlias is null)

@@ -447,6 +447,13 @@ public sealed partial class Parser
     private List<string>? expectedList;
 
     /// <summary>
+    /// The position of the next table read in a FROM clause, as the reference's orderInFrom
+    /// is: the star expansion answers the columns in the order the tables were written, which
+    /// a right join's restructured tree does not preserve on its own.
+    /// </summary>
+    private int orderInFrom;
+
+    /// <summary>
     /// The parameters read so far, in the order their placeholders appear.
     /// </summary>
     private List<Expressions.Parameter> parameterList = [];
@@ -2284,7 +2291,7 @@ public sealed partial class Parser
         Tables.Table table = query.ToTable(
             tableAlias, columnTemplates, queryParameters, forCreateView: false, topQuery: select);
         Tables.TableFilter filter = new(
-            session, table, tableAlias, rightsChecked: true, select, 0, null);
+            session, table, tableAlias, rightsChecked: true, select, orderInFrom++, null);
         if (derivedColumnNames is not null)
         {
             filter.SetDerivedColumns(derivedColumnNames);
@@ -2534,7 +2541,7 @@ public sealed partial class Parser
                 : ReadTableFunction(name.Equals("TABLE", StringComparison.OrdinalIgnoreCase)
                     ? Expressions.Functions.Table.ArrayTableFunction.Table : Expressions.Functions.Table.ArrayTableFunction.TableDistinct);
             Tables.FunctionTable table = new(session.GetCurrentSchema(), session, function);
-            Tables.TableFilter filter = new(session, table, name, true, select, 0, null);
+            Tables.TableFilter filter = new(session, table, name, true, select, orderInFrom++, null);
             return ReadCorrelation(filter);
         }
 
@@ -2674,7 +2681,7 @@ public sealed partial class Parser
 
         Tables.TableFilter buildFilter = new(
             session, fromTable, filterAlias,
-            rightsChecked: true, select, 0, indexHints);
+            rightsChecked: true, select, orderInFrom++, indexHints);
         if (derivedColumnNames is not null)
         {
             buildFilter.SetDerivedColumns(derivedColumnNames);
@@ -2929,10 +2936,13 @@ public sealed partial class Parser
             filter2.AddCommonJoinColumnToExclude(column2);
         }
 
+        // The reference qualifies both operands with the schema of their table: two tables
+        // of the same name in different schemas would otherwise answer the same alias and
+        // the column would bind twice.
         Expressions.Expression tableExpr = new Expressions.ExpressionColumn(
-            filter1.GetColumnName(column1), filter1.GetTableAlias(), 0);
+            filter1.GetColumnName(column1), filter1.GetSchemaName()!, filter1.GetTableAlias(), 0);
         Expressions.Expression joinExpr = new Expressions.ExpressionColumn(
-            filter2.GetColumnName(column2), filter2.GetTableAlias(), 0);
+            filter2.GetColumnName(column2), filter2.GetSchemaName()!, filter2.GetTableAlias(), 0);
         Expressions.Expression equal = new Expressions.Conditions.Comparison(
             Expressions.Conditions.Comparison.Equal, tableExpr, joinExpr, whenOperand: false);
         if (on is null)
@@ -4594,23 +4604,44 @@ public sealed partial class Parser
         // the empty string for the star of every table, and the alias for the star of one
         // table ("SELECT t.* FROM T AS t").
         string? star = null;
-        List<string>? exceptColumns = null;
+        List<(string? Schema, string? Table, string Column)>? exceptColumns = null;
         if (ReadIf(Token.Asterisk))
         {
             star = string.Empty;
         }
 
-        if (star is not null && IsWord("EXCEPT"))
+        if (star is not null && CurrentType == ParserUtil.Except)
         {
+            Read();
             Expect(Token.OpenParen, "(");
             exceptColumns = [];
             do
             {
-                exceptColumns.Add(ReadIdentifier());
-            }
-            while (ReadIf(Token.Comma));
+                // The reference reads the column with up to two qualifiers, the table and
+                // the schema it names, as parseWildcard does.
+                string name = ReadIdentifier();
+                string? table = null, schema = null;
+                if (ReadIf(Token.Dot))
+                {
+                    table = name;
+                    name = ReadIdentifier();
+                    if (ReadIf(Token.Dot))
+                    {
+                        schema = table;
+                        table = name;
+                        name = ReadIdentifier();
+                        if (ReadIf(Token.Dot))
+                        {
+                            schema = table;
+                            table = name;
+                            name = ReadIdentifier();
+                        }
+                    }
+                }
 
-            Expect(Token.CloseParen, ")");
+                exceptColumns.Add((schema, table, name));
+            }
+            while (ReadIfMore());
         }
 
         List<Expressions.Expression> selectItems = [];
@@ -4771,14 +4802,19 @@ public sealed partial class Parser
 
         List<Expressions.Expression> selectList = [];
 
-        void ExpandStar(string? starAlias, List<string>? except)
+        void ExpandStar(string? starAlias, List<(string? Schema, string? Table, string Column)>? except)
         {
             if (fromFilters.Count == 0)
             {
                 throw DbException.GetSyntaxError(sql, Current.Start, "statement");
             }
 
-            foreach (Tables.TableFilter f in fromFilters)
+            // The reference sorts the filters by their order in the FROM clause before the
+            // star expansion (Select.init), so a right join — whose execution tree starts
+            // with the right table — still answers the columns left to right as written.
+            List<Tables.TableFilter> orderedFilters = [.. fromFilters];
+            orderedFilters.Sort(Tables.TableFilter.OrderInFromComparator);
+            foreach (Tables.TableFilter f in orderedFilters)
             {
                 if (starAlias is { Length: > 0 }
                     && !IdentifierEquals(f.GetTableAlias(), starAlias))
@@ -4786,29 +4822,120 @@ public sealed partial class Parser
                     continue;
                 }
 
-                foreach (Tables.Column column in f.GetTable().GetColumns())
+                if (starAlias is { Length: > 0 })
                 {
-                    if (!column.GetVisible()) continue;
-                    if (except is not null)
-                    {
-                        bool excluded = false;
-                        foreach (string c in except)
-                        {
-                            if (IdentifierEquals(c, column.GetName()))
-                            {
-                                excluded = true;
-                                break;
-                            }
-                        }
+                    ExpandFilterColumns(f, except);
+                    continue;
+                }
 
-                        if (excluded)
+                // The reference answers the columns a join shares once: the replacement
+                // filter's column, or COALESCE of both under the shared name when the two
+                // types do not order, and never the excluded twin of it.
+                Dictionary<Tables.Column, Tables.Column>? commonJoinColumns = f.GetCommonJoinColumns();
+                if (commonJoinColumns is not null)
+                {
+                    Tables.TableFilter replacementFilter = f.GetCommonJoinColumnsFilter()!;
+                    string replacementSchema = replacementFilter.GetSchemaName()!;
+                    string replacementAlias = replacementFilter.GetTableAlias()!;
+                    foreach (KeyValuePair<Tables.Column, Tables.Column> entry in commonJoinColumns)
+                    {
+                        Tables.Column left = entry.Key, right = entry.Value;
+                        if (!f.IsCommonJoinColumnToExclude(right)
+                            && !TakeExceptColumn(except, f, left)
+                            && !TakeExceptColumn(except, replacementFilter, right))
                         {
-                            continue;
+                            bool ordered = DataType.HasTotalOrdering(
+                                left.GetTypeInfo().GetValueType())
+                                && DataType.HasTotalOrdering(right.GetTypeInfo().GetValueType());
+                            selectList.Add(
+                                ReferenceEquals(left, right) || ordered
+                                ? new Expressions.ExpressionColumn(
+                                    replacementFilter.GetColumnName(right), replacementSchema, replacementAlias, 0)
+                                : new Expressions.Alias(
+                                    new Expressions.Functions.CoalesceFunction(
+                                        Expressions.Functions.CoalesceFunction.Coalesce,
+                                        new Expressions.ExpressionColumn(
+                                            f.GetColumnName(left), f.GetSchemaName()!, f.GetTableAlias()!, 0),
+                                        new Expressions.ExpressionColumn(
+                                            replacementFilter.GetColumnName(right), replacementSchema, replacementAlias, 0)),
+                                    left.GetName(), true));
                         }
                     }
-
-                    selectList.Add(new Expressions.ExpressionColumn(column, f, 0));
                 }
+
+                foreach (Tables.Column column in f.GetTable().GetColumns())
+                {
+                    if ((commonJoinColumns is null || !commonJoinColumns.ContainsKey(column))
+                        && !f.IsCommonJoinColumnToExclude(column))
+                    {
+                        AddExpandedColumn(f, column, except);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Takes the column out of the except list, telling whether it was there. An entry
+        /// that names a table or a schema matches only the column of that table.
+        /// </summary>
+        /// <param name="except">the excluded columns, or null</param>
+        /// <param name="f">the filter the column comes from</param>
+        /// <param name="column">the column</param>
+        /// <returns>true when the column was excluded and is consumed</returns>
+        bool TakeExceptColumn(
+            List<(string? Schema, string? Table, string Column)>? except, Tables.TableFilter f, Tables.Column column)
+        {
+            if (except is null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < except.Count; i++)
+            {
+                (string? schema, string? table, string name) = except[i];
+                if (IdentifierEquals(name, column.GetName())
+                    && (table is null || IdentifierEquals(table, f.GetTableAlias()))
+                    && (schema is null || IdentifierEquals(schema, f.GetSchemaName())))
+                {
+                    except.RemoveAt(i);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Adds the visible column of one filter to the select list, unless it is excluded.
+        /// </summary>
+        /// <param name="f">the filter</param>
+        /// <param name="column">the column</param>
+        /// <param name="except">the excluded names, or null</param>
+        void AddExpandedColumn(Tables.TableFilter f, Tables.Column column, List<(string? Schema, string? Table, string Column)>? except)
+        {
+            if (!column.GetVisible())
+            {
+                return;
+            }
+
+            if (TakeExceptColumn(except, f, column))
+            {
+                return;
+            }
+
+            selectList.Add(new Expressions.ExpressionColumn(column, f, 0));
+        }
+
+        /// <summary>
+        /// Expands every visible column of one filter, the alias-qualified star form.
+        /// </summary>
+        /// <param name="f">the filter</param>
+        /// <param name="except">the excluded names, or null</param>
+        void ExpandFilterColumns(Tables.TableFilter f, List<(string? Schema, string? Table, string Column)>? except)
+        {
+            foreach (Tables.Column column in f.GetTable().GetColumns())
+            {
+                AddExpandedColumn(f, column, except);
             }
         }
 
