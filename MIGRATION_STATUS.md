@@ -11898,3 +11898,15 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   `NativeGrowBuffer`.
 * Проверено: H2Sharp.Tests 2105/2105 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 59: покрытие — TimeZoneProvider (2026-11-08)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `TimeZoneProviderPortTests.EdgePathsAnswerThePort` (новый): `GetShortId`/
+  `ToString`/`Equals`/`GetHashCode` для фиксированного смещения и IANA-зоны,
+  `GetShortId` на эпохе июля 2024 (имя дневного времени), `GetTimeZoneOffsetUtc`
+  для эпохи ниже `MinUnixSeconds` (ветка shortage).
+* Проверено: H2Sharp.Tests 2106/2106 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).

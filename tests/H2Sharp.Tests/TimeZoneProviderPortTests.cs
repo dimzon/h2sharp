@@ -54,4 +54,35 @@ public sealed class TimeZoneProviderPortTests
         Assert.NotEqual(a, c);
         Assert.Equal(a.GetHashCode(), b.GetHashCode());
     }
+
+    [Fact]
+    public void EdgePathsAnswerThePort()
+    {
+        // Simple (fixed offset): GetShortId, ToString, Equals same instance, GetHashCode.
+        TimeZoneProvider fixed1 = TimeZoneProvider.OfOffset(3_600);
+        Assert.Equal(fixed1.GetId(), fixed1.GetShortId(0));
+        Assert.Equal("TimeZoneProvider " + fixed1.GetId(), fixed1.ToString());
+        Assert.True(fixed1.Equals(fixed1));
+        _ = fixed1.GetHashCode();
+
+        // WithTimeZone: use a zone that resolves on this machine.
+        TimeZoneProvider? zone = null;
+        foreach (string candidate in new[] { "Asia/Calcutta", "Asia/Kolkata", "America/New_York", "Europe/Berlin" })
+        {
+            try { zone = TimeZoneProvider.OfId(candidate); break; } catch { }
+        }
+
+        if (zone is not null)
+        {
+            string id = zone.GetId();
+            Assert.False(string.IsNullOrEmpty(zone.GetShortId(0)));
+            Assert.Equal("TimeZoneProvider " + id, zone.ToString());
+            Assert.True(zone.Equals(zone));
+            _ = zone.GetHashCode();
+            string shortId = zone.GetShortId(1720000000L);
+            Assert.False(string.IsNullOrEmpty(shortId));
+            long off = zone.GetTimeZoneOffsetUtc(-100_000_000_000L);
+            Assert.NotEqual(0, off);
+        }
+    }
 }
