@@ -11947,3 +11947,14 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   невалидного ввода, `Envelope2WKB`.
 * Проверено: H2Sharp.Tests 2114/2114 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 63: покрытие — MVStoreTool (2026-11-09)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `MVStoreToolCoverageTests` (новый, MvStore.Tests): `Info` на несуществующем
+  файле (ветка "File not found"), `Info` и `Dump` (details off/on) на
+  реальном файле MVStore.
+* Проверено: H2Sharp.Tests 2114/2114, MvStore 154/154, Data 719, Engine 9,
+  Native 97 (+8 skipped).
