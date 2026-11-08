@@ -11427,3 +11427,21 @@ H2Sharp.Tests перезамерян): строки 76464/85251 = 89.69% (был
   (квалифицированные имена schema.table.column); раньше `T1.A` ломал парсер.
 * Проверено: H2Sharp.Tests 2067/2068 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
+
+### Спринт 36: зеркало dml/delete.sql (2026-11-07)
+
+Замер (Debug; четыре сюиты не менялись — правки только тесты, их отчёты спринта 35,
+H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, ветви 31303/36578 = 85.58%
+(без изменений: DELETE-формы уже покрывались DeleteLimitOracleTests).
+
+* `DeleteScriptOracleTests` (новый) — эталонный dml/delete.sql: DELETE с ROWNUM (убран —
+  ROWNUM() не портирован; это отдельная находка), FETCH FIRST/NEXT ROW[S] ONLY,
+  FETCH FIRST/NEXT n ROW[S] ONLY, LIMIT с подзапросом и с параметром (обе стороны
+  отказывают 90012), EXPLAIN плана DELETE, TOP 10 в MSSQLServer-режиме (отдельный факт,
+  D-029 при открытии).
+* Находка (отложена): ROWNUM() — парсер бросает TODOException
+  ("ROWNUM needs currentPrepared, which the DML parse-only layer does not set"); эталон
+  поддерживает. Требует отдельного движкового спринта (проводка currentPrepared в DML
+  парсере).
+* Проверено: H2Sharp.Tests 2070/2071 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
