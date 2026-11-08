@@ -11466,3 +11466,18 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   прибавка 1 строка и 4 ветви (остальные уже ходятся через SET TIME ZONE / AT TIME ZONE).
 * Проверено: H2Sharp.Tests 2074/2075 (`Category!=BlockedByPort`; один красный —
   предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.
+
+### Спринт 39: SHOW/ANALYZE/ALTER VIEW (2026-11-07)
+
+Замер (Debug, пять сюит): строки 76648/85333 = 89.82% (было 89.78), ветви
+31316/36576 = 85.62% (было 85.58).
+
+* `ShowAnalyzeAlterOracleTests` (новый) — ANALYZE SAMPLE_SIZE с отрицательным
+  и слишком большим значением (90008 и 22003 — последнее, потому что порт теперь
+  читает int, как эталон, а не long), SHOW TABLES / SHOW TABLES FROM schema,
+  ALTER VIEW ... RENAME TO (успех и 90037).
+* Движок: PrepareAnalyze читает int, как эталон (было long с ручной проверкой →
+  90008 вместо 22003). PrepareAlterView: отсутствующий вид бросает 90037
+  (ViewNotFound1) вместо 42102 (TableOrViewNotFound1), как эталон.
+* Проверено: H2Sharp.Tests 2074/2075 (`Category!=BlockedByPort`; один красный —
+  предсуществующий аллокационный гейт), Data 719, Engine 9, MvStore 152, Native 97.

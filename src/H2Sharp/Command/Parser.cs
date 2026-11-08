@@ -1394,13 +1394,7 @@ public sealed partial class Parser
 
         if (IsWord("SAMPLE_SIZE"))
         {
-            long sample = ReadLong();
-            if (sample < 0 || sample > int.MaxValue)
-            {
-                throw DbException.GetInvalidValueException("non-negative int", sample);
-            }
-
-            command.SetTop((int)sample);
+            command.SetTop(ReadNonNegativeInt());
         }
 
         return command;
@@ -1499,9 +1493,19 @@ public sealed partial class Parser
         bool ifExists = ReadIfExists(false);
         string viewName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
         Table? table = schema.FindTableOrView(current, viewName);
-        if (table is not null && table is not Tables.TableView)
+        if (table is null)
         {
-            throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, viewName);
+            if (ifExists)
+            {
+                return new Dml.NoOperation(current);
+            }
+
+            throw DbException.Get(Api.ErrorCode.ViewNotFound1, viewName);
+        }
+
+        if (table is not Tables.TableView)
+        {
+            throw DbException.Get(Api.ErrorCode.ViewNotFound1, viewName);
         }
 
         if (IsWord("RENAME", consume: false))
