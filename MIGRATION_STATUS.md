@@ -12889,3 +12889,20 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.01 п.п. к спринту 109.
 * Проверено: H2Sharp.Tests 2284/2284, MvStore 185/185, Data 741/741,
   Specs 983/983 (+68 skipped).
+
+### Спринт 111: оракул форм схемы/домена/view (2026-11-09)
+
+* `Tables/TableView.cs`: 115 → **120/160** — список колонок у CREATE VIEW
+  `V(A, B) AS SELECT ...` попал в рендер create-SQL.
+* Новый `SchemaDomainViewFormsOracleTests` (2 оракула): view со списком
+  колонок; CREATE/RENAME/DROP SCHEMA с CASCADE; безымянный UNIQUE
+  (`ALTER TABLE ... ADD UNIQUE`) и счётчик констрейнтов в
+  INFORMATION_SCHEMA; домен с CHECK (`CREATE DOMAIN D AS INT CHECK(VALUE >
+  0)`, нарушение при вставке); присваивание строк в INT/NUMERIC/DATE/
+  TIMESTAMP/BOOLEAN; описание колонок из INFORMATION_SCHEMA.
+  Остальные файлы кластера (TableTypes UpdateRows, Column.Convert,
+  Schema.Add/Remove, ConstraintDomain) не дали строк: эти ветви уже
+  покрыты существующими прогонами либо недостижимы без fault-injection.
+* Итог: **90.97%** строк (78282/86049), **86.36%** ветвей (31846/36874).
+* Проверено: H2Sharp.Tests 2286/2286, MvStore 185/185, Data 741/741,
+  Specs 983/983 (+68 skipped).
