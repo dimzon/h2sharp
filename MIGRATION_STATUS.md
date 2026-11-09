@@ -12873,3 +12873,19 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.01 п.п. к спринту 108.
 * Проверено: H2Sharp.Tests 2282/2282, MvStore 185/185, Data 741/741,
   Specs 983/983 (+68 skipped).
+
+### Спринт 110: покрытие — LOB-значения (2026-11-09)
+
+* `Values/ValueBlob.cs`: 88 → **98/125**; `Values/ValueClob.cs`: 87 → **90/109**;
+  `Values/ValueLob.cs`: 106 → **107/131**. Новый `LobValueEdgeTests`: длины
+  малых LOB (октеты/символы), `IsLinkedToTable`, `Copy`/`CopyToResult` для
+  in-memory и stored LOB, сравнение смешанных пар (равные/разные префиксы и
+  длины), ленивое вычисление длины CLOB (`OctetLength` из текста), подсчёт
+  символов stored-CLOB через reader, отказ `Copy` для stored-LOB.
+* Осталось непокрытым: ветки «слишком длинного значения» (>1 GB),
+  IOException-обёртки чтения/сравнения и TODO `CopyToResult` для
+  file-backed LOB.
+* Итог: **90.97%** строк (78282/86049), **86.36%** ветвей (31846/36874);
+  +0.01 п.п. к спринту 109.
+* Проверено: H2Sharp.Tests 2284/2284, MvStore 185/185, Data 741/741,
+  Specs 983/983 (+68 skipped).
