@@ -11982,3 +11982,21 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
 * `TypeAndTrimOracleTests`: добавлены EXPLAIN-формы TRIM (select list и WHERE).
 * Проверено: H2Sharp.Tests 2115/2115 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 66: покрытие — Select (2026-11-09)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `SelectCoverageSprintOracleTests` (новый): GROUP BY через алиас и копии
+  столбцов, WITH TIES с ASC/DESC/NULLS, оконные функции с QUALIFY, ленивое
+  выполнение плоских и группированных запросов (SET LAZY_QUERY_EXECUTION).
+* Разбор `uncovered.py` показал, что оставшиеся непокрытые строки Select —
+  это TODOException (оптимизатор/зависимости/union/строки), мёртвые ветви
+  алиасов GROUP BY (первое условие второй петли недостижимо, т.к. sql либо
+  совпадает с базовым выражением, либо уже Alias-обёртка), ленивые пути
+  `QueryFlat`/`QueryGroupSorted` (требуют target/subquery) и setters
+  DISTINCT/DISTINCT ON, конфликт которых недостижим через парсер.
+  Покрытие файла осталось 1600/1761.
+* Проверено: H2Sharp.Tests 2119/2119 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
