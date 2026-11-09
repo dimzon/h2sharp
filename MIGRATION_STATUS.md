@@ -12440,3 +12440,28 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   `SPACE(70000 ...)`; ветки `ReplaceLobsForTrace` обоих писателей закрыты.
 * Проверено: H2Sharp.Tests 2169/2169 (`Category!=BlockedByPort`), MvStore
   185/185 (спринт 87); движок не менялся — только тесты и статус.
+
+### Спринт 89: покрытие — Value.Conversion.Families (2026-11-09)
+
+* `Value/Value.Conversion.Families.cs`: 970 → **1026/1083** строк (+56).
+  Добавлен `ValueConversionFamiliesOracleTests`: CHAR/VARCHAR/VARCHAR_IGNORECASE
+  при присваивании (padding, обрезка хвостовых пробелов, too-long 22001),
+  ветка CharPadding.Never — в отдельной базе с `MODE=MySQL` (порт фиксирует
+  режим при открытии, D-029); BINARY из BINARY (padding нулями) и усечение
+  при CAST; BLOB/CLOB/JSON precision; ошибки BLOB→CHAR/VARCHAR,
+  BOOLEAN→BINARY; ENUM-метки; JAVA_OBJECT из binary и проверка precision;
+  DECFLOAT из REAL с Infinity/NaN и `CAST('abc' AS DECFLOAT)`; плюс прямой
+  `ValueVarchar.ConvertToChar()`.
+* Найден дефект порта: в Oracle-режиме эталон разбирает `DATE` как
+  `TIMESTAMP(0)` (`Mode.dateIsTimestamp0`, Parser.java:5820), а порт читает
+  настоящий DATE — mode-ветки чтения типов не перенесены (задокументировано
+  в шапке `Parser.DataTypes.cs`). Тест `OracleDateFromTimestampStringMatchesJdbc`
+  добавлен с трейтом `BlockedByPort`: зелёный прогон его исключает, красный
+  показывает расхождение. Значение строки 1235-1236 при этом исполняется
+  (Oracle-совместимый разбор timestamp-строки в DATE), поэтому в измерении
+  покрытия оно закрыто.
+* Осталось непокрытым недостижимое: internal-error ветви, default-ветки
+  конверсий, путь BLOB не из памяти → CLOB (нужен файловый LOB) и
+  конверсии без target-типа (`ConvertTo`-early-return).
+* Проверено: H2Sharp.Tests 2174/2174 (`Category!=BlockedByPort`),
+  MvStore 185/185; `Category=BlockedByPort` перечисляет новый дефект.
