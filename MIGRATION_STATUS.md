@@ -12744,3 +12744,21 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.02 п.п. к спринту 101.
 * Проверено: H2Sharp.Tests 2224/2224, MvStore 185/185, Data 741/741,
   Specs 983/983 (+68 skipped).
+
+### Спринт 103: покрытие — BETWEEN и IN как выражения (2026-11-09)
+
+* `Expressions/Conditions/BetweenPredicate.cs`: 105 → **129/130**. Прямой тест:
+  when-operand форма (`GetWhenValue`, NULL-операнд → false, отсутствие
+  негативной формы, `Optimize` не сворачивает), обычная и SYMMETRIC формы с
+  вычислением, обход подвыражений (0..2 и выход за границу), cost,
+  `NeedParentheses`.
+* `Expressions/Conditions/ConditionIn.cs`: 55 → **72/76**. Прямой тест
+  `ConditionInConstantSet`: when-operand и обычная формы, NOT, обход
+  подвыражений, `GetValue`, `IsWhenConditionOperand`.
+* Непокрытым осталось: ветки `CreateIndexConditions` для compound-IN
+  (ExpressionList с не-колоночными элементами), до которых SQL-планировщик
+  не доводит; закрывающая скобка симметричной ветки BETWEEN.
+* Итог: **90.78%** строк (78111/86049), **86.15%** ветвей (31766/36874);
+  +0.05 п.п. к спринту 102.
+* Проверено: H2Sharp.Tests 2226/2226, MvStore 185/185, Data 741/741,
+  Specs 983/983 (+68 skipped).
