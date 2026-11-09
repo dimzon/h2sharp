@@ -12,7 +12,12 @@ namespace H2SharpSql.Specs.Commands;
 
 public sealed class CreateMaterializedViewCommandTests
 {
-    /// <summary>docs/commands.html:1923 — CREATE [ OR REPLACE ]</summary>
+    /// <summary>
+    /// docs/commands.html:1923 — CREATE [ OR REPLACE ]. The reference parses OR REPLACE but
+    /// then creates the underlying "&lt;name&gt;$1" table again, so the statement fails with
+    /// the table-already-exists error and the old view stays. The JVM oracle in
+    /// MaterializedViewFormsOracleTests pins the same behaviour.
+    /// </summary>
     [Fact]
     public void CreateMaterializedView_OrReplace_ReplacesTheDefinition() // CMD-1923
     {
@@ -20,9 +25,13 @@ public sealed class CreateMaterializedViewCommandTests
         GivenTestTable(connection);
         _ = connection.Execute("CREATE MATERIALIZED VIEW TEST_VIEW AS SELECT ID FROM TEST WHERE ID < 100");
 
-        _ = connection.Execute("CREATE OR REPLACE MATERIALIZED VIEW TEST_VIEW AS SELECT ID FROM TEST WHERE ID > 1");
+        H2Sharp.H2SharpException e = Assert.Throws<H2Sharp.H2SharpException>(
+            () => connection.Execute(
+                "CREATE OR REPLACE MATERIALIZED VIEW TEST_VIEW AS SELECT ID FROM TEST WHERE ID > 1"));
+        Assert.Equal(42101, e.H2ErrorCode);
 
-        Assert.Equal(1, connection.QuerySingle<int>("SELECT COUNT(*) FROM TEST_VIEW"));
+        // The original definition (ID < 100 over two rows) is still in place.
+        Assert.Equal(2, connection.QuerySingle<int>("SELECT COUNT(*) FROM TEST_VIEW"));
     }
 
     /// <summary>docs/commands.html:1924 — MATERIALIZED VIEW [ IF NOT EXISTS ] [schemaName.]viewName</summary>

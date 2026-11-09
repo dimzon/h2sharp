@@ -27,7 +27,6 @@ public sealed class CreateMaterializedView : SchemaCommand
     private string? comment;
     private H2Query? select;
     private string selectSQL = string.Empty;
-    private List<string>? columnNames;
 
     /// <summary>Creates the statement.</summary>
     public CreateMaterializedView(SessionLocal session, Schema schema) : base(session, schema)
@@ -52,9 +51,6 @@ public sealed class CreateMaterializedView : SchemaCommand
         select = value;
         createTable.SetQuery(value);
     }
-
-    /// <summary>Sets the column names written in parentheses.</summary>
-    public void SetColumnNames(List<string>? names) => columnNames = names;
 
     /// <summary>Sets IF NOT EXISTS.</summary>
     public void SetIfNotExists(bool value)
@@ -86,24 +82,13 @@ public sealed class CreateMaterializedView : SchemaCommand
             }
 
             view = (MaterializedView)old;
-            db.RemoveSchemaObject(GetSession(), view.GetUnderlyingTable());
+            // Reference: the old underlying table is not dropped first, so the CREATE TABLE
+            // of "<name>$1" reports the existing table. OR REPLACE of a materialized view
+            // therefore fails the same way there.
         }
 
         createTable.Update();
         Table underlying = schema.GetTableOrView(GetSession(), viewName + "$1");
-        if (columnNames is not null)
-        {
-            Column[] columns = underlying.GetColumns();
-            if (columns.Length != columnNames.Count)
-            {
-                throw DbException.Get(ErrorCode.ColumnCountDoesNotMatch);
-            }
-
-            for (int i = 0; i < columns.Length; i++)
-            {
-                columns[i].Rename(columnNames[i]);
-            }
-        }
 
         if (view is null)
         {

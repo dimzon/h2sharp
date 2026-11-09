@@ -106,12 +106,13 @@ public sealed class MaterializedView : Table
     public override Column[] GetColumns() => columns;
 
     /// <inheritdoc/>
-    public override Index? GetScanIndex(SessionLocal session) => table.GetScanIndex(session);
+    public override Index? GetScanIndex(SessionLocal session)
+        => GetBestPlanItem(session, null, null, -1, null, null, isSelectCommand: true).GetIndex();
 
     /// <inheritdoc/>
     public override Index? GetScanIndex(SessionLocal session, int[]? masks, TableFilter[]? filters,
         int filter, SortOrder? sortOrder, AllColumnsForPlan? allColumnsSet)
-        => table.GetScanIndex(session, masks, filters, filter, sortOrder, allColumnsSet);
+        => GetBestPlanItem(session, masks, filters, filter, sortOrder, allColumnsSet, isSelectCommand: true).GetIndex();
 
     /// <inheritdoc/>
     public override PlanItem GetBestPlanItem(SessionLocal session, int[]? masks, TableFilter[]? filters,

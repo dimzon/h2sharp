@@ -1259,25 +1259,15 @@ public sealed partial class Parser
             throw DbException.GetUnsupportedException("CREATE FORCE MATERIALIZED VIEW");
         }
 
+        // Reference parseCreateMaterializedView: AS comes first, and the comment, when
+        // written, follows it and precedes the query.
+        ExpectWord("AS");
         if (IsWord("COMMENT"))
         {
             _ = IsWord("IS");
             command.SetComment(ReadString());
         }
 
-        if (ReadIf(Token.OpenParen))
-        {
-            List<string> columns = [];
-            do
-            {
-                columns.Add(ReadIdentifier());
-            }
-            while (ReadIf(Token.Comma));
-            Expect(Token.CloseParen, ")");
-            command.SetColumnNames(columns);
-        }
-
-        ExpectWord("AS");
         string selectSql = sql[Current.Start..];
         command.SetSelectSql(selectSql);
         Query.Query query = ParseQueryExpression(prepare: false);
