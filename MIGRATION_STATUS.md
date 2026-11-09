@@ -12600,3 +12600,21 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **90.42%** строк (77798/86043), **85.89%** ветвей (31673/36878).
 * Проверено: H2Sharp.Tests 2207/2207 (`Category!=BlockedByPort`),
   MvStore 185/185, H2Sharp.Data.Tests 741/741.
+
+### Спринт 97: покрытие — публичный API LIRS-кэша (2026-11-09)
+
+* `MvStore/Cache/CacheLongKeyLIRS.cs`: 522 → **596/603** строк (98.8%).
+  Новый `CacheLongKeyLirsApiTests`: контракт map-view — `EntrySet`, `KeySet`,
+  `GetMap`, `Get`/`Peek`/`Put`/`Remove` (включая возврат старого значения и
+  промах), `PutAll`, `ContainsKey`/`ContainsValue`, счётчики hits/misses,
+  `Size`/`SizeHot`/`SizeNonResident`/`SizeMapArray`/`GetUsedMemory`/
+  `GetMemory`, четыре комбинации `Keys(cold, nonResident)`; базовая
+  `SizeOf` (подкласс в `TestCacheLirs` её прячет); малый кэш, где записи
+  вытесняются, но бюджет памяти соблюдается, и `TrimNonResidentQueue`.
+* Осталось непокрытым: ветка `InvalidOperationException` о несогласованном
+  состоянии очередей (защитная), обход очереди нерезидентов при пустой
+  очереди (в этом сценарии записи вытесняются целиком) и закрывающие строки
+  служебных методов.
+* Итог: **90.50%** строк (77872/86043), **85.94%** ветвей (31694/36878).
+* Проверено: H2Sharp.Tests 2209/2209 (`Category!=BlockedByPort`),
+  MvStore 185/185, H2Sharp.Data.Tests 741/741.
