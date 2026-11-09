@@ -1713,6 +1713,18 @@ public sealed class MVStore : IDisposable
                 }
             }
 
+            if (version == 0 && fileStore is not null)
+            {
+                // Every map has just been re-rooted at an empty page, but that lowered the
+                // root versions instead of registering unsaved changes, so no later commit
+                // would write them. Materialize the emptied store now: the chunk written
+                // here is the one the close-time header names; without it a reopen would
+                // follow the old header to a discarded (still readable) chunk and resurrect
+                // the rolled-back data. The chunk keeps the rolled-back version 0 — the
+                // reference promises the current version is 0 after this call.
+                StoreNow(true, currentVersion);
+            }
+
             OnVersionChange(currentVersion);
             Debug.Assert(!HasUnsavedChanges());
         }

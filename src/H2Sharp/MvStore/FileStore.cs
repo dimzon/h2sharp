@@ -704,6 +704,36 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
             string? metaId = layout!.Get(MetaIdKey);
             layout.SetInitialRoot(layout.CreateEmptyLeaf(), MVStore.InitialVersion);
             layout.Put(MetaIdKey, metaId!);
+
+            // The reference stops here: the layout no longer references the chunks of the
+            // discarded versions, but those chunks stay in the runtime chunk set, so the
+            // close-time invariant (every chunk is the last one or has a layout entry)
+            // rejects them, and the next store header still names an old chunk that the
+            // reopened store would read as the newest one. Version 0 means "no data":
+            // forget the chunks. The store itself is rewritten by the caller once every
+            // map has been re-rooted (MVStore.RollbackTo).
+            lock (deadChunksLock)
+            {
+                deadChunks.Clear();
+            }
+
+            lock (removedPages)
+            {
+                removedPages.Clear();
+            }
+
+            recentlySaved.Clear();
+            saveChunkLock.Lock();
+            try
+            {
+                chunks.Clear();
+                lastChunk = null;
+                lastChunkId = 0;
+            }
+            finally
+            {
+                saveChunkLock.Unlock();
+            }
         }
         else
         {

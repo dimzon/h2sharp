@@ -801,3 +801,27 @@ JSON-строка при обратной записи остаётся JSON-с�
 как дату; преобразования Utc/Local у границы `DateTime.MinValue` могут
 упереться в диапазон `DateTime`.
 
+
+### D-051. MVStore: `rollbackTo(0)` действительно очищает store (дефект эталона исправлен)
+
+Указание пользователя: лечим дефект оригинала. Эталонный
+`MVStore.rollbackTo(0)` / `FileStore.rollbackTo(0)` сбрасывает layout-карту, но:
+(1) оставляет в runtime-наборе чанки откатанных версий — при Close срабатывает
+`verifyOrphanedChunksAbsence` (проверено на JVM 2.5.259: `AssertionError`,
+`chunk:…,occupancy:05`); (2) не переписывает store header, поэтому после Close
+заголовок указывает на старый чанк, и переоткрытие видит прежние данные;
+(3) карты, созданные в версии 0, только закрываются и снимаются с учёта, но их
+корни не очищаются (это оставлено как в эталоне: закрытая карта остаётся
+читаемой для параллельных читателей).
+
+Порт: `FileStore.RollbackTo(0)` после сброса layout очищает `chunks`,
+`deadChunks`, `recentlySaved`, `removedPages`, `lastChunk`/`lastChunkId`;
+`MVStore.RollbackTo(0)` после отката всех карт материализует пустое состояние
+через `StoreNow(true, currentVersion)` — новый chunk с тем же номером версии 0
+(эталонное обещание `getCurrentVersion() == 0` сохраняется), чтобы header при
+Close указывал на существующий пустой layout, а не на отброшенный чанк.
+Данные откатанных версий в файле остаются недостижимым мусором (место не
+переиспользуется), но переоткрытие их не видит.
+
+Регрессия: `RollbackToZeroTests` (`RollbackToZeroEmptiesTheStoreAndKeepsWriting`,
+`CloseRightAfterRollbackToZeroReopensEmpty`).

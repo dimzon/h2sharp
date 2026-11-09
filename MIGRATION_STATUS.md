@@ -12291,3 +12291,19 @@ SQL, хранимые значения, параметры и LOB-хранили
   `INSERT DIRECT INTO ... SELECT` (оракул, используют существующие ветки
   `ParseInsert`, не добавляя кода).
 * Проверено: H2Sharp.Tests 2154/2154 (`Category!=BlockedByPort`).
+
+### Спринт 81: MVStore — rollbackTo(0) (дефект эталона исправлен, D-051)
+
+По указанию пользователя вылечен дефект оригинала, обнаруженный при покрытии.
+
+* Воспроизведение: файловый store, `Put → Commit → Put → Commit →
+  RollbackTo(0) → Close` — эталон на JVM падает `verifyOrphanedChunksAbsence`
+  (orphan-чанк), порт падал так же; после Close заголовок ссылался на старый
+  чанк, и переоткрытие могло воскресить данные.
+* Фикс: `FileStore.RollbackTo(0)` очищает набор чанков/очереди/`lastChunk`
+  после сброса layout; `MVStore.RollbackTo(0)` материализует пустое состояние
+  новым чанком версии 0 (`StoreNow(true, currentVersion)`), сохраняя
+  эталонный контракт `GetCurrentVersion() == 0`.
+* Регрессия: `RollbackToZeroTests` — откат с последующей записью и переоткрытием
+  (видны только новые строки) и немедленный Close с переоткрытием (пусто).
+* Проверено: MvStore 172/172, H2Sharp.Tests 2154/2154 (`Category!=BlockedByPort`).
