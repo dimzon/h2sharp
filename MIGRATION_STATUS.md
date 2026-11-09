@@ -12487,3 +12487,41 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: новый оракул-класс 2/2; полный прогон H2Sharp.Tests
   2174/2174 (`Category!=BlockedByPort`) и MvStore 185/185 — до добавления
   тестов, движок не менялся.
+
+### Спринт 91: покрытие — CompressTool (2026-11-09)
+
+* `Tools/CompressTool.cs`: 106 → **171/171** строк (100%). Новый
+  `CompressToolCoverageTests` (13 кейсов): round-trip кадров для LZF, DEFLATE
+  (включая options-суффикс `DEFLATE level 1`), NO и `null`; длины 0/1/4/5/200
+  (одно- и двухбайтовый Rice-int), 200 000 (трёхбайтовый int и ветка
+  `GetBuffer` выше `MaxBufferSize` = 3 × 128 KiB) и 2 200 000 (четырёхбайтовый
+  int); статический `Expand(input, output, outPos)`; откат на NO для
+  несжимаемых случайных данных; все ширины `WriteVariableInt`/
+  `ReadVariableInt`/`GetVariableIntLength` (включая пятибайтовые отрицательные
+  и `0x10000000`); ошибки `CompressionError` для пустого/обрезанного кадра и
+  `UnsupportedCompressionAlgorithm` для неизвестного имени.
+* Проверено: новый класс 13/13.
+
+### Спринт 92: покрытие — ANALYZE и коллекционные значения (2026-11-09)
+
+* `Command/Ddl/Analyze.cs`: 93 → **148/154** строк (+55). Новый
+  `AnalyzeCommandOracleTests`: 20 000 строк, у колонки A 20 000 различных
+  значений — при `SAMPLE_SIZE 0` (полный скан) счётчик
+  `SelectivityDistinctCount` (10 000) переполняется и сбрасывается; колонка B
+  из значений с одним хэш-бакетом (mod 8) заставляет хэш-таблицу пробегать
+  цепочки и расти; колонка C из одной константы даёт selectivity 0 → 1;
+  пустая таблица — ветка `SetSelectivity(0)`; bare `ANALYZE` обходит все схемы.
+* `Value/ValueCollectionBase.cs`: 84 → **107/107** строк (100%). Новый
+  `ValueCollectionMembersTests`: кэш хэша (первый вызов считает, второй
+  возвращает), сравнение коллекции с NULL → `int.MinValue`, ROW разной длины →
+  `ColumnCountDoesNotMatch`, правило «первого NULL» для ARRAY (левый NULL —
+  левое значение, правый — параметр, NULL с обеих сторон — ответа нет).
+* Наблюдение (вне спринта): `ANALYZE TABLE` локальной временной таблицы порт
+  пропускает, эталон анализирует; в INFORMATION_SCHEMA порта локальная
+  временная таблица вообще не видна, поэтому SELECTIVITY не сравнить. Это
+  отдельный известный пробел (локальные temp-таблицы в INFORMATION_SCHEMA),
+  движок в спринте не менялся.
+* Осталось непокрытым: `GetSelectivity` при count=0 (в эталоне тоже
+  недостижимо), `GetCommandType` (используется только meta-записями).
+* Проверено: H2Sharp.Tests 2194/2194 (`Category!=BlockedByPort`),
+  MvStore 185/185, H2Sharp.Data.Tests 741/741.
