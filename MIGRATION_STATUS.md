@@ -12379,3 +12379,23 @@ SQL, хранимые значения, параметры и LOB-хранили
 * Остаётся единственный реальный пробел из спринта 84 — отсутствующий рендер
   прижатого условия в плане derived-таблицы (push-down оптимизатора).
 * Проверено: `TableValueConstructorCoverageOracleTests` 6/6.
+
+### Спринт 86: push-down условий в производную таблицу VALUES (дефект порта)
+
+Закрыт пробел, найденный оракулом в спринте 84: план `FROM (VALUES ...) T(X)
+WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что фильтр молча
+выбрасывал index-условие.
+
+* Причина: `VirtualConstructedTable.GetScanIndex` создавал
+  `VirtualConstructedTableIndex` **без колонок** (`[]`), тогда как эталон
+  передаёт `IndexColumn.wrap(columns)`. `TableFilter.Prepare()` оставляет
+  условие только если колонка — первая в индексе; с пустым списком
+  `GetColumnIndex` = -1, условие удалялось, и в план ничего не попадало.
+* Исправлено 1:1 с эталоном: у индекса теперь колонки
+  (`IndexColumn.Wrap(GetColumns())`), тип `IndexType.CreateNonUnique(true)`
+  как в `VirtualTableIndex`, `DataChangeDeltaTable` тоже передаёт колонки.
+  Заодно портирован `FunctionTable ? "function" : "table scan"` в `GetPlanSQL`.
+* Оракул: в `ValuesPlansMatchJdbc` добавлены планы с прижатым условием
+  (`WHERE X = 1`, `WHERE X > 1`, join двух VALUES) — совпадают с JVM.
+* Проверено: H2Sharp.Tests 2160/2160 (`Category!=BlockedByPort`),
+  MvStore 185/185.

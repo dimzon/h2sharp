@@ -89,7 +89,7 @@ public sealed class DataChangeDeltaTable : VirtualConstructedTable
             expressions[i] = new ExpressionColumn(columns[i].GetName(), tableName, 0);
         }
 
-        index = new VirtualConstructedTableIndex(this);
+        index = new VirtualConstructedTableIndex(this, IndexColumn.Wrap(columns));
     }
 
     /// <summary>

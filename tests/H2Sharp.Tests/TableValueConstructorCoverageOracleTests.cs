@@ -40,6 +40,11 @@ public sealed class TableValueConstructorCoverageOracleTests
     {
         ExplainOracleTests.Check([
             "EXPLAIN SELECT * FROM (VALUES (1), (2)) T(X)",
+            // The pushed condition is printed on the derived table's scan; the index of a
+            // virtual table must know its columns or the filter drops the condition.
+            "EXPLAIN SELECT * FROM (VALUES (1), (2)) T(X) WHERE X = 1",
+            "EXPLAIN SELECT * FROM (VALUES (1), (2)) T(X) WHERE X > 1",
+            "EXPLAIN SELECT * FROM (VALUES (1), (2)) T(X), (VALUES (3), (4)) U(Y) WHERE X = Y",
             "SELECT * FROM (VALUES (1), (2)) T(X) WHERE X = 1",
             "SELECT * FROM (VALUES (1), (2)) T(X) WHERE X = 2",
         ]);

@@ -33,7 +33,8 @@ public abstract class VirtualConstructedTable : Table
     public abstract ResultInterface GetResult(SessionLocal session);
 
     /// <inheritdoc/>
-    public override Index? GetScanIndex(SessionLocal session) => new VirtualConstructedTableIndex(this);
+    public override Index? GetScanIndex(SessionLocal session)
+        => new VirtualConstructedTableIndex(this, IndexColumn.Wrap(GetColumns()));
 
     // The reference inherits these from VirtualTable, which has no indexes of its own.
 

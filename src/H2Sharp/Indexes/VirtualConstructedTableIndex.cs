@@ -27,8 +27,9 @@ public sealed class VirtualConstructedTableIndex : Index
     /// Creates the index of a virtual table.
     /// </summary>
     /// <param name="table">the table</param>
-    public VirtualConstructedTableIndex(VirtualConstructedTable table)
-        : base(table, 0, "VIRTUAL_CONSTRUCTED_TABLE_INDEX", [], 0, null)
+    /// <param name="columns">the index columns</param>
+    public VirtualConstructedTableIndex(VirtualConstructedTable table, IndexColumn[] columns)
+        : base(table, 0, "VIRTUAL_CONSTRUCTED_TABLE_INDEX", columns, 0, IndexType.CreateNonUnique(true))
     {
         virtualTable = table;
     }
@@ -61,7 +62,8 @@ public sealed class VirtualConstructedTableIndex : Index
     public override bool CanGetFirstOrLast() => false;
 
     /// <inheritdoc/>
-    public override string GetPlanSql() => "table scan";
+    public override string GetPlanSql()
+        => virtualTable is FunctionTable ? "function" : "table scan";
 
     /// <inheritdoc/>
     public override void Close(SessionLocal session)
