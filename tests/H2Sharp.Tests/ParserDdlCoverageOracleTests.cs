@@ -316,6 +316,33 @@ public sealed class ParserDdlCoverageOracleTests
     }
 
     [JavaOracleFact]
+    public void OverridingIdentityMatchJdbc()
+    {
+        ExplainOracleTests.Check([
+            "CREATE TABLE OI(ID INT GENERATED ALWAYS AS IDENTITY, V INT)",
+            "INSERT INTO OI OVERRIDING SYSTEM VALUE VALUES (5, 1), (6, 2)",
+            "SELECT ID, V FROM OI ORDER BY ID",
+            "INSERT INTO OI OVERRIDING USER VALUE VALUES (7, 3)",
+            "SELECT ID, V FROM OI ORDER BY ID",
+            "DROP TABLE OI",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void InsertSelectShortcutsMatchJdbc()
+    {
+        ExplainOracleTests.Check([
+            "CREATE TABLE IS1(A INT)",
+            "CREATE TABLE IS2(A INT)",
+            "INSERT DIRECT INTO IS1 SELECT 1",
+            "INSERT DIRECT INTO IS2 SELECT 2",
+            "SELECT A FROM IS1 UNION ALL SELECT A FROM IS2 ORDER BY A",
+            "DROP TABLE IS1",
+            "DROP TABLE IS2",
+        ]);
+    }
+
+    [JavaOracleFact]
     public void IgnoreCaseVarcharMatchesJdbc()
     {
         ExplainOracleTests.Check([

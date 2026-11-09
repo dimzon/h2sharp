@@ -12284,3 +12284,10 @@ SQL, хранимые значения, параметры и LOB-хранили
   `rollbackTo(0)` сам падает (данные остаются, `verifyOrphanedChunksAbsence`
   на Close), `Clear()` посреди жизни ломает учёт — порт воспроизводит оба.
 * Проверено: MvStore 170/170.
+
+### Спринт 80: покрытие — Parser (INSERT-формы) (2026-11-09)
+
+* `ParserDdlCoverageOracleTests`: `INSERT OVERRIDING SYSTEM/USER VALUE` и
+  `INSERT DIRECT INTO ... SELECT` (оракул, используют существующие ветки
+  `ParseInsert`, не добавляя кода).
+* Проверено: H2Sharp.Tests 2154/2154 (`Category!=BlockedByPort`).
