@@ -12525,3 +12525,18 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   недостижимо), `GetCommandType` (используется только meta-записями).
 * Проверено: H2Sharp.Tests 2194/2194 (`Category!=BlockedByPort`),
   MvStore 185/185, H2Sharp.Data.Tests 741/741.
+
+### Спринт 93: покрытие — LZF-потоки (2026-11-09)
+
+* `Compression/LZFOutputStream.cs`: 69 → **99/99** строк (100%).
+  `Compression/LZFInputStream.cs`: 114 → **147/147** (100%). Новый
+  `LzfStreamCoverageTests`: round-trip 300 KiB через блоки 128 KiB, обе
+  перегрузки `Write` (массив и span) поперёк границы буфера, `WriteByte` при
+  полном буфере (сначала Flush), явный `Flush`, заголовок `H2IS`, `.NET`
+  контракт чтения (0 в конце, не -1), `ReadByte`, `Read(span)` (включая пустой
+  и после конца), `Read(byte[],…)` c count=0 и через `CopyTo`, повреждённый
+  блок → `IOException("Corrupt LZF block")`, поток без заголовка → `IOException`,
+  и запреты read-only/write-only членов (Length, Position, Seek, SetLength,
+  Read/Write не той стороны).
+* Проверено: H2Sharp.Tests 2197/2197 (`Category!=BlockedByPort`),
+  MvStore 185/185, H2Sharp.Data.Tests 741/741.
