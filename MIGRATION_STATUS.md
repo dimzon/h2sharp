@@ -12017,3 +12017,14 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   dependencies, Commit/Flush).
 * Проверено: H2Sharp.Tests 2123/2123 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 68: покрытие — NullValueDataType (2026-11-09)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `NullValueDataTypeCoverageTests` (новый, MvStore.Tests): Compare/BinarySearch
+  возвращают 0; Write/Read массивов заполняет NULL.
+* Покрытие файла: 16/16.
+* Проверено: H2Sharp.Tests 2123/2123, MvStore 154/154, Data 719, Engine 9,
+  Native 97 (+8 skipped).
