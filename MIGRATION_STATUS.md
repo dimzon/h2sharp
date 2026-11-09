@@ -12325,3 +12325,18 @@ SQL, хранимые значения, параметры и LOB-хранили
   `TryExecuteUnderStoreLock`, ожидание в `IsClosed` и часы назад в
   `GetTimeAbsolute` — недостижимы без конкурентных/повреждённых сценариев.
 * Проверено: MvStore 182/182.
+
+### Спринт 83: покрытие — MVMap: lookup-края (2026-11-09)
+
+Замер на входе (union, `MVMap.cs` не менялся): 1077/1170.
+
+* `MVMapLookupEdgeTests` (новый, MvStore.Tests): `GetKey` за концом глубокого
+  дерева (PageSplitSize=64, 600 ключей) и отрицательный индекс, не-generic
+  `IEnumerable` у `KeyList`, `ToString`/`Reset` синглтонов `DecisionMaker`
+  (default/put/remove/if_absent/if_present).
+* Покрытие `MVMap.cs`: 1077/1170 → **1083/1170** (+6). Осталось 87 строк:
+  recovery/копирование корня при конкурентном открытии, flush append-buffer
+  со сплитом, IObjectMapAccess-члены (internal), interrupt/root-lock защиты —
+  недостижимы без конкурентных или внутренних сценариев (MvStore.Tests без
+  InternalsVisibleTo).
+* Проверено: MvStore 185/185.
