@@ -150,6 +150,10 @@ public sealed class Alias : Expression
     }
 
     /// <inheritdoc/>
+    public override string GetColumnNameForView(SessionLocal session, int columnIndex, bool cte)
+        => alias;
+
+    /// <inheritdoc/>
     public override bool IsEverything(ExpressionVisitor visitor)
     {
         return expr.IsEverything(visitor);

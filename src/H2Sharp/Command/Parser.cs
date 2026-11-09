@@ -2558,11 +2558,11 @@ public sealed partial class Parser
         {
             Expression columnExp = expressions[i];
 
-            // The name the statement gave wins; without it the name of the expression is the
-            // name, and for a common table expression the name of the column.
+            // The name the statement gave wins; without it the view rule decides, which for
+            // the default mode is the alias the expression has.
             string columnName = cols.Count > i
                 ? cols[i]
-                : cte ? columnExp.GetColumnName(current, i) : columnExp.GetAlias(current, i);
+                : columnExp.GetColumnNameForView(current, i, cte);
             columnTemplateList.Add(new Tables.Column(columnName, columnExp.GetTypeInfo()));
         }
 

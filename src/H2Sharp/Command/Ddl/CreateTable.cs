@@ -302,7 +302,7 @@ public sealed class CreateTable : CommandWithColumns
         for (int i = 0; i < select.GetColumnCount(); i++)
         {
             AddColumn(new Column(
-                expressions[i].GetColumnName(GetSession(), i), expressions[i].GetTypeInfo()));
+                expressions[i].GetColumnNameForView(GetSession(), i, false), expressions[i].GetTypeInfo()));
         }
     }
 

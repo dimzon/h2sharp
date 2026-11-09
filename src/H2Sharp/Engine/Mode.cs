@@ -119,6 +119,33 @@ public sealed class Mode
     }
 
     /// <summary>
+    /// How a column of a query gets its name when the query becomes a view, a table or a
+    /// common table expression: <c>Mode.ViewExpressionNames</c> in the reference.
+    /// </summary>
+    /// <remarks>
+    /// The reference calls the nested enum <c>ViewExpressionNames</c>, the same name as its
+    /// field; C# does not allow a type and a property to share a name, so the enum is named
+    /// <c>ExpressionNames</c> and the property keeps the field's name.
+    /// </remarks>
+    public enum ExpressionNames
+    {
+        /// <summary>
+        /// The alias when there is one, otherwise the name derived from the expression.
+        /// </summary>
+        AsIs,
+
+        /// <summary>
+        /// Refuse a column that has no alias.
+        /// </summary>
+        Exception,
+
+        /// <summary>
+        /// Derive a name from the expression text, MySQL's way.
+        /// </summary>
+        MysqlStyle,
+    }
+
+    /// <summary>
     /// Whether <c>#</c> begins a name, as it does in Oracle and in SQL Server.
     /// </summary>
     public bool SupportPoundSymbolForColumnNames { get; }
@@ -130,6 +157,16 @@ public sealed class Mode
     /// column label.
     /// </summary>
     public bool AliasColumnName { get; }
+
+    /// <summary>
+    /// How a column of a query is named when the query becomes a view or a table.
+    /// </summary>
+    public ExpressionNames ViewExpressionNames { get; }
+
+    /// <summary>
+    /// How a column of a query is named when the query becomes a common table expression.
+    /// </summary>
+    public ExpressionNames CteExpressionNames { get; }
 
     /// <summary>
     /// Whether a number written <c>0x1A</c> is a string of bytes rather than the number 26.
@@ -379,7 +416,9 @@ public sealed class Mode
         bool alterTableModifyColumnPreserveNullability = false,
         bool sysDummy1 = false,
         bool aliasColumnName = false,
-        IReadOnlySet<string>? disallowedTypes = null)
+        IReadOnlySet<string>? disallowedTypes = null,
+        ExpressionNames viewExpressionNames = ExpressionNames.AsIs,
+        ExpressionNames cteExpressionNames = ExpressionNames.AsIs)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
@@ -422,6 +461,8 @@ public sealed class Mode
         AlterTableModifyColumn = alterTableModifyColumn;
         AlterTableModifyColumnPreserveNullability = alterTableModifyColumnPreserveNullability;
         DisallowedTypes = disallowedTypes ?? FrozenSet<string>.Empty;
+        ViewExpressionNames = viewExpressionNames;
+        CteExpressionNames = cteExpressionNames;
     }
 
     /// <summary>
@@ -473,35 +514,43 @@ public sealed class Mode
                 updateSequenceOnManualIdentityInsertion: true, takeInsertedIdentity: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true,
                 numericWithBooleanComparison: true, sysDummy1: true, takeInsertedIdentity: true,
-                aliasColumnName: true),
+                aliasColumnName: true, viewExpressionNames: ExpressionNames.Exception,
+                cteExpressionNames: ExpressionNames.Exception),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false, sysDummy1: true,
-                takeInsertedIdentity: true, aliasColumnName: true),
+                takeInsertedIdentity: true, aliasColumnName: true,
+                viewExpressionNames: ExpressionNames.Exception,
+                cteExpressionNames: ExpressionNames.Exception),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true,
-                allowPlusForStringConcat: true, topInSelect: true, numericWithBooleanComparison: true),
+                allowPlusForStringConcat: true, topInSelect: true, numericWithBooleanComparison: true,
+                cteExpressionNames: ExpressionNames.Exception),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
                 greatestLeastIgnoreNulls: true, swapLogFunctionParameters: true,
                 allowPlusForStringConcat: true, topInSelect: true, topInDml: true,
                 identityClause: true, allowEmptySchemaValuesAsDefaultSchema: true,
                 discardWithTableHints: true, numericWithBooleanComparison: true,
-                takeInsertedIdentity: true, aliasColumnName: true),
+                takeInsertedIdentity: true, aliasColumnName: true,
+                viewExpressionNames: ExpressionNames.Exception,
+                cteExpressionNames: ExpressionNames.Exception),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
                 replaceInto: true, autoIncrementClause: true, alterTableModifyColumn: true,
                 numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true,
-                takeInsertedIdentity: true),
+                takeInsertedIdentity: true, viewExpressionNames: ExpressionNames.MysqlStyle,
+                cteExpressionNames: ExpressionNames.MysqlStyle),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
                 replaceInto: true, autoIncrementClause: true, alterTableModifyColumn: true,
                 numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true,
-                takeInsertedIdentity: true),
+                takeInsertedIdentity: true, viewExpressionNames: ExpressionNames.MysqlStyle,
+                cteExpressionNames: ExpressionNames.MysqlStyle),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, charAndByteLengthUnits: true,
                 treatEmptyStringsAsNull: true, mergeWhere: true, decimalSequences: true,
                 alterTableModifyColumn: true, alterTableModifyColumnPreserveNullability: true,
-                aliasColumnName: true),
+                aliasColumnName: true, viewExpressionNames: ExpressionNames.Exception),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
                 logIsLogBase10: true, groupByColumnIndex: true, serialDataTypes: true,

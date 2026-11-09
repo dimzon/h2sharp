@@ -32,6 +32,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Indexes;
@@ -414,6 +415,41 @@ public abstract class Expression
     public virtual string GetColumnName(SessionLocal session, int columnIndex)
     {
         return GetAlias(session, columnIndex);
+    }
+
+    /// <summary>
+    /// Get the column name of this expression when the query becomes a view, a table or a
+    /// common table expression.
+    /// </summary>
+    /// <remarks>
+    /// The reference's <c>Expression.getColumnNameForView</c>: the mode decides whether a
+    /// missing alias is an error, is derived from the SQL text (MySQL's style) or is simply
+    /// the expression name.
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="columnIndex">0-based column index</param>
+    /// <param name="cte">whether the query becomes a common table expression</param>
+    /// <returns>the column name for a view</returns>
+    public virtual string GetColumnNameForView(SessionLocal session, int columnIndex, bool cte)
+    {
+        Mode mode = session.GetMode();
+        switch (cte ? mode.CteExpressionNames : mode.ViewExpressionNames)
+        {
+            case Mode.ExpressionNames.Exception:
+                throw DbException.Get(Api.ErrorCode.ColumnAliasIsNotSpecified1, GetTraceSql());
+            case Mode.ExpressionNames.MysqlStyle:
+                {
+                    string name = GetSql(HasSql.QuoteOnlyWhenRequired | HasSql.NoCasts, WithoutParentheses);
+                    if (name.Length > 64)
+                    {
+                        name = "Name_exp_" + (columnIndex + 1).ToString(CultureInfo.InvariantCulture);
+                    }
+
+                    return name;
+                }
+            default:
+                return GetAlias(session, columnIndex);
+        }
     }
 
     /// <summary>

@@ -12618,3 +12618,34 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **90.50%** строк (77872/86043), **85.94%** ветвей (31694/36878).
 * Проверено: H2Sharp.Tests 2209/2209 (`Category!=BlockedByPort`),
   MvStore 185/185, H2Sharp.Data.Tests 741/741.
+
+### Исправление: имена колонок CTAS/VIEW/CTE (дефект)
+
+Разобран падавший `MergeUsingCoverageTests.UpdateDeleteAndInsertDispatchOverOneSource`
+(`MERGE INTO ... AS P USING (...) AS S ...` → `Column "ID" not found` [42122]).
+Причина оказалась не в MERGE: `CREATE TABLE PARENT AS (SELECT X AS ID, ...)`
+создавал колонку **X**, а не **ID** — имя бралось через `GetColumnName`, который
+для алиаса над `ExpressionColumn` возвращает имя базовой колонки. Эталон в
+`CreateTable` (и в `QueryExpressionTable.createQueryColumnTemplateList`) зовёт
+`getColumnNameForView`, а `Alias.getColumnNameForView` всегда отдаёт алиас.
+
+Портировано 1:1 с эталоном:
+
+* `Mode`: enum `ExpressionNames` (`AsIs/Exception/MysqlStyle`) и поля
+  `ViewExpressionNames`/`CteExpressionNames` — режимы DB2, Derby, MSSQLServer
+  (view+cte Exception), HSQLDB (cte Exception), Oracle (view Exception),
+  MariaDB/MySQL (оба MysqlStyle). Enum в эталоне называется
+  `ViewExpressionNames`, как и поле; в C# тип и свойство не могут совпадать по
+  имени, поэтому переименован enum (причина записана в коде).
+* `Expression.GetColumnNameForView(session, index, cte)`: режимная ветка
+  AS_IS / EXCEPTION (90156) / MYSQL_STYLE (текст выражения, >64 → `Name_exp_N`).
+* Переопределения: `Alias` → алиас, `ExpressionColumn` → `GetAlias`.
+* Вызовы: `CreateTable.GenerateColumnsFromQuery`, `QueryExpressionTable.
+  InitColumns` (не derived) и `Parser.CreateQueryColumnTemplateList` теперь
+  используют `GetColumnNameForView`, как эталон.
+* Регрессия: новый `ViewColumnNamingOracleTests` (4 оракула) — имена колонок
+  CTAS/VIEW из алиасов, MySQL-стиль для без-алиасного выражения, отказ 90156
+  в Oracle (VIEW) и HSQLDB (CTE).
+* Проверено: H2Sharp.Tests 2213/2213, MvStore 185/185, Data 741/741,
+  Engine 9/9, **H2SharpSql.Specs 983/983 + 68 skipped, 0 failed** (прежний
+  единственный красный тест теперь проходит).

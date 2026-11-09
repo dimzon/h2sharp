@@ -457,4 +457,8 @@ public sealed class ExpressionColumn : Expression
     {
         return columnAlias ?? GetSql(HasSql.QuoteOnlyWhenRequired | HasSql.NoCasts, WithoutParentheses);
     }
+
+    /// <inheritdoc/>
+    public override string GetColumnNameForView(SessionLocal session, int columnIndex, bool cte)
+        => GetAlias(session, columnIndex);
 }

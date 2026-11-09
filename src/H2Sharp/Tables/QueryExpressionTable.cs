@@ -146,7 +146,7 @@ public abstract class QueryExpressionTable : Table
             {
                 columnName = isDerivedTable
                     ? expr.GetAlias(session, i)
-                    : expr.GetColumnName(session, i);
+                    : expr.GetColumnNameForView(session, i, cte);
             }
 
             if (type.GetValueType() == Value.Unknown)
