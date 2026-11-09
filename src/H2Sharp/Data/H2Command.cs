@@ -214,6 +214,7 @@ public sealed class H2Command : DbCommand
     public override object? ExecuteScalar()
     {
         List<Command.CommandContainer> containers = PrepareEngines(out Command.CommandList? lazyRemaining);
+        H2DataFormatOptions formats = connection!.DataFormat;
         try
         {
             if (!containers[0].IsQuery())
@@ -234,7 +235,11 @@ public sealed class H2Command : DbCommand
                 else
                 {
                     Values.Value?[] row = result.CurrentRow();
-                    scalar = row.Length == 0 ? null : H2ValueMapper.ToObject(row[0]);
+                    // The result is closed before the caller sees the value, so streams and
+                    // readers must be detached copies; the scalar is one value, not a cursor.
+                    scalar = row.Length == 0
+                        ? null
+                        : H2ValueMapper.ToObject(row[0], formats, detached: true);
                 }
             }
 
@@ -261,6 +266,7 @@ public sealed class H2Command : DbCommand
         }
 
         List<Command.CommandContainer> containers = PrepareEngines(out Command.CommandList? lazyRemaining);
+        H2DataFormatOptions formats = connection!.DataFormat;
         H2DataReader reader;
         if (!containers[0].IsQuery())
         {
@@ -269,7 +275,7 @@ public sealed class H2Command : DbCommand
             lazyRemaining?.ExecuteRemaining();
             lazyRemaining?.Close();
 
-            reader = new H2DataReader(count);
+            reader = new H2DataReader(count, formats);
             // An update result has no rows and no result set to close; it must not keep
             // the command marked as having an open reader (H2 Statement does not either).
             return reader;
@@ -295,7 +301,7 @@ public sealed class H2Command : DbCommand
                     connection?.Close();
                 }
             };
-            reader = new H2DataReader(result, onClose, remaining, maxrows);
+            reader = new H2DataReader(result, onClose, remaining, maxrows, formats);
         }
 
         openReaders++;

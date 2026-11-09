@@ -718,6 +718,7 @@ SP-39 (дефект проводки, найден при ревью): пул с
 после изменившегося требует другого таргета; совпадающие случаи (первое
 поле не меняется, несовпадение степени) продолжают сверяться оракулом
 (`RowCastOracleTests`), исправленное поведение закреплено порт-тестами.
+
 ### D-049. MVStore: дренаж очередей записи перед rollbackTo (устранение гонки эталона)
 
 `FileStore.RollbackTo` перед откатом layout-корня ожидает завершения обеих
@@ -735,4 +736,68 @@ JVM-планировщик стабильно успевает выполнит�
 single-threaded, а обе задачи не требуют storeLock (только layout и файл),
 поэтому ожидание не может привести к дедлоку. Регрессия:
 `MVStoreApiCoverageTests.RollbackAfterAsyncCommitIsConsistent` (50 итераций).
+
+### D-050. Настраиваемая ADO.NET-проекция BLOB/CLOB/JSON/ARRAY/временных значений
+
+По указанию пользователя: ADO.NET не имеет `Blob`/`Clob`, поэтому провайдер
+сам выбирает CLR-форму. Эта форма настраивается на **конкретном соединении**,
+а не в базе, движке, SQL или хранимых значениях. Один и тот же `Database` может
+обслуживать соединения с разными режимами; идентичность базы, парсинг,
+транзакции, параметры и LOB-хранилище не меняются.
+
+Публичный API:
+
+* `IH2DataFormat` реализован `H2Connection` явно (как `IH2Test`/`IH2Extensions`),
+  свойства доступны только через приведение к интерфейсу. Сеттеры разрешены
+  только при `ConnectionState.Closed` и до `Dispose`; `Open()` фиксирует снимок
+  до `Close()`.
+* `H2DataSourceBuilder.ConfigureDataFormat(Action<IH2DataFormat>)` — аналог
+  `ConfigureExtensions`: действие выполняется для каждого соединения, которое
+  выдаёт датасоурс, сразу после создания и до открытия. Режим остаётся
+  пер-соединение, а не свойством базы.
+* Ключи `BLOB_FORMAT`/`CLOB_FORMAT`/`JSON_FORMAT`/`ARRAY_FORMAT` в connection
+  string не добавлялись: по указанию пользователя канал настройки — свойства.
+
+Режимы и умолчания:
+
+* `H2BlobFormat`: `ByteArray` (эталонное умолчание) / `Stream`.
+* `H2ClobFormat`: `String` (умолчание) / `TextReader`.
+* `H2JsonFormat`: `ByteArray` (умолчание) / `String` / `TextReader` / `Stream`
+  / `JsonDocument`. `JsonDocument` создаётся через `JsonDocument.Parse` на
+  каждое чтение, принадлежит вызывающему и требует `Dispose()`.
+* `H2ArrayFormat`: `Array` (умолчание) / `List`. `List` применяется только к
+  внешнему уровню ARRAY-колонки; элементы вложенных массивов и ROW сохраняют
+  эталонную форму. Массивы с компонентом `BINARY`/`VARBINARY`/`BLOB`/`JSON`
+  исключены и остаются `byte[][]`.
+* `H2TemporalFormat` для `DateFormat`, `TimeTzFormat`, `TimestampFormat`,
+  `TimestampTzFormat`; `H2TimeFormat` для `TimeFormat`:
+  `DateTimeUnspecified`/`DateTimeUtc`/`DateTimeLocal`/`DateTimeOffset`, для
+  TIME также `TimeSpan` (умолчание). Для DATE/TIMESTAMP `DateTime.Kind` — это
+  только метка, часы не сдвигаются. DATE/TIMESTAMP/TIME без собственного offset
+  получают offset зоны сессии H2, снятой при `Open`, если запрошен
+  `DateTimeOffset`. Для TIMESTAMP WITH TIME ZONE/TIME WITH TIME ZONE
+  `DateTimeUnspecified` сохраняет настенное время и отбрасывает offset, а
+  Utc/Local преобразуют момент.
+
+Влияние ограничено ADO.NET-проекцией: `GetValue`, `GetValues`,
+`ExecuteScalar`, `GetFieldType`, `GetColumnSchema`, `GetSchemaTable`.
+`ExecuteScalar` возвращает отсоединённые `MemoryStream`/`StringReader` (его
+результат закрывается до возврата), `JsonDocument` и `List<T>` уже являются
+независимыми копиями. Явные getter'ы от режима не зависят: `GetString`,
+`GetBytes`, `GetStream`, `GetTextReader`, `GetFieldValue<T>`,
+`GetFieldValue<T[]>`, `GetFieldValue<List<T>>`, `GetFieldValue<JsonDocument>`.
+
+Заодно устранены два расхождения с эталоном в явных getter'ах:
+`DbDataReader.GetBytes` принимает CLOB (эталонный `ValueClob.GetBytesInternal`
+отдаёт UTF-8), а `GetTextReader` читает BLOB через `ValueLob.GetReader`
+(эталонный `getCharacterStream` декодирует UTF-8).
+
+Границы: `H2CommandBuilder`/`DbDataAdapter` не гарантируют вывод параметров
+обновления для `DataType = Stream`/`TextReader`/`JsonDocument`/`List<T>`;
+JSON-строка при обратной записи остаётся JSON-строкой (документ сохраняет
+`JsonDocument`/`byte[]`); для ARRAY с NULL-элементами метаданные объявляют
+`List<T>`, а значение использует `Nullable<T>` — как и в текущем array-пути.
+Для TIME/TIME WITH TIME ZONE DateTime-формы используют `DateTime.MinValue`
+как дату; преобразования Utc/Local у границы `DateTime.MinValue` могут
+упереться в диапазон `DateTime`.
 

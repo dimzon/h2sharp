@@ -25,6 +25,8 @@ public sealed class H2DataSource : DbDataSource
 
     private readonly Action<IH2Extensions>[] configureExtensions;
 
+    private readonly Action<IH2DataFormat>[] configureDataFormat;
+
     private readonly object sync = new();
 
     private Database? database;
@@ -146,11 +148,13 @@ public sealed class H2DataSource : DbDataSource
     internal H2DataSource(
         ConnectionInfo connectionInfo,
         string connectionString,
-        Action<IH2Extensions>[] configureExtensions)
+        Action<IH2Extensions>[] configureExtensions,
+        Action<IH2DataFormat>[] configureDataFormat)
     {
         this.connectionInfo = connectionInfo;
         this.connectionString = connectionString;
         this.configureExtensions = configureExtensions;
+        this.configureDataFormat = configureDataFormat;
     }
 
     /// <inheritdoc/>
@@ -172,6 +176,11 @@ public sealed class H2DataSource : DbDataSource
             try
             {
                 foreach (Action<IH2Extensions> configure in configureExtensions)
+                {
+                    configure(connection);
+                }
+
+                foreach (Action<IH2DataFormat> configure in configureDataFormat)
                 {
                     configure(connection);
                 }

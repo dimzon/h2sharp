@@ -365,13 +365,26 @@ internal static class H2ValueMapper
     /// </summary>
     /// <param name="value">the engine value, possibly null</param>
     /// <returns>the caller value</returns>
-    internal static object? ToObject(Value? value)
+    internal static object? ToObject(Value? value) => ToObject(value, null);
+
+    /// <summary>
+    /// Converts an engine value to the caller shape the connection configured.
+    /// </summary>
+    /// <param name="value">the engine value, possibly null</param>
+    /// <param name="formats">the connection's projection, or null for the defaults</param>
+    /// <param name="detached">
+    /// whether a stream or reader must outlive the result that produced it; ExecuteScalar
+    /// closes its result before returning, so it asks for a detached copy
+    /// </param>
+    /// <returns>the caller value</returns>
+    internal static object? ToObject(Value? value, H2DataFormatOptions? formats, bool detached = false)
     {
         if (value is null or ValueNull)
         {
             return DBNull.Value;
         }
 
+        H2DataFormatOptions options = formats ?? H2DataFormatOptions.Default;
         return value.GetValueType() switch
         {
             Value.Boolean => value.GetBoolean(),
@@ -382,26 +395,22 @@ internal static class H2ValueMapper
             Value.Real => value.GetFloat(),
             Value.Double => value.GetDouble(),
             Value.Numeric or Value.Decfloat => ToDecimal(value),
-            Value.Char or Value.Varchar or Value.VarcharIgnorecase or Value.Clob
+            Value.Char or Value.Varchar or Value.VarcharIgnorecase
                 or Value.Enum => value.GetString(),
+            Value.Clob => ToClobObject(value, options, detached),
             // H2 ValueToObjectConverter.valueToDefaultObject: JSON uses UTF-8 byte[];
             // passing the returned bytes back as a parameter preserves document semantics.
-            Value.Binary or Value.Varbinary or Value.Blob or Value.Json => value.GetBytes(),
-            Value.Date => FromDateValue(((ValueDate)value).GetDateValue(), 0L),
-            Value.Time => new TimeSpan(((ValueTime)value).GetNanos() / 100L),
-            Value.TimeTz => new DateTimeOffset(
-                DateTime.MinValue.Date.AddTicks(((ValueTimeTimeZone)value).GetNanos() / 100L),
-                TimeSpan.FromSeconds(((ValueTimeTimeZone)value).GetTimeZoneOffsetSeconds())),
-            Value.Timestamp => FromDateValue(
-                ((ValueTimestamp)value).GetDateValue(), ((ValueTimestamp)value).GetTimeNanos()),
-            Value.TimestampTz => new DateTimeOffset(
-                FromDateValue(
-                    ((ValueTimestampTimeZone)value).GetDateValue(),
-                    ((ValueTimestampTimeZone)value).GetTimeNanos()),
-                TimeSpan.FromSeconds(((ValueTimestampTimeZone)value).GetTimeZoneOffsetSeconds())),
+            Value.Binary or Value.Varbinary => value.GetBytes(),
+            Value.Blob => ToBlobObject(value, options, detached),
+            Value.Json => ToJsonObject(value, options),
+            Value.Date => ToDateObject(value, options),
+            Value.Time => ToTimeObject(value, options),
+            Value.TimeTz => ToTimeTzObject(value, options),
+            Value.Timestamp => ToTimestampObject(value, options),
+            Value.TimestampTz => ToTimestampTzObject(value, options),
             Value.Uuid => ((ValueUuid)value).GetUuid(),
             Value.Geometry => ((ValueGeometry)value).GetString(),
-            Value.Array => ToArrayObject((ValueArray)value),
+            Value.Array => ToArrayValue((ValueArray)value, options),
             Value.Row => ToRowObject((ValueRow)value),
             _ when IsIntervalType(value.GetValueType()) => ToTimeSpan((ValueInterval)value),
             _ => throw new TODOException(
@@ -409,6 +418,197 @@ internal static class H2ValueMapper
                 + Value.GetTypeName(value.GetValueType())),
         };
     }
+
+    private static object? ToBlobObject(Value value, H2DataFormatOptions options, bool detached)
+    {
+        if (options.BlobFormat != H2BlobFormat.Stream)
+        {
+            return value.GetBytes();
+        }
+
+        return detached
+            ? new MemoryStream(value.GetBytes()!, writable: false)
+            : value.GetInputStream();
+    }
+
+    private static object? ToClobObject(Value value, H2DataFormatOptions options, bool detached)
+    {
+        if (options.ClobFormat != H2ClobFormat.TextReader)
+        {
+            return value.GetString();
+        }
+
+        return detached
+            ? new StringReader(value.GetString()!)
+            : value.GetReader();
+    }
+
+    /// <summary>
+    /// The H2 date value of <see cref="DateTime.MinValue"/>, used by TIME shapes that have
+    /// to choose a date for a time-of-day.
+    /// </summary>
+    private static readonly long MinDateValue = DateTimeUtils.DateValue(1, 1, 1);
+
+    private static object ToDateObject(Value value, H2DataFormatOptions options)
+    {
+        long dateValue = ((ValueDate)value).GetDateValue();
+        DateTime wall = FromDateValue(dateValue, 0L);
+        if (options.DateFormat == H2TemporalFormat.DateTimeOffset)
+        {
+            return new DateTimeOffset(wall, SessionOffset(options, dateValue, 0L));
+        }
+
+        return SpecifyKind(wall, options.DateFormat);
+    }
+
+    private static object ToTimeObject(Value value, H2DataFormatOptions options)
+    {
+        long nanos = ((ValueTime)value).GetNanos();
+        if (options.TimeFormat == H2TimeFormat.TimeSpan)
+        {
+            return new TimeSpan(nanos / 100L);
+        }
+
+        DateTime wall = DateTime.MinValue.Date.AddTicks(nanos / 100L);
+        H2TemporalFormat shape = TemporalShape(options.TimeFormat);
+        if (shape == H2TemporalFormat.DateTimeOffset)
+        {
+            return new DateTimeOffset(wall, SessionOffset(options, MinDateValue, nanos));
+        }
+
+        return SpecifyKind(wall, shape);
+    }
+
+    private static object ToTimeTzObject(Value value, H2DataFormatOptions options)
+    {
+        ValueTimeTimeZone time = (ValueTimeTimeZone)value;
+        DateTime wall = DateTime.MinValue.Date.AddTicks(time.GetNanos() / 100L);
+        DateTimeOffset instant = new(
+            wall, TimeSpan.FromSeconds(time.GetTimeZoneOffsetSeconds()));
+        if (options.TimeTzFormat == H2TemporalFormat.DateTimeUnspecified)
+        {
+            return wall;
+        }
+
+        if (options.TimeTzFormat == H2TemporalFormat.DateTimeUtc)
+        {
+            return instant.UtcDateTime;
+        }
+
+        if (options.TimeTzFormat == H2TemporalFormat.DateTimeLocal)
+        {
+            return instant.LocalDateTime;
+        }
+
+        return instant;
+    }
+
+    private static object ToTimestampObject(Value value, H2DataFormatOptions options)
+    {
+        ValueTimestamp timestamp = (ValueTimestamp)value;
+        long dateValue = timestamp.GetDateValue();
+        long nanos = timestamp.GetTimeNanos();
+        DateTime wall = FromDateValue(dateValue, nanos);
+        if (options.TimestampFormat == H2TemporalFormat.DateTimeOffset)
+        {
+            return new DateTimeOffset(wall, SessionOffset(options, dateValue, nanos));
+        }
+
+        return SpecifyKind(wall, options.TimestampFormat);
+    }
+
+    private static object ToTimestampTzObject(Value value, H2DataFormatOptions options)
+    {
+        ValueTimestampTimeZone timestamp = (ValueTimestampTimeZone)value;
+        DateTime wall = FromDateValue(timestamp.GetDateValue(), timestamp.GetTimeNanos());
+        DateTimeOffset instant = new(
+            wall, TimeSpan.FromSeconds(timestamp.GetTimeZoneOffsetSeconds()));
+        if (options.TimestampTzFormat == H2TemporalFormat.DateTimeUnspecified)
+        {
+            return wall;
+        }
+
+        if (options.TimestampTzFormat == H2TemporalFormat.DateTimeUtc)
+        {
+            return instant.UtcDateTime;
+        }
+
+        if (options.TimestampTzFormat == H2TemporalFormat.DateTimeLocal)
+        {
+            return instant.LocalDateTime;
+        }
+
+        return instant;
+    }
+
+    private static DateTime SpecifyKind(DateTime value, H2TemporalFormat format)
+        => DateTime.SpecifyKind(value, format switch
+        {
+            H2TemporalFormat.DateTimeUtc => DateTimeKind.Utc,
+            H2TemporalFormat.DateTimeLocal => DateTimeKind.Local,
+            _ => DateTimeKind.Unspecified,
+        });
+
+    private static H2TemporalFormat TemporalShape(H2TimeFormat format)
+        => format switch
+        {
+            H2TimeFormat.DateTimeUtc => H2TemporalFormat.DateTimeUtc,
+            H2TimeFormat.DateTimeLocal => H2TemporalFormat.DateTimeLocal,
+            H2TimeFormat.DateTimeOffset => H2TemporalFormat.DateTimeOffset,
+            _ => H2TemporalFormat.DateTimeUnspecified,
+        };
+
+    private static TimeSpan SessionOffset(H2DataFormatOptions options, long dateValue, long nanos)
+        => TimeSpan.FromSeconds(
+            (options.SessionTimeZone ?? TimeZoneProvider.GetDefault())
+                .GetTimeZoneOffsetLocal(dateValue, nanos));
+
+    private static object? ToJsonObject(Value value, H2DataFormatOptions options)
+    {
+        return options.JsonFormat switch
+        {
+            H2JsonFormat.String => value.GetString(),
+            H2JsonFormat.TextReader => value.GetReader(),
+            H2JsonFormat.Stream => value.GetInputStream(),
+            H2JsonFormat.JsonDocument => ToJsonDocument(value),
+            _ => value.GetBytes(),
+        };
+    }
+
+    /// <summary>
+    /// Parses a JSON value into an independent document the caller owns.
+    /// </summary>
+    /// <param name="value">the JSON value</param>
+    /// <returns>the document</returns>
+    internal static JsonDocument ToJsonDocument(Value value)
+        => JsonDocument.Parse(value.GetBytes()!);
+
+    private static object ToArrayValue(ValueArray value, H2DataFormatOptions options)
+    {
+        if (options.ArrayFormat != H2ArrayFormat.List || IsBinaryArrayComponent(value.GetComponentType()))
+        {
+            return ToArrayObject(value);
+        }
+
+        Array array = ToArrayObject(value);
+        Type elementType = array.GetType().GetElementType()!;
+        IList list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(elementType))!;
+        foreach (object? item in array)
+        {
+            list.Add(item);
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Whether an ARRAY component is represented as binary data, in which case the List
+    /// projection is not applied and the reference CLR array stays.
+    /// </summary>
+    /// <param name="component">the component type</param>
+    /// <returns>true for the binary family</returns>
+    private static bool IsBinaryArrayComponent(TypeInfo component)
+        => component.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob or Value.Json;
 
     // Approved CLR adaptation: SQL ARRAY reads as a typed CLR array. A NULL element in a
     // value-type array uses Nullable<T>, never zero / false. NULL columns remain DBNull.
@@ -511,8 +711,17 @@ internal static class H2ValueMapper
     /// </summary>
     /// <param name="type">the engine type</param>
     /// <returns>the CLR type</returns>
-    internal static Type GetFieldType(TypeInfo type)
+    internal static Type GetFieldType(TypeInfo type) => GetFieldType(type, null);
+
+    /// <summary>
+    /// The CLR type a column of the given engine type reads as under the configured projection.
+    /// </summary>
+    /// <param name="type">the engine type</param>
+    /// <param name="formats">the connection's projection, or null for the defaults</param>
+    /// <returns>the CLR type</returns>
+    internal static Type GetFieldType(TypeInfo type, H2DataFormatOptions? formats)
     {
+        H2DataFormatOptions options = formats ?? H2DataFormatOptions.Default;
         return type.GetValueType() switch
         {
             Value.Boolean => typeof(bool),
@@ -524,16 +733,46 @@ internal static class H2ValueMapper
             Value.Real => typeof(float),
             Value.Double => typeof(double),
             Value.Char or Value.Varchar or Value.VarcharIgnorecase
-                or Value.Clob or Value.Enum or Value.Null or Value.Unknown => typeof(string),
-            Value.Binary or Value.Varbinary or Value.Blob or Value.Json => typeof(byte[]),
-            Value.Date or Value.Timestamp => typeof(DateTime),
-            Value.Time => typeof(TimeSpan),
-            Value.TimeTz or Value.TimestampTz => typeof(DateTimeOffset),
+                or Value.Enum or Value.Null or Value.Unknown => typeof(string),
+            Value.Clob => options.ClobFormat == H2ClobFormat.TextReader ? typeof(TextReader) : typeof(string),
+            Value.Binary or Value.Varbinary => typeof(byte[]),
+            Value.Blob => options.BlobFormat == H2BlobFormat.Stream ? typeof(Stream) : typeof(byte[]),
+            Value.Json => options.JsonFormat switch
+            {
+                H2JsonFormat.String => typeof(string),
+                H2JsonFormat.TextReader => typeof(TextReader),
+                H2JsonFormat.Stream => typeof(Stream),
+                H2JsonFormat.JsonDocument => typeof(JsonDocument),
+                _ => typeof(byte[]),
+            },
+            Value.Date => TemporalType(options.DateFormat),
+            Value.Time => TimeType(options.TimeFormat),
+            Value.TimeTz => TemporalType(options.TimeTzFormat),
+            Value.Timestamp => TemporalType(options.TimestampFormat),
+            Value.TimestampTz => TemporalType(options.TimestampTzFormat),
             Value.Uuid => typeof(Guid),
-            Value.Array => GetFieldType((TypeInfo)type.GetExtTypeInfo()!).MakeArrayType(),
+            Value.Array => ArrayFieldType(type, options),
             _ when IsIntervalType(type.GetValueType()) => typeof(TimeSpan),
             _ => typeof(object),
         };
+    }
+
+    private static Type TemporalType(H2TemporalFormat format)
+        => format == H2TemporalFormat.DateTimeOffset ? typeof(DateTimeOffset) : typeof(DateTime);
+
+    private static Type TimeType(H2TimeFormat format)
+        => format == H2TimeFormat.TimeSpan ? typeof(TimeSpan) : TemporalType(TemporalShape(format));
+
+    private static Type ArrayFieldType(TypeInfo type, H2DataFormatOptions options)
+    {
+        TypeInfo component = (TypeInfo)type.GetExtTypeInfo()!;
+        Type element = GetFieldType(component);
+        if (options.ArrayFormat == H2ArrayFormat.List && !IsBinaryArrayComponent(component))
+        {
+            return typeof(List<>).MakeGenericType(element);
+        }
+
+        return element.MakeArrayType();
     }
 
     /// <summary>

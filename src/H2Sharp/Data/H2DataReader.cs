@@ -22,6 +22,7 @@ using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using H2Sharp.Values;
@@ -41,6 +42,8 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
 
     private readonly long maxrows;
 
+    private readonly H2DataFormatOptions formats;
+
     private Value?[]? current;
 
     private bool closed;
@@ -54,16 +57,19 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     /// <param name="onClose">what to do when the reader closes, if anything</param>
     /// <param name="remaining">the statements after the first, for NextResult</param>
     /// <param name="maxrows">the row limit each result set runs with</param>
+    /// <param name="formats">the connection's value projection, or null for the defaults</param>
     internal H2DataReader(
         Result.ResultInterface result,
         Action? onClose = null,
         List<Command.CommandContainer>? remaining = null,
-        long maxrows = -1)
+        long maxrows = -1,
+        H2DataFormatOptions? formats = null)
     {
         this.result = result;
         this.onClose = onClose;
         this.remaining = remaining ?? [];
         this.maxrows = maxrows;
+        this.formats = formats ?? H2DataFormatOptions.Default;
         recordsAffected = -1;
     }
 
@@ -71,9 +77,11 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     /// Creates a reader with no rows, for a statement that changed rows instead.
     /// </summary>
     /// <param name="recordsAffected">how many rows the statement changed</param>
-    internal H2DataReader(long recordsAffected)
+    /// <param name="formats">the connection's value projection, or null for the defaults</param>
+    internal H2DataReader(long recordsAffected, H2DataFormatOptions? formats = null)
     {
         remaining = [];
+        this.formats = formats ?? H2DataFormatOptions.Default;
         this.recordsAffected = recordsAffected;
     }
 
@@ -208,7 +216,7 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     public override Type GetFieldType(int ordinal)
     {
         CheckOrdinal(ordinal);
-        return H2ValueMapper.GetFieldType(result!.GetColumnType(ordinal));
+        return H2ValueMapper.GetFieldType(result!.GetColumnType(ordinal), formats);
     }
 
     /// <inheritdoc/>
@@ -219,7 +227,8 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     }
 
     /// <inheritdoc/>
-    public override object GetValue(int ordinal) => H2ValueMapper.ToObject(Cell(ordinal)) ?? DBNull.Value;
+    public override object GetValue(int ordinal)
+        => H2ValueMapper.ToObject(Cell(ordinal), formats) ?? DBNull.Value;
 
     /// <inheritdoc/>
     public override int GetValues(object?[] values)
@@ -229,7 +238,7 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
         int count = Math.Min(values.Length, row.Length);
         for (int i = 0; i < count; i++)
         {
-            values[i] = H2ValueMapper.ToObject(row[i]);
+            values[i] = H2ValueMapper.ToObject(row[i], formats);
         }
 
         return count;
@@ -459,7 +468,7 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     public override long GetBytes(int ordinal, long fieldOffset, byte[]? buffer, int bufferOffset, int length)
     {
         Value cell = NotNull(ordinal, "Byte[]");
-        if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob or Value.Json
+        if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob or Value.Json or Value.Clob
             && cell.GetBytesNoCopy() is byte[] bytes)
         {
             return CopySlice(bytes, fieldOffset, buffer, bufferOffset, length);
@@ -478,8 +487,9 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
 
     /// <inheritdoc/>
     /// <remarks>
-    /// A binary column reads as a stream, anything else refuses: a stream over text would
-    /// encode it in an encoding the query did not name.
+    /// A binary column reads as a stream; a BLOB or CLOB uses its own stream, as the
+    /// reference does. Anything else refuses: a stream over text would encode it in an
+    /// encoding the query did not name.
     /// </remarks>
     public override Stream GetStream(int ordinal)
     {
@@ -495,9 +505,11 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
             return lob.GetInputStream();
         }
 
-        if (H2ValueMapper.ToObject(cell) is byte[] bytes)
+        // Read the value type directly rather than through the configured projection: an
+        // explicit getter must answer the same way whatever GetValue was configured to do.
+        if (cell.GetValueType() is Value.Binary or Value.Varbinary or Value.Json)
         {
-            return new MemoryStream(bytes, writable: false);
+            return new MemoryStream(cell.GetBytes()!, writable: false);
         }
 
         throw new InvalidOperationException("Column " + ordinal + " is not binary");
@@ -505,8 +517,9 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
 
     /// <inheritdoc/>
     /// <remarks>
-    /// A text column reads as a text reader, anything else refuses, for the same reason a
-    /// stream refuses text: the encoding would be invented.
+    /// A BLOB or CLOB reads through the reference's UTF-8 reader, and JSON and character
+    /// types read as text. Anything else refuses, for the same reason a stream refuses
+    /// text: the encoding would be invented.
     /// </remarks>
     public override TextReader GetTextReader(int ordinal)
     {
@@ -516,16 +529,23 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
             throw NullValueException("TextReader");
         }
 
-        // JDBC getCharacterStream reads JSON through Value.getReader / getString;
-        // its default object is byte[], but the explicit text path remains available.
+        // JDBC getCharacterStream reads a BLOB or CLOB through Value.getReader, which
+        // decodes UTF-8; its default object may be byte[], but the explicit text path
+        // remains available. Read the value type directly, not through GetValue's option.
+        if (cell is Values.ValueLob lob)
+        {
+            return lob.GetReader();
+        }
+
         if (cell.GetValueType() == Value.Json)
         {
             return new StringReader(cell.GetString()!);
         }
 
-        if (H2ValueMapper.ToObject(cell) is string text)
+        if (cell.GetValueType() is Value.Char or Value.Varchar or Value.VarcharIgnorecase
+            or Value.Enum or Value.Geometry)
         {
-            return new StringReader(text);
+            return new StringReader(cell.GetString()!);
         }
 
         throw new InvalidOperationException("Column " + ordinal + " is not text");
@@ -534,16 +554,52 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     /// <inheritdoc/>
     public override T GetFieldValue<T>(int ordinal)
     {
+        Value? cell = Cell(ordinal);
+
         // JDBC getObject(column, String.class) uses Value.getString independently of
-        // the default JSON byte[] mapping. Keep the same explicit text conversion here.
-        if (typeof(T) == typeof(string) && Cell(ordinal)?.GetValueType() == Value.Json)
+        // the default byte[] mapping. The same explicit text conversion stays available
+        // for every LOB/JSON shape the connection may have configured.
+        if (typeof(T) == typeof(string)
+            && cell?.GetValueType() is Value.Json or Value.Clob or Value.Blob)
         {
             return (T)(object)GetString(ordinal);
         }
 
-        if (typeof(T).IsArray && Cell(ordinal) is ValueArray array)
+        if (typeof(T) == typeof(byte[]))
         {
-            return (T)(object)H2ValueMapper.ToArrayObject(array, typeof(T));
+            Value value = NotNull(ordinal, "Byte[]");
+            if (value.GetValueType() is Value.Binary or Value.Varbinary
+                or Value.Blob or Value.Json or Value.Clob)
+            {
+                return (T)(object)value.GetBytes()!;
+            }
+        }
+
+        if (typeof(T) == typeof(JsonDocument) && cell?.GetValueType() == Value.Json)
+        {
+            return (T)(object)H2ValueMapper.ToJsonDocument(cell);
+        }
+
+        if (cell is ValueArray array)
+        {
+            if (typeof(T).IsArray)
+            {
+                return (T)(object)H2ValueMapper.ToArrayObject(array, typeof(T));
+            }
+
+            if (typeof(T).IsGenericType && typeof(T).GetGenericTypeDefinition() == typeof(List<>))
+            {
+                Type elementType = typeof(T).GetGenericArguments()[0];
+                Array values = H2ValueMapper.ToArrayObject(array, elementType.MakeArrayType());
+                IList list = (IList)Activator.CreateInstance(
+                    typeof(List<>).MakeGenericType(elementType))!;
+                foreach (object? item in values)
+                {
+                    list.Add(item);
+                }
+
+                return (T)list;
+            }
         }
 
         if (typeof(T) == typeof(Stream))
@@ -741,7 +797,7 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
                     // separately as BaseColumnName.
                     source.GetAlias(i),
                     i,
-                    H2ValueMapper.GetFieldType(type),
+                    H2ValueMapper.GetFieldType(type, formats),
                     Value.GetTypeName(type.GetValueType()),
                     type.GetPrecision() is >= 0 and <= int.MaxValue ? (int)type.GetPrecision() : -1,
                     type.GetScale(),

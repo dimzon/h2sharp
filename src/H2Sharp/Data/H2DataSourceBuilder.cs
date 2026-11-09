@@ -19,6 +19,8 @@ public sealed class H2DataSourceBuilder
 
     private readonly List<Action<IH2Extensions>> configureExtensions = [];
 
+    private readonly List<Action<IH2DataFormat>> configureDataFormat = [];
+
     /// <summary>
     /// Creates a builder for the given connection string.
     /// </summary>
@@ -47,9 +49,28 @@ public sealed class H2DataSourceBuilder
     }
 
     /// <summary>
+    /// Adds an action that configures the ADO.NET value projection on each new connection.
+    /// </summary>
+    /// <remarks>
+    /// The action is invoked immediately after the connection object is created and before it
+    /// is returned, so the connection cannot be open yet. It is invoked for every connection
+    /// this data source creates, after the extension actions and in registration order. The
+    /// projection belongs to the connection, not to the database: the action must therefore
+    /// set the properties, not share one mutable object between connections.
+    /// </remarks>
+    /// <param name="configure">the projection action</param>
+    /// <returns>this builder</returns>
+    public H2DataSourceBuilder ConfigureDataFormat(Action<IH2DataFormat> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        configureDataFormat.Add(configure);
+        return this;
+    }
+
+    /// <summary>
     /// Builds the data source.
     /// </summary>
     /// <returns>the configured data source</returns>
     public H2DataSource Build()
-        => new(connectionInfo, connectionString, [.. configureExtensions]);
+        => new(connectionInfo, connectionString, [.. configureExtensions], [.. configureDataFormat]);
 }

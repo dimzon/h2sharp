@@ -32,11 +32,11 @@ using H2Sharp.Jdbc.Meta;
 using H2Sharp.Result;
 using H2Sharp.Util;
 using H2Sharp.Values;
-using H2DbException = H2Sharp.Message.DbException;
 // The engine's isolation level and the ADO.NET one share the name; the transaction surface
 // of this file speaks ADO.NET, the session surface speaks the engine's.
 using AdoIsolationLevel = System.Data.IsolationLevel;
 using EngineIsolationLevel = H2Sharp.Engine.IsolationLevel;
+using H2DbException = H2Sharp.Message.DbException;
 
 namespace H2Sharp.Data;
 
@@ -48,7 +48,7 @@ namespace H2Sharp.Data;
 /// not members of a connection that nobody is testing, and a caller who wants them casts
 /// the connection to the interface first.
 /// </remarks>
-public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawExtensions
+public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawExtensions, IH2DataFormat
 {
     private string connectionString = string.Empty;
 
@@ -74,6 +74,14 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     private Func<Util.TimeZoneProvider>? timeZoneProviderProvider;
 
     private readonly ExtensionConfiguration extensionConfiguration = new();
+
+    /// <summary>
+    /// The format configured for the next open. It is mutable only while the connection is
+    /// closed; <see cref="openedDataFormat"/> is the snapshot the running session uses.
+    /// </summary>
+    private H2DataFormatOptions dataFormat = H2DataFormatOptions.Default;
+
+    private H2DataFormatOptions? openedDataFormat;
 
     private bool disposed;
 
@@ -110,6 +118,110 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         get => timeZoneProviderProvider;
         set => timeZoneProviderProvider = value;
     }
+
+    /// <inheritdoc/>
+    H2BlobFormat IH2DataFormat.BlobFormat
+    {
+        get => (openedDataFormat ?? dataFormat).BlobFormat;
+        set
+        {
+            EnsureCanConfigure();
+            dataFormat = dataFormat with { BlobFormat = value };
+        }
+    }
+
+    /// <inheritdoc/>
+    H2ClobFormat IH2DataFormat.ClobFormat
+    {
+        get => (openedDataFormat ?? dataFormat).ClobFormat;
+        set
+        {
+            EnsureCanConfigure();
+            dataFormat = dataFormat with { ClobFormat = value };
+        }
+    }
+
+    /// <inheritdoc/>
+    H2JsonFormat IH2DataFormat.JsonFormat
+    {
+        get => (openedDataFormat ?? dataFormat).JsonFormat;
+        set
+        {
+            EnsureCanConfigure();
+            dataFormat = dataFormat with { JsonFormat = value };
+        }
+    }
+
+    /// <inheritdoc/>
+    H2ArrayFormat IH2DataFormat.ArrayFormat
+    {
+        get => (openedDataFormat ?? dataFormat).ArrayFormat;
+        set
+        {
+            EnsureCanConfigure();
+            dataFormat = dataFormat with { ArrayFormat = value };
+        }
+    }
+
+    /// <inheritdoc/>
+    H2TemporalFormat IH2DataFormat.DateFormat
+    {
+        get => (openedDataFormat ?? dataFormat).DateFormat;
+        set
+        {
+            EnsureCanConfigure();
+            dataFormat = dataFormat with { DateFormat = value };
+        }
+    }
+
+    /// <inheritdoc/>
+    H2TimeFormat IH2DataFormat.TimeFormat
+    {
+        get => (openedDataFormat ?? dataFormat).TimeFormat;
+        set
+        {
+            EnsureCanConfigure();
+            dataFormat = dataFormat with { TimeFormat = value };
+        }
+    }
+
+    /// <inheritdoc/>
+    H2TemporalFormat IH2DataFormat.TimeTzFormat
+    {
+        get => (openedDataFormat ?? dataFormat).TimeTzFormat;
+        set
+        {
+            EnsureCanConfigure();
+            dataFormat = dataFormat with { TimeTzFormat = value };
+        }
+    }
+
+    /// <inheritdoc/>
+    H2TemporalFormat IH2DataFormat.TimestampFormat
+    {
+        get => (openedDataFormat ?? dataFormat).TimestampFormat;
+        set
+        {
+            EnsureCanConfigure();
+            dataFormat = dataFormat with { TimestampFormat = value };
+        }
+    }
+
+    /// <inheritdoc/>
+    H2TemporalFormat IH2DataFormat.TimestampTzFormat
+    {
+        get => (openedDataFormat ?? dataFormat).TimestampTzFormat;
+        set
+        {
+            EnsureCanConfigure();
+            dataFormat = dataFormat with { TimestampTzFormat = value };
+        }
+    }
+
+    /// <summary>
+    /// The projection snapshot commands on this connection read with.
+    /// </summary>
+    internal H2DataFormatOptions DataFormat => openedDataFormat ?? dataFormat;
 
     /// <summary>
     /// Creates a connection with no connection string.
@@ -148,6 +260,10 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         H2Connection connection = new();
         connection.session = session;
         connection.borrowedSession = true;
+        connection.openedDataFormat = H2DataFormatOptions.Default with
+        {
+            SessionTimeZone = session.CurrentTimeZone(),
+        };
         return connection;
     }
 
@@ -314,6 +430,10 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             throw;
         }
 
+        openedDataFormat = dataFormat with
+        {
+            SessionTimeZone = opened.CurrentTimeZone(),
+        };
         OnStateChange(new StateChangeEventArgs(ConnectionState.Closed, ConnectionState.Open));
     }
 
@@ -337,49 +457,49 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         return Task.CompletedTask;
     }
 
-    private void EnsureCanRegister()
+    private void EnsureCanConfigure()
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
         if (State != ConnectionState.Closed)
         {
-            throw new InvalidOperationException("Extensions can only be registered while the connection is closed");
+            throw new InvalidOperationException("Connection options can only be changed while the connection is closed");
         }
     }
 
     void IH2Extensions.RegisterUdf<TResult>(string name, Func<TResult> implementation, bool deterministic)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
     }
 
     void IH2Extensions.RegisterUdf<T1, TResult>(string name, Func<T1, TResult> implementation, bool deterministic)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
     }
 
     void IH2Extensions.RegisterUdf<T1, T2, TResult>(string name, Func<T1, T2, TResult> implementation, bool deterministic)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
     }
 
     void IH2Extensions.RegisterUdf<T1, T2, T3, TResult>(string name, Func<T1, T2, T3, TResult> implementation, bool deterministic)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
     }
 
     void IH2Extensions.RegisterUdf<T1, T2, T3, T4, TResult>(string name, Func<T1, T2, T3, T4, TResult> implementation, bool deterministic)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
     }
 
     void IH2Extensions.RegisterAggregate(string name, IH2AggregateProvider provider)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         ArgumentNullException.ThrowIfNull(provider);
         extensionConfiguration.AddAggregate(SqlName(name), provider);
     }
@@ -388,28 +508,28 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         string name, int arity, H2Sharp.Values.TypeInfo resultType,
         Func<H2Sharp.Values.Value[], H2Sharp.Values.Value> implementation, bool deterministic)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         ArgumentNullException.ThrowIfNull(implementation);
         extensionConfiguration.AddRaw(SqlName(name), arity, resultType, deterministic, implementation);
     }
 
     void IH2Extensions.RegisterHashAlgorithm(string name, Func<System.Security.Cryptography.HashAlgorithm> factory)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         ArgumentNullException.ThrowIfNull(factory);
         extensionConfiguration.AddHash(SqlName(name), factory);
     }
 
     void IH2Extensions.RegisterRandomGenerator(Func<long?, Random> factory)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         ArgumentNullException.ThrowIfNull(factory);
         extensionConfiguration.SetRandomGenerator(factory);
     }
 
     void IH2Extensions.RegisterUuidGenerator(Func<int, Guid> factory)
     {
-        EnsureCanRegister();
+        EnsureCanConfigure();
         ArgumentNullException.ThrowIfNull(factory);
         extensionConfiguration.SetUuidGenerator(factory);
     }
@@ -433,6 +553,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         {
             // The borrowed session belongs to the connection that owns it.
             session = null;
+            openedDataFormat = null;
             return;
         }
 
@@ -448,6 +569,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             // but the completion notification still has to commit or roll it back.
             enlistedSession = current;
             session = null;
+            openedDataFormat = null;
             OnStateChange(new StateChangeEventArgs(ConnectionState.Open, ConnectionState.Closed));
             return;
         }
@@ -462,6 +584,7 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             currentTransaction?.Dispose();
             currentTransaction = null;
             session = null;
+            openedDataFormat = null;
             current.Close();
         }
         finally

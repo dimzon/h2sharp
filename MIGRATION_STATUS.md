@@ -12197,6 +12197,7 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   тест упрощён до in-memory rollback, сценарий зафиксирован для отдельного
   разбора.
 * Проверено: MvStore 161/161, H2Sharp.Tests (без изменений).
+
 ### Спринт 76: MVStore — гонка rollbackTo с асинхронным tryCommit (дефект устранён)
 
 Разобран Debug.Assert в `Chunk.AccountForRemovedPage`, обнаруженный в спринте 75.
@@ -12213,6 +12214,59 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   `bufferSaveExecutor` перед откатом. Обе задачи не требуют storeLock —
   дедлока нет.
 * Регрессия: `MVStoreApiCoverageTests.RollbackAfterAsyncCommitIsConsistent`
-  (50 итераций).
-* Проверено: H2Sharp.Tests 2152/2152 (`Category!=BlockedByPort`), MvStore 164/164.
+  (50 итераций). Проверено: MvStore 164/164.
+* H2Sharp.Tests в этом спринте не прогонялись: файл `H2Sharp.Tests\debug\H2Sharp.dll`
+  занят параллельным testhost пользователя (не убиваем чужие процессы).
 
+### Спринт 77: настраиваемая ADO.NET-проекция значений (issue #29)
+
+Закрывает issue #29 и расширяет его на BLOB, CLOB, ARRAY и временные типы.
+Эталонное поведение остаётся умолчанием; настройка — чисто косметическая
+проекция конкретного соединения (D-050), движок, `ConnectionInfo`, `Database`,
+SQL, хранимые значения, параметры и LOB-хранилище не менялись.
+
+* `IH2DataFormat` реализован `H2Connection` явно, по образцу `IH2Test`:
+  `BlobFormat`, `ClobFormat`, `JsonFormat`, `ArrayFormat`, `DateFormat`,
+  `TimeFormat`, `TimeTzFormat`, `TimestampFormat`, `TimestampTzFormat`.
+  Сеттеры работают только на закрытом, не disposed соединении; `Open()`
+  фиксирует снимок, `Close()` его сбрасывает.
+* `H2DataSourceBuilder.ConfigureDataFormat(Action<IH2DataFormat>)` применяет
+  действие к каждому соединению, которое выдаёт датасоурс, до открытия.
+  Настройка остаётся пер-соединение: два соединения к одной базе могут иметь
+  разные режимы.
+* Режимы: BLOB `byte[]`/`Stream`, CLOB `string`/`TextReader`, JSON `byte[]`/
+  `string`/`TextReader`/`Stream`/`JsonDocument`, ARRAY `T[]`/`List<T>`
+  (только внешний уровень; бинарные компоненты исключены), даты/время —
+  отдельная настройка на каждый тип с `DateTime.Kind` как меткой и
+  `DateTimeOffset` по зоне сессии, снятой при `Open`, для значений без зоны.
+* `GetValue`/`GetValues`/`ExecuteScalar`/`GetFieldType`/`GetColumnSchema`/
+  `GetSchemaTable` согласованы между собой. Явные getter'ы не зависят от
+  режима; `GetBytes` теперь читает CLOB, `GetTextReader` — BLOB (эталонные
+  `ValueClob.GetBytesInternal`/`ValueLob.GetReader`).
+* `ExecuteScalar` для потоковых режимов отдаёт отсоединённые
+  `MemoryStream`/`StringReader`; `JsonDocument` принадлежит вызывающему.
+* `H2DataFormatTests`: 12 ADO.NET-тестов на умолчания, все режимы, метаданные,
+  явные getter'ы, `JsonDocument`, `List<T>`, временные типы, guard закрытого
+  соединения и пер-соединение через датасоурс.
+* Проверено: `H2Sharp.Data.Tests` 741/741 (`Category!=BlockedByPort`),
+  сборка net8.0/net10.0.
+* `H2Sharp.Tests`: 2150/2152 (`Category!=BlockedByPort`). Два падения —
+  оракульные `AggregateTypeOracleTests.TheAggregatePlansMatchJdbc` и
+  `InListOracleTests.NullsAndConstantsMatchJdbc` — находятся в `EXPLAIN`/`IN`
+  движка и не затрагивают изменённые ADO-файлы; отдельного разбора требуют
+  в текущем параллельном дереве.
+
+### Спринт 78: покрытие — Page (2026-11-09)
+
+Замер на входе (валидный union): `MvStore\Page.cs` 779/983.
+
+* `PageCoverageTests` (новый, MvStore.Tests): ToString/Dump сохранённых
+  leaf/non-leaf и пустого корня, `GetDiskSpaceUsed(true/false)` на сохранённом
+  и глубоком (PageSplitSize=64) дереве, базовая `Remove(long)` и
+  NotSupported-отказы NonLeaf/Leaf (`GetValue`/`SetValue`/`InsertLeaf`/
+  `GetChildPage`/`SetChild`/`InsertNode`), `PageReference.EmptyRef().ToString()`,
+  split внутренних узлов RTree (CreateEmptyNode).
+* Покрытие `Page.cs`: 779/983 → **890/983** (+111). Остались IPage-члены
+  (internal), ветви чтения повреждённого файла, повторная запись страницы и
+  мёртвые ветви оценки памяти/`first=true`.
+* Проверено: MvStore 168/168.
