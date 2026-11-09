@@ -12075,3 +12075,32 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
 * Покрытие файла: 6/9 → 9/9 (+3). JavaLegacy-сборка целиком 150/150 (100%).
 * Проверено: H2Sharp.Tests 2134/2134 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 73: покрытие — Parser (DDL/DML-грамматика) (2026-11-09)
+
+Замер на входе (валидный union текущих отчётов): строки 75995/85051 = 89.35%,
+ветви 30989/36482 = 84.94%.
+
+* `ParserDdlCoverageOracleTests` (новый): identity-формы (ALWAYS/BY DEFAULT,
+  START WITH/INCREMENT BY), generated columns, DEFAULT ... ON NULL, ON UPDATE,
+  NULL/NOT NULL, именованные PRIMARY KEY/REFERENCES с ON DELETE, PRIMARY KEY
+  HASH, `ENGINE`/`WITH` (пропущены — нет в грамматике 2.5), ON COMMIT
+  DELETE/DROP для временных таблиц, `INSERT INTO t (SELECT ...)`,
+  MySQL `ON DUPLICATE KEY UPDATE` с квалифицированным столбцом (включая
+  schema-mismatch), MSSQL `INT IDENTITY`, ALTER TABLE (ADD COLUMN BEFORE/
+  AFTER/FIRST, ADD (...), SET DATA TYPE, SET/DROP NOT NULL, SET/DROP DEFAULT,
+  SET GENERATED, MODIFY, RENAME COLUMN, RENAME TO), отказы schema-mismatch и
+  дубликат столбца.
+* Покрытие `Parser.Columns.cs`: 701/769 → **764/769** (+63). Остались
+  `INSERT ... VALUES ROW` без скобок (недостижимо) и `INSERT (cols) SET`
+  (расхождение кода ошибки, см. ниже).
+* Найдено расхождение (задокументировано, не исправлено в этом спринте):
+  `INSERT INTO t(cols) SET ...` — эталон 42000, порт 42001 (ожидаемый список
+  остаётся непустым на этой ветке).
+* Важно для следующих спринтов: крупнейший «непокрытый» кластер `Parser.cs`
+  (`ReadCreateTable`, `ReadInsert`, `ReadUpdate`, `ReadDelete`, `ReadAlterTable`)
+  — это statement-model путь, используемый только статическим `Parser.Parse`
+  и будущим RUNSCRIPT, а не обычным SQL. Основной путь CREATE/INSERT/UPDATE —
+  `ParseCreateTable`/`ParseInsert` в `Parser.Columns.cs`.
+* Проверено: H2Sharp.Tests 2147/2147 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
