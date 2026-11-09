@@ -130,4 +130,84 @@ public sealed class ObjectDataTypeRoundTripTests
         ObjectDataType type = new();
         Assert.Equal(10_000, type.GetMemory(new object()));
     }
+
+    private static object? RoundTrip(ObjectDataType type, object? value)
+    {
+        WriteBuffer buffer = new(256);
+        type.Write(buffer, value);
+        byte[] written = buffer.ToArray();
+        int position = 0;
+        object? back = type.Read(written, ref position);
+        Assert.Equal(written.Length, position);
+        return back;
+    }
+
+    [Fact]
+    public void EveryScalarTagComesBack()
+    {
+        ObjectDataType type = new();
+        object?[] values =
+        [
+            true, false,
+            0, 1, -1, 7, int.MinValue, int.MaxValue,
+            0L, 1L, -1L, 7L, long.MinValue, long.MaxValue,
+            0f, 1f, 1.5f, -2.5f, float.NaN, float.PositiveInfinity,
+            0d, 1d, 2.5d, -3.5d, double.NaN, double.NegativeInfinity,
+            System.Numerics.BigInteger.Zero,
+            System.Numerics.BigInteger.One,
+            new System.Numerics.BigInteger(-5),
+            System.Numerics.BigInteger.Parse("123456789012345678901234567890"),
+            BigDecimal.Zero,
+            BigDecimal.One,
+            BigDecimal.FromLong(1_234_567),
+            new BigDecimal(12_345, 2),
+            "", "a", "0123456789abcde", "0123456789abcdef", new string('x', 40), "Ω≈ç√",
+            Guid.Parse("00112233-4455-6677-8899-aabbccddeeff"),
+            new DateTime(2024, 1, 2, 3, 4, 5, 678),
+            DateTime.UnixEpoch,
+        ];
+        foreach (object? value in values)
+        {
+            object? back = RoundTrip(type, value);
+            if (value is DateTime dateTime)
+            {
+                // The wire form is milliseconds since the epoch, so the value comes back UTC.
+                Assert.Equal(DateTimeKind.Utc, ((DateTime)back!).Kind);
+                Assert.Equal(dateTime.ToUniversalTime(), ((DateTime)back!).ToUniversalTime());
+            }
+            else
+            {
+                Assert.Equal(value, back);
+            }
+
+            Assert.True(type.GetMemory(value) >= 0);
+        }
+
+        Assert.Equal(0, type.Compare(1, 1));
+        Assert.True(type.Compare(1, 2) < 0);
+        Assert.True(type.Compare("b", "a") > 0);
+        Assert.Equal(3, type.CreateStorage(3).Length);
+    }
+
+    [Fact]
+    public void ReferenceArraysComeBackElementByElement()
+    {
+        ObjectDataType type = new();
+
+        string[] strings = ["a", "bb", "ccc", ""];
+        string[] stringsBack = Assert.IsType<string[]>(RoundTrip(type, strings));
+        Assert.Equal(strings, stringsBack);
+
+        object?[] mixed = [1, "a", null, true];
+        object?[] mixedBack = Assert.IsType<object?[]>(RoundTrip(type, mixed));
+        Assert.Equal(mixed, mixedBack);
+    }
+
+    [Fact]
+    public void UnsupportedObjectsAreRefused()
+    {
+        ObjectDataType type = new();
+        _ = Assert.Throws<ArgumentException>(() => ObjectDataType.Serialize(new object()));
+        _ = Assert.Throws<ArgumentException>(() => ObjectDataType.Deserialize([1, 2, 3]));
+    }
 }

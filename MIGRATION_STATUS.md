@@ -12762,3 +12762,23 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.05 п.п. к спринту 102.
 * Проверено: H2Sharp.Tests 2226/2226, MvStore 185/185, Data 741/741,
   Specs 983/983 (+68 skipped).
+
+### Спринт 104: покрытие — сериализация объектов и порядок строк (2026-11-09)
+
+* `MvStore/Type/ObjectDataType.cs`: 799 → **802/894**. В
+  `ObjectDataTypeRoundTripTests` добавлены: все скалярные теги (bool, int/long
+  во всех формах, BigInteger 0/1/small/large, float/double 0/1/fixed/NaN,
+  BigDecimal 0/1/масштаб, строки ≤15/>15/40, Guid, DateTime в миллисекундах
+  эпохи), массивы ссылочных типов, `Compare`/`GetMemory`/`CreateStorage` и
+  отказы `Serialize`/`Deserialize`. Остальные непокрытые строки — per-type
+  `Read`-обёртки `AutoDetectDataType`, которые порт не вызывает: чтение
+  диспетчеризуется одним switch в `ObjectDataType.Read`; это мёртвый код
+  (расхождение структуры с эталоном зафиксировано, не расширялось).
+* `MvStore/Db/ValueDataType.cs`: 505 → **526/594**. Новый
+  `ValueDataTypeCompareTests`: сравнение compound-значений по колонкам с
+  ascending/descending, SearchRow-ветка через `DefaultRow`, NULL-операнды,
+  `CompareValues` с масками NULLS FIRST/LAST и DESCENDING.
+* Итог: **90.80%** строк (78135/86049), **86.19%** ветвей (31782/36874);
+  +0.02 п.п. к спринту 103.
+* Проверено: H2Sharp.Tests 2232/2232, MvStore 185/185, Data 741/741,
+  Specs 983/983 (+68 skipped).
