@@ -19,6 +19,9 @@
   <ItemGroup Label="Optional providers">
     <PackageVersion Include="CryptoHives.Foundation.Security.Cryptography" Version="0.7.37" />
   </ItemGroup>
+  <ItemGroup Label="PowerShell">
+    <PackageVersion Include="Microsoft.PowerShell.SDK" Version="7.4.6" />
+  </ItemGroup>
   <ItemGroup Label="EF Core">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0" />
