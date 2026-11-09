@@ -51,6 +51,15 @@ dotnet build H2Sharp.sln
 dotnet test
 ```
 
+## Tools
+
+The repository also contains small client tools over the engine:
+
+* `tools/H2Sharp.Shell` — console SQL client, similar to `sqlite3`. See
+  [tools/H2Sharp.Shell/README.md](tools/H2Sharp.Shell/README.md).
+* `tools/H2Sharp.PowerShell` — PowerShell module with `Invoke-H2Query`. See
+  [tools/H2Sharp.PowerShell/README.md](tools/H2Sharp.PowerShell/README.md).
+
 ## Named parameters
 
 The ADO.NET provider writes a named parameter as `$name`:
