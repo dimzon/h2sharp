@@ -12579,3 +12579,24 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **90.37%** строк (77760/86043), **85.84%** ветвей (31655/36878).
 * Проверено: H2Sharp.Tests 2202/2202 (`Category!=BlockedByPort`),
   MvStore 185/185, H2Sharp.Data.Tests 741/741.
+
+### Спринт 96: покрытие — формы дата-времени функций (2026-11-09)
+
+* `Expressions/Functions/DateTimeFunction.cs`: 542 → **578/623** строк (+36).
+  Новый `DateTimeFunctionFormsOracleTests`: DATEADD по всем полям
+  (MILLENNIUM/CENTURY/DECADE/QUARTER/WEEK/ISO_WEEK/DAY_OF_YEAR/DOW/
+  ISO_DAY_OF_WEEK, все времени́ые единицы, TIMEZONE_HOUR/MINUTE/SECOND),
+  отказы: count шире int, дата-часть у TIME; EXTRACT MILLISECOND/MICROSECOND/
+  NANOSECOND из INTERVAL и DAY_OF_WEEK из DATE, недоступные для интервала
+  поля (DAY_OF_WEEK/QUARTER); DATE_TRUNC MILLENNIUM и пролептические годы
+  (`DATE '-0001-06-01'`, `'-0100-…'`, `'-1500-…'`), последний день week-year
+  (`2018-12-31`), TIME/TIME WITH TIME ZONE; отказы DATE_TRUNC
+  (TIMEZONE_HOUR/EPOCH); DATEDIFF между значениями с зоной (включая
+  отрицательный переход); DOW в `MODE=PostgreSQL` (нумерация с воскресенья).
+* Осталось непокрытым: внутренние ошибки (`GetFieldName` вне диапазона,
+  неизвестная function), default-ветки EXTRACT/DATEADD (парсер до них не
+  доводит), PostgreSQL-конверсия результата DATE_TRUNC в TIMESTAMPTZ —
+  результат зависит от локальной зоны машины, поэтому в оракул не включён.
+* Итог: **90.42%** строк (77798/86043), **85.89%** ветвей (31673/36878).
+* Проверено: H2Sharp.Tests 2207/2207 (`Category!=BlockedByPort`),
+  MvStore 185/185, H2Sharp.Data.Tests 741/741.
