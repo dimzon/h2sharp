@@ -12125,3 +12125,23 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   precision < MinPrecision недостижимо, т.к. ReadPositiveLong отвергает 0 раньше.
 * Проверено: H2Sharp.Tests 2151/2151 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 75: покрытие — MVStore views/API (2026-11-09)
+
+Замер на входе (валидный union): `MVMap.cs` 1068/1170, `MVStore.cs` 894/1033.
+
+* `MVMapViewEdgeCoverageTests` (новый, MvStore.Tests): перечислители всех
+  view (map, KeySet, EntrySet, KeyList, включая non-generic IEnumerable),
+  fluent `KeyType`/`ValueType` билдера, `GetKey` за границей.
+* `MVStoreApiCoverageTests` (новый, MvStore.Tests): file-store аксессоры
+  (HasMap/HasData/GetMapNames/GetMapName/IsPersistent/StoreVersion/KeysPerPage/
+  MaxPageSize/CacheSize/RetentionTime/VersionsToKeep/IsVersioningRequired/
+  GetFileStore/GetStoreHeader/GetLayoutMap/Sync/Commit/PopulateInfo/GetMap),
+  Rollback/TryCommit, статический Compact (in-place и в другой файл), Panic.
+* Покрытие: `MVMap.cs` 1068/1170 → **1077/1170** (+9);
+  `MVStore.cs` 894/1033 → **908/1033** (+14).
+* Замечание: при прогоне обнаружен Debug.Assert-fail в
+  `Chunk.AccountForRemovedPage` на сценарии rollback+commit с версионированием;
+  тест упрощён до in-memory rollback, сценарий зафиксирован для отдельного
+  разбора.
+* Проверено: MvStore 161/161, H2Sharp.Tests (без изменений).
