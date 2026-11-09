@@ -12399,3 +12399,27 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   (`WHERE X = 1`, `WHERE X > 1`, join двух VALUES) — совпадают с JVM.
 * Проверено: H2Sharp.Tests 2160/2160 (`Category!=BlockedByPort`),
   MvStore 185/185.
+
+### Спринт 87: покрытие — Aggregate (2026-11-09)
+
+* `Expressions/Aggregate/Aggregate.cs`: 993 → **1020/1097** строк (+27).
+  Добавлен `AggregateFormsOracleTests` (5 `JavaOracleFact`): MODE во всех
+  формах (с/без ORDER BY, WITHIN GROUP, FILTER, DISTINCT), LISTAGG/ARRAY_AGG
+  с ORDER BY/FILTER/DISTINCT и window-формы, JSON_ARRAYAGG/JSON_OBJECTAGG
+  (включая ABSENT ON NULL), имена агрегатов в плане (EVERY, BIT_*_AGG,
+  REGR_*, COVAR_*, CORR), PERCENTILE с NULL-аргументом, недетерминированные
+  аргументы/ORDER BY, и рендер SQL агрегатов через `CREATE VIEW`.
+* Window-агрегат с внутренним ORDER BY достигает `RememberExpressions` только
+  когда упорядочен сам OVER-клауз (`OVER (PARTITION BY ... ORDER BY ...)`):
+  при неупорядоченном OVER `over.IsOrdered()` ложно и запоминания нет —
+  поэтому в оракуле обе формы оконного ARRAY_AGG идут с OVER ORDER BY.
+* Недетерминированный ORDER BY проверяется отдельным оператором: кэш команд
+  останавливается на первом недетерминированном выражении, и стоящий раньше
+  `SUM(RAND(...))` скрывал обход ORDER BY.
+* Осталось непокрытым только недостижимое/защитное: internal-error ветви,
+  `TODOException` в `createAggregateData`/`optimize`, ветки MODE, которые
+  парсер H2 2.5 не порождает (MODE всегда получает orderByList), повторная
+  проверка NULL-ключа JSON_OBJECTAGG в `getValue` (update бросает раньше),
+  переполнение LISTAGG на `MaxStringLength` (1 GB) и `GetCost`.
+* Проверено: H2Sharp.Tests 2165/2165 (`Category!=BlockedByPort`),
+  MvStore 185/185; новых `BlockedByPort` нет.
