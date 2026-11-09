@@ -125,6 +125,37 @@ public sealed class UtilCoverageTests
     }
 
     [Fact]
+    public void PropertiesFileJoinsContinuationsAndUnescapes()
+    {
+        Dictionary<string, string> props = PropertiesFile.LoadJavaProperties(
+            // An odd number of trailing backslashes continues the line; the next line's
+            // leading whitespace is dropped. An even number ends it.
+            "joined=one\\\n   two\n"
+            + "even=two\\\\\n"
+            // A line that starts with a backslash has no key and no separator.
+            + "\\ ignored\n"
+            + "tab=\\t\\n\\r\\f\\u0041\n");
+
+        Assert.Equal("onetwo", props["joined"]);
+        Assert.Equal("two\\", props["even"]);
+        Assert.Equal("\t\n\r\fA", props["tab"]);
+        Assert.False(props.ContainsKey("ignored"));
+
+        Assert.Throws<FormatException>(() => PropertiesFile.Unescape("\\u12"));
+        Assert.Throws<FormatException>(() => PropertiesFile.Unescape("\\uZZZZ"));
+    }
+
+    [Fact]
+    public void PlainLinesSplitOnEveryTerminator()
+    {
+        Dictionary<string, string> lines = PropertiesFile.LoadPlainLines("a=1\r\nb=2\rc=3\n=4\n");
+        Assert.Equal("1", lines["a"]);
+        Assert.Equal("2", lines["b"]);
+        Assert.Equal("3", lines["c"]);
+        Assert.False(lines.ContainsKey(string.Empty));
+    }
+
+    [Fact]
     public void DateTimeTemplateFormatsAndParses()
     {
         var value = H2Sharp.Values.ValueTimestamp.Parse("2020-05-06 12:34:56", null);
