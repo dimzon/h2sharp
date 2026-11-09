@@ -12064,3 +12064,14 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
 * Покрытие файла: 34/40 → 40/40 (+6).
 * Проверено: H2Sharp.Tests 2133/2133 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 72: покрытие — JavaLegacyExtensions (2026-11-09)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `JavaLegacyExtensionsCoverageTests` (новый): non-raw guard бросает
+  InvalidOperationException (через фейковый IH2Extensions).
+* Покрытие файла: 6/9 → 9/9 (+3). JavaLegacy-сборка целиком 150/150 (100%).
+* Проверено: H2Sharp.Tests 2134/2134 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
