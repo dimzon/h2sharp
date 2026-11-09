@@ -12559,3 +12559,23 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   61→96/101: прежний отчёт был снят, когда файл блокировался другим прогоном.
 * Проверено: H2Sharp.Tests 2199/2199 (`Category!=BlockedByPort`),
   MvStore 185/185, H2Sharp.Data.Tests 741/741.
+
+### Спринт 95: покрытие — типы реестра LOB-карт (2026-11-09)
+
+* `MvStore/Db/LobStorageMap.cs` (`BlobReference` и `BlobMeta` с их типами):
+  18 → **72/72** строк (100%). Новый `LobStorageMapTypesTests`: порядок
+  `BlobReference` (длина stream id, затем знаковые байты как в Java, затем
+  lob id), `CompareTo(null)`; round-trip обоих типов через `WriteBuffer`,
+  `GetMemory`, `Compare` с null, `CreateStorage`; `BlobMeta` с
+  `ByteCount > int`, отрицательным `Hash` (fixed long) и `CharLength`.
+  Это формат, который эталон пишет в реестр типов файла, — без него
+  эталонный файл не открывается.
+* Измерение пересобрано с нуля: `coverage-current` теперь собран только из
+  свежих полных прогонов H2Sharp.Tests, MvStore, Data, Engine и
+  H2SharpSql.Specs (Specs — без известного падающего MERGE-теста
+  `UpdateDeleteAndInsertDispatchOverOneSource`, он воспроизводится на main и
+  не связан с этим спринтом). Прежнее объединение содержало отчёты разных
+  ревизий, из-за чего номера строк в `uncovered.py` съезжали.
+* Итог: **90.37%** строк (77760/86043), **85.84%** ветвей (31655/36878).
+* Проверено: H2Sharp.Tests 2202/2202 (`Category!=BlockedByPort`),
+  MvStore 185/185, H2Sharp.Data.Tests 741/741.
