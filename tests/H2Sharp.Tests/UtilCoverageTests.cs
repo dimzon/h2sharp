@@ -65,6 +65,55 @@ public sealed class UtilCoverageTests
         Assert.Null(cache.Find(2));
     }
 
+    /// <summary>
+    /// The two-queue cache: a FIFO entry looked up twice while another position was used
+    /// in between is promoted to the LRU queue, a recently used position is written to the
+    /// LRU queue directly, a stream stays in the FIFO queue, and the changed lists of both
+    /// queues are merged.
+    /// </summary>
+    [Fact]
+    public void CacheTqPromotesAndMergesQueues()
+    {
+        var writer = new ListCacheWriter();
+        Cache cache = CacheLRU.GetCache(writer, "TQ", 100);
+        Assert.IsType<CacheTQ>(cache);
+
+        CacheObj one = new(1);
+        cache.Put(one);
+        cache.Put(new CacheObj(2));
+        // First lookup only remembers the position; the position used after it is what
+        // makes the next lookup a promotion.
+        Assert.Same(one, cache.Get(1));
+        cache.Put(new CacheObj(3));
+        Assert.Same(one, cache.Get(1));
+        Assert.Same(one, cache.Get(1));
+
+        // A position already seen is written straight into the LRU queue.
+        CacheObj four = new(4);
+        cache.Put(four);
+        Assert.Same(four, cache.Get(4));
+        CacheObj fourAgain = new(4);
+        cache.Put(fourAgain);
+        Assert.Same(fourAgain, cache.Find(4));
+
+        // A stream object never leaves the FIFO queue, even when asked for.
+        StreamCacheObj stream = new(5);
+        cache.Put(stream);
+        Assert.Same(stream, cache.Get(5));
+
+        // The changed records of both queues come back in one list.
+        one.SetChanged(true);
+        stream.SetChanged(true);
+        List<CacheObject> changed = cache.GetAllChanged();
+        Assert.Contains(one, changed);
+        Assert.Contains(stream, changed);
+
+        // The LRU queue holds 4 now; 5 lives in the FIFO queue only.
+        Assert.True(cache.Remove(4));
+        Assert.True(cache.Remove(5));
+        Assert.False(cache.Remove(999));
+    }
+
     [Fact]
     public void CacheLruEdgePaths()
     {
@@ -222,5 +271,16 @@ public sealed class UtilCoverageTests
         public override int GetMemory() => Memory;
 
         public override bool CanRemove() => Removable;
+    }
+
+    private sealed class StreamCacheObj : CacheObject
+    {
+        internal StreamCacheObj(int pos) => SetPos(pos);
+
+        public override int GetMemory() => 64;
+
+        public override bool CanRemove() => true;
+
+        public override bool IsStream() => true;
     }
 }

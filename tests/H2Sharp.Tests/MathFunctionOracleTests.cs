@@ -145,4 +145,28 @@ public sealed class MathFunctionOracleTests
             "EXPLAIN SELECT ABS(NULL)",
         ]);
     }
+
+    /// <summary>
+    /// The one-argument math functions: every name in the dispatcher is called, and the
+    /// NULL argument, the NaN of a negative square root and the domain refusals are checked.
+    /// </summary>
+    [JavaOracleFact]
+    public void TheOneArgumentFunctionsMatchJdbc()
+    {
+        ExplainOracleTests.Check([
+            "SELECT CASE WHEN SIN(0) = 0 AND COS(0) = 1 AND TAN(0) = 0 AND COT(1) > 0"
+                + " AND SINH(0) = 0 AND COSH(0) = 1 AND TANH(0) = 0"
+                + " AND ASIN(0) = 0 AND ACOS(1) = 0 AND ATAN(0) = 0"
+                + " AND LOG10(100) = 2 AND LN(1) = 0 AND EXP(0) = 1"
+                + " AND SQRT(4) = 2 AND DEGREES(0) = 0 AND RADIANS(0) = 0"
+                + " THEN 1 ELSE 0 END",
+            "SELECT SIN(CAST(NULL AS DOUBLE))",
+            "SELECT CAST(SQRT(-1) AS VARCHAR)",
+            "SELECT COT(0)",
+            "SELECT ASIN(2)",
+            "SELECT ACOS(2)",
+            "SELECT LOG10(0)",
+            "SELECT LN(0)",
+        ]);
+    }
 }

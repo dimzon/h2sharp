@@ -12649,3 +12649,22 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2213/2213, MvStore 185/185, Data 741/741,
   Engine 9/9, **H2SharpSql.Specs 983/983 + 68 skipped, 0 failed** (прежний
   единственный красный тест теперь проходит).
+
+### Спринт 98: покрытие — TQ-кэш и унарные math-функции (2026-11-09)
+
+* `Util/CacheTQ.cs`: 50 → **79/79** строк (100%). Новый тест в
+  `UtilCoverageTests`: продвижение записи FIFO→LRU при повторном чтении после
+  использования другой позиции, запись сразу в LRU для уже виденной позиции,
+  потоковая запись навсегда в FIFO (даже при `Get`), слияние changed-списков
+  обеих очередей, удаление из LRU и из FIFO, отсутствующая позиция.
+* `Expressions/Functions/MathFunction1.cs`: 56 → **75/77**. В
+  `MathFunctionOracleTests` добавлен оракул: вызовы всех имён диспетчера
+  (SIN/COS/TAN/COT/SINH/COSH/TANH/ASIN/ACOS/ATAN/LOG10/LN/EXP/SQRT/
+  DEGREES/RADIANS), NULL-аргумент, `SQRT(-1)` → NaN, отказы COT(0) (деление
+  на ноль), ASIN(2), ACOS(2), LOG10(0), LN(0). Непокрытыми остались
+  internal-error и `Optimize`-return, до которых парсер не доводит.
+* Объединение покрытия пересобрано после исправления CTAS/VIEW/CTE: все пять
+  наборов, Specs — полный прогон без исключений.
+* Итог: **90.58%** строк (77961/86072), **86.05%** ветвей (31740/36884).
+* Проверено: H2Sharp.Tests 2215/2215 (`Category!=BlockedByPort`),
+  MvStore 185/185, Data 741/741, H2SharpSql.Specs 983/983 (+68 skipped).
