@@ -103,4 +103,30 @@ public sealed class MVStoreApiCoverageTests : StoreTestBase
         Assert.True(s.IsClosed());
         s.CloseImmediately();
     }
+
+    /// <summary>
+    /// A rollback right after an asynchronous tryCommit must not race the store's own
+    /// writer: the async task may be between its layout put and the occupancy/finalization
+    /// steps when the rollback moves the layout root, which used to queue the same saved
+    /// page for removal twice and leave a stale lastChunk behind.
+    /// </summary>
+    [Fact]
+    public void RollbackAfterAsyncCommitIsConsistent()
+    {
+        for (int i = 0; i < 50; i++)
+        {
+            string file = TempFile("async-rollback" + i + ".mv");
+            DeleteFile(file);
+            using MVStore s = MVStore.Open(file);
+            s.SetVersionsToKeep(10);
+            MVMap<int, string> m = s.OpenMap<int, string>("m");
+            m.Put(1, "a");
+            long v = s.Commit();
+            m.Put(2, "b");
+            _ = s.TryCommit();
+            s.RollbackTo(v);
+            Assert.False(m.ContainsKey(2));
+            Assert.Equal("a", m.Get(1));
+        }
+    }
 }

@@ -12197,3 +12197,22 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   тест упрощён до in-memory rollback, сценарий зафиксирован для отдельного
   разбора.
 * Проверено: MvStore 161/161, H2Sharp.Tests (без изменений).
+### Спринт 76: MVStore — гонка rollbackTo с асинхронным tryCommit (дефект устранён)
+
+Разобран Debug.Assert в `Chunk.AccountForRemovedPage`, обнаруженный в спринте 75.
+
+* Воспроизведение: файловый store, `SetVersionsToKeep(10)`,
+  `Put(1) → Commit → Put(2) → TryCommit → RollbackTo(v1) → Close` — порт падал
+  20/20, эталон (H2 2.5.259, `-ea`) — 0/200.
+* Причина: `TryCommit` запускает `serializeAndStore` на executor'е и отпускает
+  storeLock. `RollbackTo` двигает корень layout-карты, пока задача стоит между
+  `layout.Put` и учётом занятости: та же сохранённая страница ставится в очередь
+  на удаление дважды. Поздний `StoreBuffer` дополнительно переставлял
+  `lastChunk` за откатанную версию (orphan-чанк на Close).
+* Фикс (D-049): `FileStore.RollbackTo` дренирует `serializationExecutor` и
+  `bufferSaveExecutor` перед откатом. Обе задачи не требуют storeLock —
+  дедлока нет.
+* Регрессия: `MVStoreApiCoverageTests.RollbackAfterAsyncCommitIsConsistent`
+  (50 итераций).
+* Проверено: H2Sharp.Tests 2152/2152 (`Category!=BlockedByPort`), MvStore 164/164.
+

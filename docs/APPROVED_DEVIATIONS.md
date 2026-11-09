@@ -718,3 +718,21 @@ SP-39 (дефект проводки, найден при ревью): пул с
 после изменившегося требует другого таргета; совпадающие случаи (первое
 поле не меняется, несовпадение степени) продолжают сверяться оракулом
 (`RowCastOracleTests`), исправленное поведение закреплено порт-тестами.
+### D-049. MVStore: дренаж очередей записи перед rollbackTo (устранение гонки эталона)
+
+`FileStore.RollbackTo` перед откатом layout-корня ожидает завершения обеих
+очередей записи — `serializationExecutor` и `bufferSaveExecutor`. Причина:
+`tryCommit()` и фоновый писатель запускают `serializeAndStore`/`StoreBuffer`
+асинхронно, уже отпустив storeLock. Откат, двигающий корень layout-карты,
+может попасть между `layout.Put` задачи и учётом занятости чанка: одна и та же
+сохранённая страница ставится в очередь на удаление дважды
+(`Chunk.AccountForRemovedPage`, assert `!Occupancy.Get(pageNo)`), а поздний
+`StoreBuffer` переставляет `lastChunk` за откатываемую версию
+(`VerifyOrphanedChunksAbsence` при Close). Код эталона идентичен, но
+JVM-планировщик стабильно успевает выполнить откат раньше; в .NET гонка
+воспроизводилась 20/20 на `Put → Commit → Put → TryCommit → RollbackTo → Close`.
+Дренаж не меняет наблюдаемую семантику: откат и так документирован как
+single-threaded, а обе задачи не требуют storeLock (только layout и файл),
+поэтому ожидание не может привести к дедлоку. Регрессия:
+`MVStoreApiCoverageTests.RollbackAfterAsyncCommitIsConsistent` (50 итераций).
+

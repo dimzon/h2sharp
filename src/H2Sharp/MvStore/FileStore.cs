@@ -686,6 +686,18 @@ public abstract class FileStore<C> : FileStore, IFileStore, FileStore.ISerializa
     /// <inheritdoc/>
     public void RollbackTo(long version)
     {
+        // tryCommit() and the background writer store asynchronously: serializeAndStore()
+        // and StoreBuffer() run on their executors after the store lock has been released.
+        // Rolling the layout root back while such a task is in flight races with it — the
+        // task's layout put and the rollback's root CAS can interleave so the same saved
+        // page is queued for removal twice, and a late StoreBuffer() moves lastChunk past
+        // the rolled-back version. The reference runs the same code, but the JVM scheduler
+        // happens to finish the rollback first; here the tasks are drained before the
+        // rollback so the outcome does not depend on timing. Neither task needs the store
+        // lock (they only touch the layout and the file), so waiting here cannot deadlock.
+        Utils.FlushExecutor(serializationExecutor);
+        Utils.FlushExecutor(bufferSaveExecutor);
+
         if (version == 0)
         {
             // special case: remove all data
