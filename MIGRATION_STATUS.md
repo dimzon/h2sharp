@@ -12465,3 +12465,25 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   конверсии без target-типа (`ConvertTo`-early-return).
 * Проверено: H2Sharp.Tests 2174/2174 (`Category!=BlockedByPort`),
   MvStore 185/185; `Category=BlockedByPort` перечисляет новый дефект.
+
+### Спринт 90: покрытие — границы первичного индекса (2026-11-09)
+
+* `MvStore/Db/MVPrimaryIndex.cs`: 288 → **291/334**. Новый
+  `PrimaryIndexBoundOracleTests`: предикаты по числовому PK (`COUNT(*)` при
+  `ID > -Infinity`, `ID > +Infinity`, `ID < ±Infinity` для DECFLOAT; `NaN` для
+  DOUBLE/REAL) и по `_ROWID_` (граница — сам ключ, ветки
+  `min = first.GetKey()` / `max = last.GetKey()`).
+* Остальные непокрытые строки файла недостижимы по устройству: `TableBase.
+  GetMainIndexColumn` (и эталон, и порт) отдаёт главную колонку индекса только
+  для TINYINT/SMALLINT/INTEGER/BIGINT, поэтому ветки преобразования границы
+  для REAL/DOUBLE/DECFLOAT/NUMERIC в `GetCursor` — мёртвый код; ветки
+  ConcurrentUpdate/RowNotFound — гоночные/дефектные пути; строки с
+  `TODOException` — известные TODO порта (транзакция у сессии, не-long ключ).
+* Измерение: в объединение добавлен полный прогон `H2Sharp.Data.Tests`
+  (741 тест) — прежний отчёт был единственным и неполным. Итог по порту:
+  **89.53%** строк (78490/87672); ADO-файлы выросли заметно
+  (`H2CommandBuilder` 8/165 → 103/165, `H2Connection`, `H2DataReader`,
+  `H2ValueMapper` ушли из списка худших).
+* Проверено: новый оракул-класс 2/2; полный прогон H2Sharp.Tests
+  2174/2174 (`Category!=BlockedByPort`) и MvStore 185/185 — до добавления
+  тестов, движок не менялся.
