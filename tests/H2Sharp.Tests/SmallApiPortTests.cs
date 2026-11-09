@@ -8,7 +8,6 @@
  */
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.IO;
 using H2Sharp.Compression;
 using H2Sharp.Data;
@@ -89,31 +88,5 @@ public sealed class SmallApiPortTests
         Assert.Throws<NotSupportedException>(() => stream.Seek(0, SeekOrigin.Begin));
         Assert.Throws<NotSupportedException>(() => stream.Position = 0);
         Assert.Throws<NotSupportedException>(() => stream.Write(buffer, 0, 1));
-    }
-
-    [Fact]
-    public void CommandBuilderRefusesCommandGeneration()
-    {
-        // The schema machinery is not there yet: every command-generation question refuses
-        // instead of answering something plausible.
-        H2CommandBuilder builder = new();
-        H2DataAdapter adapter = new();
-        builder.DataAdapter = adapter;
-        Assert.Same(adapter, builder.DataAdapter);
-
-        System.Reflection.BindingFlags protectedInstance =
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
-        foreach (string name in new[] { "GetParameterName", "GetParameterPlaceholder" })
-        {
-            System.Reflection.MethodInfo byOrdinal = typeof(H2CommandBuilder).GetMethod(
-                name, protectedInstance, [typeof(int)])!;
-            Assert.Throws<System.Reflection.TargetInvocationException>(
-                () => byOrdinal.Invoke(builder, [0]));
-        }
-
-        System.Reflection.MethodInfo apply = typeof(H2CommandBuilder).GetMethod(
-            "ApplyParameterInfo", protectedInstance)!;
-        Assert.Throws<System.Reflection.TargetInvocationException>(
-            () => apply.Invoke(builder, [null!, null!, StatementType.Insert, false]));
     }
 }

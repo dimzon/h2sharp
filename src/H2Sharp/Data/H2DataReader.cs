@@ -163,19 +163,37 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The label, as JDBC's getColumnLabel and ADO.NET's GetName mean it: an aliased column is
+    /// known by its alias, while getColumnName keeps reporting the base column.
+    /// </remarks>
     public override string GetName(int ordinal)
     {
         CheckOrdinal(ordinal);
-        return result!.GetColumnName(ordinal);
+        return result!.GetAlias(ordinal);
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Labels first, then base column names, as the reference's findColumn does: an alias wins
+    /// over the name of the column it renames, and a name still finds a column that an alias
+    /// did not take.
+    /// </remarks>
     public override int GetOrdinal(string name)
     {
         ThrowIfClosed();
         ArgumentNullException.ThrowIfNull(name);
         Result.ResultInterface source = State();
-        for (int i = 0, count = source.GetVisibleColumnCount(); i < count; i++)
+        int count = source.GetVisibleColumnCount();
+        for (int i = 0; i < count; i++)
+        {
+            if (string.Equals(source.GetAlias(i), name, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        for (int i = 0; i < count; i++)
         {
             if (string.Equals(source.GetColumnName(i), name, StringComparison.OrdinalIgnoreCase))
             {
@@ -664,6 +682,10 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
         table.Columns.Add("DataType", typeof(Type));
         table.Columns.Add("DataTypeName", typeof(string));
         table.Columns.Add("AllowDBNull", typeof(bool));
+        table.Columns.Add("BaseSchemaName", typeof(string));
+        table.Columns.Add("BaseTableName", typeof(string));
+        table.Columns.Add("BaseColumnName", typeof(string));
+        table.Columns.Add("IsAutoIncrement", typeof(bool));
         foreach (H2DbColumn column in columns)
         {
             DataRow row = table.NewRow();
@@ -675,6 +697,13 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
             row["DataType"] = column.DataType;
             row["DataTypeName"] = column.DataTypeName;
             row["AllowDBNull"] = column.AllowDBNull;
+            // A column that is not read from a table has no base name: the ADO.NET schema
+            // table says that with DBNull rather than with the expression text the query
+            // printed, so a command builder can tell a table column from a computed one.
+            row["BaseSchemaName"] = column.BaseSchemaName ?? (object)DBNull.Value;
+            row["BaseTableName"] = column.BaseTableName ?? (object)DBNull.Value;
+            row["BaseColumnName"] = column.BaseColumnName ?? (object)DBNull.Value;
+            row["IsAutoIncrement"] = column.IsAutoIncrement ?? false;
             table.Rows.Add(row);
         }
 
@@ -705,14 +734,24 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
             for (int i = 0, count = source.GetVisibleColumnCount(); i < count; i++)
             {
                 TypeInfo type = source.GetColumnType(i);
+                string? tableName = source.GetTableName(i);
                 columns.Add(new H2DbColumn(
-                    source.GetColumnName(i),
+                    // The label is the name the caller knows the column by; the column name
+                    // stays the base column's, which is what the schema table reports
+                    // separately as BaseColumnName.
+                    source.GetAlias(i),
                     i,
                     H2ValueMapper.GetFieldType(type),
                     Value.GetTypeName(type.GetValueType()),
                     type.GetPrecision() is >= 0 and <= int.MaxValue ? (int)type.GetPrecision() : -1,
                     type.GetScale(),
-                    source.GetNullable(i) != H2Sharp.Tables.Column.NotNullable));
+                    source.GetNullable(i) != H2Sharp.Tables.Column.NotNullable,
+                    source.GetSchemaName(i),
+                    tableName,
+                    // Only a resolved table column has a base column; an expression reports
+                    // none, and the schema table says that with DBNull.
+                    tableName is null ? null : source.GetColumnName(i),
+                    source.IsIdentity(i)));
             }
         }
 

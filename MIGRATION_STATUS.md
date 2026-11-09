@@ -1,5 +1,57 @@
 # MIGRATION STATUS — рабочая памятка
 
+### Генерация команд H2CommandBuilder и Update без ручных команд (2026-11-09)
+
+Закрыт отказ `H2CommandBuilder` от генерации (`NotSupportedException` на
+`GetParameterName`/`GetParameterPlaceholder`/`ApplyParameterInfo`).
+`DbCommandBuilder` теперь получает от провайдера всё, чего ему не хватало.
+
+* `H2CommandBuilder` задаёт диалект: идентификаторы в двойных кавычках
+  (`QuotePrefix`/`QuoteSuffix`), позиционный плейсхолдер `?`, имена
+  параметров — метки (`p1`, `name`), в текст не попадают. `H2Parameter`
+  хранит CLR-значение, и движок приводит его к колонке при выполнении;
+  исключение — TIME (см. ниже).
+* `SetRowUpdatingHandler` подписывает `RowUpdatingHandler` базового класса на
+  типизированные `RowUpdating`/`RowUpdated` адаптера; `H2DataAdapter.Update`
+  без `InsertCommand`/`UpdateCommand`/`DeleteCommand` строит их на каждом
+  ряду, как SqlClient с `SqlCommandBuilder`.
+* Ключи: `H2DataReader.GetSchemaTable` отдаёт `BaseSchemaName`,
+  `BaseTableName`, `BaseColumnName` и `IsAutoIncrement` из метаданных
+  результата; `H2CommandBuilder.GetSchemaTable` дополняет `IsKey` (по
+  `Table.FindPrimaryKey()` схемы, из которой прочитана колонка) и
+  `IsReadOnly` (generated-колонка). Identity и generated-колонки не попадают
+  ни в INSERT, ни в UPDATE SET; таблица без PK отказывает в UPDATE/DELETE,
+  а не пишет WHERE по всем строкам.
+* Та же метаинформация теперь в `GetColumnSchema()` (`H2DbColumn`).
+* `H2DataReader.GetName` и `GetOrdinal` отвечают меткой
+  (`ResultInterface.GetAlias`, как JDBC `getColumnLabel`), а базовая колонка
+  отдаётся `GetSchemaTable` отдельно (`ResultInterface.GetColumnName`, как
+  JDBC `getColumnName`). `GetOrdinal` ищет сначала метки, затем имена
+  базовых колонок — как эталонный `ResultSet.findColumn`.
+* Найден и исправлен дефект порта: флаг `Mode.aliasColumnName` не был
+  перенесён, `Parser` подставлял `Alias(..., aliasColumnName: true)` всегда.
+  Флаг добавлен в `Mode` с эталонными значениями (DB2, Derby, MSSQLServer,
+  Oracle, PostgreSQL — true), парсер читает его, а `Alias` получил
+  недостающие `GetSchemaName`/`GetTableName`/`GetColumnName` из эталона.
+  В `REGULAR` это возвращает алиасированным колонкам базовые имя и таблицу,
+  в alias-режимах — метку без таблицы, как JDBC.
+* `ApplyParameterInfo` помечает `DbType.Time` параметры TIME-колонок: иначе
+  CLR `TimeSpan` уходит в движок интервалом и присваивание TIME отвергается
+  (`INTERVAL DAY TO SECOND to TIME`). Остальные значения движок приводит по
+  CLR-типу.
+* Тесты: `H2CommandBuilderTests` (10: генерация и Update через адаптер,
+  алиасы, identity/generated, nullable-WHERE, TIME, quoted-идентификаторы,
+  составной ключ, отказы без PK и без базовой таблицы) и
+  `AliasColumnMetadataOracleTests` (`JavaOracleFact`: label/name/table/schema
+  во всех 11 режимах против JVM). Все проверки — против
+  `h2-2.5.259-SNAPSHOT.jar`.
+* Проверено: H2Sharp.Tests 2152/2152 (`Category!=BlockedByPort`),
+  H2Sharp.Data.Tests 729/729, Engine 9/9; в MvStore падает только
+  незакоммиченный `AssertReproTests` параллельной работы (не относится к
+  этому изменению).
+* Новых записей в `docs/APPROVED_DEVIATIONS.md` нет: это принятая
+  .NET-граница (ADR-001/D-020/D-021) плюс исправление эталонного порта.
+
 ### System.Data.Common: batch, schema и metadata (feature/system-data-common)
 
 Пункты P0/P1 из `docs/ANALYSIS_SYSTEM_DATA_COMMON.md` реализованы в отдельном

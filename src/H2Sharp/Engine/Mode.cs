@@ -40,18 +40,19 @@ public enum CharPadding
 /// what it means.
 /// </summary>
 /// <remarks>
-/// The reference carries 59 flags and this carries the seven that something reads. Five of them
-/// are read by the tokenizer and are the places where the same characters mean different things in
-/// different databases; the other two are read by the conversion family, which is where a CHAR is
-/// padded and where a NUMERIC's scale is reduced. Every other flag belongs to a feature that is
-/// not ported yet; a flag nobody reads is a flag nobody can test. A flag arrives with the feature
-/// that needs it, the same way <see cref="CastDataProvider"/> carries one member of the
-/// reference's five for the same reason.
+/// The reference carries 59 flags and this carries the ones something reads. Some are read by the
+/// tokenizer and are the places where the same characters mean different things in different
+/// databases; others are read by the conversion family, which is where a CHAR is padded and where a
+/// NUMERIC's scale is reduced, and by result metadata, where an alias decides whether a column is
+/// still named after its base column. Every other flag belongs to a feature that is not ported yet;
+/// a flag nobody reads is a flag nobody can test. A flag arrives with the feature that needs it,
+/// the same way <see cref="CastDataProvider"/> carries one member of the reference's five for the
+/// same reason.
 /// <para>
-/// The table below is the reference's own, read off the static initialiser: for each mode, which of
-/// the eight are on. It is worth having in full even though only the tokenizer and the conversion
-/// family read it, because "which mode turns this on" is the question that every future feature
-/// starts with.
+/// The table below is the reference's own, read off the static initialiser: for each mode, which
+/// flags are on. It is worth having in full even though only the tokenizer, the conversion family
+/// and result metadata read it, because "which mode turns this on" is the question that every
+/// future feature starts with.
 /// </para>
 /// </remarks>
 public sealed class Mode
@@ -121,6 +122,14 @@ public sealed class Mode
     /// Whether <c>#</c> begins a name, as it does in Oracle and in SQL Server.
     /// </summary>
     public bool SupportPoundSymbolForColumnNames { get; }
+
+    /// <summary>
+    /// Whether an aliased column is reported under the alias: when this is on, result metadata
+    /// returns the alias from the column name and no table name, as in <c>SELECT ID AS I FROM T</c>;
+    /// when it is off, the base column name and table name are returned and the alias is only the
+    /// column label.
+    /// </summary>
+    public bool AliasColumnName { get; }
 
     /// <summary>
     /// Whether a number written <c>0x1A</c> is a string of bytes rather than the number 26.
@@ -369,11 +378,13 @@ public sealed class Mode
         bool alterTableModifyColumn = false,
         bool alterTableModifyColumnPreserveNullability = false,
         bool sysDummy1 = false,
+        bool aliasColumnName = false,
         IReadOnlySet<string>? disallowedTypes = null)
     {
         Enum = modeEnum;
         Name = NameOf(modeEnum);
         SupportPoundSymbolForColumnNames = pound;
+        AliasColumnName = aliasColumnName;
         ZeroExLiteralsAreBinaryStrings = zeroExIsBinary;
         SquareBracketQuotedNames = squareBrackets;
         Limit = limit;
@@ -461,9 +472,10 @@ public sealed class Mode
                 identityClause: true, allowEmptyInPredicate: true, numericWithBooleanComparison: true,
                 updateSequenceOnManualIdentityInsertion: true, takeInsertedIdentity: true),
             ["DB2"] = new(ModeEnum.Db2, false, false, false, true, true,
-                numericWithBooleanComparison: true, sysDummy1: true, takeInsertedIdentity: true),
+                numericWithBooleanComparison: true, sysDummy1: true, takeInsertedIdentity: true,
+                aliasColumnName: true),
             ["DERBY"] = new(ModeEnum.Derby, false, false, false, false, false, sysDummy1: true,
-                takeInsertedIdentity: true),
+                takeInsertedIdentity: true, aliasColumnName: true),
             ["HSQLDB"] = new(ModeEnum.HsqlDb, false, false, false, true, true,
                 allowPlusForStringConcat: true, topInSelect: true, numericWithBooleanComparison: true),
             ["MSSQLSERVER"] = new(ModeEnum.MsSqlServer, true, true, true, false, false,
@@ -471,7 +483,7 @@ public sealed class Mode
                 allowPlusForStringConcat: true, topInSelect: true, topInDml: true,
                 identityClause: true, allowEmptySchemaValuesAsDefaultSchema: true,
                 discardWithTableHints: true, numericWithBooleanComparison: true,
-                takeInsertedIdentity: true),
+                takeInsertedIdentity: true, aliasColumnName: true),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
@@ -488,11 +500,12 @@ public sealed class Mode
                 ModeEnum.Oracle, true, false, false, false, true,
                 CharPadding.Always, convertOnlyToSmallerScale: true, charAndByteLengthUnits: true,
                 treatEmptyStringsAsNull: true, mergeWhere: true, decimalSequences: true,
-                alterTableModifyColumn: true, alterTableModifyColumnPreserveNullability: true),
+                alterTableModifyColumn: true, alterTableModifyColumnPreserveNullability: true,
+                aliasColumnName: true),
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
                 logIsLogBase10: true, groupByColumnIndex: true, serialDataTypes: true,
-                takeGeneratedSequenceValue: true,
+                takeGeneratedSequenceValue: true, aliasColumnName: true,
                 disallowedTypes: new HashSet<string>(StringComparer.Ordinal)
                 {
                     "NUMBER", "TINYINT", "BLOB", "VARCHAR_IGNORECASE",

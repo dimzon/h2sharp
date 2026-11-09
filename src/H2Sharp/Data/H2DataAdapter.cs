@@ -7,14 +7,12 @@
  *
  * Filling and updating run through the commands, so a fill reads through the select
  * command into the table and an update writes through the insert, update and delete
- * commands. The row-update events are declared here, because DbDataAdapter itself keeps
- * only the hooks that create and raise the arguments: without this declaration a caller
- * could not subscribe to them. FillError is different — DataAdapter declares and raises
- * it itself, so it is inherited and needs no member here.
- *
- * What is not here is batch updating and conflict detection, which need the schema
- * machinery behind GetInsertCommand and friends — those live on the command builder and
- * refuse there.
+ * commands. Those commands can be supplied by hand, and an H2CommandBuilder attached to
+ * this adapter builds them from the select command when they are not. The row-update
+ * events are declared here, because DbDataAdapter itself keeps only the hooks that create
+ * and raise the arguments: without this declaration a caller could not subscribe to them.
+ * FillError is different — DataAdapter declares and raises it itself, so it is inherited
+ * and needs no member here.
  */
 using System;
 using System.Data;

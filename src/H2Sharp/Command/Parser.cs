@@ -4830,7 +4830,7 @@ public sealed partial class Parser
 
             if (alias is not null)
             {
-                item = new Expressions.Alias(item, alias, aliasColumnName: true);
+                item = new Expressions.Alias(item, alias, provider.GetMode().AliasColumnName);
             }
 
             return item;

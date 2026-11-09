@@ -114,6 +114,42 @@ public sealed class Alias : Expression
     }
 
     /// <inheritdoc/>
+    public override string? GetSchemaName()
+    {
+        // An alias that defines the column name makes the column the alias's own, so it no
+        // longer reports the schema of the expression it wraps; modes that keep base metadata
+        // report the alias only as the column label.
+        if (aliasColumnName)
+        {
+            return null;
+        }
+
+        return expr.GetSchemaName();
+    }
+
+    /// <inheritdoc/>
+    public override string? GetTableName()
+    {
+        if (aliasColumnName)
+        {
+            return null;
+        }
+
+        return expr.GetTableName();
+    }
+
+    /// <inheritdoc/>
+    public override string GetColumnName(SessionLocal session, int columnIndex)
+    {
+        if (expr is not ExpressionColumn || aliasColumnName)
+        {
+            return alias;
+        }
+
+        return expr.GetColumnName(session, columnIndex);
+    }
+
+    /// <inheritdoc/>
     public override bool IsEverything(ExpressionVisitor visitor)
     {
         return expr.IsEverything(visitor);

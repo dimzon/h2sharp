@@ -7,9 +7,10 @@
  *
  * DbColumn carries its description as settable properties rather than abstract members,
  * so this is the whole description in one constructor call: the name the query gave, the
- * position, the engine type and what it reads as. Everything the engine does not know —
- * keys, auto-increment, expression text — stays at the base default, which is null or
- * false, rather than a guess about a table the query may not even read.
+ * position, the engine type and what it reads as, and the base table and column the result
+ * column was read from when the engine resolved one. Everything the engine does not know —
+ * keys, uniqueness, expression text — stays at the base default, which is null or false,
+ * rather than a guess about a table the query may not even read.
  */
 using System;
 using System.Data.Common;
@@ -31,9 +32,14 @@ internal sealed class H2DbColumn : DbColumn
     /// <param name="precision">the precision, or -1</param>
     /// <param name="scale">the scale, or -1</param>
     /// <param name="allowNull">whether NULL reads</param>
+    /// <param name="baseSchemaName">the schema of the base table, if any</param>
+    /// <param name="baseTableName">the base table, if any</param>
+    /// <param name="baseColumnName">the base column, if any</param>
+    /// <param name="isAutoIncrement">whether the base column is an identity column</param>
     internal H2DbColumn(
         string name, int ordinal, Type fieldType, string dataTypeName,
-        int precision, int scale, bool allowNull)
+        int precision, int scale, bool allowNull,
+        string? baseSchemaName, string? baseTableName, string? baseColumnName, bool isAutoIncrement)
     {
         ColumnName = name;
         ColumnOrdinal = ordinal;
@@ -46,5 +52,9 @@ internal sealed class H2DbColumn : DbColumn
         NumericPrecision = precision >= 0 ? precision : null;
         NumericScale = scale >= 0 ? scale : null;
         AllowDBNull = allowNull;
+        BaseSchemaName = baseSchemaName;
+        BaseTableName = baseTableName;
+        BaseColumnName = baseColumnName;
+        IsAutoIncrement = isAutoIncrement;
     }
 }
