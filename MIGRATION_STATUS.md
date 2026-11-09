@@ -12307,3 +12307,21 @@ SQL, хранимые значения, параметры и LOB-хранили
 * Регрессия: `RollbackToZeroTests` — откат с последующей записью и переоткрытием
   (видны только новые строки) и немедленный Close с переоткрытием (пусто).
 * Проверено: MvStore 172/172, H2Sharp.Tests 2154/2154 (`Category!=BlockedByPort`).
+
+### Спринт 82: покрытие — MVStore API (2026-11-09)
+
+Свежий замер после сдвига строк (D-051): `MvStore\MVStore.cs` 909/1037.
+
+* `MVStoreApiEdgeTests` (новый, MvStore.Tests): close с полной компакцией
+  (`Close(-1)` → static Compact с fileStore, AdoptFileStore, compress),
+  отказ commit в read-only store, невалидная версия отката (-1), in-memory
+  `PopulateInfo`/`GetMapNames`/`GetTimeAbsolute`/`IsVersioningRequired`,
+  паника через `ExecuteFilestoreOperation` (MvStoreException и обычное
+  исключение), подавление исключения самого handler'а, отказ операций на
+  закрытом store, `RemoveMap` в памяти и deregister корня закрытой карты
+  при Close, отказ encryption key с занулением ключа.
+* Покрытие `MVStore.cs`: 909/1037 → **956/1037** (+47). Остались recovery-
+  ветви `ScrubMetaMap`, гонки `OpenMap`, panic-catch внутри `StoreNow`/
+  `TryExecuteUnderStoreLock`, ожидание в `IsClosed` и часы назад в
+  `GetTimeAbsolute` — недостижимы без конкурентных/повреждённых сценариев.
+* Проверено: MvStore 182/182.
