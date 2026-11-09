@@ -12797,3 +12797,23 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.03 п.п. к спринту 104.
 * Проверено: H2Sharp.Tests 2238/2238, MvStore 185/185, Data 741/741,
   Specs 983/983 (+68 skipped).
+
+### Спринт 106: покрытие — wire-форма значений (2026-11-09)
+
+* `MvStore/Db/ValueDataType.cs`: 526 → **557/594**. Новый `ValueDataTypeWireTests`:
+  round-trip всех SQL-типов (bool, tinyint/smallint/int/bigint в отрицательной и
+  компактной формах, real/double 0/1/прочее, varchar/varchar-ignorecase ≤31 и
+  >31, varbinary/binary, char, date/time/timetz/timestamp/timestamptz, uuid,
+  numeric 0/1/small/scale/large, array/row, interval обоих знаков, json,
+  geometry, blob/clob); stored-LOB через `DataHandler` (write -2/lobId/tableId,
+  read через LobStorageMap), отсутствующая LOB-мета → MvStoreException,
+  чтение без handler → TODOException; legacy-теги bigint (negative, 0–7, full).
+* Отдельно проверен и не покрывается: статический `Parser.Parse` →
+  `Statement` DTO-дерево — в H2 2.5 такого API нет (эталонный parse возвращает
+  Prepared), в src порта он не используется, и его `ReadCreateTable`/
+  `ReadAlterTable` поддерживают только подмножество H2 1.x. Это порт-онли
+  рудимент; ~300 непокрытых строк там — мёртвый путь, не цель покрытия.
+* Итог: **90.88%** строк (78202/86049), **86.25%** ветвей (31803/36874);
+  +0.05 п.п. к спринту 105.
+* Проверено: H2Sharp.Tests 2241/2241, MvStore 185/185, Data 741/741,
+  Specs 983/983 (+68 skipped).
