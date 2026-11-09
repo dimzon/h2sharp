@@ -12000,3 +12000,20 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   Покрытие файла осталось 1600/1761.
 * Проверено: H2Sharp.Tests 2119/2119 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 67: покрытие — SessionLocal (2026-11-09)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `SessionLocalCoverageTests` (новый): SetQuirksMode, параметры (Set/Get/
+  IsParameterSet, Parameters), GetRowValue без текущей строки (TODO),
+  HasPreparedTransaction, локальные temp-индексы, ClearViewIndexCache,
+  IsParsingCreateView, CurrentTimeZone, GetDynamicSettings, троттлинг,
+  ClearQueryCache, путы Cancel/Close/Abort, prepared-transaction close path,
+  CheckReadRight (TODO).
+* Покрытие файла: 778/1013 (остались TODO-пути checkRight/addTemporaryLob/getResolver,
+  случайные генераторы с seed, savepoint/rollback-пути, transaction map
+  dependencies, Commit/Flush).
+* Проверено: H2Sharp.Tests 2123/2123 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
