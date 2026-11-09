@@ -248,7 +248,83 @@ public sealed class ParserDdlCoverageOracleTests
             "CREATE TABLE MS(A INT IDENTITY, B INT)",
             "INSERT INTO MS(B) VALUES (1), (2)",
             "SELECT A, B FROM MS ORDER BY A",
+            "CREATE TABLE MS2(A INT IDENTITY(-5, +2), B INT)",
             "DROP TABLE MS",
+            "DROP TABLE MS2",
         ], urlSuffix: "MODE=MSSQLServer");
+    }
+
+    [JavaOracleFact]
+    public void DataTypeEdgeFormsMatchJdbc()
+    {
+        ExplainOracleTests.Check([
+            "CREATE TABLE TE1(A TIME(3), B TIMESTAMP(9), C TIME WITH TIME ZONE(2))",
+            "CREATE TABLE TE2(A TIME(99))",
+            "CREATE TABLE TE3(A NUMERIC(200000))",
+            "CREATE TABLE TE4(A INTERVAL FOO)",
+            "CREATE TABLE TE5(A BLOB(1K), B CLOB(2M))",
+            "CREATE TABLE TE6(A BLOB(999999999999999999K))",
+            "CREATE TABLE TE7(A NUMERIC(10, +2))",
+            "CREATE TABLE TE8(A VARCHAR(0))",
+            "CREATE TABLE TE9(A CHAR(0))",
+            "CREATE TABLE TE10(A BINARY(0))",
+            "CREATE DOMAIN DX AS",
+            "DROP TABLE TE1",
+            "DROP TABLE TE5",
+            "DROP TABLE TE7",
+        ]);
+    }
+
+    [JavaOracleFact]
+    public void OracleNumberFormsMatchJdbc()
+    {
+        ExplainOracleTests.Check([
+            "CREATE TABLE ON1(A NUMBER, B NUMBER(10, 2))",
+            "INSERT INTO ON1 VALUES (1.5, 2.25)",
+            "SELECT A, B FROM ON1",
+            "DROP TABLE ON1",
+        ], urlSuffix: "MODE=Oracle");
+    }
+
+    [JavaOracleFact]
+    public void PostgreSqlDisallowedTypesMatchJdbc()
+    {
+        ExplainOracleTests.Check([
+            "CREATE TABLE PG1(A NUMBER)",
+            "CREATE TABLE PG2(A TINYINT)",
+            "CREATE TABLE PG3(A BLOB)",
+            "CREATE TABLE PG4(A VARCHAR_IGNORECASE(5))",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                + "WHERE TABLE_NAME IN ('PG1', 'PG2', 'PG3', 'PG4')",
+        ], urlSuffix: "MODE=PostgreSQL");
+    }
+
+    [JavaOracleFact]
+    public void MySqlNumericWidthsMatchJdbc()
+    {
+        ExplainOracleTests.Check([
+            "CREATE TABLE MW(A INT(11), B BIGINT(20), C INT(11) UNSIGNED)",
+            "INSERT INTO MW VALUES (1, 2, 3)",
+            "SELECT A, B, C FROM MW",
+            "CREATE TABLE MI(A INT AUTO_INCREMENT(5, 2), B INT)",
+            "INSERT INTO MI(B) VALUES (1), (2)",
+            "SELECT A, B FROM MI ORDER BY A",
+            "CREATE TABLE MI2(A INT AUTO_INCREMENT(5, -2), B INT)",
+            "DROP TABLE MW",
+            "DROP TABLE MI",
+        ], urlSuffix: "MODE=MySQL");
+    }
+
+    [JavaOracleFact]
+    public void IgnoreCaseVarcharMatchesJdbc()
+    {
+        ExplainOracleTests.Check([
+            "SET IGNORECASE TRUE",
+            "CREATE TABLE IC(A VARCHAR(5))",
+            "INSERT INTO IC VALUES ('AbC')",
+            "SELECT A FROM IC WHERE A = 'abc'",
+            "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'IC'",
+            "DROP TABLE IC",
+        ]);
     }
 }

@@ -12104,3 +12104,24 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   `ParseCreateTable`/`ParseInsert` в `Parser.Columns.cs`.
 * Проверено: H2Sharp.Tests 2147/2147 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 74: покрытие — Parser.DataTypes (2026-11-09)
+
+Замер на входе (валидный union): строки 76071/85051 = 89.44%,
+ветви 31012/36482 = 85.01%.
+
+* `ParserDdlCoverageOracleTests` расширен: TIME/TIMESTAMP со scale и
+  невалидным scale, NUMERIC с невалидной precision, INTERVAL с мусором,
+  BLOB(1K)/CLOB(2M) и переполнение precision-суффикса, знак в scale
+  (`NUMERIC(10, +2)`), `VARCHAR(0)`/`CHAR(0)`/`BINARY(0)`,
+  `CREATE DOMAIN ... AS` без типа, Oracle `NUMBER`/`NUMBER(10,2)`,
+  PostgreSQL запрещённые типы (NUMBER/TINYINT/BLOB/VARCHAR_IGNORECASE),
+  MySQL `INT(11)`/`BIGINT(20) UNSIGNED`/`AUTO_INCREMENT(5,-2)`,
+  MSSQL `IDENTITY(-5,+2)`, `SET IGNORECASE TRUE` + VARCHAR→VARCHAR_IGNORECASE.
+* Покрытие `Parser.DataTypes.cs`: 664/733 → **689/733** (+25).
+* Мёртвые ветви (задокументированы): `SpecialPrecisionScale` всегда false;
+  generic-ветки scale (327-350) недостижимы, т.к. Numeric идёт через
+  ParseNumericType, а TIME/TIMESTAMP — через ParseTimeType/ParseTimestampType;
+  precision < MinPrecision недостижимо, т.к. ReadPositiveLong отвергает 0 раньше.
+* Проверено: H2Sharp.Tests 2151/2151 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
