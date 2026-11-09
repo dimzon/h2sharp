@@ -201,6 +201,12 @@ public sealed class SequenceOracleTests
             "SELECT CURRVAL('SEQ_ID')",
             "SELECT NEXTVAL('PUBLIC', 'SEQ_ID')",
             "SELECT NEXTVAL('NOSUCH')",
+            // A qualified name in the single argument, lowercase names resolved through
+            // the schema and sequence lookups, and an argument that is not a column.
+            "SELECT NEXTVAL('PUBLIC.SEQ_ID')",
+            "SELECT CURRVAL('PUBLIC.SEQ_ID')",
+            "SELECT NEXTVAL('public', 'seq_id')",
+            "SELECT NEXTVAL('1 + 1')",
         ];
         List<string> port = RunPort(statements);
         List<string> java = RunJava(statements);

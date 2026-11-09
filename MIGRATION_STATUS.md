@@ -12727,3 +12727,20 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.05 п.п. к спринту 100.
 * Проверено: H2Sharp.Tests 2223/2223, MvStore 185/185, Data 741/741,
   Specs 983/983 (+68 skipped).
+
+### Спринт 102: покрытие — делегирующий PK-индекс и compatibility-последовательности (2026-11-09)
+
+* `MvStore/Db/MVDelegateIndex.cs`: 45 → **51/60**. Прямой тест: фабрика строк,
+  row counts и приближение, занимаемое место, cost, no-op Add/Close,
+  транзакционная карта через основную транзакцию.
+* `Expressions/Functions/CompatibilitySequenceValueFunction.cs`: 52 → **63/67**.
+  В `SequenceOracleTests` добавлены: `NEXTVAL('PUBLIC.SEQ_ID')` и
+  `CURRVAL('PUBLIC.SEQ_ID')` (квалифицированное имя в одном аргументе),
+  `NEXTVAL('public', 'seq_id')` (нижний регистр через поиск схемы/последовательности),
+  `NEXTVAL('1 + 1')` (аргумент не колонка → синтаксическая ошибка).
+* Непокрытым осталось: internal-error ветви делегата и ветка
+  `IsEverything(ReadOnly)` для NEXTVAL, до которой SQL не доводит.
+* Итог: **90.73%** строк (78070/86049), **86.10%** ветвей (31750/36874);
+  +0.02 п.п. к спринту 101.
+* Проверено: H2Sharp.Tests 2224/2224, MvStore 185/185, Data 741/741,
+  Specs 983/983 (+68 skipped).
