@@ -12817,3 +12817,26 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.05 п.п. к спринту 105.
 * Проверено: H2Sharp.Tests 2241/2241, MvStore 185/185, Data 741/741,
   Specs 983/983 (+68 skipped).
+
+### Спринт 107: statement-model формы и регрессия ядра MVStore (2026-11-09)
+
+* `Command/Parser.cs` (statement-model путь `Parser.Parse` → `Statement`):
+  6028 → **6067/6905**. Новый `ParserModelFormsTests`: 35 форм, которые модель
+  читает, — богатые CREATE TABLE (PK/UNIQUE/CHECK/DEFAULT/IDENTITY/GENERATED/
+  REFERENCES с ON DELETE/UPDATE/ARRAY/INTERVAL/ENUM/JSON/UUID/GEOMETRY),
+  INSERT с литералами всех типов, UPDATE/DELETE/SELECT-выражения, DROP.
+* Регрессия ядра MVStore (`MvStoreCoreEdgeTests`): большой persistent-map с
+  PageSplitSize(64) — append-flush со сплитами страниц/узлов, `GetDiskSpaceUsed`
+  (approx/exact) после commit, reopen read-only, `ExecuteFilestoreOperation`,
+  `Clear`, `IsClosed`, in-memory flush. Новых строк не даёт: эти пути уже
+  покрыты полным прогоном MvStore-тестов; тест оставлен как регрессия.
+* Блокер цели 95%: значительная часть оставшихся 7 811 непокрытых строк —
+  мёртвый порт-онли код (statement-DTO `Parser.Parse`, которого нет в H2 2.5 и
+  который не используется в src; per-type `Read`-обёртки `ObjectDataType`,
+  не вызываемые из-за единого switch), защитные error/race-ветки и
+  исключённое D-035 шифрование. Без решения пользователя (удаление мёртвого
+  кода / смена метрики) 95% недостижимо тестами.
+* Итог: **90.92%** строк (78238/86049), **86.31%** ветвей (31825/36874);
+  +0.04 п.п. к спринту 106.
+* Проверено: H2Sharp.Tests 2278/2278, MvStore 185/185, Data 741/741,
+  Specs 983/983 (+68 skipped).
