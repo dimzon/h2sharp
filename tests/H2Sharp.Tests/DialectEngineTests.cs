@@ -111,4 +111,20 @@ public sealed class DialectEngineTests
         };
         return builder.ToString();
     }
+
+    [Fact]
+    public void LobsOverTheTraceLimitAreReplacedByTheirLength()
+    {
+        // h2.maxTraceDataLength is 65535: a longer in-memory LOB never reaches the trace as
+        // data, only as its length and storage, which is what these two writers produce.
+        ValueBlob blob = ValueBlob.CreateSmall(new byte[70_000]);
+        Assert.StartsWith(
+            "CAST(REPEAT(CHAR(0), 70000) AS BINARY VARYING",
+            Dialect.AppendBlob(new StringBuilder(), blob, HasSql.ReplaceLobsForTrace).ToString());
+
+        ValueClob clob = ValueClob.CreateSmall(new string('x', 70_000));
+        Assert.StartsWith(
+            "SPACE(70000",
+            Dialect.AppendClob(new StringBuilder(), clob, HasSql.ReplaceLobsForTrace).ToString());
+    }
 }

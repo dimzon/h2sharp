@@ -12423,3 +12423,20 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   переполнение LISTAGG на `MaxStringLength` (1 GB) и `GetCost`.
 * Проверено: H2Sharp.Tests 2165/2165 (`Category!=BlockedByPort`),
   MvStore 185/185; новых `BlockedByPort` нет.
+
+### Спринт 88: покрытие — Dialect (2026-11-09)
+
+* `Data/Dialect.cs`: 485 → **569/573** строк (+84). Непокрытым осталось только
+  недостижимое: ветка отказа `decimal.TryFormat` (31 символа хватает любому
+  decimal) и `Guid.TryWriteBytes` (16 байт пишутся всегда).
+* `DialectLiteralPortTests`: добавлены литералы публичной .NET-поверхности
+  (D-020): TIME WITH TIME ZONE с ненулевым смещением, GEOMETRY из WKT/SRID и
+  WKB, ENUM-каст, ARRAY (включая пустой и NULL), ROW, BLOB/CLOB и NULL
+  BigInteger. Проверено обратное чтение движком: `ARRAY [1, 2]`, `ROW (1, 'a')`
+  и `TIME WITH TIME ZONE '10:00:00+03'` приходят в ADO-проекции как CLR-массив,
+  object[] и DateTimeOffset.
+* `DialectEngineTests`: LOB длиннее `h2.maxTraceDataLength` (65535) в trace
+  заменяется длиной — `CAST(REPEAT(CHAR(0), 70000) AS BINARY VARYING ...)` и
+  `SPACE(70000 ...)`; ветки `ReplaceLobsForTrace` обоих писателей закрыты.
+* Проверено: H2Sharp.Tests 2169/2169 (`Category!=BlockedByPort`), MvStore
+  185/185 (спринт 87); движок не менялся — только тесты и статус.
