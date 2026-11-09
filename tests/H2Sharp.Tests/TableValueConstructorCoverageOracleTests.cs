@@ -15,6 +15,7 @@ using System.Collections.Generic;
 using System.Data.Common;
 using H2Sharp;
 using H2Sharp.Data;
+using H2Sharp.JavaLegacy;
 using H2Sharp.Tests.Oracle;
 using Xunit;
 
@@ -58,8 +59,8 @@ public sealed class TableValueConstructorCoverageOracleTests
     /// <summary>
     /// A non-deterministic expression in VALUES is visited while the query cache
     /// decides whether the statement is reusable. The value itself is not compared:
-    /// the port draws a different number for RAND(seed) inside VALUES than in a plain
-    /// SELECT (a separate defect, recorded in MIGRATION_STATUS.md).
+    /// the default session generator is System.Random (a documented difference), so
+    /// only <see cref="ValuesRandWithJavaLegacyMatchesJdbc"/> compares the draws.
     /// </summary>
     /// <summary>
     /// Values built from parameters: the cell types are unknown while the constructor is
@@ -169,5 +170,58 @@ public sealed class TableValueConstructorCoverageOracleTests
         using DbDataReader reader = command.ExecuteReader();
         Assert.True(reader.Read());
         Assert.False(reader.IsDBNull(0));
+    }
+
+    /// <summary>
+    /// The same seeded draws as the JVM when the connection opts into the JDK generator.
+    /// Without that opt-in the session uses System.Random (a documented difference), which
+    /// is why only this variant compares the numbers.
+    /// </summary>
+    [JavaOracleFact]
+    public void ValuesRandWithJavaLegacyMatchesJdbc()
+    {
+        string[] statements =
+        [
+            "SELECT * FROM (VALUES (RAND(1))) T(X)",
+            "SELECT X FROM (VALUES (RAND(1)), (RAND(1))) T(X)",
+        ];
+        List<string> port = RunPortWithJavaRandom(statements);
+        List<string> java = OracleRunner.Run(statements, """
+            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:h2:mem:tvc_rand");
+            java.sql.Statement stat = conn.createStatement();
+            for (int i = 0; i < inputs.length; i++) {
+              java.sql.ResultSet rs = stat.executeQuery(inputs[i]);
+              while (rs.next()) {
+                String s = rs.getString(1);
+                System.out.println("=" + (rs.wasNull() ? "-" : s));
+              }
+            }
+            conn.close();
+            """, extraJavaArgs: ["-Duser.language=en"]);
+        Assert.True(java.Count == port.Count && java.SequenceEqual(port),
+            "java:\n  " + string.Join("\n  ", java) + "\nport:\n  " + string.Join("\n  ", port));
+    }
+
+    private static List<string> RunPortWithJavaRandom(IReadOnlyList<string> statements)
+    {
+        using H2Connection connection = new(
+            "Data Source=tvc_rand_java_" + Guid.NewGuid().ToString("N"));
+        connection.UseJavaLegacy();
+        connection.Open();
+        List<string> lines = [];
+        foreach (string sql in statements)
+        {
+            using DbCommand command = connection.CreateCommand();
+            command.CommandText = sql;
+            using DbDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                lines.Add("=" + (reader.IsDBNull(0)
+                    ? "-"
+                    : Convert.ToString(reader.GetValue(0), System.Globalization.CultureInfo.InvariantCulture)));
+            }
+        }
+
+        return lines;
     }
 }
