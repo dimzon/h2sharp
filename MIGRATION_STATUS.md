@@ -12053,3 +12053,14 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
   циклов, недостижимых детерминированно).
 * Проверено: H2Sharp.Tests 2129/2129 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 71: покрытие — OraHashFunction (2026-11-09)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `OraHashFunctionCoverageTests` (новый): null → NULL, невалидный bucket/seed →
+  исключение, happy path → BIGINT (через reflection, т.к. класс internal).
+* Покрытие файла: 34/40 → 40/40 (+6).
+* Проверено: H2Sharp.Tests 2133/2133 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
