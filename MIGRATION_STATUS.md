@@ -12040,3 +12040,16 @@ H2Sharp.Tests перезамерян): строки 76609/85331 = 89.78%, вет
 * Покрытие файла: 14/14.
 * Проверено: H2Sharp.Tests 2124/2124 (`Category!=BlockedByPort`; красных нет),
   Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
+
+### Спринт 70: покрытие — JavaRandom (2026-11-09)
+
+Замер на входе (спринт 44, пять сюит): строки 76769/85453 = 89.84%, ветви
+31380/36626 = 85.68%.
+
+* `JavaRandomCoverageTests` (новый): Next/Next(bound)/Next(min,max) для int и long
+  (включая 0, равные границы, полный диапазон), NextDouble/NextSingle/NextBytes
+  (массив и Span), SetSeed, Sample через подкласс.
+* Покрытие файла: 49/101 → 96/101 (+47; остались 5 строк rejection-sampling
+  циклов, недостижимых детерминированно).
+* Проверено: H2Sharp.Tests 2129/2129 (`Category!=BlockedByPort`; красных нет),
+  Data 719, MvStore 152, Engine 9, Native 97 (+8 skipped).
