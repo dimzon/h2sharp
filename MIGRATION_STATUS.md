@@ -12953,3 +12953,16 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.01 п.п. к спринту 113.
 * Проверено: H2Sharp.Tests 2293/2293, MvStore 185/185, Data 746/746,
   Engine 9/9, Specs 983/983 (+68 skipped).
+
+### Спринт 115: покрытие — CommandList (2026-11-09)
+
+* `Command/CommandList.cs`: 84 → **93/106**. Новый `CommandListMembersTests`:
+  список команд из многострочного текста (`GetCommands`, `GetParameters` со
+  всеми вопросами, `QueryMeta` DDL → documented TODO, `IsReadOnly`,
+  `IsTransactional`, `IsQuery`, `GetCommandType`, `GetDependencies`,
+  `UpdateRows`, `InvalidateCachedResult`, двойной `Close`), query-список с
+  установленными параметрами и `Query`.
+* Итог: **91.03%** строк (78329/86049), **86.39%** ветвей (31857/36874);
+  +0.01 п.п. к спринту 114.
+* Проверено: H2Sharp.Tests 2294/2294, MvStore 185/185, Data 746/746,
+  Engine 9/9, Specs 983/983 (+68 skipped).
