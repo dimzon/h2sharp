@@ -12935,3 +12935,21 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.03 п.п. к спринту 112.
 * Проверено: H2Sharp.Tests 2291/2291, MvStore 185/185, Data 746/746,
   Engine 9/9, Specs 983/983 (+68 skipped).
+
+### Спринт 114: покрытие — DateTimeUtils и оракул арифметики (2026-11-09)
+
+* `Util/DateTimeUtils.cs`: 629 → **635/684**. Прямые вызовы в `UtilEdgeTests`:
+  `ParseTimeNanos`/`ParseDateValue` на всех формах (включая отказы),
+  `DateValueFromDenormalizedDate` с переносом месяца в год, round-trip
+  абсолютного дня, инкремент/декремент, все комбинации first-day/minimal-days
+  для week-year/ISO-week (границы 2020-12-31/2021-01-01), `GetEpochSeconds` +
+  `DateValueFromLocalSeconds` перенос через полночь, `NormalizeNanosOfDay`,
+  `ConvertScale`, отказы `ParseTime`/`ParseTimestamp` на "bad".
+  Оракул `DateTimeArithmeticEdgeOracleTests` закрепляет формы: DATEADD через
+  короткий месяц, timestamp+interval через полночь, DATE '2020-1-2',
+  DATE_TRUNC WEEK_YEAR/ISO_WEEK_YEAR на границе года, DATEDIFF через полночь,
+  отказы `TIME WITH TIME ZONE 'bad'` и переполнения TIME.
+* Итог: **91.02%** строк (78319/86049), **86.39%** ветвей (31855/36874);
+  +0.01 п.п. к спринту 113.
+* Проверено: H2Sharp.Tests 2293/2293, MvStore 185/185, Data 746/746,
+  Engine 9/9, Specs 983/983 (+68 skipped).
