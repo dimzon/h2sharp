@@ -20,6 +20,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using H2Sharp.Api;
 using H2Sharp.Command;
 using H2Sharp.Engine;
@@ -39,22 +40,49 @@ public sealed class ScriptConformanceTests
     /// </summary>
     public static TheoryData<string> Scripts => new()
     {
+        "datatypes/bigint.sql",
+        "datatypes/binary.sql",
+        "datatypes/blob.sql",
+        "datatypes/clob.sql",
+        "datatypes/date.sql",
         "datatypes/identity.sql",
+        "datatypes/int.sql",
+        "datatypes/java_object.sql",
+        "datatypes/time-with-time-zone.sql",
+        "datatypes/time.sql",
+        "datatypes/timestamp.sql",
+        "datatypes/tinyint.sql",
+        "datatypes/uuid.sql",
         "functions/numeric/abs.sql",
+        "functions/numeric/acos.sql",
+        "functions/numeric/asin.sql",
         "functions/numeric/atan.sql",
         "functions/numeric/atan2.sql",
+        "functions/numeric/bitand.sql",
+        "functions/numeric/bitcount.sql",
         "functions/numeric/bitget.sql",
+        "functions/numeric/bitnot.sql",
+        "functions/numeric/bitor.sql",
+        "functions/numeric/bitxor.sql",
+        "functions/numeric/ceil.sql",
+        "functions/numeric/compress.sql",
         "functions/numeric/cos.sql",
         "functions/numeric/cot.sql",
         "functions/numeric/degrees.sql",
         "functions/numeric/exp.sql",
+        "functions/numeric/expand.sql",
         "functions/numeric/floor.sql",
+        "functions/numeric/gcd.sql",
         "functions/numeric/length.sql",
+        "functions/numeric/lshift.sql",
         "functions/numeric/mod.sql",
         "functions/numeric/pi.sql",
         "functions/numeric/power.sql",
         "functions/numeric/radians.sql",
+        "functions/numeric/rotate.sql",
+        "functions/numeric/round.sql",
         "functions/numeric/roundmagic.sql",
+        "functions/numeric/rshift.sql",
         "functions/numeric/secure-rand.sql",
         "functions/numeric/sign.sql",
         "functions/numeric/sin.sql",
@@ -62,6 +90,7 @@ public sealed class ScriptConformanceTests
         "functions/numeric/sqrt.sql",
         "functions/numeric/tan.sql",
         "functions/numeric/tanh.sql",
+        "functions/numeric/truncate.sql",
         "functions/numeric/zero.sql",
         "functions/string/ascii.sql",
         "functions/string/bit-length.sql",
@@ -76,16 +105,26 @@ public sealed class ScriptConformanceTests
         "functions/string/ltrim.sql",
         "functions/string/octet-length.sql",
         "functions/string/quote_ident.sql",
+        "functions/string/regexp-like.sql",
         "functions/string/rpad.sql",
+        "functions/string/rtrim.sql",
         "functions/string/soundex.sql",
         "functions/string/space.sql",
+        "functions/string/stringdecode.sql",
         "functions/string/stringencode.sql",
         "functions/string/stringtoutf8.sql",
         "functions/string/upper.sql",
         "functions/string/utf8tostring.sql",
         "functions/string/xmlattr.sql",
         "functions/string/xmlstartdoc.sql",
+        "ddl/alterDomain.sql",
+        "ddl/alterTableDropConstraint.sql",
+        "ddl/alterTableRenameConstraint.sql",
         "ddl/analyze.sql",
+        "ddl/createIndex.sql",
+        "ddl/createSequence.sql",
+        "ddl/createSynonym.sql",
+        "ddl/dropTable.sql",
     };
 
     [Theory]
@@ -173,7 +212,7 @@ internal static class ScriptRunner
             CommandInterface command = session.PrepareCommand(item.Sql);
             if (command.IsQuery())
             {
-                using ResultInterface result = command.ExecuteQuery(0, 0, false);
+                using ResultInterface result = command.ExecuteQuery(-1, 0, false);
                 return CompareResult(item, result);
             }
 
@@ -219,7 +258,8 @@ internal static class ScriptRunner
             header[i] = result.GetAlias(i);
         }
 
-        List<string[]> formatted = rows.Select(row => row.Select(FormatValue).ToArray()).ToList();
+        List<string[]> formatted = rows
+            .Select(row => row.Take(columns).Select(FormatValue).ToArray()).ToList();
         List<string> expected = item.ExpectedRows!;
         if (!item.Ordered)
         {
@@ -260,6 +300,15 @@ internal static class ScriptRunner
         if (value is null or ValueNull)
         {
             return "null";
+        }
+
+        if (value.GetValueType() is Value.Binary or Value.Varbinary or Value.Blob)
+        {
+            byte[]? bytes = value.GetBytes();
+            if (bytes is not null)
+            {
+                return "X'" + Convert.ToHexString(bytes).ToLowerInvariant() + "'";
+            }
         }
 
         string? text = value.GetString();
@@ -502,24 +551,37 @@ internal static class ScriptParser
     }
 }
 
-/// <summary>Symbolic names of the error codes, as the reference's script format writes them.</summary>
+/// <summary>
+/// The symbolic error-code names the reference's scripts write. They are the field names of
+/// the reference's <c>ErrorCode</c> class, so the map is read from its source rather than
+/// guessed from the port's C# names.
+/// </summary>
 internal static class ErrorCodes
 {
-    private static readonly Dictionary<int, string> Names = Build();
+    private static readonly Lazy<Dictionary<int, string>> Names = new(Load);
 
     internal static string NameOf(int code)
-        => Names.TryGetValue(code, out string? name)
+        => Names.Value.TryGetValue(code, out string? name)
             ? name
             : code.ToString(CultureInfo.InvariantCulture);
 
-    private static Dictionary<int, string> Build()
+    private static Dictionary<int, string> Load()
     {
         Dictionary<int, string> names = [];
-        foreach (FieldInfo field in typeof(ErrorCode).GetFields(BindingFlags.Public | BindingFlags.Static))
+        string path = Path.GetFullPath(Path.Combine(ScriptRunner.ScriptsDirectory,
+            "..", "..", "..", "..", "..", "main", "org", "h2", "api", "ErrorCode.java"));
+        if (!File.Exists(path))
         {
-            if (field.IsLiteral && field.FieldType == typeof(int) && field.GetValue(null) is int value)
+            return names;
+        }
+
+        foreach (string line in File.ReadLines(path))
+        {
+            Match match = Regex.Match(line,
+                @"public\s+static\s+final\s+int\s+(\w+)\s*=\s*(\d+)\s*;");
+            if (match.Success)
             {
-                names[value] = field.Name;
+                names[int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture)] = match.Groups[1].Value;
             }
         }
 
