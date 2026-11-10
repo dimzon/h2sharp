@@ -13123,3 +13123,22 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2319/2319, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 121: покрытие — следующий кластер (2026-11-10)
+
+* Новый файл `EdgeClusterCoverageTests3` (H2Sharp.Tests, 9 тестов): IndexSort,
+  SimpleRowValue (GetValue/SetKey), DomainValueExpression (Optimize/IsValueSet/
+  IsEverything/GetCost), AlterTableRename (TableOrViewAlreadyExists + GetCommandType),
+  SetFunction (Optimize/IsEverything), CardinalityExpression (нечисловой аргумент,
+  JSON TODO, не-JSON), ValueTimeTimeZone (наносы вне диапазона),
+  StringFunction2 (default throw в GetValue/Optimize, GetName), CurrentDateTimeValueFunction
+  (GetName/GetCost), AggregateDataCorr (пустой ввод → ValueNull, неизвестный тип → отказ),
+  TrimFunction (Optimize/GetName/GetUnenclosedSql + prepare с колонкой),
+  JsonConstructorFunction (SetFlags/GetFlags + prepare JSON_OBJECT),
+  RegexpFunction (REGEXP_LIKE с невалидным шаблоном → LikeEscapeError1),
+  DropDatabase (Update + GetCommandType), InCondition (MapColumns) и Dialect.
+* Итог: **91.47%** строк (78707/86049), **86.78%** ветвей (32001/36874);
+  +0.06 п.п. к спринту 120.
+* Проверено: H2Sharp.Tests 2328/2328, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.
