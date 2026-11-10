@@ -76,4 +76,14 @@ public sealed class ExtensionEdgeClusterTests
     {
         Assert.Throws<InvalidOperationException>(() => new NotRawExtensions().UseCrypto());
     }
+
+    [Fact]
+    public void WeightedAverageRefusesItsArgumentShapes()
+    {
+        WeightedAverage average = new();
+        Assert.Throws<ArgumentException>(() => average.GetResultType([TypeInfo.TypeInteger]));
+        Assert.Throws<ArgumentException>(() => average.Accumulate(1));
+        average.Accumulate(new object?[] { 1.0, 2.0 });
+        Assert.NotNull(average.GetResult());
+    }
 }

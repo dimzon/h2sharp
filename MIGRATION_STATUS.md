@@ -13081,3 +13081,45 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2309/2309, MvStore 185/185, Data 755/755,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 120: покрытие — следующий кластер (2026-11-10)
+
+* Два файла: `EdgeClusterCoverageTests2` (H2Sharp.Tests, 9 тестов) и
+  дополнение `ExtensionEdgeClusterTests` (H2Sharp.Data.Tests, +1 тест).
+  Прямые вызовы членов, которых SQL не достигает:
+  — `AggregateDataDefault` (EVERY → ValueBoolean.Get с &&, неизвестный тип →
+    внутренняя ошибка); `BitSetHelper.Flip` с хвостовыми нулевыми словами +
+    `Length([])`; `ValueUuid.CompareTypeSafe` с самим собой → 0.
+  — `Database.DataHandler`: CheckPowerOff/GetLobSyncObject/GetLobFileListCache/
+    OpenFile.
+  — `ColumnResolver`: все дефолтные члены + IncrementQueryLevel → TODO;
+    `DomainColumnResolver`: GetColumns/FindColumn.
+  — `ModeFunction.GetFunction` с не-regular модом → TODO, regular → null;
+    `DelegatedCastDataProvider` (одноаргументный ctor, ZeroBasedEnums, GetMode).
+  — Переименования: `ALTER SCHEMA PUBLIC RENAME TO PUBLIC` → SchemaAlreadyExists1,
+    `ALTER SCHEMA INFORMATION_SCHEMA RENAME TO OTHER` → SchemaCanNotBeDropped1,
+    `ALTER TABLE T RENAME CONSTRAINT Missing TO X` → ConstraintNotFound1,
+    `ALTER TABLE T RENAME CONSTRAINT C1 TO C1` → ConstraintAlreadyExists1,
+    `ALTER TABLE T SET ...` с неизвестным типом → внутренняя ошибка.
+  — `Rownum.IsEverything` с DecrementQueryLevelVisitor (queryLevel > 0) →
+    singleRow; `SessionControlFunction` — null → ValueNull, AbortSession на
+    живой сессии, CancelSession → Cancel(), неизвестный id → внутренняя
+    ошибка; `SetSessionCharacteristics` — QueryMeta null, GetCommandType, Update.
+  — `GeneratedColumnResolver`: GetValue с current == null → null, затем
+    Set(DefaultRow с key 7) + колонка с id -1 → ValueBigint.Get(7).
+  — `WeightedAverage` (H2Sharp.Extensions): GetResultType с одним аргументом и
+    Accumulate с не-массивом → ArgumentException.
+  — JSON-сканер: `JsonStringSource`/`JsonTextSource` — `1.5E1` (ветка
+    дробной части), `"\u"` (ReadHex без 4 цифр), `"\uD800\n"`
+    (AppendNonSurrogate с pending surrogate).
+* Осталось непокрытым (недостижимо): `Constants.BuildVendorAndVersion` (readonly
+  null), `PropertiesFile` ведущий whitespace (TrimStart), `FilePath.
+  CreateTempFile` коллизия, `RollbackDecisionMaker` (TransactionStore),
+  `ValueUuid` TryWriteBytes=false (span всегда 16 байт), `JsonTextSource`
+  256-257 (code point > 0xffff — в .NET char 16-битный), `SplitFileChannel`
+  (требует файл-стор).
+* Итог: **91.41%** строк (78660/86049), **86.76%** ветвей (31993/36874);
+  +0.09 п.п. к спринту 119.
+* Проверено: H2Sharp.Tests 2319/2319, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.
