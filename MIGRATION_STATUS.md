@@ -13174,3 +13174,16 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2339/2339, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 124: покрытие — порча заголовка MVStore (2026-11-10)
+
+* Новый `FileStoreHeaderFaultTests` (2 теста): заголовок стора собирается тем же
+  checksummed-форматом, что пишет сам стор (`DataUtils.AppendMap` + Fletcher32),
+  и открывается через `MVStore.Builder` — проверяются отказы на неверный
+  blockSize и на write/read-форматы (слишком новый и слишком старый);
+  `Clear()` сбрасывает счётчики и lastChunk.
+* Итог: **91.61%** строк (78832/86049), **86.88%** ветвей (32037/36874);
+  +0.02 п.п. к спринту 123.
+* Проверено: H2Sharp.Tests 2341/2341, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.
