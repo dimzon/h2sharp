@@ -13142,3 +13142,20 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2328/2328, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 122: покрытие — SQL-формы парсера (2026-11-10)
+
+* Новый `ParserFormsCoverageTests` (8 тестов): живые формы ALTER TABLE ALTER COLUMN
+  (SET NOT NULL / SET NULL / SET DEFAULT / DROP DEFAULT / SET DATA TYPE / SET
+  VISIBLE / SET INVISIBLE / RENAME), модельные формы (`Parser.Parse`):
+  DROP IDENTITY, SET GENERATED ALWAYS/BY DEFAULT, SET INCREMENT, RESTART WITH,
+  SET CYCLE, отказ SET DATA TYPE в модели; CREATE TABLE с именованным PRIMARY KEY
+  HASH; временные таблицы ON COMMIT DROP / ON COMMIT DELETE ROWS; JSON-литералы
+  (текст и X'...'); LIMIT (включая bigint), FOR UPDATE OF, SET SCHEMA_SEARCH_PATH,
+  MySQL `ON DUPLICATE KEY UPDATE ... VALUES(col)` и квалифицированные имена колонок.
+* `Command/Parser.cs`: 6067 → **6147/6905** (+80 строк).
+* Итог: **91.58%** строк (78802/86049), **86.86%** ветвей (32030/36874);
+  +0.11 п.п. к спринту 121.
+* Проверено: H2Sharp.Tests 2335/2335, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.
