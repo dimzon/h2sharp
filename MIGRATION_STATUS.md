@@ -12966,3 +12966,17 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.01 п.п. к спринту 114.
 * Проверено: H2Sharp.Tests 2294/2294, MvStore 185/185, Data 746/746,
   Engine 9/9, Specs 983/983 (+68 skipped).
+
+### Спринт 116: покрытие — фабрики исключений (2026-11-09)
+
+* `Message/DbException.cs`: 97 → **134/145**. Новый `DbExceptionEdgeTests`:
+  `GetFileVersionError`, `ConvertIOException` с сообщением (IoException2) и
+  без (IoException1), `Get` с cause и параметром, `ConvertInvocation` для
+  H2-исключения (тот же экземпляр) и для обычного, все формы
+  `GetJdbcSqlException`, `PrintNextExceptions` (пусто, один уровень и
+  обрезка после 100 вложенных), `BuildMessageForException`,
+  `TraceThrowable`, конструкторы `H2SharpFatalException`.
+* Итог: **91.07%** строк (78366/86049), **86.42%** ветвей (31866/36874);
+  +0.04 п.п. к спринту 115.
+* Проверено: H2Sharp.Tests 2295/2295, MvStore 185/185, Data 746/746,
+  Engine 9/9, Specs 983/983 (+68 skipped).
