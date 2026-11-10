@@ -13005,3 +13005,20 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2296/2296, MvStore 185/185, Data 751/751,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 118: покрытие — H2CommandBuilder (2026-11-10)
+
+* `Data/H2CommandBuilder.cs`: 97 → **109/111**. Новый `H2CommandBuilderEdgeTests`
+  (класс sealed, protected-члены через reflection): `GetParameterName(string)` как
+  метка, `SetRowUpdatingHandler` — attach/detach того же адаптера, swap с
+  присоединённым адаптером, отказ чужого `DbDataAdapter`, `GetSchemaTable` — null
+  schema table у update-результата (у readerа нет колонок) и неразрешённый ключ для
+  `INFORMATION_SCHEMA.TABLES` (BaseSchemaName=null → поиск в текущей схеме → continue;
+  IsKey/IsReadOnly остаются DBNull, IsAutoIncrement остаётся engine-ным).
+  Остались 2 линии ветви для чужой schema table без BaseTableName/BaseColumnName —
+  достижима только через фейк другого провайдера.
+* Итог: **91.15%** строк (78433/86049), **86.53%** ветвей (31907/36874);
+  +0.01 п.п. к спринту 117.
+* Проверено: H2Sharp.Tests 2296/2296, MvStore 185/185, Data 753/753,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.
