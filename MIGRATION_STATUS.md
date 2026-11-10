@@ -13159,3 +13159,18 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2335/2335, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 123: покрытие — комментарии токенизатора и формы GROUP BY (2026-11-10)
+
+* Новый `TokenizerCommentFormsTests` (4 теста): `/* ... */`, `--`, `//`,
+  вложенные блочные комментарии и отказ незакрытого `/*`; большие целые
+  литералы (включая `_`-разделители) и отказ на переполняющем порядке;
+  GROUP BY по алиасу (`GROUP BY X`), GROUP BY по выражению, HAVING,
+  `ROW_NUMBER() OVER (...)`, `ORDER BY ... DESC`, `ORDER BY ... LIMIT`;
+  outer join с неэкви-условием (`LEFT JOIN ... ON A.ID > B.ID`), который
+  уходит в non-evaluable join path.
+* Итог: **91.59%** строк (78816/86049), **86.87%** ветвей (32034/36874);
+  +0.01 п.п. к спринту 122.
+* Проверено: H2Sharp.Tests 2339/2339, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.
