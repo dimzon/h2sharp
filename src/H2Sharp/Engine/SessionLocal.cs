@@ -49,6 +49,12 @@ public sealed class SessionLocal : Session
     private readonly ValueTimestampTimeZone sessionStart;
 
     /// <summary>
+    /// The current timestamp the date and time functions answer with, fixed until the
+    /// transaction ends. See <see cref="CurrentTimestamp"/>.
+    /// </summary>
+    private ValueTimestampTimeZone? currentTimestamp;
+
+    /// <summary>
     /// Gets the id of this session.
     /// </summary>
     /// <returns>the id</returns>
@@ -524,6 +530,9 @@ public sealed class SessionLocal : Session
     /// <param name="ddl">if the statement was a data definition statement</param>
     public void Commit(bool ddl)
     {
+        // The reference's beforeCommitOrRollback: the transaction owns the instant the date and
+        // time functions answer with, so the next one starts from a fresh reading.
+        currentTimestamp = null;
         MvStore.Tx.Transaction? transaction = Transaction;
         if (transaction is not null)
         {
@@ -608,6 +617,8 @@ public sealed class SessionLocal : Session
     /// </summary>
     public void Rollback()
     {
+        // The reference's beforeCommitOrRollback, as in Commit.
+        currentTimestamp = null;
         RollbackTo(null);
         idsToRelease = null;
 
@@ -1459,15 +1470,29 @@ public sealed class SessionLocal : Session
     /// <remarks>
     /// The reference answers from the session zone: after <c>SET TIME ZONE</c> the same moment
     /// is written with the new offset, and that is what the casts that read the current time rely
-    /// on. A provider a test set is asked instead, so a frozen clock stays frozen. The reference
-    /// also fixes the value for the length of a command; this port does not keep a command-start
-    /// instant yet, so each call is the moment the call is made.
+    /// on. A provider a test set is asked instead, so a frozen clock stays frozen.
+    /// <para>
+    /// The value is cached until the transaction ends, as the reference's
+    /// <c>SessionLocal.currentTimestamp</c> is. Within one statement every date and time
+    /// function must see the same instant — <c>(LOCALTIMESTAMP + 1) = (CURRENT_TIMESTAMP + 1)</c>
+    /// is TRUE in the reference — and the reference's REGULAR mode keeps the value for the whole
+    /// transaction, dropping it in <c>beforeCommitOrRollback</c>. The mode flag that shortens
+    /// the lifetime to one command is not ported; the default mode is the one the scripts use.
+    /// </para>
     /// </remarks>
     /// <returns>the current timestamp</returns>
     public override Values.ValueTimestampTimeZone CurrentTimestamp()
-        => castDataProvider is not null
-            ? castDataProvider.CurrentTimestamp()
-            : Util.DateTimeUtils.CurrentTimestamp(timeZone, DateTimeOffset.UtcNow);
+    {
+        Values.ValueTimestampTimeZone? ts = currentTimestamp;
+        if (ts is null)
+        {
+            currentTimestamp = ts = castDataProvider is not null
+                ? castDataProvider.CurrentTimestamp()
+                : Util.DateTimeUtils.CurrentTimestamp(timeZone, DateTimeOffset.UtcNow);
+        }
+
+        return ts;
+    }
 
     /// <summary>
     /// Gets the current time zone.

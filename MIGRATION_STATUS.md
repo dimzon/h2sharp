@@ -13228,3 +13228,58 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2426/2426, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 127: conformance — дефекты раннера и движка, 171 скрипт (2026-11-11)
+
+* Раннер приведён к эталонному `TestScript` в форматировании: значения и
+  заголовки проходят через `formatString` (переводы строк → пробел, серия
+  пробелов → один), каждая отформатированная строка сравнивается после
+  `Trim()` — эталон пишет строку с префиксом `> ` и тримит её целиком.
+  Пустая строка-заголовок `>` больше не падает (ожидание — пустая ячейка).
+  Это закрыло расхождения по CHAR-паддингу и по ширинам колонок
+  (`char`, `like`, `unique`, `query-optimisations`).
+* Исправлены дефекты порта, найденные триажем:
+  * `StringUtils.decodeUnicodeStringSQL` — пропущена эталонная проверка
+    `i + 4 > l` перед разбором escape: `U&'\0'`, `U&'\00'`, `U&'\003'`
+    падали `IndexOutOfRangeException` вместо `STRING_FORMAT_ERROR_1`
+    (`datatypes/varchar.sql`);
+  * `Tokenizer.skipBracketedComment` — незакрытый `/*` в самом конце
+    оператора уходил в `AsSpan` с отрицательной длиной; теперь, как в
+    эталоне, `SYNTAX_ERROR_1` (`parser/comments.sql`);
+  * `TimeZoneProvider.WithTimeZone` — `MinUnixSeconds` был на год ниже
+    `DateTimeOffset.MinValue` (`-62_167_219_200` вместо `-62_135_596_800`),
+    из-за чего свёртка зоны для года −1 000 000 000 давала instant вне
+    календаря и `AddSeconds` бросал; приведено к эталонному диапазону
+    (`datatypes/timestamp-with-time-zone.sql`);
+  * `SessionLocal.CurrentTimestamp()` — значение теперь кешируется до конца
+    транзакции и сбрасывается в `Commit`/`Rollback` (эталонный
+    `beforeCommitOrRollback`): `(LOCALTIMESTAMP + 1) = (CURRENT_TIMESTAMP + 1)`
+    стало TRUE. Флаг `Mode.dateTimeValueWithinTransaction`, сокращающий
+    жизнь кеша до команды в MySQL/MariaDB/PostgreSQL-режимах, не портирован —
+    для REGULAR (умолчание и режим скриптов) поведение эталонное;
+  * `Parser.ReadValuesRow` — читает необязательный `ROW` перед скобкой
+    (`VALUES ROW (1, 2)`), как `readIf(ROW, OPEN_PAREN)`;
+  * `Parser` в `FROM VALUES` — имя производной таблицы берётся из
+    `SessionLocal.GetNextSystemIdentifier(sql)` (эталонный `_0`, `_1`, …),
+    а не `_VALUES_<позиция>`; это видно в EXPLAIN и в подписях колонок.
+* Новый `ScriptConformanceRegressionTests` (12 тестов): короткие U&escape,
+  незакрытый комментарий, `VALUES ROW`, экстремальные годы ±1 000 000 000,
+  фиксированный `CURRENT_TIMESTAMP` — минимальные воспроизведения каждого
+  дефекта с ответами эталона.
+* Закреплённый список скриптов эталона: 85 → **171** (171/171 зелёные).
+  Добавлены 86 скриптов с операторами (пустые файлы эталона не
+  закрепляются): `datatypes/timestamp-with-time-zone`, `varchar`,
+  `dml/insert`, `dml/update`, 66 функций (агрегаты, окна, даты, системные),
+  `parser/comments`, `predicates/*`, `queries/*`.
+* Полный триаж всех 319 скриптов: **193** воспроизводятся построчно.
+  Остаются классы расхождений: `SET MODE` (D-029), непортённые `SCRIPT`-
+  фильтры, текст EXPLAIN, системные вью (`ENUM_VALUES`, `ELEMENT_TYPES`,
+  `VIEWS`), `COSH` (последняя цифра: эталонный fdlibm против .NET libm —
+  платформенное расхождение, записано здесь), `SHA-224`/`ORA_HASH`/crypt —
+  опциональные пакеты `H2Sharp.Hashes`/`JavaLegacy`/`Crypto`, в ядре их нет
+  по ADR-001.
+* Итог: **92.03%** строк (79208/86070), **87.86%** ветвей (32407/36886);
+  +0.26 п.п. к спринту 126.
+* Проверено: H2Sharp.Tests 2524/2524, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.

@@ -2179,6 +2179,14 @@ public sealed class Tokenizer
         i += 2;
         for (int level = 1; level > 0;)
         {
+            // The reference checks before it scans; an unterminated comment at the very end
+            // leaves i past end, where AsSpan would report its own argument error instead of
+            // the syntax error the input deserves.
+            if (i >= end)
+            {
+                throw DbException.GetSyntaxError(sql, tokenStart);
+            }
+
             int rel = sql.AsSpan(i, end - i).IndexOfAny('*', '/');
             if (rel < 0)
             {

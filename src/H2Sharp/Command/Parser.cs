@@ -1994,6 +1994,16 @@ public sealed partial class Parser
     private List<Expressions.Expression> ReadValuesRow()
     {
         List<Expressions.Expression> row = [];
+        // The reference's readIf(ROW, OPEN_PAREN): the ROW keyword is part of the row only
+        // when a parenthesis follows it, so `VALUES ROW (1, 2)` and `VALUES (1, 2)` read the
+        // same row and a bare `ROW` expression still reads as one.
+        if (IsWord("ROW", consume: false)
+            && position + 1 < tokens.Count
+            && tokens[position + 1].TokenType == Token.OpenParen)
+        {
+            Read();
+        }
+
         if (!ReadIf(Token.OpenParen))
         {
             row.Add(ReadExpression());
@@ -2608,7 +2618,10 @@ public sealed partial class Parser
             BitSet outerUsedParameters = OpenParametersScope();
             Query.Query values = ReadValues();
             List<Expressions.Parameter> queryParameters = CloseParametersScope(outerUsedParameters);
-            tableName = "_VALUES_" + Current.Start.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            // The reference's parseValues in readTableReference names the table with the
+            // session's next system identifier, not with a position in the text: the name is
+            // visible in EXPLAIN and in column labels, and it must be the reference's one.
+            tableName = session!.GetNextSystemIdentifier(sql);
             fromTable = values.ToTable(
                 tableName, null, queryParameters, forCreateView: false, topQuery: select);
             baseAlias = tableName;

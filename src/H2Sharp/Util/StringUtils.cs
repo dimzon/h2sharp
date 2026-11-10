@@ -595,6 +595,15 @@ public static class StringUtils
                 }
                 else
                 {
+                    // The reference tests the shortest form first, before it looks at the
+                    // character: fewer than four characters left is a format error whatever
+                    // they are. Without this test a too-short escape reaches the parser and
+                    // indexes past the end instead.
+                    if (at + 4 > l)
+                    {
+                        throw GetFormatException(s, at);
+                    }
+
                     char ch = s[at];
                     int end;
                     if (ch == '+')

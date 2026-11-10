@@ -50,9 +50,45 @@ public sealed class ScriptConformanceTests
         "datatypes/java_object.sql",
         "datatypes/time-with-time-zone.sql",
         "datatypes/time.sql",
+        "datatypes/timestamp-with-time-zone.sql",
         "datatypes/timestamp.sql",
         "datatypes/tinyint.sql",
         "datatypes/uuid.sql",
+        "datatypes/varchar.sql",
+        "ddl/alterDomain.sql",
+        "ddl/alterTableDropConstraint.sql",
+        "ddl/alterTableRenameConstraint.sql",
+        "ddl/analyze.sql",
+        "ddl/createIndex.sql",
+        "ddl/createSequence.sql",
+        "ddl/createSynonym.sql",
+        "ddl/dropTable.sql",
+        "dml/insert.sql",
+        "dml/update.sql",
+        "functions/aggregate/any_value.sql",
+        "functions/aggregate/avg.sql",
+        "functions/aggregate/bit_and_agg.sql",
+        "functions/aggregate/bit_or_agg.sql",
+        "functions/aggregate/corr.sql",
+        "functions/aggregate/covar_pop.sql",
+        "functions/aggregate/covar_samp.sql",
+        "functions/aggregate/every.sql",
+        "functions/aggregate/gcd_agg.sql",
+        "functions/aggregate/histogram.sql",
+        "functions/aggregate/json_arrayagg.sql",
+        "functions/aggregate/mode.sql",
+        "functions/aggregate/rank.sql",
+        "functions/aggregate/regr_avgx.sql",
+        "functions/aggregate/regr_avgy.sql",
+        "functions/aggregate/regr_count.sql",
+        "functions/aggregate/regr_intercept.sql",
+        "functions/aggregate/regr_r2.sql",
+        "functions/aggregate/regr_slope.sql",
+        "functions/aggregate/regr_sxx.sql",
+        "functions/aggregate/regr_sxy.sql",
+        "functions/aggregate/regr_syy.sql",
+        "functions/aggregate/sum.sql",
+        "functions/json/json_array.sql",
         "functions/numeric/abs.sql",
         "functions/numeric/acos.sql",
         "functions/numeric/asin.sql",
@@ -100,12 +136,15 @@ public sealed class ScriptConformanceTests
         "functions/string/concat.sql",
         "functions/string/difference.sql",
         "functions/string/insert.sql",
+        "functions/string/left.sql",
         "functions/string/lower.sql",
         "functions/string/lpad.sql",
         "functions/string/ltrim.sql",
         "functions/string/octet-length.sql",
         "functions/string/quote_ident.sql",
         "functions/string/regexp-like.sql",
+        "functions/string/repeat.sql",
+        "functions/string/right.sql",
         "functions/string/rpad.sql",
         "functions/string/rtrim.sql",
         "functions/string/soundex.sql",
@@ -113,18 +152,65 @@ public sealed class ScriptConformanceTests
         "functions/string/stringdecode.sql",
         "functions/string/stringencode.sql",
         "functions/string/stringtoutf8.sql",
+        "functions/string/trim.sql",
         "functions/string/upper.sql",
         "functions/string/utf8tostring.sql",
         "functions/string/xmlattr.sql",
         "functions/string/xmlstartdoc.sql",
-        "ddl/alterDomain.sql",
-        "ddl/alterTableDropConstraint.sql",
-        "ddl/alterTableRenameConstraint.sql",
-        "ddl/analyze.sql",
-        "ddl/createIndex.sql",
-        "ddl/createSequence.sql",
-        "ddl/createSynonym.sql",
-        "ddl/dropTable.sql",
+        "functions/system/array-cat.sql",
+        "functions/system/array-contains.sql",
+        "functions/system/array-get.sql",
+        "functions/system/autocommit.sql",
+        "functions/system/casewhen.sql",
+        "functions/system/coalesce.sql",
+        "functions/system/convert.sql",
+        "functions/system/decode.sql",
+        "functions/system/greatest.sql",
+        "functions/system/h2version.sql",
+        "functions/system/least.sql",
+        "functions/system/nullif.sql",
+        "functions/system/readonly.sql",
+        "functions/system/trim_array.sql",
+        "functions/system/truncate-value.sql",
+        "functions/timeanddate/current-time.sql",
+        "functions/timeanddate/current_date.sql",
+        "functions/timeanddate/dateadd.sql",
+        "functions/timeanddate/datediff.sql",
+        "functions/timeanddate/day-of-month.sql",
+        "functions/timeanddate/day-of-week.sql",
+        "functions/timeanddate/day-of-year.sql",
+        "functions/timeanddate/dayname.sql",
+        "functions/timeanddate/hour.sql",
+        "functions/timeanddate/last_day.sql",
+        "functions/timeanddate/minute.sql",
+        "functions/timeanddate/month.sql",
+        "functions/timeanddate/monthname.sql",
+        "functions/timeanddate/quarter.sql",
+        "functions/timeanddate/second.sql",
+        "functions/timeanddate/truncate.sql",
+        "functions/timeanddate/week.sql",
+        "functions/timeanddate/year.sql",
+        "functions/window/lead.sql",
+        "functions/window/nth_value.sql",
+        "functions/window/ntile.sql",
+        "functions/window/ratio_to_report.sql",
+        "functions/window/row_number.sql",
+        "other/boolean-test.sql",
+        "other/concatenation.sql",
+        "other/field-reference.sql",
+        "other/unique_include.sql",
+        "parser/comments.sql",
+        "predicates/between.sql",
+        "predicates/distinct.sql",
+        "predicates/like.sql",
+        "predicates/quantified-comparison-with-array.sql",
+        "predicates/type.sql",
+        "predicates/unique.sql",
+        "queries/derived-column-names.sql",
+        "queries/duplicate-order-by.sql",
+        "queries/query-optimisations.sql",
+        "queries/values.sql",
+        "queries/window.sql",
     };
 
     [Theory]
@@ -243,7 +329,7 @@ internal static class ScriptRunner
             string got = rows.Count switch
             {
                 0 => "<no result>",
-                1 when columns == 1 => FormatValue(rows[0][0]),
+                1 when columns == 1 => FormatValue(rows[0][0]).Trim(),
                 1 => "<row with " + columns.ToString(CultureInfo.InvariantCulture) + " values>",
                 _ => "<" + rows.Count.ToString(CultureInfo.InvariantCulture) + " rows>",
             };
@@ -255,7 +341,7 @@ internal static class ScriptRunner
         string[] header = new string[columns];
         for (int i = 0; i < columns; i++)
         {
-            header[i] = result.GetAlias(i);
+            header[i] = CollapseText(result.GetAlias(i));
         }
 
         List<string[]> formatted = rows
@@ -266,7 +352,10 @@ internal static class ScriptRunner
             formatted.Sort(CompareRows);
         }
 
-        List<string> actual = FormatRows(header, formatted);
+        // The reference compares whole trimmed lines: it writes the formatted row after the
+        // `> ` prefix and trims it, so a last cell that ends in a space loses it.
+        List<string> actual = FormatRows(header, formatted)
+            .Select(static line => line.Trim()).ToList();
         for (int i = 0; i < Math.Min(expected.Count, actual.Count); i++)
         {
             if (expected[i] != actual[i])
@@ -317,6 +406,18 @@ internal static class ScriptRunner
             return "null";
         }
 
+        text = CollapseText(text);
+
+        return text;
+    }
+
+    /// <summary>
+    /// The reference's <c>formatString</c>: line breaks become spaces and a run of spaces
+    /// becomes one. The scripts were written through it, so a value with a double space is
+    /// expected with a single one.
+    /// </summary>
+    private static string CollapseText(string text)
+    {
         text = text.Replace("\r\n", "\n").Replace('\n', ' ');
         while (text.Contains("  ", StringComparison.Ordinal))
         {
@@ -513,7 +614,7 @@ internal static class ScriptParser
                 Sql = sql,
                 Line = line,
                 Skipped = skipped,
-                Expectation = only[2..],
+                Expectation = WithoutPrefix(only),
             };
         }
 
@@ -536,7 +637,7 @@ internal static class ScriptParser
         List<string> rows = [];
         for (int i = 0; i < expectations.Count - 1; i++)
         {
-            rows.Add(expectations[i][2..]);
+            rows.Add(WithoutPrefix(expectations[i]));
         }
 
         return new ScriptItem
@@ -544,11 +645,20 @@ internal static class ScriptParser
             Sql = sql,
             Line = line,
             Skipped = skipped,
-            Expectation = last[2..],
+            Expectation = WithoutPrefix(last),
             ExpectedRows = rows,
             Ordered = ordered,
         };
     }
+
+    /// <summary>
+    /// The text of an expectation line after its <c>&gt;</c> marker. A line that is only
+    /// <c>&gt;</c> is an empty header cell — the reference trims the line and compares it
+    /// whole, so <c>&gt;</c> against <c>&gt; </c> is a match — and has no second character
+    /// to cut from.
+    /// </summary>
+    private static string WithoutPrefix(string line)
+        => line.Length > 1 ? line[1..].TrimStart() : string.Empty;
 }
 
 /// <summary>

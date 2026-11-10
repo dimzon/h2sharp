@@ -455,9 +455,14 @@ public abstract class TimeZoneProvider
         private static long MaxUnixSeconds = 253_402_300_799L;
 
         /// <summary>
-        /// The narrowest, which is year 1.
+        /// The narrowest, which is year 1 — <see cref="DateTimeOffset.MinValue"/> itself.
         /// </summary>
-        private static long MinUnixSeconds = -62_167_219_200L;
+        /// <remarks>
+        /// The old <c>-62_167_219_200</c> is a year below year 1; folding to it left the result
+        /// just under <see cref="DateTimeOffset.MinValue"/> whenever the residue came out near
+        /// the period, and <c>AddSeconds</c> threw for an instant the reference can name.
+        /// </remarks>
+        private static long MinUnixSeconds = -62_135_596_800L;
 
         private readonly TimeZoneInfo zoneId;
 
