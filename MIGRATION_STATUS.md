@@ -12906,3 +12906,17 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **90.97%** строк (78282/86049), **86.36%** ветвей (31846/36874).
 * Проверено: H2Sharp.Tests 2286/2286, MvStore 185/185, Data 741/741,
   Specs 983/983 (+68 skipped).
+
+### Спринт 112: покрытие — ADO-рёбра соединения и батча (2026-11-09)
+
+* `Data/H2Connection.cs`: 476 → **498/555**. `Data/H2Batch.cs`: 114 → **116/150**.
+  Новый `AdoConnectionBatchEdgeTests` (H2Sharp.Data.Tests): регистрация
+  расширений после Open отказана (`EnsureCanConfigure`), маппинг
+  isolation-level туда и обратно (Serializable, отказ Chaos), открытие с
+  некорректным путём, двойной Close, участие в амбиентной TransactionScope
+  (`EnlistTransaction`), батч-коллекция: ExecuteNonQuery/ExecuteScalar/
+  ExecuteReader/Cancel.
+* Итог: **90.98%** строк (78291/86049), **86.37%** ветвей (31847/36874);
+  +0.01 п.п. к спринту 111.
+* Проверено: H2Sharp.Tests 2286/2286, MvStore 185/185, Data 746/746,
+  Engine 9/9, Specs 983/983 (+68 skipped).
