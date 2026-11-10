@@ -12920,3 +12920,18 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.01 п.п. к спринту 111.
 * Проверено: H2Sharp.Tests 2286/2286, MvStore 185/185, Data 746/746,
   Engine 9/9, Specs 983/983 (+68 skipped).
+
+### Спринт 113: покрытие — утилиты строк (2026-11-09)
+
+* `Util/StringUtils.cs`: 1362 → **1369/1412**. Новый `UtilEdgeTests`:
+  UrlDecode длиннее 256 символов (пул ArrayPool), JavaEncode через
+  StringBuilder-перегрузку, отказы hex-преобразования (`"c"`, `"cg"`,
+  `"0 "`, span-формы), QuoteStringSql/QuoteJavaString/Array/IntArray,
+  ReplaceAll, AddAsterisk, Indent, XmlComment/XmlNode/XmlStartDoc/
+  XmlText, ArraySplit/ArrayCombine, регистр-складки.
+* `Util/MathUtils.cs` без изменений: secure-random кеш и seed-предупреждение
+  не достижимы без fault-injection.
+* Итог: **91.01%** строк (78310/86049), **86.38%** ветвей (31852/36874);
+  +0.03 п.п. к спринту 112.
+* Проверено: H2Sharp.Tests 2291/2291, MvStore 185/185, Data 746/746,
+  Engine 9/9, Specs 983/983 (+68 skipped).
