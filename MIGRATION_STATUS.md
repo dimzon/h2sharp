@@ -12980,3 +12980,28 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   +0.04 п.п. к спринту 115.
 * Проверено: H2Sharp.Tests 2295/2295, MvStore 185/185, Data 746/746,
   Engine 9/9, Specs 983/983 (+68 skipped).
+
+### Спринт 117: покрытие — DbObject + H2DataSource (2026-11-10)
+
+* `Engine/DbObject.cs`: 64 → **84/84**. Новый `DbObjectEdgeTests`: прямой вызов
+  protected-членов через тестовый подкласс — `TraceModuleId`, `GetModificationId`
+  (при базе и у отсоединённого объекта, пост-инкремент `SetModified`),
+  `SetObjectName`/`Rename`, `Invalidate` с отказом второго вызова
+  ("Unexpected code path"), базовые `GetChildren`/`GetDropSql` → null,
+  `GetCreateSqlForCopy`/`DependsOn` → TODOException, комментарий/временный
+  флаг, identity по id (`Equals`/`GetHashCode`), `ToString` на
+  инвалидированном объекте.
+* `Data/H2DataSource.cs`: 85 → **114/114**, `Data/H2DataSourceBuilder.cs`:
+  14 → **19/19**. Новый `H2DataSourceEdgeTests`: `ConfigureExtensions`/
+  `ConfigureDataFormat` билдера (цепочка, null-отказы), `CreateConnection` с
+  обоими configure-петлями и с выкидывающим configure (соединение dispose-ится,
+  исключение пробрасывается), `ConnectionString`/`DatabaseName`,
+  `SetTraceListener`/`SetDatabaseEventListener` до и после открытия базы,
+  `RegisterTrigger` до первого открытия с применением при `OpenSession`,
+  `UnregisterTrigger` true/false, двойной `Dispose` с отказом `CreateConnection`
+  и `Dispose(false)` через рефлексию.
+* Итог: **91.14%** строк (78422/86049), **86.46%** ветвей (31880/36874);
+  +0.07 п.п. к спринту 116.
+* Проверено: H2Sharp.Tests 2296/2296, MvStore 185/185, Data 751/751,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.
