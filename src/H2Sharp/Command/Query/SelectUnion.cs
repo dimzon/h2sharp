@@ -135,6 +135,13 @@ public sealed class SelectUnion : Query
         int count = left.GetColumnCount();
         if (count != right.GetColumnCount()) throw DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
         expressions = left.GetExpressions()[..count];
+        // The reference's SelectUnion.init: WITH TIES takes the rows tied with the last kept
+        // one, and without an order there is no "tied" to compare — a union has nowhere to get
+        // one from, so it refuses instead of choosing an order of its own.
+        if (IsWithTies() && !HasOrder())
+        {
+            throw DbException.Get(Api.ErrorCode.WithTiesWithoutOrderBy);
+        }
     }
     public override void PrepareExpressions()
     {

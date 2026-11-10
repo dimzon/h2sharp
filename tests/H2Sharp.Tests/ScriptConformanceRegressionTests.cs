@@ -154,4 +154,66 @@ public sealed class ScriptConformanceRegressionTests
             database.Close();
         }
     }
+
+    /// <summary>
+    /// A percentage fetch is a share of the rows the query produces, rounded up. Reading it as
+    /// a row count stopped the walk at ten rows instead of all twelve, so ten percent answered
+    /// one row where the reference answers two (queries/select.sql).
+    /// </summary>
+    [Fact]
+    public void FetchPercentIsAShareOfAllRows()
+    {
+        (Database database, SessionLocal session) = Open();
+        try
+        {
+            session.PrepareCommand("CREATE TABLE TEST(A INT, B INT, C INT)").ExecuteUpdate(false);
+            session.PrepareCommand(
+                "INSERT INTO TEST VALUES (1,1,1),(1,1,2),(1,1,3),(1,2,1),(1,2,2),(1,2,3),"
+                + "(2,1,1),(2,1,2),(2,1,3),(2,2,1),(2,2,2),(2,2,3)").ExecuteUpdate(false);
+
+            Assert.Equal(2, CountRows(session, "SELECT * FROM TEST FETCH FIRST 10 PERCENT ROWS ONLY"));
+            Assert.Equal(1, CountRows(session, "SELECT * FROM TEST FETCH FIRST 1 PERCENT ROWS ONLY"));
+            Assert.Equal(2, CountRows(session,
+                "SELECT * FROM TEST OFFSET 2 ROWS FETCH NEXT 10 PERCENT ROWS ONLY"));
+            Assert.Equal(2, CountRows(session,
+                "SELECT * FROM TEST ORDER BY A, B, C FETCH FIRST 10 PERCENT ROWS ONLY"));
+        }
+        finally
+        {
+            database.Close();
+        }
+    }
+
+    /// <summary>
+    /// WITH TIES needs an order to know which rows are tied. A union has none of its own, so
+    /// the reference refuses it with WITH_TIES_WITHOUT_ORDER_BY (queries/select.sql); the port
+    /// returned rows instead of an error.
+    /// </summary>
+    [Fact]
+    public void UnionWithTiesWithoutOrderIsRefused()
+    {
+        (Database database, SessionLocal session) = Open();
+        try
+        {
+            H2SharpException e = Assert.Throws<H2SharpException>(() => Single(session,
+                "(SELECT 1) UNION (SELECT 2) FETCH NEXT 1 ROW WITH TIES"));
+            Assert.Equal(Api.ErrorCode.WithTiesWithoutOrderBy, e.H2ErrorCode);
+        }
+        finally
+        {
+            database.Close();
+        }
+    }
+
+    private static int CountRows(SessionLocal session, string sql)
+    {
+        using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);
+        int count = 0;
+        while (result.Next())
+        {
+            count++;
+        }
+
+        return count;
+    }
 }

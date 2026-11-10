@@ -1036,7 +1036,12 @@ public sealed class Select : Query
         topTableFilter!.StartQuery(session);
         topTableFilter.Reset();
         topTableFilter.Lock(session);
-        QuickOffset quickOffset = QuickOffset.Yes;
+        // A percentage is a share of the rows the query produces, so the walk cannot stop at
+        // the percentage as if it were a row count: it reads everything and the result trims
+        // to the share (reference: quickOffset is NO for a percentage, and the limit passed
+        // down is -1).
+        QuickOffset quickOffset = fetchPercent ? QuickOffset.No : QuickOffset.Yes;
+        long queryLimit = fetchPercent ? -1 : fetch;
         if (sort is not null && indexSortedColumns != Indexes.IndexSort.FullySorted)
         {
             result!.SetSortOrder(sort);
@@ -1060,7 +1065,7 @@ public sealed class Select : Query
 
         if (isQuickAggregateQuery)
         {
-            QueryQuick(array, to, columnCount, offset, fetch);
+            QueryQuick(array, to, columnCount, offset, queryLimit);
             offset = 0;
         }
         else if (isWindowQuery)
@@ -1091,7 +1096,7 @@ public sealed class Select : Query
         }
         else
         {
-            QueryFlat(array, to, offset, fetch, withTies, quickOffset);
+            QueryFlat(array, to, offset, queryLimit, withTies, quickOffset);
             if (quickOffset == QuickOffset.Yes)
             {
                 offset = 0;

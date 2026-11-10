@@ -13283,3 +13283,33 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2524/2524, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 128: FETCH PERCENT, WITH TIES у UNION, `??` в раннере (2026-11-11)
+
+* `Select.Run` — процентный FETCH читался как количество строк: `FETCH FIRST 10
+  PERCENT` на 12 строках отдавал 1 строку. Эталон для процента передаёт вниз
+  `limit = -1` и `quickOffset = NO` (нельзя останавливать обход на «10
+  строках» — процент считается от всех строк, округление вверх в
+  `LocalResult`). Теперь 10% от 12 = 2 строки, с OFFSET и с ORDER BY — тоже
+  (queries/select.sql).
+* `SelectUnion.Init` — пропущена эталонная проверка `withTies && !hasOrder()`:
+  `(SELECT 1) UNION (SELECT 2) FETCH NEXT 1 ROW WITH TIES` возвращал строки
+  вместо `WITH_TIES_WITHOUT_ORDER_BY` (queries/select.sql).
+* Раннер: распознавание параметров как в эталонном `hasParameters` — `??`
+  это escape скобок массива (`ARRAY??(1??)` = `ARRAY[1]`), а не два
+  параметра; из-за этого `datatypes/array.sql` считался параметризованным и
+  падал на «statement without an expectation». Плюс защита `CompareResult`
+  от отсутствующего блока строк: запрос, который должен был упасть, но
+  вернул строки, теперь даёт внятное расхождение, а не NRE.
+* `ScriptConformanceRegressionTests` +2 теста (проценты и WITH TIES у UNION).
+* Зафиксированный список скриптов не изменился (171): `array.sql` дальше
+  упирается в непортённые SCRIPT-фильтры, `select.sql` — в набор ещё не
+  совпавших форм (TOP/OFFSET, `* EXCEPT`, RAND, `GROUP BY ()` и др.).
+* Итог: **92.03%** строк (79475/86355), **87.71%** ветвей (32642/37215).
+  Важно: знаменатель прошлого спринта (86070) был посчитан по устаревшей
+  карте строк `Select.cs` (1310 против 1585 строк в свежей сборке); с
+  текущей картой 92.03/87.71 — это база для следующих спринтов, а не рост
+  на +0.26. Свежая сборка перед замером теперь обязательна.
+* Проверено: H2Sharp.Tests 2526/2526, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.

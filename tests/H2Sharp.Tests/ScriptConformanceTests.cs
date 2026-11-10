@@ -346,7 +346,14 @@ internal static class ScriptRunner
 
         List<string[]> formatted = rows
             .Select(row => row.Take(columns).Select(FormatValue).ToArray()).ToList();
-        List<string> expected = item.ExpectedRows!;
+        if (item.ExpectedRows is null)
+        {
+            // A statement expected to fail answered with rows instead. Say so rather than
+            // dereferencing the absent block: the mismatch is the finding.
+            return $"line {item.Line}: {item.Sql}\n  expected: {item.Expectation}\n  got: a result of {rows.Count} row(s)";
+        }
+
+        List<string> expected = item.ExpectedRows;
         if (!item.Ordered)
         {
             formatted.Sort(CompareRows);
@@ -557,7 +564,7 @@ internal static class ScriptParser
             string sql = statement.ToString();
             sql = sql[..^1].Trim();
             bool skipped = false;
-            if (sql.Contains('?', StringComparison.Ordinal))
+            if (HasParameters(sql))
             {
                 // The parameter block follows the statement: `{`, value lines, `};`. Binding
                 // the values is not ported in the runner yet, so consume the block and mark
@@ -659,6 +666,32 @@ internal static class ScriptParser
     /// </summary>
     private static string WithoutPrefix(string line)
         => line.Length > 1 ? line[1..].TrimStart() : string.Empty;
+
+    /// <summary>
+    /// Whether a statement has a bind parameter, as the reference's <c>hasParameters</c>:
+    /// <c>??</c> is the script escape for the array brackets <c>[</c> and <c>]</c>, not two
+    /// parameters, so a statement that contains only those has no parameter block.
+    /// </summary>
+    private static bool HasParameters(string sql)
+    {
+        for (int i = 0; i < sql.Length; i++)
+        {
+            if (sql[i] != '?')
+            {
+                continue;
+            }
+
+            if (i + 1 < sql.Length && sql[i + 1] == '?')
+            {
+                i++;
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
 }
 
 /// <summary>
