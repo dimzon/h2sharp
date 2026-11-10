@@ -13022,3 +13022,62 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2296/2296, MvStore 185/185, Data 753/753,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 119: покрытие — дешёвый кластер (2026-11-10)
+
+* Два новых файла: `EdgeClusterCoverageTests` (H2Sharp.Tests, 13 тестов) и
+  `ExtensionEdgeClusterTests` (H2Sharp.Data.Tests, 2 теста). Прямые вызовы
+  членов, которых SQL не достигает:
+  — `TODOException()` без сообщения; `NoOperation` — Update/IsTransactional/
+    NeedRecompile/IsReadOnly/QueryMeta/GetCommandType.
+  — Отказы значений: `ValueNumeric` с 100_001-значным BigInteger,
+    `ValueDate.FromDateValue` вне диапазона, `ValueArray` длиннее
+    MaxArrayCardinality, `ValueJson.FromJson` с невалидным JSON.
+  — `ConvertToForComparison` для Array (ConvertToAnyArray) и Row.
+  — `ValueNull` — GetBoolean/GetInt/GetLong/GetDouble отказывают.
+  — `VersionedValue<T>` — базовые IsCommitted/GetEntryId/GetCurrentValue/
+    GetCommittedValue; `BatchResult.GetGeneratedKeys`; `FetchedResult.
+    CreateShallowCopy` через подкласс `LazyResult`.
+  — Команды: `TransactionCommand` с непортённым типом (default TODO),
+    `Delete` (GetCommandType/CollectDependencies TODO/IsRetryable),
+    `SetComment` (default GeneralError + GetCommandType); SQL-отказы
+    `TRUNCATE TABLE` на представлении (CannotTruncate1),
+    `ALTER DOMAIN ... RENAME CONSTRAINT` на то же имя
+    (ConstraintAlreadyExists1), `COMMENT ON CONSTRAINT`;
+    `DropView` — отказ по имени, исчезнувшему между prepare и update,
+    и отказ для таблицы вместо представления.
+  — `SequenceValue` — IsEverything(ReadOnlyVisitor) → current,
+    GetDependenciesVisitor, GetCost; `CompatibilitySequenceValueFunction`
+    с current=false → ReadOnly-отказ.
+  — Выражения: `ArrayElementReference` (null → ValueExpression.Null,
+    не-массив → отказ, JSON-колонка без констант), `Format` делегирует
+    IsIdentity/GetNullable/GetTableName/GetColumnName, `NullIfFunction`
+    сохраняет себя при неконстантных аргументах + GetName,
+    `DayMonthNameFunction` (null → ValueNull, неизвестный id → отказ),
+    `TimeZoneOperation` (Operation1_2.GetCost с двумя операндами,
+    GetSubexpression(2) → IndexOutOfRange), `ConditionInArray`
+    (NeedParentheses, UpdateAggregate).
+  — Агрегаты: `AggregateDataDistinctWithCounts` (ignoreNulls, GetValue →
+    внутренняя ошибка), `AggregateDataCovar`/`AggregateDataStdVar` —
+    пустой ввод → ValueNull, неизвестный тип → отказ.
+  — Утилиты: `RandomExtensions` (maxValue=0 → 0), `CaseInsensitiveMap(int)`,
+    `SmallLRUCache` (явный IEnumerable), `CacheHead`/`CacheObject.SetPos`
+    «too late», `MergedResult.ToString`, `DefaultSpatial` Equals-семейство,
+    `RangeReader.Skip(0)/Ready`, `ReadOnlyMemoryStream` (Position/Flush/
+    SetLength), `ExtTypeInfo.GetSql` без рендеринга, `PropertiesFile` с
+    ведущим пробелом, геттеры `H2SharpException` (SqlState/Kind/
+    RecordedStackTrace/IsCommon), `ErrorCodeKind.GetKind` — 4 бакета,
+    `TableSynonym` (UpdateData/GetDropSql/CheckRename/IsInvalid).
+  — `CountIf` (H2Sharp.Extensions): GetResultType с двумя аргументами и
+    Accumulate с не-bool → ArgumentException; `CryptoExtensions.UseCrypto`
+    на не-raw поверхности → InvalidOperationException.
+* Осталось непокрытым (тестом не достижимо): `Constants.BuildVendorAndVersion`
+  (readonly null — ветка недостижима), `PropertiesFile` ветка ведущего
+  whitespace (TrimStart убирает до SplitKeyValue), `FilePath.CreateTempFile`
+  ветка коллизии (нужен случайный суффикс), `RollbackDecisionMaker`
+  (требует TransactionStore).
+* Итог: **91.32%** строк (78581/86049), **86.70%** ветвей (31969/36874);
+  +0.17 п.п. к спринту 118.
+* Проверено: H2Sharp.Tests 2309/2309, MvStore 185/185, Data 755/755,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.
