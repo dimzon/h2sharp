@@ -178,7 +178,13 @@ public sealed class Comparison : Condition
     public override StringBuilder GetWhenSql(StringBuilder builder, int sqlFlags)
     {
         _ = builder.Append(' ').Append(CompareTypes[compareType]).Append(' ');
-        return right.GetSql(builder, sqlFlags, AutoParentheses);
+        // The reference wraps an ANY aggregate on the right side in parentheses: the column
+        // name a bare TRUE = (ANY((SELECT ...))) answer carries spells them out.
+        return right.GetSql(builder, sqlFlags,
+            right is Expressions.Aggregate.Aggregate { } aggregate
+                && aggregate.GetAggregateType() == Expressions.Aggregate.AggregateType.Any
+                ? Expression.WithParentheses
+                : AutoParentheses);
     }
 
     /// <inheritdoc/>

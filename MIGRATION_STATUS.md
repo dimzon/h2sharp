@@ -13702,3 +13702,28 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   В пакетном прогоне MvStore 1 раз упал известный flaky
   `StopEndsBackgroundWorkAndTheStoreStaysUsable` (Debug.Assert сиротных чанков под
   нагруженным CPU; FileStore в диффе не затронут), отдельный полный повтор — 185/185.
+
+### Спринт 143: ANY-агрегат в скобках и три закреплённых скрипта (2026-11-11)
+
+* `Comparison.getWhenSQL`: эталон оборачивает правый ANY-агрегат в скобки
+  (`WITH_PARENTHESES` для `right instanceof Aggregate && ANY`), и колонка без алиаса у
+  `TRUE = (ANY((SELECT X > 0 FROM SYSTEM_RANGE(1, 1))))` несёт их в своём имени. Порт
+  печатал без скобок — `TRUE = ANY((SELECT …))`. Ветка перенесена 1:1
+  (functions/aggregate/any.sql, строки 23/29).
+* Триаж не закреплённого набора показал: `altertable-fk.sql` и
+  `altertable-index-reuse.sql` уже отвечают построчно с эталоном — закрыты прежними
+  спринтами (фиксы IN/VALUES и ANY-семантики) и закреплены теперь.
+* Закреплены `functions/aggregate/any.sql`, `altertable-fk.sql`,
+  `altertable-index-reuse.sql`: 180 → **183**.
+* Остаток триажа (по возрастанию дешевизны): `bit_xor_agg.sql` — 2 (DISTINCT внутри
+  BIT_XOR_AGG/BIT_XNOR_AGG игнорируется); `xmlnode.sql` — 3 (формат самозакрывающихся и
+  блочных узлов); `alterTableRename.sql` — 1 (ALTER VIEW IF EXISTS … RENAME); 
+  `error_reporting.sql` — 2 (код отказа NOT в выражении: SYNTAX_ERROR_2 против
+  SYNTAX_ERROR_1); `queries/table.sql` — 2 (EXPLAIN TABLE печатает SELECT-разворот);
+  `data_type_sql.sql` — 4 (DATA_TYPE_SQL для CONSTANT/ROUTINE + CREATE/DROP ALIAS —
+  D-037); `help.sql` — 4 (оператор HELP не портирован); `show.sql` — 10 (формат
+  SHOW COLUMNS и PostgreSQL-специфика); `array-to-string.sql` — 9 (функция не
+  портирована + SET MODE, D-029); `substring.sql` — SCRIPT-фильтры.
+* Итог: **92.13%** строк (79498/86292), **87.96%** ветвей (32580/37038).
+* Проверено: H2Sharp.Tests 2553/2553, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
