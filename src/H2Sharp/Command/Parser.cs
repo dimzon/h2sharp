@@ -6593,7 +6593,7 @@ public sealed partial class Parser
             Read();
             Expect(Token.OpenParen, "(");
             Expression result = IsDerivedQuery()
-                ? new Expressions.Conditions.ConditionInQuery(left, whenOperand, false, ParseQueryExpression(prepare: false), all, compareType)
+                ? new Expressions.Conditions.ConditionInQuery(left, false, whenOperand, ParseQueryExpression(prepare: false), all, compareType)
                 : new Expressions.Conditions.ConditionInArray(left, whenOperand, ReadQueryOr(select), all, compareType);
             Expect(Token.CloseParen, ")");
             return result;

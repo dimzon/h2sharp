@@ -13679,3 +13679,26 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   упал MSB4166 — краш узла сборки, не теста; повтор зелёный), Category!=BlockedByPort.
 * Осталось из триажа: `other/case.sql` — 1 расхождение (simple CASE с предикатными WHEN
   падает TYPES_ARE_NOT_COMPARABLE_2 вместо 14 строк) — следующий дешёвый кандидат.
+
+### Спринт 142: квантифицированное сравнение как WHEN-операнд (2026-11-11)
+
+* `Parser.readComparison`: в вызове `ConditionInQuery` аргументы `not` и `whenOperand`
+  стояли в обратном порядке относительно эталонного `new ConditionInQuery(left, false,
+  whenOperand, parseQuery(), …)`. На обычных запросах дефект не проявлялся (вне WHEN
+  not=false и whenOperand=false совпадали с правильными значениями), но в WHEN-операнде
+  простого CASE квантифицированное сравнение `< ANY(VALUES 'j', 'l')` строилось с
+  not=true и whenOperand=false: `IsWhenConditionOperand()` отвечал false, `SimpleCase`
+  требовал сравнимость VARCHAR с BOOLEAN, и оператор падал
+  TYPES_ARE_NOT_COMPARABLE_2 вместо ответа (other/case.sql, строка 57). Методы
+  `IsWhenConditionOperand`/`GetWhenValue` у `ConditionInQuery` в порту уже были —
+  дефект был только в порядке аргументов вызова.
+* `other/case.sql` закреплён: 179 → **180** (все тринадцать форм WHEN-операндов —
+  IS NULL, LOWER, LIKE/ILIKE/REGEXP, IS NOT DISTINCT FROM, IN со списком, IN с
+  VALUES-подзапросом, BETWEEN, равенство, квантифицированное ANY, NOT LIKE, IS OF —
+  построчно с эталоном).
+* Итог: **92.10%** строк (79471/86288), **87.93%** ветвей (32564/37034).
+* Проверено: H2Sharp.Tests 2550/2550, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+  В пакетном прогоне MvStore 1 раз упал известный flaky
+  `StopEndsBackgroundWorkAndTheStoreStaysUsable` (Debug.Assert сиротных чанков под
+  нагруженным CPU; FileStore в диффе не затронут), отдельный полный повтор — 185/185.

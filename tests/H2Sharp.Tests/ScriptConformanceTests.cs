@@ -205,6 +205,7 @@ public sealed class ScriptConformanceTests
         "functions/window/ratio_to_report.sql",
         "functions/window/row_number.sql",
         "other/boolean-test.sql",
+        "other/case.sql",
         "other/concatenation.sql",
         "other/field-reference.sql",
         "other/unique_include.sql",
