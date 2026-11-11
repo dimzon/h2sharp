@@ -104,6 +104,21 @@ public sealed class CreateView : SchemaCommand
                 throw DbException.GetUnsupportedException("parameters in views");
             }
 
+            // The reference refuses a view whose OFFSET or FETCH is not a constant: the
+            // number of rows a view answers cannot depend on the session that reads it
+            // (issue #4409, ddl/createView.sql).
+            Expression? offset = query.GetOffset();
+            if (offset is not null && !offset.IsEverything(ExpressionVisitor.DeterministicVisitor))
+            {
+                throw DbException.GetUnsupportedException("non-constant offset in views");
+            }
+
+            Expression? fetch = query.GetFetch();
+            if (fetch is not null && !fetch.IsEverything(ExpressionVisitor.DeterministicVisitor))
+            {
+                throw DbException.GetUnsupportedException("non-constant fetch in views");
+            }
+
             querySql = query.GetPlanSql(HasSql.DefaultSqlFlags);
         }
 

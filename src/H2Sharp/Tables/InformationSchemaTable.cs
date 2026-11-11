@@ -1100,22 +1100,33 @@ public sealed class InformationSchemaTable : Table
                         continue;
                     }
 
-                    // The reference reads the definition of a view and the instead-of
-                    // triggers over it; this port has neither, so the definition is null
-                    // and the triggers say "NO".
+                    // The reference reads the view's own query text and its invalid flag from
+                    // TableView. The instead-of triggers over the view are not ported, so the
+                    // three trigger columns keep answering "NO".
+                    string? viewDefinition = null;
+                    string status = "VALID";
+                    if (table is TableView view)
+                    {
+                        viewDefinition = view.GetQuerySql();
+                        if (view.IsInvalid())
+                        {
+                            status = "INVALID";
+                        }
+                    }
+
                     Add(
                         rows,
                         catalog,
                         table.GetSchema()?.GetName(),
                         table.GetTableName(),
-                        null,
+                        viewDefinition,
                         "NONE",
                         "NO",
                         "NO",
                         "NO",
                         "NO",
                         "NO",
-                        "VALID",
+                        status,
                         table.GetComment());
                 }
 

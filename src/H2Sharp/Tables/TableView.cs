@@ -181,6 +181,13 @@ public sealed class TableView : QueryExpressionTable
     /// <summary>The query text of this view.</summary>
     public string GetQuerySql() => querySQL;
 
+    /// <summary>
+    /// Whether the view failed to compile and is read through its old text: the reference's
+    /// <c>isInvalid</c>, which INFORMATION_SCHEMA.VIEWS answers with the status INVALID.
+    /// </summary>
+    /// <returns>true when the view is invalid</returns>
+    public bool IsInvalid() => createException is not null;
+
     /// <summary>Recompiles this view and its dependent views.</summary>
     /// <remarks>
     /// The first dependent view whose recompilation fails answers that failure, unless

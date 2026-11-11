@@ -1337,13 +1337,17 @@ public sealed partial class Parser
         if (ReadIf(Token.OpenParen))
         {
             List<string> columns = [];
-            do
+            // The reference's parseColumnList: an empty list of column names is legal, and a
+            // view over a query without select items has none (ddl/createView.sql).
+            if (!ReadIf(Token.CloseParen))
             {
-                columns.Add(ReadIdentifier());
+                do
+                {
+                    columns.Add(ReadIdentifier());
+                }
+                while (ReadIfMore());
             }
-            while (ReadIf(Token.Comma));
 
-            Expect(Token.CloseParen, ")");
             command.SetColumnNames([.. columns]);
         }
 
@@ -2035,27 +2039,26 @@ public sealed partial class Parser
         BitSet parameters = new();
         List<Token> tokens = CreateTokenizer(session.CastDataProvider, session).Tokenize(sql, false, parameters);
         Parser parser = new(sql, session.CastDataProvider, tokens, session);
+        // The reference's TableView.compileViewQuery prepares the query while the session is
+        // parsing a view: the functions whose value depends on the session must not be folded
+        // into the stored definition, or a view read in another time zone would keep the zone
+        // it was created in (issue #4406, ddl/createView.sql).
         session.SetParsingCreateView(true);
-        Query.Query query;
         try
         {
-            query = parser.ParseQueryExpression(prepare: false);
+            Query.Query query = parser.ParseQueryExpression(prepare: false);
+            if (parser.CurrentType != Token.EndOfInput)
+            {
+                throw DbException.GetSyntaxError(sql, parser.Current.Start);
+            }
+
+            query.Prepare();
+            return query;
         }
         finally
         {
             session.SetParsingCreateView(false);
         }
-
-        if (parser.CurrentType != Token.EndOfInput)
-        {
-            throw DbException.GetSyntaxError(sql, parser.Current.Start);
-        }
-
-        // Prepare outside the view-parsing flag: the plan built while a view is parsed is a
-        // fake plan and leaves the table filters unprepared, which a query later run from the
-        // view index cannot use.
-        query.Prepare();
-        return query;
     }
 
     private Query.Query ParseQueryExpression(bool prepare = true)

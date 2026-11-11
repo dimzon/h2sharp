@@ -430,6 +430,73 @@ public sealed class ScriptConformanceRegressionTests
         Assert.True(failures.Count == 0, string.Join(" | ", failures));
     }
 
+    /// <summary>
+    /// A view stores its query text, not the values that text produced: a function that reads
+    /// the session's time zone must answer with the reader's zone, and the row-choosing
+    /// clauses of a view may not depend on a session variable at all — otherwise the number
+    /// of rows a view answers would change with the reader (issues #4406/#4409,
+    /// ddl/createView.sql). A view may also have no columns at all.
+    /// </summary>
+    [Fact]
+    public void ViewsFollowTheReaderAndRefuseNonConstantRows()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "SET TIME ZONE '+05:00';",
+            "> ok",
+            "CREATE VIEW V_EXTRACT_TZ AS SELECT EXTRACT(TIMEZONE_HOUR FROM TIMESTAMP '2010-01-01 10:00:00') AS TZ_HOUR;",
+            "> ok",
+            "CREATE VIEW V() AS SELECT;",
+            "> ok",
+            "TABLE V;",
+            ">",
+            ">",
+            ">",
+            "> rows: 1",
+            "SET @VN = 1;",
+            "> ok",
+            "CREATE VIEW VF AS SELECT X FROM SYSTEM_RANGE(1, 3) ORDER BY X OFFSET @VN;",
+            "> exception FEATURE_NOT_SUPPORTED_1",
+            "CREATE VIEW VF AS SELECT X FROM SYSTEM_RANGE(1, 3) ORDER BY X FETCH FIRST @VN ROWS ONLY;",
+            "> exception FEATURE_NOT_SUPPORTED_1",
+            "SET TIME ZONE '+08:00';",
+            "> ok",
+            "SELECT * FROM V_EXTRACT_TZ;",
+            ">> 8",
+            "DROP VIEW V;",
+            "> ok",
+            "DROP VIEW V_EXTRACT_TZ;",
+            "> ok",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
+    /// <summary>
+    /// INFORMATION_SCHEMA.VIEWS answers the view's own query text and its status, as the
+    /// reference does; the instead-of trigger columns stay "NO" while triggers are unported
+    /// (ddl/createView.sql).
+    /// </summary>
+    [Fact]
+    public void ViewsExposeTheirDefinition()
+    {
+        (Database database, SessionLocal session) = Open();
+        try
+        {
+            session.PrepareCommand("CREATE VIEW V_TEST AS SELECT 1 AS A").ExecuteUpdate(false);
+            using ResultInterface result = session.PrepareCommand(
+                    "SELECT VIEW_DEFINITION, STATUS, IS_TRIGGER_UPDATABLE FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_NAME = 'V_TEST'")
+                .ExecuteQuery(-1, 0, false);
+            Assert.True(result.Next());
+            Assert.Contains("SELECT", result.CurrentRow()[0]!.GetString(), StringComparison.Ordinal);
+            Assert.Equal("VALID", result.CurrentRow()[1]!.GetString());
+            Assert.Equal("NO", result.CurrentRow()[2]!.GetString());
+        }
+        finally
+        {
+            database.Close();
+        }
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);

@@ -13448,3 +13448,29 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2534/2534, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 134: INFORMATION_SCHEMA.VIEWS и компиляция view (2026-11-11)
+
+* `INFORMATION_SCHEMA.VIEWS` — перенесено заполнение `VIEW_DEFINITION` из текста
+  запроса view и `STATUS` (`VALID`/`INVALID` по `TableView.IsInvalid()`, эталонный
+  `isInvalid`); вместо прежнего `null`/всегда `VALID`. Колонки instead-of-триггеров
+  пока честно `NO` — триггеры не портированы.
+* `TableView.compileViewQuery` готовит запрос **внутри** флага `isParsingCreateView`,
+  как `TableView.compileViewQuery` эталона: функции, зависящие от сессии, не
+  сворачиваются в сохранённый текст view. До этого план строился после снятия флага
+  и `EXTRACT(TIMEZONE_HOUR FROM …)` замораживался в константу зоны создания
+  (issue #4406): view, созданное при `+05:00`, читалось при `+08:00` как 5, теперь 8.
+* `CreateView` — эталонные отказы на непостоянные OFFSET/FETCH view
+  (`NonConstantOffsetInViews`/`NonConstantFetchInViews`, issue #4409): число строк,
+  которое отдаёт view, не может зависеть от читателя. `CREATE VIEW V() AS SELECT`
+  (пустой список колонок) теперь принимается, как `parseColumnList` эталона.
+* `ScriptConformanceRegressionTests` +2: view читает зону читателя, отказ на
+  `@VN` в OFFSET/FETCH, пустое view; `VIEW_DEFINITION`/`STATUS` в INFORMATION_SCHEMA.
+* `ddl/createView.sql` после спринта расходится только на `TO_CHAR('TZH:TZM')` и
+  `FORMATDATETIME('XXX')` — это утверждённое отклонение .NET-шаблонов (D-019-род),
+  поэтому скрипт не закрепляется. Закреплённый список — 172, все зелёные.
+* Замер: снова поймана ловушка старых копий — после `--no-build` у четырёх сюит
+  union складывал старую карту строк (91.88% на 88334 строках). После пересборки
+  всех сюит: **92.06%** строк (79345/86192), **87.86%** ветвей (32498/36988).
+* Проверено: H2Sharp.Tests 2536/2536, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
