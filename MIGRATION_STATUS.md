@@ -13924,3 +13924,25 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.15%** строк (79702/86496), **88.08%** ветвей (32736/37168).
 * Проверено: H2Sharp.Tests 2573/2573, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 153: CAST в домен и NULL-шаблон FORMAT (2026-11-12)
+
+* `Parser.ReadColumnWithType` теперь отдаёт `Column`, как эталонный
+  `parseColumnWithType`: тип без домена — `new Column(name, typeInfo)`, имя домена —
+  `getColumnWithDomain` (тип домена + комментарий + сам домен). CAST, CONVERT и
+  постфиксный `::` передают колонку. Раньше домен терялся на `domain.GetDataType()`,
+  поэтому `CAST(10 AS D)` не проверял `CHECK (VALUE > 10)` и план печатал
+  `CAST("X" AS INTEGER)` вместо `CAST("X" AS "PUBLIC"."D")`
+  (functions/system/cast.sql строки 187/190).
+* `CastSpecification`: добавлены эталонные конструкторы `(Expression, Column[, template])`,
+  поле `domain`, проверка `domain.CheckConstraints(session, v)` после приведения и печать
+  домена в `getUnenclosedSQL` (`(domain != null ? domain : type).getSQL`).
+* `CastSpecification.GetValue`: перенесён короткий путь `Function1_2.getValue` — NULL
+  значения или NULL шаблона даёт NULL; порт парсил пустой шаблон и отдавал пустую строку
+  вместо `null` для строки с `F = NULL` (cast.sql строка 265).
+* Закреплён `functions/system/cast.sql`: 203 → **204**.
+  `ddl/createDomain.sql` не закрепляется: SCRIPT-дампы (D-004) и неполные
+  CHECK_CONSTRAINTS/DOMAIN_CONSTRAINTS (5/3/7 строк против 2).
+* Итог: **92.18%** строк (79755/86525), **88.12%** ветвей (32760/37176).
+* Проверено: H2Sharp.Tests 2574/2574, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

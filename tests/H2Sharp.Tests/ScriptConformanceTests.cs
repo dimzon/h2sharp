@@ -180,6 +180,7 @@ public sealed class ScriptConformanceTests
         "functions/system/autocommit.sql",
         "functions/system/cardinality.sql",
         "functions/system/casewhen.sql",
+        "functions/system/cast.sql",
         "functions/system/coalesce.sql",
         "functions/system/convert.sql",
         "functions/system/current_schema.sql",

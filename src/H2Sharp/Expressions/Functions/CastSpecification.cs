@@ -31,6 +31,12 @@ public sealed class CastSpecification : Expression
     private readonly TypeInfo castToType;
 
     /// <summary>
+    /// The domain the column carries, or null when the target is a plain type, as in the
+    /// reference's CastSpecification.
+    /// </summary>
+    private readonly Schemas.Domain? domain;
+
+    /// <summary>
     /// Creates a cast.
     /// </summary>
     /// <param name="expr">the expression to cast</param>
@@ -53,16 +59,55 @@ public sealed class CastSpecification : Expression
         this.template = template;
     }
 
+    /// <summary>
+    /// Creates a cast to the type of a column, as CAST(x AS domain) does: the domain is kept
+    /// and its constraints are checked.
+    /// </summary>
+    /// <param name="expr">the expression to cast</param>
+    /// <param name="column">the column carrying the type and the domain</param>
+    public CastSpecification(Expression expr, Column column)
+        : this(expr, column.GetTypeInfo(), null)
+    {
+        domain = column.GetDomain();
+    }
+
+    /// <summary>
+    /// Creates a cast to the type of a column with a format template.
+    /// </summary>
+    /// <param name="expr">the expression to cast</param>
+    /// <param name="column">the column carrying the type and the domain</param>
+    /// <param name="template">the format template, or null when there is none</param>
+    public CastSpecification(Expression expr, Column column, Expression? template)
+        : this(expr, column.GetTypeInfo(), template)
+    {
+        domain = column.GetDomain();
+    }
+
     /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
     {
         Value v = expr.GetValue(session);
-        if (template is not null)
+        if (v is ValueNull)
         {
-            v = GetValueWithTemplate(v, template.GetValue(session), session);
+            return ValueNull.Instance;
         }
 
-        return v.CastToValue(castToType, session.CastDataProvider);
+        if (template is not null)
+        {
+            // Function1_2.getValue: a NULL template makes the whole cast NULL; the reference
+            // never parses an empty pattern in its place.
+            Value templateValue = template.GetValue(session);
+            if (templateValue is ValueNull)
+            {
+                return ValueNull.Instance;
+            }
+
+            v = GetValueWithTemplate(v, templateValue, session);
+        }
+
+        v = v.CastToValue(castToType, session.CastDataProvider);
+        domain?.CheckConstraints(session, v);
+        return v;
     }
 
     /// <summary>
@@ -213,7 +258,15 @@ public sealed class CastSpecification : Expression
         _ = builder.Append("CAST(");
         expr.GetUnenclosedSql(builder, expr is ValueExpression ? sqlFlags | HasSql.NoCasts : sqlFlags)
             .Append(" AS ");
-        castToType.GetSql(builder, sqlFlags);
+        if (domain is not null)
+        {
+            domain.GetSql(builder, sqlFlags);
+        }
+        else
+        {
+            castToType.GetSql(builder, sqlFlags);
+        }
+
         if (template is not null)
         {
             template.GetSql(builder.Append(" FORMAT "), sqlFlags);

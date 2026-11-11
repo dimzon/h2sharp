@@ -6184,7 +6184,7 @@ public sealed partial class Parser
         Expect(Token.OpenParen, "(");
         Expressions.Expression arg = ReadQueryOr(aggregateSelect);
         Expect(ParserUtil.As, "AS");
-        TypeInfo type = ReadColumnWithType();
+        Tables.Column column = ReadColumnWithType();
         Expressions.Expression? template = null;
         if (IsWord("FORMAT", consume: false))
         {
@@ -6193,7 +6193,7 @@ public sealed partial class Parser
         }
 
         Expect(Token.CloseParen, ")");
-        return new Expressions.Functions.CastSpecification(arg, type, template);
+        return new Expressions.Functions.CastSpecification(arg, column, template);
     }
 
     /// <summary>
@@ -7837,9 +7837,9 @@ public sealed partial class Parser
             {
                 Expression arg = ReadQueryOr(aggregateSelect);
                 Expect(Token.Comma, ",");
-                TypeInfo type = ReadColumnWithType();
+                Tables.Column column = ReadColumnWithType();
                 Expect(Token.CloseParen, ")");
-                return new Expressions.Functions.CastSpecification(arg, type);
+                return new Expressions.Functions.CastSpecification(arg, column);
             }
 
             case "IFNULL":

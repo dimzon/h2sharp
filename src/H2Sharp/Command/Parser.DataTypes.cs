@@ -936,20 +936,18 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Reads the type of a column: a type, or the name of a domain.
+    /// Reads the type of a column: a type, or the name of a domain, as the reference's
+    /// <c>parseColumnWithType</c> does. The column keeps the domain, so a CAST to a domain
+    /// checks its constraints and prints the domain name instead of the base type.
     /// </summary>
-    /// <remarks>
-    /// The reference reads a name that is not a type as a domain and looks it up in the
-    /// schema. The port has no domains, so the lookup has one answer, and it is the answer
-    /// the reference gives when the schema has no such domain.
-    /// </remarks>
-    /// <returns>the type</returns>
-    private TypeInfo ReadColumnWithType()
+    /// <param name="columnName">the column name, or null when the column is not a definition</param>
+    /// <returns>the column</returns>
+    private Tables.Column ReadColumnWithType(string? columnName = null)
     {
         TypeInfo? typeInfo = ReadIfDataType();
         if (typeInfo is not null)
         {
-            return typeInfo;
+            return new Tables.Column(columnName!, typeInfo);
         }
 
         if (session is null)
@@ -988,7 +986,22 @@ public sealed partial class Parser
             throw DbException.Get(ErrorCode.DomainNotFound1, name);
         }
 
-        return domain.GetDataType();
+        return GetColumnWithDomain(columnName, domain);
+    }
+
+    /// <summary>
+    /// The reference's <c>getColumnWithDomain</c>: a column of the domain's type that carries
+    /// the domain itself.
+    /// </summary>
+    /// <param name="columnName">the column name, or null</param>
+    /// <param name="domain">the domain</param>
+    /// <returns>the column</returns>
+    private static Tables.Column GetColumnWithDomain(string? columnName, Schemas.Domain domain)
+    {
+        Tables.Column column = new(columnName!, domain.GetDataType());
+        column.SetComment(domain.GetComment());
+        column.SetDomain(domain);
+        return column;
     }
 
     /// <summary>
