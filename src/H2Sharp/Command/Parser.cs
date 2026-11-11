@@ -8568,15 +8568,12 @@ public sealed partial class Parser
 
         if (statement.DropPrimaryKey)
         {
-            Tables.Table? table = schema.FindTableOrView(session, statement.Name);
+            // The reference's parseAlterTableDrop asks tableIfTableExists here, so a missing
+            // table in an empty database answers TABLE_OR_VIEW_NOT_FOUND_DATABASE_EMPTY_1.
+            Tables.Table? table = TableIfTableExists(session, schema, statement.Name, statement.IfTableExists);
             if (table is null)
             {
-                if (statement.IfTableExists)
-                {
-                    return new Dml.NoOperation(session);
-                }
-
-                throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, statement.Name);
+                return new Dml.NoOperation(session);
             }
 
             // The reference turns DROP PRIMARY KEY into a DROP INDEX on the primary key's
@@ -8597,6 +8594,14 @@ public sealed partial class Parser
 
         if (statement.DropColumns is not null)
         {
+            // As in the reference's parseAlterTableDrop, the table (and so the empty-database
+            // error) is resolved before the command is built; the command resolves it again
+            // when it runs, because the port's statement is resolved late.
+            if (TableIfTableExists(session, schema, statement.Name, statement.IfTableExists) is null)
+            {
+                return new Dml.NoOperation(session);
+            }
+
             Ddl.AlterTableAlterColumn dropColumns = new(session, schema);
             dropColumns.SetSql(statement.Sql, null);
             dropColumns.SetTableName(statement.Name);
@@ -9260,31 +9265,100 @@ public sealed partial class Parser
             return new Tables.DualTable(session.GetDatabase());
         }
 
-        if (session.GetDatabase().GetFirstUserTable() is null)
+        throw GetTableOrViewNotFoundDbException(
+            session, schemas.ConvertAll(static s => s.GetName()), tableName);
+    }
+
+    /// <summary>
+    /// Resolves a table for an ALTER TABLE branch, telling a missing table from one missing in
+    /// an empty database the way the reference's <c>tableIfTableExists</c> does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="schema">the schema the name was resolved in</param>
+    /// <param name="tableName">the table name</param>
+    /// <param name="ifTableExists">whether IF EXISTS was written</param>
+    /// <returns>the table, or null for IF EXISTS</returns>
+    private Tables.Table? TableIfTableExists(
+        SessionLocal session, Schemas.Schema schema, string tableName, bool ifTableExists)
+    {
+        Tables.Table? table = schema.ResolveTableOrView(session, tableName);
+        if (table is null && !ifTableExists)
         {
-            throw DbException.Get(Api.ErrorCode.TableOrViewNotFoundDatabaseEmpty1, tableName);
+            throw GetTableOrViewNotFoundDbException(session, schema.GetName(), tableName);
+        }
+
+        return table;
+    }
+
+    /// <summary>
+    /// The reference's <c>getTableOrViewNotFoundDbException(schemaName, tableName)</c>: an
+    /// empty database has its own code, and a name that only differs in case lists the
+    /// candidates.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="schemaName">the schema to look for candidates in</param>
+    /// <param name="tableName">the table name that was not found</param>
+    /// <returns>the exception to throw</returns>
+    private H2SharpException GetTableOrViewNotFoundDbException(
+        SessionLocal session, string schemaName, string tableName)
+        => GetTableOrViewNotFoundDbException(session, [schemaName], tableName);
+
+    /// <summary>
+    /// The reference's <c>getTableOrViewNotFoundDbException(set, tableName)</c>.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="schemaNames">the schemas to look for candidates in</param>
+    /// <param name="tableName">the table name that was not found</param>
+    /// <returns>the exception to throw</returns>
+    private H2SharpException GetTableOrViewNotFoundDbException(
+        SessionLocal session, IReadOnlyCollection<string> schemaNames, string tableName)
+    {
+        Engine.Database database = session.GetDatabase();
+        if (database.GetFirstUserTable() is null)
+        {
+            return DbException.Get(Api.ErrorCode.TableOrViewNotFoundDatabaseEmpty1, tableName);
+        }
+
+        if (database.IsCaseInsensitiveIdentifiers())
+        {
+            return DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
         }
 
         SortedSet<string> candidates = new(StringComparer.Ordinal);
-        foreach (Schemas.Schema candidateSchema in schemas)
+        foreach (string schemaName in schemaNames)
         {
-            foreach (Tables.Table candidate in candidateSchema.GetAllTablesAndViews(session))
-            {
-                string candidateName = candidate.GetTableName();
-                if (IdentifierEquals(candidateName, tableName))
-                {
-                    _ = candidates.Add(candidateName);
-                }
-            }
+            FindTableNameCandidates(session, schemaName, tableName, candidates);
         }
 
         if (candidates.Count == 0)
         {
-            throw DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
+            return DbException.Get(Api.ErrorCode.TableOrViewNotFound1, tableName);
         }
 
-        throw DbException.Get(Api.ErrorCode.TableOrViewNotFoundWithCandidates2,
+        return DbException.Get(Api.ErrorCode.TableOrViewNotFoundWithCandidates2,
             tableName, string.Join(", ", candidates));
+    }
+
+    /// <summary>
+    /// Collects the tables of a schema whose names match the searched one, as the reference's
+    /// <c>findTableNameCandidates</c> does.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="schemaName">the schema to look in</param>
+    /// <param name="tableName">the table name that was not found</param>
+    /// <param name="candidates">the candidate names</param>
+    private void FindTableNameCandidates(
+        SessionLocal session, string schemaName, string tableName, SortedSet<string> candidates)
+    {
+        Schemas.Schema schema = session.GetDatabase().GetSchema(schemaName);
+        foreach (Tables.Table candidate in schema.GetAllTablesAndViews(session))
+        {
+            string candidateName = candidate.GetTableName();
+            if (IdentifierEquals(candidateName, tableName))
+            {
+                _ = candidates.Add(candidateName);
+            }
+        }
     }
 
     /// <summary>

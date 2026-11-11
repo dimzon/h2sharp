@@ -61,6 +61,7 @@ public sealed class ScriptConformanceTests
         "datatypes/uuid.sql",
         "datatypes/varchar.sql",
         "ddl/alterDomain.sql",
+        "ddl/alterTableDropColumn.sql",
         "ddl/alterTableDropConstraint.sql",
         "ddl/alterTableRename.sql",
         "ddl/alterTableRenameConstraint.sql",
@@ -180,11 +181,14 @@ public sealed class ScriptConformanceTests
         "functions/system/coalesce.sql",
         "functions/system/convert.sql",
         "functions/system/current_schema.sql",
+        "functions/system/currval.sql",
         "functions/system/decode.sql",
         "functions/system/greatest.sql",
         "functions/system/h2version.sql",
         "functions/system/least.sql",
+        "functions/system/nextval.sql",
         "functions/system/nullif.sql",
+        "functions/system/nvl2.sql",
         "functions/system/readonly.sql",
         "functions/system/rownum.sql",
         "functions/system/table.sql",
@@ -237,6 +241,7 @@ public sealed class ScriptConformanceTests
         "queries/values.sql",
         "queries/window.sql",
         "range_table.sql",
+        "indexes.sql",
     };
 
     [Theory]

@@ -286,7 +286,21 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
         Table newTable = CloneTableStructure(table, table.GetColumns(), db, tempName, newColumns);
         if (sequences is not null)
             foreach (Sequence sequence in sequences) table.AddSequence(sequence);
-        // Persistent TableView objects are not yet implemented, so neither table has dependent views.
+        try
+        {
+            // A view that names the dropped column must refuse the whole ALTER: the new table
+            // impersonates the old one while every dependent view is re-prepared.
+            CheckViews(table, newTable);
+        }
+        catch
+        {
+            Execute(newTable.GetSql(new StringBuilder("DROP TABLE "), HasSql.DefaultSqlFlags).ToString());
+            throw;
+        }
+        // The views are dropped together with the old table by Database.RemoveSchemaObject, so
+        // they are taken off the dependency list first and re-created from their SQL at the end.
+        List<TableView> dependentViews = table.GetDependentViews();
+        foreach (TableView view in dependentViews) table.RemoveDependentView(view);
         string originalName = table.GetTableName();
         Execute(table.GetSql(new StringBuilder("DROP TABLE "), HasSql.DefaultSqlFlags).Append(" IGNORE").ToString());
         db.RenameSchemaObject(GetSession(), newTable, originalName);
@@ -304,6 +318,66 @@ public sealed class AlterTableAlterColumn : CommandWithColumns
             db.RenameSchemaObject(GetSession(), obj, name);
         }
         if (createConstraints) CreateConstraints();
+        foreach (TableView view in dependentViews) Execute(view.GetCreateSql(true, true));
+    }
+
+    /// <summary>
+    /// Checks that all views and other dependent objects stay valid when a table is rebuilt,
+    /// the reference's <c>checkViews</c>: the new table takes the old name while the old one is
+    /// renamed away, so a view is prepared against the table as it will be after the ALTER.
+    /// </summary>
+    /// <param name="sourceTable">the table being altered</param>
+    /// <param name="newTable">the rebuilt table</param>
+    private void CheckViews(Table sourceTable, Table newTable)
+    {
+        string sourceTableName = sourceTable.GetTableName();
+        string newTableName = newTable.GetTableName();
+        Database db = sourceTable.GetSchema()!.GetDatabase();
+        // Save the real table under a temporary name, as the reference does.
+        string temp = db.GetTempTableName(sourceTableName, GetSession());
+        db.RenameSchemaObject(GetSession(), sourceTable, temp);
+        try
+        {
+            // Have the new table impersonate the target table.
+            db.RenameSchemaObject(GetSession(), newTable, sourceTableName);
+            CheckViewsAreValid(sourceTable);
+        }
+        finally
+        {
+            // Always put the tables back with their proper names.
+            try
+            {
+                db.RenameSchemaObject(GetSession(), newTable, newTableName);
+            }
+            finally
+            {
+                db.RenameSchemaObject(GetSession(), sourceTable, sourceTableName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Prepares the query of every dependent view, the reference's <c>checkViewsAreValid</c>;
+    /// a view that no longer compiles names itself in COLUMN_IS_REFERENCED_1.
+    /// </summary>
+    /// <param name="tableOrView">the table or view whose children are checked</param>
+    private void CheckViewsAreValid(Table tableOrView)
+    {
+        // D-011: Table is not a DbObject, so the reference's walk over getChildren() is the
+        // dependent-views list here; TableView registers itself there.
+        foreach (TableView view in tableOrView.GetDependentViews())
+        {
+            try
+            {
+                _ = GetSession().PrepareCommand(view.GetQuerySql());
+            }
+            catch (H2SharpException e)
+            {
+                throw DbException.Get(ErrorCode.ColumnIsReferenced1, e, view.GetTraceSql());
+            }
+
+            CheckViewsAreValid(view);
+        }
     }
 
     private Table CloneTableStructure(Table table, Column[] columns, Database db, string tempName, List<Column> newColumns)

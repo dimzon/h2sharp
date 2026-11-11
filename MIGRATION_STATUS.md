@@ -13846,3 +13846,28 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.13%** строк (79601/86403), **88.00%** ветвей (32666/37122).
 * Проверено: H2Sharp.Tests 2564/2564, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 149: ALTER TABLE DROP COLUMN — пустая база и зависимые вьюхи (2026-11-12)
+
+* `Parser`: перенесены эталонные `tableIfTableExists` и
+  `getTableOrViewNotFoundDbException`/`findTableNameCandidates`. В DROP PRIMARY KEY и
+  DROP COLUMN таблица резолвится при подготовке, как в `parseAlterTableDrop`, поэтому
+  отсутствующая таблица в пустой базе отвечает
+  `TABLE_OR_VIEW_NOT_FOUND_DATABASE_EMPTY_1` (было `TABLE_OR_VIEW_NOT_FOUND_1` —
+  ddl/alterTableDropColumn.sql строка 18); при case-insensitive идентификаторах —
+  обычный `TABLE_OR_VIEW_NOT_FOUND_1`, иначе кандидаты. `ReadTableOrView` теперь
+  использует те же хелперы вместо своей копии поиска кандидатов.
+* `AlterTableAlterColumn.CopyData`: перенесён эталонный `checkViews` +
+  `checkViewsAreValid` — при перестройке таблицы новая таблица на время занимает имя
+  старой, и каждый зависимый вид готовится заново; вид, который перестал компилироваться,
+  отказывает `COLUMN_IS_REFERENCED_1` с текстом вида. Зависимые виды снимаются с
+  зависимости до DROP старой таблицы и создаются заново после (`getCreateSQL(true, true)`)
+  — раньше DROP COLUMN молча уносил вид вместе с таблицей и следующий `DROP VIEW`
+  отвечал VIEW_NOT_FOUND_1 (строки 88/91/94). Обход видов идёт по
+  `GetDependentViews()` (Table — не DbObject, D-011).
+* Закреплены `ddl/alterTableDropColumn.sql`, а также уже проходившие без расхождений
+  `functions/system/currval.sql`, `nextval.sql`, `nvl2.sql`, `indexes.sql`:
+  194 → **199**.
+* Итог: **92.15%** строк (79675/86464), **88.02%** ветвей (32686/37134).
+* Проверено: H2Sharp.Tests 2569/2569, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
