@@ -205,6 +205,60 @@ public sealed class ScriptConformanceRegressionTests
         }
     }
 
+    /// <summary>
+    /// A grouped query with HAVING used to crash the aggregate walk: the copy map was sized
+    /// over the visible columns while the walk indexes every expression, and HAVING had been
+    /// appended to that list (queries/select.sql).
+    /// </summary>
+    [Fact]
+    public void GroupedHavingWithDuplicateColumnsAnswers()
+    {
+        (Database database, SessionLocal session) = Open();
+        try
+        {
+            session.PrepareCommand("CREATE TABLE TEST(A INT)").ExecuteUpdate(false);
+            session.PrepareCommand("INSERT INTO TEST VALUES (1), (1), (2)").ExecuteUpdate(false);
+            using ResultInterface result = session
+                .PrepareCommand("SELECT A, A FROM TEST GROUP BY A HAVING SUM(A) > 0 ORDER BY A")
+                .ExecuteQuery(-1, 0, false);
+            Assert.True(result.Next());
+            Assert.Equal("1", result.CurrentRow()[0]!.GetString());
+            Assert.True(result.Next());
+            Assert.Equal("2", result.CurrentRow()[1]!.GetString());
+            Assert.False(result.Next());
+        }
+        finally
+        {
+            database.Close();
+        }
+    }
+
+    /// <summary>
+    /// The runner's parameter block: one execution per line, values bound as strings, a
+    /// query's own answer block, and the summed update count compared with the line after `}`.
+    /// </summary>
+    [Fact]
+    public void ParameterBlocksExecuteAndCompare()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "CREATE TABLE T(A INT);",
+            "> ok",
+            "INSERT INTO T VALUES (?), (?);",
+            "{",
+            "1, 2",
+            "};",
+            "> update count: 2",
+            "SELECT A FROM T WHERE A > ?;",
+            "{",
+            "1",
+            ">> 2",
+            "};",
+            "> update count: 0",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);

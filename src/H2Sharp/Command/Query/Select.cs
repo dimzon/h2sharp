@@ -268,6 +268,19 @@ public sealed class Select : Query
         if (groupBy is not null)
         {
             Database db = session.GetDatabase();
+            // The reference extends the SQL list over every expression of the select, not
+            // only the visible columns: ORDER BY and HAVING were appended above, and the copy
+            // map is indexed by the same positions updateAgg walks. Without it the map is
+            // shorter than the expression list and a grouped query with HAVING crashes
+            // (SELECT A, A FROM TEST GROUP BY A HAVING SUM(A) > 0).
+            int expressionCount = expressionSQL!.Count;
+            int fullExpressionCount = expressions.Count;
+            for (int i = expressionCount; i < fullExpressionCount; i++)
+            {
+                expressionSQL.Add(expressions[i].GetSql(
+                    HasSql.DefaultSqlFlags, Expression.WithoutParentheses));
+            }
+
             int size = groupBy.Count;
             groupIndex = new int[size];
             for (int i = 0; i < size; i++)

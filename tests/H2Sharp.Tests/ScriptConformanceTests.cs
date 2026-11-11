@@ -24,6 +24,7 @@ using System.Text.RegularExpressions;
 using H2Sharp.Api;
 using H2Sharp.Command;
 using H2Sharp.Engine;
+using H2Sharp.Expressions;
 using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Values;
@@ -259,10 +260,30 @@ internal static class ScriptRunner
         }
     }
 
+    /// <summary>
+    /// Runs script text that is not a file of the reference, for the runner's own tests: the
+    /// format is the same, and a failure means the runner and the engine disagree with it.
+    /// </summary>
+    internal static List<string> RunLines(string[] lines)
+    {
+        try
+        {
+            return RunItems(ScriptParser.Parse(lines));
+        }
+        catch (Exception e)
+        {
+            return ["script could not run: " + e.GetType().Name + ": " + e.Message];
+        }
+    }
+
     private static List<string> RunCore(string relativePath)
     {
         string path = Path.Combine(ScriptsDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
-        List<ScriptItem> items = ScriptParser.Parse(File.ReadAllLines(path, Encoding.UTF8));
+        return RunItems(ScriptParser.Parse(File.ReadAllLines(path, Encoding.UTF8)));
+    }
+
+    private static List<string> RunItems(List<ScriptItem> items)
+    {
         List<string> failures = [];
         Database database = new(ConnectionInfo.Memory("script_" + Guid.NewGuid().ToString("N")));
         SessionLocal session = new(database, "sa");
@@ -287,9 +308,9 @@ internal static class ScriptRunner
 
     private static string? Execute(SessionLocal session, ScriptItem item)
     {
-        if (item.Skipped)
+        if (item.ParameterRuns is not null)
         {
-            return null;
+            return ExecuteParameterized(session, item);
         }
 
         string got;
@@ -299,7 +320,7 @@ internal static class ScriptRunner
             if (command.IsQuery())
             {
                 using ResultInterface result = command.ExecuteQuery(-1, 0, false);
-                return CompareResult(item, result);
+                return CompareResult(item.Line, item.Sql, item.Answer, result);
             }
 
             long count = command.ExecuteUpdate(false).GetUpdateCount();
@@ -310,12 +331,144 @@ internal static class ScriptRunner
             got = "exception " + ErrorCodes.NameOf(e.H2ErrorCode);
         }
 
-        return got == item.Expectation
-            ? null
-            : $"line {item.Line}: {item.Sql}\n  expected: {item.Expectation}\n  got:      {got}";
+        return CompareSimple(item.Line, item.Sql, item.Answer, got);
     }
 
-    private static string? CompareResult(ScriptItem item, ResultInterface result)
+    private static string? CompareSimple(int line, string sql, ExpectedAnswer answer, string got)
+        => got == answer.Expectation
+            ? null
+            : $"line {line}: {sql}\n  expected: {answer.Expectation}\n  got:      {got}";
+
+    /// <summary>
+    /// Runs a statement once per line of its parameter block, as the reference's
+    /// <c>process</c>/<c>processPrepared</c> do: the statement is prepared once, the values
+    /// are bound as strings, queries compare their own answer block, and the update counts of
+    /// non-queries are summed and compared with the line after the closing brace.
+    /// </summary>
+    private static string? ExecuteParameterized(SessionLocal session, ScriptItem item)
+    {
+        CommandInterface command;
+        try
+        {
+            command = session.PrepareCommand(item.Sql);
+        }
+        catch (H2SharpException e)
+        {
+            return CompareSimple(item.Line, item.Sql, item.Answer,
+                "exception " + ErrorCodes.NameOf(e.H2ErrorCode));
+        }
+
+        if (command is not CommandContainer container)
+        {
+            return $"line {item.Line}: {item.Sql}\n  the statement is not a runnable command";
+        }
+
+        long total = 0;
+        foreach (ScriptParameterRun run in item.ParameterRuns!)
+        {
+            List<string?> values = ParseParameterValues(run.Values);
+            List<ParameterInterface> parameters = container.GetParameters();
+            if (values.Count > parameters.Count)
+            {
+                return $"line {item.Line}: {item.Sql}\n  expected {values.Count} parameter value(s), got {parameters.Count}";
+            }
+
+            for (int i = 0; i < values.Count; i++)
+            {
+                parameters[i].SetValue(
+                    values[i] is null ? ValueNull.Instance : ValueVarchar.Get(values[i]!, session),
+                    closeOld: true);
+            }
+
+            try
+            {
+                if (command.IsQuery())
+                {
+                    using ResultInterface result = command.ExecuteQuery(-1, 0, false);
+                    string? failure = CompareResult(item.Line, item.Sql, run.Answer!, result);
+                    if (failure is not null)
+                    {
+                        return failure;
+                    }
+                }
+                else
+                {
+                    total += command.ExecuteUpdate(false).GetUpdateCount();
+                }
+            }
+            catch (H2SharpException e)
+            {
+                string got = "exception " + ErrorCodes.NameOf(e.H2ErrorCode);
+                if (run.Answer is null)
+                {
+                    return $"line {item.Line}: {item.Sql}\n  expected: ok\n  got:      {got}";
+                }
+
+                string? failure = CompareSimple(item.Line, item.Sql, run.Answer, got);
+                if (failure is not null)
+                {
+                    return failure;
+                }
+            }
+        }
+
+        // The reference writes the sum of the counts unconditionally here — unlike a plain
+        // statement, where zero prints as `ok` — so the script's `> update count: 0` matches.
+        string totalGot = "update count: " + total.ToString(CultureInfo.InvariantCulture);
+        return CompareSimple(item.Line, item.Sql, item.Answer, totalGot);
+    }
+
+    /// <summary>
+    /// The values of one parameter line, as the reference's <c>processPrepared</c> reads them:
+    /// comma separated, a quoted part keeps its spaces and commas, unquoted whitespace is
+    /// dropped, and the word <c>null</c> binds NULL.
+    /// </summary>
+    private static List<string?> ParseParameterValues(string raw)
+    {
+        List<string?> values = [];
+        StringBuilder buff = new();
+        bool quoted = false;
+        foreach (char c in raw)
+        {
+            if (quoted)
+            {
+                if (c == '"')
+                {
+                    quoted = false;
+                }
+                else
+                {
+                    buff.Append(c);
+                }
+            }
+            else if (c == ',')
+            {
+                values.Add(ToParameterValue(buff.ToString()));
+                buff.Clear();
+            }
+            else if (c == '"')
+            {
+                quoted = true;
+            }
+            else if (c > ' ')
+            {
+                buff.Append(c);
+            }
+        }
+
+        if (buff.Length > 0)
+        {
+            values.Add(ToParameterValue(buff.ToString()));
+        }
+
+        return values;
+    }
+
+    private static string? ToParameterValue(string text)
+        => text.Equals("null", StringComparison.OrdinalIgnoreCase) ? null : text;
+
+    private static string? CompareResult(
+        int line, string sql, ExpectedAnswer answer, ResultInterface result)
     {
         List<Value?[]> rows = [];
         while (result.Next())
@@ -324,7 +477,7 @@ internal static class ScriptRunner
         }
 
         int columns = result.GetVisibleColumnCount();
-        if (item.ExpectedValue is not null)
+        if (answer.ExpectedValue is not null)
         {
             string got = rows.Count switch
             {
@@ -333,9 +486,9 @@ internal static class ScriptRunner
                 1 => "<row with " + columns.ToString(CultureInfo.InvariantCulture) + " values>",
                 _ => "<" + rows.Count.ToString(CultureInfo.InvariantCulture) + " rows>",
             };
-            return got == item.ExpectedValue
+            return got == answer.ExpectedValue
                 ? null
-                : $"line {item.Line}: {item.Sql}\n  expected: >> {item.ExpectedValue}\n  got:      >> {got}";
+                : $"line {line}: {sql}\n  expected: >> {answer.ExpectedValue}\n  got:      >> {got}";
         }
 
         string[] header = new string[columns];
@@ -346,15 +499,15 @@ internal static class ScriptRunner
 
         List<string[]> formatted = rows
             .Select(row => row.Take(columns).Select(FormatValue).ToArray()).ToList();
-        if (item.ExpectedRows is null)
+        if (answer.ExpectedRows is null)
         {
             // A statement expected to fail answered with rows instead. Say so rather than
             // dereferencing the absent block: the mismatch is the finding.
-            return $"line {item.Line}: {item.Sql}\n  expected: {item.Expectation}\n  got: a result of {rows.Count} row(s)";
+            return $"line {line}: {sql}\n  expected: {answer.Expectation}\n  got: a result of {rows.Count} row(s)";
         }
 
-        List<string> expected = item.ExpectedRows;
-        if (!item.Ordered)
+        List<string> expected = answer.ExpectedRows;
+        if (!answer.Ordered)
         {
             formatted.Sort(CompareRows);
         }
@@ -367,13 +520,13 @@ internal static class ScriptRunner
         {
             if (expected[i] != actual[i])
             {
-                return $"line {item.Line}: {item.Sql}\n  expected row: {expected[i]}\n  got row:      {actual[i]}";
+                return $"line {line}: {sql}\n  expected row: {expected[i]}\n  got row:      {actual[i]}";
             }
         }
 
         return expected.Count == actual.Count
             ? null
-            : $"line {item.Line}: {item.Sql}\n  expected {expected.Count} lines, got {actual.Count}";
+            : $"line {line}: {sql}\n  expected {expected.Count} lines, got {actual.Count}";
     }
 
     private static int CompareRows(string[] a, string[] b)
@@ -486,17 +639,39 @@ internal sealed class ScriptItem
 {
     internal required string Sql { get; init; }
 
-    internal required string Expectation { get; init; }
+    internal required ExpectedAnswer Answer { get; init; }
 
     internal required int Line { get; init; }
 
-    internal bool Skipped { get; init; }
+    /// <summary>
+    /// The executions of a parameterized statement: one per line of its <c>{ ... }</c> block.
+    /// Null when the statement has no parameters.
+    /// </summary>
+    internal List<ScriptParameterRun>? ParameterRuns { get; init; }
+}
+
+/// <summary>One expected answer: a value, an exception, an update count, or a row block.</summary>
+internal sealed class ExpectedAnswer
+{
+    internal required string Expectation { get; init; }
 
     internal string? ExpectedValue { get; init; }
 
     internal List<string>? ExpectedRows { get; init; }
 
     internal bool Ordered { get; init; }
+}
+
+/// <summary>One line of a parameter block and the answer the reference records for it.</summary>
+internal sealed class ScriptParameterRun
+{
+    internal required string Values { get; init; }
+
+    /// <summary>
+    /// The answer block for this execution. Non-queries have none: the reference only compares
+    /// their summed update count against the line after the block.
+    /// </summary>
+    internal ExpectedAnswer? Answer { get; init; }
 }
 
 /// <summary>The reference script format: statements end with <c>;</c>, expectations start with <c>&gt;</c>.</summary>
@@ -563,22 +738,63 @@ internal static class ScriptParser
 
             string sql = statement.ToString();
             sql = sql[..^1].Trim();
-            bool skipped = false;
             if (HasParameters(sql))
             {
-                // The parameter block follows the statement: `{`, value lines, `};`. Binding
-                // the values is not ported in the runner yet, so consume the block and mark
-                // the statement skipped.
-                skipped = true;
-                while (index < lines.Length && !lines[index].TrimStart().StartsWith("}", StringComparison.Ordinal))
+                // The parameter block follows the statement: `{`, then one line of values per
+                // execution. A query's expectation lines follow its own value line (the
+                // reference's processPrepared consumes them); updates have none — their counts
+                // are summed and compared with the line after `}`.
+                if (index >= lines.Length || lines[index].Trim() != "{")
                 {
+                    throw new InvalidOperationException(
+                        "expected a parameter block at line " + sqlLine + ": " + sql);
+                }
+
+                index++;
+                List<ScriptParameterRun> runs = [];
+                while (index < lines.Length
+                       && !lines[index].TrimStart().StartsWith("}", StringComparison.Ordinal))
+                {
+                    string values = lines[index].Trim();
                     index++;
+                    List<string> runExpectations = [];
+                    while (index < lines.Length
+                           && lines[index].TrimStart().StartsWith(">", StringComparison.Ordinal))
+                    {
+                        runExpectations.Add(lines[index].Trim());
+                        index++;
+                    }
+
+                    runs.Add(new ScriptParameterRun
+                    {
+                        Values = values,
+                        Answer = runExpectations.Count == 0
+                            ? null
+                            : BuildAnswer(sql, sqlLine, runExpectations),
+                    });
                 }
 
                 if (index < lines.Length)
                 {
                     index++;
                 }
+
+                List<string> finalExpectations = [];
+                while (index < lines.Length
+                       && lines[index].TrimStart().StartsWith(">", StringComparison.Ordinal))
+                {
+                    finalExpectations.Add(lines[index].Trim());
+                    index++;
+                }
+
+                items.Add(new ScriptItem
+                {
+                    Sql = sql,
+                    Line = sqlLine,
+                    Answer = BuildAnswer(sql, sqlLine, finalExpectations),
+                    ParameterRuns = runs,
+                });
+                continue;
             }
 
             List<string> expectations = [];
@@ -588,13 +804,18 @@ internal static class ScriptParser
                 index++;
             }
 
-            items.Add(MakeItem(sql, sqlLine, skipped, expectations));
+            items.Add(new ScriptItem
+            {
+                Sql = sql,
+                Line = sqlLine,
+                Answer = BuildAnswer(sql, sqlLine, expectations),
+            });
         }
 
         return items;
     }
 
-    private static ScriptItem MakeItem(string sql, int line, bool skipped, List<string> expectations)
+    private static ExpectedAnswer BuildAnswer(string sql, int line, List<string> expectations)
     {
         if (expectations.Count == 0)
         {
@@ -606,23 +827,14 @@ internal static class ScriptParser
             string only = expectations[0];
             if (only.StartsWith(">> ", StringComparison.Ordinal))
             {
-                return new ScriptItem
+                return new ExpectedAnswer
                 {
-                    Sql = sql,
-                    Line = line,
-                    Skipped = skipped,
                     Expectation = only,
                     ExpectedValue = only[3..],
                 };
             }
 
-            return new ScriptItem
-            {
-                Sql = sql,
-                Line = line,
-                Skipped = skipped,
-                Expectation = WithoutPrefix(only),
-            };
+            return new ExpectedAnswer { Expectation = WithoutPrefix(only) };
         }
 
         string last = expectations[^1];
@@ -647,11 +859,8 @@ internal static class ScriptParser
             rows.Add(WithoutPrefix(expectations[i]));
         }
 
-        return new ScriptItem
+        return new ExpectedAnswer
         {
-            Sql = sql,
-            Line = line,
-            Skipped = skipped,
             Expectation = WithoutPrefix(last),
             ExpectedRows = rows,
             Ordered = ordered,
