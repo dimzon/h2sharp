@@ -32,6 +32,7 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(ScriptCatalogCollection.Name)]
 public sealed class ScriptConformanceTests
 {
     /// <summary>
@@ -264,12 +265,13 @@ internal static class ScriptRunner
     /// <summary>
     /// Runs script text that is not a file of the reference, for the runner's own tests: the
     /// format is the same, and a failure means the runner and the engine disagree with it.
+    /// Such a test asserts nothing about the catalog, so its database keeps a private name.
     /// </summary>
     internal static List<string> RunLines(string[] lines)
     {
         try
         {
-            return RunItems(ScriptParser.Parse(lines));
+            return RunItems(ScriptParser.Parse(lines), "script_lines_" + Guid.NewGuid().ToString("N"));
         }
         catch (Exception e)
         {
@@ -280,13 +282,16 @@ internal static class ScriptRunner
     private static List<string> RunCore(string relativePath)
     {
         string path = Path.Combine(ScriptsDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
-        return RunItems(ScriptParser.Parse(File.ReadAllLines(path, Encoding.UTF8)));
+        // The harness of the reference opens its scripts on a database named SCRIPT, and the
+        // scripts write that catalog into their expected rows; the name is part of the
+        // expectation, not a detail of the run.
+        return RunItems(ScriptParser.Parse(File.ReadAllLines(path, Encoding.UTF8)), "script");
     }
 
-    private static List<string> RunItems(List<ScriptItem> items)
+    private static List<string> RunItems(List<ScriptItem> items, string databaseName)
     {
         List<string> failures = [];
-        Database database = new(ConnectionInfo.Memory("script_" + Guid.NewGuid().ToString("N")));
+        Database database = new(ConnectionInfo.Memory(databaseName));
         SessionLocal session = new(database, "sa");
         try
         {
@@ -940,4 +945,18 @@ internal static class ErrorCodes
 
         return names;
     }
+}
+
+/// <summary>
+/// The collection the script tests belong to. They run on one database name, the one the
+/// reference's own harness uses, and an in-memory database of the same name is the same
+/// database — so the scripts must not run beside each other.
+/// </summary>
+[CollectionDefinition(ScriptCatalogCollection.Name, DisableParallelization = true)]
+public sealed class ScriptCatalogCollection
+{
+    /// <summary>
+    /// The name the script test class puts in its <c>Collection</c> attribute.
+    /// </summary>
+    public const string Name = "script catalog";
 }
