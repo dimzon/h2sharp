@@ -4736,20 +4736,19 @@ public sealed partial class Parser
         // table ("SELECT t.* FROM T AS t").
         string? star = null;
         List<(string? Schema, string? Table, string Column)>? exceptColumns = null;
-        if (ReadIf(Token.Asterisk))
-        {
-            star = string.Empty;
-        }
+        // An aliased star carries its own EXCEPT list; the marker expression is the key,
+        // because the star reaches the select list as that expression.
+        Dictionary<Expressions.ExpressionColumn, List<(string? Schema, string? Table, string Column)>> starExcept = [];
 
-        if (star is not null && CurrentType == ParserUtil.Except)
+        // The reference reads the list of a wildcard's EXCEPT with up to three qualifiers:
+        // the column, its table and its schema, as parseWildcard does.
+        List<(string? Schema, string? Table, string Column)> ReadExceptColumns()
         {
+            List<(string? Schema, string? Table, string Column)> except = [];
             Read();
             Expect(Token.OpenParen, "(");
-            exceptColumns = [];
             do
             {
-                // The reference reads the column with up to two qualifiers, the table and
-                // the schema it names, as parseWildcard does.
                 string name = ReadIdentifier();
                 string? table = null, schema = null;
                 if (ReadIf(Token.Dot))
@@ -4770,9 +4769,20 @@ public sealed partial class Parser
                     }
                 }
 
-                exceptColumns.Add((schema, table, name));
+                except.Add((schema, table, name));
             }
             while (ReadIfMore());
+
+            return except;
+        }
+
+        if (ReadIf(Token.Asterisk))
+        {
+            star = string.Empty;
+            if (CurrentType == ParserUtil.Except)
+            {
+                exceptColumns = ReadExceptColumns();
+            }
         }
 
         List<Expressions.Expression> selectItems = [];
@@ -4782,7 +4792,13 @@ public sealed partial class Parser
             Expressions.Expression item;
             if (ReadIf(Token.Asterisk))
             {
-                item = new Expressions.ExpressionColumn("*", null, 0);
+                var starItem = new Expressions.ExpressionColumn("*", null, 0);
+                if (CurrentType == ParserUtil.Except)
+                {
+                    starExcept[starItem] = ReadExceptColumns();
+                }
+
+                item = starItem;
             }
             else if (IsIdentifier()
                 && position + 2 < tokens.Count
@@ -4792,7 +4808,16 @@ public sealed partial class Parser
                 string itemTable = ReadIdentifier();
                 Read();
                 Read();
-                item = new Expressions.ExpressionColumn("*", itemTable, 0);
+                var starItem = new Expressions.ExpressionColumn("*", itemTable, 0);
+                // The reference attaches the EXCEPT list to the wildcard itself, so every
+                // star of the select list carries its own list: `TEST1.* EXCEPT (A),
+                // TEST2.* EXCEPT (D)` excludes a different column of each table.
+                if (CurrentType == ParserUtil.Except)
+                {
+                    starExcept[starItem] = ReadExceptColumns();
+                }
+
+                item = starItem;
             }
             else
             {
@@ -4945,6 +4970,32 @@ public sealed partial class Parser
             // with the right table — still answers the columns left to right as written.
             List<Tables.TableFilter> orderedFilters = [.. fromFilters];
             orderedFilters.Sort(Tables.TableFilter.OrderInFromComparator);
+
+            // The EXCEPT list is resolved against the filters the star expands: every filter
+            // of a bare star, only the named one of `t.*` (as the reference's Wildcard.mapColumns
+            // is called for the matching filter alone).
+            Dictionary<Tables.Column, Expressions.ExpressionColumn>? exceptMap = null;
+            if (except is not null)
+            {
+                List<Tables.TableFilter> against = [];
+                if (starAlias is { Length: > 0 })
+                {
+                    foreach (Tables.TableFilter f in orderedFilters)
+                    {
+                        if (IdentifierEquals(f.GetTableAlias(), starAlias))
+                        {
+                            against.Add(f);
+                        }
+                    }
+                }
+                else
+                {
+                    against = orderedFilters;
+                }
+
+                exceptMap = MapExceptColumns(except, against);
+            }
+
             foreach (Tables.TableFilter f in orderedFilters)
             {
                 if (starAlias is { Length: > 0 }
@@ -4955,7 +5006,7 @@ public sealed partial class Parser
 
                 if (starAlias is { Length: > 0 })
                 {
-                    ExpandFilterColumns(f, except);
+                    ExpandFilterColumns(f, exceptMap);
                     continue;
                 }
 
@@ -4971,9 +5022,11 @@ public sealed partial class Parser
                     foreach (KeyValuePair<Tables.Column, Tables.Column> entry in commonJoinColumns)
                     {
                         Tables.Column left = entry.Key, right = entry.Value;
+                        // The reference consumes the entry as it excludes: `except.remove(left)
+                        // == null && except.remove(right) == null`.
                         if (!f.IsCommonJoinColumnToExclude(right)
-                            && !TakeExceptColumn(except, f, left)
-                            && !TakeExceptColumn(except, replacementFilter, right))
+                            && (exceptMap is null
+                                || (!exceptMap.Remove(left) && !exceptMap.Remove(right))))
                         {
                             bool ordered = DataType.HasTotalOrdering(
                                 left.GetTypeInfo().GetValueType())
@@ -4999,70 +5052,72 @@ public sealed partial class Parser
                     if ((commonJoinColumns is null || !commonJoinColumns.ContainsKey(column))
                         && !f.IsCommonJoinColumnToExclude(column))
                     {
-                        AddExpandedColumn(f, column, except);
+                        AddExpandedColumn(f, column, exceptMap);
                     }
                 }
             }
         }
 
         /// <summary>
-        /// Takes the column out of the except list, telling whether it was there. An entry
-        /// that names a table or a schema matches only the column of that table.
+        /// Maps the EXCEPT list of a wildcard onto columns, as the reference's
+        /// <c>Wildcard.mapExceptColumns</c>: a name that matches no column of these filters is
+        /// COLUMN_NOT_FOUND_1; a bare name that matches the columns of two filters is
+        /// AMBIGUOUS_COLUMN_NAME_1, which the mapping itself says; the same column named twice
+        /// is DUPLICATE_COLUMN_NAME_1.
         /// </summary>
-        /// <param name="except">the excluded columns, or null</param>
-        /// <param name="f">the filter the column comes from</param>
-        /// <param name="column">the column</param>
-        /// <returns>true when the column was excluded and is consumed</returns>
-        bool TakeExceptColumn(
-            List<(string? Schema, string? Table, string Column)>? except, Tables.TableFilter f, Tables.Column column)
+        /// <param name="except">the excluded names</param>
+        /// <param name="against">the filters the names are resolved against</param>
+        /// <returns>the map of excluded columns</returns>
+        Dictionary<Tables.Column, Expressions.ExpressionColumn> MapExceptColumns(
+            List<(string? Schema, string? Table, string Column)> except,
+            List<Tables.TableFilter> against)
         {
-            if (except is null)
+            Dictionary<Tables.Column, Expressions.ExpressionColumn> map = [];
+            foreach ((string? schema, string? table, string name) in except)
             {
-                return false;
-            }
-
-            for (int i = 0; i < except.Count; i++)
-            {
-                (string? schema, string? table, string name) = except[i];
-                if (IdentifierEquals(name, column.GetName())
-                    && (table is null || IdentifierEquals(table, f.GetTableAlias()))
-                    && (schema is null || IdentifierEquals(schema, f.GetSchemaName())))
+                Expressions.ExpressionColumn ec = new(name, schema, table, 0);
+                foreach (Tables.TableFilter f in against)
                 {
-                    except.RemoveAt(i);
-                    return true;
+                    ec.MapColumns(f, 1, Expressions.Expression.MapInitial);
+                }
+
+                Tables.Column? column = ec.GetColumn();
+                if (column is null)
+                {
+                    throw ec.GetColumnException(Api.ErrorCode.ColumnNotFound1);
+                }
+
+                if (!map.TryAdd(column, ec))
+                {
+                    throw ec.GetColumnException(Api.ErrorCode.DuplicateColumnName1);
                 }
             }
 
-            return false;
+            return map;
         }
 
         /// <summary>
-        /// Adds the visible column of one filter to the select list, unless it is excluded.
+        /// Adds the visible column of one filter to the select list, unless the EXCEPT map
+        /// names it — and consumes the entry, as the reference's <c>except.remove(c)</c> does.
         /// </summary>
         /// <param name="f">the filter</param>
         /// <param name="column">the column</param>
-        /// <param name="except">the excluded names, or null</param>
-        void AddExpandedColumn(Tables.TableFilter f, Tables.Column column, List<(string? Schema, string? Table, string Column)>? except)
+        /// <param name="except">the excluded columns, or null</param>
+        void AddExpandedColumn(
+            Tables.TableFilter f, Tables.Column column, Dictionary<Tables.Column, Expressions.ExpressionColumn>? except)
         {
-            if (!column.GetVisible())
+            if ((except is null || !except.Remove(column)) && column.GetVisible())
             {
-                return;
+                selectList.Add(new Expressions.ExpressionColumn(column, f, 0));
             }
-
-            if (TakeExceptColumn(except, f, column))
-            {
-                return;
-            }
-
-            selectList.Add(new Expressions.ExpressionColumn(column, f, 0));
         }
 
         /// <summary>
         /// Expands every visible column of one filter, the alias-qualified star form.
         /// </summary>
         /// <param name="f">the filter</param>
-        /// <param name="except">the excluded names, or null</param>
-        void ExpandFilterColumns(Tables.TableFilter f, List<(string? Schema, string? Table, string Column)>? except)
+        /// <param name="except">the excluded columns, or null</param>
+        void ExpandFilterColumns(Tables.TableFilter f, Dictionary<Tables.Column, Expressions.ExpressionColumn>? except)
         {
             foreach (Tables.Column column in f.GetTable().GetColumns())
             {
@@ -5080,7 +5135,8 @@ public sealed partial class Parser
             if (item is Expressions.ExpressionColumn marker
                 && marker.GetOriginalColumnName() == "*")
             {
-                ExpandStar(marker.GetOriginalTableAliasName(), null);
+                _ = starExcept.TryGetValue(marker, out List<(string? Schema, string? Table, string Column)>? itemExcept);
+                ExpandStar(marker.GetOriginalTableAliasName(), itemExcept);
             }
             else
             {
@@ -5204,76 +5260,80 @@ public sealed partial class Parser
         }
 
         // Standard SQL OFFSET / FETCH, then MySQL-style LIMIT, in the reference's order and
-        // only when no fetch was set: vacuous for a flat select read once (no union branch
-        // could have set one), but the shape is kept so the union port finds it in place.
+        // only when no fetch was set: a TOP clause above already filled the fetch slot, and
+        // the reference leaves OFFSET/FETCH/LIMIT unread in that case — the leftover token is
+        // what turns `SELECT TOP 1 ID FROM TEST OFFSET 1 ROW` into SYNTAX_ERROR_1.
         // The counts are expressions, as in the reference: a limit may name a parameter, and
         // the value of a parameter is not known until the statement runs.
-        bool hasOffsetOrFetch = false;
-        if (CurrentType == ParserUtil.Offset)
+        if (query.GetFetch() is null)
         {
-            Read();
-            hasOffsetOrFetch = true;
-            query.SetOffset(ReadQueryLimitExpression());
-            _ = IsWord("ROW") || IsWord("ROWS");
-        }
-
-        if (CurrentType == ParserUtil.Fetch)
-        {
-            Read();
-            hasOffsetOrFetch = true;
-            if (!IsWord("FIRST"))
-            {
-                ExpectWord("NEXT");
-            }
-
-            if (IsWord("ROW") || IsWord("ROWS"))
-            {
-                query.SetFetch(Expressions.ValueExpression.Get(Values.ValueInteger.Get(1)));
-            }
-            else
-            {
-                query.SetFetch(ReadQueryLimitExpression());
-                if (IsWord("PERCENT"))
-                {
-                    query.SetFetchPercent(true);
-                }
-
-                if (!IsWord("ROW"))
-                {
-                    ExpectWord("ROWS");
-                }
-            }
-
-            if (IsWord("WITH"))
-            {
-                ExpectWord("TIES");
-                query.SetWithTies(true);
-            }
-            else
-            {
-                ExpectWord("ONLY");
-            }
-        }
-
-        // The mode comes from the cast provider rather than the session: the tokenizer
-        // gates the LIMIT keyword on the same flag, and SessionLocal.GetMode refuses until
-        // Mode is ported.
-        if (!hasOffsetOrFetch && provider.GetMode().Limit && IsWord("LIMIT"))
-        {
-            Expressions.Expression limit = ReadQueryLimitExpression();
+            bool hasOffsetOrFetch = false;
             if (CurrentType == ParserUtil.Offset)
             {
                 Read();
+                hasOffsetOrFetch = true;
                 query.SetOffset(ReadQueryLimitExpression());
-            }
-            else if (ReadIf(Token.Comma))
-            {
-                // MySQL: [offset, ] rowcount.
-                query.SetOffset(limit);
-                limit = ReadQueryLimitExpression();
+                _ = IsWord("ROW") || IsWord("ROWS");
             }
 
-            query.SetFetch(limit);
+            if (CurrentType == ParserUtil.Fetch)
+            {
+                Read();
+                hasOffsetOrFetch = true;
+                if (!IsWord("FIRST"))
+                {
+                    ExpectWord("NEXT");
+                }
+
+                if (IsWord("ROW") || IsWord("ROWS"))
+                {
+                    query.SetFetch(Expressions.ValueExpression.Get(Values.ValueInteger.Get(1)));
+                }
+                else
+                {
+                    query.SetFetch(ReadQueryLimitExpression());
+                    if (IsWord("PERCENT"))
+                    {
+                        query.SetFetchPercent(true);
+                    }
+
+                    if (!IsWord("ROW"))
+                    {
+                        ExpectWord("ROWS");
+                    }
+                }
+
+                if (IsWord("WITH"))
+                {
+                    ExpectWord("TIES");
+                    query.SetWithTies(true);
+                }
+                else
+                {
+                    ExpectWord("ONLY");
+                }
+            }
+
+            // The mode comes from the cast provider rather than the session: the tokenizer
+            // gates the LIMIT keyword on the same flag, and SessionLocal.GetMode refuses until
+            // Mode is ported.
+            if (!hasOffsetOrFetch && provider.GetMode().Limit && IsWord("LIMIT"))
+            {
+                Expressions.Expression limit = ReadQueryLimitExpression();
+                if (CurrentType == ParserUtil.Offset)
+                {
+                    Read();
+                    query.SetOffset(ReadQueryLimitExpression());
+                }
+                else if (ReadIf(Token.Comma))
+                {
+                    // MySQL: [offset, ] rowcount.
+                    query.SetOffset(limit);
+                    limit = ReadQueryLimitExpression();
+                }
+
+                query.SetFetch(limit);
+            }
         }
 
         if (IsWord("FOR"))
@@ -5814,6 +5874,26 @@ public sealed partial class Parser
     /// The keyword runs ReadIfWords recognizes. Static arrays: the reference's callers pass a
     /// fresh String[] per call, which is an allocation per keyword run in a DDL statement.
     /// </summary>
+    /// <summary>
+    /// The keywords the reference's term reader reads as built-in functions: the CURRENT_*
+    /// value functions, ROW, TABLE, the date-parts and the rest. A keyword outside this set
+    /// that reaches the term reader is not a function the port has yet to read — it is a
+    /// keyword where a term does not belong, and the reference answers it with the syntax
+    /// error that names the expected tokens.
+    /// </summary>
+    private static readonly HashSet<int> KeywordFunctionTokens =
+    [
+        ParserUtil.Any, ParserUtil.Array, ParserUtil.Case, ParserUtil.Cast,
+        ParserUtil.CurrentCatalog, ParserUtil.CurrentDate, ParserUtil.CurrentPath,
+        ParserUtil.CurrentRole, ParserUtil.CurrentSchema, ParserUtil.CurrentTime,
+        ParserUtil.CurrentTimestamp, ParserUtil.CurrentUser, ParserUtil.Day,
+        ParserUtil.Hour, ParserUtil.Interval, ParserUtil.Left, ParserUtil.Localtime,
+        ParserUtil.Localtimestamp, ParserUtil.Minute, ParserUtil.Month, ParserUtil.Row,
+        ParserUtil.Rownum, ParserUtil.Second, ParserUtil.SessionUser, ParserUtil.Set,
+        ParserUtil.SystemUser, ParserUtil.Table, ParserUtil.User,
+        ParserUtil.Values, ParserUtil.Year, ParserUtil._ROWID_,
+    ];
+
     private static readonly string[] WordsOnNull = ["ON", "NULL"];
     private static readonly string[] WordsOnUpdate = ["ON", "UPDATE"];
     private static readonly string[] WordsSetGenerated = ["SET", "GENERATED"];
@@ -6907,12 +6987,19 @@ public sealed partial class Parser
                             ReadQueryOr(aggregateSelect), ReadLastArgument(aggregateSelect));
 
                     default:
-                        // Every other function spelled as a keyword — the CURRENT_* value
-                        // functions, CAST, ROW, TABLE and the rest — is read by the reference's
-                        // own keyword branches, which are not ported. Naming the keyword beats
-                        // answering that no such function exists.
-                        throw new TODOException(
-                            "Parser.readTerm: the keyword function " + Current.AsIdentifier + " is not ported");
+                        // A keyword the reference reads as a built-in function in its term
+                        // reader — the CURRENT_* value functions, ROW, TABLE and the rest —
+                        // is a gap of the port, and the TODO names it. A keyword the
+                        // reference does not read as a term at all (FROM where a select item
+                        // belongs, DISTINCT, ALL) is what the reference's own default says:
+                        // the syntax error with the list of expected tokens.
+                        if (KeywordFunctionTokens.Contains(CurrentType))
+                        {
+                            throw new TODOException(
+                                "Parser.readTerm: the keyword function " + Current.AsIdentifier + " is not ported");
+                        }
+
+                        throw GetSyntaxError();
                 }
             }
 

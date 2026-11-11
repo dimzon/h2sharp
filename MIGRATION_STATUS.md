@@ -13344,3 +13344,35 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2528/2528, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 130: TOP с OFFSET/FETCH/LIMIT, EXCEPT у звёздочки, keyword-терминал (2026-11-11)
+
+* `ParseEndOfQuery` — стандартные OFFSET/FETCH и MySQL-лимит читаются только когда слот
+  `fetch` свободен (эталонное `if (command.getFetch() == null)`): после `TOP` эти
+  слова не читаются вовсе, и оставшийся токен даёт `SYNTAX_ERROR_1`, как в эталоне
+  (`SELECT TOP 1 ID FROM TEST OFFSET 1 ROW` и четыре других микса из queries/select.sql).
+* `Parser.readTerm`, `default`: ключевое слово, которое эталон не читает как терм, —
+  это `SYNTAX_ERROR_2` со списком ожидаемых токенов, а не «незапортированная функция».
+  TODO остаётся только для ключевых слов-функций (`KeywordFunctionTokens`: CURRENT_*,
+  ROW, TABLE, VALUES, DAY..YEAR и т.п.) — `SELECT X, FROM (VALUES 1) T(X)` теперь
+  отказывает как эталон.
+* EXCEPT у звёздочки разбирается как в эталоне (`Wildcard.mapExceptColumns`): имя,
+  которого нет среди колонок разбираемых фильтров — `COLUMN_NOT_FOUND_1`; одно и то же
+  имя дважды — `DUPLICATE_COLUMN_NAME_1`; голое имя, общее для двух таблиц, —
+  `AMBIGUOUS_COLUMN_NAME_1` (это говорит само сопоставление). Звёздочка с алиасом
+  (`TEST1.* EXCEPT (A), TEST2.* EXCEPT (D)`) читает свой список, как `Wildcard` у
+  эталона; раньше список терялся для всех звёзд, кроме первой голой.
+* `ExpressionColumn.GetColumnException` — перенесён эталонный `getColumnException`
+  (имя колонки с таблицей и схемой, как его пишут ошибки EXCEPT-списка).
+* `ScriptConformanceRegressionTests` +2 теста на формате эталона (`RunLines`):
+  миксы TOP/OFFSET/FETCH/LIMIT и весь набор случаев EXCEPT.
+* Триажем 306 скриптов: 171 закреплённый зелёный, падений списка нет; новых
+  осмысленных скриптов не добавилось (21 «проходящий» — пустые файлы эталона,
+  они не закрепляются). `queries/select.sql` сократился с 30 расхождений до 27:
+  остались проверка FOR UPDATE на DISTINCT/GROUP BY, детерминизм RAND, пустая
+  группа `GROUP BY ()` и тексты EXPLAIN; `range_table.sql` — на переписывании
+  `NOT` в EXPLAIN.
+* Итог: **92.05%** строк (79292/86144), **87.89%** ветвей (32443/36914).
+* Проверено: H2Sharp.Tests 2530/2530, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.

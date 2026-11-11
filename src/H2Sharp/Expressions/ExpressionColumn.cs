@@ -132,6 +132,26 @@ public sealed class ExpressionColumn : Expression
     }
 
     /// <summary>
+    /// The exception the reference's <c>getColumnException</c> builds: the column's own name,
+    /// qualified with the table and the schema it was written with. The EXCEPT list of a
+    /// wildcard needs it — there the name is a request about a column, not the column itself.
+    /// </summary>
+    /// <param name="code">the error code</param>
+    /// <returns>the exception</returns>
+    public H2SharpException GetColumnException(int code)
+    {
+        string name = columnAlias!;
+        if (tableAlias is not null)
+        {
+            name = schemaName is not null
+                ? schemaName + '.' + tableAlias + '.' + name
+                : tableAlias + '.' + name;
+        }
+
+        return DbException.Get(code, name);
+    }
+
+    /// <summary>
     /// Gets the table filter this expression reads from.
     /// </summary>
     /// <remarks>

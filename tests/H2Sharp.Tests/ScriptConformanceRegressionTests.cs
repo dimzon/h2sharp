@@ -259,6 +259,80 @@ public sealed class ScriptConformanceRegressionTests
         Assert.True(failures.Count == 0, string.Join(" | ", failures));
     }
 
+    /// <summary>
+    /// The clauses that choose rows are one mechanism in the reference: a TOP has already
+    /// filled the fetch, so OFFSET/FETCH/LIMIT after it are not read at all, and the leftover
+    /// keyword is the syntax error the reference reports (queries/select.sql). A comma with no
+    /// select item after it is a keyword where a term does not belong, which the reference
+    /// answers with the expected-token error (SYNTAX_ERROR_2), not with a missing function.
+    /// </summary>
+    [Fact]
+    public void MixedRowLimitClausesAreRefused()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "CREATE TABLE TEST (ID BIGINT);",
+            "> ok",
+            "SELECT TOP 1 ID FROM TEST OFFSET 1 ROW;",
+            "> exception SYNTAX_ERROR_1",
+            "SELECT TOP 1 ID FROM TEST FETCH NEXT ROW ONLY;",
+            "> exception SYNTAX_ERROR_1",
+            "SELECT TOP 1 ID FROM TEST LIMIT 1;",
+            "> exception SYNTAX_ERROR_1",
+            "SELECT ID FROM TEST OFFSET 1 ROW LIMIT 1;",
+            "> exception SYNTAX_ERROR_1",
+            "SELECT ID FROM TEST FETCH NEXT ROW ONLY LIMIT 1;",
+            "> exception SYNTAX_ERROR_1",
+            "SELECT X, FROM (VALUES 1) T(X);",
+            "> exception SYNTAX_ERROR_2",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
+    /// <summary>
+    /// The EXCEPT list of a wildcard is resolved, not guessed: a name that is no column of the
+    /// query's tables is COLUMN_NOT_FOUND_1, the same column named twice is
+    /// DUPLICATE_COLUMN_NAME_1, a bare name shared by two tables is AMBIGUOUS_COLUMN_NAME_1 —
+    /// and each star of the select list carries its own list (queries/select.sql).
+    /// </summary>
+    [Fact]
+    public void WildcardExceptResolvesColumns()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "CREATE TABLE TEST1(A INT, B INT, C INT);",
+            "> ok",
+            "CREATE TABLE TEST2(A INT, D INT);",
+            "> ok",
+            "INSERT INTO TEST1 VALUES (1, 2, 3);",
+            "> update count: 1",
+            "INSERT INTO TEST2 VALUES (4, 5);",
+            "> update count: 1",
+            "SELECT * EXCEPT (Z) FROM TEST1;",
+            "> exception COLUMN_NOT_FOUND_1",
+            "SELECT * EXCEPT (B, TEST1.B) FROM TEST1;",
+            "> exception DUPLICATE_COLUMN_NAME_1",
+            "SELECT * EXCEPT (A) FROM TEST1, TEST2;",
+            "> exception AMBIGUOUS_COLUMN_NAME_1",
+            "SELECT * EXCEPT (TEST1.A, B, TEST2.D) FROM TEST1, TEST2;",
+            "> C A",
+            "> - -",
+            "> 3 4",
+            "> rows: 1",
+            "SELECT TEST1.* EXCEPT (A), TEST2.* EXCEPT (A) FROM TEST1, TEST2;",
+            "> B C D",
+            "> - - -",
+            "> 2 3 5",
+            "> rows: 1",
+            "SELECT TEST1.* EXCEPT (A), TEST2.* EXCEPT (D) FROM TEST1, TEST2;",
+            "> B C A",
+            "> - - -",
+            "> 2 3 4",
+            "> rows: 1",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);
