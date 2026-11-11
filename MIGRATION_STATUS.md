@@ -13474,3 +13474,28 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   всех сюит: **92.06%** строк (79345/86192), **87.86%** ветвей (32498/36988).
 * Проверено: H2Sharp.Tests 2536/2536, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 135: COMMENT ON CONSTANT/DOMAIN и DROP ALL OBJECTS (2026-11-11)
+
+* `SetComment`: снята устаревшая заглушка «констант в порте нет» — константы
+  (`Schema.FindConstant`) и домены (`Schema.FindDomain`) принимают комментарии,
+  как в эталонном `SetComment.update`; `INFORMATION_SCHEMA.CONSTANTS/DOMAINS`
+  показывают их в `REMARKS`.
+* `DropDatabase.DropAllObjects` (DROP ALL OBJECTS): удаляются домены (до
+  последовательностей — домен может ссылаться на последовательность в
+  DEFAULT) и константы, как в эталонном списке `dropAllObjects`. Раньше они
+  переживали DROP ALL OBJECTS: `CREATE CONSTANT abc` после него падал
+  `CONSTANT_ALREADY_EXISTS`, `COUNT(*) FROM INFORMATION_SCHEMA.DOMAINS` был 1
+  вместо 0. Триггеры/алиасы по-прежнему не входят: эти виды объектов ещё не
+  портированы.
+* `ddl/createConstant.sql` закреплён: 172 → **173** скрипта (создание/комментарий/
+  INFORMATION_SCHEMA/удаление/DROP ALL OBJECTS/повторное создание — построчно
+  с эталоном). Триаж 306 скриптов: падений закреплённого списка нет.
+* `ScriptConformanceRegressionTests` +1: комментарии константы и домена видны в
+  системных представлениях, после DROP ALL OBJECTS оба создаются заново.
+* `ddl/dropAllObjects.sql` продвинулся до непортённого `CREATE ALIAS`;
+  `ddl/createDomain.sql` — до ширины дампа `SCRIPT`.
+* Итог: **92.06%** строк (79369/86212), **87.85%** ветвей (32501/36996).
+* Проверено: H2Sharp.Tests 2538/2538, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.

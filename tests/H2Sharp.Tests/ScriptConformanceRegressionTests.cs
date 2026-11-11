@@ -497,6 +497,38 @@ public sealed class ScriptConformanceRegressionTests
         }
     }
 
+    /// <summary>
+    /// Constants and domains take comments and show them in their system views, and DROP ALL
+    /// OBJECTS drops them with the rest — otherwise `CREATE CONSTANT ONE` after the drop would
+    /// find the old one and refuse (ddl/createConstant.sql).
+    /// </summary>
+    [Fact]
+    public void ConstantsAndDomainsTakeCommentsAndDrop()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "CREATE CONSTANT ONE VALUE 1;",
+            "> ok",
+            "COMMENT ON CONSTANT ONE IS 'Eins';",
+            "> ok",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.CONSTANTS WHERE CONSTANT_NAME = 'ONE';",
+            ">> Eins",
+            "CREATE DOMAIN D1 AS INT;",
+            "> ok",
+            "COMMENT ON DOMAIN D1 IS 'dom';",
+            "> ok",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.DOMAINS WHERE DOMAIN_NAME = 'D1';",
+            ">> dom",
+            "DROP ALL OBJECTS;",
+            "> ok",
+            "CREATE CONSTANT ONE VALUE 1;",
+            "> ok",
+            "CREATE DOMAIN D1 AS INT;",
+            "> ok",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);

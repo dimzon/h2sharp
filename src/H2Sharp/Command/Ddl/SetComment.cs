@@ -110,9 +110,16 @@ public sealed class SetComment : DefineCommand
                     break;
                 }
             case DbObject.Constant:
-                // The port has no constants: every name is missing, and the reference
-                // answers a missing constant this way.
-                throw DbException.Get(Api.ErrorCode.ConstantNotFound1, objectName);
+                {
+                    Schemas.Constant? constant = schema.FindConstant(objectName);
+                    if (constant is null)
+                    {
+                        throw DbException.Get(Api.ErrorCode.ConstantNotFound1, objectName);
+                    }
+
+                    constant.SetComment(GetCommentText());
+                    break;
+                }
             case DbObject.FunctionAlias:
                 throw DbException.Get(Api.ErrorCode.FunctionAliasNotFound1, objectName);
             case DbObject.User:
@@ -122,7 +129,16 @@ public sealed class SetComment : DefineCommand
             case DbObject.Trigger:
                 throw DbException.Get(Api.ErrorCode.TriggerNotFound1, objectName);
             case DbObject.Domain:
-                throw DbException.Get(Api.ErrorCode.DomainNotFound1, objectName);
+                {
+                    Schemas.Domain? domain = schema.FindDomain(objectName);
+                    if (domain is null)
+                    {
+                        throw DbException.Get(Api.ErrorCode.DomainNotFound1, objectName);
+                    }
+
+                    domain.SetComment(GetCommentText());
+                    break;
+                }
             default:
                 throw DbException.Get(Api.ErrorCode.GeneralError1, objectName);
         }

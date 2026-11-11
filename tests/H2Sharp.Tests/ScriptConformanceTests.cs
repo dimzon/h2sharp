@@ -61,6 +61,7 @@ public sealed class ScriptConformanceTests
         "ddl/alterTableDropConstraint.sql",
         "ddl/alterTableRenameConstraint.sql",
         "ddl/analyze.sql",
+        "ddl/createConstant.sql",
         "ddl/createIndex.sql",
         "ddl/createSequence.sql",
         "ddl/createSynonym.sql",

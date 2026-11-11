@@ -85,9 +85,21 @@ public sealed class DropDatabase : DefineCommand
                 }
             }
 
+            // The reference drops domains before sequences: a domain may name a sequence in
+            // its default, and the sequence cannot go while the domain still uses it.
+            foreach (Domain domain in schema.GetAllDomains())
+            {
+                db.RemoveSchemaObject(current, domain);
+            }
+
             foreach (Sequence sequence in schema.GetAllSequences())
             {
                 db.RemoveSchemaObject(current, sequence);
+            }
+
+            foreach (Constant constant in schema.GetAllConstants())
+            {
+                db.RemoveSchemaObject(current, constant);
             }
         }
 
