@@ -2320,49 +2320,52 @@ public static class StringUtils
         int mask = 0;
         int[] hex = HexDecode;
         int i = start;
-        while (true)
+        // The reference guards the whole loop with one catch: a character beyond the decode
+        // table is a wrong hex string wherever it appears — in a pair or as the odd last
+        // digit. Splitting the guard over just the pair let X'~' fall out of the odd branch
+        // as a raw IndexOutOfRangeException, where the reference answers HEX_STRING_WRONG_1.
+        try
         {
-            // Skip spaces before the first digit. Running out of input here is a clean
-            // end of input, not an error: the trailing mask check below decides.
-            int c1;
             while (true)
             {
-                if (i >= end)
+                // Skip spaces before the first digit. Running out of input here is a clean
+                // end of input, not an error: the trailing mask check below decides.
+                int c1;
+                while (true)
                 {
-                    goto done;
-                }
-
-                c1 = s[i++];
-                if (c1 != ' ')
-                {
-                    break;
-                }
-            }
-
-            int c2;
-            while (true)
-            {
-                if (i >= end)
-                {
-                    if (((mask | hex[c1]) & ~255) != 0)
+                    if (i >= end)
                     {
-                        throw GetHexStringException(ErrorCode.HexStringWrong1, s, start, end);
+                        goto done;
                     }
 
-                    throw GetHexStringException(ErrorCode.HexStringOdd1, s, start, end);
+                    c1 = s[i++];
+                    if (c1 != ' ')
+                    {
+                        break;
+                    }
                 }
 
-                c2 = s[i++];
-                if (c2 != ' ')
+                int c2;
+                while (true)
                 {
-                    break;
-                }
-            }
+                    if (i >= end)
+                    {
+                        if (((mask | hex[c1]) & ~255) != 0)
+                        {
+                            throw GetHexStringException(ErrorCode.HexStringWrong1, s, start, end);
+                        }
 
-            int d;
-            try
-            {
-                d = hex[c1] << 4 | hex[c2];
+                        throw GetHexStringException(ErrorCode.HexStringOdd1, s, start, end);
+                    }
+
+                    c2 = s[i++];
+                    if (c2 != ' ')
+                    {
+                        break;
+                    }
+                }
+
+                int d = hex[c1] << 4 | hex[c2];
                 mask |= d;
                 if (buffered == span.Length)
                 {
@@ -2373,10 +2376,10 @@ public static class StringUtils
 
                 span[buffered++] = (byte)d;
             }
-            catch (IndexOutOfRangeException)
-            {
-                throw GetHexStringException(ErrorCode.HexStringWrong1, s, start, end);
-            }
+        }
+        catch (IndexOutOfRangeException)
+        {
+            throw GetHexStringException(ErrorCode.HexStringWrong1, s, start, end);
         }
 
     done:

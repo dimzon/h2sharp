@@ -621,6 +621,39 @@ public sealed class ScriptConformanceRegressionTests
         Assert.True(failures.Count == 0, string.Join(" | ", failures));
     }
 
+    /// <summary>
+    /// A hex digit beyond the decode table is a wrong hex string wherever it stands —
+    /// the reference guards its whole spaced loop with one catch, while the port guarded only
+    /// the digit pairs and a character like '~' fell out of the odd-last-digit branch
+    /// uncaught (datatypes/varbinary.sql).
+    /// </summary>
+    [Fact]
+    public void HexLiteralsRefuseDigitsPastTheDecodeTable()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "SELECT X'1';",
+            "> exception HEX_STRING_ODD_1",
+            "SELECT X'~';",
+            "> exception HEX_STRING_WRONG_1",
+            "SELECT X'G';",
+            "> exception HEX_STRING_WRONG_1",
+            "SELECT X'TT';",
+            "> exception HEX_STRING_WRONG_1",
+            "SELECT X' TT';",
+            "> exception HEX_STRING_WRONG_1",
+            "SELECT X' 1 2  3 4 ';",
+            ">> X'1234'",
+            "SELECT X'1 2 3';",
+            "> exception HEX_STRING_ODD_1",
+            "SELECT X'AB' 'CD';",
+            ">> X'abcd'",
+            "SELECT X'AB' 'CX';",
+            "> exception HEX_STRING_WRONG_1",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);

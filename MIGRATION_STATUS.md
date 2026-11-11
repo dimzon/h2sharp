@@ -13559,3 +13559,29 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2542/2542, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 138: hex-литералы с цифрой за таблицей декодирования (2026-11-11)
+
+* `StringUtils.ConvertHexWithSpacesToBytes`: эталон защищает весь цикл одним
+  `catch` — символ вне таблицы декодирования есть `HEX_STRING_WRONG_1` где бы он
+  ни появился, в паре или последней нечётной цифрой. Порт разрезал защиту по
+  парам, и `SELECT X'~'` (`'~'` за краем таблицы размером `'f'+1`) падал
+  неконтролируемым `IndexOutOfRangeException` вместо ошибки. Восстановлена
+  единая граница try/catch 1:1 с эталоном. Триаж varbinary.sql показал дефект:
+  скрипт падал на строке 60 целиком, не доходя до сравнения ответов.
+* Триаж SCRIPT-сюжетов (varbinary/json/real/decfloat/double_precision/dml/script/
+  dropDomain/other/set): фильтр `SCRIPT ... TABLE/SCHEMA` переносился и снимал
+  заглушку Parser, но ни один из этих скриптов не закрепляется и с ним — эталон
+  открывает каждый дамп строкой `CREATE USER IF NOT EXISTS "SA" PASSWORD ''
+  ADMIN;` (`getAllUsersAndRoles` в `ScriptCommand.query`), а подсистемы
+  пользователей/ролей в порту нет. Фильтр откатан и отложен до спринта, где он
+  делается вместе с дампом прав: тогда закрепятся все восемь скриптов разом.
+* `ScriptConformanceRegressionTests` +1: блок hex-границ из varbinary.sql
+  дословно (ODD/WRONG/пробелы/конкатенация `X'AB' 'CD'`).
+* Итог: **92.06%** строк (79419/86267), **87.88%** ветвей (32538/37028).
+  Против 137-го −17 строк покрытия — межпрогоновый шум тайминг-зависимых мест
+  (`Util/MemoryEstimator.cs` 104→94 по состоянию памяти, MvStore чекпойнты);
+  сам фикс дал StringUtils +1 строку при −1 исполняемой.
+* Проверено: H2Sharp.Tests 2543/2543, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort. Закреплённых скриптов — 173.
