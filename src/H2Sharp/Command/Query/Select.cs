@@ -770,14 +770,16 @@ public sealed class Select : Query
         TableFilter? filter = topTableFilter;
         if (filter is null)
         {
-            if (topFilters.Count != 1 || topFilters[0].GetTable() is not DualTable)
+            // The reference asks the filter whether it has a FROM clause at all: a bare
+            // DUAL with nothing joined to it is the only shape that does not.
+            if (topFilters.Count != 1 || topFilters[0].HasFromClause())
             {
                 builder.Append("\nFROM ");
                 bool isJoin = false;
                 foreach (TableFilter top in topFilters) isJoin = GetPlanFromFilter(builder, sqlFlags, top, isJoin);
             }
         }
-        else if (filter.GetTable() is not DualTable) GetPlanFromFilter(builder.Append("\nFROM "), sqlFlags, filter, false);
+        else if (filter.HasFromClause()) GetPlanFromFilter(builder.Append("\nFROM "), sqlFlags, filter, false);
         if (condition is not null) condition.GetNonAliasExpression().GetUnenclosedSql(builder.Append("\nWHERE "), sqlFlags);
         if (groupIndex is not null)
         {
@@ -1837,7 +1839,21 @@ public sealed class Select : Query
 
     /// <summary>Sets the table this statement locks.</summary>
     /// <param name="forUpdate">the table name</param>
-    public override void SetForUpdate(ForUpdate forUpdate) => this.forUpdate = forUpdate;
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The reference refuses the lock on a distinct or a grouped query: what is locked is a
+    /// group, not a row, and there is nothing to lock. (queries/select.sql)
+    /// </remarks>
+    /// <param name="forUpdate">the lock to take</param>
+    public override void SetForUpdate(ForUpdate forUpdate)
+    {
+        if (forUpdate is not null && (IsAnyDistinct() || isGroupQuery))
+        {
+            throw DbException.Get(Api.ErrorCode.ForUpdateIsNotAllowedInDistinctOrGroupedSelect);
+        }
+
+        this.forUpdate = forUpdate;
+    }
 
     /// <inheritdoc/>
     public override ForUpdate? GetForUpdate() => forUpdate;

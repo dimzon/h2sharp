@@ -13376,3 +13376,28 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2530/2530, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 131: FOR UPDATE на DISTINCT/GROUP BY, FROM у вложенного join, joins.sql (2026-11-11)
+
+* `Select.SetForUpdate` — перенесена эталонная проверка: блок на DISTINCT или
+  сгруппированном запросе не имеет строки,ную locking даёт
+  `FOR_UPDATE_IS_NOT_ALLOWED_IN_DISTINCT_OR_GROUPED_SELECT` (90145); в порту был
+  просто `forUpdate = …`, и пять операторов из queries/select.sql проходили.
+* `Select.GetPlanSql` — решение печатать FROM эталон берёт у
+  `TableFilter.hasFromClause()`; порт спрашивал «таблица не DUAL». Обёртка
+  вложенного join (`T1 JOIN T2 LEFT JOIN T3 ON … ON …`) имеет таблицу-обёртку
+  DUAL с nested/join — FROM с комментариями индексов пропадал из плана
+  (queries/joins.sql). Теперь план печатается как в эталоне:
+  `( T2 … LEFT OUTER JOIN T3 … ) INNER JOIN T1 … ON 1=1 WHERE …`.
+* `queries/joins.sql` закреплён: 171 → **172** скрипта (создание/dropped
+  таблицы, все виды join, EXPLAIN планов — построчная сверка с эталоном).
+  Триаж 306 скриптов: 172 осмысленных + 21 пустой файл эталона.
+* `ScriptConformanceRegressionTests` +3 теста: отказ FOR UPDATE (с позитивным
+  случаем простого FOR UPDATE), план вложенного join, и раньше — EXCEPT/TOP.
+* Осталось в queries/select.sql: 20 расхождений (детерминизм RAND из-за
+  эталонного сида TestBase, пустая группа `GROUP BY ()`/`ROW ()` и её план,
+  `_ROWID_` в Qualified форме, тексты EXPLAIN); в queries/joins.sql — ноль.
+* Итог: **92.06%** строк (79305/86149), **87.89%** ветвей (32450/36920).
+* Проверено: H2Sharp.Tests 2533/2533, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.

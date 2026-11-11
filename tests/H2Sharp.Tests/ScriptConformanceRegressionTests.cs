@@ -333,6 +333,65 @@ public sealed class ScriptConformanceRegressionTests
         Assert.True(failures.Count == 0, string.Join(" | ", failures));
     }
 
+    /// <summary>
+    /// FOR UPDATE locks rows; a distinct or a grouped answer has no row to lock, and the
+    /// reference refuses it with FOR_UPDATE_IS_NOT_ALLOWED_IN_DISTINCT_OR_GROUPED_SELECT at
+    /// the moment the lock is set (queries/select.sql).
+    /// </summary>
+    [Fact]
+    public void ForUpdateIsRefusedOnDistinctOrGroupedSelect()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "CREATE TABLE TEST(ID INT PRIMARY KEY, \"VALUE\" INT);",
+            "> ok",
+            "INSERT INTO TEST VALUES (1, 10), (2, 20);",
+            "> update count: 2",
+            "SELECT DISTINCT \"VALUE\" FROM TEST FOR UPDATE;",
+            "> exception FOR_UPDATE_IS_NOT_ALLOWED_IN_DISTINCT_OR_GROUPED_SELECT",
+            "SELECT DISTINCT ON(\"VALUE\") ID, \"VALUE\" FROM TEST FOR UPDATE;",
+            "> exception FOR_UPDATE_IS_NOT_ALLOWED_IN_DISTINCT_OR_GROUPED_SELECT",
+            "SELECT SUM(\"VALUE\") FROM TEST FOR UPDATE;",
+            "> exception FOR_UPDATE_IS_NOT_ALLOWED_IN_DISTINCT_OR_GROUPED_SELECT",
+            "SELECT ID FROM TEST GROUP BY \"VALUE\" FOR UPDATE;",
+            "> exception FOR_UPDATE_IS_NOT_ALLOWED_IN_DISTINCT_OR_GROUPED_SELECT",
+            "SELECT 1 FROM TEST HAVING TRUE FOR UPDATE;",
+            "> exception FOR_UPDATE_IS_NOT_ALLOWED_IN_DISTINCT_OR_GROUPED_SELECT",
+            "SELECT ID FROM TEST ORDER BY ID FOR UPDATE;",
+            "> ID",
+            "> --",
+            "> 1",
+            "> 2",
+            "> rows (ordered): 2",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
+    /// <summary>
+    /// A nested join is a FROM clause: the reference asks the filter whether it has one, and
+    /// the port asked whether its table was DUAL — a join wrapper's table is exactly that, so
+    /// the plan lost the FROM and its index comments (queries/joins.sql).
+    /// </summary>
+    [Fact]
+    public void NestedJoinPlanKeepsTheFromClause()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "CREATE TABLE T1(C1 INT);",
+            "> ok",
+            "CREATE TABLE T2(C2 INT);",
+            "> ok",
+            "CREATE TABLE T3(C3 INT);",
+            "> ok",
+            "EXPLAIN SELECT * FROM T1 JOIN T2 LEFT JOIN T3 ON T2.C2 = T3.C3 ON T1.C1 = T2.C2;",
+            ">> SELECT \"PUBLIC\".\"T1\".\"C1\", \"PUBLIC\".\"T2\".\"C2\", \"PUBLIC\".\"T3\".\"C3\" "
+                + "FROM ( \"PUBLIC\".\"T2\" /* PUBLIC.T2.tableScan */ LEFT OUTER JOIN \"PUBLIC\".\"T3\" "
+                + "/* PUBLIC.T3.tableScan */ ON \"T2\".\"C2\" = \"T3\".\"C3\" ) INNER JOIN \"PUBLIC\".\"T1\" "
+                + "/* PUBLIC.T1.tableScan */ ON 1=1 WHERE \"T1\".\"C1\" = \"T2\".\"C2\"",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);

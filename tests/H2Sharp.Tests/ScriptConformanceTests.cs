@@ -209,6 +209,7 @@ public sealed class ScriptConformanceTests
         "predicates/unique.sql",
         "queries/derived-column-names.sql",
         "queries/duplicate-order-by.sql",
+        "queries/joins.sql",
         "queries/query-optimisations.sql",
         "queries/values.sql",
         "queries/window.sql",
