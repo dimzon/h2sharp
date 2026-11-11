@@ -392,6 +392,44 @@ public sealed class ScriptConformanceRegressionTests
         Assert.True(failures.Count == 0, string.Join(" | ", failures));
     }
 
+    /// <summary>
+    /// A parenthesized GROUP BY element is a grouping set, not a row: the reference flattens
+    /// <c>GROUP BY (B, C)</c> into the two expressions, reads <c>()</c> as nothing, and keeps
+    /// the query grouped so the aggregate answers the single group the whole table makes —
+    /// one row even when the condition admits none (queries/select.sql).
+    /// </summary>
+    [Fact]
+    public void GroupingSetsAreFlattenedAndEmptyGroupIsOneGroup()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "CREATE TABLE TEST(A INT, B INT, C INT);",
+            "> ok",
+            "INSERT INTO TEST VALUES (1, 1, 1), (1, 2, 1), (1, NULL, 1);",
+            "> update count: 3",
+            "SELECT SUM(A), B, C FROM TEST GROUP BY (B), C, ();",
+            "> SUM(A) B    C",
+            "> ------ ---- -",
+            "> 1      1    1",
+            "> 1      2    1",
+            "> 1      null 1",
+            "> rows: 3",
+            "EXPLAIN SELECT SUM(A), B, C FROM TEST GROUP BY (B), C, ();",
+            ">> SELECT SUM(\"A\"), \"B\", \"C\" FROM \"PUBLIC\".\"TEST\" /* PUBLIC.TEST.tableScan */ GROUP BY \"B\", \"C\"",
+            "SELECT COUNT(*) FROM TEST GROUP BY ();",
+            ">> 3",
+            "EXPLAIN SELECT COUNT(*) FROM TEST GROUP BY ();",
+            ">> SELECT COUNT(*) FROM \"PUBLIC\".\"TEST\" /* PUBLIC.TEST.tableScan */ /* direct lookup */",
+            "SELECT COUNT(*) FROM TEST WHERE FALSE GROUP BY ();",
+            ">> 0",
+            "SELECT COUNT(*) FROM TEST WHERE FALSE GROUP BY (), ();",
+            ">> 0",
+            "SELECT 1 FROM TEST GROUP BY ();",
+            ">> 1",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);

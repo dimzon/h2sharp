@@ -2538,6 +2538,53 @@ public sealed partial class Parser
     }
 
     /// <summary>
+    /// Whether the parenthesis in front is an ordinary grouping set of GROUP BY: the token
+    /// after its matching close parenthesis is one that can follow a grouping element. The
+    /// reference answers false for ROLLUP, CUBE and GROUPING SETS — those words end the
+    /// parenthesis in another way — and reads them as an expression to report a better syntax
+    /// error. When true, the token index is left on the parenthesis' content.
+    /// </summary>
+    /// <returns>true when a grouping set starts here</returns>
+    private bool IsOrdinaryGroupingSet()
+    {
+        int offset = ScanToCloseParen(position + 1);
+        if (offset < 0)
+        {
+            // Try to parse as an expression to get the better syntax error, as the reference says.
+            return false;
+        }
+
+        switch (tokens[offset].TokenType)
+        {
+            // End of query
+            case Token.CloseParen:
+            case Token.Semicolon:
+            case Token.EndOfInput:
+            // Next grouping element
+            case Token.Comma:
+            // Next select clause
+            case ParserUtil.Having:
+            case ParserUtil.Window:
+            case ParserUtil.Qualify:
+            // Next query expression body clause
+            case ParserUtil.Union:
+            case ParserUtil.Except:
+            case ParserUtil.Minus:
+            case ParserUtil.Intersect:
+            // Next query expression clause
+            case ParserUtil.Order:
+            case ParserUtil.Offset:
+            case ParserUtil.Fetch:
+            case ParserUtil.Limit:
+            case ParserUtil.For:
+                position++;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
     /// Creates the columns of a table out of the columns of a query, as the reference's
     /// createQueryColumnTemplateList does.
     /// </summary>
@@ -5160,6 +5207,24 @@ public sealed partial class Parser
             List<Expressions.Expression> group = [];
             do
             {
+                // The reference reads a parenthesized grouping set by flattening it into the
+                // list of grouping expressions, and reads `()` as nothing at all:
+                // `GROUP BY (B, C)` groups by B and C, `GROUP BY ()` groups the whole query
+                // into the single group an aggregate over no columns makes.
+                if (CurrentType == Token.OpenParen && IsOrdinaryGroupingSet())
+                {
+                    if (!ReadIf(Token.CloseParen))
+                    {
+                        do
+                        {
+                            group.Add(ReadQueryOr());
+                        }
+                        while (ReadIfMore());
+                    }
+
+                    continue;
+                }
+
                 Expressions.Expression groupExpression = ReadQueryOr();
                 if (current.GetMode().GroupByColumnIndex
                     && groupExpression is Expressions.ValueExpression valueExpression
@@ -5189,7 +5254,10 @@ public sealed partial class Parser
             }
             while (ReadIf(Token.Comma));
 
-            select.SetGroupBy(group);
+            if (group.Count > 0)
+            {
+                select.SetGroupBy(group);
+            }
         }
 
         if (CurrentType == ParserUtil.Having)
