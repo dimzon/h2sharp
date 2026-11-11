@@ -13585,3 +13585,34 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2543/2543, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort. Закреплённых скриптов — 173.
+
+### Спринт 139: единый обход ELEMENT_TYPES/FIELDS/ENUM_VALUES и индексность ROW (2026-11-11)
+
+* `InformationSchemaTable`: ELEMENT_TYPES, FIELDS и ENUM_VALUES отвечает один
+  эталонный обход (`elementTypesFields`): каждый столбец, домен и константа
+  входит в рекурсивного читателя строк, и каждое представление берёт по `type`
+  своё. Раньше ENUM_VALUES был отдельным плоским циклом — видел только прямые
+  enum-столбцы таблиц и доменов и не спускался в ARRAY/ROW, где эталон печатает
+  значения под вложенными идентификаторами (`2_`, `3_1`); домены и константы
+  раньше не входили в ELEMENT_TYPES/FIELDS (строки `D2 DOMAIN TYPE` в row.sql).
+  Обходчик `elementTypesFieldsRow` — эталонный switch: ENUM-лист питает
+  ENUM_VALUES, ARRAY — ELEMENT_TYPES и рекурсию под `id_`, ROW — FIELDS и
+  рекурсию под `id_n`. Функциональные псевдостолбцы (алиасы) войдут с
+  CREATE ALIAS.
+* `DataType.IsIndexable`: перенесён метод эталона 1:1 — UNKNOWN/NULL/BLOB/CLOB
+  неиндексируемы, ARRAY смотрит на элемент, ROW — на поля, остальное (включая
+  JAVA_OBJECT) индексируемо. `Index.CheckIndexColumnTypes` зовёт его; прежняя
+  плоская копия внутри порта отвергала и ROW целиком, поэтому `CREATE INDEX
+  IDX ON TEST(R)` падал FEATURE_NOT_SUPPORTED там, где эталон отвечает ok.
+* `datatypes/enum.sql` и `datatypes/row.sql` закреплены: 173 → **175** скрипта
+  (построчное совпадение с эталоном, включая все три вью и индексы на ROW).
+  `@reconnect` в них раннер игнорирует — та же конвенция, что у трёх уже
+  закреплённых скриптов с ним (alterDomain/createConstant/createSequence).
+* Гейт: в пакетном прогоне `MvStore.StopEndsBackgroundWorkAndTheStoreStaysUsable`
+  упал один раз `Debug.Fail` про сиротные чанки — гонка фоновой компакции с
+  проверкой `Stop` под нагруженным CPU (FileStore в диффе не затронут);
+  одиночный и полный повтор — 185/185 зелёные.
+* Итог: **92.08%** строк (79440/86273), **87.91%** ветвей (32550/37028).
+* Проверено: H2Sharp.Tests 2545/2545, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.

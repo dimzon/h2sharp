@@ -1012,17 +1012,42 @@ public sealed class InformationSchemaTable : Table
                 }
 
                 break;
+            // The reference answers ELEMENT_TYPES, FIELDS and ENUM_VALUES from one walk
+            // (elementTypesFields): every column, domain and constant enters the recursive
+            // row reader, and each view takes from it what its name says. Function aliases join
+            // the walk with CREATE ALIAS.
             case ElementTypes:
             case Fields:
+            case EnumValues:
                 foreach (Table table in GetAllTables(session))
                 {
                     Column[] columns = table.GetColumns();
                     for (int i = 0; i < columns.Length; i++)
+                    {
                         ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation,
                             table.GetSchema()?.GetName(), table.GetTableName(), "TABLE",
-                            (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), columns[i].GetTypeInfo(),
-                            type == Fields);
+                            (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            columns[i].GetTypeInfo(), type);
+                    }
                 }
+
+                foreach (Schemas.Schema schema in database.GetSchemas())
+                {
+                    foreach (Domain domain in schema.GetAllDomains())
+                    {
+                        ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation,
+                            schema.GetName(), domain.GetName()!, "DOMAIN", "TYPE",
+                            domain.GetDataType(), type);
+                    }
+
+                    foreach (Constant constant in schema.GetAllConstants())
+                    {
+                        ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation,
+                            schema.GetName(), constant.GetName()!, "CONSTANT", "TYPE",
+                            constant.GetValue().GetTypeInfo(), type);
+                    }
+                }
+
                 break;
             case TableConstraints:
                 foreach (Constraint constraint in GetAllConstraints(session))
@@ -1219,36 +1244,6 @@ public sealed class InformationSchemaTable : Table
                 }
 
                 break;
-            case EnumValues:
-                foreach (Table table in GetAllTables(session))
-                {
-                    Column[] columns = table.GetColumns();
-                    for (int i = 0; i < columns.Length; i++)
-                    {
-                        TypeInfo columnType = columns[i].GetTypeInfo();
-                        if (columnType.GetValueType() == Value.Enum)
-                        {
-                            AddEnumValues(session, rows, catalog,
-                                table.GetSchema()?.GetName(), table.GetTableName()!, "TABLE",
-                                (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), columnType);
-                        }
-                    }
-                }
-
-                foreach (Schemas.Schema schema in database.GetSchemas())
-                {
-                    foreach (Schemas.Domain domain in schema.GetAllDomains())
-                    {
-                        TypeInfo domainType = domain.GetDataType();
-                        if (domainType.GetValueType() == Value.Enum)
-                        {
-                            AddEnumValues(session, rows, catalog, schema.GetName(),
-                                domain.GetName()!, "DOMAIN", "TYPE", domainType);
-                        }
-                    }
-                }
-
-                break;
             case CheckConstraints:
                 foreach (Constraint constraint in GetAllConstraints(session))
                 {
@@ -1325,41 +1320,57 @@ public sealed class InformationSchemaTable : Table
         return tables;
     }
 
-    // H2 elementTypesFieldsRow: recursively follow ARRAY / ROW types. Other schema
-    // objects (domains, routines, constants, local temporary tables) are not present yet.
+    // H2 elementTypesFieldsRow: the switch of the reference — an ENUM leaf feeds ENUM_VALUES,
+    // an ARRAY its ELEMENT_TYPES and recurses under `id_`, a ROW feeds FIELDS and recurses
+    // under `id_n`.
     private static void ElementTypesFieldsRow(SessionLocal session, List<Value[]> rows, string catalog,
         string mainSchemaName, string collation, string? objectSchema, string objectName, string objectType,
-        string identifier, TypeInfo typeInfo, bool fields)
+        string identifier, TypeInfo typeInfo, int type)
     {
-        if (typeInfo.GetValueType() == Value.Array)
+        switch (typeInfo.GetValueType())
         {
-            TypeInfo component = (TypeInfo)typeInfo.GetExtTypeInfo()!;
-            string dtdIdentifier = identifier + '_';
-            if (!fields)
-            {
-                AddElementTypes(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
-                    objectType, identifier, dtdIdentifier, component);
-            }
-
-            ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
-                objectType, dtdIdentifier, component, fields);
-        }
-        else if (typeInfo.GetValueType() == Value.Row)
-        {
-            int ordinal = 0;
-            foreach (var field in ((ExtTypeInfoRow)typeInfo.GetExtTypeInfo()!).GetFields())
-            {
-                int position = ++ordinal;
-                string dtdIdentifier = identifier + '_' + position.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture);
-                if (fields)
+            case Value.Enum:
+                if (type == EnumValues)
                 {
-                    AddField(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
-                        objectType, identifier, field.Key, position, dtdIdentifier, field.Value);
+                    AddEnumValues(session, rows, catalog, objectSchema, objectName, objectType,
+                        identifier, typeInfo);
+                }
+
+                break;
+            case Value.Array:
+            {
+                TypeInfo component = (TypeInfo)typeInfo.GetExtTypeInfo()!;
+                string dtdIdentifier = identifier + '_';
+                if (type == ElementTypes)
+                {
+                    AddElementTypes(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
+                        objectType, identifier, dtdIdentifier, component);
                 }
 
                 ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
-                    objectType, dtdIdentifier, field.Value, fields);
+                    objectType, dtdIdentifier, component, type);
+                break;
+            }
+
+            case Value.Row:
+            {
+                int ordinal = 0;
+                foreach (var field in ((ExtTypeInfoRow)typeInfo.GetExtTypeInfo()!).GetFields())
+                {
+                    int position = ++ordinal;
+                    string dtdIdentifier = identifier + '_' + position.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture);
+                    if (type == Fields)
+                    {
+                        AddField(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
+                            objectType, identifier, field.Key, position, dtdIdentifier, field.Value);
+                    }
+
+                    ElementTypesFieldsRow(session, rows, catalog, mainSchemaName, collation, objectSchema, objectName,
+                        objectType, dtdIdentifier, field.Value, type);
+                }
+
+                break;
             }
         }
     }

@@ -363,6 +363,40 @@ public sealed class DataType
     }
 
     /// <summary>
+    /// Returns whether columns with the specified data type may have an index.
+    /// </summary>
+    /// <param name="type">the data type</param>
+    /// <returns>whether an index is allowed</returns>
+    public static bool IsIndexable(TypeInfo type)
+    {
+        switch (type.GetValueType())
+        {
+            case Value.Unknown:
+            case Value.Null:
+            case Value.Blob:
+            case Value.Clob:
+                return false;
+            case Value.Array:
+                return IsIndexable((TypeInfo)type.GetExtTypeInfo()!);
+            case Value.Row:
+            {
+                ExtTypeInfoRow ext = (ExtTypeInfoRow)type.GetExtTypeInfo()!;
+                foreach (KeyValuePair<string, TypeInfo> entry in ext.GetFields())
+                {
+                    if (!IsIndexable(entry.Value))
+                    {
+                        return false;
+                    }
+                }
+
+                break;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Whether the name is a type name.
     /// </summary>
     /// <param name="s">the name, in upper case as the standard writes it</param>

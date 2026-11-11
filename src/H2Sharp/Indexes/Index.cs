@@ -46,18 +46,12 @@ public abstract class Index : SchemaObject
     {
         foreach (IndexColumn c in columns)
         {
-            if (!IsIndexable(c.GetColumn()))
+            if (!DataType.IsIndexable(c.GetColumn().GetTypeInfo()))
             {
                 throw DbException.GetUnsupportedException(
                     "Index on column: " + c.GetColumn().GetSql(HasSql.DefaultSqlFlags));
             }
         }
-    }
-
-    private static bool IsIndexable(Column column)
-    {
-        int type = column.GetValueType();
-        return type is not Values.Value.Blob and not Values.Value.Clob and not Values.Value.Row and not Values.Value.JavaObject;
     }
 
     /// <summary>
