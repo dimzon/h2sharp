@@ -6559,7 +6559,24 @@ public sealed partial class Parser
                 Expressions.Conditions.CompareLike.LikeType.Regexp);
         }
 
-        if (!not && CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
+        // The reference's not branch: after NOT only the BETWEEN/IN/LIKE-style predicates
+        // may follow — a comparison operator or the end of the statement is the
+        // expected-token refusal (SYNTAX_ERROR_2 with that list), never a null that would
+        // leave the NOT unconsumed.
+        if (not)
+        {
+            if (whenOperand)
+            {
+                return null;
+            }
+
+            AddExpected(ParserUtil.Between);
+            AddExpected(ParserUtil.In);
+            AddExpected(ParserUtil.Like);
+            throw GetSyntaxError();
+        }
+
+        if (CurrentType is Token.Equal or Token.NotEqual or Token.Smaller or Token.Bigger
             or Token.SmallerEqual or Token.BiggerEqual or Token.SpatialIntersects)
         {
             int compareType = ReadQueryComparisonType();

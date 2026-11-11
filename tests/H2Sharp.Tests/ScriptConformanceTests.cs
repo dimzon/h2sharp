@@ -72,6 +72,7 @@ public sealed class ScriptConformanceTests
         "ddl/createSequence.sql",
         "ddl/createSynonym.sql",
         "ddl/dropTable.sql",
+        "dml/error_reporting.sql",
         "dml/insert.sql",
         "dml/update.sql",
         "functions/aggregate/any_value.sql",
