@@ -5545,23 +5545,27 @@ public sealed partial class Parser
             || word.Equals("KEY", StringComparison.OrdinalIgnoreCase)
             || word.Equals("VALUES", StringComparison.OrdinalIgnoreCase);
     /// <summary>
-    /// Reads a column name with optional schema and table prefixes.
+    /// Reads a column name with optional schema, table and catalog prefixes, going through the
+    /// same levels as the reference's readTermObjectDot: at the fourth level the first name is
+    /// the database one, it is checked and it drops out of the column's qualification.
     /// </summary>
     /// <param name="schemaName">the schema prefix, or null</param>
     /// <param name="tableAlias">the table prefix, or null</param>
+    /// <param name="rowId">whether the name read is the unquoted _ROWID_ pseudo-column</param>
     /// <returns>the column name</returns>
-    private string ReadQueryColumnName(out string? schemaName, out string? tableAlias)
+    private string ReadQueryColumnName(out string? schemaName, out string? tableAlias, out bool rowId)
     {
         string first = ReadIdentifier();
         schemaName = null;
         tableAlias = null;
+        rowId = false;
         if (ReadIf(Token.Dot))
         {
             tableAlias = first;
-            if (!Current.IsQuoted
-                && (CurrentType == ParserUtil._ROWID_
-                    || Current.AsIdentifier?.Equals(Tables.Column.RowId, StringComparison.OrdinalIgnoreCase) == true))
+            if (IsRowIdName())
             {
+                Read();
+                rowId = true;
                 return Tables.Column.RowId;
             }
 
@@ -5570,7 +5574,33 @@ public sealed partial class Parser
             {
                 schemaName = tableAlias;
                 tableAlias = second;
-                return ReadIdentifier();
+                if (IsRowIdName())
+                {
+                    Read();
+                    rowId = true;
+                    return Tables.Column.RowId;
+                }
+
+                string third = ReadIdentifier();
+                if (ReadIf(Token.Dot))
+                {
+                    // The reference's fourth level: what was read before the schema names the
+                    // database itself — checkDatabaseName validates it, and the column belongs
+                    // to schema.second with table third.
+                    CheckDatabaseName(session!, first);
+                    schemaName = second;
+                    tableAlias = third;
+                    if (IsRowIdName())
+                    {
+                        Read();
+                        rowId = true;
+                        return Tables.Column.RowId;
+                    }
+
+                    return ReadIdentifier();
+                }
+
+                return third;
             }
 
             return second;
@@ -5578,6 +5608,17 @@ public sealed partial class Parser
 
         return first;
     }
+
+    /// <summary>
+    /// Whether the current token is the unquoted <c>_ROWID_</c> keyword: the reference reads
+    /// it through readIf(_ROWID_) in readIfWildcardRowidOrSequencePseudoColumn, and a quoted
+    /// spelling of the same name is an ordinary identifier naming a real column instead.
+    /// </summary>
+    /// <returns>whether the token names the pseudo-column</returns>
+    private bool IsRowIdName()
+        => !Current.IsQuoted
+            && (CurrentType == ParserUtil._ROWID_
+                || Current.AsIdentifier?.Equals(Tables.Column.RowId, StringComparison.OrdinalIgnoreCase) == true);
 
     /// <summary>
     /// Reads an aggregate using the branches of org.h2.command.Parser.readAggregate.
@@ -7082,10 +7123,10 @@ public sealed partial class Parser
                 throw GetSyntaxError();
             }
 
-            string columnName = ReadQueryColumnName(out string? schemaName, out string? tableAlias);
-            if (columnName.Equals(Tables.Column.RowId, StringComparison.OrdinalIgnoreCase))
+            string columnName = ReadQueryColumnName(out string? schemaName, out string? tableAlias, out bool isRowId);
+            if (isRowId)
             {
-                return Expressions.ExpressionColumn.RowId(tableAlias);
+                return Expressions.ExpressionColumn.RowId(schemaName, tableAlias);
             }
 
             return new Expressions.ExpressionColumn(columnName, schemaName, tableAlias, 0);

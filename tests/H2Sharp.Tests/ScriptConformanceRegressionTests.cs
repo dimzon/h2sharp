@@ -595,6 +595,32 @@ public sealed class ScriptConformanceRegressionTests
         }
     }
 
+    /// <summary>
+    /// The <c>_ROWID_</c> pseudo-column reads through every qualifier — the table, the schema,
+    /// and the database name the reference checks and drops — while the quoted spelling of the
+    /// same name is a real column of the table. The expectation names the catalog SCRIPT, so
+    /// the database carries the harness name (queries/select.sql, lines 678-690).
+    /// </summary>
+    [Fact]
+    public void RowidPseudoColumnResolvesThroughEveryQualifier()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "CREATE TABLE TEST(\"_ROWID_\" INT) AS VALUES 2;",
+            "> ok",
+            "SELECT _ROWID_ S1, TEST._ROWID_ S2, PUBLIC.TEST._ROWID_ S3, SCRIPT.PUBLIC.TEST._ROWID_ S4,",
+            "    \"_ROWID_\" U1, TEST.\"_ROWID_\" U2, PUBLIC.TEST.\"_ROWID_\" U3, SCRIPT.PUBLIC.TEST.\"_ROWID_\" U4",
+            "    FROM TEST;",
+            "> S1 S2 S3 S4 U1 U2 U3 U4",
+            "> -- -- -- -- -- -- -- --",
+            "> 1  1  1  1  2  2  2  2",
+            "> rows: 1",
+            "DROP TABLE TEST;",
+            "> ok",
+        ], "script");
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);

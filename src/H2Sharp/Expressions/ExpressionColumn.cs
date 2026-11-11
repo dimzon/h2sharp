@@ -108,9 +108,18 @@ public sealed class ExpressionColumn : Expression
     /// </summary>
     /// <param name="tableAlias">the table alias, or null</param>
     /// <returns>the column reference</returns>
-    public static ExpressionColumn RowId(string? tableAlias)
+    public static ExpressionColumn RowId(string? tableAlias) => RowId(null, tableAlias);
+
+    /// <summary>
+    /// Creates a reference to the <c>_ROWID_</c> pseudo-column with the schema and table
+    /// qualification of the reference's ExpressionColumn(Database, String, String).
+    /// </summary>
+    /// <param name="schemaName">the schema name, or null</param>
+    /// <param name="tableAlias">the table alias, or null</param>
+    /// <returns>the column reference</returns>
+    public static ExpressionColumn RowId(string? schemaName, string? tableAlias)
     {
-        ExpressionColumn expression = new(Column.RowId, tableAlias, 0);
+        ExpressionColumn expression = new(Column.RowId, schemaName, tableAlias, 0);
         expression.rowId = true;
         return expression;
     }
@@ -241,13 +250,9 @@ public sealed class ExpressionColumn : Expression
             return;
         }
 
-        Column? found = resolver.FindColumn(columnAlias!);
-        if (found is not null)
-        {
-            MapColumn(resolver, found, level);
-            return;
-        }
-
+        // The reference's mapColumns tries the _ROWID_ pseudo-column first and returns: a real
+        // column of that name is reachable only through its quoted spelling, which never sets
+        // the rowId flag.
         if (rowId)
         {
             Column? rowIdColumn = resolver.GetRowIdColumn();
@@ -255,6 +260,14 @@ public sealed class ExpressionColumn : Expression
             {
                 MapColumn(resolver, rowIdColumn, level);
             }
+
+            return;
+        }
+
+        Column? found = resolver.FindColumn(columnAlias!);
+        if (found is not null)
+        {
+            MapColumn(resolver, found, level);
         }
     }
 

@@ -268,11 +268,18 @@ internal static class ScriptRunner
     /// format is the same, and a failure means the runner and the engine disagree with it.
     /// Such a test asserts nothing about the catalog, so its database keeps a private name.
     /// </summary>
-    internal static List<string> RunLines(string[] lines)
+    internal static List<string> RunLines(string[] lines) => RunLines(lines, null);
+
+    /// <summary>
+    /// Runs script text on a database of the caller's name, for the expectations that spell
+    /// the catalog into their rows: those name it "script", as the reference harness does.
+    /// </summary>
+    internal static List<string> RunLines(string[] lines, string? databaseName)
     {
         try
         {
-            return RunItems(ScriptParser.Parse(lines), "script_lines_" + Guid.NewGuid().ToString("N"));
+            return RunItems(ScriptParser.Parse(lines),
+                databaseName ?? "script_lines_" + Guid.NewGuid().ToString("N"));
         }
         catch (Exception e)
         {
