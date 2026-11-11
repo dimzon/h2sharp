@@ -236,6 +236,54 @@ public sealed class ExpressionColumn : Expression
     }
 
     /// <inheritdoc/>
+    public override Expression? GetNotIfPossible(SessionLocal session)
+    {
+        Expression o = Optimize(session);
+        if (!ReferenceEquals(o, this))
+        {
+            return o.GetNotIfPossible(session);
+        }
+
+        Value v;
+        switch (column!.GetTypeInfo().GetValueType())
+        {
+            case Value.Boolean:
+                v = ValueBoolean.False;
+                break;
+            case Value.Tinyint:
+                v = ValueTinyint.Get(0);
+                break;
+            case Value.Smallint:
+                v = ValueSmallint.Get(0);
+                break;
+            case Value.Integer:
+                v = ValueInteger.Get(0);
+                break;
+            case Value.Bigint:
+                v = ValueBigint.Get(0L);
+                break;
+            case Value.Numeric:
+                v = ValueNumeric.Zero;
+                break;
+            case Value.Real:
+                v = ValueReal.Zero;
+                break;
+            case Value.Double:
+                v = ValueDouble.Zero;
+                break;
+            case Value.Decfloat:
+                v = ValueDecfloat.Zero;
+                break;
+            default:
+                // The reference: can be replaced with CAST(column AS BOOLEAN) = FALSE, but that
+                // replacement can't be optimized further, so it's better to leave NOT (column).
+                return null;
+        }
+
+        return new Conditions.Comparison(Conditions.Comparison.Equal, this, ValueExpression.Get(v), false);
+    }
+
+    /// <inheritdoc/>
     public override void MapColumns(ColumnResolver resolver, int level, int state)
     {
         if (tableAlias != null && !tableAlias.Equals(resolver.GetTableAlias(), StringComparison.Ordinal))

@@ -144,6 +144,17 @@ public class ValueExpression : Expression
     }
 
     /// <inheritdoc/>
+    public override Expression? GetNotIfPossible(SessionLocal session)
+    {
+        if (value is ValueNull)
+        {
+            return TypedValueExpression.Unknown;
+        }
+
+        return value.GetBoolean() ? False : True;
+    }
+
+    /// <inheritdoc/>
     public override void MapColumns(ColumnResolver resolver, int level, int state)
     {
     }

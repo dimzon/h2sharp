@@ -98,9 +98,15 @@ public sealed class ConditionNot : Condition
     }
 
     /// <inheritdoc/>
+    public override bool NeedParentheses()
+    {
+        return true;
+    }
+
+    /// <inheritdoc/>
     public override StringBuilder GetUnenclosedSql(StringBuilder builder, int sqlFlags)
     {
-        return condition.GetSql(builder.Append("NOT "), sqlFlags, WithoutParentheses);
+        return condition.GetSql(builder.Append("NOT "), sqlFlags, AutoParentheses);
     }
 
     /// <inheritdoc/>

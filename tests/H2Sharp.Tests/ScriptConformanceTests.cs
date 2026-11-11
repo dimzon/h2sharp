@@ -187,6 +187,7 @@ public sealed class ScriptConformanceTests
         "functions/system/nullif.sql",
         "functions/system/readonly.sql",
         "functions/system/rownum.sql",
+        "functions/system/table.sql",
         "functions/system/trim_array.sql",
         "functions/system/unnest.sql",
         "functions/system/truncate-value.sql",
@@ -217,6 +218,7 @@ public sealed class ScriptConformanceTests
         "default-and-on_update.sql",
         "other/case.sql",
         "other/concatenation.sql",
+        "other/conditions.sql",
         "other/field-reference.sql",
         "other/unique_include.sql",
         "parser/comments.sql",
@@ -234,6 +236,7 @@ public sealed class ScriptConformanceTests
         "queries/query-optimisations.sql",
         "queries/values.sql",
         "queries/window.sql",
+        "range_table.sql",
     };
 
     [Theory]

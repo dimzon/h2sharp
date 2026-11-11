@@ -13819,3 +13819,30 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.13%** строк (79555/86347), **87.98%** ветвей (32631/37090).
 * Проверено: H2Sharp.Tests 2561/2561, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 148: отрицание условия — эталонное семейство getNotIfPossible (2026-11-12)
+
+* `Comparison.GetNotIfPossible`: перенесён эталонный метод — `NOT (X = 1)` становится
+  `X <> 1`, `NOT (X >= 5)` — `X < 5` (и обратные пары, включая null-safe); для
+  `SPATIAL_INTERSECTS` и when-операнда — null, как в эталоне. `GetNotCompareType` уже был
+  (его использует ConditionInArray) — теперь он ещё и замыкает отрицание сравнения.
+  Без метода `ConditionNot` оставался в плане: `WHERE NOT "X" >= CAST(5 AS BIGINT)`
+  вместо `WHERE "X" < CAST(5 AS BIGINT)` и без `/* range index: X < … */`
+  (range_table.sql строки 9/12).
+* `ConditionNot`: добавлен эталонный `NeedParentheses() => true`; `GetUnenclosedSql`
+  печатает вложенное условие с `AUTO_PARENTHESES`, как эталон (было
+  `WithoutParentheses`) — из-за этого `NOT(C AND C)` печаталось `NOT C OR NOT C`
+  вместо `(NOT C) OR (NOT C)` (other/conditions.sql строка 132).
+* `Comparison.Optimize`: перенесён эталонный хвост про NULL-константу —
+  `X IS [NOT] DISTINCT FROM NULL` сворачивается в `NullPredicate` (портовый
+  `ConditionIsNull`), а нечисловые сравнения с NULL-константой — в UNKNOWN. План
+  отвечает `"A" IS NULL` / `"A" IS NOT NULL` (other/conditions.sql строки 72/75).
+* `ExpressionColumn.GetNotIfPossible` (эталонный: optimize, затем BOOLEAN/TINYINT/…/
+  DECFLOAT → `= 0`, прочие типы — null с эталонным комментарием),
+  `ValueExpression.GetNotIfPossible` (NULL → UNKNOWN, иначе инверсия boolean) и
+  `Parameter.GetNotIfPossible` (`? = FALSE`) — вся ветвь отрицания перенесена 1:1.
+* Закреплены `range_table.sql`, `other/conditions.sql`, `functions/system/table.sql`:
+  191 → **194**.
+* Итог: **92.13%** строк (79601/86403), **88.00%** ветвей (32666/37122).
+* Проверено: H2Sharp.Tests 2564/2564, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

@@ -128,6 +128,17 @@ public sealed class Comparison : Condition
 
     private int compareType;
 
+    /// <inheritdoc/>
+    public override Expression? GetNotIfPossible(SessionLocal session)
+    {
+        if (compareType == SpatialIntersects || whenOperand)
+        {
+            return null;
+        }
+
+        return new Comparison(GetNotCompareType(compareType), left, right, false);
+    }
+
     internal static int GetNotCompareType(int type) => type switch
     {
         Equal => NotEqual,
@@ -279,6 +290,23 @@ public sealed class Comparison : Condition
         if (left.IsConstant() && right.IsConstant())
         {
             return TypedValueExpression.GetTypedIfNull(GetValue(session), TypeInfo.TypeBoolean);
+        }
+
+        if (left.IsNullConstant() || right.IsNullConstant())
+        {
+            // IS [NOT] DISTINCT FROM NULL is IS [NOT] NULL: a null-safe comparison against the
+            // NULL constant knows about nothing but nullness.
+            if ((compareType & ~1) != EqualNullSafe)
+            {
+                return TypedValueExpression.Unknown;
+            }
+
+            Expression e = left.IsNullConstant() ? right : left;
+            int type = e.GetTypeInfo().GetValueType();
+            if (type != Value.Unknown && type != Value.Row)
+            {
+                return new ConditionIsNull(e, compareType == NotEqualNullSafe, false);
+            }
         }
 
         return this;

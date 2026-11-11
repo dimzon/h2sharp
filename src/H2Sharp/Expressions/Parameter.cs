@@ -236,4 +236,10 @@ public sealed class Parameter : Expression, ParameterInterface
     {
         return 1;
     }
+
+    /// <inheritdoc/>
+    public override Expression? GetNotIfPossible(SessionLocal session)
+    {
+        return new Comparison(Comparison.Equal, this, ValueExpression.False, false);
+    }
 }
