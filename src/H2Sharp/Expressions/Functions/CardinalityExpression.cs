@@ -6,10 +6,10 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * The JSON branch of getValue() refuses with a TODOException: the reference decomposes the
- * value with Value.convertToAnyJson and counts the elements of a JSONArray, and neither the
- * JSON object model (JSONValue, JSONArray) nor that conversion is ported. A JSON value also
- * cannot be produced by the port yet, so the refusal is unreachable rather than pending.
+ * getValue()'s JSON branch counts the elements of a JSONArray, as the reference does after
+ * its Value.convertToAnyJson: the switch has already told us the value is JSON, and
+ * convertToAnyJson is the identity for a JSON value, so the port reads its decomposition
+ * directly.
  */
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
@@ -64,8 +64,20 @@ public sealed class CardinalityExpression : Function1
             switch (v.GetValueType())
             {
                 case Value.Json:
-                    throw new TODOException(
-                        "CardinalityExpression.getValue: JSON decomposition (JSONValue, JSONArray) is not ported");
+                {
+                    Util.Json.JsonValue decomposition = ((ValueJson)v).GetDecomposition();
+                    if (decomposition is Util.Json.JsonArray array)
+                    {
+                        result = array.Length();
+                    }
+                    else
+                    {
+                        return ValueNull.Instance;
+                    }
+
+                    break;
+                }
+
                 case Value.Array:
                     result = ((ValueArray)v).GetList().Length;
                     break;

@@ -13616,3 +13616,41 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2545/2545, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 140: CARDINALITY(JSON), SET SCHEMA NULL и VALUES как терм (2026-11-11)
+
+* `CardinalityExpression.getValue`: JSON-ветка перенесена из эталона — массив считает
+  элементы (`JsonArray.Length()`), любой другой JSON отвечает NULL. Заглушка
+  ссылалась на неперенесённость JSON-модели, но `Util.Json` и `ValueJson` в порту
+  уже есть — отказ стал недостижимой явной ошибкой там, где эталон отвечает.
+* `Database.findSchema/getSchema`: эталонная `findSchema` принимает null и отвечает
+  «нет схемы»; порт стоял на `ArgumentNullException.ThrowIfNull`, и `SET SCHEMA
+  NULL` падал крахом вместо эталонного `SCHEMA_NOT_FOUND_1` (current_schema.sql
+  строка 35). Nullability приведена к эталону (`string?`).
+* `Parser.readTerm`, `case VALUES`: вне MySQL-ветки ON DUPLICATE KEY UPDATE
+  (она в порту есть) эталон читает VALUES-терм как `Subquery(parseQuery())` —
+  тем же способом, что и bare SELECT/TABLE/WITH. В порту терм падал в TODO
+  «keyword function VALUES»; теперь `CREATE TABLE … AS SELECT VALUES ((1))`
+  разбирается (query-cache.sql).
+* Закреплены `functions/system/cardinality.sql`, `functions/system/current_schema.sql`
+  и `queries/query-cache.sql`: 175 → **178** скрипта (построчно с эталоном;
+  блоки параметров `{…}` раннер исполняет по-настоящему — шапка раннера
+  приведена в соответствие, «не перенесено» осталось со спринта 125).
+* `EdgeClusterCoverageTests3.CardinalityAndValueTimeRefuse`: утверждение
+  TODOException снято — вместо него эталонное поведение (массив через FromJson = 2,
+  закодированная Get(String) строка и число = NULL).
+* Триаж unpinned-набора: следующий дешёвый рычаг — `other/case.sql` (simple CASE с
+  предикатными WHEN, один TYPES_ARE_NOT_COMPARABLE_2) и `rownum.sql` (ROWNUM внутри
+  UPDATE SET отвечает 0 вместо 1). Группа же user/SCRIPT-сюжетов (commentOn,
+  createSchema, execute_immediate, double_precision, substring, varbinary, real,
+  decfloat, dml/script, dropDomain, json, set) упирается в D-004: каждый эталонный
+  дамп SCRIPT начинается с `CREATE USER … SA … ADMIN;`, а ролей/пользователей в
+  порту нет по утверждённому отклонению. Пересмотр D-004 — только отдельным
+  указанием пользователя; до него фильтр `SCRIPT … TABLE/SCHEMA` не кладут
+  (перенесённый и зелёный сам по себе, но закреплений не даёт — откачан).
+* Итог: **92.07%** строк (79441/86285), **87.90%** ветвей (32554/37034).
+  Знаменатель вырос на 12 новых исполняемых строк при +1 покрытой — процент
+  почти неизменен, в пределах межпрогонового шума тайминг-мест.
+* Проверено: H2Sharp.Tests 2548/2548, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.

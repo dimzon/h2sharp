@@ -6977,6 +6977,14 @@ public sealed partial class Parser
             return new Modes.OnDuplicateKeyValues(column, insert);
         }
 
+        if (CurrentType == ParserUtil.Values)
+        {
+            // The reference's readTermWithoutIdentifier case VALUES: outside the MySQL-style
+            // ON DUPLICATE KEY UPDATE reading above, a bare VALUES term is a subquery —
+            // new Subquery(parseQuery()), the same shape SELECT, TABLE and WITH take.
+            return new Expressions.Subquery(ParseQueryExpression(prepare: false));
+        }
+
         if (Current.AsIdentifier is not null
             && position + 2 < tokens.Count
             && tokens[position + 1].TokenType == Token.Dot

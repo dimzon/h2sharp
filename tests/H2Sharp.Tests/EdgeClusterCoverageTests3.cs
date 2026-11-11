@@ -107,8 +107,18 @@ public sealed class EdgeClusterCoverageTests3
 
         Assert.Throws<H2SharpException>(() =>
             new CardinalityExpression(ValueExpression.Get(ValueInteger.Get(1)), false).GetValue(session));
-        Assert.Throws<TODOException>(() =>
-            new CardinalityExpression(ValueExpression.Get(ValueJson.Get(0)), false).GetValue(session));
+
+        // The JSON branch is ported now, as the reference answers it: an array counts its
+        // elements, any other JSON value is NULL. FromJson parses the text the way the JSON
+        // '...' literal does; Get(String) encodes a JSON string just as the reference's
+        // ValueJson.get(String) does, so that one and a number are not arrays.
+        Assert.Equal("2", new CardinalityExpression(
+            ValueExpression.Get(ValueJson.FromJson("[1, 5]")), false).GetValue(session).GetString());
+        Assert.Same(ValueNull.Instance, new CardinalityExpression(
+            ValueExpression.Get(ValueJson.Get("[1, 5]")), false).GetValue(session));
+        Assert.Same(ValueNull.Instance, new CardinalityExpression(
+            ValueExpression.Get(ValueJson.Get(0)), false).GetValue(session));
+
         Assert.Throws<H2SharpException>(() =>
             new CardinalityExpression(ValueExpression.Get(ValueVarchar.Get("x")), false).GetValue(session));
 

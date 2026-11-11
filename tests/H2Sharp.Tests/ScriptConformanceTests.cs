@@ -9,9 +9,10 @@
  * format, runs the statements on a fresh in-memory database, and compares the answer with
  * the reference's expectation — so a script that passes is a line-by-line oracle check.
  *
- * Statements with `?` placeholders carry a `{ ... }` parameter block; binding them is not
- * ported in the runner yet, so those statements are counted as skipped rather than silently
- * ignored.
+ * Statements with `?` placeholders carry a `{ ... }` parameter block: the statement is
+ * prepared once, run once per block line with the values bound as strings, and the summed
+ * update count or the query's own answer block is compared, as the reference's
+ * processPrepared does.
  */
 using System;
 using System.Collections.Generic;
@@ -166,9 +167,11 @@ public sealed class ScriptConformanceTests
         "functions/system/array-contains.sql",
         "functions/system/array-get.sql",
         "functions/system/autocommit.sql",
+        "functions/system/cardinality.sql",
         "functions/system/casewhen.sql",
         "functions/system/coalesce.sql",
         "functions/system/convert.sql",
+        "functions/system/current_schema.sql",
         "functions/system/decode.sql",
         "functions/system/greatest.sql",
         "functions/system/h2version.sql",
@@ -214,6 +217,7 @@ public sealed class ScriptConformanceTests
         "queries/derived-column-names.sql",
         "queries/duplicate-order-by.sql",
         "queries/joins.sql",
+        "queries/query-cache.sql",
         "queries/query-optimisations.sql",
         "queries/values.sql",
         "queries/window.sql",

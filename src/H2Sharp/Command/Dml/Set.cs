@@ -501,8 +501,10 @@ public sealed class Set : Prepared
             case SetTypes.Schema:
             {
                 SessionLocal session = GetSession();
+                // The reference hands the string straight to getSchema: a NULL value there is
+                // the SCHEMA_NOT_FOUND_1 it reports, not an argument error.
                 Schemas.Schema schema = session.GetDatabase()
-                    .GetSchema(expression!.Optimize(session).GetValue(session).GetString()!);
+                    .GetSchema(expression!.Optimize(session).GetValue(session).GetString());
                 session.SetCurrentSchema(schema);
                 break;
             }

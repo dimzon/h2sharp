@@ -166,9 +166,16 @@ public sealed partial class Database : CastDataProvider
     /// </summary>
     /// <param name="name">the schema name</param>
     /// <returns>the schema, or null</returns>
-    public Schemas.Schema? FindSchema(string name)
+    public Schemas.Schema? FindSchema(string? name)
     {
-        ArgumentNullException.ThrowIfNull(name);
+        // The reference's findSchema answers "no schema" for a null name; refusing with an
+        // exception here is what turned SET SCHEMA NULL into a crash instead of the
+        // SCHEMA_NOT_FOUND_1 the reference reports.
+        if (name is null)
+        {
+            return null;
+        }
+
         return frozenSchemas.TryGetValue(name, out Schemas.Schema? schema) ? schema : null;
     }
 
@@ -177,9 +184,9 @@ public sealed partial class Database : CastDataProvider
     /// </summary>
     /// <param name="name">the schema name</param>
     /// <returns>the schema</returns>
-    public Schemas.Schema GetSchema(string name)
+    public Schemas.Schema GetSchema(string? name)
     {
-        return FindSchema(name) ?? throw DbException.Get(Api.ErrorCode.SchemaNotFound1, name);
+        return FindSchema(name) ?? throw DbException.Get(Api.ErrorCode.SchemaNotFound1, name!);
     }
 
     /// <summary>
