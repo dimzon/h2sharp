@@ -13790,3 +13790,32 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.12%** строк (79507/86309), **87.96%** ветвей (32606/37068).
 * Проверено: H2Sharp.Tests 2557/2557, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 147: MIN/MAX по убывающему диапазону, CALL табличной функции (2026-11-11)
+
+* `RangeIndex.FindFirstOrLast`: эталонный выбор конца `first ^ (min >= max) ? min : max` —
+  порт разветвлял по знаку шага и брал `first ? min : max`, поэтому у убывающего
+  `SYSTEM_RANGE(2, 1, -1)` MIN отвечал 2 вместо 1, MAX — 1 вместо 2
+  (functions/aggregate/min.sql строка 74, max.sql строка 68).
+* `Parser.parseCall`: перенесён эталонный fallback — выражение читается первым, и только
+  `FUNCTION_NOT_FOUND_1` при имени-идентификаторе превращает оператор в вызов табличной
+  функции (`readTableFunction(name, schema)`): так `CALL UNNEST(ARRAY[...])` отвечает
+  строками, а `SELECT UNNEST(...)` — FUNCTION_NOT_FOUND_1, как эталон (проверено на JVM).
+  Имена табличных функций в `ReadFunction` больше не уходят в TODO о непорченном
+  builtin: эталонный readFunction их тоже не знает и отвечает «not found».
+* `Parser.ReadTableFilter` (ветка табличных функций): фильтр создаётся с
+  `alias: null`, как эталон — псевдоним читается только `readCorrelation`; имя функции
+  работает fallback-алиасом через `GetTableAlias`. Из плана ушёл лишний `"UNNEST"`
+  после вызова (EXPLAIN-строки unnest.sql 47/50/59).
+* Закреплены `functions/aggregate/min.sql`, `functions/aggregate/max.sql`,
+  `functions/system/unnest.sql`, `default-and-on_update.sql`: 187 → **191**.
+* `functions/string/xmltext.sql`, `functions/string/xmlnode.sql` не закрепляются:
+  `&#xA;` против `&#xa;`, формат `/>` и отступ содержимого — поведение BCL
+  (System.Xml/XmlWriter), утверждённое в D-012…D-018; D-013 прямо отмечает, что
+  изменения XMLTEXT этим решением не утверждены — вопрос к пользователю, отступление
+  не трогаю.
+* `functions/system/data_type_sql.sql` не закрепляется: CREATE/DROP ALIAS (D-037),
+  строки CONSTANT/ROUTINE без алиасов не воспроизвести.
+* Итог: **92.13%** строк (79555/86347), **87.98%** ветвей (32631/37090).
+* Проверено: H2Sharp.Tests 2561/2561, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

@@ -1734,8 +1734,71 @@ public sealed partial class Parser
             Read();
             command.SetTableFunction(ReadTableFunction(Expressions.Functions.Table.ArrayTableFunction.Table));
         }
-        else command.SetExpression(ReadExpression());
+        else
+        {
+            // Reference parseCall: an expression first; the statement is a table function
+            // after all when the expression reader reports the name as not found.
+            int index = position;
+            bool canBeFunction = Current.IsIdentifier;
+            try
+            {
+                command.SetExpression(ReadExpression());
+            }
+            catch (H2SharpException e) when (canBeFunction && e.H2ErrorCode == Api.ErrorCode.FunctionNotFound1)
+            {
+                position = index;
+                string name = ReadIdentifier();
+                string? schemaName = null;
+                if (ReadIf(Token.Dot))
+                {
+                    schemaName = name;
+                    name = ReadIdentifier();
+                    if (ReadIf(Token.Dot))
+                    {
+                        CheckDatabaseName(session!, schemaName);
+                        schemaName = name;
+                        name = ReadIdentifier();
+                    }
+                }
+
+                Expect(Token.OpenParen, "(");
+                Schemas.Schema? schema = schemaName is not null
+                    ? session!.GetDatabase().GetSchema(schemaName)
+                    : null;
+                command.SetTableFunction(ReadTableFunctionByName(name, schema));
+            }
+        }
+
         return command;
+    }
+
+    /// <summary>
+    /// Reads a table function by name, as the reference's readTableFunction(String, Schema):
+    /// the array functions are there, the rest name a class the port does not have yet.
+    /// </summary>
+    /// <param name="name">the name</param>
+    /// <param name="schema">the schema, or null</param>
+    /// <returns>the table function</returns>
+    private Expressions.Functions.Table.ArrayTableFunction ReadTableFunctionByName(
+        string name, Schemas.Schema? schema)
+    {
+        if (schema is null)
+        {
+            switch (StringUtils.ToUpperEnglish(name))
+            {
+                case "UNNEST":
+                    return ReadUnnestFunction();
+                case "TABLE_DISTINCT":
+                    return ReadTableFunction(Expressions.Functions.Table.ArrayTableFunction.TableDistinct);
+                case "CSVREAD":
+                case "LINK_SCHEMA":
+                    throw new TODOException(
+                        "Parser.readTableFunction: " + name + " (CSVReadFunction/LinkSchemaFunction) is not ported");
+            }
+        }
+
+        throw new TODOException(
+            "Parser.readTableFunction: table functions over function aliases are not ported (D-037)");
     }
     private Prepared ParseReleaseSavepoint()
     {
@@ -2659,7 +2722,9 @@ public sealed partial class Parser
                 : ReadTableFunction(name.Equals("TABLE", StringComparison.OrdinalIgnoreCase)
                     ? Expressions.Functions.Table.ArrayTableFunction.Table : Expressions.Functions.Table.ArrayTableFunction.TableDistinct);
             Tables.FunctionTable table = new(session.GetCurrentSchema(), session, function);
-            Tables.TableFilter filter = new(session, table, name, true, select, orderInFrom++, null);
+            // Reference readTableFilter: the filter's alias stays unset until readCorrelation
+            // reads an explicit one; the function's own name is the fallback table alias.
+            Tables.TableFilter filter = new(session, table, alias: null, true, select, orderInFrom++, null);
             return ReadCorrelation(filter);
         }
 
@@ -7286,7 +7351,8 @@ public sealed partial class Parser
             return expression;
         }
 
-        if (Expressions.Functions.BuiltinFunctions.IsBuiltinFunction(provider.GetMode(), upperName))
+        if (Expressions.Functions.BuiltinFunctions.IsBuiltinFunction(provider.GetMode(), upperName)
+            && !IsTableFunctionName(upperName))
         {
             // A name the reference calls a built-in but that has no branch above is not "not
             // found" — the branch is missing, and the answer has to say which.
@@ -7294,8 +7360,20 @@ public sealed partial class Parser
                 "Parser.readFunction: the built-in function " + name + " is not ported");
         }
 
+        // The reference's readFunction knows nothing about the table functions either and
+        // reports them as not found; its parseCall then reads the call as a table function.
         throw DbException.Get(Api.ErrorCode.FunctionNotFound1, name);
     }
+
+    /// <summary>
+    /// Whether the name belongs to a table function, as the switch of the reference's
+    /// readTableFunction names them. Outside a table-function position the reference reports
+    /// such a name as not found, which is what lets CALL read it as one.
+    /// </summary>
+    /// <param name="upperName">the upper-case name</param>
+    /// <returns>whether the name is a table function</returns>
+    private static bool IsTableFunctionName(string upperName)
+        => upperName is "UNNEST" or "TABLE_DISTINCT" or "CSVREAD" or "LINK_SCHEMA";
 
     internal Expressions.Aggregate.ClrAggregate ReadClrAggregateCore(
         AggregateDefinition definition,

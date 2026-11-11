@@ -78,13 +78,11 @@ public sealed class RangeIndex : Index
             throw DbException.Get(ErrorCode.StepSizeMustNotBeZero);
         }
 
-        return step > 0
-            ? min <= max
-                ? new SingleRowCursor(Row.Get([ValueBigint.Get(first ? min : max)], 1))
-                : SingleRowCursor.Empty
-            : min >= max
-                ? new SingleRowCursor(Row.Get([ValueBigint.Get(first ? min : max)], 1))
-                : SingleRowCursor.Empty;
+        // Reference: the searched end depends on the direction — first means min while the
+        // range runs upwards and max while it runs downwards.
+        return (step > 0 ? min <= max : min >= max)
+            ? new SingleRowCursor(Row.Get([ValueBigint.Get((first ^ min >= max) ? min : max)], 1))
+            : SingleRowCursor.Empty;
     }
 
     /// <inheritdoc/>
