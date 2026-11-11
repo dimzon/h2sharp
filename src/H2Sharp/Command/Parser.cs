@@ -6765,6 +6765,15 @@ public sealed partial class Parser
                 continue;
             }
 
+            // A term followed by an interval qualifier is a cast to that interval type, as in
+            // the reference's readTerm: SELECT S DAY.
+            TypeInfo? intervalType = ReadIntervalQualifier();
+            if (intervalType is not null)
+            {
+                expression = new Expressions.Functions.CastSpecification(expression, intervalType);
+                continue;
+            }
+
             int timeZoneIndex = position;
             if (IsWord("AT"))
             {

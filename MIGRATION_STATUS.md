@@ -13946,3 +13946,19 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.18%** строк (79755/86525), **88.12%** ветвей (32760/37176).
 * Проверено: H2Sharp.Tests 2574/2574, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 154: INTERVAL — постфиксный квалификатор и скобки операции (2026-11-12)
+
+* `Parser.ReadQueryTerm`: перенесён эталонный постфикс `TypeInfo ti =
+  readIntervalQualifier()` — терм, за которым идёт квалификатор интервала, становится
+  `CastSpecification(term, ti)`: `SELECT S DAY FROM TEST` и `EXPLAIN` с `CAST("S" AS
+  INTERVAL DAY)` работают (datatypes/interval.sql строки 871/874). Порт отвечал
+  SYNTAX_ERROR_1, потому что читал только `::` и `AT TIME ZONE`.
+* `IntervalOperation.GetInnerSql2`: операнды печатаются с `AUTO_PARENTHESES`, как эталон,
+  а не `WITH_PARENTHESES`; из планов ушли лишние скобки вокруг значений —
+  `(TIMESTAMP '…' - TIMESTAMP '…') HOUR TO SECOND` вместо
+  `((TIMESTAMP '…') - (TIMESTAMP '…')) …` (строки 862/865/1077/1089).
+* Закреплён `datatypes/interval.sql`: 204 → **205**.
+* Итог: **92.21%** строк (79785/86530), **88.18%** ветвей (32784/37178).
+* Проверено: H2Sharp.Tests 2575/2575, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

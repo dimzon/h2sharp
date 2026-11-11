@@ -94,8 +94,8 @@ public class IntervalOperation : Operation2
 
     private void GetInnerSql2(StringBuilder builder, int sqlFlags)
     {
-        left.GetSql(builder, sqlFlags, WithParentheses).Append(' ').Append(GetOperationToken()).Append(' ');
-        right.GetSql(builder, sqlFlags, WithParentheses);
+        left.GetSql(builder, sqlFlags, AutoParentheses).Append(' ').Append(GetOperationToken()).Append(' ');
+        right.GetSql(builder, sqlFlags, AutoParentheses);
     }
 
     internal static StringBuilder GetForcedTypeSql(StringBuilder builder, TypeInfo? forcedType)
