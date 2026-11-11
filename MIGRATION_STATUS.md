@@ -13891,3 +13891,19 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.15%** строк (79696/86481), **88.04%** ветвей (32721/37164).
 * Проверено: H2Sharp.Tests 2570/2570, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 151: длина идентификатора — NAME_TOO_LONG_2 на каждом токене (2026-11-12)
+
+* `Parser.Read()`: перенесён эталонный `ParserBase.read()` — при переходе к следующему
+  токену идентификатор длиннее `Constants.MAX_IDENTIFIER_LENGTH` (256) отказывает
+  `NAME_TOO_LONG_2` с первыми 32 символами и пределом; проверка идёт до
+  `checkLiterals`, как в эталоне. Порт принимал `SELECT 1 <257 симв.>` и длинные
+  quoted/U&имена как обычные выражения (parser/identifiers.sql строки 18/27/30/33/51).
+* Закреплён `parser/identifiers.sql`: 200 → **201**.
+* `ddl/createTable.sql` и `functions/string/substring.sql` не закрепляются: обе используют
+  `SCRIPT ... TABLE`, а любой дамп эталона начинается с
+  `CREATE USER IF NOT EXISTS "SA" PASSWORD '' ADMIN;` — пользователи вне порта (D-004);
+  TODO в `PrepareScript` честно называет непортённый фильтр.
+* Итог: **92.15%** строк (79702/86487), **88.05%** ветвей (32727/37168).
+* Проверено: H2Sharp.Tests 2571/2571, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

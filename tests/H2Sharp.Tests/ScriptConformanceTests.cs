@@ -226,6 +226,7 @@ public sealed class ScriptConformanceTests
         "other/field-reference.sql",
         "other/unique_include.sql",
         "parser/comments.sql",
+        "parser/identifiers.sql",
         "predicates/between.sql",
         "predicates/distinct.sql",
         "predicates/like.sql",

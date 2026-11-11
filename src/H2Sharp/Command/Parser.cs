@@ -9436,6 +9436,16 @@ public sealed partial class Parser
         if (position < tokens.Count - 1)
         {
             position++;
+            // The reference refuses an identifier longer than MAX_IDENTIFIER_LENGTH on every
+            // token advance; the message names the first 32 characters.
+            string? identifier = Current.AsIdentifier;
+            if (identifier is not null && identifier.Length > Engine.Constants.MaxIdentifierLength)
+            {
+                throw Message.DbException.Get(Api.ErrorCode.NameTooLong2,
+                    identifier[..32],
+                    Engine.Constants.MaxIdentifierLength.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+
             CheckLiterals();
         }
     }
