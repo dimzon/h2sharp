@@ -1246,7 +1246,7 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
         switch (aggregateType)
         {
             case AggregateType.Count:
-                if (args[0].IsConstant() && over is null)
+                if (args[0].IsConstant())
                 {
                     if (args[0].IsNullConstant())
                     {
@@ -1255,12 +1255,16 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
 
                     if (!distinct)
                     {
+                        // The reference rewrites COUNT(<constant>) to COUNT(*) and keeps the
+                        // window and filter, so COUNT(1) OVER (...) prints and aggregates as
+                        // COUNT(*) OVER (...).
                         Aggregate rewritten = new(AggregateType.CountAll, [], select, false);
                         if (filterCondition is not null)
                         {
                             rewritten.SetFilterCondition(filterCondition);
                         }
 
+                        rewritten.SetOverCondition(over);
                         return rewritten.Optimize(session);
                     }
                 }

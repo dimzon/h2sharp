@@ -13907,3 +13907,20 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.15%** строк (79702/86487), **88.05%** ветвей (32727/37168).
 * Проверено: H2Sharp.Tests 2571/2571, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 152: COUNT(константа) и DISTINCT с ORDER BY в агрегате (2026-11-12)
+
+* `Aggregate.Optimize`, ветка COUNT: снят портовый гейт `over is null` —
+  эталон переписывает `COUNT(<константа>)` в `COUNT(*)` и переносит и filter, и over
+  (`setFilterCondition`/`setOverCondition`). Порт копировал только filter, поэтому
+  `COUNT(1) OVER (PARTITION BY …)` печаталось как `COUNT(1)` и не сворачивалось
+  (functions/aggregate/count.sql строки 172/201).
+* `AggregateDataCollecting.Add`: для DISTINCT у упорядоченного агрегата сравнение идёт по
+  первому полю собранной строки (`Comparator.comparing(t -> ((ValueRow)t).getList()[0])`),
+  а не по всей строке — иначе `ARRAY_AGG(DISTINCT A ORDER BY B)` сохранял (5,1) и (5,2)
+  как разные и отвечал `[5, 5, 4]` вместо `[5, 4]` (array_agg.sql строка 674).
+* Закреплены `functions/aggregate/count.sql`, `functions/aggregate/array_agg.sql`:
+  201 → **203**.
+* Итог: **92.15%** строк (79702/86496), **88.08%** ветвей (32736/37168).
+* Проверено: H2Sharp.Tests 2573/2573, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

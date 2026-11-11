@@ -71,7 +71,7 @@ internal sealed class AggregateDataCollecting : AggregateData, IEnumerable<Value
         }
 
         ICollection<Value> c = _values ??= _distinct
-            ? (ICollection<Value>)new SortedSet<Value>(session.GetValueComparer())
+            ? new SortedSet<Value>(DistinctComparer(session))
             : new List<Value>();
         if (_nullCollectionMode == NullCollectionMode.Excluded && IsNull(v))
         {
@@ -79,6 +79,25 @@ internal sealed class AggregateDataCollecting : AggregateData, IEnumerable<Value
         }
 
         c.Add(v!);
+    }
+
+    /// <summary>
+    /// The reference's comparator for a distinct ordered aggregate: DISTINCT applies to the
+    /// aggregated value (the first field of the collected row), while ORDER BY may use more
+    /// fields. Comparing the whole row would keep duplicates of the value.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the comparator</returns>
+    private IComparer<Value> DistinctComparer(SessionLocal session)
+    {
+        IComparer<Value> values = session.GetValueComparer();
+        if (!_orderedWithOrder)
+        {
+            return values;
+        }
+
+        return Comparer<Value>.Create(
+            (a, b) => values.Compare(((ValueRow)a!).GetList()[0], ((ValueRow)b!).GetList()[0]));
     }
 
     private bool IsNull(Value? v) =>
