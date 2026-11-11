@@ -178,6 +178,7 @@ public sealed class ScriptConformanceTests
         "functions/system/least.sql",
         "functions/system/nullif.sql",
         "functions/system/readonly.sql",
+        "functions/system/rownum.sql",
         "functions/system/trim_array.sql",
         "functions/system/truncate-value.sql",
         "functions/timeanddate/current-time.sql",

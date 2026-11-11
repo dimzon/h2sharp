@@ -4715,9 +4715,14 @@ public sealed partial class Parser
         ExpectWord("SELECT");
         Query.Select select = new(current);
         select.SetSql(sql, null);
-        // Reference parseSelect: currentSelect is the select while its clauses are read.
+        // Reference parseSelect: currentSelect and currentPrepared are both the select while
+        // its clauses are read, and both are restored afterwards; the prepared one is what
+        // ROWNUM binds to, so a ROWNUM inside a data change statement nested in this select's
+        // FROM clause belongs to that statement, not to this select.
         Query.Select? oldSelect = currentSelect;
+        Prepared? oldPrepared = currentPrepared;
         currentSelect = select;
+        currentPrepared = select;
         BitSet outerUsedParameters = OpenParametersScope();
         try
         {
@@ -4728,6 +4733,7 @@ public sealed partial class Parser
         finally
         {
             currentSelect = oldSelect;
+            currentPrepared = oldPrepared;
         }
     }
 
@@ -6951,7 +6957,12 @@ public sealed partial class Parser
                 Expect(Token.CloseParen, ")");
             }
 
-            Prepared? context = aggregateSelect ?? currentSelect ?? currentPrepared;
+            // Reference getCurrentPreparedOrSelect: currentPrepared first, currentSelect
+            // second — a ROWNUM inside a statement nested in the FROM clause (FINAL TABLE
+            // (UPDATE ...)) belongs to that statement, whose row counter is the one moving.
+            // The aggregate parameter carries the select through readers the reference
+            // reaches by its field.
+            Prepared? context = currentPrepared ?? aggregateSelect ?? currentSelect;
             if (context is null)
             {
                 // Reference: outside a select and a data change statement ROWNUM() has no

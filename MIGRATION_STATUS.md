@@ -13654,3 +13654,28 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2548/2548, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 141: ROWNUM внутри вложенного data-change (2026-11-11)
+
+* `Parser.parseQuerySelect`: эталонный parseSelect ставит на время чтения предложений
+  select оба поля — currentSelect и currentPrepared — и восстанавливает оба; порт ставил
+  только currentSelect. Из-за этого ROWNUM внутри `SELECT … FROM FINAL TABLE (UPDATE …
+  SET str = char(rownum + 48) …)` связывался с внешним select, чей счётчик строк стоит на
+  нуле в момент исполнения UPDATE, и отвечал '0' вместо '1' (rownum.sql, строка 17,
+  Issue#3353).
+* Привязка ROWNUM: эталонный `getCurrentPreparedOrSelect` берёт currentPrepared первым,
+  currentSelect вторым; порт брал currentSelect раньше currentPrepared. Порядок приведён
+  к эталону; параметр aggregateSelect остаётся порт-механизмом тех же контекстов — ORDER
+  BY читается уже после восстановления полей и через него получает select.
+* `functions/system/rownum.sql` закреплён: 178 → **179** (ROWNUM в select, FINAL TABLE,
+  ROWNUM в WHERE соединения VALUES-таблиц, ORDER BY ROWNUM — построчно с эталоном).
+  Других закреплённых скриптов с ROWNUM нет, правка их не задевает.
+* Замер: правка дала +3 покрытых строки в Parser.cs (6274→6277); остальная разница с
+  прошлым прогоном — межпрогоновый шум MvStore (RandomAccessStore −18, MVMap −4,
+  MVStore −3) против шума в плюс (ValueTimeTimeZone 36→41 из 41, CacheLongKeyLIRS +2).
+* Итог: **92.05%** строк (79427/86288), **87.90%** ветвей (32552/37034).
+* Проверено: H2Sharp.Tests 2549/2549, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped; в пакетном прогоне узел MSBuild
+  упал MSB4166 — краш узла сборки, не теста; повтор зелёный), Category!=BlockedByPort.
+* Осталось из триажа: `other/case.sql` — 1 расхождение (simple CASE с предикатными WHEN
+  падает TYPES_ARE_NOT_COMPARABLE_2 вместо 14 строк) — следующий дешёвый кандидат.
