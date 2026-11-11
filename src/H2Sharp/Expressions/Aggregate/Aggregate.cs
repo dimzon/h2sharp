@@ -283,6 +283,8 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
 
                 break;
             case AggregateType.Sum:
+            case AggregateType.BitXorAgg:
+            case AggregateType.BitXnorAgg:
             case AggregateType.Avg:
             case AggregateType.RegrAvgx:
             case AggregateType.RegrAvgy:
@@ -302,12 +304,10 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
             case AggregateType.Every:
             case AggregateType.BitAndAgg:
             case AggregateType.BitOrAgg:
-            case AggregateType.BitXorAgg:
             case AggregateType.BitNandAgg:
             case AggregateType.BitNorAgg:
-            case AggregateType.BitXnorAgg:
-                // DISTINCT changes nothing for an extremum, a conjunction or a bit
-                // reduction: duplicates collapse on their own.
+                // DISTINCT changes nothing for an extremum or an idempotent bit reduction:
+                // AND and OR collapse duplicates on their own, XOR does not.
                 return new AggregateDataDefault(aggregateType, type!);
             case AggregateType.StddevPop:
             case AggregateType.StddevSamp:
@@ -596,6 +596,8 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
 
                 break;
             case AggregateType.Sum:
+            case AggregateType.BitXorAgg:
+            case AggregateType.BitXnorAgg:
                 if (distinct)
                 {
                     AggregateDataCollecting collected = (AggregateDataCollecting)data;

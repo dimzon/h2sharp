@@ -13727,3 +13727,27 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.13%** строк (79498/86292), **87.96%** ветвей (32580/37038).
 * Проверено: H2Sharp.Tests 2553/2553, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 144: DISTINCT у битовых XOR-агрегатов и ALTER VIEW по эталону (2026-11-11)
+
+* `Aggregate.CreateAggregateData`: эталон группирует SUM/BIT_XOR_AGG/BIT_XNOR_AGG — при
+  DISTINCT они проваливаются в `AggregateDataCollecting` (XOR не идемпотентен: 1^1^2^3^4
+  = 5 против 1^2^3^4 = 4), а MIN/MAX/AND/OR — неидемпотентность не касается, они остаются
+  в `AggregateDataDefault`. Порт держал XOR-пары в default-группе всегда —
+  `BIT_XOR_AGG(DISTINCT V)` отвечал как без DISTINCT. Финализация
+  `BIT_XOR_AGG/BIT_XNOR_AGG` при DISTINCT добавлена в collect-ветку рядом с SUM, 1:1 с
+  эталоном (functions/aggregate/bit_xor_agg.sql, строки 6/12).
+* `PrepareAlterView` перестроен 1:1 с эталонным `parseAlterView`: отсутствие представления
+  при IF EXISTS больше не возвращает NoOperation на месте — чтение продолжается
+  (RENAME TO или RECOMPILE), и невыполнение переносится в Update-слой, где
+  `AlterView.Update` и `AlterTable.Update` сами отвечают 0 при IF EXISTS. Прежний ранний
+  возврат оставлял хвост оператора непрочитанным, и `ALTER VIEW IF EXISTS BAD RECOMPILE`
+  падал SYNTAX_ERROR_1 на RECOMPILE вместо ответа (alterTableRename.sql, строка 54).
+  Новое имя читается эталонно — `readIdentifierWithSchema(old.getName())` с
+  SCHEMA_NAME_MUST_MATCH при переносе в другую схему, как у портового
+  `PrepareAlterIndex`.
+* Закреплены `functions/aggregate/bit_xor_agg.sql` и `ddl/alterTableRename.sql`:
+  183 → **185**.
+* Итог: **92.12%** строк (79493/86290), **87.96%** ветвей (32598/37058).
+* Проверено: H2Sharp.Tests 2555/2555, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

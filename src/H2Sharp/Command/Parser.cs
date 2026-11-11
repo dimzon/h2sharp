@@ -1512,7 +1512,12 @@ public sealed partial class Parser
         return command;
     }
 
-    /// <summary>Parses ALTER VIEW ... RECOMPILE.</summary>
+    /// <summary>Parses ALTER VIEW ... RECOMPILE and ALTER VIEW ... RENAME TO.</summary>
+    /// <remarks>
+    /// The reference keeps reading past a missing view when IF EXISTS is written — the view
+    /// is looked up again when the command runs — so a missing view must not turn the rest
+    /// of the statement into unexpected tokens.
+    /// </remarks>
     private Prepared PrepareAlterView(SessionLocal current)
     {
         ExpectWord("ALTER");
@@ -1520,29 +1525,27 @@ public sealed partial class Parser
         bool ifExists = ReadIfExists(false);
         string viewName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
         Table? table = schema.FindTableOrView(current, viewName);
-        if (table is null)
-        {
-            if (ifExists)
-            {
-                return new Dml.NoOperation(current);
-            }
-
-            throw DbException.Get(Api.ErrorCode.ViewNotFound1, viewName);
-        }
-
-        if (table is not Tables.TableView)
+        if (table is not Tables.TableView && !ifExists)
         {
             throw DbException.Get(Api.ErrorCode.ViewNotFound1, viewName);
         }
 
-        if (IsWord("RENAME", consume: false))
+        if (IsWord("RENAME", consume: false) && NextIs("TO"))
         {
             Read();
             ExpectWord("TO");
+            // The reference reads the new name with readIdentifierWithSchema(old.getName())
+            // and checks the schema it names: a rename cannot move a view to another schema.
+            string newName = ReadIdentifierWithSchema(current, schema.GetName(), out Schemas.Schema newSchema);
+            if (!IdentifierEquals(newSchema.GetName(), schema.GetName()))
+            {
+                throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
+            }
+
             Ddl.AlterTableRename rename = new(current, schema);
             rename.SetTableName(viewName);
+            rename.SetNewTableName(newName);
             rename.SetIfTableExists(ifExists);
-            rename.SetNewTableName(ReadIdentifier());
             return rename;
         }
 
