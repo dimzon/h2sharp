@@ -90,6 +90,15 @@ public sealed class Select : Query
     private Dictionary<string, Expressions.Analysis.Window>? windowClause;
     private Select? parentSelect = null;
 
+    /// <summary>
+    /// Set when this statement was read as <c>TABLE tableName</c>: the plan prints the table
+    /// form, as the reference's isExplicitTable does.
+    /// </summary>
+    private bool isExplicitTable;
+
+    /// <summary>Marks a query read as <c>TABLE tableName</c>, as the reference's setExplicitTable.</summary>
+    public void SetExplicitTable() => isExplicitTable = true;
+
     /// <summary>Marks a query that uses window operations.</summary>
     public void SetWindowQuery() => isWindowQuery = true;
     /// <summary>Whether window operations are present.</summary>
@@ -758,37 +767,47 @@ public sealed class Select : Query
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)
     {
-        // Ported getPlanSQL over this port's existing fields. Explicit TABLE is not present
-        // in this Select representation yet.
+        // Ported getPlanSQL over this port's existing fields.
         WriteWithList(builder, sqlFlags);
         Expression[] exprList = GetExpressions();
-        builder.Append("SELECT");
-        if (IsAnyDistinct())
+        // The reference's explicit-table form replaces only the SELECT and FROM parts; the
+        // end-of-query clauses and the plan information are the common tail.
+        if (isExplicitTable && (topTableFilter is not null || topFilters.Count == 1))
         {
-            builder.Append(" DISTINCT");
-            if (distinctExpressions is not null)
+            builder.Append("TABLE ");
+            TableFilter? explicitFilter = topTableFilter ?? topFilters[0];
+            _ = explicitFilter.GetPlanSql(builder, false, sqlFlags);
+        }
+        else
+        {
+            builder.Append("SELECT");
+            if (IsAnyDistinct())
             {
-                _ = Expression.WriteExpressions(builder.Append(" ON("), distinctExpressions, sqlFlags).Append(')');
+                builder.Append(" DISTINCT");
+                if (distinctExpressions is not null)
+                {
+                    _ = Expression.WriteExpressions(builder.Append(" ON("), distinctExpressions, sqlFlags).Append(')');
+                }
             }
-        }
-        for (int i = 0; i < visibleColumnCount; i++)
-        {
-            if (i > 0) builder.Append(',');
-            StringUtils.Indent(builder.Append('\n'), exprList[i].GetSql(sqlFlags, Expression.WithoutParentheses), 4, false);
-        }
-        TableFilter? filter = topTableFilter;
-        if (filter is null)
-        {
-            // The reference asks the filter whether it has a FROM clause at all: a bare
-            // DUAL with nothing joined to it is the only shape that does not.
-            if (topFilters.Count != 1 || topFilters[0].HasFromClause())
+            for (int i = 0; i < visibleColumnCount; i++)
             {
-                builder.Append("\nFROM ");
-                bool isJoin = false;
-                foreach (TableFilter top in topFilters) isJoin = GetPlanFromFilter(builder, sqlFlags, top, isJoin);
+                if (i > 0) builder.Append(',');
+                StringUtils.Indent(builder.Append('\n'), exprList[i].GetSql(sqlFlags, Expression.WithoutParentheses), 4, false);
             }
+            TableFilter? filter = topTableFilter;
+            if (filter is null)
+            {
+                // The reference asks the filter whether it has a FROM clause at all: a bare
+                // DUAL with nothing joined to it is the only shape that does not.
+                if (topFilters.Count != 1 || topFilters[0].HasFromClause())
+                {
+                    builder.Append("\nFROM ");
+                    bool isJoin = false;
+                    foreach (TableFilter top in topFilters) isJoin = GetPlanFromFilter(builder, sqlFlags, top, isJoin);
+                }
+            }
+            else if (filter.HasFromClause()) GetPlanFromFilter(builder.Append("\nFROM "), sqlFlags, filter, false);
         }
-        else if (filter.HasFromClause()) GetPlanFromFilter(builder.Append("\nFROM "), sqlFlags, filter, false);
         if (condition is not null) condition.GetNonAliasExpression().GetUnenclosedSql(builder.Append("\nWHERE "), sqlFlags);
         if (groupIndex is not null)
         {

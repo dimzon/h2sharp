@@ -13751,3 +13751,25 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.12%** строк (79493/86290), **87.96%** ветвей (32598/37058).
 * Проверено: H2Sharp.Tests 2555/2555, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 145: TABLE-форма в плане запроса (2026-11-11)
+
+* `Select`: перенесён эталонный флаг `isExplicitTable` (`setExplicitTable` +
+  `setWildcard`) — `ReadExplicitTable` помечает запрос, и `getPlanSQL` печатает
+  `TABLE <фильтр>` вместо разворота SELECT-столбцов. Ветвь заменяет только SELECT/FROM
+  часть: ORDER BY, конец запроса и блок план-информации (`/* index sorted */` и др.) —
+  общий хвост эталонного метода, прежний ранний return его отбрасывал, и
+  `EXPLAIN TABLE TEST ORDER BY A` по индексу печатался без `/* index sorted */`
+  (queries/table.sql, строка 60).
+* `functions/string/xmlnode.sql` не закрепляется: три расхождения — форматы
+  `<a href="…"/>` / `<br/>` / отступ содержимого `<p> Hello World </p>` — ровно
+  утверждённое отклонение D-014 (XMLNODE через System.Xml, `Indent=false` по умолчанию,
+  алгоритм BCL при явном TRUE). Проверено JVM-эталоном: эталонный `StringUtils.xmlNode`
+  даёт многострочный отступ, который эталонный harness сворачивает `formatString`-ом;
+  портовой раннер имеет тот же `CollapseText`, но результат System.Xml по D-014 другой —
+  не ломать, скрипт в список не входит.
+* `queries/table.sql` закреплён: 185 → **186** (TABLE с ORDER BY/FETCH, TABLE в
+  подзапросах и IN, EXPLAIN TABLE по scan и по индексу — построчно с эталоном).
+* Итог: **92.13%** строк (79506/86300), **87.96%** ветвей (32605/37066).
+* Проверено: H2Sharp.Tests 2556/2556, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

@@ -224,6 +224,7 @@ public sealed class ScriptConformanceTests
         "queries/derived-column-names.sql",
         "queries/duplicate-order-by.sql",
         "queries/joins.sql",
+        "queries/table.sql",
         "queries/query-cache.sql",
         "queries/query-optimisations.sql",
         "queries/values.sql",

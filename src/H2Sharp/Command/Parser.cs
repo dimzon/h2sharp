@@ -2168,6 +2168,9 @@ public sealed partial class Parser
         IsWord("TABLE");
         Query.Select select = new(current);
         select.SetSql(sql, null);
+        // The reference's parseExplicitTable marks the select as an explicit table: the plan
+        // prints the TABLE form instead of the column expansion.
+        select.SetExplicitTable();
         Tables.TableFilter filter = ReadTableReference(current, select);
         select.AddTableFilter(filter, isTop: true);
         List<Expressions.Expression> columns = [];
