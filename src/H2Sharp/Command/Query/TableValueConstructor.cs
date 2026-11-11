@@ -112,6 +112,51 @@ public sealed class TableValueConstructor : Query
     }
 
     /// <inheritdoc/>
+    public override bool IsConstantQuery()
+    {
+        if (!base.IsConstantQuery())
+        {
+            return false;
+        }
+
+        foreach (List<Expression> row in rows)
+        {
+            for (int i = 0; i < visibleColumnCount; i++)
+            {
+                if (!row[i].IsConstant())
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public override Expression? GetIfSingleRow()
+    {
+        if (offsetExpr is not null || fetchExpr is not null || rows.Count != 1)
+        {
+            return null;
+        }
+
+        List<Expression> row = rows[0];
+        if (visibleColumnCount == 1)
+        {
+            return row[0];
+        }
+
+        Expression[] array = new Expression[visibleColumnCount];
+        for (int i = 0; i < visibleColumnCount; i++)
+        {
+            array[i] = row[i];
+        }
+
+        return new ExpressionList(array, false);
+    }
+
+    /// <inheritdoc/>
     public override int GetCommandType() => CommandInterface.Select;
 
     /// <inheritdoc/>

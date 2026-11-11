@@ -205,6 +205,15 @@ public sealed class Select : Query
             throw DbException.GetInternalError();
         }
 
+        // The reference measures the select list against MAX_COLUMNS inside init, right
+        // after the star expansion has grown it; here the list arrives complete from the
+        // parser, so the check stands at that same point of the init flow.
+        if (visibleColumnCount > Constants.MaxColumns)
+        {
+            throw DbException.Get(Api.ErrorCode.TooManyColumns1,
+                Constants.MaxColumns.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         List<string>? expressionSQL = null;
         if (distinctExpressions is not null || orderList is not null || groupBy is not null)
         {

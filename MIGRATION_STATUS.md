@@ -13499,3 +13499,34 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Проверено: H2Sharp.Tests 2538/2538, MvStore 185/185, Data 756/756,
   Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort.
+
+### Спринт 136: скалярные VALUES-подзапросы и ширина select-list (2026-11-11)
+
+* `TableValueConstructor`: перенесены оверрайды `isConstantQuery` и
+  `getIfSingleRow` эталона (строки 337–367). Без них базовая проверка
+  `Query.isConstantQuery` не смотрит на выражения строк — `EXPLAIN SELECT
+  (VALUES (1, RAND()))` сворачивался вычислением (в план попадал случайный
+  `CAST(0.29… AS DOUBLE PRECISION)` вместо `ROW (1, RAND())`), а
+  `EXPLAIN SELECT (VALUES 1, RAND())` падал `SCALAR_SUBQUERY_CONTAINS_MORE_THAN_ONE_ROW`
+  ещё на разборе; у эталона ошибка принадлежит только чтению значения.
+  Однострочный конструктор с несколькими столбцами теперь заменяется
+  `ExpressionList` (печатается `ROW (…)`), многострочный остаётся подзапросом.
+* `Select.Init`: перенесена проверка `visibleColumnCount > MAX_COLUMNS` из
+  эталонного `init` (строка 1024). Без неё `CREATE TABLE … AS SELECT` с 16385
+  столбцами создавал таблицу вместо `TOO_MANY_COLUMNS_1`, и неверное имя
+  ломало все последующие операторы — каскад расхождений в select.sql.
+* Триаж `queries/select.sql`: **12 расхождений → 4**. Закрыты строки 1103/1106
+  (скалярные VALUES) и каскад 1148–1169 (шесть строк: TOO_MANY_COLUMNS_1,
+  пересоздание TEST, `CREATE INDEX`, ORDER BY по алиасу, EXPLAIN index sorted).
+  Остались три платформы RAND (поток `java.util.Random`, строки 530/533/539) и
+  qualified `_ROWID_` (`PUBLIC.TEST._ROWID_`, строка 681) — по одному на след.
+  спринт. Скрипт в закреплённый список не входит (расхождения сохранятся и
+  после `_ROWID_`), закреплённых — по-прежнему 173.
+* `ScriptConformanceRegressionTests` +2: блок EXPLAIN-строк 1082–1107 из
+  эталона дословно (включая runtime-ошибку `SELECT (VALUES 1, 2);`) и теория
+  16384 ok / 16385 `TOO_MANY_COLUMNS_1`.
+* Итог: **92.05%** строк (79393/86246, знаменатель вырос на 34 новые
+  исполняемые строки), **87.87%** ветвей (32525/37016).
+* Проверено: H2Sharp.Tests 2541/2541, MvStore 185/185, Data 756/756,
+  Engine 9/9, Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped),
+  Category!=BlockedByPort.

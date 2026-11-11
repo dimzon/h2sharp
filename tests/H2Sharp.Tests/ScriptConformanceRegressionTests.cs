@@ -529,6 +529,72 @@ public sealed class ScriptConformanceRegressionTests
         Assert.True(failures.Count == 0, string.Join(" | ", failures));
     }
 
+    /// <summary>
+    /// A VALUES constructor folds into a scalar subquery only as a whole when every row is
+    /// constant — the base check alone would evaluate RAND() and put its value into the plan
+    /// text — and a single non-constant row is replaced by its expressions, a row of several
+    /// columns rendered as ROW (...); a multi-row VALUES is refused only when its value is
+    /// read, not when its plan is printed (queries/select.sql, lines 1082-1107).
+    /// </summary>
+    [Fact]
+    public void ScalarValueSubqueriesUseTheReferencePlans()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "EXPLAIN SELECT (VALUES 1, 2 OFFSET 1 ROW);",
+            ">> SELECT 2",
+            "EXPLAIN SELECT (VALUES 1, 2 OFFSET RAND() ROWS);",
+            ">> SELECT (VALUES (1), (2) OFFSET RAND() ROWS)",
+            "EXPLAIN SELECT (VALUES 1 FETCH FIRST 2 ROWS ONLY);",
+            ">> SELECT 1",
+            "EXPLAIN SELECT (VALUES 1, 2 FETCH FIRST RAND() ROWS ONLY);",
+            ">> SELECT (VALUES (1), (2) FETCH FIRST RAND() ROWS ONLY)",
+            "EXPLAIN SELECT (SELECT 1, RAND());",
+            ">> SELECT ROW (1, RAND())",
+            "EXPLAIN SELECT (VALUES (1, RAND()));",
+            ">> SELECT ROW (1, RAND())",
+            "EXPLAIN SELECT (VALUES 1, RAND());",
+            ">> SELECT (VALUES (1), (RAND()))",
+            "SELECT (VALUES 1, 2);",
+            "> exception SCALAR_SUBQUERY_CONTAINS_MORE_THAN_ONE_ROW",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
+    /// <summary>
+    /// The reference measures the select list against MAX_COLUMNS in init: 16384 columns
+    /// still pass, 16385 are refused — and while the refusal was missing, the wrongly built
+    /// table hid behind its name and broke every following statement
+    /// (queries/select.sql, lines 1141-1169).
+    /// </summary>
+    [Theory]
+    [InlineData(16384, true)]
+    [InlineData(16385, false)]
+    public void SelectListWidthEnforcesMaxColumns(int columns, bool allowed)
+    {
+        (Database database, SessionLocal session) = Open();
+        try
+        {
+            string sql = "SELECT " + string.Join(", ",
+                Enumerable.Range(1, columns).Select(static i => i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            if (allowed)
+            {
+                using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);
+                Assert.True(result.Next());
+            }
+            else
+            {
+                H2SharpException e = Assert.Throws<H2SharpException>(
+                    () => session.PrepareCommand(sql).ExecuteQuery(-1, 0, false));
+                Assert.Equal(Api.ErrorCode.TooManyColumns1, e.H2ErrorCode);
+            }
+        }
+        finally
+        {
+            database.Close();
+        }
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);
