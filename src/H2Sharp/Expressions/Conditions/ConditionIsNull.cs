@@ -18,7 +18,11 @@
  * *every* field is null, not whether the row is null. So a row with one non-null field is not
  * null, and the loop below returns false on the first field that disagrees. The xor with `not`
  * is what makes the same loop answer both IS NULL and IS NOT NULL without a second pass.
+ *
+ * A NULL constant inside a row is special: for IS NULL it can be dropped from the row (it can
+ * never make the answer false), and for IS NOT NULL it makes the answer false outright.
  */
+using System.Collections.Generic;
 using System.Text;
 using H2Sharp.Engine;
 using H2Sharp.Indexes;
@@ -30,13 +34,9 @@ namespace H2Sharp.Expressions.Conditions;
 /// <summary>
 /// Null predicate (IS [NOT] NULL).
 /// </summary>
-public sealed class ConditionIsNull : Condition
+public sealed class ConditionIsNull : SimplePredicate
 {
-    private Expression left;
-
-    private readonly bool not;
-
-    private readonly bool whenOperand;
+    private bool optimized;
 
     /// <summary>
     /// Creates an IS [NOT] NULL predicate.
@@ -45,16 +45,8 @@ public sealed class ConditionIsNull : Condition
     /// <param name="not">whether this is IS NOT NULL</param>
     /// <param name="whenOperand">whether this is the when operand of a simple case</param>
     public ConditionIsNull(Expression left, bool not, bool whenOperand)
+        : base(left, not, whenOperand)
     {
-        this.left = left;
-        this.not = not;
-        this.whenOperand = whenOperand;
-    }
-
-    /// <inheritdoc/>
-    public override bool NeedParentheses()
-    {
-        return true;
     }
 
     /// <inheritdoc/>
@@ -70,9 +62,63 @@ public sealed class ConditionIsNull : Condition
     }
 
     /// <inheritdoc/>
+    public override Expression Optimize(SessionLocal session)
+    {
+        if (optimized)
+        {
+            return this;
+        }
+
+        Expression o = base.Optimize(session);
+        if (!ReferenceEquals(o, this))
+        {
+            return o;
+        }
+
+        optimized = true;
+        if (!whenOperand && left is ExpressionList list && !list.IsArray())
+        {
+            for (int i = 0, count = list.GetSubexpressionCount(); i < count; i++)
+            {
+                if (!list.GetSubexpression(i)!.IsNullConstant())
+                {
+                    continue;
+                }
+
+                if (not)
+                {
+                    return ValueExpression.False;
+                }
+
+                List<Expression> newList = new(count - 1);
+                for (int j = 0; j < i; j++)
+                {
+                    newList.Add(list.GetSubexpression(j)!);
+                }
+
+                for (int j = i + 1; j < count; j++)
+                {
+                    Expression e = list.GetSubexpression(j)!;
+                    if (!e.IsNullConstant())
+                    {
+                        newList.Add(e);
+                    }
+                }
+
+                left = newList.Count == 1
+                    ? newList[0]
+                    : new ExpressionList(newList.ToArray(), false);
+                break;
+            }
+        }
+
+        return this;
+    }
+
+    /// <inheritdoc/>
     public override Value GetValue(SessionLocal session)
     {
-        return ValueBoolean.Get(Answer(left.GetValue(session)));
+        return ValueBoolean.Get(GetValue(left.GetValue(session)));
     }
 
     /// <inheritdoc/>
@@ -83,20 +129,20 @@ public sealed class ConditionIsNull : Condition
             return base.GetWhenValue(session, leftValue);
         }
 
-        return Answer(leftValue);
+        return GetValue(leftValue);
     }
 
     /// <summary>
     /// The answer for one value. Never NULL: that is what makes this a predicate rather than a
     /// comparison.
     /// </summary>
-    private bool Answer(Value value)
+    private bool GetValue(Value leftValue)
     {
-        if (value is ValueRow row)
+        if (leftValue.GetTypeInfo().GetValueType() == Value.Row)
         {
-            foreach (Value v in row.GetList())
+            foreach (Value v in ((ValueRow)leftValue).GetList())
             {
-                if ((v is not ValueNull) == !not)
+                if ((v is not ValueNull) ^ not)
                 {
                     return false;
                 }
@@ -105,14 +151,31 @@ public sealed class ConditionIsNull : Condition
             return true;
         }
 
-        return (value is ValueNull) != not;
+        return (leftValue is ValueNull) ^ not;
     }
 
     /// <inheritdoc/>
-    public override Expression Optimize(SessionLocal session)
+    public override Expression? GetNotIfPossible(SessionLocal session)
     {
-        left = left.Optimize(session);
-        return this;
+        if (whenOperand)
+        {
+            return null;
+        }
+
+        Expression o = Optimize(session);
+        if (!ReferenceEquals(o, this))
+        {
+            return o.GetNotIfPossible(session);
+        }
+
+        switch (left.GetTypeInfo().GetValueType())
+        {
+            case Value.Unknown:
+            case Value.Row:
+                return null;
+        }
+
+        return new ConditionIsNull(left, !not, false);
     }
 
     /// <inheritdoc/>
@@ -148,53 +211,5 @@ public sealed class ConditionIsNull : Condition
             filter.AddIndexCondition(
                 IndexCondition.Get(Comparison.EqualNullSafe, column, ValueExpression.Null));
         }
-    }
-
-    /// <inheritdoc/>
-    public override void SetEvaluatable(TableFilter tableFilter, bool b)
-    {
-        left.SetEvaluatable(tableFilter, b);
-    }
-
-    /// <inheritdoc/>
-    public override void UpdateAggregate(SessionLocal session, int stage)
-    {
-        left.UpdateAggregate(session, stage);
-    }
-
-    /// <inheritdoc/>
-    public override void MapColumns(ColumnResolver resolver, int level, int state)
-    {
-        left.MapColumns(resolver, level, state);
-    }
-
-    /// <inheritdoc/>
-    public override bool IsEverything(ExpressionVisitor visitor)
-    {
-        return left.IsEverything(visitor);
-    }
-
-    /// <inheritdoc/>
-    public override int GetCost()
-    {
-        return left.GetCost() + 1;
-    }
-
-    /// <inheritdoc/>
-    public override int GetSubexpressionCount()
-    {
-        return 1;
-    }
-
-    /// <inheritdoc/>
-    public override Expression? GetSubexpression(int index)
-    {
-        return index == 0 ? left : throw new System.IndexOutOfRangeException();
-    }
-
-    /// <inheritdoc/>
-    public override bool IsWhenConditionOperand()
-    {
-        return whenOperand;
     }
 }

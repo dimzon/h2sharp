@@ -229,6 +229,7 @@ public sealed class ScriptConformanceTests
         "predicates/between.sql",
         "predicates/distinct.sql",
         "predicates/like.sql",
+        "predicates/null.sql",
         "predicates/quantified-comparison-with-array.sql",
         "predicates/type.sql",
         "predicates/unique.sql",

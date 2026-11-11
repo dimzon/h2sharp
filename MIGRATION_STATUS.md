@@ -13871,3 +13871,23 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.15%** строк (79675/86464), **88.02%** ветвей (32686/37134).
 * Проверено: H2Sharp.Tests 2569/2569, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 150: IS [NOT] NULL — эталонный NullPredicate над SimplePredicate (2026-11-12)
+
+* `ConditionIsNull` переведён на эталонную иерархию: `NullPredicate extends
+  SimplePredicate` — порт дублировал члены базового класса, теперь наследует их
+  (`NeedParentheses`, `SetEvaluatable`, `MapColumns`, `GetCost`, подвыражения и
+  when-операнд) и совпадает с `BooleanTest`/`TypePredicate`.
+* Перенесён `NullPredicate.optimize` (флаг `optimized`, `super.optimize`, разбор
+  `ExpressionList`): `(A, NULL) IS NULL` сводится к `"A" IS NULL` (NULL-константы
+  выбрасываются, одна колонка остаётся сама собой), `(A, NULL) IS NOT NULL` — к FALSE,
+  `(A, NULL, B) IS NULL` — к `ROW ("A", "B") IS NULL`; хвост SimplePredicate сворачивает
+  `IS NULL` константы (predicates/null.sql строки 169–181).
+* Перенесён `NullPredicate.getNotIfPossible`: `NOT (A, NULL) IS NULL` →
+  `ConditionIsNull(A, not: true)` → `"A" IS NOT NULL`; для UNKNOWN/ROW — null.
+  `GetValue(SessionLocal)`/`GetWhenValue`/`getValue(Value)` различают ROW и скаляр, как
+  эталон; `CreateIndexConditions` не изменился по смыслу.
+* Закреплён `predicates/null.sql`: 199 → **200**.
+* Итог: **92.15%** строк (79696/86481), **88.04%** ветвей (32721/37164).
+* Проверено: H2Sharp.Tests 2570/2570, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
