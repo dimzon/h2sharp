@@ -14054,3 +14054,18 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.30%** строк (79915/86582), **88.43%** ветвей (32905/37210).
 * Проверено: H2Sharp.Tests 2582/2582, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 161: одиннадцать системных скриптов без расхождений (2026-11-12)
+
+* Код не менялся: батальный триаж непомянутых скриптов эталона дал 11 файлов с
+  **0 расхождений** — они закреплены свободными пинами:
+  `functions/aggregate/stddev_pop.sql`, `stddev_samp.sql`, `var_pop.sql`, `var_samp.sql`,
+  `functions/system/cancel-session.sql`, `disk-space-used.sql`, `lock-mode.sql`,
+  `lock-timeout.sql`, `memory-used.sql`, `session-id.sql`, `transaction-id.sql`.
+  211 → **222**.
+* Остальные кандидаты того же батала подтвердили блокировки: `current_catalog.sql`
+  (табличные функции по алиасам, D-037), `db_object.sql` (CREATE ROLE, D-004),
+  `last-insert-id.sql`/`compatibility/add_months.sql` (SET MODE, D-029).
+* Итог: **92.31%** строк (79920/86582), **88.44%** ветвей (32907/37210).
+* Проверено: H2Sharp.Tests 2593/2593, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
