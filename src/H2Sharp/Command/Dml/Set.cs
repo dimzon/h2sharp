@@ -711,7 +711,7 @@ public sealed class Set : Prepared
             throw DbException.GetInvalidValueException("TIME ZONE", v.GetTraceSql());
         }
 
-        throw new TODOException("Set.parseTimeZone: interval time zones are not ported");
+        return TimeZoneProvider.OfOffset(TimeZoneOperation.ParseInterval(v));
     }
 
     private int GetIntValue()

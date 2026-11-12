@@ -13996,3 +13996,17 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.21%** строк (79813/86551), **88.19%** ветвей (32798/37190).
 * Проверено: H2Sharp.Tests 2577/2577, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 157: SET TIME ZONE INTERVAL (2026-11-12)
+
+* `Set.ParseTimeZone`: перенесён эталонный хвост — значение, не являющееся строкой, но не
+  NULL, читается как дневной интервал и превращается в смещение
+  (`TimeZoneProvider.OfOffset(TimeZoneOperation.ParseInterval(v))`); TODO про
+  «interval time zones are not ported» снят. Оба куска уже были в порте — не хватало
+  только соединения, поэтому `SET TIME ZONE INTERVAL '4:00' HOUR TO MINUTE` отвечал
+  FEATURE_NOT_SUPPORTED (other/at-time-zone.sql строка 121).
+* Закреплён `other/at-time-zone.sql`: 206 → **207** (AT TIME ZONE по смещению, интервалу,
+  именам зон, AT LOCAL, ошибки диапазона ±18:00 — построчно с эталоном).
+* Итог: **92.23%** строк (79825/86551), **88.22%** ветвей (32810/37190).
+* Проверено: H2Sharp.Tests 2578/2578, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

@@ -223,6 +223,7 @@ public sealed class ScriptConformanceTests
         "functions/window/ntile.sql",
         "functions/window/ratio_to_report.sql",
         "functions/window/row_number.sql",
+        "other/at-time-zone.sql",
         "other/boolean-test.sql",
         "default-and-on_update.sql",
         "other/case.sql",
