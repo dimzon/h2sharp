@@ -317,6 +317,13 @@ public sealed class Mode
     public bool TakeGeneratedSequenceValue { get; }
 
     /// <summary>
+    /// Whether NEXT VALUE FOR hands out a new value on every occurrence rather than one value
+    /// per row, as the reference's <c>nextValueReturnsDifferentValues</c> says for MariaDB
+    /// and PostgreSQL.
+    /// </summary>
+    public bool NextValueReturnsDifferentValues { get; }
+
+    /// <summary>
     /// Whether a numeric value and a BOOLEAN may be compared with EQUAL / NOT EQUAL, as the
     /// reference allows in Legacy, DB2, HSQLDB, SQL Server, MariaDB and MySQL.
     /// </summary>
@@ -400,6 +407,7 @@ public sealed class Mode
         bool updateSequenceOnManualIdentityInsertion = false,
         bool takeInsertedIdentity = false,
         bool takeGeneratedSequenceValue = false,
+        bool nextValueReturnsDifferentValues = false,
         bool numericWithBooleanComparison = false,
         bool decimalSequences = false,
         bool groupByColumnIndex = false,
@@ -446,6 +454,7 @@ public sealed class Mode
         UpdateSequenceOnManualIdentityInsertion = updateSequenceOnManualIdentityInsertion;
         TakeInsertedIdentity = takeInsertedIdentity;
         TakeGeneratedSequenceValue = takeGeneratedSequenceValue;
+        NextValueReturnsDifferentValues = nextValueReturnsDifferentValues;
         NumericWithBooleanComparison = numericWithBooleanComparison;
         DecimalSequences = decimalSequences;
         GroupByColumnIndex = groupByColumnIndex;
@@ -536,7 +545,8 @@ public sealed class Mode
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
                 replaceInto: true, autoIncrementClause: true, alterTableModifyColumn: true,
                 numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true,
-                takeInsertedIdentity: true, viewExpressionNames: ExpressionNames.MysqlStyle,
+                takeInsertedIdentity: true, nextValueReturnsDifferentValues: true,
+                viewExpressionNames: ExpressionNames.MysqlStyle,
                 cteExpressionNames: ExpressionNames.MysqlStyle),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
@@ -554,7 +564,8 @@ public sealed class Mode
             ["POSTGRESQL"] = new(
                 ModeEnum.PostgreSql, false, false, false, true, false, CharPadding.InResultSets,
                 logIsLogBase10: true, groupByColumnIndex: true, serialDataTypes: true,
-                takeGeneratedSequenceValue: true, aliasColumnName: true,
+                takeGeneratedSequenceValue: true, nextValueReturnsDifferentValues: true,
+                aliasColumnName: true,
                 disallowedTypes: new HashSet<string>(StringComparer.Ordinal)
                 {
                     "NUMBER", "TINYINT", "BLOB", "VARCHAR_IGNORECASE",

@@ -175,6 +175,52 @@ public sealed class SessionLocal : Session
     /// </summary>
     private readonly Dictionary<H2Sharp.Schemas.Sequence, Value> currentValueFor = [];
 
+    // The reference's nextValueFor: NEXT VALUE FOR hands one value per row and per command,
+    // so the same sequence named twice in a row answers the same number both times. The map
+    // lives exactly as long as the command that drew it.
+    private Dictionary<SequenceAndPrepared, RowNumberAndValue>? nextValueFor;
+
+    /// <summary>
+    /// The reference's <c>SequenceAndPrepared</c>: the cache key of a sequence within one
+    /// command; identity on both parts, as the reference compares them.
+    /// </summary>
+    private sealed class SequenceAndPrepared
+    {
+        private readonly H2Sharp.Schemas.Sequence sequence;
+
+        private readonly H2Sharp.Command.Prepared prepared;
+
+        internal SequenceAndPrepared(H2Sharp.Schemas.Sequence sequence, H2Sharp.Command.Prepared prepared)
+        {
+            this.sequence = sequence;
+            this.prepared = prepared;
+        }
+
+        public override int GetHashCode() => 31 * (31 + prepared.GetHashCode()) + sequence.GetHashCode();
+
+        public override bool Equals(object? obj)
+            => obj is SequenceAndPrepared other
+                && ReferenceEquals(sequence, other.sequence)
+                && ReferenceEquals(prepared, other.prepared);
+    }
+
+    /// <summary>
+    /// The reference's <c>RowNumberAndValue</c>: the row a drawn value belongs to, mutable so
+    /// one entry can follow the row counter instead of being re-created every row.
+    /// </summary>
+    private sealed class RowNumberAndValue
+    {
+        internal long RowNumber;
+
+        internal Value? NextValue;
+
+        internal RowNumberAndValue(long rowNumber, Value nextValue)
+        {
+            RowNumber = rowNumber;
+            NextValue = nextValue;
+        }
+    }
+
     // The reference's lastIdentity: the identity an insert or a sequence value left in this
     // session, read by the compatibility-mode functions (LAST_INSERT_ID and friends).
     private Value lastIdentity = ValueNull.Instance;
@@ -405,7 +451,16 @@ public sealed class SessionLocal : Session
     /// Remembers the command being run, as the reference's setCurrentCommand.
     /// </summary>
     /// <param name="command">the command, or null</param>
-    private void SetCurrentCommand(H2Sharp.Command.Command? command) => currentCommand = command;
+    private void SetCurrentCommand(H2Sharp.Command.Command? command)
+    {
+        currentCommand = command;
+        if (command is null)
+        {
+            // The reference's setCurrentCommand: the statement that drew the row-per-value
+            // sequence cache is ending, and the cache ends with it.
+            nextValueFor?.Clear();
+        }
+    }
 
     /// <summary>
     /// Gets the command being run, as the reference's getCurrentCommand.
@@ -1322,18 +1377,46 @@ public sealed class SessionLocal : Session
     /// The next value of a sequence, as the reference's getNextValueFor.
     /// </summary>
     /// <remarks>
-    /// The reference keeps the value of a sequence per statement, so that the same statement
-    /// read twice gives the same number, and it keeps the current value of every sequence for
-    /// CURRVAL. The flags of the mode that turn those on are not set in the regular mode, and
-    /// this port has no modes to set them in, so the value is always a new one.
+    /// The reference hands one value per row and per command: the same sequence named twice in
+    /// one row answers the same number, and the value is remembered as the sequence's current
+    /// value for CURRVAL. Modes that want a fresh value on every occurrence (MariaDB,
+    /// PostgreSQL) say so with <c>nextValueReturnsDifferentValues</c>.
     /// </remarks>
     /// <param name="sequence">the sequence</param>
     /// <param name="prepared">the statement, or null</param>
     /// <returns>the value</returns>
     public Value GetNextValueFor(H2Sharp.Schemas.Sequence sequence, H2Sharp.Command.Prepared? prepared)
     {
-        _ = prepared;
-        Value value = sequence.GetNext(this);
+        Value value;
+        if (GetMode().NextValueReturnsDifferentValues || prepared is null)
+        {
+            value = sequence.GetNext(this);
+        }
+        else
+        {
+            nextValueFor ??= [];
+            SequenceAndPrepared key = new(sequence, prepared);
+            long rowNumber = prepared.GetCurrentRowNumber();
+            if (nextValueFor.TryGetValue(key, out RowNumberAndValue? data))
+            {
+                if (data.RowNumber == rowNumber)
+                {
+                    value = data.NextValue!;
+                }
+                else
+                {
+                    value = sequence.GetNext(this);
+                    data.NextValue = value;
+                    data.RowNumber = rowNumber;
+                }
+            }
+            else
+            {
+                value = sequence.GetNext(this);
+                nextValueFor[key] = new RowNumberAndValue(rowNumber, value);
+            }
+        }
+
         currentValueFor[sequence] = value;
         if (GetMode().TakeGeneratedSequenceValue)
         {

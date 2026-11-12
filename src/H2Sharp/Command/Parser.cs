@@ -7158,9 +7158,12 @@ public sealed partial class Parser
                         Schemas.Sequence sequence = ReadSequence(
                             session ?? throw new TODOException(
                                 "Parser.readTerm: this parser has no session"));
+                        // NEXT VALUE FOR binds to the statement being read, as the reference's
+                        // getCurrentPreparedOrSelect: that is what makes the same sequence named
+                        // twice in a row answer the same number.
                         return current
                             ? new Expressions.SequenceValue(sequence)
-                            : new Expressions.SequenceValue(sequence, null);
+                            : new Expressions.SequenceValue(sequence, GetCurrentPreparedOrSelect());
                     }
 
                     position = index;
@@ -7787,6 +7790,14 @@ public sealed partial class Parser
     /// <param name="current">whether the current value is read instead of the next one</param>
     /// <param name="aggregateSelect">the select when aggregates may appear, null otherwise</param>
     /// <returns>the expression</returns>
+    /// <summary>
+    /// The statement a row-bound value belongs to, as the reference's
+    /// <c>getCurrentPreparedOrSelect</c>: the prepared statement being read, or the select
+    /// that surrounds it.
+    /// </summary>
+    /// <returns>the statement</returns>
+    private Prepared GetCurrentPreparedOrSelect() => currentPrepared ?? currentSelect!;
+
     private Expressions.Expression ReadCompatibilitySequenceValueFunction(
         bool current, Query.Select? aggregateSelect)
     {

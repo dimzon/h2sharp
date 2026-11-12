@@ -14088,3 +14088,27 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.31%** строк (79925/86581), **88.45%** ветвей (32909/37208).
 * Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 163: NEXT VALUE FOR — одно значение на строку и на команду (2026-11-12)
+
+* `SessionLocal.GetNextValueFor`: перенесён эталонный `nextValueFor` — кэш
+  `(sequence, prepared) → (rowNumber, value)`. Два `NEXT VALUE FOR S1` в одной строке
+  отвечают одним числом (`SELECT NEXT VALUE FOR S1 A, ..., NEXT VALUE FOR S1 C FROM
+  SYSTEM_RANGE(1,2)`: эталон `11 61 11 61`, порт до фикса `11 61 12 62`); счётчик строки
+  берётся из `Prepared.GetCurrentRowNumber()`, кэш живёт до конца команды и очищается в
+  `SetCurrentCommand(null)` — как эталонный `setCurrentCommand`. Перенесены эталонные
+  классы-ключи `SequenceAndPrepared` (сравнение по идентичности обеих частей) и
+  `RowNumberAndValue` (изменяемая запись, не пересоздаётся каждую строку).
+* `Parser.readTerm`: `NEXT VALUE FOR` привязывается к читаемой команде через перенесённый
+  `getCurrentPreparedOrSelect()` — раньше порт строил `SequenceValue(sequence, null)` и
+  кэш не срабатывал вовсе (старый комментарий «режимов нет, всегда новое значение» был
+  неверен и в REGULAR-режиме).
+* `Mode.NextValueReturnsDifferentValues`: перенесён флаг эталона (`true` у MariaDB и
+  PostgreSQL — там каждый вызов NEXT VALUE берёт новое число, без кэша).
+* `other/sequence.sql` не закреплён: раннер игнорирует `@reconnect`/`@autocommit`
+  (эталонный harness перезапускает файл-БД и выключает автокоммит — контракт раннера,
+  отдельная работа), `SEQ.NEXTVAL`/`CURRVAL` псевдостолбцы и SCRIPT-дампы останутся и
+  после (D-029/D-004). Первый блок скрипта совпал с эталоном после фикса.
+* Итог: **92.29%** строк (79948/86630), **88.42%** ветвей (32916/37228).
+* Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
