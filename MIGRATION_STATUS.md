@@ -14206,3 +14206,18 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.30%** строк (80023/86698), **88.44%** ветвей (32942/37248).
 * Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 169: TABLE_CONSTRAINTS.ENFORCED для внешних ключей (2026-11-12)
+
+* `InformationSchemaTable.AddTableConstraints`: колонка ENFORCED не всегда «YES» —
+  перенесено эталонное правило: для не-ссылочных ограничений enforced=true, для
+  FOREIGN KEY — `database.getReferentialIntegrity() && table.getCheckForeignKeyConstraints()
+  && refTable.getCheckForeignKeyConstraints()`. Поэтому `SET REFERENTIAL_INTEGRITY FALSE` и
+  `ALTER TABLE ... SET REFERENTIAL_INTEGRITY FALSE` (с обеих сторон ключа) теперь дают
+  ENFORCED=NO (information_schema.sql строки 154/163/172).
+* `information_schema.sql`: 13 → 10 расхождений; остальные — блок `SET MODE MySQL` и
+  вытекающие из него строки метаданных, SCRIPT-дампы, `@reconnect`-секции и
+  ROW_COUNT_ESTIMATE служебных таблиц — пин невозможен без D-029/D-004.
+* Итог: **92.32%** строк (80041/86702), **88.44%** ветвей (32952/37258).
+* Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

@@ -1935,6 +1935,12 @@ public sealed class InformationSchemaTable : Table
         Constraint.Type constraintType = constraint.GetConstraintType();
         Table table = constraint.GetTable();
         Index? index = constraint.GetIndex();
+        // The reference's ENFORCED: only a foreign key answers to the switches — the
+        // database-wide one and the check flag of both tables it joins.
+        bool enforced = constraintType != Constraint.Type.REFERENTIAL
+            || (constraint.GetSchema()?.GetDatabase().IsReferentialIntegrity() ?? false)
+                && table.GetCheckForeignKeyConstraints()
+                && ((ConstraintReferential)constraint).GetRefTable().GetCheckForeignKeyConstraints();
         Add(
             rows,
             catalog,
@@ -1946,7 +1952,7 @@ public sealed class InformationSchemaTable : Table
             table.GetTableName(),
             "NO",
             "NO",
-            "YES",
+            enforced ? "YES" : "NO",
             constraintType == Constraint.Type.UNIQUE && constraint is ConstraintUnique unique
                 ? NullsDistinctToString(unique.GetNullsDistinct())
                 : null,
