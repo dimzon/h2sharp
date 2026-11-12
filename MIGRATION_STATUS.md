@@ -14151,3 +14151,25 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.33%** строк (80021/86672), **88.46%** ветвей (32951/37250).
 * Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 166: проверка существующих данных FK эталонным запросом (2026-11-12)
+
+* `ConstraintReferential.CheckExistingData`: портовая самодеятельная реализация (скан
+  строк с `Convert` и `ExistsRow` по индексу) заменена эталонной — запрос
+  `SELECT 1 FROM (SELECT cols FROM t WHERE cols IS NOT NULL ORDER BY cols) C WHERE
+  NOT EXISTS(SELECT 1 FROM parent P WHERE C.col=P.col ...)` готовится и исполняется под
+  `startStatementWithinTransaction`. Именно на подготовке этого запроса эталон проверяет
+  сравнимость типов колонок, поэтому `ALTER TABLE B ADD FOREIGN KEY(C) REFERENCES A(C)`
+  (INT ARRAY против TIME ARRAY) отказывает `TYPES_ARE_NOT_COMPARABLE_2`
+  (ddl/alterTableAdd.sql строка 165). Штатное нарушение целостности остаётся
+  `REFERENTIAL_INTEGRITY_VIOLATED_PARENT_MISSING_1`.
+* `IndexColumn.WriteColumns(builder, columns, separator, suffix, sqlFlags)`: перенесена
+  эталонная перегрузка (нужна для «AND » / « IS NOT NULL »).
+* `ddl/alterTableAdd.sql`: 11 → 10 расхождений; остальные — блоки `SET MODE` (117/120/126),
+  SCRIPT-дампы (371) и кластер `UNIQUE(VALUE)` на невидимых колонках (391–417) —
+  разбор эталона показал, что там не хватает только `readIf(VALUE, CLOSE_PAREN)` →
+  `setIndexColumns(null)` (командный хвост с видимыми колонками уже портирован):
+  спринт 167. Скрипт не пиннуется и сейчас (SET MODE).
+* Итог: **92.31%** строк (80016/86684), **88.45%** ветвей (32938/37238).
+* Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

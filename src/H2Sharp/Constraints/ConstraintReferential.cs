@@ -18,7 +18,8 @@
  * parameter plumbing of nested commands; this port writes the child rows itself, under the
  * same skipOwnTable guard and with the same row-level fires, so the rows that change and
  * the errors they raise are the same. The statement strings are still built, but only where
- * the reference builds them for reading: getCreateSQLForCopy.
+ * the reference builds them: getCreateSQLForCopy and the existing-data check, which runs the
+ * reference's SQL query and so answers the comparison of the column types as the reference does.
  *
  * The lookup is the reference's: the constraint's own index (or the referenced unique one)
  * is walked with the key as both bounds, and the rows it returns are compared value by
@@ -841,50 +842,55 @@ public class ConstraintReferential : Constraint
             return;
         }
 
-        Index? scan = table.GetScanIndex(session)
-            ?? throw DbException.GetInternalError(table.GetTableName());
-        Indexes.Cursor cursor = scan.GetCursor(session, null, null, reverse: false)
-            ?? throw DbException.GetInternalError(table.GetTableName());
-        while (cursor.Next())
+        // The reference asks the question in SQL: an existing row of this table whose key
+        // is not null must find its parent. Preparing that statement is also where the
+        // comparison of the two column types is checked, so adding a foreign key between
+        // incomparable types refuses with TYPES_ARE_NOT_COMPARABLE_2 here.
+        StringBuilder builder = new("SELECT 1 FROM (SELECT ");
+        _ = IndexColumn.WriteColumns(builder, columns!, IndexColumn.SqlNoOrder);
+        _ = builder.Append(" FROM ");
+        _ = table.GetSql(builder, HasSql.DefaultSqlFlags).Append(" WHERE ");
+        _ = IndexColumn.WriteColumns(builder, columns!, " AND ", " IS NOT NULL ", IndexColumn.SqlNoOrder);
+        _ = builder.Append(" ORDER BY ");
+        _ = IndexColumn.WriteColumns(builder, columns!, HasSql.DefaultSqlFlags);
+        _ = builder.Append(") C WHERE NOT EXISTS(SELECT 1 FROM ");
+        _ = refTable!.GetSql(builder, HasSql.DefaultSqlFlags).Append(" P WHERE ");
+        for (int i = 0, l = columns!.Length; i < l; i++)
         {
-            Row? row = cursor.Get();
-            if (row is null)
+            if (i > 0)
             {
-                continue;
+                _ = builder.Append(" AND ");
             }
 
-            bool anyNull = false;
-            foreach (IndexColumn col in columns!)
+            _ = builder.Append("C.");
+            _ = columns[i].GetColumn().GetSql(builder, HasSql.DefaultSqlFlags)
+                .Append('=').Append("P.");
+            _ = refColumns![i].GetColumn().GetSql(builder, HasSql.DefaultSqlFlags);
+        }
+
+        _ = builder.Append(')');
+
+        session.StartStatementWithinTransaction(null);
+        try
+        {
+            ResultInterface r = session.PrepareCommand(builder.ToString()).ExecuteQuery(1, 0, false);
+            try
             {
-                Value? v = row.GetValue(col.GetColumn().GetColumnId());
-                if (v is null or ValueNull)
+                if (r.Next())
                 {
-                    anyNull = true;
-                    break;
+                    throw DbException.Get(
+                        Api.ErrorCode.ReferentialIntegrityViolatedParentMissing1,
+                        GetShortDescription(null, null));
                 }
             }
-
-            if (anyNull)
+            finally
             {
-                continue;
+                r.Close();
             }
-
-            Row check = refTable!.GetTemplateRow();
-            for (int i = 0, len = columns!.Length; i < len; i++)
-            {
-                int idx = columns[i].GetColumn().GetColumnId();
-                Value? v = row.GetValue(idx);
-                Column refCol = refColumns![i].GetColumn();
-                check.SetValue(refCol.GetColumnId(), refCol.Convert(session.CastDataProvider, v!));
-            }
-
-            Index refIndex = refConstraint!.GetIndex()!;
-            if (!ExistsRow(session, refIndex, check, excluding: null))
-            {
-                throw DbException.Get(
-                    Api.ErrorCode.ReferentialIntegrityViolatedParentMissing1,
-                    GetShortDescription(null, null));
-            }
+        }
+        finally
+        {
+            session.EndStatement();
         }
     }
 

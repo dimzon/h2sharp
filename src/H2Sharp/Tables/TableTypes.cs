@@ -294,6 +294,37 @@ public class IndexColumn
         return builder;
     }
 
+    /// <summary>
+    /// Writes every column with a separator between them and SQL appended after each one, the
+    /// reference's <c>writeColumns(builder, columns, separator, suffix, sqlFlags)</c>; the
+    /// referential check of existing rows joins its columns with «AND » and « IS NOT NULL».
+    /// </summary>
+    /// <param name="builder">the builder</param>
+    /// <param name="columns">the columns</param>
+    /// <param name="separator">the separator</param>
+    /// <param name="suffix">the SQL appended after each column</param>
+    /// <param name="sqlFlags">formatting flags</param>
+    /// <returns>the builder</returns>
+    public static StringBuilder WriteColumns(
+        StringBuilder builder,
+        IndexColumn[] columns,
+        string separator,
+        string suffix,
+        int sqlFlags)
+    {
+        for (int i = 0, l = columns.Length; i < l; i++)
+        {
+            if (i > 0)
+            {
+                _ = builder.Append(separator);
+            }
+
+            _ = columns[i].GetSql(builder, sqlFlags).Append(suffix);
+        }
+
+        return builder;
+    }
+
     /// <summary>Ascending sort order.</summary>
     public const int ASCENDING = 0;
 
