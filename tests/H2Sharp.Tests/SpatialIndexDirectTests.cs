@@ -13,6 +13,7 @@ using H2Sharp.Engine;
 using H2Sharp.Indexes;
 using H2Sharp.MvStore.Db;
 using H2Sharp.Result;
+using H2Sharp.Tables;
 using H2Sharp.Values;
 using Xunit;
 
@@ -121,8 +122,10 @@ public sealed class SpatialIndexDirectTests
     }
 
     [Fact]
-    public void AUniqueSpatialIndexSeesUncommittedNeighbors()
+    public void AUniqueIndexOnGeometrySeesUncommittedNeighbors()
     {
+        // Not a spatial index: H2 2.5's CREATE UNIQUE INDEX builds IndexType.createUnique,
+        // which carries no spatial flag, so this is the regular unique index over geometry.
         SessionLocal second = new(database, "sa");
         Execute("CREATE TABLE U(ID INT PRIMARY KEY, THE_GEOM GEOMETRY)");
         Execute("CREATE UNIQUE NULLS DISTINCT INDEX IDX_U ON U USING RTREE (THE_GEOM)");
@@ -174,6 +177,134 @@ public sealed class SpatialIndexDirectTests
             () => Execute("CREATE SPATIAL INDEX IDX_NL ON G(THE_GEOM NULLS LAST)"));
         Assert.Throws<H2SharpException>(
             () => Execute("CREATE SPATIAL INDEX IDX_NG ON G(ID)"));
+    }
+
+    /// <summary>
+    /// The constructor guards themselves: the SQL parser rejects some of these forms before the
+    /// index is built, so the messages that prove the guard ran are checked here directly.
+    /// </summary>
+    [Fact]
+    public void TheConstructorGuardsRefuseUnsupportedColumns()
+    {
+        MVTable table = (MVTable)database.GetSchema("PUBLIC").GetTableOrView(null, "G");
+        Column geom = table.GetColumn("THE_GEOM");
+        Column id = table.GetColumn("ID");
+        IndexType type = IndexType.CreateNonUnique(persistent: false, hash: false, spatial: true);
+
+        H2SharpException many = Assert.Throws<H2SharpException>(() => new MVSpatialIndex(
+            database, table, 900001, "DIRECT_MANY",
+            new[] { new IndexColumn(geom), new IndexColumn(id) }, 0, type));
+        Assert.Contains("Can only index one column", many.Message, StringComparison.Ordinal);
+
+        H2SharpException descending = Assert.Throws<H2SharpException>(() => new MVSpatialIndex(
+            database, table, 900002, "DIRECT_DESC",
+            new[] { new IndexColumn(geom, SortOrder.Descending) }, 0, type));
+        Assert.Contains("Cannot index in descending order", descending.Message, StringComparison.Ordinal);
+
+        H2SharpException nullsFirst = Assert.Throws<H2SharpException>(() => new MVSpatialIndex(
+            database, table, 900003, "DIRECT_NF",
+            new[] { new IndexColumn(geom, SortOrder.NullsFirst) }, 0, type));
+        Assert.Contains("Nulls first is not supported", nullsFirst.Message, StringComparison.Ordinal);
+
+        H2SharpException nullsLast = Assert.Throws<H2SharpException>(() => new MVSpatialIndex(
+            database, table, 900004, "DIRECT_NL",
+            new[] { new IndexColumn(geom, SortOrder.NullsLast) }, 0, type));
+        Assert.Contains("Nulls last is not supported", nullsLast.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A unique spatial index only exists when it is built directly: H2 2.5's CREATE UNIQUE
+    /// INDEX never sets the spatial flag, so this path has no SQL form. The reference's
+    /// contained-key search is strict (a key equal to the filter is not "inside" it), so the
+    /// duplicate branches are unreachable; the walk over a containing neighbor is not.
+    /// </summary>
+    [Fact]
+    public void AUniqueSpatialIndexWalksItsNeighbors()
+    {
+        Execute("CREATE TABLE US(ID INT PRIMARY KEY, G GEOMETRY)");
+        Execute("INSERT INTO US VALUES (1, 'POINT (1 1)')");
+        MVTable table = (MVTable)database.GetSchema("PUBLIC").GetTableOrView(null, "US");
+        MVSpatialIndex unique = NewUniqueSpatialIndex(table, 900011);
+
+        Row point = (Row)table.GetRow(session, 1)!;
+        unique.Add(session, point);
+        session.Commit(false);
+
+        // A polygon strictly containing the stored point is a neighbor the contained-key
+        // cursor yields; it is not equal, so the loop walks past it and the insert succeeds.
+        Execute("INSERT INTO US VALUES (2, 'POLYGON ((0 0, 0 2, 2 2, 2 0, 0 0))')");
+        Row polygon = (Row)table.GetRow(session, 2)!;
+        unique.Add(session, polygon);
+
+        Assert.Equal(2L, unique.GetRowCount(session));
+    }
+
+    [Fact]
+    public void AddingToAClosedSpatialIndexReportsTheStoreError()
+    {
+        Execute("CREATE TABLE CA(ID INT PRIMARY KEY, G GEOMETRY)");
+        Execute("INSERT INTO CA VALUES (1, 'POINT (1 1)')");
+        MVTable table = (MVTable)database.GetSchema("PUBLIC").GetTableOrView(null, "CA");
+        MVSpatialIndex closing = NewUniqueSpatialIndex(table, 900012);
+        Row row = (Row)table.GetRow(session, 1)!;
+
+        closing.Remove(session);
+        Assert.ThrowsAny<H2SharpException>(() => closing.Add(session, row));
+    }
+
+    [Fact]
+    public void RemovingFromAClosedSpatialIndexReportsTheStoreError()
+    {
+        Execute("CREATE TABLE CR(ID INT PRIMARY KEY, G GEOMETRY)");
+        Execute("INSERT INTO CR VALUES (1, 'POINT (1 1)')");
+        MVTable table = (MVTable)database.GetSchema("PUBLIC").GetTableOrView(null, "CR");
+        MVSpatialIndex closing = NewUniqueSpatialIndex(table, 900013);
+        Row row = (Row)table.GetRow(session, 1)!;
+
+        closing.Remove(session);
+        Assert.ThrowsAny<H2SharpException>(() => closing.Remove(session, row));
+    }
+
+    [Fact]
+    public void RemovingAMissingKeyReportsRowNotFound()
+    {
+        MVTable table = (MVTable)database.GetSchema("PUBLIC").GetTableOrView(null, "G");
+        Row row = table.GetTemplateRow();
+        row.SetKey(999);
+        row.SetValue(table.GetColumn("THE_GEOM").GetColumnId(), ValueGeometry.Get("POINT (2 2)"));
+
+        H2SharpException notFound = Assert.Throws<H2SharpException>(() => index.Remove(session, row));
+        Assert.Equal(Api.ErrorCode.RowNotFoundWhenDeleting1, notFound.H2ErrorCode);
+    }
+
+    [Fact]
+    public void FindByGeometryWithAnIntersectionFiltersRows()
+    {
+        MVTable table = (MVTable)database.GetSchema("PUBLIC").GetTableOrView(null, "G");
+        Row intersection = table.GetTemplateRow();
+        intersection.SetValue(table.GetColumn("THE_GEOM").GetColumnId(),
+            ValueGeometry.Get("POLYGON ((0 0, 0 10, 10 10, 10 0, 0 0))"));
+
+        Cursor? cursor = index.FindByGeometry(session, null, null, false, intersection);
+        Assert.NotNull(cursor);
+        Assert.True(cursor!.Next());
+        Assert.NotNull(cursor.Get());
+        Assert.False(cursor.Next());
+    }
+
+    [Fact]
+    public void TruncateEmptiesTheIndex()
+    {
+        Execute("TRUNCATE TABLE G");
+        Assert.Equal(0L, index.GetRowCount(session));
+    }
+
+    private MVSpatialIndex NewUniqueSpatialIndex(MVTable table, int id)
+    {
+        Column geom = table.GetColumn("G");
+        return new MVSpatialIndex(database, table, id, "DIRECT_" + id,
+            new[] { new IndexColumn(geom) }, 1,
+            IndexType.CreateNonUnique(persistent: false, hash: false, spatial: true));
     }
 
     [Fact]

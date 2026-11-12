@@ -14362,3 +14362,23 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.48%** строк (80304/86833), **88.63%** ветвей (33072/37316).
 * Проверено: H2Sharp.Tests 2614/2614, MvStore 198/198, Data 764/764, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 178: MVSpatialIndex — гарды конструктора и прямые пути (2026-11-13)
+
+* `SpatialIndexDirectTests` дополнен прямыми проверками `MVSpatialIndex`, которых не
+  достигает SQL: конструктор с двумя колонками, DESC, NULLS FIRST и NULLS LAST даёт
+  четыре разных сообщения (парсер отказывает раньше, поэтому раньше эти строки не
+  исполнялись); уникальный пространственный индекс, построенный напрямую, обходит
+  соседа-полигон в обоих проходах; `Add`/`Remove` на закрытой карте конвертируют
+  `MvStoreException`; `Remove` отсутствующего ключа даёт `RowNotFoundWhenDeleting1`;
+  `FindByGeometry` с пересечением отбирает строки; `TRUNCATE` очищает карту.
+* Уточнён старый тест: `CREATE UNIQUE ... USING RTREE` в H2 2.5 создаёт обычный unique-
+  индекс без spatial-флага (`IndexType.createUnique` его не несёт), поэтому тест
+  переименован в `AUniqueIndexOnGeometrySeesUncommittedNeighbors`.
+* Задокументировано в тесте: поиск `findContainedKeys` строгий (`isInside`), поэтому
+  ветки `EqualsIgnoringId`/duplicate внутри `Add` уникального пространственного индекса
+  недостижимы и в эталоне 2.5; это не дефект порта.
+* `MVSpatialIndex.cs`: 305 → **339/364** строк; итог **92.53%** строк (80344/86833),
+  **88.66%** ветвей (33085/37316).
+* Проверено: H2Sharp.Tests 2621/2621, MvStore 198/198, Data 764/764, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
