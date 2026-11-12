@@ -14221,3 +14221,17 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.32%** строк (80041/86702), **88.44%** ветвей (32952/37258).
 * Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 170: четыре скрипта файлов и пути БД без расхождений (2026-11-12)
+
+* Код не менялся: триаж дал четыре скрипта с **0 расхождений** — закреплены свободными
+  пинами `functions/system/csvwrite.sql`, `functions/system/database-path.sql`,
+  `functions/system/file-read.sql`, `functions/system/file-write.sql`. 223 → **227**.
+* Их соседи подтвердили блок: `csvread`/`link-schema` (табличные функции по файлам,
+  TODO в `ReadTableFunctionByName`), `two_phase_commit.sql` — `@reconnect` в раннере,
+  `execute_immediate.sql` — SCRIPT-дамп с CREATE USER (D-004), `dropAllObjects.sql` —
+  CREATE ALIAS (D-037). `dml/show.sql` (10 расхождений) — самодеятельный портовый
+  `PrepareShow`: перенос эталонного `parseShow` идёт следующим спринтом.
+* Итог: **92.32%** строк (80043/86702), **88.44%** ветвей (32951/37258).
+* Проверено: H2Sharp.Tests 2598/2598, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
