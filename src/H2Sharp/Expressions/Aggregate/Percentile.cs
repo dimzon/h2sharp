@@ -330,12 +330,15 @@ internal static class Percentile
                     long timeNanos = bd.LongValue();
                     if (timeNanos < 0L)
                     {
-                        timeNanos += DateTimeUtils.NanosPerDay;
+                        // The reference adds and subtracts one second, not a whole day: the
+                        // offset moves by one second with the time, so the represented instant
+                        // stays the same while the local time is brought back into the day.
+                        timeNanos += DateTimeUtils.NanosPerSecond;
                         intOffset++;
                     }
                     else if (timeNanos >= DateTimeUtils.NanosPerDay)
                     {
-                        timeNanos -= DateTimeUtils.NanosPerDay;
+                        timeNanos -= DateTimeUtils.NanosPerSecond;
                         intOffset--;
                     }
 

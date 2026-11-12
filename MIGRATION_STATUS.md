@@ -13982,3 +13982,17 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.18%** строк (79787/86551), **88.14%** ветвей (32781/37190).
 * Проверено: H2Sharp.Tests 2576/2576, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 156: PERCENTILE времени со смещением — секунда, а не сутки (2026-11-12)
+
+* `Percentile.interpolate` (ветка TIME_TZ): при выходе интерполированного времени за
+  границы суток эталон сдвигает смещение на секунду и правит время на
+  `DateTimeUtils.NANOS_PER_SECOND`; порт вычитал/прибавлял `NANOS_PER_DAY`, из-за чего
+  результат уезжал почти на сутки: `PERCENTILE_CONT(0.7)` по двум
+  `TIME WITH TIME ZONE '23:59:59.999999999Z'` / `'+00:00:01'` отвечал
+  `00:00:00.299999999-00:00:01` вместо `23:59:59.299999999-00:00:01`
+  (functions/aggregate/percentile.sql строки 908/911).
+* Закреплён `functions/aggregate/percentile.sql`: 205 → **206**.
+* Итог: **92.21%** строк (79813/86551), **88.19%** ветвей (32798/37190).
+* Проверено: H2Sharp.Tests 2577/2577, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

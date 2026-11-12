@@ -95,6 +95,7 @@ public sealed class ScriptConformanceTests
         "functions/aggregate/histogram.sql",
         "functions/aggregate/json_arrayagg.sql",
         "functions/aggregate/mode.sql",
+        "functions/aggregate/percentile.sql",
         "functions/aggregate/rank.sql",
         "functions/aggregate/regr_avgx.sql",
         "functions/aggregate/regr_avgy.sql",
