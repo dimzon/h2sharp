@@ -1427,35 +1427,169 @@ public sealed partial class Parser
         return command;
     }
 
+    /// <summary>
+    /// Reads a SHOW statement as the reference's <c>parseShow</c>: the command is the SELECT
+    /// it spells out, prepared with literals temporarily allowed because the text carries the
+    /// literals the compatibility values are made of.
+    /// </summary>
+    /// <param name="current">the session</param>
+    /// <returns>the prepared statement</returns>
     private Prepared PrepareShow(SessionLocal current)
     {
         ExpectWord("SHOW");
-        if (IsWord("TABLES"))
+        StringBuilder builder = new("SELECT ");
+        if (IsWord("CLIENT_ENCODING"))
         {
-            string schema = current.GetCurrentSchemaName();
+            // for PostgreSQL compatibility
+            _ = builder.Append("'UNICODE' CLIENT_ENCODING");
+        }
+        else if (IsWord("DEFAULT_TRANSACTION_ISOLATION"))
+        {
+            // for PostgreSQL compatibility
+            _ = builder.Append("'read committed' DEFAULT_TRANSACTION_ISOLATION");
+        }
+        else if (IsWord("TRANSACTION"))
+        {
+            // for PostgreSQL compatibility
+            ExpectWord("ISOLATION");
+            ExpectWord("LEVEL");
+            _ = builder.Append(
+                "LOWER(ISOLATION_LEVEL) TRANSACTION_ISOLATION FROM INFORMATION_SCHEMA.SESSIONS "
+                + "WHERE SESSION_ID = SESSION_ID()");
+        }
+        else if (IsWord("DATESTYLE"))
+        {
+            // for PostgreSQL compatibility
+            _ = builder.Append("'ISO' DATESTYLE");
+        }
+        else if (IsWord("SEARCH_PATH"))
+        {
+            // for PostgreSQL compatibility
+            string[]? searchPath = current.GetSchemaSearchPath();
+            StringBuilder path = new();
+            if (searchPath is not null)
+            {
+                for (int i = 0; i < searchPath.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        _ = path.Append(", ");
+                    }
+
+                    _ = ParserUtil.QuoteIdentifier(path, searchPath[i], HasSql.QuoteOnlyWhenRequired);
+                }
+            }
+
+            _ = StringUtils.QuoteStringSql(builder, path.ToString()).Append(" SEARCH_PATH");
+        }
+        else if (IsWord("SERVER_VERSION"))
+        {
+            // for PostgreSQL compatibility
+            _ = builder.Append('\'').Append(Engine.Constants.PgVersion).Append("' SERVER_VERSION");
+        }
+        else if (IsWord("SERVER_ENCODING"))
+        {
+            // for PostgreSQL compatibility
+            _ = builder.Append("'UTF8' SERVER_ENCODING");
+        }
+        else if (IsWord("SSL"))
+        {
+            // for PostgreSQL compatibility
+            _ = builder.Append("'off' SSL");
+        }
+        else if (IsWord("TABLES"))
+        {
+            // for MySQL compatibility
+            string schema = current.GetDatabase().GetMainSchema()!.GetName();
             if (IsWord("FROM"))
             {
                 schema = ReadIdentifier();
             }
 
-            string query = "SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA="
-                + StringUtils.QuoteStringSql(schema) + " ORDER BY TABLE_NAME";
-            return current.PrepareQueryExpression(query);
+            _ = builder.Append("TABLE_NAME, TABLE_SCHEMA FROM "
+                + "INFORMATION_SCHEMA.TABLES "
+                + "WHERE TABLE_SCHEMA=");
+            _ = StringUtils.QuoteStringSql(builder, schema).Append(" ORDER BY TABLE_NAME");
         }
-
-        ExpectWord("COLUMNS");
-        ExpectWord("FROM");
-        string table = ReadIdentifierWithSchema(current, out Schemas.Schema tableSchema);
-        string schemaName = tableSchema.GetName();
-        if (IsWord("FROM"))
+        else if (IsWord("COLUMNS"))
         {
-            schemaName = ReadIdentifier();
+            // for MySQL compatibility
+            ExpectWord("FROM");
+            string tableName = ReadIdentifierWithSchema(current, out Schemas.Schema tableSchema);
+            string schemaName = tableSchema.GetName();
+            if (IsWord("FROM"))
+            {
+                schemaName = ReadIdentifier();
+            }
+
+            _ = builder.Append("C.COLUMN_NAME FIELD, ");
+            bool oldInformationSchema = current.IsOldInformationSchema();
+            if (oldInformationSchema)
+            {
+                _ = builder.Append("C.COLUMN_TYPE");
+            }
+            else
+            {
+                _ = builder.Append("DATA_TYPE_SQL(");
+                _ = StringUtils.QuoteStringSql(builder, schemaName).Append(", ");
+                _ = StringUtils.QuoteStringSql(builder, tableName).Append(", 'TABLE', C.DTD_IDENTIFIER)");
+            }
+
+            _ = builder.Append(" TYPE, "
+                + "C.IS_NULLABLE \"NULL\", "
+                + "CASE (SELECT MAX(I.INDEX_TYPE_NAME) FROM "
+                + "INFORMATION_SCHEMA.INDEXES I ");
+            if (!oldInformationSchema)
+            {
+                _ = builder.Append("JOIN INFORMATION_SCHEMA.INDEX_COLUMNS IC ");
+            }
+
+            _ = builder.Append("WHERE I.TABLE_SCHEMA=C.TABLE_SCHEMA "
+                + "AND I.TABLE_NAME=C.TABLE_NAME ");
+            if (oldInformationSchema)
+            {
+                _ = builder.Append("AND I.COLUMN_NAME=C.COLUMN_NAME");
+            }
+            else
+            {
+                _ = builder.Append("AND IC.TABLE_SCHEMA=C.TABLE_SCHEMA "
+                    + "AND IC.TABLE_NAME=C.TABLE_NAME "
+                    + "AND IC.INDEX_SCHEMA=I.INDEX_SCHEMA "
+                    + "AND IC.INDEX_NAME=I.INDEX_NAME "
+                    + "AND IC.COLUMN_NAME=C.COLUMN_NAME");
+            }
+
+            _ = builder.Append(')'
+                + "WHEN 'PRIMARY KEY' THEN 'PRI' "
+                + "WHEN 'UNIQUE INDEX' THEN 'UNI' ELSE '' END `KEY`, "
+                + "COALESCE(COLUMN_DEFAULT, 'NULL') `DEFAULT` "
+                + "FROM INFORMATION_SCHEMA.COLUMNS C "
+                + "WHERE C.TABLE_SCHEMA=");
+            _ = StringUtils.QuoteStringSql(builder, schemaName).Append(" AND C.TABLE_NAME=");
+            _ = StringUtils.QuoteStringSql(builder, tableName).Append(" ORDER BY C.ORDINAL_POSITION");
+        }
+        else if (IsWord("DATABASES") || IsWord("SCHEMAS"))
+        {
+            // for MySQL compatibility
+            _ = builder.Append("SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA");
+        }
+        else if (provider.GetMode().Enum == Mode.ModeEnum.PostgreSql && ReadIf(ParserUtil.All))
+        {
+            // for PostgreSQL compatibility
+            _ = builder.Append("NAME, SETTING FROM PG_CATALOG.PG_SETTINGS");
         }
 
-        string columns = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA="
-            + StringUtils.QuoteStringSql(schemaName) + " AND TABLE_NAME="
-            + StringUtils.QuoteStringSql(table) + " ORDER BY ORDINAL_POSITION";
-        return current.PrepareQueryExpression(columns);
+        bool allow = current.GetAllowLiterals();
+        try
+        {
+            // need to temporarily enable it
+            current.SetAllowLiterals(true);
+            return current.PrepareQueryExpression(builder.ToString());
+        }
+        finally
+        {
+            current.SetAllowLiterals(allow);
+        }
     }
 
     /// <summary>Parses ALTER INDEX RENAME.</summary>

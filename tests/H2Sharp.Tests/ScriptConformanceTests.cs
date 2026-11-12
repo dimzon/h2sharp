@@ -78,6 +78,7 @@ public sealed class ScriptConformanceTests
         "ddl/dropTable.sql",
         "dml/error_reporting.sql",
         "dml/insert.sql",
+        "dml/show.sql",
         "dml/update.sql",
         "functions/aggregate/any_value.sql",
         "functions/aggregate/any.sql",

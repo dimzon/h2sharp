@@ -14235,3 +14235,20 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.32%** строк (80043/86702), **88.44%** ветвей (32951/37258).
 * Проверено: H2Sharp.Tests 2598/2598, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 171: SHOW по эталонному parseShow, show.sql закреплён (2026-11-12)
+
+* `Parser.PrepareShow`: перенесён эталонный `parseShow` целиком — цепочка
+  `CLIENT_ENCODING`, `DEFAULT_TRANSACTION_ISOLATION`, `TRANSACTION ISOLATION LEVEL`
+  (через INFORMATION_SCHEMA.SESSIONS), `DATESTYLE`, `SEARCH_PATH`, `SERVER_VERSION`
+  (Constants.PG_VERSION), `SERVER_ENCODING`, `SSL`, MySQL-шные `TABLES` (основная схема,
+  а не текущая) и `COLUMNS` (полный эталонный текст: FIELD, DATA_TYPE_SQL-тип,
+  IS_NULLABLE, KEY через INFORMATION_SCHEMA.INDEXES, DEFAULT), `DATABASES`/`SCHEMAS` и
+  режимная `SHOW ALL` для PostgreSQL. Порт раньше знал только две формы и печатал в
+  COLUMNS одну колонку COLUMN_NAME (dml/show.sql строки 10–101).
+* Подготовка выполняется с временно разрешёнными литералами
+  (`setAllowLiterals(true)` + finally), как эталон.
+* Закреплён `dml/show.sql`: 227 → **228**.
+* Итог: **92.30%** строк (80119/86807), **88.41%** ветвей (32973/37296).
+* Проверено: H2Sharp.Tests 2599/2599, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
