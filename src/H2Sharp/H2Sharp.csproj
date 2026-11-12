@@ -59,6 +59,9 @@
     <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="$(MSBuildThisFileDirectory)..\..\LICENSE-H2.txt" Pack="true" PackagePath="\" />
     <None Include="$(MSBuildThisFileDirectory)..\..\NOTICE.md" Pack="true" PackagePath="\" />
+    <!-- README.md refers to assets/ by relative path; ship them so the NuGet readme renders too. -->
+    <None Include="$(MSBuildThisFileDirectory)..\..\assets\h2sharp-banner-clean.png" Pack="true" PackagePath="assets\" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\assets\h2sharp-icon-512.png" Pack="true" PackagePath="assets\" />
   </ItemGroup>
 
 </Project>
