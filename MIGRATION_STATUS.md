@@ -14382,3 +14382,24 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   **88.66%** ветвей (33085/37316).
 * Проверено: H2Sharp.Tests 2621/2621, MvStore 198/198, Data 764/764, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 179: AlterTableAddConstraint — UNIQUE(VALUE) и отказы внешних ключей (2026-11-13)
+
+* Новый `AlterTableAddConstraintTests` (9 тестов) в H2Sharp.Tests закрывает пути
+  добавления ограничений через ALTER TABLE, которых нет в CREATE TABLE-тестах:
+  `UNIQUE(VALUE)` собирает список всех видимых колонок (дубликат после этого
+  отказывает); `UNIQUE NULLS ALL DISTINCT (A)` на одной колонке схлопывается в
+  DISTINCT — два NULL проходят, как в эталоне (схлопывание и в команде, и в
+  IndexType); UNIQUE переиспользует существующий уникальный индекс; FK на
+  GENERATED ALWAYS-колонке с RESTRICT проходит через default-ветку, а
+  `ON DELETE SET NULL` и `ON UPDATE CASCADE` отказывают
+  `GeneratedColumnCannotBeUpdatableByConstraint2`; FK с DATE на TIME-ключ
+  отказывает `UncomparableReferencedColumn2` (заодно покрыт неявный список
+  колонок ссылочной стороны — её первичный ключ); FK на несуществующую таблицу —
+  `TableOrViewNotFound1`; несовпадение количества колонок —
+  `ColumnCountDoesNotMatch`; FK между таблицами разной временности —
+  «referential constraint uses temporary table».
+* `AlterTableAddConstraint.cs`: 342 → **366/393** строк; итог **92.56%** строк
+  (80373/86833), **88.72%** ветвей (33105/37316).
+* Проверено: H2Sharp.Tests 2630/2630, MvStore 198/198, Data 764/764, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
