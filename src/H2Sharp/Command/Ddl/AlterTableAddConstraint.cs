@@ -54,7 +54,10 @@ public class AlterTableAddConstraint : AlterTable
 
     private Expression? checkExpression;
 
-    private IndexColumn[] indexColumns = [];
+    // The reference's indexColumns field is null until a branch's parser sets it; a null
+    // list survives only for UNIQUE(VALUE), whose branch below expands it over the
+    // table's visible columns.
+    private IndexColumn[]? indexColumns;
 
     private IndexColumn[]? refIndexColumns;
 
@@ -164,7 +167,7 @@ public class AlterTableAddConstraint : AlterTable
         {
             case CommandInterface.AlterTableAddConstraintPrimaryKey:
                 {
-                    IndexColumn[] keyColumns = IndexColumn.MapColumns(indexColumns, table);
+                    IndexColumn[] keyColumns = IndexColumn.MapColumns(indexColumns!, table);
                     index = table.FindPrimaryKey();
                     foreach (Constraint c in table.GetConstraints())
                     {
@@ -237,7 +240,7 @@ public class AlterTableAddConstraint : AlterTable
                     }
 
                     bool isOwner = false;
-                    IndexColumn[] keyColumns = IndexColumn.MapColumns(indexColumns, table);
+                    IndexColumn[] keyColumns = IndexColumn.MapColumns(indexColumns!, table);
                     IndexColumn[] refKeyColumns;
                     if (refIndexColumns is null)
                     {
@@ -542,8 +545,8 @@ public class AlterTableAddConstraint : AlterTable
     /// <summary>
     /// Sets the columns this constraint covers.
     /// </summary>
-    /// <param name="indexColumns">the columns</param>
-    public void SetIndexColumns(IndexColumn[] indexColumns)
+    /// <param name="indexColumns">the columns, or null for UNIQUE(VALUE)</param>
+    public void SetIndexColumns(IndexColumn[]? indexColumns)
     {
         this.indexColumns = indexColumns;
     }
@@ -552,7 +555,7 @@ public class AlterTableAddConstraint : AlterTable
     /// Gets the columns this constraint covers.
     /// </summary>
     /// <returns>the columns</returns>
-    public IndexColumn[] GetIndexColumns() => indexColumns;
+    public IndexColumn[]? GetIndexColumns() => indexColumns;
 
     /// <summary>
     /// Sets the table and the columns a foreign key points at.

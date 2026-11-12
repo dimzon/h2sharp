@@ -14173,3 +14173,22 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.31%** строк (80016/86684), **88.45%** ветвей (32938/37238).
 * Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 167: UNIQUE(VALUE) — список колонок равен null по эталону (2026-11-12)
+
+* `Parser.ReadTableConstraint` (ветка UNIQUE): перенесён эталонный
+  `readIf(VALUE, CLOSE_PAREN)` — ключевое слово VALUE перед закрывающей скобкой даёт
+  `indexColumns = null`, а не колонку с именем VALUE. Команда (`AlterTableAddConstraint`,
+  ветка UNIQUE) уже содержала эталонное раскрытие null-списка по видимым колонкам с
+  отказом SyntaxError на пустой таблице; в парсере этот случай был недостижим
+  (ddl/alterTableAdd.sql строки 391/397/400/417 — KEY_COLUMN_USAGE с A, B и D).
+* `TableConstraintDefinition.Columns` и `AlterTableAddConstraint.indexColumns`/
+  `SetIndexColumns`/`GetIndexColumns` стали `IndexColumn[]?` — как эталонное поле,
+  которое для PRIMARY KEY/FOREIGN KEY задаёт парсер, а null доживает только до ветки
+  UNIQUE. Проверка компаратора `UNIQUE(VALUE)` на таблице без колонок остаётся
+  `SYNTAX_ERROR_1`, как в эталоне.
+* `ddl/alterTableAdd.sql`: 11 → 4 расхождений; все четыре — блоки `SET MODE MySQL`
+  (117/120/126, D-029) и SCRIPT-дамп (371, D-004) — скрипт не пиннуется.
+* Итог: **92.32%** строк (80031/86691), **88.45%** ветвей (32944/37244).
+* Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

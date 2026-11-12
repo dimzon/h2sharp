@@ -100,7 +100,7 @@ public abstract class CommandWithColumns : SchemaCommand
             return;
         }
 
-        IndexColumn[] keyColumns = primaryKey.GetIndexColumns();
+        IndexColumn[] keyColumns = primaryKey.GetIndexColumns()!;
         foreach (Column column in columns)
         {
             foreach (IndexColumn keyColumn in keyColumns)
@@ -203,8 +203,9 @@ public abstract class CommandWithColumns : SchemaCommand
     {
         if (this.primaryKey is not null)
         {
-            IndexColumn[] oldColumns = this.primaryKey.GetIndexColumns();
-            IndexColumn[] newColumns = primaryKey.GetIndexColumns();
+            // A primary key always names its columns; only UNIQUE(VALUE) keeps a null list.
+            IndexColumn[] oldColumns = this.primaryKey.GetIndexColumns()!;
+            IndexColumn[] newColumns = primaryKey.GetIndexColumns()!;
             int len = newColumns.Length;
             if (len != oldColumns.Length)
             {

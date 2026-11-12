@@ -129,7 +129,7 @@ public sealed record ColumnDefinition(
 public sealed record TableConstraintDefinition(
     string? Name,
     bool IfNotExists,
-    List<IndexColumn> Columns,
+    List<IndexColumn>? Columns,
     bool Hash,
     int Type = CommandInterface.AlterTableAddConstraintPrimaryKey,
     string? Comment = null,
@@ -8888,11 +8888,15 @@ public sealed partial class Parser
             }
 
             key.SetPrimaryKeyHash(constraint.Hash);
-            key.SetIndexColumns([.. constraint.Columns]);
+            // A UNIQUE constraint may carry a null column list — the UNIQUE(VALUE) shape —
+            // and the command expands it; PRIMARY KEY and REFERENCES always name columns.
+            key.SetIndexColumns(constraint.Columns is null
+                ? null
+                : [.. constraint.Columns]);
             return key;
         }
 
-        key.SetIndexColumns([.. constraint.Columns]);
+        key.SetIndexColumns([.. constraint.Columns!]);
         Schemas.Schema refSchema = constraint.RefTableSchema is null
             ? CurrentSchema(session)
             : session.GetDatabase().GetSchema(constraint.RefTableSchema);
@@ -10039,14 +10043,26 @@ public sealed partial class Parser
             }
 
             Expect(Token.OpenParen, "(");
-            List<IndexColumn> uniqueColumns = [];
-            do
+            List<IndexColumn>? uniqueColumns;
+            // The reference's readIf(VALUE, CLOSE_PAREN): the keyword VALUE closing the list
+            // means the whole row — the command expands a null column list over the visible
+            // columns, exactly as `command.setIndexColumns(null)` does there.
+            if (ReadIf(ParserUtil.Value) && ReadIf(Token.CloseParen))
             {
-                uniqueColumns.Add(new IndexColumn(ReadIdentifier(), ReadSortType()));
+                uniqueColumns = null;
             }
-            while (ReadIf(Token.Comma));
+            else
+            {
+                uniqueColumns = [];
+                do
+                {
+                    uniqueColumns.Add(new IndexColumn(ReadIdentifier(), ReadSortType()));
+                }
+                while (ReadIf(Token.Comma));
 
-            Expect(Token.CloseParen, ")");
+                Expect(Token.CloseParen, ")");
+            }
+
             if (IsWord("INDEX", consume: false))
             {
                 Read();
