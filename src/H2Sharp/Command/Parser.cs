@@ -2329,8 +2329,11 @@ public sealed partial class Parser
             Query.Query query = ParseQueryExpression();
             bool selfReferenced = query.GetTables().Contains(cte);
             Tables.Column[]? finalTemplates = CreateQueryColumnTemplateList(columnNames, query, cte: true);
+            // The reference stores the first parse's text when the body really names the CTE —
+            // there the inner reference carries the shadow table and no inherited alias — and
+            // the re-parsed text when the second pass proved the query is not recursive.
             cte.Initialize(current, finalTemplates, query, selfReferenced,
-                query.GetPlanSql(HasSql.DefaultSqlFlags));
+                (selfReferenced ? firstQuery : query).GetPlanSql(HasSql.DefaultSqlFlags));
         }
         else
         {

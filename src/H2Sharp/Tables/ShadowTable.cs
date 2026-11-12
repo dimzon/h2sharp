@@ -71,11 +71,16 @@ public sealed class ShadowTable : VirtualConstructedTable
     public override string? GetCreateSql() => null;
 
     /// <inheritdoc/>
-    public override string GetSql(int sqlFlags) => name;
+    /// <remarks>
+    /// The reference's ShadowTable inherits <c>Table.getSQL</c>, which writes the quoted name;
+    /// that quoted name is what the WITH list of a recursive query shows.
+    /// </remarks>
+    public override string GetSql(int sqlFlags)
+        => Util.ParserUtil.QuoteIdentifier(new StringBuilder(), name, sqlFlags).ToString();
 
     /// <inheritdoc/>
     public override StringBuilder GetSql(StringBuilder builder, int sqlFlags)
-        => builder.Append(name);
+        => Util.ParserUtil.QuoteIdentifier(builder, name, sqlFlags);
 
     /// <inheritdoc/>
     public override int GetId() => 0;

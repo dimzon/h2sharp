@@ -14112,3 +14112,23 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.29%** строк (79948/86630), **88.42%** ветвей (32916/37228).
 * Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 164: план WITH RECURSIVE по эталону (2026-11-12)
+
+* `Index.GetPlanSql` → `string?`: эталонный `QueryExpressionIndex.getPlanSQL` отвечает null,
+  пока запрос индекса не скомпилирован, а `TableFilter.getPlanSQL` склеивает его в текст
+  (`StringBuilder.append(null)` в Java печатает «null») — отсюда `/* null */` у EXPLAIN
+  рекурсивного запроса. `RecursiveIndex` портирует то же состояние флагом: порт держит
+  готовый query, но план показывает null до первого курсора, как эталон до своего `find()`.
+* `Parser.ReadSingleCommonTableExpression`: сохраняемый текст CTE берётся из первого разбора
+  (тело ещё ссылается на `ShadowTable`), как эталонный `parseSingleCommonTableExpression`;
+  из второго — только если повторный разбор доказал нерекурсивность CTE.
+* `ShadowTable`: порт переопределял `getSQL` голым именем — собственная форма, которой в
+  эталоне нет; переопределения сняты, имя печатается кавычкированным, как у любого other
+  table (в теле WITH RECURSIVE ожидалось `FROM "R"`, порт писал `FROM R`).
+* `dml/with.sql`: расхождений осталось два — оба в блоке `SET MODE MySQL`
+  (`WITH W AS (SELECT NULL FROM FINAL TABLE (REPLACE INTO ...))`, D-029); пин невозможен,
+  строки 35/41/198 совпали с эталоном.
+* Итог: **92.32%** строк (79976/86632), **88.44%** ветвей (32931/37234).
+* Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

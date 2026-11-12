@@ -764,7 +764,9 @@ public class TableFilter : ColumnResolver
         }
         if (index is not null && (sqlFlags & Util.HasSql.AddPlanInformation) != 0)
         {
-            StringBuilder plan = new StringBuilder("/* ").Append(index.GetPlanSql());
+            // Java's StringBuilder.append((String) null) writes the four letters "null", and
+            // the reference's plan builder relies on it: a recursive query shows /* null */.
+            StringBuilder plan = new StringBuilder("/* ").Append(index.GetPlanSql() ?? "null");
             if (indexConditions.Count > 0)
             {
                 plan.Append(": ");

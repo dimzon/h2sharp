@@ -266,8 +266,13 @@ public abstract class Index : SchemaObject
     /// <summary>
     /// Get the plan for this index.
     /// </summary>
-    /// <returns>the plan</returns>
-    public virtual string GetPlanSql()
+    /// <remarks>
+    /// The reference answers null for an index whose query has not been compiled yet — the
+    /// recursive CTE index before its first read — and the table filter prints that null as
+    /// text, which is the <c>/* null */</c> an EXPLAIN of a recursive query shows.
+    /// </remarks>
+    /// <returns>the plan, or null</returns>
+    public virtual string? GetPlanSql()
     {
         return GetSql(HasSql.TraceSqlFlags | HasSql.AddPlanInformation);
     }

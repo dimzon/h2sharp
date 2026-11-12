@@ -20,6 +20,12 @@ public sealed class RecursiveIndex : QueryExpressionIndex
 {
     private readonly CTE cte;
 
+    // The reference's index holds only the query text until find() compiles it, so its plan
+    // reads null and an EXPLAIN of a recursive query prints /* null */. The port's query is
+    // built with the statement, so the same state is kept here as a flag: false until the
+    // first cursor opens.
+    private bool queryPrepared;
+
     /// <summary>Creates a recursive index.</summary>
     /// <param name="table">the query expression table</param>
     /// <param name="query">the recursive query</param>
@@ -29,6 +35,9 @@ public sealed class RecursiveIndex : QueryExpressionIndex
         cte = table;
         this.query = query;
     }
+
+    /// <inheritdoc/>
+    public override string? GetPlanSql() => queryPrepared ? base.GetPlanSql() : null;
 
     /// <inheritdoc/>
     public override double GetCost(
@@ -44,6 +53,7 @@ public sealed class RecursiveIndex : QueryExpressionIndex
     /// <inheritdoc/>
     public override Cursor? GetCursor(SessionLocal session, SearchRow? first, SearchRow? last, bool reverse)
     {
+        queryPrepared = true;
         ResultInterface? recursiveResult = cte.GetRecursiveResult();
         if (recursiveResult is not null)
         {

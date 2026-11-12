@@ -44,7 +44,7 @@ public abstract class QueryExpressionIndex : Index
     public Query GetQuery() => query;
 
     /// <inheritdoc/>
-    public override string GetPlanSql()
+    public override string? GetPlanSql()
         => query.GetPlanSql(HasSql.TraceSqlFlags | HasSql.AddPlanInformation);
 
     /// <inheritdoc/>
