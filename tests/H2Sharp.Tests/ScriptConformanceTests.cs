@@ -26,6 +26,7 @@ using H2Sharp.Api;
 using H2Sharp.Command;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
+using H2Sharp.JavaLegacy;
 using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Values;
@@ -134,6 +135,7 @@ public sealed class ScriptConformanceTests
         "functions/numeric/pi.sql",
         "functions/numeric/power.sql",
         "functions/numeric/radians.sql",
+        "functions/numeric/rand.sql",
         "functions/numeric/rotate.sql",
         "functions/numeric/round.sql",
         "functions/numeric/roundmagic.sql",
@@ -246,6 +248,7 @@ public sealed class ScriptConformanceTests
         "queries/table.sql",
         "queries/query-cache.sql",
         "queries/query-optimisations.sql",
+        "queries/select.sql",
         "queries/values.sql",
         "queries/window.sql",
         "range_table.sql",
@@ -335,7 +338,13 @@ internal static class ScriptRunner
     {
         List<string> failures = [];
         Database database = new(ConnectionInfo.Memory(databaseName));
-        SessionLocal session = new(database, "sa");
+        // The reference harness runs on the JVM, so its RAND() sequences are java.util.Random's.
+        // The port's default is System.Random (the .NET idiom); the scripts that seed RAND and
+        // spell out its values need the ported JDK generator to be the reference's equal.
+        SessionLocal session = new(database, "sa")
+        {
+            RandomGeneratorProvider = seed => new JavaRandom(seed ?? Environment.TickCount64),
+        };
         try
         {
             foreach (ScriptItem item in items)

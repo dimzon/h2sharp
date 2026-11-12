@@ -14010,3 +14010,17 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.23%** строк (79825/86551), **88.22%** ветвей (32810/37190).
 * Проверено: H2Sharp.Tests 2578/2578, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 158: SCRIPT-раннер на JDK-последовательность RAND (2026-11-12)
+
+* `ScriptRunner.RunItems`: сессия раннера получает
+  `RandomGeneratorProvider = seed => new JavaRandom(seed ?? TickCount)` — перенесённый
+  `java.util.Random` из `H2Sharp.JavaLegacy`. Эталонный harness исполняет скрипты на JVM,
+  и `CALL RAND(0)`, `SELECT RAND() … GROUP BY …` в скриптах проверяют именно
+  jdk-последовательность; ядро по-прежнему использует `System.Random` по умолчанию,
+  подмена только в тестовом раннере. Сняты последние расхождения
+  `queries/select.sql` (RAND, строки 530–543) и `functions/numeric/rand.sql`.
+* Закреплены `queries/select.sql` и `functions/numeric/rand.sql`: 207 → **209**.
+* Итог: **92.28%** строк (79868/86551), **88.39%** ветвей (32872/37190).
+* Проверено: H2Sharp.Tests 2580/2580, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
