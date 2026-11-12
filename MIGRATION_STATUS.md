@@ -14039,3 +14039,18 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.30%** строк (79886/86551), **88.42%** ветвей (32883/37190).
 * Проверено: H2Sharp.Tests 2581/2581, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 160: повышение GEOMETRY с размерностью и SRID (2026-11-12)
+
+* `TypeInfo.GetHigherGeometry`: ветка перенесена 1:1 с эталонного `getHigherGeometry` —
+  совпадающие SRID и система размерности оставляют первый тип, разное числовое SRID
+  отказывает `TYPES_ARE_NOT_COMPARABLE_2`, сторона без ограничений даёт обычный
+  `GEOMETRY`, иначе собирается `new TypeInfo(GEOMETRY, -1, -1, new
+  ExtTypeInfoGeometry(t, srid))`. Старый `NotSupportedException` про неперенесённый
+  `ExtTypeInfoGeometry` устарел — сам класс и `GetTypeAndDimensionSystem`/`GetSrid`
+  уже в порту; снята запись про «единственный пробел» из шапки Promotion.cs
+  (datatypes/geometry.sql, промоушен колонки GEOMETRY(POINT, 4326)).
+* Закреплён `datatypes/geometry.sql`: 210 → **211**.
+* Итог: **92.30%** строк (79915/86582), **88.43%** ветвей (32905/37210).
+* Проверено: H2Sharp.Tests 2582/2582, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

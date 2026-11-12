@@ -26,9 +26,9 @@ namespace H2Sharp.Values;
 /// rules are ported whole and tested over pairs rather than sampled.
 /// </para>
 /// <para>
-/// The GEOMETRY case is the one gap: it needs <c>ExtTypeInfoGeometry</c>, which drags in the
-/// whole spatial package, so a geometry that carries an extended type fails loudly here. A
-/// plain GEOMETRY still promotes correctly.
+/// The GEOMETRY case is ported through <see cref="ExtTypeInfoGeometry"/>: two types with
+/// different known SRIDs do not promote and answer TYPES_ARE_NOT_COMPARABLE_2, as the
+/// reference does. A plain GEOMETRY promotes to the plain singleton.
 /// </para>
 /// </remarks>
 public sealed partial class TypeInfo
@@ -606,34 +606,72 @@ public sealed partial class TypeInfo
     }
 
     /// <summary>
-    /// The higher of two geometry types.
+    /// The higher of two geometry types, the reference's <c>getHigherGeometry</c>: same SRID
+    /// and same dimension system keep the first type; two different known SRIDs refuse with
+    /// TYPES_ARE_NOT_COMPARABLE_2; an unqualified side falls back to the plain geometry.
     /// </summary>
-    /// <remarks>
-    /// Only the part that needs no spatial type is ported: a geometry without an extended
-    /// type promotes to the plain geometry singleton. A geometry that carries its dimension
-    /// and SRID cannot be promoted without <c>ExtTypeInfoGeometry</c>, which would pull in
-    /// the whole <c>org.h2.util.geometry</c> package, so that case fails loudly instead of
-    /// quietly returning the plain geometry, which would silently drop the SRID.
-    /// </remarks>
+    /// <param name="type1">the first type</param>
+    /// <param name="type2">the second type</param>
+    /// <returns>the higher type</returns>
     private static TypeInfo GetHigherGeometry(TypeInfo type1, TypeInfo type2)
     {
+        int t;
+        int? srid;
         ExtTypeInfo? ext1 = type1.GetExtTypeInfo(), ext2 = type2.GetExtTypeInfo();
-        if (ext1 is not null)
+        if (ext1 is ExtTypeInfoGeometry g1)
         {
-            throw new NotSupportedException(
-                "Promoting a geometry that has a dimension and an SRID needs "
-                + "ExtTypeInfoGeometry, which is not ported yet. See MIGRATION_STATUS.md.");
+            if (ext2 is ExtTypeInfoGeometry g2)
+            {
+                t = g1.GetTypeAndDimensionSystem();
+                srid = g1.GetSrid();
+                int t2 = g2.GetTypeAndDimensionSystem();
+                int? srid2 = g2.GetSrid();
+                if (srid == srid2)
+                {
+                    if (t == t2)
+                    {
+                        return type1;
+                    }
+                    else if (srid == null)
+                    {
+                        return TypeGeometry;
+                    }
+                    else
+                    {
+                        t = 0;
+                    }
+                }
+                else if (srid == null || srid2 == null)
+                {
+                    if (t == 0 || t != t2)
+                    {
+                        return TypeGeometry;
+                    }
+                    else
+                    {
+                        srid = null;
+                    }
+                }
+                else
+                {
+                    throw DbException.Get(ErrorCode.TypesAreNotComparable2,
+                        type1.GetTraceSql(), type2.GetTraceSql());
+                }
+            }
+            else
+            {
+                return type2.GetValueType() == Value.Geometry ? TypeGeometry : type1;
+            }
+        }
+        else if (ext2 is ExtTypeInfoGeometry)
+        {
+            return type1.GetValueType() == Value.Geometry ? TypeGeometry : type2;
+        }
+        else
+        {
+            return TypeGeometry;
         }
 
-        if (ext2 is not null)
-        {
-            throw new NotSupportedException(
-                "Promoting a geometry that has a dimension and an SRID needs "
-                + "ExtTypeInfoGeometry, which is not ported yet. See MIGRATION_STATUS.md.");
-        }
-
-        // Neither carries spatial parameters, so the answer is the plain geometry, and the
-        // reference reaches the same conclusion through its last branch.
-        return TypeGeometry;
+        return GetTypeInfo(Value.Geometry, -1L, -1, new ExtTypeInfoGeometry(t, srid));
     }
 }

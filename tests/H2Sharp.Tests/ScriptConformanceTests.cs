@@ -50,6 +50,7 @@ public sealed class ScriptConformanceTests
         "datatypes/clob.sql",
         "datatypes/date.sql",
         "datatypes/enum.sql",
+        "datatypes/geometry.sql",
         "datatypes/identity.sql",
         "datatypes/interval.sql",
         "datatypes/int.sql",
