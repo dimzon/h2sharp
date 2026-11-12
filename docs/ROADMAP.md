@@ -1,5 +1,14 @@
 # H2Sharp roadmap
 
+> [!WARNING]
+> **Historical snapshot.** The status sections below describe HEAD `627a7d2`, an early
+> stage of the port, and are no longer authoritative. In particular, file-based MVStore
+> databases, joins, subqueries, window functions and the ADO.NET surface are now ported and
+> covered by tests (≈92% line coverage and growing). For the current state use
+> [`MIGRATION_STATUS.md`](../MIGRATION_STATUS.md), the test suites and
+> [`COVERAGE_ANALYSIS.md`](COVERAGE_ANALYSIS.md). Treat this file as the phase plan, not as
+> a status report.
+
 Status legend: **done** / **partial** / **todo** / **refuses** (present, but throws
 `TODOException` — the port is broad but shallow, and a stub that refuses is never a stub that
 answers).

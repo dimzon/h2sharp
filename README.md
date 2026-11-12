@@ -7,22 +7,26 @@
   <img alt=".NET 8 / 10" src="https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4?logo=dotnet">
   <img alt="H2 reference 2.5.x" src="https://img.shields.io/badge/H2%20reference-2.5.x-38bdf8">
   <a href="LICENSE-H2.txt"><img alt="License: MPL-2.0 OR EPL-1.0" src="https://img.shields.io/badge/license-MPL--2.0%20OR%20EPL--1.0-blue"></a>
-  <img alt="Status: port in progress" src="https://img.shields.io/badge/status-port%20in%20progress-orange">
+  <img alt="Status: active port" src="https://img.shields.io/badge/status-active%20port-blue">
+  <img alt="Coverage: about 92% and growing" src="https://img.shields.io/badge/coverage-~92%25%20and%20growing-34d399">
 </p>
 
-**H2Sharp** is an embeddable SQL database engine for .NET — an in-progress, faithful port of
-[H2 Database](https://github.com/h2database/h2database) **2.5.x** from Java to C#. It exposes a
-standard **ADO.NET** provider (`System.Data.Common`), so ordinary `DbConnection`/`DbCommand`
+**H2Sharp** is an embeddable SQL database engine for .NET — a faithful, actively developed port
+of [H2 Database](https://github.com/h2database/h2database) **2.5.x** from Java to C#. It exposes
+a standard **ADO.NET** provider (`System.Data.Common`), so ordinary `DbConnection`/`DbCommand`
 code, Dapper and provider-agnostic consumers run against an in-process engine: no server, no
-separate process, no configuration.
+separate process. Both in-memory and **file-based MVStore** databases are supported, and files
+written here open in the reference Java H2 2.5.259 — and vice versa.
 
 > [!IMPORTANT]
-> **The port is not finished.** A usable subset runs end to end — an ADO.NET provider over an
-> in-memory engine (DDL, DML, `SELECT` with `GROUP BY`/`UNION`/aggregates, parameters) is
-> working and tested against the reference H2 on the JVM. `JOIN`, subqueries, window functions,
-> constraints/rights and file databases are not ported yet, and many commands refuse with
-> `TODOException` rather than answering wrongly. A stub that refuses is never a stub that
-> answers — see [Project status](#project-status).
+> **Open connections through `H2DataSource`.** It owns the database and is the only correct
+> way to connect: every connection it hands out shares one engine instance. A directly
+> constructed `H2Connection` is a self-contained, single-connection database and does **not**
+> share state — see [Quick start](#quick-start).
+>
+> The port is in active development with roughly **92% line coverage** and growing. Where the
+> reference H2 can do something the port cannot yet, the port throws `TODOException` rather than
+> returning a plausible but wrong answer: a stub that refuses is never a stub that answers.
 
 ## At a glance
 
@@ -30,9 +34,9 @@ separate process, no configuration.
 |---|---|
 | **Reference** | H2 **2.5.x**, pinned in [`reference/H2_COMMIT.txt`](reference/H2_COMMIT.txt). Never target another version: 1.x and 2.5.x diverge. |
 | **Target frameworks** | `net8.0`, `net10.0` (SDK pinned in [`global.json`](global.json)) |
-| **Public API** | `H2Sharp.Data` — `H2Connection`, `H2Command`, `H2Parameter`, `H2DataReader`, `H2ProviderFactory`, … |
-| **Storage** | in-memory today; file-based MVStore is a goal |
-| **Status** | port in progress · CI on Windows + Ubuntu |
+| **Public API** | `H2Sharp.Data` — **`H2DataSource`** / `H2DataSourceBuilder` (entry point), `H2Connection`, `H2Command`, `H2Parameter`, `H2DataReader`, `H2ProviderFactory`, … |
+| **Storage** | in-memory **and** file-based MVStore; files round-trip with reference Java H2 2.5.259 |
+| **Status** | active port · ≈92% line coverage and growing · CI on Windows + Ubuntu |
 | **License** | `MPL-2.0 OR EPL-1.0` (same terms as H2) |
 
 ## Contents
@@ -43,6 +47,9 @@ separate process, no configuration.
 [ADO.NET provider guide](#adonet-provider-guide) · [Porting rules](#porting-rules) ·
 [Brand assets](#brand-assets) · [Licensing](#licensing)
 
+Full provider documentation (RU, with examples and gotchas):
+[docs/ADO_NET_GUIDE.md](docs/ADO_NET_GUIDE.md).
+
 ## Quick start
 
 Plain ADO.NET — no external packages:
@@ -51,7 +58,9 @@ Plain ADO.NET — no external packages:
 using System;
 using H2Sharp.Data;
 
-using var connection = new H2Connection("Data Source=quickstart;Storage=Memory");
+// H2DataSource owns the database. Always connect through it.
+using H2DataSource source = new H2DataSourceBuilder("Data Source=quickstart;Storage=Memory").Build();
+using H2Connection connection = (H2Connection)source.CreateConnection();
 connection.Open();
 
 using var create = connection.CreateCommand();
@@ -82,11 +91,27 @@ Console.WriteLine(query.ExecuteScalar()); // bolt
 With [Dapper](https://github.com/DapperLib/Dapper), the same flow is shorter:
 
 ```csharp
-using var connection = new H2Sharp.Data.H2Connection("Data Source=quickstart;Storage=Memory");
+using Dapper;
+using H2Sharp.Data;
+
+using H2DataSource source = new H2DataSourceBuilder("Data Source=quickstart;Storage=Memory").Build();
+using var connection = source.CreateConnection();
 connection.Open();
 connection.Execute("CREATE TABLE T(ID INT, NAME VARCHAR(20))");
 connection.Execute("INSERT INTO T VALUES ($id, $name)", new { id = 1, name = "bolt" });
 string name = connection.QuerySingle<string>("SELECT NAME FROM T WHERE ID = $id", new { id = 1 });
+```
+
+For a **persistent** database, change the connection string — the data source is still the
+entry point:
+
+```csharp
+using H2DataSource fileSource = new H2DataSourceBuilder("Data Source=./demo-db;Storage=File")
+    .Build();
+using H2Connection fileConnection = (H2Connection)fileSource.CreateConnection();
+fileConnection.Open();
+// The resulting MVStore file is readable by the reference Java H2 2.5.259 and vice versa;
+// see tests/H2Sharp.Tests/FileDatabaseOracleTests.cs.
 ```
 
 Named parameters, arrays, JSON and regex semantics are documented in the
@@ -97,8 +122,9 @@ Named parameters, arrays, JSON and regex semantics are documented in the
 * Embedded, in-memory and file-based relational database engine.
 * Public API as a standard **ADO.NET** provider (`System.Data.Common`), so it works with Dapper,
   `System.Data.Common` consumers and EF Core.
-* **MVStore** persistence ported faithfully enough that a database file produced by H2Sharp
-  can be opened by the reference Java implementation, and vice versa.
+* **MVStore** persistence faithful enough that a database file produced by H2Sharp can be
+  opened by the reference Java implementation, and vice versa — this round trip is covered by
+  `JavaOracleFact` tests (`tests/H2Sharp.Tests/FileDatabaseOracleTests.cs`).
 
 ## Non-goals
 
@@ -108,26 +134,29 @@ Named parameters, arrays, JSON and regex semantics are documented in the
 
 ## Project status
 
-An ADO.NET provider over an in-memory engine runs end to end: open a connection, run DDL/DML,
-query, read a `DbDataReader`, use Dapper. `SELECT` covers flat selects, `UNION`, `DISTINCT`,
-`GROUP BY`/`HAVING`, `ORDER BY`, `LIMIT`/`OFFSET`, aggregates and parameters. Not yet ported:
-`JOIN`, subqueries, window functions, `MERGE`, `EXPLAIN`, `INFORMATION_SCHEMA`, constraints and
-rights, and file databases.
+The port covers the SQL surface, the ADO.NET provider (Dapper, `DbBatch`, `DbCommandBuilder`,
+`GetSchema`, typed `DbDataReader`) and the MVStore file engine, with **both** in-memory and
+file-based storage. File databases survive reopening and round-trip with the reference Java
+H2 2.5.259. Line coverage is roughly **92% and growing**; see
+[`docs/COVERAGE_ANALYSIS.md`](docs/COVERAGE_ANALYSIS.md) for the measurement method.
 
-Where the reference H2 can do something the port cannot yet, the port throws `TODOException`
-rather than returning a plausible but wrong answer. That is deliberate: a missing feature is
-unfinished work on the port, not a property of the database.
+Development is active, and remaining gaps are tracked rather than papered over: where the
+reference H2 can do something the port cannot yet, the port throws `TODOException` instead of
+returning a plausible but wrong answer. A missing feature is unfinished work on the port, not
+a property of the database.
 
 Current numbers, per-phase status and working notes live in the repository rather than in this
 README, so they can be updated with the code:
 
 | Document | What it holds |
 |---|---|
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Per-phase status, SQL that executes, test counts, `TODOException` inventory |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Early phase plan — its status section describes an older snapshot (HEAD `627a7d2`); prefer the working notes and tests for the current state |
 | [`MIGRATION_STATUS.md`](MIGRATION_STATUS.md) | Working notes on what has been ported and why |
 | [`ADO_NET_TESTS.md`](ADO_NET_TESTS.md) | ADO.NET conformance test suites and their state |
+| [`docs/ADO_NET_GUIDE.md`](docs/ADO_NET_GUIDE.md) | Full ADO.NET provider guide (RU): API, connection strings, parameters, readers, transactions, batches, extensions, gotchas |
 | [`docs/PORTING.md`](docs/PORTING.md) | How the reference checkout and the port relate |
 | [`AGENTS.md`](AGENTS.md) | Rules for porting work in this repository |
+| [`docs/COVERAGE_ANALYSIS.md`](docs/COVERAGE_ANALYSIS.md) | Coverage measurement setup and results |
 
 ## Related projects
 
@@ -135,19 +164,16 @@ README, so they can be updated with the code:
   sibling checkout (`../h2sharp-efcore`, branch `h2-provider`). It is a fork of the
   EFCore.PG provider with PostgreSQL's surface replaced by H2's: the type mappings, the
   migrations SQL generator, the connection and the DDL are H2's, and the SQL it generates is
-  checked against the reference engine on the JVM rather than against this port. It does not
-  work against the port yet: what it needs from the engine is listed in its
-  `docs/DIVERGENCES.md` — identity DDL, `INFORMATION_SCHEMA`, `CREATE SEQUENCE`, `JOIN`, and
-  the `AS` in front of a table alias.
+  checked against the reference engine on the JVM rather than against this port. Integration
+  status and the engine features it relies on are tracked in its `docs/DIVERGENCES.md`.
 
 * `H2Sharp.Linq2Db` — a [linq2db](https://github.com/linq2db/linq2db) provider for this
   engine, in a sibling checkout (`../h2sharp-linq2db`). It is written against linq2db's public
   API and against the engine's public API, and it speaks H2: the identifiers are always quoted,
   the types are H2's, the paging is `LIMIT`/`OFFSET`, the functions of H2 are offered as
   `H2SharpSpecificExtensions`, and the catalogue is read from `INFORMATION_SCHEMA` the way
-  H2 2.5 keeps it. What it still needs from the engine is listed in its
-  `docs/DIVERGENCES.md` — identity DDL, `CREATE SEQUENCE`, `CREATE ALIAS`, `COMMENT ON`,
-  foreign keys in DDL, `OVER`, and the `LIMIT` with a number in a parameter.
+  H2 2.5 keeps it. Integration status and the engine features it relies on are tracked in its
+  `docs/DIVERGENCES.md`.
 
 ## Building and testing
 
@@ -158,7 +184,8 @@ dotnet test
 
 CI runs the build and tests on Windows and Ubuntu — see
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Coverage is measured in **Debug**;
-Release inlining distorts line numbers.
+Release inlining distorts line numbers. The measurement setup is in
+[`docs/COVERAGE_ANALYSIS.md`](docs/COVERAGE_ANALYSIS.md).
 
 ## Tools
 
@@ -170,6 +197,13 @@ The repository also contains small client tools over the engine:
   [tools/H2Sharp.PowerShell/README.md](tools/H2Sharp.PowerShell/README.md).
 
 ## ADO.NET provider guide
+
+This section is a quick reference. For the **full guide** — architecture, every connection
+string key, parameter rewriting, value mapping, `IH2DataFormat`, transactions, `DbBatch`,
+`DbCommandBuilder`, .NET extensions, async limitations and a symptom → cause → fix table —
+see [docs/ADO_NET_GUIDE.md](docs/ADO_NET_GUIDE.md) (in Russian, with verified code samples).
+Every snippet below assumes a `connection` obtained from an `H2DataSource` as shown in
+[Quick start](#quick-start).
 
 ### Named parameters
 
@@ -198,7 +232,11 @@ enumerables are consumed once per execution. `string` and `byte[]` remain text a
 parameters. Use jagged arrays for nested SQL arrays.
 
 ```csharp
-using var connection = new H2Sharp.Data.H2Connection("Data Source=arrays;Storage=Memory");
+using H2Sharp.Data;
+using Dapper;
+
+using H2DataSource source = new H2DataSourceBuilder("Data Source=arrays;Storage=Memory").Build();
+using var connection = source.CreateConnection();
 connection.Open();
 connection.Execute("CREATE TABLE T(ID INT PRIMARY KEY, NUMBERS INTEGER ARRAY)");
 

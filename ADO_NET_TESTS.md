@@ -1,12 +1,17 @@
 # Готовые наборы тестов для слоя ADO.NET
 
+> **Практическое руководство по провайдеру** — API, примеры, трюки и подводные камни:
+> [docs/ADO_NET_GUIDE.md](docs/ADO_NET_GUIDE.md). Этот файл описывает только внешние
+> конформанс-наборы тестов и историю их подключения.
+
 Подборка существующих (не написанных с нуля) наборов тестов, которые проверяют реализацию
 `DbConnection` / `DbCommand` / `DbParameter` / `DbDataReader` / `DbTransaction` / `DbProviderFactory`.
 Отсортировано по полезности для `H2Sharp.Data`.
 
 Текущее состояние слоя в этом репозитории: `src/H2Sharp/Data/` — `H2Command.cs`, `H2Connection.cs`,
 `H2Parameter.cs` (включая `H2ParameterCollection`), `H2Transaction.cs`, `H2ProviderFactory.cs`,
-`H2ConnectionStringBuilder.cs`.
+`H2ConnectionStringBuilder.cs` (полный состав слоя `src/H2Sharp/Data/` — в
+[руководстве](docs/ADO_NET_GUIDE.md)).
 Набор уже подключён — см. раздел «Состояние на момент подключения» в конце документа.
 
 ---
