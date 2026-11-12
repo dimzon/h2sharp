@@ -14288,3 +14288,20 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.35%** строк (80167/86807), **88.46%** ветвей (32993/37296).
 * Проверено: H2Sharp.Tests 2604/2604, MvStore 191/191, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 174: LocalResult — спилл на диск, DISTINCT, WITH TIES (2026-11-12)
+
+* Новый `LocalResultSpillTests` (4 теста) в H2Sharp.Tests гоняет результатную
+  обёртку над постоянной базой с бюджетом в две строки: переполнение `maxMemoryRows`
+  уводит строки во внешнее MVStore-хранилище и читается обратно (AddRow ×5 →
+  GetRowCount 5 → Next/CurrentRow по порядку, Reset читает с начала); `SetDistinct`
+  сворачивает дубликаты и отвечает `ContainsDistinct`/`ContainsNull`; `WITH TIES`
+  с лимитом 1 дотягивает равную строку (2 строки вместо 1); `FETCH PERCENT` с
+  процентом вне 1..100 отказывает `InvalidValueException` при `Done()`.
+* Проверено на файловой сессии (`ConnectionInfo.File` + `SetMaxMemoryRows(2)`),
+  так как спилл включается только у постоянной записываемой базы.
+* `LocalResult.cs`: 470 → **490/537** строк; общий объединённый прогон шести наборов
+  зелёный.
+* Итог: **92.38%** строк (80189/86807), **88.50%** ветвей (33007/37296).
+* Проверено: H2Sharp.Tests 2608/2608, MvStore 191/191, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
