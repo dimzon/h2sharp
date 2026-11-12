@@ -704,9 +704,9 @@ public sealed class MergeUsing : DataChangeStatement
             bool result = base.Prepare(session);
             Table targetTable = Owner.targetTableFilter.GetTable()!;
 
-            // The reference uses the table's visible columns; the port has no hidden ones, so
-            // its columns are the visible ones.
-            columns ??= targetTable.GetColumns();
+            // As in the reference's MergeUsing.Insert.prepare: an INSERT without a column list
+            // takes the table's visible columns, so invisible ones are not counted against it.
+            columns ??= targetTable.GetVisibleColumns();
             if (values.Length != columns.Length)
             {
                 throw DbException.Get(ErrorCode.ColumnCountDoesNotMatch);

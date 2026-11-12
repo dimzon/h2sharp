@@ -232,6 +232,7 @@ public sealed class ScriptConformanceTests
         "other/concatenation.sql",
         "other/conditions.sql",
         "other/field-reference.sql",
+        "other/invisible.sql",
         "other/unique_include.sql",
         "parser/comments.sql",
         "parser/identifiers.sql",

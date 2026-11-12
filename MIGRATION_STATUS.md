@@ -14024,3 +14024,18 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.28%** строк (79868/86551), **88.39%** ветвей (32872/37190).
 * Проверено: H2Sharp.Tests 2580/2580, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 159: MERGE INSERT VALUES по видимым колонкам (2026-11-12)
+
+* `MergeUsing+WhenNotMatched.Prepare`: список колонок для `INSERT` без явного списка берётся из
+  эталонного `table.getVisibleColumns()` — порт использовал `GetColumns()` и считал
+  невидимые колонки, из-за чего `MERGE … WHEN NOT MATCHED THEN INSERT VALUES (T.A, T.C,
+  T.E)` на таблице с `B INVISIBLE, D INVISIBLE` отвечал COLUMN_COUNT_DOES_NOT_MATCH, а
+  последующий `SELECT *` терял строку (other/invisible.sql строки 73/77). Не видимые
+  VALUES колонки при вставке остаются NULL, как в эталоне.
+* Старый комментарий «невидимых колонок в порту нет» убран — они есть (D-решение по
+  INVISIBLE портировано раньше).
+* Закреплён `other/invisible.sql`: 209 → **210**.
+* Итог: **92.30%** строк (79886/86551), **88.42%** ветвей (32883/37190).
+* Проверено: H2Sharp.Tests 2581/2581, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
