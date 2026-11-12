@@ -14192,3 +14192,17 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.32%** строк (80031/86691), **88.45%** ветвей (32944/37244).
 * Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 168: NULL_TO_DEFAULT — совместимый алиас DEFAULT ON NULL (2026-11-12)
+
+* `Parser.ParseColumnForTable`: после `DEFAULT ON NULL` эталон принимает и совместимое
+  написание `NULL_TO_DEFAULT` (`readIfCompat("NULL_TO_DEFAULT")`, то же значение флага) —
+  порт на нём отвечал SYNTAX_ERROR_2 и не создавал таблицу, из-за чего весь каскад
+  `ddl/truncateTable.sql` (вставка, SELECT, TRUNCATE, RESTART/CONTINUE IDENTITY) сыпался
+  TABLE_OR_VIEW_NOT_FOUND_DATABASE_EMPTY_1 (21 расхождение).
+* `ddl/truncateTable.sql`: 21 → 4 расхождения; остальные четыре — блок `SET MODE
+  MSSQLServer/MySQL` (D-029) со своим числом идентичности после TRUNCATE. Скрипт не
+  пиннуется до поддержки SET MODE.
+* Итог: **92.30%** строк (80023/86698), **88.44%** ветвей (32942/37248).
+* Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

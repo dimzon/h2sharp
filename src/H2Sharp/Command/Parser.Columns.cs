@@ -567,7 +567,16 @@ public sealed partial class Parser
         }
         else if (nullConstraint == NullConstraintType.NullIsNotAllowed) column.SetNullable(false);
         else if (!column.IsIdentity()) column.SetNullable(defaultNullable);
-        if (!defaultOnNull && ReadIfWords(WordsDefaultOnNull)) defaultOnNull = true;
+        if (!defaultOnNull && ReadIfWords(WordsDefaultOnNull))
+        {
+            defaultOnNull = true;
+        }
+        else if (!defaultOnNull && ReadIfCompat("NULL_TO_DEFAULT"))
+        {
+            // The reference's compatibility spelling of DEFAULT ON NULL.
+            defaultOnNull = true;
+        }
+
         column.SetDefaultOnNull(defaultOnNull);
         if (!column.IsGenerated() && IsWord("SEQUENCE"))
         {
