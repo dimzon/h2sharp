@@ -47,6 +47,55 @@ public sealed class RangeIndex : Index
             throw DbException.Get(ErrorCode.StepSizeMustNotBeZero);
         }
 
+        // The reference's find: the boundary rows cut the scanned interval, and the cut lands
+        // on the step grid. Without it every IN-list probe re-reads the whole range, and a
+        // value matched by two probes is emitted twice.
+        if (first is not null)
+        {
+            try
+            {
+                long v = first.GetValue(0)!.GetLong();
+                if (step > 0)
+                {
+                    if (v > min)
+                    {
+                        min += (v - min + step - 1) / step * step;
+                    }
+                }
+                else if (v > max)
+                {
+                    max = v;
+                }
+            }
+            catch (H2SharpException)
+            {
+                // Error when converting the value - ignore, as the reference does.
+            }
+        }
+
+        if (last is not null)
+        {
+            try
+            {
+                long v = last.GetValue(0)!.GetLong();
+                if (step > 0)
+                {
+                    if (v < max)
+                    {
+                        max = v;
+                    }
+                }
+                else if (v < min)
+                {
+                    min -= (min - v - step - 1) / step * step;
+                }
+            }
+            catch (H2SharpException)
+            {
+                // Error when converting the value - ignore, as the reference does.
+            }
+        }
+
         return new RangeCursor(min, max, step);
     }
 

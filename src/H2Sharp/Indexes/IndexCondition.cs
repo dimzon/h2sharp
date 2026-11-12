@@ -216,6 +216,9 @@ public class IndexCondition
         IComparer<Value> comparator;
         if (compoundColumns)
         {
+            // The per-column directions are carried by the sort order built from the index
+            // columns' sort types; reversing the whole comparison belongs to the single-column
+            // case only, as in the reference.
             SortOrder sortOrder = SortOrder.OfSortTypes(session, sortTypes);
             comparator = Comparer<Value>.Create((o1, o2) =>
                 sortOrder.Compare(((ValueRow)o1!).GetList(), ((ValueRow)o2!).GetList()));
@@ -223,11 +226,11 @@ public class IndexCondition
         else
         {
             comparator = session.GetValueComparer();
-        }
-        if ((sortTypes[0] & Result.SortOrder.Descending) != 0)
-        {
-            IComparer<Value> forward = comparator;
-            comparator = Comparer<Value>.Create((o1, o2) => forward.Compare(o2, o1));
+            if ((sortTypes[0] & Result.SortOrder.Descending) != 0)
+            {
+                IComparer<Value> forward = comparator;
+                comparator = Comparer<Value>.Create((o1, o2) => forward.Compare(o2, o1));
+            }
         }
 
         SortedSet<Value> valueSet = new(comparator);
