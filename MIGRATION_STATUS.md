@@ -14069,3 +14069,22 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.31%** строк (79920/86582), **88.44%** ветвей (32907/37210).
 * Проверено: H2Sharp.Tests 2593/2593, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 162: снят изобретённый комментарий `/* distinct on */`, envelope закреплён (2026-11-12)
+
+* `Select.GetPlanSql`: удалена строка, печатавшая `\n/* distinct on */` при
+  `distinctExpressions != null`. В эталонном `getPlanSQL` такого комментария нет:
+  `/* distinct */` там относится к `isDistinctQuery` — оптимизации одиночного
+  DISTINCT-индекса (отдельная неперенесённая работа), а не к cláusule DISTINCT ON.
+  Это устранение отступления, а не маскировка: `queries/distinct.sql` строка 183 и
+  `datatypes/varchar-ignorecase.sql` строки 53/71 теперь ближе к эталону (оба скрипта
+  остаются незакреплёнными из-за собственных блок-причин).
+* Закреплён `functions/aggregate/envelope.sql` (0 расхождений при триаже):
+  222 → **223**.
+* `testScript.sql`, `testSimple.sql`, `ddl/createSchema*` и др. подтвердили блок D-004
+  (роли/пользователи); `persistent-only.sql`, `other/two_phase_commit.sql` требуют
+  `@reconnect` в раннере (эталонный harness перезапускает файл-БД; портовый раннер
+  игнорирует директиву) — не переносится без изменения runner-контракта.
+* Итог: **92.31%** строк (79925/86581), **88.45%** ветвей (32909/37208).
+* Проверено: H2Sharp.Tests 2594/2594, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

@@ -93,6 +93,7 @@ public sealed class ScriptConformanceTests
         "functions/aggregate/covar_pop.sql",
         "functions/aggregate/covar_samp.sql",
         "functions/aggregate/every.sql",
+        "functions/aggregate/envelope.sql",
         "functions/aggregate/gcd_agg.sql",
         "functions/aggregate/histogram.sql",
         "functions/aggregate/json_arrayagg.sql",

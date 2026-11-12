@@ -838,7 +838,9 @@ public sealed class Select : Query
         if ((sqlFlags & HasSql.AddPlanInformation) != 0)
         {
             if (isQuickAggregateQuery) builder.Append("\n/* direct lookup */");
-            if (distinctExpressions is not null) builder.Append("\n/* distinct on */");
+            // The reference has no plan comment for DISTINCT ON: its `/* distinct */` comment
+            // belongs to the single-column DISTINCT index optimization (isDistinctQuery), not
+            // to the DISTINCT ON clause.
             if (indexSortedColumns == Indexes.IndexSort.FullySorted) builder.Append("\n/* index sorted */");
             else if (indexSortedColumns > 0) builder.Append("\n/* index sorted: ").Append(indexSortedColumns).Append(" of ")
                 .Append(sort!.GetOrderList()!.Count).Append(" columns */");
