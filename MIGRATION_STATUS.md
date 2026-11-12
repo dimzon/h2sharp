@@ -14323,3 +14323,18 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.42%** строк (80228/86807), **88.60%** ветвей (33045/37296).
 * Проверено: H2Sharp.Tests 2608/2608, MvStore 191/191, Data **764/764**, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 176: Column — прямой юнит-прогон (2026-11-12)
+
+* Новый `ColumnUnitTests` (6 тестов) в H2Sharp.Tests закрывает простые ветки класса:
+  статический `WriteColumns` с separator и suffix («A» NOT NULL, «B» NOT NULL); оба
+  перегруженных `Rename` (string и StringBuilder); объявленные `GetPrecision`/`GetScale`/
+  `GetTypeName` из типа (NUMERIC(10, 2)); флаг `_ROWID_` через `SetRowId`/`IsRowId`;
+  `GetHashCode` без таблицы (0), `Equals` для не-колонки и чужого типа, диагностику
+  `ToString` (name:columnId:sql); `Convert` с текстом в INT оборачивает
+  `DataConversionError1` в сообщение колонки.
+* `Column.cs`: 394 → **400/443** строк; общий объединённый прогон шести наборов зелёный
+  (один известный MvStore-флейк фонового воркера перезапущен отдельно — 191/191).
+* Итог: **92.45%** строк (80254/86807), **88.60%** ветвей (33046/37296).
+* Проверено: H2Sharp.Tests 2614/2614, MvStore 191/191, Data 764/764, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
