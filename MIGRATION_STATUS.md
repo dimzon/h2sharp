@@ -14305,3 +14305,21 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.38%** строк (80189/86807), **88.50%** ветвей (33007/37296).
 * Проверено: H2Sharp.Tests 2608/2608, MvStore 191/191, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 175: H2DataReader — конверсии и отказы геттеров под тестами (2026-11-12)
+
+* Новый `H2DataReaderCastTests` (8 тестов) в H2Sharp.Data.Tests закрывает лестницы
+  конверсий ADO.NET-ридера: `GetBoolean` из BOOLEAN/текста/чисел (signum) с отказом для
+  бинарных; `GetChar` — один символ против строки длиннее; `GetDateTime` из DATE и
+  TIMESTAMP WITH TIME ZONE (DateTimeOffset-путь); `GetGuid` из UUID-литерала, 16-байтной
+  VARBINARY (new Guid(byte[]) с перестановкой первых групп) и текста-не-GUID
+  (`FormatException`); отказы `GetBytes`/`GetChars` на INTEGER и текст через `GetString`
+  (JDBC-семантика «любой тип как текст»); NULL — `IsDBNull`, ноль у числовых и
+  `InvalidCastException` у `GetChar`; `GetFieldValue<T>` — точные и отказные.generic-пути;
+  `GetOrdinal` по алиасу без учёта регистра и `IndexOutOfRangeException` для неизвестного
+  имени и ординала.
+* `H2DataReader.cs`: 439 → **464/496** строк; общий объединённый прогон шести наборов
+  зелёный.
+* Итог: **92.42%** строк (80228/86807), **88.60%** ветвей (33045/37296).
+* Проверено: H2Sharp.Tests 2608/2608, MvStore 191/191, Data **764/764**, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
