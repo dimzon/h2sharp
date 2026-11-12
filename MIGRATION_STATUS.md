@@ -13962,3 +13962,23 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.21%** строк (79785/86530), **88.18%** ветвей (32784/37178).
 * Проверено: H2Sharp.Tests 2575/2575, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 155: LISTAGG — WITHIN GROUP (ORDER BY NULL) и параметр-разделитель (2026-11-12)
+
+* `Aggregate.GetSqlListagg`: LISTAGG всегда печатает `WITHIN GROUP (...)`, как эталон, а
+  пустой список сортировки — как `ORDER BY NULL` (`Window.appendOrderBy(..., true)`).
+  Порт возвращался из `AppendWithinGroup` при null и печатал просто `LISTAGG(V)`;
+  эталонное имя того же агрегата — `LISTAGG(V) WITHIN GROUP (ORDER BY NULL)`
+  (functions/aggregate/listagg.sql строки 58/64/94/102/126/190).
+* `Parser.ReadListaggSeparator`: перенесён эталонный `readStringOrParameter` — разделителем
+  может быть параметр (`?`), NULL/VARCHAR-константа или любая константа, приводящаяся к
+  строке; иначе SYNTAX_ERROR на «character string». Порт требовал `IsConstant()` и отвечал
+  синтаксической ошибкой на `LISTAGG(V, ?)` (строка 220; блок параметра `{ : }`).
+* Добавлен `ScriptConformanceRegressionTests.ListaggNamesItsOrderingAndAcceptsAParameterSeparator`
+  (метки LISTAGG/DISTINCT/разделитель, параметр-разделитель через блок `{}`, отказ
+  `LISTAGG(V, V)`).
+* `functions/aggregate/listagg.sql` не закреплён: единственное оставшееся расхождение —
+  `SET MODE Oracle` (D-029), остальное построчно совпадает.
+* Итог: **92.18%** строк (79787/86551), **88.14%** ветвей (32781/37190).
+* Проверено: H2Sharp.Tests 2576/2576, MvStore 185/185, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

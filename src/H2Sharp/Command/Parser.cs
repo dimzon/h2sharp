@@ -6143,22 +6143,45 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Reads a LISTAGG separator: a string literal or a parameter.
+    /// Reads a LISTAGG separator, the reference's <c>readStringOrParameter</c>: a parameter,
+    /// a NULL or VARCHAR constant, or any constant that converts to a string; anything else
+    /// is the syntax error that names a character string.
     /// </summary>
-    /// <remarks>
-    /// Parameters are not read on this layer, so in practice only constants pass;
-    /// anything else is a syntax error here, as in the reference.
-    /// </remarks>
     /// <returns>the separator expression</returns>
     private Expressions.Expression ReadListaggSeparator()
     {
+        int start = Current.Start;
         Expressions.Expression separator = ReadQueryOr();
-        if (!separator.IsConstant())
+        try
         {
-            throw DbException.GetSyntaxError(sql, Current.Start, "separator");
+            separator = separator.Optimize(session!);
+            if (separator is Expressions.Parameter)
+            {
+                return separator;
+            }
+
+            Value value = separator.GetValue(session!);
+            int valueType = value.GetValueType();
+            if ((valueType == Value.Null || valueType == Value.Varchar)
+                && separator is Expressions.ValueExpression)
+            {
+                return separator;
+            }
+
+            string? text = value.GetString();
+            if (text is null || text.Length <= Engine.Constants.MaxStringLength)
+            {
+                return text is null
+                    ? Expressions.ValueExpression.Null
+                    : Expressions.ValueExpression.Get(ValueVarchar.Get(text, provider));
+            }
+        }
+        catch (H2SharpException)
+        {
+            // The reference swallows the failure and reports the syntax error below.
         }
 
-        return separator;
+        throw DbException.GetSyntaxError(sql, start, "character string");
     }
 
     /// <summary>

@@ -654,6 +654,50 @@ public sealed class ScriptConformanceRegressionTests
         Assert.True(failures.Count == 0, string.Join(" | ", failures));
     }
 
+    /// <summary>
+    /// LISTAGG names its ordering even when the caller wrote none, and the separator may be a
+    /// parameter: both defects kept functions/aggregate/listagg.sql from matching the
+    /// reference (its own remaining difference there is SET MODE Oracle, D-029).
+    /// </summary>
+    [Fact]
+    public void ListaggNamesItsOrderingAndAcceptsAParameterSeparator()
+    {
+        List<string> failures = ScriptRunner.RunLines(
+        [
+            "CREATE TABLE T(ID INT, V INT);",
+            "> ok",
+            "INSERT INTO T VALUES (1, 7), (2, 2), (3, 7);",
+            "> update count: 3",
+            "SELECT LISTAGG(V) FROM T;",
+            "> LISTAGG(V) WITHIN GROUP (ORDER BY NULL)",
+            "> ---------------------------------------",
+            "> 7,2,7",
+            "> rows: 1",
+            "SELECT LISTAGG(DISTINCT V) FROM T;",
+            "> LISTAGG(DISTINCT V) WITHIN GROUP (ORDER BY NULL)",
+            "> ------------------------------------------------",
+            "> 2,7",
+            "> rows: 1",
+            "SELECT LISTAGG(DISTINCT V, '-') FROM T;",
+            "> LISTAGG(DISTINCT V, '-') WITHIN GROUP (ORDER BY NULL)",
+            "> -----------------------------------------------------",
+            "> 2-7",
+            "> rows: 1",
+            "SELECT LISTAGG(V, ?) L FROM (VALUES 'a', 'b', 'c') T2(V);",
+            "{",
+            ":",
+            "> L",
+            "> -----",
+            "> a:b:c",
+            "> rows: 1",
+            "};",
+            "> update count: 0",
+            "SELECT LISTAGG(V, V) FROM (VALUES 'a') T2(V);",
+            "> exception SYNTAX_ERROR_2",
+        ]);
+        Assert.True(failures.Count == 0, string.Join(" | ", failures));
+    }
+
     private static int CountRows(SessionLocal session, string sql)
     {
         using ResultInterface result = session.PrepareCommand(sql).ExecuteQuery(-1, 0, false);

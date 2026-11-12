@@ -1739,9 +1739,12 @@ public class Aggregate : AbstractAggregate, ExpressionWithFlags
         }
 
         _ = builder.Append(')');
-        // The reference always renders WITHIN GROUP here; with no ORDER BY list
-        // there is nothing to render, and the reader refuses that clause anyway.
-        AppendWithinGroup(builder, sqlFlags);
+        // The reference always renders WITHIN GROUP for LISTAGG, and an absent ORDER BY list
+        // is printed as ORDER BY NULL: LISTAGG(V) and LISTAGG(V) WITHIN GROUP (ORDER BY NULL)
+        // are the same aggregate, and the reference names it by the latter.
+        _ = builder.Append(" WITHIN GROUP (");
+        H2Sharp.Expressions.Analysis.Window.AppendOrderBy(builder, orderByList, sqlFlags, true);
+        _ = builder.Append(')');
         return AppendTailConditions(builder, sqlFlags, false);
     }
 
