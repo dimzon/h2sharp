@@ -14252,3 +14252,21 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.30%** строк (80119/86807), **88.41%** ветвей (32973/37296).
 * Проверено: H2Sharp.Tests 2599/2599, MvStore 185/185, Data 756/756, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 172: MVStoreTool — сжатые, битые и старые версии под тестами (2026-11-12)
+
+* Новый `MVStoreToolDamageTests` (6 тестов) в H2Sharp.MvStore.Tests закрывает редко
+  ходимые ветки инструмента: Dump по сжатому хранилищу (`CompressHigh` → ветка LZF/Deflate
+  распаковки страниц в дампе) и по файлу с искажённой серединой (обход chunks без
+  исключения); Info по файлу без заголовков и футера (ответ сообщением, не исключение);
+  Rollback на старую версию (запись `*.temp`, возврат версии); Repair здорового
+  хранилища (перебор версий, `*.back`, Info == null) — поведение согласовано с эталонным
+  `MVStoreTool.repair/rollback/info`, включая то, что `readFully`-ошибки (`MvStoreException`)
+  наружу catch(IOException) в rollback не ловятся, как и в эталоне; Compact с компрессией
+  (хранилище остаётся читаемым) и CompactCleanUp (удаление `*.tempFile`, удаление и
+  продвижение `*.newFile`).
+* `MVStoreTool.cs`: 429 → **454/500** строк; общий объединённый прогон шести наборов
+  зелёный.
+* Итог: **92.33%** строк (80153/86807), **88.44%** ветвей (32985/37296).
+* Проверено: H2Sharp.Tests 2599/2599, MvStore 191/191, Data 756/756, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
