@@ -1030,10 +1030,18 @@ public class TransactionStore : IDisposable
                                 "Data type with hash {0} can not be found", keyTypeName);
                     }
 
-                    object underlying = registered is IObjectMapDataType adapter
-                        ? adapter.UnderlyingDataType
-                        : registered;
-                    keyType = (DataType<K>)underlying;
+                    // The registry keeps an object-typed view of the registered type (see
+                    // RegisterDataType). A typed map reads the real type back through the
+                    // adapter, as the reference's erased cast does; an object-keyed map (every
+                    // lazily reopened transaction map) keeps the object view, which is already
+                    // its DataType<K>. Unwrapping it there used to cast, say, LongDataType to
+                    // DataType<object> and fail.
+                    if (registered is IObjectMapDataType adapter && typeof(K) != typeof(object))
+                    {
+                        registered = adapter.UnderlyingDataType;
+                    }
+
+                    keyType = (DataType<K>)registered;
                     SetKeyType(keyType);
                 }
             }

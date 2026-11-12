@@ -14338,3 +14338,27 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог: **92.45%** строк (80254/86807), **88.60%** ветвей (33046/37296).
 * Проверено: H2Sharp.Tests 2614/2614, MvStore 191/191, Data 764/764, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 177: Transaction и TransactionStore — состояния, savepoint, восстановление (2026-11-13)
+
+* Новый `TransactionTests` (7 тестов) в H2Sharp.MvStore.Tests закрывает прямые ветки
+  `Transaction`: id и sequence первого транзакции (слот 0 не используется, VersionedBitSet
+  начинается с версии 1); `SetName`/`OpenMap` после commit и `SetName` после rollback
+  отказывают `MvStoreException` через `CheckNotClosed`; savepoint и `RollbackToSavepoint`
+  оставляют транзакцию OPEN; `GetChanges(savepoint)` возвращает записанное после savepoint
+  изменение; закрытие файлового store с открытой транзакцией и повторный `Init()`
+  восстанавливает leftover-транзакцию, `EndLeftoverTransactions()` её откатывает.
+* Найдён и исправлен дефект порта в `TransactionStore.TxMapBuilder.Create`: при ленивом
+  переоткрытии версионированной карты из файла реестр типов отдаёт object-view
+  (`ObjectMapDataType<T>`), который разворачивался в реальный `DataType<T>` и затем
+  кастовался к `DataType<K>` при `K=object` — `InvalidCastException` (`LongDataType` →
+  `DataType<object>`). Исключение молча съедалось catch'ем `Init`, и undo-log карта
+  удалялась, так что восстановление leftover-транзакций было невозможно. Теперь object-
+  keyed карта (любая лениво переоткрытая транзакционная карта) оставляет object-view;
+  типизированная — разворачивает, как erased-каст эталона. Поведение эталона: в Java каст
+  `(DataType)` стёрт и всегда проходит.
+* `Transaction.cs`: 370 → **373/431** строк; `TransactionStore.cs`: 529/602 →
+  **566/628** строк (файл вырос на 26 строк из-за исправления).
+* Итог: **92.48%** строк (80304/86833), **88.63%** ветвей (33072/37316).
+* Проверено: H2Sharp.Tests 2614/2614, MvStore 198/198, Data 764/764, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
