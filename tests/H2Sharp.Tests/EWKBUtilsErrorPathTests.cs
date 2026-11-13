@@ -8,6 +8,7 @@
  * envelope shape the reference draws (point, segment, area).
  */
 using System;
+using System.Reflection;
 using H2Sharp.Util;
 using H2Sharp.Util.Geometry;
 using Xunit;
@@ -136,5 +137,138 @@ public sealed class EWKBUtilsErrorPathTests
         {
             Coordinates.Add((x, y, z, m));
         }
+    }
+
+    [Fact]
+    public void RewritingToLowerDimensionRefusesExtraM()
+    {
+        // Источник имеет M, цель Xy не знает про M → ArgumentException (строки 168–169).
+        byte[] ewkb = new byte[29];
+        ewkb[0] = 1; // little endian
+        BitConverter.GetBytes(1 | unchecked((int)0x4000_0000)).CopyTo(ewkb, 1); // type = Point | EwkbM
+        BitConverter.GetBytes(1.0).CopyTo(ewkb, 5); // x
+        BitConverter.GetBytes(2.0).CopyTo(ewkb, 13); // y
+        BitConverter.GetBytes(3.0).CopyTo(ewkb, 21); // m
+        Assert.Throws<ArgumentException>(() => EWKBUtils.EWKB2EWKB(ewkb, GeometryUtils.DimensionSystemXy));
+    }
+
+    [Fact]
+    public void SourceToStringIsReachable()
+    {
+        // EWKBSource.ToString() — приватный, вызываем через dynamic (строки 229–239).
+        var sourceType = typeof(EWKBUtils).GetNestedType("EWKBSource", BindingFlags.NonPublic)!;
+        dynamic source = Activator.CreateInstance(sourceType, BindingFlags.NonPublic | BindingFlags.Instance, null, new object?[] { new byte[] { 1, 2, 3 } }, null)!;
+        string result = source.ToString();
+        Assert.Contains("<*>", result);
+    }
+
+    [Fact]
+    public void ParseCutMidNumberIsRefused()
+    {
+        // Big-endian, обрывается в середине числа → IndexOutOfRange → ArgumentException (290–294).
+        byte[] ewkb = new byte[] { 0, 0, 0, 0, 1, 0x40 };
+        Assert.Throws<ArgumentException>(() => EWKBUtils.ParseEWKB(ewkb, new NullTarget()));
+    }
+
+    [Fact]
+    public void LineStringWithOnePointIsRefused()
+    {
+        // parentType=0 (допустимо), numPoints==1 → throw (410–411).
+        byte[] ewkb = new byte[1 + 4 + 4 + 16];
+        ewkb[0] = 1;
+        BitConverter.GetBytes(GeometryUtils.LineString).CopyTo(ewkb, 1);
+        BitConverter.GetBytes(1).CopyTo(ewkb, 5);
+        BitConverter.GetBytes(1.0).CopyTo(ewkb, 9);
+        BitConverter.GetBytes(2.0).CopyTo(ewkb, 17);
+        Assert.Throws<ArgumentException>(() => EWKBUtils.ParseEWKB(ewkb, new NullTarget()));
+    }
+
+    [Fact]
+    public void PolygonWithNegativeRingCountIsRefused()
+    {
+        // type=3 Polygon, numRings=-1 → throw (438–439).
+        byte[] ewkb = new byte[1 + 4 + 4];
+        ewkb[0] = 1;
+        BitConverter.GetBytes(GeometryUtils.Polygon).CopyTo(ewkb, 1);
+        BitConverter.GetBytes(-1).CopyTo(ewkb, 5);
+        Assert.Throws<ArgumentException>(() => EWKBUtils.ParseEWKB(ewkb, new NullTarget()));
+    }
+
+    [Fact]
+    public void PolygonWithSmallRingIsRefused()
+    {
+        // type=3 Polygon, numRings=1, size=2 (от 1 до 3) → throw (447–448).
+        byte[] ewkb = new byte[1 + 4 + 4 + 4];
+        ewkb[0] = 1;
+        BitConverter.GetBytes(GeometryUtils.Polygon).CopyTo(ewkb, 1);
+        BitConverter.GetBytes(1).CopyTo(ewkb, 5);
+        BitConverter.GetBytes(2).CopyTo(ewkb, 9);
+        Assert.Throws<ArgumentException>(() => EWKBUtils.ParseEWKB(ewkb, new NullTarget()));
+    }
+
+    [Fact]
+    public void PolygonWithZeroRingAndMoreRingsIsRefused()
+    {
+        // type=3 Polygon, numRings=2, size=0 → throw (452–453).
+        byte[] ewkb = new byte[1 + 4 + 4 + 4];
+        ewkb[0] = 1;
+        BitConverter.GetBytes(GeometryUtils.Polygon).CopyTo(ewkb, 1);
+        BitConverter.GetBytes(2).CopyTo(ewkb, 5);
+        BitConverter.GetBytes(0).CopyTo(ewkb, 9);
+        Assert.Throws<ArgumentException>(() => EWKBUtils.ParseEWKB(ewkb, new NullTarget()));
+    }
+
+    [Fact]
+    public void PolygonWithSmallInnerRingIsRefused()
+    {
+        // type=3 Polygon, numRings=1, outer size=4, inner size=2 → throw (464–465).
+        byte[] ewkb = new byte[1 + 4 + 4 + 4 + 4];
+        ewkb[0] = 1;
+        BitConverter.GetBytes(GeometryUtils.Polygon).CopyTo(ewkb, 1);
+        BitConverter.GetBytes(1).CopyTo(ewkb, 5); // numRings=1
+        BitConverter.GetBytes(4).CopyTo(ewkb, 9); // outer size=4
+        BitConverter.GetBytes(2).CopyTo(ewkb, 13); // inner size=2
+        Assert.Throws<ArgumentException>(() => EWKBUtils.ParseEWKB(ewkb, new NullTarget()));
+    }
+
+    [Fact]
+    public void CollectionWithNegativeItemCountIsRefused()
+    {
+        // type=7 GeometryCollection, numItems=-1 → throw (488–489).
+        byte[] ewkb = new byte[1 + 4 + 4];
+        ewkb[0] = 1;
+        BitConverter.GetBytes(GeometryUtils.GeometryCollection).CopyTo(ewkb, 1);
+        BitConverter.GetBytes(-1).CopyTo(ewkb, 5);
+        Assert.Throws<ArgumentException>(() => EWKBUtils.ParseEWKB(ewkb, new NullTarget()));
+    }
+
+    [Fact]
+    public void UnknownGeometryTypeIsRefused()
+    {
+        // type=999 → default → throw (503).
+        byte[] ewkb = new byte[1 + 4];
+        ewkb[0] = 1;
+        BitConverter.GetBytes(999).CopyTo(ewkb, 1);
+        Assert.Throws<ArgumentException>(() => EWKBUtils.ParseEWKB(ewkb, new NullTarget()));
+    }
+
+    [Fact]
+    public void OpenRingIsRefused()
+    {
+        // Polygon, ring size=4, start!=end → throw (539–540).
+        byte[] ewkb = new byte[1 + 4 + 4 + 4 + 64];
+        ewkb[0] = 1;
+        BitConverter.GetBytes(GeometryUtils.Polygon).CopyTo(ewkb, 1);
+        BitConverter.GetBytes(1).CopyTo(ewkb, 5);  // numRings=1
+        BitConverter.GetBytes(4).CopyTo(ewkb, 9);  // size=4
+        Buffer.BlockCopy(BitConverter.GetBytes(1.0), 0, ewkb, 13, 8);
+        Buffer.BlockCopy(BitConverter.GetBytes(2.0), 0, ewkb, 21, 8);
+        Buffer.BlockCopy(BitConverter.GetBytes(3.0), 0, ewkb, 29, 8);
+        Buffer.BlockCopy(BitConverter.GetBytes(4.0), 0, ewkb, 37, 8);
+        Buffer.BlockCopy(BitConverter.GetBytes(5.0), 0, ewkb, 45, 8);
+        Buffer.BlockCopy(BitConverter.GetBytes(6.0), 0, ewkb, 53, 8);
+        Buffer.BlockCopy(BitConverter.GetBytes(7.0), 0, ewkb, 61, 8);
+        Buffer.BlockCopy(BitConverter.GetBytes(8.0), 0, ewkb, 69, 8);
+        Assert.Throws<ArgumentException>(() => EWKBUtils.ParseEWKB(ewkb, new NullTarget()));
     }
 }
