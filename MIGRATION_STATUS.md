@@ -14612,3 +14612,11 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог **92.79%** строк (80539/86798), **88.94%** ветвей (33171/37298).
 * Проверено: H2Sharp.Tests 2719/2719 (+1 флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 199: Tables/TableView.cs — замена view с неверным запросом, алиасы колонок (2026-11-14)
+
+* Новый `<TableViewDirectTests>` (2 тестов) в `H2Sharp.Tests` покрывает: `CREATE OR REPLACE VIEW` с неверным SQL — старый запрос восстанавливается (строки 69-73), табличные алиасы в определении view (строки 166-169).
+* `TableView.cs`: 127/161 строк (цель не достигнута: оставшиеся строки — защищённые ветки `GetScanIndex`, `GetDropSql`, `Recompile` — недостижимы через публичный SQL в текущем порте).
+* Итог **92.81%** строк (80553/86798), **88.95%** ветвей (33175/37298).
+* Проверено: H2Sharp.Tests 2721/2721 (+1 флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
