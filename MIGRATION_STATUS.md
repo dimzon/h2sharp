@@ -14539,3 +14539,10 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * `EWKBUtils.cs`: 307 → **329/342** строк (цель ≥320); итог **92.73%** строк (80491/86798), **88.88%** ветвей (33149/37298).
 * Проверено: H2Sharp.Tests 2675/2675, MvStore 203/203, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 189: MvStore/Page.cs — память страницы при замене и удалении ключа (2026-11-13)
+
+* Новый `<PageMemoryTests>` (1 тест) в `H2Sharp.MvStore.Tests` покрывает: `Page<K,V>.SetKey` без оценки памяти (строки 439–447) и `Page<K,V>.Remove(int)` без оценки памяти (строки 497–500) через `MVMap<int,int>` с кастомным `NoMemIntType` (`IsMemoryEstimationAllowed() == false`).
+* `Page.cs`: 890 → **906/983** строк (цель ≥900); итог **92.73%** строк (80491/86798), **88.89%** ветвей (33154/37298).
+* Проверено: H2Sharp.Tests 2675/2675, MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
