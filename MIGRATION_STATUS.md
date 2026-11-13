@@ -14403,3 +14403,23 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   (80373/86833), **88.72%** ветвей (33105/37316).
 * Проверено: H2Sharp.Tests 2630/2630, MvStore 198/198, Data 764/764, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 180: Index — прямые вызовы базовых членов (2026-11-13)
+
+* Новый `IndexAccessorTests` (10 тестов) в H2Sharp.Tests дёргает базовые члены
+  `Indexes.Index`, до которых SQL-пути не доходят: `GetDropSql` печатает
+  «DROP INDEX …»; позиционные `GetColumn`/`IsColumnAscending`/`GetColumnCount`/
+  `GetIndexColumns`; `IsFirstColumn` — своя колонка первая, чужая нет;
+  `GetFirstColumn` отвечает колонку своей таблицы и null для чужой и null-таблицы;
+  флаги `IsUnique`/`IsPrimaryKey`/`IsScan` для первичного, вторичного и скан-пути;
+  `GetUniqueColumns` копирует уникальный префикс или отдаёт пустой массив; тот же
+  объект строки эквивалентен и равен (`AreRowsEquivalent`/`CompareRows`);
+  равенство на неисследованной колонке пустой таблицы даёт планировщику одну
+  различимую строку (fallback distinctRows=1); вторичный индекс отвечает базовой
+  `GetRowCountApproximation` через `GetRowCount`; индекс INFORMATION_SCHEMA
+  занимает ноль объявленного места (базовый `GetDiskSpaceUsed`); индекс по
+  BLOB-колонке отказывает «Index on column: …».
+* `Indexes/Index.cs`: 440 → **483/503** строк; итог **92.61%** строк (80416/86833),
+  **88.75%** ветвей (33118/37316).
+* Проверено: H2Sharp.Tests 2640/2640, MvStore 198/198, Data 764/764, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
