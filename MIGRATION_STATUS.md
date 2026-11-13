@@ -14588,3 +14588,11 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог **92.80%** строк (80547/86798), **88.94%** ветвей (33173/37298).
 * Проверено: H2Sharp.Tests 2709/2710 (+1 флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 196: Tables/TableTypes.cs — ROWID ключ, GENERATED колонка, row-value IN, составной IN (2026-11-13)
+
+* Новый `<TableTypesDirectTests>` (3 тестов) в `H2Sharp.Tests` покрывает: `GENERATED ALWAYS AS` с не-null значением → `GeneratedColumnCannotBeAssigned1` (строки 1983–1986), `(a,b) IN (SELECT x,y FROM t2)` → `Column.Convert(session?.CastDataProvider, columns, ValueRow)` (строки 818–820), два `IN(...)` условия — второе видит `inColumn` установленным → `CanUseIndexForIn` возвращает false (строки 628–630).
+* `TableTypes.cs`: 943 → **943/1040** строк (цель ≥975 не достигнута:残り的 99 строк — TODOException-заглушки и защищённые ветки, недостижимые через текущий public SQL API; неудавшиеся `INSERT INTO t(_ROWID_, a) VALUES (NULL, 1)` из-за `ValueNull.GetLong()` исключения не даёт 도달 до строк 904–906).
+* Итог **92.79%** строк (80537/86798), **88.93%** ветвей (33170/37298).
+* Проверено: H2Sharp.Tests 2710/2710 (+1 флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
