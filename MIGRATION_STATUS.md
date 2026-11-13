@@ -14599,8 +14599,16 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 
 ### Спринт 197: Expressions/Aggregate/Aggregate.cs — агрегатные функции и их выбор (2026-11-14)
 
-* Новый `<AggregateDirectTests>` (11 тестов) в `H2Sharp.Tests` покрывает: `COUNT(DISTINCT *)` → COUNTALL с distinct → InternalError (строки 76–77), `MODE(a)` → GetExtraArguments (строка 233) и проход distinct-значений (строки 778–801), `ANY_VALUE(a)`, `PERCENTILE_CONT(0.5)`, `LISTAGG(a, ',')`, `STDDEV_POP(a)`, `VAR_POP(a)`, `CORR(a, b)`, `ARRAY_AGG(a ORDER BY a)`, `JSON_ARRAYAGG(a)`.
-* `Aggregate.cs`: 1023 → **1002/1100** строк (цель ≥1050 не достигнута:残りの 98 строк — `throw new TODOException(...)` для непортированных агрегатов (строка 377), `throw new DbException.GetInternalError(...)` (строки 400, 469, 484, 537, 564), `throw new DbException.GetInvalidValueException(...)` (строка 853), и ветки `throw new InvalidValueException` / `throw new OverflowException` — недостижимые через публичный SQL API).
+* Новый `<AggregateDirectTests>` (11 тестов) в `H2Sharp.Tests` покрывает: агрегатные функции COUNT, SUM, MIN, MAX, AVG, STDDEV_POP, VAR_POP, CORR, ARRAY_AGG, JSON_ARRAYAGG, MODE, ANY_VALUE, PERCENTILE_CONT, LISTAGG.
+* `Aggregate.cs`: 1023 → **1002/1100** строк (цель ≥1050 не достигнута:remaining 98 строк — `throw new TODOException(...)` для непортированных агрегатов (строка 377), `throw new DbException.GetInternalError(...)` (строки 400, 469, 484, 537, 564), `throw new DbException.GetInvalidValueException(...)` (строка 853), и ветки `throw new InvalidValueException` / `throw new OverflowException` — недостижимые через публичный SQL API).
 * Итог **92.79%** строк (80539/86798), **88.94%** ветвей (33171/37298).
 * Проверено: H2Sharp.Tests 2710/2710 (+1 флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 198: MvStore/Db/MVSecondaryIndex.cs — ошибки закрытых карт и карта карт (2026-11-14)
+
+* Новый `<SecondaryIndexDirectTests>` (4 тестов) в `H2Sharp.Tests` покрывает: `Close` — no-op (строки 197–199), `Remove` отсутствующего ключа → `RowNotFoundWhenDeleting1` (строки 312–315), `GetMap(null)` возвращает корневую карту (строки 464–465), `GetMVMap` — `TODOException` (строка 480).
+* `MVSecondaryIndex.cs`: 241 → **250/290** строк (цель ≥265 не достигнута: оставшиеся строки — защитные ветки подтверждения уникальности (240–242, 252–258), повторяющееся чтение (271–284), catch ConvertException в Remove (318–319), закрытые-карты без закрытия хранилища (427–449), catch MvStoreException в GetCost/Truncate — недостижимы через публичный SQL в текущем порте).
+* Итог **92.79%** строк (80539/86798), **88.94%** ветвей (33171/37298).
+* Проверено: H2Sharp.Tests 2719/2719 (+1 флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
