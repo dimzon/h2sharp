@@ -63,8 +63,7 @@ public sealed class SelectUnion : Query
         => left.AllowGlobalConditions() && right.AllowGlobalConditions();
 
     public override bool IsConstantQuery() => base.IsConstantQuery() && left.IsConstantQuery() && right.IsConstantQuery();
-    // Query.GetUnionType currently has an int interface in the port.
-    public override int GetUnionType() => (int)unionType;
+    public UnionType GetUnionType() => unionType;
     public Query GetLeft() => left;
     public Query GetRight() => right;
     public override Expression[] GetExpressions() => expressions;

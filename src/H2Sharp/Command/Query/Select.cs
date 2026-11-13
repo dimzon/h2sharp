@@ -448,10 +448,6 @@ public sealed class Select : Query
     }
 
     /// <inheritdoc/>
-    public override void Optimize(SessionLocal session, TableFilter? targetTableFilter)
-        => throw new TODOException("Select.optimize: the optimizer is not ported");
-
-    /// <inheritdoc/>
     /// <remarks>
     /// What runs here is the reference's shape — outer joins keep their conditions out of
     /// the indexes, then the optimizer prices and prepares, then a sorted index replaces
@@ -740,10 +736,6 @@ public sealed class Select : Query
     public override long GetCost() => (long)cost;
 
     /// <inheritdoc/>
-    public override HashSet<DbObject> GetDependencies()
-        => throw new TODOException("Select.getDependencies: the plan is not built");
-
-    /// <inheritdoc/>
     public override bool IsUnion() => false;
 
     private bool HasFromClause() => topTableFilter is not null ? topTableFilter.HasFromClause()
@@ -759,10 +751,6 @@ public sealed class Select : Query
         if (GetOffset() is not null || GetFetch() is not null || condition is not null || isGroupQuery || isWindowQuery || HasFromClause()) return null;
         return visibleColumnCount == 1 ? expressions[0] : new ExpressionList(expressions.GetRange(0, visibleColumnCount).ToArray(), false);
     }
-
-    /// <inheritdoc/>
-    public override int GetUnionType()
-        => throw new TODOException("Select.getUnionType: a select is not a union");
 
     /// <inheritdoc/>
     public override StringBuilder GetPlanSql(StringBuilder builder, int sqlFlags)

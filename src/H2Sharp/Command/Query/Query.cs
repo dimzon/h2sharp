@@ -213,20 +213,16 @@ public abstract class Query : Prepared
     }
 
     /// <summary>
-    /// Optimizes this query.
-    /// </summary>
-    /// <param name="session">the session</param>
-    /// <param name="targetTableFilter">the table the rows are written into, or null</param>
-    public virtual void Optimize(SessionLocal session, TableFilter? targetTableFilter)
-        => throw new TODOException("Query.optimize: the optimizer is not ported");
-
-    /// <summary>
     /// Prepares this query for the second execution and beyond.
     /// </summary>
+    /// <remarks>
+    /// The reference's abstract <c>preparePlan()</c>, where the optimizer runs
+    /// (<see cref="Select.PreparePlan(SessionLocal, TableFilter?)"/> builds it). The reference
+    /// has no separate <c>optimize(session, filter)</c> step, so neither does the port.
+    /// </remarks>
     /// <param name="session">the session</param>
     /// <param name="targetTableFilter">the table the rows are written into, or null</param>
-    public virtual void PreparePlan(SessionLocal session, TableFilter? targetTableFilter)
-        => throw new TODOException("Query.preparePlan: the optimizer is not ported");
+    public abstract void PreparePlan(SessionLocal session, TableFilter? targetTableFilter);
 
     /// <summary>
     /// Whether this query is read only.
@@ -249,34 +245,22 @@ public abstract class Query : Prepared
     /// <summary>
     /// Gets the cost of this query.
     /// </summary>
+    /// <remarks>
+    /// Debt, deferred by the user and recorded in MIGRATION_STATUS.md ("Долг: Query.GetCost"):
+    /// the reference's <c>getCost()</c> returns <c>double</c>, this port truncates to
+    /// <c>long</c>. The truncation can move a plan choice where two plans differ by a
+    /// fraction, so closing the debt means changing this signature and the three overrides.
+    /// </remarks>
     /// <returns>the cost</returns>
-    public virtual long GetCost() => throw new TODOException("Query.getCost: not ported");
-
-    /// <summary>
-    /// Gets the tables this query reads.
-    /// </summary>
-    /// <returns>the dependencies</returns>
-    public virtual HashSet<DbObject> GetDependencies()
-        => throw new TODOException("Query.getDependencies: not ported");
+    // TODO(debt): the reference's getCost() returns double; see MIGRATION_STATUS.md,
+    // "Долг (отложено): Query.GetCost". Closing it changes this signature and three overrides.
+    public abstract long GetCost();
 
     /// <summary>
     /// Whether this query is a union of queries.
     /// </summary>
     /// <returns>true if it is</returns>
     public virtual bool IsUnion() => false;
-
-    /// <summary>
-    /// Gets the union type, one of the reference's UNION_* constants.
-    /// </summary>
-    /// <returns>the union type</returns>
-    public virtual int GetUnionType() => throw new TODOException("Query.getUnionType: not ported");
-
-    /// <summary>
-    /// Gets the name of this query for the plan.
-    /// </summary>
-    /// <returns>the name</returns>
-    public virtual string GetPlanSQL(StringBuilder builder, int sqlFlags)
-        => throw new TODOException("Query.getPlanSQL: not ported");
 
     /// <summary>
     /// Gets the expressions of the columns this query produces.
@@ -515,11 +499,15 @@ public abstract class Query : Prepared
     }
 
     /// <summary>Runs the query, writing rows to the target when one is given.</summary>
+    /// <remarks>
+    /// The reference's abstract <c>queryWithoutCache</c>, per query kind: every concrete kind
+    /// answers it, and the final <c>query(...)</c> in the reference corresponds to the sealed
+    /// <see cref="Run(long)"/> above it.
+    /// </remarks>
     /// <param name="limit">the limit</param>
     /// <param name="target">the target, or null to return a result</param>
     /// <returns>the result when the target is null; otherwise null</returns>
-    public virtual ResultInterface? Run(long limit, ResultTarget? target)
-        => throw new TODOException("Query.Run(limit,target): this query kind is not ported");
+    public abstract ResultInterface? Run(long limit, ResultTarget? target);
 
     private ResultInterface? QueryWithoutCacheLazyCheck(long limit, ResultTarget? target)
     {

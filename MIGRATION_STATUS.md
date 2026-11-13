@@ -14466,3 +14466,48 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   (80432/86833), **88.77%** ветвей (33126/37316).
 * Проверено: H2Sharp.Tests 2653/2653, MvStore 201/201, Data 764/764, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Долг (отложено): Query.GetCost — long вместо эталонного double (2026-11-13)
+
+**НЕ ЗАБЫТЬ.** Эталонный `org.h2.command.query.Query.getCost()` возвращает `double`
+(`Select.getCost()`, `SelectUnion.getCost()` — тоже `double`). Порт объявляет
+`Query.GetCost()` как `long`, `Select.GetCost()` кастует `(long)cost`, а
+`SelectUnion.GetCost()` суммирует `long`. Усечение может сдвинуть выбор плана там,
+где два плана отличаются на дробную часть, и влияет на
+`GetCostAsExpression()` (оценка стоимости подзапроса через
+`ArrayConstructorByQuery`).
+
+Отложено пользователем при очистке Query (2026-11-13). Закрытие долга:
+`Query.GetCost()` → `double`, `Select`/`SelectUnion`/`TableValueConstructor` —
+`override double`, `GetCostAsExpression()` остаётся на double-арифметике; прогнать
+шесть наборов, покрытие и оракульные тесты планировщика (EXPLAIN-скрипты), затем
+удалить этот раздел. Маркер в коде: `TODO(debt)` у `Query.GetCost()`.
+
+### Спринт 184: очистка Query — выдуманные члены удалены, заглушки → abstract (2026-11-13)
+
+* Проверка по эталону показала: «заглушки оптимизатора» — не недоделанный
+  оптимизатор (`Optimizer.cs` портирован и вызывается из `Select.PreparePlan`), а
+  мёртвые члены без аналога в H2 2.5. Удалены:
+  * `Query.Optimize(session, filter)` и `Select.Optimize(...)` — в эталоне такого
+    метода нет (планирование — `preparePlan()` + `Optimizer.optimize(parse,
+    isSelectCommand)`), вызовов не было; текст «the optimizer is not ported» был
+    ложным;
+  * `Query.GetPlanSQL(StringBuilder,int): string` — в эталоне только
+    `Prepared.getPlanSQL(...): StringBuilder` (портирован как `Prepared.GetPlanSql`);
+  * `Query.GetDependencies()` и `Select.GetDependencies()` — в эталоне
+    `Prepared.collectDependencies(HashSet)` (портирован как `CollectDependencies`);
+  * `Query.GetUnionType()` (база) и `Select.GetUnionType()` — в эталоне
+    `getUnionType` есть только у `SelectUnion`; там метод теперь отдаёт
+    `UnionType` без `override`.
+* Недостижимые virtual-заглушки заменены эталонной формой `abstract`:
+  `Query.PreparePlan` (эталонный `preparePlan()`), `Query.Run(limit,target)`
+  (эталонный `queryWithoutCache`), `Query.GetCost` (эталонный `getCost()`).
+* Долг `GetCost` (long вместо double) **отложен пользователем и записан отдельным
+  разделом** «Долг (отложено): Query.GetCost» с маркером `TODO(debt)` в коде —
+  не потеряется.
+* Измерение этого спринта переснято на одной сборке: смешивание отчётов разных
+  сборок после сдвига номеров строк давало фантомные строки в объединении.
+* Итог: **92.66%** строк (80424/86798), **88.81%** ветвей (33125/37298);
+  удалено 35 учитываемых строк мёртвого кода.
+* Проверено: H2Sharp.Tests 2653/2653, MvStore 201/201, Data 764/764, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
