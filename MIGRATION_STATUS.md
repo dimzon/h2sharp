@@ -14518,3 +14518,10 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * `TransactionStore.cs`: 540 → **544/603** строк; итог **92.64%** строк (80408/86798), **88.80%** ветвей (33120/37298).
 * Проверено: H2Sharp.Tests 2653/2653, MvStore 203/203, Data 764/764, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 186: Data/H2Connection.cs — форматы данных, UDF с 2–4 аргументами, GetSchema-guard'ы (2026-11-13)
+
+* Новый `<H2ConnectionExtensionTests>` (3 теста) в `H2Sharp.Data.Tests` покрывает: геттеры `IH2DataFormat` (`BlobFormat`…`TimestampTzFormat`, строки 136, 158, 169, 180, 191, 202, 213), `RegisterUdf` с 2, 3 и 4 аргументами на закрытом соединении (строки 484–486, 490–492, 496–498), `GetSchema(null!)`/`GetSchema("NOPE")` → `ArgumentException` (674–675, 730–731), `GetSchemaAsync("TABLES")` (742).
+* `H2Connection.cs`: 498 → **520/555** строк; итог **92.69%** строк (80450/86798), **88.83%** ветвей (33132/37298).
+* Проверено: H2Sharp.Tests 2653/2653, MvStore 203/203, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
