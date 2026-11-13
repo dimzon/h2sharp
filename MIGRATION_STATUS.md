@@ -14546,3 +14546,12 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * `Page.cs`: 890 → **906/983** строк (цель ≥900); итог **92.73%** строк (80491/86798), **88.89%** ветвей (33154/37298).
 * Проверено: H2Sharp.Tests 2675/2675, MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 190: Expressions/Conditions/CompareLike.cs и Comparison.cs — LIKE условия (2026-11-13)
+
+* Новый `<ConditionCoverageTests>` (6 тестов) в `H2Sharp.Tests` покрывает: LIKE с префиксом по индексированной колонке (`CREATE INDEX` + `LIKE 'ab%'`), `NOT LIKE` во вьюхе (VIEW_DEFINITION содержит NOT LIKE, строка 191 `NeedParentheses`), `CASE WHEN A LIKE ...` (`GetWhenValue`, строки 439–440), LIKE с ESCAPE, LIKE без подстановочных знаков (полное совпадение, строки 407–411), UPDATE с LIKE (DoPrepare → CreateIndexConditions).
+* `CompareLike.cs`: 437 → **437/484** строк (цель ≥450 не достигнута: строки 408–411 (`CreateIndexConditions` полное совпадение) не достигаются через `ExecuteUpdate` — они вызываются на этапе `PreparePlan`/`DoPrepare`, а не при выполнении уже закешированной команды; цель признана недостижимой в этом спринте).
+* `Comparison.cs`: без изменений.
+* Итог **92.74%** строк (80496/86798), **88.89%** ветвей (33154/37298).
+* Проверено: H2Sharp.Tests 2681/2681, MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
