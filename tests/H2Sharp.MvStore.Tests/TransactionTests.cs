@@ -133,4 +133,23 @@ public sealed class TransactionTests : StoreTestBase
             Assert.Empty(ts.GetOpenTransactions());
         }
     }
+
+    [Fact]
+    public void OpenTransactionsInitializesTheStore()
+    {
+        using MVStore s = new MVStore.Builder().Open();
+        var ts = new TransactionStore(s);
+        // Init() не вызываем: GetOpenTransactions инициализирует store сам.
+        Assert.Empty(ts.GetOpenTransactions());
+    }
+
+    [Fact]
+    public void CloseImmediatelySkipsTheCommit()
+    {
+        using MVStore s = new MVStore.Builder().Open();
+        var ts = new TransactionStore(s);
+        ts.Init();
+        ts.CloseImmediately();
+        ts.Dispose();
+    }
 }

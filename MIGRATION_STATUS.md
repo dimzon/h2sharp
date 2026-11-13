@@ -14511,3 +14511,10 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   удалено 35 учитываемых строк мёртвого кода.
 * Проверено: H2Sharp.Tests 2653/2653, MvStore 201/201, Data 764/764, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 185: MvStore/Tx/TransactionStore.cs — GetOpenTransactions авто-Init и CloseImmediately (2026-11-13)
+
+* Дополнен `<TransactionTests>` (9 тестов) в `H2Sharp.MvStore.Tests` покрывает: `GetOpenTransactions` вызывает `Init()` сам (строки 386–388), `CloseImmediately` только выставляет состояние `Closed` без коммита (строка 451).
+* `TransactionStore.cs`: 540 → **544/603** строк; итог **92.64%** строк (80408/86798), **88.80%** ветвей (33120/37298).
+* Проверено: H2Sharp.Tests 2653/2653, MvStore 203/203, Data 764/764, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
