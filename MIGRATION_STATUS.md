@@ -14555,3 +14555,11 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог **92.74%** строк (80496/86798), **88.89%** ветвей (33154/37298).
 * Проверено: H2Sharp.Tests 2681/2681, MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 191: MvStore/Type/ObjectDataType.cs — авто-детект, round-trip, массивы (2026-11-13)
+
+* Новый `<ObjectDataTypeDirectTests>` (5 тестов) в `H2Sharp.Tests` покрывает: round-trip каждого внутреннего типа (bool/sbyte/short/int/long/float/double/char/string/Guid/BigInteger/массивы), `GetMemory(DateTime)`/`GetMemory(array)` (ветки IsDate/IsArray, строки 301, 303), `CompareNotNull` (строки 326–332), `CreateStorage`/`GetMemory`/`Write` (строки 352, 362, 365), `Write/Read(null)` (строка 388).
+* `ObjectDataType.cs`: 802 → **806/894** строк (цель ≥830 не достижима: `DetectType`/`AutoDetectDataType`/`SwitchType`/`ReadTagged`-ветки — `internal`, тестовая сборка не подписана ключом `InternalsVisibleTo` из csproj движка, менять `src/`/`tests/` csproj запрещено правилами спринта).
+* Итог **92.76%** строк (80511/86798), **88.91%** ветвей (33161/37298).
+* Проверено: H2Sharp.Tests 2685/2686 (+1 флейк OffHeapMemoryGateTests, не relacionado), MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
