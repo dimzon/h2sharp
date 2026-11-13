@@ -14453,3 +14453,16 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   (80430/86833), **88.77%** ветвей (33125/37316).
 * Проверено: H2Sharp.Tests 2653/2653, MvStore 198/198, Data 764/764, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 183: FileStore — знание версий и конфигурация кэша (2026-11-13)
+
+* Новый `FileStoreVersionTests` (3 теста) в H2Sharp.MvStore.Tests: пустой файловый
+  store отвечает `IsKnownVersion` на любую версию; после коммита известна своя
+  версия и текущая, а версия ниже первого чанка — нет (поиск отдаёт самый новый
+  чанк не выше запрошенной версии, как в эталоне); связка
+  `CacheSize(1).CacheConcurrency(2)` на файловом store доходит до конфигурации
+  кэша (SegmentCount) и обслуживает запись/чтение.
+* `MvStore/FileStore.cs`: 1300 → **1305/1508** строк; итог **92.63%** строк
+  (80432/86833), **88.77%** ветвей (33126/37316).
+* Проверено: H2Sharp.Tests 2653/2653, MvStore 201/201, Data 764/764, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
