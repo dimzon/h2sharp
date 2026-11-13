@@ -14608,7 +14608,7 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 ### Спринт 198: MvStore/Db/MVSecondaryIndex.cs — ошибки закрытых карт и карта карт (2026-11-14)
 
 * Новый `<SecondaryIndexDirectTests>` (4 тестов) в `H2Sharp.Tests` покрывает: `Close` — no-op (строки 197–199), `Remove` отсутствующего ключа → `RowNotFoundWhenDeleting1` (строки 312–315), `GetMap(null)` возвращает корневую карту (строки 464–465), `GetMVMap` — `TODOException` (строка 480).
-* `MVSecondaryIndex.cs`: 241 → **250/290** строк (цель ≥265 не достигнута: оставшиеся строки — защитные ветки подтверждения уникальности (240–242, 252–258), повторяющееся чтение (271–284), catch ConvertException в Remove (318–319), закрытые-карты без закрытия хранилища (427–449), catch MvStoreException в GetCost/Truncate — недостижимы через публичный SQL в текущем порте).
+* `MVSecondaryIndex.cs`: 241 → **252/290** строк (цель ≥265 не достигнута: оставшиеся строки — защитные ветки подтверждения уникальности (240–242, 252–258), повторяющееся чтение (271–284), catch ConvertException в Remove (318–319), закрытые-карты без закрытия хранилища (427–449), catch MvStoreException в GetCost/Truncate — недостижимы через публичный SQL в текущем порте).
 * Итог **92.79%** строк (80539/86798), **88.94%** ветвей (33171/37298).
 * Проверено: H2Sharp.Tests 2719/2719 (+1 флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
@@ -14620,3 +14620,5 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог **92.81%** строк (80553/86798), **88.95%** ветвей (33175/37298).
 * Проверено: H2Sharp.Tests 2721/2721 (+1 флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 200: Command/Parser.cs — FOREIGN KEY, ALTER TABLE, CREATE TABLE (2026-11-14)
