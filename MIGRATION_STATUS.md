@@ -14439,3 +14439,17 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   (80423/86833), **88.77%** ветвей (33125/37316).
 * Проверено: H2Sharp.Tests 2648/2648, MvStore 198/198, Data 764/764, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 182: Query — флаги, текст ORDER BY/FETCH во view и OFFSET-отказы (2026-11-13)
+
+* Новый `QueryAccessorTests` (5 тестов) в H2Sharp.Tests: флаги обычного SELECT
+  (`IsNeverLazy`, `IsInPredicateResult`, `IsReadOnly`, `GetForUpdate`,
+  `GetSortOrder`, `DisableCache`); view сохраняет текст `ORDER BY` в
+  `INFORMATION_SCHEMA.VIEWS.VIEW_DEFINITION`; view с
+  `ORDER BY … FETCH FIRST 10 PERCENT ROWS WITH TIES` сохраняет `PERCENT` и
+  `WITH TIES`; отрицательный и NULL OFFSET отказывают с упоминанием OFFSET
+  (`GetOffsetFetch`).
+* `Command/Query/Query.cs`: 577 → **583/639** строк; итог **92.63%** строк
+  (80430/86833), **88.77%** ветвей (33125/37316).
+* Проверено: H2Sharp.Tests 2653/2653, MvStore 198/198, Data 764/764, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
