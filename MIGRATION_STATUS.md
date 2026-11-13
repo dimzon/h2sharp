@@ -14571,3 +14571,11 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Итог **92.76%** строк (80513/86798), **88.89%** ветвей (33156/37298).
 * Проверено: H2Sharp.Tests 2691/2692 (+1 известный флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 194: Util/StringUtils.cs + MvStore/WriteBuffer.cs — инвариантный регистр, числа, хекс, URL/XML, рост буфера (2026-11-13)
+
+* Новый `<StringUtilsWriteBufferDirectTests>` (9 тестов) в `H2Sharp.Tests` покрывает: `ToUpperEnglish` с не-ASCII (строки 265–266), `IsNumber` пустой/нецифровой (2444–2446, 2451–2454), `AppendZeroPadded` с исправлением степеней十 (2566–2571), `AppendToLength` с целой строкой (2596–2598), `ParseUnsignedInt` переполнение/плохая цифра (2838–2840, 2832–2834), `WriteBuffer.Clear()` после нативного роста (359–368), `WriteBuffer.Grow()` управляемый массив (468–480), `WriteBuffer.GetRegion()` нативный (391–394, 525–526), `JavaEncode` обычный символ (784–785).
+* `StringUtils.cs`: 1376 → **1389/1414** (+13); `WriteBuffer.cs`: 162 → **171/197** (+9); итог **92.80%** строк (80548/86798), **88.93%** ветвей (33170/37298).
+* Цель ≥1395/≥180 не полностью достигнута: оставшиеся строки — OOM-ветки (не тестируются без краша), `ParseUnsignedInt` (нет публичных вызывающих), `GetCache`/`Cache` (internal), `NativeView.Pin/Unpin` (internal), `ConvertHexToBytes(ReadOnlySpan<char>)` (public, но все его ветки уже reachable через `ConvertHexToBytes(string)`).
+* Проверено: H2Sharp.Tests 2700/2701 (+1 известный флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
