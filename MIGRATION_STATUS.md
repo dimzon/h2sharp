@@ -14579,3 +14579,12 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * Цель ≥1395/≥180 не полностью достигнута: оставшиеся строки — OOM-ветки (не тестируются без краша), `ParseUnsignedInt` (нет публичных вызывающих), `GetCache`/`Cache` (internal), `NativeView.Pin/Unpin` (internal), `ConvertHexToBytes(ReadOnlySpan<char>)` (public, но все его ветки уже reachable через `ConvertHexToBytes(string)`).
 * Проверено: H2Sharp.Tests 2700/2701 (+1 известный флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 195: Data/H2ValueMapper.cs + Value/Value.Conversion.Families.cs — CLR↔engine преобразование значений (2026-11-13)
+
+* Новый `<ValueMapperDirectTests>` (9 тестов) в `H2Sharp.Tests` покрывает: `H2ValueMapper.ToValue` с sbyte/float/sbyte[] (строки 81, 86, 194), `CastToValue` с целевым типом Null и Unknown (строки ~140, ~1486), `CastToValue` с TypeBinary из Varchar (строки ~404), `CastToValue` с TypeClob из Blob (строки ~440), `CastToValue` с TypeBoolean из Null/Blob (строки ~493, ~497), `CastToValue` с TypeDecfloat из невалидной строки (строка ~1130).
+* `H2ValueMapper.cs`: ~575 → **577/620** строк (цель ≥600 не достигнута: оставшиеся 43 строк — внутренние/private методы (`ReadStream`, `ReadText`, `ToObject`, `ToBlobObject`, `ToClobObject`, `ToDateObject`, `ToTimeObject`, `ToTimeTzObject`, `ToTimestampObject`, `ToTimestampTzObject`, `ToJsonObject`, `ToArrayValue`, `GetFieldType`, `GetDbType`, `FromDecimal`, интервальные конвертации) и defensive ветки catch/throw, недостижимые через публичный API без подписанной тестовой сборки).
+* `Value.Conversion.Families.cs`: ~529 → **1041/1083** строк (цель ≥1060 не достигнута: остальные 42 строк — ветки `throw DbException.GetInternalError()` и защищённые проверки, недостижимые через публичный API).
+* Итог **92.80%** строк (80547/86798), **88.94%** ветвей (33173/37298).
+* Проверено: H2Sharp.Tests 2709/2710 (+1 флейк OffHeapMemoryGateTests), MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
