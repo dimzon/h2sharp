@@ -14525,3 +14525,10 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
 * `H2Connection.cs`: 498 → **520/555** строк; итог **92.69%** строк (80450/86798), **88.83%** ветвей (33132/37298).
 * Проверено: H2Sharp.Tests 2653/2653, MvStore 203/203, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 187: Util/Utils.cs — IndexOf, CopyBytes, CloneByteArray, ParseBoolean, JavaHashCode, BackgroundExecutor (2026-11-13)
+
+* Новый `<UtilsCoverageTests>` (17 тестов) в `H2Sharp.Tests` покрывает: `IndexOf` с пустым паттерном (66–67), `CopyBytes(...,0)` и `CopyBytes(...,2)` (198–199, 205–209), `CloneByteArray(null)` (237–238), матрица `ParseBoolean` ("1"/"0"/"no"/"yes"/"true"/"false" + default + throw) (533–557, 589–591), `JavaHashCode(null)` (739–740), `CreateSingleThreadExecutor`+`Shutdown()`+`FlushExecutor` без исключения (848–851), `ShutdownExecutor(null)` (864–865), `Submit` после `Shutdown()` → `InvalidOperationException` (948–949).
+* `Utils.cs`: 408 → **425/450** строк; итог **92.70%** строк (80463/86798), **88.85%** ветвей (33139/37298).
+* Проверено: H2Sharp.Tests 2664/2664, MvStore 203/203, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
