@@ -8,11 +8,12 @@
  *
  * SCRIPT.
  *
- * Generates the SQL that recreates the database. The reference can also encrypt,
- * compress, and filter schemas/tables; of that, only plain TO-file output is ported here.
- * Settings and users/roles are not emitted: D-004 has no users or roles and settings are not
- * ported. Asking for either through the options still builds the same script, because the
- * default switches are read from the grammar exactly as in the reference.
+ * Generates the SQL that recreates the database. Plain TO-file output, the CHARSET of that
+ * file, and the SCHEMA/TABLE filters are ported; COMPRESSION and CIPHER remain unported
+ * (CIPHER is out of scope by D-026). Settings and users/roles are not emitted: D-004 has no
+ * users or roles and settings are not ported. Asking for either through the options still
+ * builds the same script, because the default switches are read from the grammar exactly as
+ * in the reference.
  */
 using System;
 using System.Buffers;
@@ -57,6 +58,18 @@ public sealed class ScriptCommand : Prepared
 
     private Expressions.Expression? fileNameExpression;
 
+    /// <summary>
+    /// The charset of the TO file: UTF-8 without a byte order mark, as the reference's
+    /// <c>StandardCharsets.UTF_8</c> writer produces.
+    /// </summary>
+    private Encoding encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+    /// <summary>The schemas to script, or null for all of them.</summary>
+    private HashSet<string>? schemaNames;
+
+    /// <summary>The tables to script, or null for all of them.</summary>
+    private List<Table>? tables;
+
     private bool tempLobTableCreated;
 
     private int nextLobId;
@@ -91,6 +104,63 @@ public sealed class ScriptCommand : Prepared
     /// <summary>Sets the maximum size of a LOB block.</summary>
     public void SetLobBlockSize(long value)
         => lobBlockSize = (int)Math.Min(int.MaxValue, value);
+
+    /// <summary>Sets the charset of the TO file.</summary>
+    /// <remarks>
+    /// The reference asks <c>Charset.forName</c>; the port maps the charsets .NET names the
+    /// same way and refuses the rest by name. Java's <c>UTF-16</c> writes a big-endian byte
+    /// order mark, <c>UTF-16LE</c>/<c>UTF-16BE</c> write none, and <c>UTF-8</c> writes none —
+    /// the mapping below keeps those differences.
+    /// </remarks>
+    /// <param name="name">the charset name</param>
+    public void SetCharset(string name) => encoding = ParseCharset(name);
+
+    /// <summary>Sets the schemas to script, or null for all of them.</summary>
+    public void SetSchemaNames(HashSet<string> schemaNames) => this.schemaNames = schemaNames;
+
+    /// <summary>Sets the tables to script, or null for all of them.</summary>
+    public void SetTables(List<Table> tables) => this.tables = tables;
+
+    private static Encoding ParseCharset(string name)
+    {
+        switch (name.ToUpperInvariant())
+        {
+            case "UTF-8":
+            case "UTF8":
+                return new UTF8Encoding(
+                    encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+            case "UTF-16":
+                return new UnicodeEncoding(
+                    bigEndian: true, byteOrderMark: true, throwOnInvalidBytes: true);
+            case "UTF-16BE":
+                return new UnicodeEncoding(
+                    bigEndian: true, byteOrderMark: false, throwOnInvalidBytes: true);
+            case "UTF-16LE":
+                return new UnicodeEncoding(
+                    bigEndian: false, byteOrderMark: false, throwOnInvalidBytes: true);
+            case "UTF-32":
+                return new UTF32Encoding(
+                    bigEndian: true, byteOrderMark: true, throwOnInvalidCharacters: true);
+            case "UTF-32BE":
+                return new UTF32Encoding(
+                    bigEndian: true, byteOrderMark: false, throwOnInvalidCharacters: true);
+            case "UTF-32LE":
+                return new UTF32Encoding(
+                    bigEndian: false, byteOrderMark: false, throwOnInvalidCharacters: true);
+            case "US-ASCII":
+            case "ASCII":
+                // Java's encoder reports an unmappable character; .NET's default replaces it.
+                return Encoding.GetEncoding("us-ascii",
+                    EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+            case "ISO-8859-1":
+            case "ISO8859-1":
+            case "LATIN1":
+                return Encoding.GetEncoding("iso-8859-1",
+                    EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+            default:
+                throw DbException.GetUnsupportedException("charset " + name);
+        }
+    }
 
     /// <summary>Sets the expression the TO file name is read from.</summary>
     /// <param name="expression">the file name expression</param>
@@ -135,6 +205,16 @@ public sealed class ScriptCommand : Prepared
         }
 
         Database db = GetSession().GetDatabase();
+        if (schemaNames is not null)
+        {
+            // The reference validates the requested schemas up front, so a typo names the
+            // missing schema instead of silently producing an empty script.
+            foreach (string schemaName in schemaNames)
+            {
+                _ = db.GetSchema(schemaName);
+            }
+        }
+
         if (version)
         {
             Add("-- H2 " + Constants.Version);
@@ -147,6 +227,11 @@ public sealed class ScriptCommand : Prepared
             // the other system schema (INFORMATION_SCHEMA) is skipped. System schemas answer
             // null from GetCreateSql, so no CREATE SCHEMA line is emitted for PUBLIC.
             if (schema.IsSystem() && !ReferenceEquals(schema, db.GetMainSchema()))
+            {
+                continue;
+            }
+
+            if (ExcludeSchema(schema))
             {
                 continue;
             }
@@ -218,6 +303,17 @@ public sealed class ScriptCommand : Prepared
             }
 
             known = known2;
+        }
+
+        // Reference order after the domains: constants, then the table drop pass.
+        foreach (Schema schema in schemas)
+        {
+            List<Constant> constants = schema.GetAllConstants();
+            constants.Sort(static (a, b) => string.CompareOrdinal(a.GetName(), b.GetName()));
+            foreach (Constant constant in constants)
+            {
+                Add(constant.GetCreateSql());
+            }
         }
 
         if (drop)
@@ -304,7 +400,13 @@ public sealed class ScriptCommand : Prepared
         string? fileName = fileNameExpression?.GetValue(GetSession())?.GetString();
         if (fileName is not null)
         {
-            File.WriteAllLines(fileName, lines.Select(line => line.Line), Encoding.UTF8);
+            // A StreamWriter over the chosen charset, not File.WriteAllLines: the default
+            // Encoding.UTF8 writes a byte order mark and the reference's UTF-8 does not.
+            using StreamWriter writer = new(fileName, append: false, encoding);
+            foreach ((string line, bool _) in lines)
+            {
+                writer.WriteLine(line);
+            }
         }
 
         foreach ((string line, bool insert) in lines)
@@ -320,9 +422,46 @@ public sealed class ScriptCommand : Prepared
     }
 
     /// <summary>
+    /// Whether the schema is outside the requested SCHEMA/TABLE filters, as the reference's
+    /// <c>excludeSchema</c> answers.
+    /// </summary>
+    /// <param name="schema">the schema</param>
+    /// <returns>true when it is excluded</returns>
+    private bool ExcludeSchema(Schema schema)
+    {
+        if (schemaNames is not null && !schemaNames.Contains(schema.GetName()!))
+        {
+            return true;
+        }
+
+        if (tables is not null)
+        {
+            // When filtering on specific tables, only the schemas that hold one are scripted.
+            foreach (Table table in schema.GetAllTablesAndViews(GetSession()))
+            {
+                if (tables.Contains(table))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the table is outside the requested TABLE filter.
+    /// </summary>
+    /// <param name="table">the table</param>
+    /// <returns>true when it is excluded</returns>
+    private bool ExcludeTable(Table table) => tables is not null && !tables.Contains(table);
+
+    /// <summary>
     /// The tables of the schemas, in id order.
     /// /// </summary>
-    private static List<Table> BuildTables(List<Schema> schemas)
+    private List<Table> BuildTables(List<Schema> schemas)
     {
         List<Table> tables = [];
         foreach (Schema schema in schemas)
@@ -331,6 +470,7 @@ public sealed class ScriptCommand : Prepared
         }
 
         tables.Sort(static (a, b) => a.GetId().CompareTo(b.GetId()));
+        tables.RemoveAll(ExcludeTable);
         return tables;
     }
 

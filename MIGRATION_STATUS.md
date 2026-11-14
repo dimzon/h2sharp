@@ -14645,3 +14645,24 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   `OffHeapMemoryGateTests` (отдельно проходит; как и в спринтах 196–200).
 * Проверено: H2Sharp.Tests 2728/2729 (флейк), MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 202: SCRIPT — CHARSET, SCHEMA/TABLE-фильтры, секция CONSTANT (2026-11-14)
+
+* Закрыты зафиксированные TODO эталонного `parseScript`: `SCRIPT ... TO '<file>' CHARSET '<name>'`
+  (charset TO-файла) и `SCRIPT ... SCHEMA s1[, s2]` / `SCRIPT ... TABLE t1[, t2]`
+  (эталонные `excludeSchema`/`excludeTable`: схема входит, только если содержит выбранную
+  таблицу; несуществующая схема — `SchemaNotFound1`).
+* Charset: поддержаны UTF-8 (без BOM — исправлен прежний `File.WriteAllLines(...Encoding.UTF8)`,
+  который писал BOM), UTF-16/BE/LE, UTF-32/BE/LE, US-ASCII, ISO-8859-1; кодировщики strict
+  (`EncoderFallback.ExceptionFallback`), как Java; неизвестное имя — ошибка с именем charset.
+  Java-charset имена сверх этого набора (.NET-мэппинг) — осознанное сужение, записано в коде.
+* Найден и закрыт пропуск: дамп не печатал `CREATE CONSTANT` (в эталоне — после доменов,
+  до таблиц, с сортировкой по имени).
+* `COMPRESSION` и `CIPHER` остаются TODO: CIPHER — вне scope (D-026), COMPRESSION — следующий шаг.
+* Тесты: `ScriptOptionsTests` (4 факта + theory по 9 charset + unknown) и
+  `ScriptOptionsOracleTests` (Java-оракул: фильтры SCHEMA/TABLE сравнивают выбранные таблицы,
+  CHARSET UTF-16LE сравнивает байты файла с JVM).
+* Покрытие: **92.81%** строк (80632/86883), **88.96%** ветвей (33257/37386);
+  `ScriptCommand.cs` 432/444. Известный флейк `OffHeapMemoryGateTests` (отдельно проходит).
+* Проверено: H2Sharp.Tests 2746/2747 (флейк), MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

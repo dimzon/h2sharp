@@ -1742,15 +1742,30 @@ public sealed partial class Parser
 
             if (IsWord("CHARSET"))
             {
-                throw new TODOException(
-                    "Parser.parseScript: SCRIPT ... CHARSET is not ported");
+                command.SetCharset(ReadString());
             }
         }
 
-        if (IsWord("SCHEMA") || IsWord("TABLE"))
+        if (IsWord("SCHEMA"))
         {
-            throw new TODOException(
-                "Parser.parseScript: SCRIPT SCHEMA/TABLE filters are not ported");
+            HashSet<string> schemaNames = [];
+            do
+            {
+                _ = schemaNames.Add(ReadIdentifier());
+            }
+            while (ReadIf(Token.Comma));
+            command.SetSchemaNames(schemaNames);
+        }
+        else if (IsWord("TABLE"))
+        {
+            List<Tables.Table> tables = [];
+            do
+            {
+                string tableName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
+                tables.Add(ReadTableOrView(current, schema, tableName, searchPath: true));
+            }
+            while (ReadIf(Token.Comma));
+            command.SetTables(tables);
         }
 
         return command;
