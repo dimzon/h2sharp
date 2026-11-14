@@ -995,9 +995,9 @@ public sealed class InformationSchemaTable : Table
                         catalog,
                         table.GetSchema()?.GetName(),
                         table.GetTableName(),
-                        GetTableTypeName(table),
+                        table.GetSQLTableType(),
                         table is InformationSchemaTable ? "NO" : "YES",
-                        null,
+                        GetCommitAction(table),
                         GetStorageType(table),
                         table.GetComment(),
                         null,
@@ -1317,6 +1317,9 @@ public sealed class InformationSchemaTable : Table
             tables.AddRange(schema.GetAllTablesAndViews(session));
         }
 
+        // The reference's MetaTable.getAllTables concatenates the session's local temporary
+        // tables: they live outside the schemas and belong to this session alone.
+        tables.AddRange(session.GetLocalTempTables());
         return tables;
     }
 
@@ -2243,18 +2246,26 @@ public sealed class InformationSchemaTable : Table
     }
 
     /// <summary>
-    /// The name of the kind of the table, as the reference writes it in the TABLES view.
+    /// The commit action of a temporary table, as the reference writes it in the TABLES
+    /// view; a permanent table has none.
     /// </summary>
     /// <param name="table">the table</param>
     /// <returns>the name</returns>
-    private static string GetTableTypeName(Table table) => table.IsView() ? "VIEW" : "BASE TABLE";
+    private static string? GetCommitAction(Table table)
+        => table.IsTemporary()
+            ? table.GetOnCommitTruncate() ? "DELETE" : table.GetOnCommitDrop() ? "DROP" : "PRESERVE"
+            : null;
 
     /// <summary>
-    /// How the table is stored.
+    /// How the table is stored, as the reference writes it in the TABLES view: a temporary
+    /// table names its scope, the rest names the persistence.
     /// </summary>
     /// <param name="table">the table</param>
     /// <returns>the name</returns>
-    private static string GetStorageType(Table table) => "MEMORY";
+    private static string GetStorageType(Table table)
+        => table.IsTemporary()
+            ? table.IsGlobalTemporary() ? "GLOBAL TEMPORARY" : "LOCAL TEMPORARY"
+            : table.IsPersistIndexes() ? "CACHED" : "MEMORY";
 
     /// <summary>
     /// The class of the table, as the reference writes it in the TABLES view.

@@ -14776,3 +14776,33 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * Проверено: H2Sharp.Tests 2773/2774 (известный флейк `OffHeapMemoryGateTests`),
   Data 767/767, MvStore 214/214, Engine 9/9, Specs 979/979 (+25 skipped),
   Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 207: SQL-рёбра и три дефекта временных таблиц (2026-11-15)
+
+* Новый `SelectTableEdgeOracleTests` (7 Java-оракульных фактов): index-sorted сканы
+  (`ORDER BY` по ASC/DESC-индексу) и ленивые `WITH TIES` (`SET LAZY_QUERY_EXECUTION 1`),
+  `DISTINCT ON` в VIEW_DEFINITION и вместе с `DISTINCT` (отказ), `ORDER BY` по позиции
+  за границей, `HAVING` по алиасу, константные `ON` в соединениях, сравнения и LIKE по
+  индексированной колонке, присваивание генерированной колонке, откат CHECK-нарушения
+  внутри UPDATE, типы временных таблиц, FK с комментарием и `ON UPDATE SET NULL /
+  ON DELETE SET DEFAULT`.
+
+Оракул вскрыл три дефекта, все исправлены по эталону:
+
+* **INFORMATION_SCHEMA.TABLES**: `TABLE_TYPE` брался из `IsView() ? VIEW : BASE TABLE`,
+  а не из эталонного `getSQLTableType()` — временные таблицы печатались `BASE TABLE`;
+  локальные временные таблицы вообще не перечислялись (у эталона `getAllTables`
+  добавляет `session.getLocalTempTables()`); `COMMIT_ACTION` и `STORAGE_TYPE` теперь
+  эталонные (DELETE/DROP/PRESERVE; GLOBAL/LOCAL TEMPORARY; CACHED/MEMORY).
+* **`Table.IsPersistIndexes()`**: база бросала TODO, эталонная база держит поле с
+  дефолтом false — база теперь отвечает false, `MVTable` — из своего поля (как было).
+* **Жизненный цикл ограничений локальных временных таблиц**: `Database.RemoveSchemaObject`
+  не маршрутизировал INDEX/CONSTRAINT/TABLE локально-временных объектов в сессию
+  (эталонные ветви `removeSchemaObject`), а `RemoveLocalTempTableConstraint` не отцеплял
+  ограничение от таблиц (`removeChildrenAndResources`) — после `DROP TABLE LT` висел FK,
+  и `DROP TABLE GT` отказывал `CannotDrop2` там, где эталон удаляет всё.
+
+Покрытие: **93.73%** строк (81474/86926), **90.08%** ветвей (33704/37416).
+Проверено: H2Sharp.Tests 2780/2781 (известный флейк `OffHeapMemoryGateTests`),
+Data 767/767, MvStore 214/214, Engine 9/9, Specs 979/979 (+25 skipped),
+Native 97/97 (+8 skipped), Category!=BlockedByPort.

@@ -2258,12 +2258,12 @@ public abstract class Table
     /// </summary>
     /// <remarks>
     /// In the reference the flag is a field of Table, set by the constructor from the statement
-    /// that created the table. This hierarchy keeps no state in the base, so the answer lives
-    /// with the implementations and the base refuses, as it does for the other table state.
+    /// that created the table, and a table that never got one answers false. This hierarchy
+    /// keeps no state in the base, so the base answers the same default and the one kind that
+    /// carries the flag answers from it.
     /// </remarks>
     /// <returns>true if the indexes are persisted</returns>
-    public virtual bool IsPersistIndexes()
-        => throw new TODOException("Table.isPersistIndexes");
+    public virtual bool IsPersistIndexes() => false;
 
     /// <summary>
     /// Tells the table that it was modified.

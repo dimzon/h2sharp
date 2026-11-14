@@ -1030,6 +1030,13 @@ public sealed class SessionLocal : Session
         {
             _ = localTempTableConstraints.Remove(name);
         }
+
+        // The reference detaches the constraint from the tables it is attached to here,
+        // so a referenced table stops listing a constraint of a dropped temporary table.
+        lock (GetDatabase())
+        {
+            constraint.RemoveChildrenAndResources(this);
+        }
     }
 
     /// <summary>

@@ -415,8 +415,40 @@ public sealed partial class Database : CastDataProvider
     /// <param name="session">the session</param>
     /// <param name="obj">the object to remove</param>
     public void RemoveSchemaObject(SessionLocal session, Schemas.SchemaObject obj)
-        => RemoveSchemaObject(session, obj.GetId(), () => obj.GetSchema().Remove(obj),
+    {
+        // The reference routes the objects of a local temporary table to the session
+        // before anything touches the schema: the objects live there, not in it.
+        switch (obj.GetTypeId())
+        {
+            case DbObject.Index:
+                Indexes.Index removedIndex = (Indexes.Index)obj;
+                Tables.Table indexTable = removedIndex.GetTable()
+                    ?? throw DbException.GetInternalError("index without a table");
+                if (indexTable.IsTemporary() && !indexTable.IsGlobalTemporary())
+                {
+                    session.RemoveLocalTempTableIndex(removedIndex);
+                    return;
+                }
+
+                break;
+            case DbObject.Constraint:
+                Constraints.Constraint removedConstraint = (Constraints.Constraint)obj;
+                if (removedConstraint.GetConstraintType() != Constraints.Constraint.Type.DOMAIN)
+                {
+                    Tables.Table constraintTable = removedConstraint.GetTable();
+                    if (constraintTable.IsTemporary() && !constraintTable.IsGlobalTemporary())
+                    {
+                        session.RemoveLocalTempTableConstraint(removedConstraint);
+                        return;
+                    }
+                }
+
+                break;
+        }
+
+        RemoveSchemaObject(session, obj.GetId(), () => obj.GetSchema().Remove(obj),
             obj.RemoveChildrenAndResources, () => RemoveMeta(session, obj.GetId()));
+    }
 
     /// <summary>
     /// Removes a table from the database.
@@ -424,8 +456,18 @@ public sealed partial class Database : CastDataProvider
     /// <param name="session">the session</param>
     /// <param name="table">the table to remove</param>
     public void RemoveSchemaObject(SessionLocal session, Tables.Table table)
-        => RemoveSchemaObject(session, table.GetId(), () => table.GetSchema()!.Remove(table),
+    {
+        // The reference routes a local temporary table to the session: it lives there,
+        // not in the schema the general path would remove it from.
+        if (table.IsTemporary() && !table.IsGlobalTemporary())
+        {
+            session.RemoveLocalTempTable(table);
+            return;
+        }
+
+        RemoveSchemaObject(session, table.GetId(), () => table.GetSchema()!.Remove(table),
             table.RemoveChildrenAndResources, () => RemoveMeta(session, table.GetId()));
+    }
 
     private void RemoveSchemaObject(
         SessionLocal session,
