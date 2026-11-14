@@ -4438,7 +4438,7 @@ public sealed partial class Parser
         ExpectWord("CREATE");
         ExpectWord("SCHEMA");
         bool ifNotExists = ReadIfNotExists();
-        string schemaName = ReadIdentifier();
+        string schemaName = ReadIdentifierWithCatalog(session);
         Ddl.CreateSchema command = new(session);
         command.SetIfNotExists(ifNotExists);
         command.SetSchemaName(schemaName);
@@ -4735,7 +4735,8 @@ public sealed partial class Parser
             }
 
             ExpectWord("TO");
-            string newName = ReadIdentifierWithSchema(session, out Schemas.Schema newSchema);
+            string newName = ReadIdentifierWithSchema(
+                session, schema.GetName(), out Schemas.Schema newSchema);
             if (!ReferenceEquals(schema, newSchema))
             {
                 throw DbException.Get(Api.ErrorCode.SchemaNameMustMatch);
@@ -4865,7 +4866,7 @@ public sealed partial class Parser
         ExpectWord("DROP");
         ExpectWord("SCHEMA");
         bool ifExists = ReadIfExists(false);
-        string schemaName = ReadIdentifier();
+        string schemaName = ReadIdentifierWithCatalog(session);
         Ddl.DropSchema command = new(session);
         command.SetSchemaName(schemaName);
         command.SetIfExists(ifExists);
@@ -11223,6 +11224,31 @@ public sealed partial class Parser
     /// </remarks>
     public Expression ReadExpression() => ReadQueryOr();
 
+    /// <summary>
+    /// Reads a name that may be prefixed by this database's own name, as the reference's
+    /// readIdentifierWithCatalog does: a matching catalog drops out of the name, a foreign
+    /// one is an invalid name.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <returns>the name without the catalog part</returns>
+    private string ReadIdentifierWithCatalog(SessionLocal session)
+    {
+        string name = ReadIdentifier();
+        if (ReadIf(Token.Dot))
+        {
+            if (name.Equals(session.GetDatabase().GetShortName(), StringComparison.OrdinalIgnoreCase)
+                || session.GetDatabase().IsIgnoreCatalogs())
+            {
+                name = ReadIdentifier();
+            }
+            else
+            {
+                throw DbException.Get(Api.ErrorCode.InvalidName1, name);
+            }
+        }
+
+        return name;
+    }
     private string ReadIdentifier()
     {
         if (!IsIdentifier())

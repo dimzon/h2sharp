@@ -14806,3 +14806,33 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 Проверено: H2Sharp.Tests 2780/2781 (известный флейк `OffHeapMemoryGateTests`),
 Data 767/767, MvStore 214/214, Engine 9/9, Specs 979/979 (+25 skipped),
 Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 208: Parser — каталог-квалифицированные имена и литералы (2026-11-15)
+
+* Новый `ParserMoreEdgesOracleTests` (15 Java-оракульных фактов): литеральные ключевые
+  слова `T`/`TS`/`JSON`/`GEOMETRY` (включая JSON из VARBINARY и отказ `JSON 1`),
+  `AT LOCAL` и провал `AT` как имени колонки, PostgreSQL-режим с каталог-квалифицированными
+  именами (`db..schema.object`, `db.schema.table`), MySQL-режим `REPLACE INTO` (значения и
+  запрос-источник) и пустой `IN ()`, `MERGE INTO ... (SELECT ...)`, `INSERT ... VALUES
+  ROW(...), ROW(...)`, отказы `COMMENT ON`, ALTER DOMAIN-ограничения через схемы,
+  DROP SCHEMA с каталогом, CASCADE/RESTRICT у доменов, identity-команды ALTER COLUMN
+  через модель оператора, опции последовательности (`NO CYCLE`, чужое слово), отказы
+  функций/интервалов/GROUP BY.
+
+Оракул вскрыл два дефекта, исправлены по эталону:
+
+* **`ReadIdentifierWithCatalog`** (эталонный `readIdentifierWithCatalog`): `DROP SCHEMA`
+  и `CREATE SCHEMA` без AUTHORIZATION читают имя с каталогом — свой каталог отсекается,
+  чужой даёт `InvalidName1`; прежде `S1.S2` падал синтаксисом 42000.
+* **`ALTER DOMAIN ... RENAME TO`**: новое имя без схемы резолвится в схему домена
+  (эталонный `readIdentifierWithSchema(schema.getName())`), а не в текущую схему —
+  переименование домена из другого текущего schema работало отказом 90080.
+
+Замечено и не тронуто: JSON-значение ADO-читатель отдаёт как byte[] (текст даёт
+`CAST(... AS VARCHAR)`) — тема маппинга данных, не парсера; PostgreSQL-эмуляция
+`SHOW ALL`/`PG_CATALOG.PG_SETTINGS` портом не перенесена (зафиксировано как пробел).
+
+Покрытие: **93.74%** строк (81501/86941), **90.11%** ветвей (33721/37422);
+`Parser.cs` 6677/7265. Проверено: H2Sharp.Tests 2795/2796 (известный флейк
+`OffHeapMemoryGateTests`), Data 767/767, MvStore 214/214, Engine 9/9, Specs 979/979
+(+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
