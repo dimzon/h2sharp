@@ -14622,3 +14622,26 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 
 ### Спринт 200: Command/Parser.cs — FOREIGN KEY, ALTER TABLE, CREATE TABLE (2026-11-14)
+
+### Спринт 201: CREATE INDEX ... COMMENT — недопорт закрыт, проверено оракулом (2026-11-14)
+
+* Закрыт зафиксированный TODO: `CREATE [UNIQUE|SPATIAL] INDEX ... ON table COMMENT [IS] 'text' (columns)`
+  (эталонный `readCommentIf` между именем таблицы и списком колонок либо PostgreSQL `USING`).
+  Комментарий сохраняется на индексе и виден в `INFORMATION_SCHEMA.INDEXES.REMARKS`.
+* Изменения: `CreateIndexStatement.Comment`; `Parser.ReadCreateIndex` читает `COMMENT [IS]`;
+  `Parser.PrepareCreateIndex` передаёт комментарий; `CreateIndex.SetComment` принимает null,
+  как эталонный `createIndex.setComment(comment)` — ответ `readCommentIf`.
+* Два пункта из перечня долгов проверены по эталону и **долгами не являются**:
+  `ALTER SEQUENCE ... RENAME` — такого синтаксиса в H2 2.5 нет (`Parser.parseAlterSequence`
+  читает только sequence options; документация — `alterSequenceOption` без RENAME);
+  агрегата `SELECTIVITY(...)` нет (`docs/functions.html` — ни одного вхождения; `SELECTIVITY`
+  существует только как опция колонки и уже портирован). Синтаксические ошибки порта на этих
+  конструкциях совпадают с эталоном; код не менялся.
+* Тесты `CommentOnOracleTests`: Java-оракул (COMMENT и COMMENT IS, UNIQUE, `USING BTREE`,
+  пустая строка, экранированная кавычка, отсутствующий текст → syntax error) и обычный факт
+  про `REMARKS` в каталоге.
+* Покрытие: **92.80%** строк (80552/86802), **88.94%** ветвей (33174/37298);
+  `Parser.cs` 6479/7233, новые строки покрыты. Один известный флейк
+  `OffHeapMemoryGateTests` (отдельно проходит; как и в спринтах 196–200).
+* Проверено: H2Sharp.Tests 2728/2729 (флейк), MvStore 204/204, Data 767/767, Engine 9/9,
+  Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

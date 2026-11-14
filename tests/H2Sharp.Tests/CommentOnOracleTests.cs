@@ -62,6 +62,57 @@ public sealed class CommentOnOracleTests
     }
 
     /// <summary>
+    /// The comment a CREATE INDEX carries, the same on both sides: with and without IS, on a
+    /// unique index, before the PostgreSQL USING spelling, and an empty one.
+    /// </summary>
+    [JavaOracleFact]
+    public void CreateIndexCommentsAreTheSameAsTheReference()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE T(A INT, B INT)",
+            "CREATE INDEX I1 ON T COMMENT 'first' (A)",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'I1'",
+            "CREATE UNIQUE INDEX I2 ON T COMMENT IS 'second' (B)",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'I2'",
+            "CREATE INDEX I3 ON T(A)",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'I3'",
+            "CREATE INDEX I4 ON T COMMENT 'fourth' USING BTREE (B)",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'I4'",
+            "CREATE INDEX I5 ON T COMMENT '' (A)",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'I5'",
+            "CREATE INDEX I6 ON T COMMENT 'it''s' (B)",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'I6'",
+            "CREATE INDEX I7 ON T COMMENT",
+        ];
+        List<string> port = RunPort(statements);
+        List<string> java = RunJava(statements);
+        Assert.True(
+            java.Count == port.Count && java.SequenceEqual(port),
+            "java:\n  " + string.Join("\n  ", java) + "\nport:\n  " + string.Join("\n  ", port));
+    }
+
+    /// <summary>
+    /// The comment is stored on the created index and read back from the catalog; the third
+    /// index has none.
+    /// </summary>
+    [Fact]
+    public void CreateIndexCommentIsStoredOnTheIndex()
+    {
+        string[] statements =
+        [
+            "CREATE TABLE T(A INT, B INT)",
+            "CREATE INDEX I1 ON T COMMENT 'first' (A)",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'I1'",
+            "CREATE UNIQUE INDEX I2 ON T COMMENT IS 'second' (B)",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'I2'",
+            "CREATE INDEX I3 ON T(A)",
+            "SELECT REMARKS FROM INFORMATION_SCHEMA.INDEXES WHERE INDEX_NAME = 'I3'",
+        ];
+        Assert.Equal(["=first", "=second", "=-"], RunPort(statements));
+    }
+
+    /// <summary>
     /// The answers to objects the port does not have, the same on both sides.
     /// </summary>
     [JavaOracleFact]

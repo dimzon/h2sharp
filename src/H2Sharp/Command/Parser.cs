@@ -324,6 +324,9 @@ public sealed class CreateIndexStatement : Statement
 
     /// <summary>Whether this statement creates the primary key index, as CREATE PRIMARY KEY does.</summary>
     public bool PrimaryKey { get; set; }
+
+    /// <summary>The comment written after the table name, or null.</summary>
+    public string? Comment { get; set; }
 }
 
 /// <summary>DROP INDEX.</summary>
@@ -9214,6 +9217,7 @@ public sealed partial class Parser
         create.SetIndexColumns([.. statement.Columns]);
         create.SetHash(statement.Hash);
         create.SetSpatial(statement.Spatial);
+        create.SetComment(statement.Comment);
         if (statement.Unique)
         {
             create.SetUnique(statement.NullsDistinct ?? NullsDistinct.Distinct, statement.UniqueColumnCount);
@@ -10685,9 +10689,12 @@ public sealed partial class Parser
         ExpectWord("ON");
         statement.TableName = ReadIdentifierWithSchemaName(session, out string? tableSchemaName);
         statement.TableSchema = tableSchemaName;
-        if (IsWord("COMMENT", consume: false))
+        // The reference's readCommentIf: COMMENT [IS] 'text' stands between the table name and
+        // the column list (or the PostgreSQL USING spelling).
+        if (IsWord("COMMENT"))
         {
-            throw new TODOException("Parser.parseCreate: CREATE INDEX COMMENT is not ported");
+            _ = IsWord("IS");
+            statement.Comment = ReadString();
         }
 
         if (!ReadIf(Token.OpenParen))

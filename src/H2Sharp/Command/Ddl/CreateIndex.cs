@@ -180,8 +180,12 @@ public class CreateIndex : SchemaCommand
     public void SetSpatial(bool b) => spatial = b;
 
     /// <summary>Sets the comment on the index.</summary>
-    /// <param name="comment">the comment</param>
-    public void SetComment(string comment) => this.comment = comment;
+    /// <remarks>
+    /// The reference's <c>createIndex.setComment(comment)</c> takes the possibly-null answer of
+    /// <c>readCommentIf</c>, so the member accepts null here as well.
+    /// </remarks>
+    /// <param name="comment">the comment, or null</param>
+    public void SetComment(string? comment) => this.comment = comment;
 
     /// <inheritdoc/>
     public override int GetCommandType() => CommandInterface.CreateIndex;
