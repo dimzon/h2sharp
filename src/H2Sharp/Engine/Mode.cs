@@ -317,6 +317,12 @@ public sealed class Mode
     public bool TakeGeneratedSequenceValue { get; }
 
     /// <summary>
+    /// Whether a bare TRUNCATE TABLE restarts identity columns, as the reference's
+    /// <c>truncateTableRestartIdentity</c> says for SQL Server, MariaDB and MySQL.
+    /// </summary>
+    public bool TruncateTableRestartIdentity { get; }
+
+    /// <summary>
     /// Whether NEXT VALUE FOR hands out a new value on every occurrence rather than one value
     /// per row, as the reference's <c>nextValueReturnsDifferentValues</c> says for MariaDB
     /// and PostgreSQL.
@@ -407,6 +413,7 @@ public sealed class Mode
         bool updateSequenceOnManualIdentityInsertion = false,
         bool takeInsertedIdentity = false,
         bool takeGeneratedSequenceValue = false,
+        bool truncateTableRestartIdentity = false,
         bool nextValueReturnsDifferentValues = false,
         bool numericWithBooleanComparison = false,
         bool decimalSequences = false,
@@ -454,6 +461,7 @@ public sealed class Mode
         UpdateSequenceOnManualIdentityInsertion = updateSequenceOnManualIdentityInsertion;
         TakeInsertedIdentity = takeInsertedIdentity;
         TakeGeneratedSequenceValue = takeGeneratedSequenceValue;
+        TruncateTableRestartIdentity = truncateTableRestartIdentity;
         NextValueReturnsDifferentValues = nextValueReturnsDifferentValues;
         NumericWithBooleanComparison = numericWithBooleanComparison;
         DecimalSequences = decimalSequences;
@@ -537,15 +545,16 @@ public sealed class Mode
                 allowPlusForStringConcat: true, topInSelect: true, topInDml: true,
                 identityClause: true, allowEmptySchemaValuesAsDefaultSchema: true,
                 discardWithTableHints: true, numericWithBooleanComparison: true,
-                takeInsertedIdentity: true, aliasColumnName: true,
-                viewExpressionNames: ExpressionNames.Exception,
+                takeInsertedIdentity: true, truncateTableRestartIdentity: true,
+                aliasColumnName: true, viewExpressionNames: ExpressionNames.Exception,
                 cteExpressionNames: ExpressionNames.Exception),
             ["MARIADB"] = new(ModeEnum.MariaDb, false, true, false, true, false, CharPadding.Never,
                 allowUnrelatedOrderByExpressionsInDistinctQueries: true, acceptsCommaAsJsonKeyValueSeparator: true,
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
                 replaceInto: true, autoIncrementClause: true, alterTableModifyColumn: true,
                 numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true,
-                takeInsertedIdentity: true, nextValueReturnsDifferentValues: true,
+                takeInsertedIdentity: true, truncateTableRestartIdentity: true,
+                nextValueReturnsDifferentValues: true,
                 viewExpressionNames: ExpressionNames.MysqlStyle,
                 cteExpressionNames: ExpressionNames.MysqlStyle),
             ["MYSQL"] = new(ModeEnum.MySql, false, true, false, true, false, CharPadding.Never,
@@ -553,7 +562,8 @@ public sealed class Mode
                 groupByColumnIndex: true, allNumericTypesHavePrecision: true, onDuplicateKeyUpdate: true,
                 replaceInto: true, autoIncrementClause: true, alterTableModifyColumn: true,
                 numericWithBooleanComparison: true, updateSequenceOnManualIdentityInsertion: true,
-                takeInsertedIdentity: true, viewExpressionNames: ExpressionNames.MysqlStyle,
+                takeInsertedIdentity: true, truncateTableRestartIdentity: true,
+                viewExpressionNames: ExpressionNames.MysqlStyle,
                 cteExpressionNames: ExpressionNames.MysqlStyle),
             ["ORACLE"] = new(
                 ModeEnum.Oracle, true, false, false, false, true,

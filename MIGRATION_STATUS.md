@@ -14666,3 +14666,39 @@ WHERE X = 1` не печатал `/* table scan: C1 = 1 */`, потому что
   `ScriptCommand.cs` 432/444. Известный флейк `OffHeapMemoryGateTests` (отдельно проходит).
 * Проверено: H2Sharp.Tests 2746/2747 (флейк), MvStore 204/204, Data 767/767, Engine 9/9,
   Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 203: Parser — дефекты UPDATE/TRUNCATE/ReadIdentifier и границы query-синтаксиса (2026-11-14)
+
+Найдены оракулом при покрытии целевых строк; исправлены по эталону:
+
+* **UPDATE ... SET с квалифицированной колонкой** (`T.B`, `PUBLIC.T.B`, `DB..T.B`,
+  `T.A[1]`): порт читал только голое имя и отвергал форму, которую эталон принимает
+  (`readTableColumn`). Теперь читается эталонным `ReadTableColumn`: проверки
+  `DatabaseNotFound1`/`SchemaNotFound1`/`TableOrViewNotFound1` — на тех же местах,
+  что в `parseUpdate`. Заодно row-value форма.
+* **UPDATE TOP**: эталон требует скобки (`read(OPEN_PAREN) ... read(CLOSE_PAREN)`),
+  порт читал голый терм; `UPDATE TOP 1` теперь `SYNTAX_ERROR_2`, как в эталоне.
+  `DELETE TOP 10` остался голым — у эталонного `parseDelete` скобок нет.
+* **`ReadIdentifier`**: эталонный `readIdentifier` не считает ключевое слово именем
+  (кроме non-keyword режима и quirks-режима метаданных). Порт брал любой
+  `AsIdentifier`, из-за чего `UPDATE T SET _ROWID_ = ...` давал `COLUMN_NOT_FOUND_1`
+  вместо `SYNTAX_ERROR_2`. Исправлено.
+* **TRUNCATE TABLE**: стартовое значение `restart` берётся из нового флага
+  `Mode.TruncateTableRestartIdentity` (эталонный `truncateTableRestartIdentity`,
+  включён для MSSQLServer/MariaDB/MySQL), а `CONTINUE|RESTART IDENTITY` читаются
+  атомарно (`readIf` пары слов), как в эталоне; прежде `CONTINUE` без `IDENTITY`
+  молча съедался.
+* Удалён мёртвый выдуманный `ReadQueryLimitValue` — в эталоне такого члена нет,
+  вызовов нет (живой путь — `ReadQueryLimitExpression`).
+
+Тесты: новый `ParserQueryEdgeTests` (9 Java-оракульных фактов): LIMIT/OFFSET-литералы,
+семейство `FOR UPDATE` (NOWAIT/WAIT/SKIP LOCKED/OF/READ ONLY/FETCH ONLY), `* EXCEPT`,
+`_ROWID_` и синтаксические ошибки, `DOMAIN ... CHECK (VALUE ...)`, `DATATYPE`,
+TRUNCATE identity в обычном и MSSQLServer режимах, COMMENT у синонима,
+квалифицированные и массивные цели UPDATE, `COMMENT ON COLUMN` с пустой схемой,
+`UPDATE TOP (...)`.
+
+Покрытие: **93.57%** строк (81303/86890), **89.91%** ветвей (33614/37386);
+`Parser.cs` 6643/7250 (91.63%, было 6500/7248). Проверено: H2Sharp.Tests 2755/2756
+(известный флейк `OffHeapMemoryGateTests`), Data 767/767, MvStore 204/204, Engine 9/9,
+Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

@@ -4892,12 +4892,12 @@ public sealed partial class Parser
         ExpectWord("TABLE");
         string tableName = ReadIdentifierWithSchema(session, out Schemas.Schema schema);
         Tables.Table table = ReadTableOrView(session, schema, tableName);
-        bool restart = false;
-        if (IsWord("CONTINUE") && IsWord("IDENTITY"))
+        bool restart = session.GetMode().TruncateTableRestartIdentity;
+        if (ReadIfWords(WordsContinueIdentity))
         {
             restart = false;
         }
-        else if (IsWord("RESTART") && IsWord("IDENTITY"))
+        else if (ReadIfWords(WordsRestartIdentity))
         {
             restart = true;
         }
@@ -5716,35 +5716,6 @@ public sealed partial class Parser
     }
 
     /// <summary>
-    /// Reads a LIMIT, OFFSET or FETCH count: an integer literal, optionally negative.
-    /// </summary>
-    /// <remarks>
-    /// The reference reads any expression here and evaluates it per run; the engine holds
-    /// only a long, so anything but a literal refuses by name rather than binding wrong.
-    /// A negative passes through and runs as no limit, which is what the engine already
-    /// does with a negative fetch.
-    /// </remarks>
-    /// <returns>the count</returns>
-    private long ReadQueryLimitValue()
-    {
-        bool negative = ReadIf(Token.MinusSign);
-        if (Current.GetValue(provider) is Values.ValueInteger small)
-        {
-            Read();
-            return negative ? -small.GetInt() : small.GetInt();
-        }
-
-        if (Current.GetValue(provider) is Values.ValueBigint big)
-        {
-            Read();
-            long value = big.GetLong();
-            return negative ? -value : value;
-        }
-
-        throw new TODOException("Parser.parseQuerySelect: LIMIT/OFFSET takes an integer literal here");
-    }
-
-    /// <summary>
     /// Whether the word opens a clause this reader does not read: such a word is never a table
     /// alias, a column alias, or the end of anything.
     /// </summary>
@@ -6264,6 +6235,8 @@ public sealed partial class Parser
     private static readonly string[] WordsFormatJson = ["FORMAT", "JSON"];
     private static readonly string[] WordsIgnoreNulls = ["IGNORE", "NULLS"];
     private static readonly string[] WordsRespectNulls = ["RESPECT", "NULLS"];
+    private static readonly string[] WordsContinueIdentity = ["CONTINUE", "IDENTITY"];
+    private static readonly string[] WordsRestartIdentity = ["RESTART", "IDENTITY"];
 
     /// <summary>
     /// Reads a run of keyword words in order, consuming them only when the whole run matches.
@@ -10969,7 +10942,16 @@ public sealed partial class Parser
         Expression? fetch = null;
         if ((session?.GetMode() ?? provider.GetMode()).TopInDml && ReadIfCompat("TOP"))
         {
+            // Reference parseUpdate: TOP in UPDATE takes its expression in parentheses;
+            // DELETE reads a bare term.
+            Expect(Token.OpenParen, "(");
             fetch = ReadQueryTerm();
+            if (session is not null)
+            {
+                fetch = fetch.Optimize(session);
+            }
+
+            Expect(Token.CloseParen, ")");
         }
 
         statement.Fetch = fetch;
@@ -10995,6 +10977,9 @@ public sealed partial class Parser
         }
 
         ExpectWord("SET");
+        Tables.TableFilter? filter = command?.GetTableFilter();
+        string ReadUpdateColumn()
+            => filter is null ? ReadIdentifier() : ReadTableColumn(filter).GetName();
         do
         {
             if (ReadIf(Token.OpenParen))
@@ -11003,7 +10988,7 @@ public sealed partial class Parser
                 List<Expression[]?> allIndexes = [];
                 do
                 {
-                    columns.Add(ReadIdentifier());
+                    columns.Add(ReadUpdateColumn());
                     allIndexes.Add(ReadUpdateSetClauseArrayIndexes());
                 }
                 while (ReadIf(Token.Comma));
@@ -11014,7 +10999,7 @@ public sealed partial class Parser
                 continue;
             }
 
-            string column = ReadIdentifier();
+            string column = ReadUpdateColumn();
             Expression[]? indexes = ReadUpdateSetClauseArrayIndexes();
             Expect(Token.Equal, "=");
             statement.Assignments.Add((column, indexes,
@@ -11240,12 +11225,21 @@ public sealed partial class Parser
 
     private string ReadIdentifier()
     {
-        string? name = Current.AsIdentifier;
-        if (name is null)
+        if (!IsIdentifier())
         {
-            throw DbException.GetSyntaxError(sql, Current.Start, "identifier");
+            // Reference readIdentifier: a keyword is not an identifier, unless the mode
+            // declares it a non-keyword or metadata initialization reads an old database
+            // (quirks mode). The model parser has no session and keeps the written name
+            // for callers that only inspect the statement.
+            if (session is not null
+                ? !(session.IsQuirksMode() && Current.AsIdentifier is not null)
+                : Current.AsIdentifier is null)
+            {
+                throw DbException.GetSyntaxError(sql, Current.Start, "identifier");
+            }
         }
 
+        string name = Current.AsIdentifier!;
         Read();
         return name;
     }
