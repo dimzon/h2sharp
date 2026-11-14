@@ -73,9 +73,15 @@ public abstract class ParserCoverageOracleBase
                     List<string> cells = [];
                     for (int i = 0; i < columns; i++)
                     {
-                        cells.Add(reader.IsDBNull(i)
-                            ? "-"
-                            : Convert.ToString(reader.GetValue(i), CultureInfo.InvariantCulture) ?? "-");
+                        // A boolean is spelled TRUE/FALSE as the reference's getString writes
+                        // it, not the CLR False/True.
+                        object? value = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        cells.Add(value switch
+                        {
+                            null => "-",
+                            bool b => b ? "TRUE" : "FALSE",
+                            _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? "-",
+                        });
                     }
 
                     lines.Add("=" + string.Join(":", cells));

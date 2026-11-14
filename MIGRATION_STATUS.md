@@ -14724,3 +14724,28 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   Data 767/767, MvStore 204/204, Engine 9/9, Specs 979/979 (+25 skipped),
   Native 96/97 (+8 skipped) — `TestMultiThread` упал по таймауту под нагрузкой
   полного прогона и проходит отдельно (3/3), Category!=BlockedByPort.
+
+### Спринт 205: ExpressionColumn/BinaryOperation — NOT по типам, `+` как конкатенация, scale деления (2026-11-14)
+
+* Новый `ExpressionEdgeTests` (4 факта, из них 3 Java-оракула):
+  * `NOT` над колонкой каждого числового типа превращается в сравнение с нулём —
+    эталонный `getNotIfPossible`, все ветви нулевых значений (TINYINT…DECFLOAT);
+    `NOT` над строкой остаётся как есть → ошибка преобразования, одинаковая с эталоном;
+  * в режиме MSSQLServer `+` над строками и над `? + ?` сворачивается в
+    `ConcatenationOperation` (эталонные ветви `allowPlusForStringConcat`);
+  * деление точных чисел с предельными масштабами: масштаб результата упирается в
+    `MaximumScale` (100000), а избыточная точность срезается вместе со шкалой —
+    эталонные формулы `parseDivide` в `optimizeNumeric`;
+  * интервальная арифметика: допустимые комбинации и отказ `INTERVAL + VARCHAR`,
+    `INTERVAL * INTERVAL` — коды совпадают с эталоном;
+  * колонка, которая не была отображена (`*`, без резолвера), отказывается по имени:
+    звёздочка держит `TypeUnknown`, `GetValue` без резолвера — `TODOException`
+    (задокументированный долг прямого API, не заблокированная функция).
+* Тестовая обвязка: `ParserCoverageOracleBase` печатает булевы как `TRUE`/`FALSE`,
+  как `getString()` эталона (изначально печатались CLR-овые `False`/`True`).
+* Порт не менялся: линии уже соответствовали эталону, тесты закрепляют поведение.
+* Покрытие: **93.65%** строк (81376/86890), **90.02%** ветвей (33654/37386);
+  `ExpressionColumn.cs` 246/256 (96.1%, было 221), `BinaryOperation.cs` 252/275 (91.6%, было 245).
+* Проверено: H2Sharp.Tests 2773/2774 (известный флейк `OffHeapMemoryGateTests`),
+  Data 767/767, MvStore 204/204, Engine 9/9, Specs 979/979 (+25 skipped),
+  Native 97/97 (+8 skipped), Category!=BlockedByPort.
