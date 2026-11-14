@@ -14749,3 +14749,30 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * Проверено: H2Sharp.Tests 2773/2774 (известный флейк `OffHeapMemoryGateTests`),
   Data 767/767, MvStore 204/204, Engine 9/9, Specs 979/979 (+25 skipped),
   Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 206: MvStore — повреждения и восстановление (2026-11-14)
+
+* Новый `RecoveryDamageTests` (10 фактов, поведение сверено с исходником эталонного
+  `FileStore`/`MVStoreTool`):
+  * копия файла, снятая при открытом хранилище (нет `clean`), открывается со всеми
+    данными — быстрое восстановление и обход цепочки чанков;
+  * уничтоженные корневые страницы layout-карты всех чанков + футер последнего чанка →
+    эталонное `File is corrupted - unable to recover a valid set of chunks`;
+  * чанки уничтожены, заголовок цел → хранилище открывается пустым (`hasPersistentData`
+    = «есть lastChunk», его нет);
+  * футер последнего чанка уничтожен → откат к более старой проверяемой версии;
+  * рукописный store header (эталонный формат `AppendMap` + Fletcher-32, обе копии):
+    `format`/`formatRead` меньше поддерживаемого — отказ с именем формата;
+    `created` из будущего — корректировка времени создания;
+  * MVStoreTool: dump/rollback по чанку, заявляющему больше, чем есть в файле — строка
+    `ERROR: ...`, а не бросок; repair по испорченной середине.
+* Найдено и исправлено расхождение: `MVStoreTool.Dump`/`Rollback` ловили только
+  `IOException`, а портозый `DataUtils.ReadFully` бросает `MvStoreException` — там, где
+  эталон печатает `ERROR: ...` и продолжает/останавливается, порт падал наружу
+  (`IndexOutOfRangeException`/неперехваченное чтение). Теперь ловится так же, как
+  эталонный `IOException`.
+* Покрытие: **93.71%** строк (81422/86890), **90.06%** ветвей (33669/37386);
+  MvStore-файлы: `MVStoreTool` 454→469, `RandomAccessStore` 532→536, `FileStore` 1317→1324.
+* Проверено: H2Sharp.Tests 2773/2774 (известный флейк `OffHeapMemoryGateTests`),
+  Data 767/767, MvStore 214/214, Engine 9/9, Specs 979/979 (+25 skipped),
+  Native 97/97 (+8 skipped), Category!=BlockedByPort.

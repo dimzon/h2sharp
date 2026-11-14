@@ -334,8 +334,10 @@ public static class MVStoreTool
                     total.Value, percent));
             }
         }
-        catch (IOException e)
+        catch (Exception e) when (e is IOException or MvStoreException)
         {
+            // The reference's DataUtils.readFully throws IOException here; the port's
+            // throws MvStoreException, which answers the same "ERROR: ..." line.
             writer.WriteLine("ERROR: " + e);
         }
 
@@ -622,8 +624,9 @@ public static class MVStoreTool
             DataUtils.ReadFully(file, newestChunk.Block * FileStore.BlockSize, newestBytes);
             DataUtils.WriteFully(target, fileSize, newestBytes);
         }
-        catch (IOException e)
+        catch (Exception e) when (e is IOException or MvStoreException)
         {
+            // Same as dump: the read failure answers as "ERROR: ..." and not as a throw.
             writer.WriteLine("ERROR: " + e);
         }
         finally
