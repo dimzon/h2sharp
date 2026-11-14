@@ -14836,3 +14836,27 @@ Native 97/97 (+8 skipped), Category!=BlockedByPort.
 `Parser.cs` 6677/7265. Проверено: H2Sharp.Tests 2795/2796 (известный флейк
 `OffHeapMemoryGateTests`), Data 767/767, MvStore 214/214, Engine 9/9, Specs 979/979
 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 209: ObjectDataType — типизированные элементы массивов и сравнение (2026-11-15)
+
+* Новый `ObjectDataTypeTypedElementsTests` (18 фактов): массив каждого элементного типа
+  (bool/sbyte/byte/char/short/int/long/float/double/BigInteger/BigDecimal/string/Guid/
+  DateTime/int[][]) пишется и читается поэлементно; короткий byte[] читается как
+  знаковый sbyte[] (те же биты); массив с неразрешимым классом элементов отказывается
+  `MvStoreException` («Could not get class», как эталонный illegal-argument);
+  лестница сравнения — совпадение массивов, разные классы по общим id, byte[] по
+  элементам, примитивы на месте, и `IComparable`-пара.
+* Исправлены два дефекта по эталону:
+  * имя класса массива, которое не резолвится, оборачивается в `MvStoreException` —
+    эталон отвечает illegal-argument'ом, порт выпускал наружу `TypeLoadException`;
+  * лестница сравнения «не-массивов» держит «сырой» `Comparable` эталона: `IComparable`
+    без параметра и `IComparable<T>` себя самого (эразия джавы) — прежде такой тип
+    проваливался в сериализацию и отказывался, где эталон сравнивает.
+* Замечено и не тронуто: однострочные `Read` вложенных типов недостижимы снаружи
+  (вложенные типы приватны, движок читает через тегированный путь) — мёртвые строки
+  не трогаем.
+* Покрытие: **93.76%** строк (81534/86962), **90.14%** ветвей (33747/37440);
+  `ObjectDataType.cs` 834/915.
+* Проверено: H2Sharp.Tests 2795/2796 (известный флейк `OffHeapMemoryGateTests`),
+  Data 767/767, MvStore 232/232, Engine 9/9, Specs 979/979 (+25 skipped),
+  Native 97/97 (+8 skipped), Category!=BlockedByPort.

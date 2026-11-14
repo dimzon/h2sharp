@@ -1195,9 +1195,19 @@ public class ObjectDataType : BasicDataType<object?>
             if (component == -1)
             {
                 string componentType = StringDataType.Instance.Read(buff, ref position);
-                clazz = System.Type.GetType(componentType, throwOnError: true)
-                    ?? throw DataUtils.NewMvStoreException(
-                        DataUtils.ErrorSerialization, "Could not get class {0}", componentType);
+                try
+                {
+                    clazz = System.Type.GetType(componentType, throwOnError: true)
+                        ?? throw DataUtils.NewMvStoreException(
+                            DataUtils.ErrorSerialization, "Could not get class {0}", componentType);
+                }
+                catch (Exception e) when (e is not MvStoreException)
+                {
+                    // The reference answers the unreadable class name with an illegal
+                    // argument, not with whatever the type resolver throws.
+                    throw DataUtils.NewMvStoreException(
+                        DataUtils.ErrorSerialization, "Could not get class {0}", componentType, e);
+                }
             }
             else
             {
@@ -1332,13 +1342,22 @@ public class ObjectDataType : BasicDataType<object?>
                 return typeA == typeB ? typeA.Compare(a, b) : base.Compare(a, b);
             }
 
-            if (a is IComparable<object?> comparable
+            // The reference holds a raw Comparable here: erasure makes any Comparable
+            // match, and the comparison itself answers with the type's own argument
+            // check. The non-generic IComparable is that raw shape, and a comparable
+            // of its own kind answers through its generic interface.
+            if (a is IComparable comparable
                 && (b is null || a.GetType().IsAssignableFrom(b.GetType())))
             {
                 return comparable.CompareTo(b);
             }
 
-            if (b is IComparable<object?> other
+            if (a is not null && CompareThroughGeneric(a, b) is int r)
+            {
+                return r;
+            }
+
+            if (b is IComparable other
                 && (a is null || b.GetType().IsAssignableFrom(a.GetType())))
             {
                 return -other.CompareTo(a);
@@ -1349,6 +1368,28 @@ public class ObjectDataType : BasicDataType<object?>
             return CompareNotNull(first, second);
         }
 
+        /// <summary>
+        /// Compares two values of a kind that implements only <c>IComparable&lt;T&gt;</c> of
+        /// itself: the raw Comparable of the reference sees it, and so does this.
+        /// </summary>
+        /// <param name="a">the left value</param>
+        /// <param name="b">the right value</param>
+        /// <returns>the comparison, or null when no comparable interface fits</returns>
+        private static int? CompareThroughGeneric(object a, object? b)
+        {
+            System.Type? comparable = a.GetType()
+                .GetInterfaces()
+                .FirstOrDefault(t => t.IsGenericType
+                    && t.GetGenericTypeDefinition() == typeof(IComparable<>))
+                is System.Type found
+                    && found.GetGenericArguments()[0].IsInstanceOfType(b ?? a) ? found : null;
+            if (comparable is null)
+            {
+                return null;
+            }
+
+            return (int)comparable.GetMethod("CompareTo")!.Invoke(a, [b ?? a])!;
+        }
         public override int GetMemory(object? obj)
         {
             DataType<object?> t = owner.SwitchType(obj);
