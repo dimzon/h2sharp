@@ -512,6 +512,42 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
     }
 
+    void IH2Extensions.RegisterTableUdf(
+        string name, Func<H2TableUdfResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        ArgumentNullException.ThrowIfNull(implementation);
+        extensionConfiguration.AddTableUdf(
+            TableUdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterTableUdf<T1>(
+        string name, Func<T1, H2TableUdfResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        ArgumentNullException.ThrowIfNull(implementation);
+        extensionConfiguration.AddTableUdf(
+            TableUdfDefinition.Create<T1>(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterTableUdf<T1, T2>(
+        string name, Func<T1, T2, H2TableUdfResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        ArgumentNullException.ThrowIfNull(implementation);
+        extensionConfiguration.AddTableUdf(
+            TableUdfDefinition.Create<T1, T2>(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterTableUdf<T1, T2, T3>(
+        string name, Func<T1, T2, T3, H2TableUdfResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        ArgumentNullException.ThrowIfNull(implementation);
+        extensionConfiguration.AddTableUdf(
+            TableUdfDefinition.Create<T1, T2, T3>(SqlName(name), implementation, deterministic));
+    }
+
     void IH2Extensions.RegisterAggregate(string name, IH2AggregateProvider provider)
     {
         EnsureCanConfigure();

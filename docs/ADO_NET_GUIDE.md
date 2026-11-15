@@ -810,6 +810,42 @@ connection.Open();
 `RegisterAggregate(name, IH2AggregateProvider)`, `RegisterHashAlgorithm(name, Func<HashAlgorithm>)`,
 `RegisterRandomGenerator(Func<long?, Random>)`, `RegisterUuidGenerator(Func<int, Guid>)`.
 
+### Табличные UDF и CSVREAD
+
+Функция, которая используется в `FROM`, регистрируется так же — до `Open()`:
+
+```csharp
+((IH2Extensions)connection).RegisterTableUdf<int>("RANGE_TO",
+    n => new H2TableUdfResult(
+        [new H2TableUdfColumn("N", typeof(int))],
+        Enumerable.Range(1, n).Select(i => new object?[] { i })));
+connection.Open();
+// SELECT * FROM RANGE_TO(3) → 1, 2, 3
+```
+
+`RegisterTableUdf` есть для арности 0–3. Функция сама отвечает списком колонок
+(`H2TableUdfColumn`: SQL-имя и CLR-тип) и строками `IEnumerable<object?[]>`;
+колонки запрашиваются при подготовке оператора, строки читаются при выполнении.
+Если функция недетерминирована (по умолчанию), оператор помечается как
+`recompileAlways`, поэтому изменённый вход виден при повторном выполнении.
+
+`CSVREAD` — табличная UDF, зарегистрированная по умолчанию; её SQL-форма и правила
+чтения совпадают с эталоном: заголовок (или список колонок вторым аргументом),
+кавычки/удвоение кавычек, `NULL`-строка, опции (`fieldSeparator`, `fieldDelimiter`,
+`escape`, `lineComment`, `null`, `charset`, `preserveWhitespace`, `quotedNulls`,
+`caseSensitiveColumnNames`) и позиционные разделители. Своя регистрация с тем же
+именем и арностью заменяет реализацию по умолчанию:
+
+```sql
+SELECT * FROM CSVREAD('data.csv');
+SELECT ID, NAME FROM CSVREAD('data.csv', 'ID,NAME');
+SELECT * FROM CSVREAD('data.csv', NULL, 'fieldSeparator=;');
+SELECT * FROM CSVREAD('data.csv', NULL, NULL, ';', '"', '\', 'NULL');
+```
+
+`CSVWRITE` и `org.h2.tools.Csv` как публичный Java-совместимый API не переносились;
+CSVREAD реализован как .NET-функция по правилам чтения эталонного `Csv`.
+
 Это **не** `CREATE ALIAS`: зарегистрированные функции живут в сессии, не становятся
 объектами схемы и не видны из другого соединения/базы. Пакет `H2Sharp.JavaLegacy`
 добавляет `UseJavaLegacy()` — JDK-совместимую последовательность `RAND(seed)` и `ORA_HASH`:

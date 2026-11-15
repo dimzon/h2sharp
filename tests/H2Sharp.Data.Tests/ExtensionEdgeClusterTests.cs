@@ -43,6 +43,22 @@ public sealed class ExtensionEdgeClusterTests
         {
         }
 
+        public void RegisterTableUdf(string name, Func<H2TableUdfResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterTableUdf<T1>(string name, Func<T1, H2TableUdfResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterTableUdf<T1, T2>(string name, Func<T1, T2, H2TableUdfResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterTableUdf<T1, T2, T3>(string name, Func<T1, T2, T3, H2TableUdfResult> implementation, bool deterministic = false)
+        {
+        }
+
         public void RegisterAggregate(string name, IH2AggregateProvider provider)
         {
         }

@@ -104,6 +104,16 @@ mapping и число параметров. Метаданные determinism/rea
 агрегатные FILTER/WITHIN GROUP/OVER) сохраняет эталонные читатели. Schema names,
 приоритет aliases/builtins, arity и cache invalidation сохраняют правила H2 2.5.
 
+- Табличные .NET UDF (пользовательское решение): регистрация `RegisterTableUdf`
+  тем же pre-Open API; функция используется в позиции FROM и сама выбирает
+  колонки (`H2TableUdfColumn`/`H2TableUdfResult`, строки — `IEnumerable<object?[]>`).
+  Исполнение идёт через эталонные `TableFunction`/`FunctionTable`, своего
+  SQL-дерева нет. `CSVREAD` — обычная табличная UDF, зарегистрированная по
+  умолчанию (SQL-форма и правила чтения `org.h2.tools.Csv`), а не перенесённый
+  Java `CsvReadFunction`; регистрация с тем же именем и арностью заменяет
+  реализацию по умолчанию. Недетерминированные функции помечают оператор как
+  recompileAlways, как CSVREAD в эталоне.
+
 UUID-генерация предусмотрена как заменяемая .NET UDF с default-реализацией.
 Обычная база работает без ручной регистрации; внешний provider заменяет
 реализацию через тот же pre-Open API. SQL-имена, версии UUID и недетерминированность

@@ -1932,12 +1932,13 @@ public sealed partial class Parser
 
     /// <summary>
     /// Reads a table function by name, as the reference's readTableFunction(String, Schema):
-    /// the array functions are there, the rest name a class the port does not have yet.
+    /// the array functions and the registered table UDFs (CSVREAD among them); a name that
+    /// is neither is a function alias, which the port does not have (D-037).
     /// </summary>
     /// <param name="name">the name</param>
     /// <param name="schema">the schema, or null</param>
     /// <returns>the table function</returns>
-    private Expressions.Functions.Table.ArrayTableFunction ReadTableFunctionByName(
+    private Expressions.Functions.Table.TableFunction ReadTableFunctionByName(
         string name, Schemas.Schema? schema)
     {
         if (schema is null)
@@ -1948,15 +1949,56 @@ public sealed partial class Parser
                     return ReadUnnestFunction();
                 case "TABLE_DISTINCT":
                     return ReadTableFunction(Expressions.Functions.Table.ArrayTableFunction.TableDistinct);
-                case "CSVREAD":
                 case "LINK_SCHEMA":
                     throw new TODOException(
-                        "Parser.readTableFunction: " + name + " (CSVReadFunction/LinkSchemaFunction) is not ported");
+                        "Parser.readTableFunction: " + name + " (LinkSchemaFunction) is not ported");
+            }
+
+            if (session is not null && session.Extensions.HasTableUdf(name))
+            {
+                return ReadUdfTableFunction(session, name);
             }
         }
 
-        throw new TODOException(
-            "Parser.readTableFunction: table functions over function aliases are not ported (D-037)");
+        throw DbException.Get(Api.ErrorCode.FunctionAliasNotFound1, name);
+    }
+
+    /// <summary>
+    /// Reads the argument list of a registered table UDF, as the reference's
+    /// readTableFunction reads the arguments of a function alias.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="name">the UDF name</param>
+    /// <returns>the table function</returns>
+    private Expressions.Functions.Table.TableFunction ReadUdfTableFunction(
+        SessionLocal session, string name)
+    {
+        List<Expression> args = [];
+        if (!ReadIf(Token.CloseParen))
+        {
+            do
+            {
+                args.Add(ReadExpression());
+            }
+            while (ReadIf(Token.Comma));
+
+            Expect(Token.CloseParen, ")");
+        }
+
+        TableUdfDefinition? definition = session.Extensions.FindTableUdf(name, args.Count);
+        if (definition is null)
+        {
+            throw DbException.Get(Api.ErrorCode.MethodNotFound1,
+                name + " (parameter count: " + args.Count + ")");
+        }
+
+        if (!definition.Deterministic)
+        {
+            // The rows can change without any argument changing (CSVREAD reads a file).
+            recompileAlways = true;
+        }
+
+        return new Expressions.Functions.Table.UdfTableFunction(definition, [.. args]);
     }
     private Prepared ParseReleaseSavepoint()
     {
@@ -2974,6 +3016,27 @@ public sealed partial class Parser
                 fromTable = step is null
                     ? new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max)
                     : new Tables.RangeTable(session.GetDatabase().GetMainSchema()!, min, max, step);
+            }
+            else if (CurrentType == Token.OpenParen)
+            {
+                // A name with a parenthesis is a table function: a registered table UDF
+                // (CSVREAD among them) or a function alias, which the port does not have.
+                // The Sybase "(INDEX name)" hint is read before the function is looked for,
+                // as in the reference's readTableFilter.
+                Read();
+                if (ReadIfCompat("INDEX"))
+                {
+                    _ = ReadIdentifierWithSchema(session, out _);
+                    Expect(Token.CloseParen, ")");
+                    fromTable = ReadTableOrView(session, schema, tableName, searchPath: !schemaExplicit);
+                }
+                else
+                {
+                    Expressions.Functions.Table.TableFunction function =
+                        ReadTableFunctionByName(tableName, schemaExplicit ? schema : null);
+                    fromTable = new Tables.FunctionTable(
+                        session.GetDatabase().GetMainSchema()!, session, function);
+                }
             }
             else if (IsWord("TABLE"))
             {

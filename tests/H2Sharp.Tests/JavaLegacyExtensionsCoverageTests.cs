@@ -21,6 +21,10 @@ public sealed class JavaLegacyExtensionsCoverageTests
         public void RegisterUdf<T1, T2, TResult>(string name, Func<T1, T2, TResult> implementation, bool deterministic = false) { }
         public void RegisterUdf<T1, T2, T3, TResult>(string name, Func<T1, T2, T3, TResult> implementation, bool deterministic = false) { }
         public void RegisterUdf<T1, T2, T3, T4, TResult>(string name, Func<T1, T2, T3, T4, TResult> implementation, bool deterministic = false) { }
+        public void RegisterTableUdf(string name, Func<H2TableUdfResult> implementation, bool deterministic = false) { }
+        public void RegisterTableUdf<T1>(string name, Func<T1, H2TableUdfResult> implementation, bool deterministic = false) { }
+        public void RegisterTableUdf<T1, T2>(string name, Func<T1, T2, H2TableUdfResult> implementation, bool deterministic = false) { }
+        public void RegisterTableUdf<T1, T2, T3>(string name, Func<T1, T2, T3, H2TableUdfResult> implementation, bool deterministic = false) { }
         public void RegisterAggregate(string name, IH2AggregateProvider provider) { }
         public void RegisterHashAlgorithm(string name, Func<System.Security.Cryptography.HashAlgorithm> factory) { }
         public void RegisterRandomGenerator(Func<long?, Random> factory) { }

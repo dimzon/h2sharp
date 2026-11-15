@@ -39,6 +39,22 @@ public interface IH2Extensions
     void RegisterUdf<T1, T2, T3, T4, TResult>(string name, Func<T1, T2, T3, T4, TResult> implementation, bool deterministic = false);
 
     /// <summary>
+    /// Registers a table-valued function with no arguments. The function is used in the FROM
+    /// position and answers its own columns, so a prepared statement asks it for the column
+    /// list before any row is read.
+    /// </summary>
+    void RegisterTableUdf(string name, Func<H2TableUdfResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a table-valued function with one argument.</summary>
+    void RegisterTableUdf<T1>(string name, Func<T1, H2TableUdfResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a table-valued function with two arguments.</summary>
+    void RegisterTableUdf<T1, T2>(string name, Func<T1, T2, H2TableUdfResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a table-valued function with three arguments.</summary>
+    void RegisterTableUdf<T1, T2, T3>(string name, Func<T1, T2, T3, H2TableUdfResult> implementation, bool deterministic = false);
+
+    /// <summary>
     /// Registers a user-defined aggregate provider.
     /// </summary>
     /// <param name="name">the SQL name</param>

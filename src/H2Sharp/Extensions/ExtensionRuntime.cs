@@ -15,17 +15,20 @@ namespace H2Sharp.Extensions;
 internal sealed class ExtensionRuntime
 {
     private readonly Dictionary<string, List<UdfDefinition>> udfs;
+    private readonly Dictionary<string, List<TableUdfDefinition>> tableUdfs;
     private readonly Dictionary<string, AggregateDefinition> aggregates;
     private readonly Dictionary<string, Func<HashAlgorithm>> hashes;
 
     private ExtensionRuntime(
         Dictionary<string, List<UdfDefinition>> udfs,
+        Dictionary<string, List<TableUdfDefinition>> tableUdfs,
         Dictionary<string, AggregateDefinition> aggregates,
         Dictionary<string, Func<HashAlgorithm>> hashes,
         Func<long?, Random>? randomGenerator,
         Func<int, Guid>? uuidGenerator)
     {
         this.udfs = udfs;
+        this.tableUdfs = tableUdfs;
         this.aggregates = aggregates;
         this.hashes = hashes;
         RandomGenerator = randomGenerator;
@@ -53,6 +56,25 @@ internal sealed class ExtensionRuntime
             }
         }
 
+        // The default table functions are the reference's built-ins; a registration with the
+        // same name and arity replaces one of them for this connection.
+        Dictionary<string, List<TableUdfDefinition>> tableUdfs = new(StringComparer.OrdinalIgnoreCase);
+        foreach (TableUdfDefinition definition in CsvTableUdf.CreateDefinitions())
+        {
+            Add(tableUdfs, definition);
+        }
+
+        if (configuration is not null)
+        {
+            foreach ((_, List<TableUdfDefinition> list) in configuration.TableUdfs)
+            {
+                foreach (TableUdfDefinition definition in list)
+                {
+                    Add(tableUdfs, definition);
+                }
+            }
+        }
+
         Dictionary<string, Func<HashAlgorithm>> hashes = new(StringComparer.OrdinalIgnoreCase)
         {
             ["MD5"] = MD5.Create,
@@ -73,7 +95,22 @@ internal sealed class ExtensionRuntime
         }
 
         return new ExtensionRuntime(
-            udfs, aggregates, hashes, configuration?.RandomGenerator, configuration?.UuidGenerator);
+            udfs, tableUdfs, aggregates, hashes,
+            configuration?.RandomGenerator, configuration?.UuidGenerator);
+    }
+
+    private static void Add(
+        Dictionary<string, List<TableUdfDefinition>> tableUdfs, TableUdfDefinition definition)
+    {
+        if (!tableUdfs.TryGetValue(definition.Name, out List<TableUdfDefinition>? list))
+        {
+            list = [];
+            tableUdfs.Add(definition.Name, list);
+        }
+
+        _ = list.RemoveAll(d => d.Arity == definition.Arity);
+        list.Add(definition);
+        list.Sort(static (a, b) => a.Arity.CompareTo(b.Arity));
     }
 
     internal bool HasAggregate(string name) => aggregates.ContainsKey(name);
@@ -82,6 +119,42 @@ internal sealed class ExtensionRuntime
         => aggregates.GetValueOrDefault(name);
 
     internal bool HasUdf(string name) => udfs.ContainsKey(name);
+
+    internal bool HasTableUdf(string name) => tableUdfs.ContainsKey(name);
+
+    internal TableUdfDefinition? FindTableUdf(string name, int arity)
+    {
+        if (!tableUdfs.TryGetValue(name, out List<TableUdfDefinition>? list))
+        {
+            return null;
+        }
+
+        foreach (TableUdfDefinition definition in list)
+        {
+            if (definition.Arity == arity)
+            {
+                return definition;
+            }
+        }
+
+        return null;
+    }
+
+    internal int[] GetTableUdfArities(string name)
+    {
+        if (!tableUdfs.TryGetValue(name, out List<TableUdfDefinition>? list))
+        {
+            return [];
+        }
+
+        int[] arities = new int[list.Count];
+        for (int i = 0; i < list.Count; i++)
+        {
+            arities[i] = list[i].Arity;
+        }
+
+        return arities;
+    }
 
     internal UdfDefinition? FindUdf(string name, int arity)
     {
