@@ -5,6 +5,9 @@
  * The typed description of a connection. It is produced by H2ConnectionStringBuilder and
  * consumed by Engine. It does not parse any connection string.
  */
+using System;
+using System.Collections.Frozen;
+
 namespace H2Sharp.Engine;
 
 /// <summary>
@@ -24,6 +27,24 @@ public enum StorageKind
 /// </summary>
 public sealed class ConnectionInfo
 {
+    // ConnectionInfo.IGNORED_BY_PARSER: the connection settings a SET statement may name and
+    // have ignored (commonSettings plus the parser-level settings in the reference).
+    private static readonly FrozenSet<string> IgnoredByParser = new[]
+    {
+        "ACCESS_MODE_DATA", "AUTO_RECONNECT", "AUTO_SERVER", "AUTO_SERVER_PORT", "CACHE_TYPE",
+        "DB_CLOSE_ON_EXIT", "FILE_LOCK", "JMX", "NETWORK_TIMEOUT", "OLD_INFORMATION_SCHEMA",
+        "OPEN_NEW", "PAGE_SIZE", "RECOVER",
+        "ASSERT", "BINARY_COLLATION", "PAGE_STORE", "UUID_COLLATION",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether a SET statement with this setting name is ignored, as
+    /// <c>ConnectionInfo.isIgnoredByParser</c> answers.
+    /// </summary>
+    /// <param name="name">the setting name</param>
+    /// <returns>true if the parser ignores it</returns>
+    public static bool IsIgnoredByParser(string name) => IgnoredByParser.Contains(name);
+
     /// <summary>
     /// Creates an empty connection description using the regular mode and file storage.
     /// </summary>

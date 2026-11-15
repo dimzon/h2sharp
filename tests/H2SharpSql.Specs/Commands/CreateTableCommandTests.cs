@@ -70,13 +70,18 @@ public sealed class CreateTableCommandTests
             "CREATE TABLE TEST(ID INT) ENGINE \"org.h2.mvstore.db.MVTableEngine\" WITH \"compress\""));
     }
 
-    /// <summary>docs/commands.html:1824 — [ NOT PERSISTENT ] [ TRANSACTIONAL ]</summary>
+    /// <summary>
+    /// docs/commands.html:1824 — [ NOT PERSISTENT ] [ TRANSACTIONAL ]. In the reference only
+    /// the temporary form takes both; a regular table is refused with a syntax error
+    /// (Parser.parseCreateTable), so the spec uses the form the reference reads.
+    /// </summary>
     [Fact]
     public void CreateTable_NotPersistentTransactional_RegistersTheTable() // CMD-1824
     {
         using IDbConnection connection = TestDatabase.Open();
 
-        _ = connection.Execute("CREATE TABLE TEST(ID INT) NOT PERSISTENT TRANSACTIONAL");
+        _ = connection.Execute(
+            "CREATE LOCAL TEMPORARY TABLE TEST(ID INT) NOT PERSISTENT TRANSACTIONAL");
 
         Assert.Equal(1, TableCount(connection, "TEST"));
     }

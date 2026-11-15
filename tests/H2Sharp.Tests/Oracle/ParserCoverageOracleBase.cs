@@ -42,6 +42,41 @@ public abstract class ParserCoverageOracleBase
     protected static void AssertSameAsReferenceInMode(string dbName, string mode, params string[] statements)
         => Compare(dbName, mode, statements);
 
+    /// <summary>
+    /// Runs the statements on both sides and asserts the answers match line for line, with
+    /// every cell split at its newlines and the parts compared without their indentation.
+    /// A plan the reference spells across several indented lines lands in one row; the port
+    /// writes the same lines with its own indent, so the indentation is not compared.
+    /// </summary>
+    /// <param name="dbName">the unique in-memory database name</param>
+    /// <param name="statements">the SQL statements</param>
+    protected static void AssertSameLinesAsReference(string dbName, params string[] statements)
+    {
+        List<string> port = FlattenLines(RunPort(dbName, null, statements));
+        List<string> java = FlattenLines(RunJava(dbName, null, statements));
+        Assert.True(
+            java.Count == port.Count && java.SequenceEqual(port),
+            "java:\n  " + string.Join("\n  ", java) + "\nport:\n  " + string.Join("\n  ", port));
+    }
+
+    private static List<string> FlattenLines(List<string> rows)
+    {
+        List<string> lines = [];
+        foreach (string row in rows)
+        {
+            foreach (string part in row.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+            {
+                string text = part.Trim();
+                if (text.Length > 0)
+                {
+                    lines.Add(text);
+                }
+            }
+        }
+
+        return lines;
+    }
+
     private static void Compare(string dbName, string? mode, IReadOnlyList<string> statements)
     {
         List<string> port = RunPort(dbName, mode, statements);

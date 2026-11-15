@@ -624,28 +624,44 @@ public sealed partial class Parser
             command.SetTableEngineParams(parameters);
         }
 
-        if (temporary && IsWord("ON"))
+        if (temporary)
         {
-            ExpectWord("COMMIT");
-            if (IsWord("DROP"))
+            if (IsWord("ON"))
             {
-                command.SetOnCommitDrop();
+                ExpectWord("COMMIT");
+                if (IsWord("DROP"))
+                {
+                    command.SetOnCommitDrop();
+                }
+                else if (IsWord("DELETE"))
+                {
+                    ExpectWord("ROWS");
+                    command.SetOnCommitTruncate();
+                }
             }
-            else if (IsWord("DELETE"))
+            else if (IsWord("NOT"))
             {
-                ExpectWord("ROWS");
-                command.SetOnCommitTruncate();
+                if (IsWord("PERSISTENT"))
+                {
+                    command.SetPersistData(false);
+                }
+                else
+                {
+                    ExpectWord("LOGGED");
+                }
+            }
+
+            if (IsWord("TRANSACTIONAL"))
+            {
+                command.SetTransactional(true);
             }
         }
-        else if (IsWord("NOT"))
+        else if (!persistIndexes && IsWord("NOT"))
         {
+            // Only a memory table takes NOT PERSISTENT, and TRANSACTIONAL is the
+            // temporary form's word alone (Parser.parseCreateTable).
             ExpectWord("PERSISTENT");
             command.SetPersistData(false);
-        }
-
-        if (IsWord("TRANSACTIONAL"))
-        {
-            command.SetTransactional(true);
         }
 
         if (IsWord("AS"))
@@ -861,12 +877,14 @@ public sealed partial class Parser
         }
         else if (!requireQuery && CurrentType == ParserUtil.Set)
         {
+            // The reference reads SET first and only then refuses it next to a column list
+            // (parseInsertSet), so the failure points at the first name.
+            Read();
             if (columns is not null)
             {
                 throw GetSyntaxError();
             }
 
-            Read();
             List<Column> setColumns = [];
             List<Expression> values = [];
             do

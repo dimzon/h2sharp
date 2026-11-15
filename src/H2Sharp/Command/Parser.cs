@@ -10069,22 +10069,10 @@ public sealed partial class Parser
         }
         else if (!statement.PersistIndexes && IsWord("NOT"))
         {
+            // Only a memory table takes NOT PERSISTENT outside the temporary form, and
+            // only the temporary form takes TRANSACTIONAL; the reference reads no more.
             ExpectWord("PERSISTENT");
             statement.PersistData = false;
-            if (IsWord("TRANSACTIONAL"))
-            {
-                statement.Transactional = true;
-            }
-        }
-        else if (IsWord("NOT", consume: false))
-        {
-            Read();
-            ExpectWord("PERSISTENT");
-            statement.PersistData = false;
-            if (IsWord("TRANSACTIONAL"))
-            {
-                statement.Transactional = true;
-            }
         }
 
         return statement;
@@ -10895,12 +10883,14 @@ public sealed partial class Parser
 
         if (CurrentType == ParserUtil.Set)
         {
+            // The reference reads SET first and only then refuses it next to a column list
+            // (parseInsertSet); the failure therefore points at the first name, not at SET.
+            Read();
             if (statement.Columns.Count > 0)
             {
                 throw GetSyntaxError();
             }
 
-            Read();
             List<Expression> setRow = [];
             do
             {

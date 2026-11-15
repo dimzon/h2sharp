@@ -344,7 +344,7 @@ public sealed partial class Parser
             }
 
             int type = Dml.SetTypes.GetType(upperName);
-            if (type < 0 && H2Sharp.Data.H2ConnectionStringBuilder.IsKnownSetting(upperName))
+            if (type < 0 && ConnectionInfo.IsIgnoredByParser(upperName))
             {
                 Read();
                 ReadIfEqualOrTo();

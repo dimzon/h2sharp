@@ -163,8 +163,6 @@ public sealed class CreateTable : CommandWithColumns
             TableEngine = tableEngine, TableEngineParams = tableEngineParams,
         };
         Table table = schema.CreateTable(data);
-        table.SetOnCommitDrop(onCommitDrop);
-        table.SetOnCommitTruncate(onCommitTruncate);
 
         // The sequences of the identity columns are created after the table, because the
         // column needs the table to resolve its names, and the expressions of the generated
@@ -174,6 +172,10 @@ public sealed class CreateTable : CommandWithColumns
         table.SetComment(comment);
         if (isSessionTemporary)
         {
+            // The reference sets the commit actions only for a session temporary table;
+            // a global temporary table keeps PRESERVE whatever the statement said.
+            table.SetOnCommitDrop(onCommitDrop);
+            table.SetOnCommitTruncate(onCommitTruncate);
             session.AddLocalTempTable(table);
             session.ClearQueryCache();
         }
