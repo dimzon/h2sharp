@@ -15110,3 +15110,31 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   3/3 отдельно), MvStore 255/256 в гейте и 256/256 отдельно (флейк под
   нагрузкой), Data 770/770, Engine 9/9, Specs 979/979 (+25 skipped),
   Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 220: двухфазный коммит и таймауты TransactionStore (2026-11-15)
+
+* Новый `TransactionPreparedTests` (5 фактов, MvStore), перенесённый со сценариев
+  `TestTransactionStore` эталона:
+  * `ATwoPhaseCommitSurvivesReopens` — `testTwoPhaseCommit`: транзакция с именем
+    и записью переживает два переоткрытия файла; после второго `Init()` в
+    списке открытых есть prepared-транзакция с прежними id/именем, вторая
+    транзакция коммитится, prepared коммитится последней, значения видны
+    (ветвь `Init` с `preparedTransactions` и коммит восстановленной транзакции);
+  * `ASavepointRollsBackOnlyTheChangesAfterIt` — `testSavepoint`: откат к
+    savepoint возвращает «Hallo»/«!» и убирает вторую запись, полный откат
+    очищает всё;
+  * `ATimeoutWaitingForALockedRowIsReported` — блокировка строки вторым
+    BEGIN с таймаутом 10 мс даёт сообщение «…is locked by tx 1 … within
+    allocated time interval 10 ms» (ветви ожидания в `Transaction.cs`);
+  * `ChangesSinceASavepointAreListed` — `GetChanges` отдаёт по элементу на
+    ключ, `Change.Value` — прежнее значение (у вставки null), `MapName`;
+  * `IsolationLevelsDecideWhatAnUncommittedWriteShows` — итератор
+    READ_UNCOMMITTED видит незакоммиченную запись другой транзакции,
+    READ_COMMITTED — нет; обычный `Get` грязное значение не показывает ни при
+    каком уровне (эталонный `get` идёт через `getImmediate`).
+* Замеренный результат: **+13 строк** (93.91%, 81676/86981) —
+  `Transaction.cs` 215–219 и 583–590 (ожидание/таймаут), `TransactionMap.cs`
+  874, 902–904. Остальные ветви транзакционного слоя уже покрыты прежними
+  тестами; новых дефектов не найдено.
+* Проверено: MvStore 261/261; исходники не менялись, остальные наборы — как в
+  гейте спринта 219.
