@@ -14940,3 +14940,33 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   (SequenceNotFound1); VALUES с выражениями в FROM.
 * Порт не менялся: линии уже соответствовали эталону, тесты закрепляют поведение.
 * Покрытие и гейт — в записи спринта 214 (общий прогон на итоговом дереве).
+
+### Спринт 214: #94, #95, #96 — ADO-байт, свежесть каталога, переоткрытие enlisted-соединения (2026-11-15)
+
+Три дефекта, найденные провайдером EF Core; исправлены по эталону и контракту ADO.NET.
+
+* **#94 `H2DataReader.GetByte`**: читал через знаковый `Value.GetByte()` и отказывал
+  всему выше 127 (`Numeric value out of range: 255`). Теперь число читается полной
+  шириной (`GetInt`) и обрезается в `byte` — 255 отдаётся как 255, TINYINT -1 как
+  255 (те же two's-complement биты, что видит JDBC-вызывающий после знакового
+  приведения). SQL-значение остаётся знаковым, как у эталона.
+* **#95 параметризованный `INFORMATION_SCHEMA.SCHEMATA`**: ответ кэшировался сессией
+  и не замечал `CREATE SCHEMA`. Две причины: `Database.GetNextModificationMetaId`
+  не поднимал `modificationDataId` (эталон поднимает: «если метаданные изменились,
+  изменились и данные»), и `Database.AddSchema` не инвалидировал кэш запросов
+  (эталонный `addDatabaseObject` заканчивается `clearQueryCache`). Схема, созданная
+  позже в той же сессии, теперь видна и параметризованному запросу.
+* **#96 переоткрытие соединения в ambient-транзакции**: `Close()` при зачислении
+  отсоединял сессию (`session = null; enlistedSession = current`), а `Open()` считал
+  `enlistedSession` уже открытым соединением и отказывал. Теперь `Open()`
+  переподключается к удерживаемой зачислением сессии (как SqlConnection/Npgsql),
+  зачисление продолжает владеть коммитом/откатом.
+
+Тесты: `H2ReaderAndCatalogTests` (байт 255/-1 из TINYINT и SMALLINT, свежесть
+SCHEMATA с параметром и без) и `H2TransactionScopeTests.AConnectionCanBeReopenedWhileTheScopeHoldsItsSession`
+(open/close/open внутри scope, scope коммитит обе вставки).
+
+Покрытие на итоговом дереве: **93.80%** строк (81580/86974), **90.17%** ветвей
+(33759/37440). Проверено: H2Sharp.Tests 2805/2806 (известный флейк
+`OffHeapMemoryGateTests`), Data 770/770, MvStore 242/242, Engine 9/9,
+Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.

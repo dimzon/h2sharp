@@ -201,6 +201,11 @@ public sealed partial class Database : CastDataProvider
             schemas[schema.GetName()] = schema;
             PublishFrozenSchemas();
         }
+
+        // The reference's addDatabaseObject ends with clearQueryCache: a schema that
+        // appears changes the metadata catalog, and a cached catalog answer must not
+        // outlive it.
+        ClearQueryCache(schema.GetId());
     }
 
     /// <summary>
@@ -1450,12 +1455,16 @@ public sealed partial class Database : CastDataProvider
     /// </summary>
     /// <remarks>
     /// The id handed out is the one before the increment, as the reference's
-    /// incrementAndGet minus one. The data id the reference bumps alongside waits for
-    /// the meta table: nothing ported reads it yet.
+    /// incrementAndGet minus one. Like the reference, a metadata change bumps the data
+    /// id as well: the metadata tables answer their modification from the data id, and a
+    /// cached query over them must not survive a CREATE or a DROP.
     /// </remarks>
     /// <returns>the id</returns>
     public long GetNextModificationMetaId()
     {
+        // Reference getNextModificationMetaId: if the metadata has been modified, the
+        // data is modified as well (because MetaTable returns modificationDataId).
+        _ = Interlocked.Increment(ref modificationDataId);
         return Interlocked.Increment(ref modificationMetaId) - 1;
     }
 

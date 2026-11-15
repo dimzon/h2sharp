@@ -388,7 +388,8 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// <remarks>
     /// Opening twice is refused rather than ignored, and that is the reference's rule: a second
     /// open on an open connection would hand out a second session, and the close of either one
-    /// would then take the database away from the other.
+    /// would then take the database away from the other. A connection whose session was only
+    /// detached by a close — the ambient transaction kept it — opens onto that same session.
     /// </remarks>
     public override void Open()
     {
@@ -397,9 +398,23 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             throw new InvalidOperationException("The borrowed connection is already open");
         }
 
-        if (session is not null || enlistedSession is not null)
+        if (session is not null)
         {
             throw new InvalidOperationException("The connection is already open");
+        }
+
+        if (enlistedSession is not null)
+        {
+            // The ambient transaction still holds the session the close detached: the
+            // open takes it back, as any ADO.NET provider does. The enlistment's
+            // completion keeps its commit-or-rollback either way.
+            session = enlistedSession;
+            openedDataFormat = dataFormat with
+            {
+                SessionTimeZone = session.CurrentTimeZone(),
+            };
+            OnStateChange(new StateChangeEventArgs(ConnectionState.Closed, ConnectionState.Open));
+            return;
         }
 
         if (connectionString.Length == 0)

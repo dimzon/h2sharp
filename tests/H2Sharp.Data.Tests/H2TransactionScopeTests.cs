@@ -69,6 +69,28 @@ public sealed class H2TransactionScopeTests
         }
     }
 
+    [Fact]
+    public void AConnectionCanBeReopenedWhileTheScopeHoldsItsSession()
+    {
+        // Issue 96: closing an enlisted connection detaches the session but keeps the
+        // enlistment; opening it again must return to that session, as any ADO.NET
+        // provider does, and the scope must still commit what was written.
+        using H2Connection control = Open("tx_scope_reopen");
+        Execute(control, "CREATE TABLE T(ID INT)");
+        using (TransactionScope scope = new())
+        {
+            using H2Connection enlisted = Open("tx_scope_reopen");
+            Execute(enlisted, "INSERT INTO T VALUES (1)");
+            enlisted.Close();
+            enlisted.Open();
+            Execute(enlisted, "INSERT INTO T VALUES (2)");
+            Assert.Equal(2, Count(enlisted));
+            scope.Complete();
+        }
+
+        Assert.Equal(2, Count(control));
+    }
+
     private static H2Connection Open(string name)
     {
         return H2TestDataSource.Open("Data Source=" + name + ";Storage=Memory");

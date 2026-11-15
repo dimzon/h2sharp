@@ -346,7 +346,9 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
 
         // TINYINT is signed; ADO.NET's GetByte is not. Keeping the two's-complement bits
         // gives the same value a JDBC caller sees when it casts the byte to a signed type.
-        return unchecked((byte)cell.GetByte());
+        // The signed Value.GetByte refuses everything above 127, so the number is read at
+        // its full width and truncated: 255 is a byte a .NET reader can hold.
+        return unchecked((byte)cell.GetInt());
     }
 
     /// <inheritdoc/>
