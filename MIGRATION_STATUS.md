@@ -14988,11 +14988,69 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
     ветка Equal (408–411) недостижима этим путём, префиксная ветка уже была покрыта;
   * «перевёрнутые» index-condition-ветки не срабатывают: порт нормализует
     `100 > A` в `A < 100` ещё в парсере;
-  * внутренности PERCENTILE (`GetFromIndex`-интерполяция 286–302, null/empty-ветви)
-    достигаются только неиндексным путём — результат верный, но код идёт мимо;
+  * PERCENTILE идёт быстрым путём: `EXPLAIN` показывает `/* direct lookup */` для
+    `PERCENTILE_CONT`/`MEDIAN`, тело `GetFromIndex` покрыто. Непокрытыми остаются
+    ветви интерполяции для TINYINT..BIGINT (286–292): эталон в
+    `Aggregate.java` (1055–1100) присваивает результату `PERCENTILE_CONT`/`MEDIAN`
+    по числовой колонке `TYPE_NUMERIC_FLOATING_POINT`, поэтому `Interpolate` всегда
+    берёт NUMERIC-ветвь, а целочисленные ветви недостижимы через эти агрегаты.
+    Особые возвраты пустой/сплошной NULL-группы (101, 136, 178) не покрыты —
+    добавлены MEDIAN по X/Y/Z, пустая индексированная таблица до вставки и
+    NULL-таблица с `DEFAULT_NULL_ORDERING HIGH/LOW`, но часть форм ещё не
+    задействована;
   * LISTAGG-усечение и `GetListaggError` живут за пределом `MaxStringLength` (1e9) —
     в тестах недостижимы.
 * Порт не менялся: расхождения не найдены, тесты закрепляют поведение.
 * Проверено: H2Sharp.Tests 2810/2811 (известный флейк `OffHeapMemoryGateTests`),
   Data 770/770, MvStore 242/242, Engine 9/9, Specs 979/979 (+25 skipped),
   Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 218: MvStore — recovery-ветви страниц и жизненный цикл store (2026-11-15)
+
+* Новый `MvStoreRecoveryEdgesTests` (8 фактов): store, открытый в recovery-режиме,
+  отвечает пустым листом вместо паники на каждой ветви `Page.Read` — испорченное
+  check-значение, отрицательный pageNo (пятибайтовый varint с установленным старшим
+  битом), чужой mapId, чужой тип узла (XOR младшего бита), битая длина страницы;
+  закрытый store отказывает `GetMapNames`/`GetStoreVersion`/`SetStoreVersion`/
+  `RollbackTo` (`CheckOpen`/`CheckNotClosed`); `SetVersionsToKeep(2)` при двадцати
+  коммитах; `CompactMoveChunks` файла с двумя картами сохраняет обе.
+* Новый `MvStoreLifecycleTests` (6 фактов): статический `MVStore.Compact` переносит
+  настройки store (`setting.storeVersion` копируется в meta целевого файла, а
+  `GetMapNames` останавливается на первом не-`name:` ключе); имя удалённой карты
+  исчезает из метаданных, а соседняя карта продолжает коммититься; `RollbackTo`
+  старой версии возвращает данные и версию; поверхность листа
+  (`GetRawChildPageCount` = 0, `SetComplete`, `IsComplete`, `GetDiskSpaceUsed`);
+  четырёхуровневое дерево измеряется сверху — ветвь `maxLevel == 0 && l > 4`
+  в обе стороны `first` (для `first = false` нужен сбалансированный левый путь:
+  вставка в случайном порядке, страницы 2 KiB, 60 000 ключей); параллельное
+  открытие одной новой карты сходится к одному экземпляру (ветвь проигравшего
+  `meta.PutIfAbsent`).
+* Замеренный результат: **+66 строк** (93.88%, 81650/86974; ветви 90.25%,
+  33788/37440): `Page.cs` 954/983, `MVStore.cs` 964/1037,
+  `RandomAccessStore.cs` 536/591, `FileStore.cs` 1320/1508. Сюда же вошли
+  добавления к `ExpressionEdgeOracleTests` из разбора PERCENTILE (MEDIAN по
+  X/Y/Z, пустая индексированная таблица до вставки, NULL-таблица с
+  `DEFAULT_NULL_ORDERING HIGH/LOW`).
+* Что осталось непокрытым и почему:
+  * `Page.cs` 1184/1590 (`Expand`, `GetCounts` у листа) и `SetChild` — internal
+    override'ы, которые публичный API не вызывает;
+  * `Page.cs` 1272–1274 и 1602–1604 — ветви `!IsMemoryEstimationAllowed()`
+    достижимы только через приватный `MVStoreTool.GenericDataType`, публичные
+    типы карт оценку памяти разрешают;
+  * `Page.cs` 1468–1471 и 1483–1486 — `WriteUnsavedRecursive`/`Dump` неполного
+    узла: `IncompleteNonLeaf` живёт только внутри копирующего прохода, снаружи
+    его не увидеть;
+  * `Page.cs` 208/216, 732–733 — явные реализации интерфейса и защита
+    «Page already stored» (реентерабельный вызов);
+  * `MVStore.cs` 1684–1686 — `RollbackTo` срезает счётчики версий, удерживаемые
+    открытой транзакцией `TransactionStore`; без открытой транзакции счётчик
+    удаляется раньше (`DropUnusedVersions`), поэтому нужен отдельный
+    транзакционный сценарий;
+  * `MVStore.cs` 1201–1203 и 1852–1854 — вычищение закрытой карты: первое требует,
+    чтобы версия корня опустилась ниже `oldestVersionToKeep` (по умолчанию 0,
+    так что нужен сценарий с удержанием версии), второе — закрытая карта в `maps`
+    с ещё зарегистрированным корнем, но `RemoveMap` снимает регистрацию раньше.
+* Порт не менялся: расхождения не найдены, тесты закрепляют поведение.
+* Проверено: H2Sharp.Tests 2810/2811 (известный флейк `OffHeapMemoryGateTests`,
+  класс повторно 3/3), Data 770/770, MvStore 256/256, Engine 9/9, Specs 979/979
+  (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
