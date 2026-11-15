@@ -14926,3 +14926,17 @@ Native 97/97 (+8 skipped), Category!=BlockedByPort.
 `Parser.cs` 6704/7266. Проверено: H2Sharp.Tests 2800/2801 (известный флейк
 `OffHeapMemoryGateTests`), Data 767/767, MvStore 242/242, Engine 9/9,
 Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 213: SQL-слой — IN по составному индексу, массивы в UPDATE, последовательности (2026-11-15)
+
+* Новый `TablesLayerEdgeOracleTests` (5 Java-оракульных фактов): два IN-условия по
+  составному индексу (второй IN не сужает скан — эталонный `CanUseIndexForIn`),
+  row-value IN по индексу и подзапросу, сравнения с NULL-границами (эталонные
+  GetMax-ветви), пустой `IN ()`; ошибки элементов массива в UPDATE (индекс за
+  границей — ArrayElementError2 с диапазоном, индекс по не-массиву — ArrayElementError2
+  с типом); последовательности в MySQL-режиме (десятичный тип по умолчанию,
+  MINVALUE/NO CYCLE, CYCLE-прокрутка, ALTER SEQUENCE IF EXISTS, RESTART);
+  `ALTER TABLE ... ALTER COLUMN ... RESTART` у колонки без последовательности
+  (SequenceNotFound1); VALUES с выражениями в FROM.
+* Порт не менялся: линии уже соответствовали эталону, тесты закрепляют поведение.
+* Покрытие и гейт — в записи спринта 214 (общий прогон на итоговом дереве).
