@@ -14878,3 +14878,20 @@ Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * Проверено: H2Sharp.Tests 2795/2796 (известный флейк `OffHeapMemoryGateTests`),
   Data 767/767, MvStore 239/239, Engine 9/9, Specs 979/979 (+25 skipped),
   Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 211: Transaction — статусные отказы и committed-leftover (2026-11-15)
+
+* Новый `TransactionEdgeTests` (3 факта): операция над картой закоммиченной транзакции
+  отказывает `TransactionIllegalState` («has status COMMITTED, not OPEN») — и Put, и
+  Remove; транзакция, закоммиченная прямо перед незакрытым завершением хранилища,
+  восстанавливается при переоткрытии как committed-leftover: значение читается новой
+  транзакцией и до, и после `EndLeftoverTransactions` (эталонный очистительный
+  коммит), маркер-undoLog не мешает данным.
+* Замечено и не тронуто: `Util.CacheLRU`/`CacheTQ` в порте не имеют производственных
+  пользователей (JDBC-наследие) — их непокрытые 27 строк недостижимы и не тронуты;
+  детект дедлока (676–716) требует конкурентных сессий — не покрыт.
+* Порт не менялся: линии уже соответствовали эталону, тесты закрепляют поведение.
+* Покрытие: **93.78%** строк (81551/86962), **90.14%** ветвей (33749/37440).
+* Проверено: H2Sharp.Tests 2795/2796 (известный флейк `OffHeapMemoryGateTests`),
+  Data 767/767, MvStore 242/242, Engine 9/9, Specs 979/979 (+25 skipped),
+  Native 97/97 (+8 skipped), Category!=BlockedByPort.
