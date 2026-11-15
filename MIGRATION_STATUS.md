@@ -14860,3 +14860,21 @@ Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * Проверено: H2Sharp.Tests 2795/2796 (известный флейк `OffHeapMemoryGateTests`),
   Data 767/767, MvStore 232/232, Engine 9/9, Specs 979/979 (+25 skipped),
   Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 210: MVStore/Page — строитель, закрытие, учёт памяти, битая страница (2026-11-15)
+
+* Новый `MVStoreEdgeTests` (7 фактов): все ручки `MVStore.Builder` (AutoCommitDisabled/
+  AutoCommitBufferSize/AutoCompactFillRate/KeysPerPage/CacheSize), `Close()` с
+  несохранёнными изменениями сохраняет их (эталонное поведение close-коммита), рост
+  версий при серии коммитов, учёт памяти при замене значения и удалении детей
+  (`GetUnsavedMemory`), приближение места на диске с вершины глубокого дерева
+  (`GetDiskSpaceUsedApproximation` с узлами на максимальной глубине), проход записи
+  по смешанным сохранённым/несохранённым детям (3000 записей, close, reopen), и
+  испорченная страница: check value корня карты данных → `MvStoreException` на
+  открытии карты, повторяемое, хранилище остаётся открытым — паника в эталоне
+  принадлежит пути записи, не чтения.
+* Порт не менялся: линии уже соответствовали эталону, тесты закрепляют поведение.
+* Покрытие: **93.77%** строк (81548/86962), **90.14%** ветвей (33750/37440).
+* Проверено: H2Sharp.Tests 2795/2796 (известный флейк `OffHeapMemoryGateTests`),
+  Data 767/767, MvStore 239/239, Engine 9/9, Specs 979/979 (+25 skipped),
+  Native 97/97 (+8 skipped), Category!=BlockedByPort.
