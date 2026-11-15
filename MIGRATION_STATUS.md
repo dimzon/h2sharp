@@ -14970,3 +14970,29 @@ SCHEMATA с параметром и без) и `H2TransactionScopeTests.AConnect
 (33759/37440). Проверено: H2Sharp.Tests 2805/2806 (известный флейк
 `OffHeapMemoryGateTests`), Data 770/770, MvStore 242/242, Engine 9/9,
 Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 217: выражения — LIKE/Comparison index conditions, PERCENTILE, MODE, promotion (2026-11-15)
+
+* Новый `ExpressionEdgeOracleTests` (5 Java-оракульных фактов): LIKE на DML-пути
+  (точный, префиксный, `_`, `%`, ESCAPE со значением и NULL, NULL-pattern, NOT LIKE,
+  LIKE по нестроковой колонке); сравнения на DML-пути, включая row-value пары списков
+  `(A,B) < (B,A)`, `(A,B) = (B,A)`, `(A,B) < (SELECT A,B ...)` и перевёрнутые формы
+  `100 > A`; PERCENTILE_CONT/DISC по INT/BIGINT/DOUBLE через индексы (включая DESC-
+  индекс, пустую группу, NULL-группу, одно значение и окно `OVER ()`); упорядоченный
+  `MODE() WITHIN GROUP (ORDER BY ...)` и `MODE(DISTINCT ...)`; `JSON_OBJECTAGG` с
+  NULL-ключом; пространственные `&&` с обеих сторон; промоушен `? + NULL`, `? + ?`,
+  `CAST(NULL AS INT) + ?`, `? = ?`, `NUMERIC(100,2) * ?`.
+* Замеренный результат скромнее плана: **+4 строки** (93.80%, 81584/86974; ветви
+  90.18%) и +6 в `Comparison.cs` (397→403). Причины зафиксированы:
+  * точный `LIKE 'abc'` оптимизируется в `= 'abc'` до `CreateIndexConditions` —
+    ветка Equal (408–411) недостижима этим путём, префиксная ветка уже была покрыта;
+  * «перевёрнутые» index-condition-ветки не срабатывают: порт нормализует
+    `100 > A` в `A < 100` ещё в парсере;
+  * внутренности PERCENTILE (`GetFromIndex`-интерполяция 286–302, null/empty-ветви)
+    достигаются только неиндексным путём — результат верный, но код идёт мимо;
+  * LISTAGG-усечение и `GetListaggError` живут за пределом `MaxStringLength` (1e9) —
+    в тестах недостижимы.
+* Порт не менялся: расхождения не найдены, тесты закрепляют поведение.
+* Проверено: H2Sharp.Tests 2810/2811 (известный флейк `OffHeapMemoryGateTests`),
+  Data 770/770, MvStore 242/242, Engine 9/9, Specs 979/979 (+25 skipped),
+  Native 97/97 (+8 skipped), Category!=BlockedByPort.
