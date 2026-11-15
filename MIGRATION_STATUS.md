@@ -15138,3 +15138,17 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   тестами; новых дефектов не найдено.
 * Проверено: MvStore 261/261; исходники не менялись, остальные наборы — как в
   гейте спринта 219.
+
+### Спринт 221: DbBatch — пустые и асинхронные формы, коллекция команд (2026-11-15)
+
+* Новый `H2BatchSurfaceTests` (2 факта, Data): пустой batch (`ExecuteScalar` →
+  null, `ExecuteReader` → `InvalidOperationException`), `Cancel`,
+  `PrepareAsync`, `Timeout`, геттеры `Connection`/`Transaction`,
+  асинхронные scalar/reader-формы, `RecordsAffected` команды; базовая
+  `DbBatchCommandCollection` поверх того же списка — `Count`, `IsReadOnly`,
+  индексатор, `IndexOf`, `Contains`, `CopyTo`, перечислитель, `SetBatchCommand`,
+  `Insert`, `Remove`, `RemoveAt`, `Clear`.
+* Замеренный результат: **+25 строк** (93.93%, 81701/86981) — все в
+  `Data/H2Batch.cs` (асинхронные обёртки, пустые формы, коллекция).
+  Поведение соответствовало эталонной ADO-поверхности; исходники не менялись.
+* Проверено: Data — новые тесты 2/2; остальные наборы — как в гейте спринта 219.
