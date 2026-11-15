@@ -1259,7 +1259,9 @@ public sealed partial class Parser
         command.SetOrReplace(orReplace);
         if (force)
         {
-            throw DbException.GetUnsupportedException("CREATE FORCE MATERIALIZED VIEW");
+            // The reference throws UnsupportedOperationException("not yet implemented"),
+            // which the command layer answers as a general error.
+            throw DbException.Get(Api.ErrorCode.GeneralError1, "not yet implemented");
         }
 
         // Reference parseCreateMaterializedView: AS comes first, and the comment, when
@@ -1298,10 +1300,14 @@ public sealed partial class Parser
         ExpectWord("MATERIALIZED");
         ExpectWord("VIEW");
         string viewName = ReadIdentifierWithSchema(current, out Schemas.Schema schema);
-        Tables.Table? table = schema.FindTableOrView(current, viewName);
+        // The reference's readTableOrView(false): a missing name is TABLE_OR_VIEW_NOT_FOUND,
+        // a materialized view stays itself, and only a table of another kind is
+        // VIEW_NOT_FOUND.
+        Tables.Table table = ReadTableOrView(
+            current, schema, viewName, searchPath: false, resolveMaterializedView: false);
         if (table is not Tables.MaterializedView view)
         {
-            throw DbException.Get(Api.ErrorCode.ViewNotFound1, viewName);
+            throw DbException.Get(Api.ErrorCode.ViewNotFound1, table.GetTableName());
         }
 
         Ddl.RefreshMaterializedView command = new(current, schema);
@@ -9403,9 +9409,10 @@ public sealed partial class Parser
     /// <param name="tableName">the table name</param>
     /// <returns>the table or view</returns>
     private Tables.Table ReadTableOrView(
-        SessionLocal session, Schemas.Schema schema, string tableName, bool searchPath = false)
+        SessionLocal session, Schemas.Schema schema, string tableName, bool searchPath = false,
+        bool resolveMaterializedView = true)
     {
-        Tables.Table? table = schema.ResolveTableOrView(session, tableName);
+        Tables.Table? table = schema.ResolveTableOrView(session, tableName, resolveMaterializedView);
         if (table is not null)
         {
             return table;

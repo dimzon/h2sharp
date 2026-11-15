@@ -14895,3 +14895,34 @@ Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * Проверено: H2Sharp.Tests 2795/2796 (известный флейк `OffHeapMemoryGateTests`),
   Data 767/767, MvStore 242/242, Engine 9/9, Specs 979/979 (+25 skipped),
   Native 97/97 (+8 skipped), Category!=BlockedByPort.
+
+### Спринт 212: Parser — SHOW-формы, materialized views, переименования (2026-11-15)
+
+* Новый `ParserShowAndViewOracleTests` (5 Java-оракульных фактов): `SHOW SEARCH_PATH`,
+  `SHOW SSL`, `SHOW TABLES [FROM]`, `SHOW COLUMNS FROM ... [FROM]`, `SHOW DATABASES/
+  SCHEMAS`; `CREATE VIEW ... COMMENT`; `REFRESH MATERIALIZED VIEW`, `CREATE FORCE
+  MATERIALIZED VIEW`, `ALTER VIEW ... RECOMPILE`; переименования ALTER INDEX/SCHEMA/VIEW
+  через схемы (SchemaNameMustMatch) и в своей схеме; `DROP DOMAIN IF EXISTS`;
+  байндинг параметров в тексте запроса `{0: 42}` (и отказ при индексе за границей);
+  трёхчастные имена `db.schema.table` (свой каталог отсекается).
+
+Оракул вскрыл два дефекта, исправлены по эталону:
+
+* **REFRESH MATERIALIZED VIEW**: эталонный `readTableOrView(resolveMaterializedView:
+  false)` — отсутствующее имя отвечает `TABLE_OR_VIEW_NOT_FOUND` (42102), а
+  `VIEW_NOT_FOUND` только для таблицы другого вида; порт отвечал 90037 всегда и
+  разрешал materialized view в нижележащую таблицу (из-за чего корректный REFRESH
+  перестал работать). Добавлен флаг `resolveMaterializedView` в портовый
+  `ReadTableOrView`.
+* **CREATE FORCE MATERIALIZED VIEW**: эталон бросает `UnsupportedOperationException`
+  («not yet implemented»), что командный слой отдаёт общей ошибкой 50000; порт
+  отвечал `UnsupportedException` 50100.
+
+Замечено и не тронуто: порядок строк `SHOW DATABASES/SCHEMAS` (каталог SCHEMATA)
+отличается от эталонного, а `SET OLD_INFORMATION_SCHEMA` портом не поддержан —
+старый SHOW COLUMNS-вариант недостижим.
+
+Покрытие: **93.80%** строк (81573/86963), **90.17%** ветвей (33761/37440);
+`Parser.cs` 6704/7266. Проверено: H2Sharp.Tests 2800/2801 (известный флейк
+`OffHeapMemoryGateTests`), Data 767/767, MvStore 242/242, Engine 9/9,
+Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
