@@ -15381,3 +15381,17 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 268/268, Data 805/805, Engine 9/9, Specs 983/983 (+25 skipped),
   Native 97/97 (+8 skipped).
 
+### Спринт 230: NUMERIC-последовательности в Oracle-режиме (2026-11-16)
+
+* Оракул `SequenceModeOracleTests` (2 факта) обнаружил дефект: `SequenceOptions`
+  инициализировал тип `BIGINT`, поэтому ветка конструктора `Sequence`, выбирающая
+  `NUMERIC` по `mode.decimalSequences`, никогда не срабатывала. В Oracle-режиме
+  `CREATE SEQUENCE` давал BIGINT вместо эталонного NUMERIC. Поле options теперь
+  остаётся unset до конструктора, как в эталоне.
+* Тем же оракулом закреплены перезапуск, CURRENT VALUE, повторное создание,
+  отсутствующая последовательность и циклические последовательности.
+* Покрытие: **94.06%** строк (83264/88524), ветви 90.41%; +12 строк. Гейт:
+  Core 2856/2857 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 268/268, Data 805/805, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+

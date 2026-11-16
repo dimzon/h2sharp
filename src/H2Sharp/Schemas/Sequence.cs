@@ -84,12 +84,15 @@ public sealed class Sequence : SchemaObject
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(options);
-        dataType = options.GetDataType();
-        if (dataType is null)
+        TypeInfo? configuredType = options.GetDataType();
+        if (configuredType is null)
         {
-            dataType = session.GetMode().DecimalSequences ? TypeInfo.TypeNumericBigint : TypeInfo.TypeBigint;
-            options.SetDataType(dataType);
+            configuredType = session.GetMode().DecimalSequences
+                ? TypeInfo.TypeNumericBigint : TypeInfo.TypeBigint;
+            options.SetDataType(configuredType);
         }
+
+        dataType = configuredType;
 
         long[] bounds = options.GetBounds();
         long? writtenIncrement = options.GetIncrement(session);

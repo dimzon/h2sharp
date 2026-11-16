@@ -37,7 +37,10 @@ namespace H2Sharp.Command.Ddl;
 /// </summary>
 public class SequenceOptions
 {
-    private TypeInfo dataType = TypeInfo.TypeBigint;
+    // The reference leaves this unset until the sequence is constructed: that is where the
+    // mode decides between BIGINT and NUMERIC. A default here would silently make every
+    // Oracle-mode sequence BIGINT.
+    private TypeInfo? dataType;
 
     private long[]? bounds;
 
@@ -79,7 +82,7 @@ public class SequenceOptions
 
     /// <summary>Gets the data type.</summary>
     /// <returns>the data type</returns>
-    public TypeInfo GetDataType()
+    public TypeInfo? GetDataType()
     {
         if (oldSequence is not null)
             lock (oldSequence) CopyFromOldSequence();
@@ -212,7 +215,7 @@ public class SequenceOptions
     /// <returns>the minimum and the maximum</returns>
     public long[] GetBounds()
     {
-        long[] b = bounds ??= GetBounds(dataType);
+        long[] b = bounds ??= GetBounds(dataType!);
         return b;
     }
 
