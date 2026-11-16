@@ -733,6 +733,13 @@ public sealed partial class Database : CastDataProvider
                 informationSchema, Constants.InformationSchemaId - type, type));
         }
 
+        // The PostgreSQL compatibility catalogue exists only when the database was opened in
+        // PostgreSQL mode, as in the reference. Its tables are generated lazily by the schema.
+        if (mode.Enum == Mode.ModeEnum.PostgreSql)
+        {
+            AddSchema(new H2Sharp.Modes.PgCatalogSchema(this));
+        }
+
         store = new MvStore.Db.Store(this, null);
         store.GetTransactionStore().Init();
 

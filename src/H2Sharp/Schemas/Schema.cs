@@ -48,7 +48,7 @@ namespace H2Sharp.Schemas;
 /// belongs to a schema prints its name qualified by it, and a schema that is not itself an object
 /// has nothing to print that qualification with.
 /// </remarks>
-public sealed class Schema : DbObject
+public class Schema : DbObject
 {
     private readonly ConcurrentDictionary<string, Table> tablesAndViews;
 
@@ -271,7 +271,7 @@ public sealed class Schema : DbObject
     /// <param name="session">the session</param>
     /// <param name="name">the object name</param>
     /// <returns>the object or null</returns>
-    public Table? FindTableOrView(SessionLocal? session, string name)
+    public virtual Table? FindTableOrView(SessionLocal? session, string name)
     {
         _ = tablesAndViews.TryGetValue(name, out Table? table);
         return table ?? session?.FindLocalTempTable(name);
@@ -718,7 +718,7 @@ public sealed class Schema : DbObject
     /// </summary>
     /// <param name="session">the session</param>
     /// <returns>all tables and views</returns>
-    public List<Table> GetAllTablesAndViews(SessionLocal session)
+    public virtual List<Table> GetAllTablesAndViews(SessionLocal session)
         => [.. tablesAndViews.Values];
 
     /// <summary>
@@ -730,7 +730,7 @@ public sealed class Schema : DbObject
     /// <summary>
     /// Whether this schema holds nothing.
     /// </summary>
-    public bool IsEmpty()
+    public virtual bool IsEmpty()
     {
         return tablesAndViews.IsEmpty && indexes.IsEmpty && constraints.IsEmpty && synonyms.IsEmpty;
     }

@@ -970,9 +970,9 @@ public sealed partial class Parser
             }
             else
             {
-                // The port does not create the PG_CATALOG schema yet; the reference resolves
-                // it and reports the missing domain instead. A really missing schema keeps
-                // the reference's SCHEMA_NOT_FOUND.
+                // PG_CATALOG is a real schema in PostgreSQL mode; elsewhere the reference
+                // still reports the missing domain for that qualified name, while a genuinely
+                // unknown schema keeps SCHEMA_NOT_FOUND.
                 schema = session.GetDatabase().FindSchema(first)
                     ?? (first.Equals(Engine.Constants.SchemaPgCatalog, StringComparison.OrdinalIgnoreCase)
                         ? throw DbException.Get(ErrorCode.DomainNotFound1, name)

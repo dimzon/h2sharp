@@ -1331,6 +1331,15 @@ public abstract class Table
     /// <summary>Checks whether the table supports ALTER TABLE.</summary>
     public virtual void CheckSupportAlter() => throw DbException.GetUnsupportedException("ALTER TABLE");
 
+    /// <summary>
+    /// Checks whether this table may be renamed.
+    /// </summary>
+    /// <remarks>
+    /// The reference inherits this from SchemaObject. Table in the port stands on its own, so
+    /// the member lives here; the default is the reference's base refusal.
+    /// </remarks>
+    public virtual void CheckRename() => throw DbException.GetUnsupportedException("RENAME");
+
     /// <summary>Renames this schema object.</summary>
     public virtual void Rename(string newName) => throw new TODOException("Table.rename: this table kind is not ported");
 
@@ -1394,6 +1403,16 @@ public abstract class Table
     /// The triggers attached to this table, in the order they were attached.
     /// </summary>
     private List<TriggerObject>? triggers;
+
+    /// <summary>
+    /// Gets the triggers attached to this table, or null when it has none.
+    /// </summary>
+    /// <remarks>
+    /// The reference's Table.getTriggers, needed by the PG_CLASS catalogue table to report the
+    /// trigger count of a relation.
+    /// </remarks>
+    /// <returns>the triggers, or null</returns>
+    internal List<TriggerObject>? GetTriggers() => triggers;
 
     /// <summary>
     /// Whether the pending trigger registrations of the database were already consulted for

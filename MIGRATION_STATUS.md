@@ -15309,3 +15309,32 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   `SetComment` 106/106. Гейт: Core 2835/2836 (известный флейк
   `OffHeapMemoryGateTests`), MvStore 268/268, Data 802/802, Engine 9/9,
   Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+
+### Спринт 227: PG_CATALOG и SHOW ALL (2026-11-16)
+
+* Портированы эталонные `MetaTable`, `MetaIndex`/`MetaCursor`, `MetaSchema`,
+  `PgCatalogSchema` и `PgCatalogTable` (19 типов таблиц, все определения колонок;
+  генерация строк для PG_AM, PG_ATTRIBUTE, PG_CLASS, PG_CONSTRAINT, PG_DATABASE,
+  PG_DESCRIPTION, PG_NAMESPACE, PG_SETTINGS, PG_TABLESPACE, PG_TYPE; пустые таблицы
+  остаются пустыми по тем же причинам, что и в эталоне). Схема `PG_CATALOG`
+  создаётся при открытии БД в режиме PostgreSQL, как в эталоне.
+* Портирована эталонная таблица типов PG (`PgServer.PG_TYPE_*` и `convertType`);
+  сам сервер PG по-прежнему не портирован и остаётся в долге.
+* `SHOW ALL` в режиме PostgreSQL теперь читает `PG_CATALOG.PG_SETTINGS` и возвращает
+  те же три строки (`autovacuum`, `stats_start_collector`, `stats_row_level`), что и
+  эталон. Новый `PgCatalogOracleTests` (6 оракульных фактов + 1 факт D-004):
+  SHOW ALL, статические таблицы, PG_NAMESPACE/PG_DATABASE, PG_CLASS/ATTRIBUTE/
+  CONSTRAINT, PG_TYPE, отсутствие схемы вне PG-режима. Идентификаторы пользователей
+  (`ID`, `DATDBA`) сравнены отдельно: D-004 не имеет объектов пользователей.
+* `Schema` стала расширяемой (в эталоне эти методы не final), `FindTableOrView`,
+  `GetAllTablesAndViews`, `IsEmpty` стали виртуальными; добавлены эталонные
+  `Table.getTriggers()` и `Table.checkRename()`. Пространство имён — `H2Sharp.Modes`
+  (как у остальных mode-файлов): `H2Sharp.Mode` затенял бы тип `Mode`.
+* Покрытие: **93.98%** строк (83171/88500), ветви 90.32%; +305 покрытых строк при
+  +350 строках исходника. Гейт: Core 2842/2843 (известный флейк
+  `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 267/268 (флейк под нагрузкой
+  `TestTxRegression.TestConcurrentBeginCommit`, класс отдельно 4/4), Data 802/802,
+  Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+* Долг: пользовательские PG_ROLES/PG_USER пусты и id пользователей расходятся с
+  эталоном (D-004); сервер PG, CREATE FORCE MATERIALIZED VIEW (эталон отказывает
+  50000) и `Query.GetCost long → double` остаются отдельными задачами.
