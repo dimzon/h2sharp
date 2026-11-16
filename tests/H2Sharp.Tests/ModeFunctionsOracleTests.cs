@@ -65,6 +65,24 @@ public sealed class ModeFunctionsOracleTests : ParserCoverageOracleBase
     }
 
     [JavaOracleFact]
+    public void MySqlFunctions()
+    {
+        AssertSameAsReferenceInMode("mode_mysql_functions", "MySQL",
+            "SELECT UNIX_TIMESTAMP(TIMESTAMP '1970-01-02 00:00:00')",
+            // The JVM and CLR defaults differ in time zone and date rendering, so compare
+            // parts of the answer rather than the literal string.
+            "SELECT SUBSTRING(FROM_UNIXTIME(0), 1, 10)",
+            "SELECT SUBSTRING(FROM_UNIXTIME(0, '%Y-%m-%d'), 1, 10)",
+            "SELECT YEAR(DATE('2020-01-02 03:04:05')), "
+                + "MONTH(DATE('2020-01-02 03:04:05')), DAY(DATE('2020-01-02 03:04:05'))",
+            "CREATE TABLE T(ID INT AUTO_INCREMENT PRIMARY KEY)",
+            "INSERT INTO T DEFAULT VALUES",
+            "SELECT LAST_INSERT_ID()",
+            "SELECT LAST_INSERT_ID(5)",
+            "SELECT LAST_INSERT_ID()");
+    }
+
+    [JavaOracleFact]
     public void WrongArgumentCountsAreRefused()
     {
         AssertSameAsReferenceInMode("mode_mssql_args", "MSSQLServer",

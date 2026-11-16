@@ -59,6 +59,7 @@ public abstract class ModeFunction : FunctionN
             Mode.ModeEnum.Legacy => FunctionsLegacy.GetFunction(name),
             Mode.ModeEnum.Db2 or Mode.ModeEnum.Derby => FunctionsDB2Derby.GetFunction(name),
             Mode.ModeEnum.Oracle => FunctionsOracle.GetFunction(name),
+            Mode.ModeEnum.MySql or Mode.ModeEnum.MariaDb => FunctionsMySQL.GetFunction(name),
             _ => throw new TODOException(
                 "ModeFunction.getCompatibilityModeFunction: the " + modeEnum
                 + " compatibility mode functions are not ported"),

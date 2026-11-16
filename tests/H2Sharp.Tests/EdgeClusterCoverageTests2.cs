@@ -106,7 +106,11 @@ public sealed class EdgeClusterCoverageTests2
     [Fact]
     public void ModeFunctionAndCastProviderAnswer()
     {
-        Assert.Throws<TODOException>(() => ModeFunction.GetFunction(Mode.GetInstance("MYSQL")!, "X"));
+        // MySQL mode functions are ported, so an unknown name is absent, not a refusal;
+        // PostgreSQL mode still refuses with the reference's named TODO.
+        Assert.Null(ModeFunction.GetFunction(Mode.GetInstance("MYSQL")!, "X"));
+        Assert.Throws<TODOException>(() => ModeFunction.GetFunction(
+            Mode.GetInstance("POSTGRESQL")!, "X"));
         Assert.Null(ModeFunction.GetFunction(Mode.GetRegular(), "X"));
 
         DelegatedCastDataProvider provider = new(() => DateTimeOffset.Now);

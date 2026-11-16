@@ -15430,3 +15430,20 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 268/268, Data 805/805, Engine 9/9, Specs 983/983 (+25 skipped),
   Native 97/97 (+8 skipped).
 
+### Спринт 233: функции MySQL/MariaDB (2026-11-16)
+
+* Портирован `FunctionsMySQL`: `UNIX_TIMESTAMP` (с эталонной логикой
+  TIMESTAMPTZ/локальной зоны), `FROM_UNIXTIME` (перевод MySQL-шаблонов в
+  формат .NET, как эталон переводит их в SimpleDateFormat), `DATE` и
+  `LAST_INSERT_ID`. `ModeFunction` диспетчеризует MySQL и MariaDB.
+* `ModeFunctionsOracleTests.MySqlFunctions` (оракул): значения FROM_UNIXTIME и
+  DATE сравниваются частями — JVM и CLR по умолчанию рендерят дату и время в
+  разных зонах/форматах, и это не то, что тестирует функция.
+* `EdgeClusterCoverageTests2.ModeFunctionAndCastProviderAnswer` обновлён:
+  неизвестное имя в MySQL-режиме теперь «нет функции», TODO остаётся для
+  PostgreSQL-режима.
+* Покрытие: **93.99%** строк (83559/88904), ветви 90.31%; +102 покрытых строки
+  при +117 строках исходника. Гейт: Core 2862/2863 (известный флейк
+  `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 805/805,
+  Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+
