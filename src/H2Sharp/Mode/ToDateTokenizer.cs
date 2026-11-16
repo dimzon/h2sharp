@@ -121,14 +121,9 @@ internal static class ToDateTokenizer
         for (int i = 0; i < values.Length; i++)
         {
             string dayName = values[i];
-            if (dayName.Length == 0)
-            {
-                continue;
-            }
-
             int len = dayName.Length;
-            if (string.Equals(dayName, s[..Math.Min(len, s.Length)], StringComparison.OrdinalIgnoreCase)
-                && s.Length >= len)
+            if (s.Length >= len
+                && string.Equals(dayName, s[..len], StringComparison.OrdinalIgnoreCase))
             {
                 switch (field)
                 {

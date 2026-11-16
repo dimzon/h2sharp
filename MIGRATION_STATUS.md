@@ -15492,3 +15492,19 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 805/805,
   Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
 
+### Спринт 236: оставшиеся ветви ToDateTokenizer (2026-11-17)
+
+* Оракул `ModeFunctionsOracleTests.ToDateRemainingFormatTokens` (15 утверждений):
+  YYY, нулевой год YYYY/RRRR/BC SYYYY, RRRR-99 → 1999, MONTH/MON по полному и
+  сокращённому имени, DAY/DY, SSSSS, TZH:TZM с положительным и отрицательным
+  смещением, TZR по имени зоны.
+* Найдено и исправлено по JVM расхождение: в `SetByName` порт пропускал пустую
+  первую запись таблицы дней недели, а эталон её матчит и затем отказывает —
+  `TO_DATE(... DAY)`/`DY` в эталоне всегда дают 90056 «Tried to parse one of…»;
+  порт теперь делает то же самое (поведение проверено против JVM).
+* Гейт (прерван перезагрузкой, Native перезапущен отдельно): Core 2865/2866
+  (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268,
+  Data 805/805, Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+* Покрытие: **93.87%** строк (84272/89772), ветви 90.03%; +57 покрытых строк при
+  +60 строках исходника (ToTokenizer добран до ~94%).
+

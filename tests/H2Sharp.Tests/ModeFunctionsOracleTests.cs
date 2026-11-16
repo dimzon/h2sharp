@@ -154,6 +154,30 @@ public sealed class ModeFunctionsOracleTests : ParserCoverageOracleBase
     }
 
     [JavaOracleFact]
+    public void ToDateRemainingFormatTokens()
+    {
+        AssertSameAsReferenceInMode("mode_todate_more", "Oracle",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('17', 'YYY'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('0000-01-01', 'YYYY-MM-DD'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('99', 'RRRR'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('0000', 'RRRR'))",
+            "SELECT EXTRACT(MONTH FROM TO_DATE('2020 APRIL 21', 'YYYY MONTH DD'))",
+            "SELECT EXTRACT(MONTH FROM TO_DATE('2020 APR 21', 'YYYY MON DD'))",
+            "SELECT EXTRACT(DAY FROM TO_DATE('2020-04-21 WEDNESDAY', 'YYYY-MM-DD DAY'))",
+            "SELECT EXTRACT(DAY FROM TO_DATE('2020-04-21 WED', 'YYYY-MM-DD DY'))",
+            "SELECT EXTRACT(HOUR FROM TO_TIMESTAMP('3661', 'SSSSS'))",
+            "SELECT EXTRACT(MINUTE FROM TO_TIMESTAMP('3661', 'SSSSS'))",
+            "SELECT EXTRACT(SECOND FROM TO_TIMESTAMP('3661', 'SSSSS'))",
+            "SELECT EXTRACT(TIMEZONE_HOUR FROM TO_TIMESTAMP_TZ('2017-04-21 05:06:07 +03:30', "
+                + "'YYYY-MM-DD HH24:MI:SS TZH:TZM'))",
+            "SELECT EXTRACT(TIMEZONE_MINUTE FROM TO_TIMESTAMP_TZ('2017-04-21 05:06:07 -03:30', "
+                + "'YYYY-MM-DD HH24:MI:SS TZH:TZM'))",
+            "SELECT EXTRACT(TIMEZONE_HOUR FROM TO_TIMESTAMP_TZ('2017-04-21 05:06:07 UTC', "
+                + "'YYYY-MM-DD HH24:MI:SS TZR'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('BC 0000-01-01', 'BC SYYYY-MM-DD'))");
+    }
+
+    [JavaOracleFact]
     public void WrongArgumentCountsAreRefused()
     {
         AssertSameAsReferenceInMode("mode_mssql_args", "MSSQLServer",
