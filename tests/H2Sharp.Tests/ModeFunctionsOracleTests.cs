@@ -33,6 +33,38 @@ public sealed class ModeFunctionsOracleTests : ParserCoverageOracleBase
     }
 
     [JavaOracleFact]
+    public void LegacyIdentityFunctions()
+    {
+        AssertSameAsReferenceInMode("mode_legacy_functions", "Legacy",
+            "CREATE TABLE T(ID INT IDENTITY)",
+            "INSERT INTO T DEFAULT VALUES",
+            "SELECT IDENTITY()",
+            "SELECT SCOPE_IDENTITY()");
+    }
+
+    [JavaOracleFact]
+    public void Db2IdentityValLocal()
+    {
+        AssertSameAsReferenceInMode("mode_db2_functions", "DB2",
+            "CREATE TABLE T(ID INT IDENTITY)",
+            "INSERT INTO T DEFAULT VALUES",
+            "SELECT IDENTITY_VAL_LOCAL()");
+    }
+
+    [JavaOracleFact]
+    public void OracleAddMonthsAndSysGuid()
+    {
+        AssertSameAsReferenceInMode("mode_oracle_functions", "Oracle",
+            "SELECT EXTRACT(YEAR FROM ADD_MONTHS(DATE '2020-01-31', 1)), "
+                + "EXTRACT(MONTH FROM ADD_MONTHS(DATE '2020-01-31', 1)), "
+                + "EXTRACT(DAY FROM ADD_MONTHS(DATE '2020-01-31', 1))",
+            "SELECT EXTRACT(YEAR FROM ADD_MONTHS(DATE '2020-01-31', -1)), "
+                + "EXTRACT(MONTH FROM ADD_MONTHS(DATE '2020-01-31', -1)), "
+                + "EXTRACT(DAY FROM ADD_MONTHS(DATE '2020-01-31', -1))",
+            "SELECT CAST(SYS_GUID() AS VARCHAR) LIKE '________-____-____-____-____________'");
+    }
+
+    [JavaOracleFact]
     public void WrongArgumentCountsAreRefused()
     {
         AssertSameAsReferenceInMode("mode_mssql_args", "MSSQLServer",

@@ -56,6 +56,9 @@ public abstract class ModeFunction : FunctionN
         return modeEnum switch
         {
             Mode.ModeEnum.MsSqlServer => FunctionsMSSQLServer.GetFunction(name),
+            Mode.ModeEnum.Legacy => FunctionsLegacy.GetFunction(name),
+            Mode.ModeEnum.Db2 or Mode.ModeEnum.Derby => FunctionsDB2Derby.GetFunction(name),
+            Mode.ModeEnum.Oracle => FunctionsOracle.GetFunction(name),
             _ => throw new TODOException(
                 "ModeFunction.getCompatibilityModeFunction: the " + modeEnum
                 + " compatibility mode functions are not ported"),

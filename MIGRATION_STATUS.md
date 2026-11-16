@@ -15416,3 +15416,17 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 805/805,
   Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
 
+### Спринт 232: функции Legacy, DB2/Derby и Oracle (2026-11-16)
+
+* Портированы `FunctionsLegacy` (IDENTITY, SCOPE_IDENTITY), `FunctionsDB2Derby`
+  (IDENTITY_VAL_LOCAL) и `FunctionsOracle` (ADD_MONTHS, SYS_GUID, объявления
+  TO_DATE/TO_TIMESTAMP/TO_TIMESTAMP_TZ). `ModeFunction` диспетчеризует их по
+  режиму. Тела TO_DATE-семейства называют отсутствующий ToDateParser через
+  TODOException, а не отвечают своим форматом.
+* `ModeFunctionsOracleTests` расширен тремя оракульными фактами (5 всего):
+  Legacy/DB2 identity-функции и Oracle ADD_MONTHS/SYS_GUID.
+* Покрытие: **94.00%** строк (83457/88787), ветви 90.33%; +69 строк. Гейт:
+  Core 2861/2862 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 268/268, Data 805/805, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+
