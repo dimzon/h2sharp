@@ -15271,3 +15271,18 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data
   795/795, Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped),
   Category!=BlockedByPort (Native прогнан отдельно, 30,5 мин).
+
+### Спринт 225: ADO.NET — конверсии чтения, enlist и временные формы (2026-11-16)
+
+* Новый `AdoMappingEdgeTests` (6, Data): типизированные геттеры над REAL/
+  BOOLEAN/VARCHAR/INT (GetFloat/GetDouble/GetDecimal, GetDateTime из строки,
+  отказы GetDecimal на BOOLEAN, GetBytes/GetChar/GetGuid, GetStream/GetTextReader
+  на небинарной/нестроковой колонке, GetChars-срез); `GetFieldValue<T>`;
+  отменённый `GetColumnSchemaAsync`; перечислитель reader'а; запреты
+  `EnlistTransaction` (повтор того же, другой, null при активном enlist,
+  BeginTransaction при enlist); неизвестная коллекция `GetSchema`; параметр
+  `sbyte`; временные параметры (DateOnly/TimeOnly/DateTimeOffset/TimeSpan) и
+  настроенные формы чтения DATE/TIME/TIMETZ/TIMESTAMP/TIMESTAMPTZ.
+* Покрытие: **93.99%** строк (82743/88035), ветви 90.18%; прирост +27 строк
+  (`H2Connection` 7, `H2DataReader` 16, `H2ValueMapper` 4). Исходники движка не
+  менялись после гейта спринта 224; Data — 801/801.
