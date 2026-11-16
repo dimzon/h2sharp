@@ -209,6 +209,36 @@ public sealed partial class Database : CastDataProvider
     }
 
     /// <summary>
+    /// Adds a database object that is not a schema object, as the reference's
+    /// <c>addDatabaseObject</c>: the object is registered and its meta row is written.
+    /// </summary>
+    /// <remarks>
+    /// The port knows one such object kind so far, the schema; the other kinds are added by
+    /// their own command-specific paths (a setting by <see cref="AddDatabaseObject(SessionLocal, Setting)"/>).
+    /// </remarks>
+    /// <param name="session">the session</param>
+    /// <param name="obj">the object</param>
+    public void AddDatabaseObject(SessionLocal session, DbObject obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        if (obj is not Schemas.Schema schema)
+        {
+            throw new TODOException(
+                "Database.addDatabaseObject: only schemas are ported, got type "
+                + obj.GetTypeId().ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        if (schema.GetId() > 0 && !starting)
+        {
+            CheckWritingAllowed();
+        }
+
+        // The reference writes the meta row first and registers the object after it.
+        AddMeta(session, schema);
+        AddSchema(schema);
+    }
+
+    /// <summary>
     /// Removes a schema from the database, the reference's removeDatabaseObject: the children
     /// go first, while the schema is still in the map, and the map entry is taken out after
     /// them.

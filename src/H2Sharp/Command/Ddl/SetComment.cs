@@ -73,10 +73,15 @@ public sealed class SetComment : DefineCommand
                         // any table this resolves to is a real one.
                         Column c = table.GetColumn(columnName!);
                         c.SetComment(GetCommentText());
-                        break;
+                    }
+                    else
+                    {
+                        table.SetComment(GetCommentText());
                     }
 
-                    table.SetComment(GetCommentText());
+                    // A table and its columns persist their comments as part of the table
+                    // definition (SetComment.update).
+                    database.UpdateMeta(session, table);
                     break;
                 }
 
@@ -89,6 +94,7 @@ public sealed class SetComment : DefineCommand
                     }
 
                     index.SetComment(GetCommentText());
+                    database.UpdateMeta(session, index);
                     break;
                 }
 
@@ -107,6 +113,7 @@ public sealed class SetComment : DefineCommand
                     }
 
                     constraint.SetComment(GetCommentText());
+                    database.UpdateMeta(session, constraint);
                     break;
                 }
             case DbObject.Constant:

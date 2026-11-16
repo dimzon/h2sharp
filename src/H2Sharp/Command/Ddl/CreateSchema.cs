@@ -66,7 +66,7 @@ public sealed class CreateSchema : DefineCommand
 
         int id = GetObjectId();
         Schema schema = new(db, id, schemaName, system: false, authorization);
-        db.AddSchema(schema);
+        db.AddDatabaseObject(GetSession(), schema);
         return 0;
     }
 
