@@ -2718,8 +2718,11 @@ public static class StringUtils
                     return false;
                 }
 
-                char u1 = char.ToUpperInvariant(c1), u2 = char.ToUpperInvariant(c2);
-                if (u1 == u2 || char.ToLowerInvariant(u1) == char.ToLowerInvariant(u2))
+                // String.regionMatches in the reference folds with Character.toUpperCase and
+                // Character.toLowerCase. JavaCharacter is the port of those two methods; the
+                // CLR's invariant fold disagrees on characters such as the dotted I.
+                char u1 = JavaCharacter.ToUpperCase(c1), u2 = JavaCharacter.ToUpperCase(c2);
+                if (u1 == u2 || JavaCharacter.ToLowerCase(u1) == JavaCharacter.ToLowerCase(u2))
                 {
                     continue;
                 }

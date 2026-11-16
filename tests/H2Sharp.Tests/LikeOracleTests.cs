@@ -322,4 +322,23 @@ public sealed class LikeOracleTests
             "EXPLAIN SELECT ID FROM T WHERE V LIKE 'a\\%c' ESCAPE '\\'",
         ]);
     }
+
+    /// <summary>
+    /// Java's Character.toLowerCase folds U+0130 to 'i'; the CLR's invariant fold leaves it
+    /// alone. The reference's regionMatches and ILIKE use the JDK fold, so the dotted I has to
+    /// match a plain I even though no collation is involved.
+    /// </summary>
+    [JavaOracleFact]
+    public void JavaCaseFoldingMatchesTheDottedI()
+    {
+        FreshIssuesOracleTests.Compare([
+            "SELECT 'I' ILIKE CHAR(0x130)",
+            "SELECT 'i' ILIKE CHAR(0x130)",
+            "SELECT 'I' ILIKE '%' || CHAR(0x130)",
+            "SELECT CHAR(0x130) ILIKE 'I'",
+            "SELECT 'I' = CHAR(0x130)",
+            "SELECT 'I' LIKE 'i'",
+            "SELECT 'I' ILIKE 'i'",
+        ]);
+    }
 }

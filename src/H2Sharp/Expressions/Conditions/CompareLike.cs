@@ -518,8 +518,10 @@ public sealed class CompareLike : Condition
             return true;
         }
 
-        char firstLo = char.ToLowerInvariant(what[start]);
-        char firstUp = char.ToUpperInvariant(what[start]);
+        // The reference folds this quick check with Character.toLowerCase/toUpperCase, so use
+        // their port: the CLR fold misses a dotted I in the pattern.
+        char firstLo = H2Sharp.Util.JavaCharacter.ToLowerCase(what[start]);
+        char firstUp = H2Sharp.Util.JavaCharacter.ToUpperCase(what[start]);
         for (int i = src.Length - length; i >= 0; i--)
         {
             // Quick check before calling the more expensive regionMatches()

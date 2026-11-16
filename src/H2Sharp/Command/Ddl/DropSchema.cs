@@ -59,8 +59,10 @@ public sealed class DropSchema : DefineCommand
             throw DbException.Get(ErrorCode.SchemaCanNotBeDropped1, schemaName);
         }
 
-        if (dropAction == ConstraintActionType.RESTRICT)
+        if (dropAction == ConstraintActionType.RESTRICT && !schema.IsEmpty())
         {
+            // The reference lists every schema object, not just tables: a synonym, constant,
+            // index or constraint is just as much a reason to refuse RESTRICT.
             List<string> names = [];
             foreach (Tables.Table table in schema.GetAllTablesAndViews(GetSession()))
             {
@@ -75,6 +77,26 @@ public sealed class DropSchema : DefineCommand
             foreach (Sequence sequence in schema.GetAllSequences())
             {
                 names.Add(sequence.GetName()!);
+            }
+
+            foreach (Tables.TableSynonym synonym in schema.GetAllSynonyms())
+            {
+                names.Add(synonym.GetName()!);
+            }
+
+            foreach (Constant constant in schema.GetAllConstants())
+            {
+                names.Add(constant.GetName()!);
+            }
+
+            foreach (Indexes.Index index in schema.GetAllIndexes())
+            {
+                names.Add(index.GetName()!);
+            }
+
+            foreach (Constraint constraint in schema.GetAllConstraints())
+            {
+                names.Add(constraint.GetName()!);
             }
 
             if (names.Count > 0)

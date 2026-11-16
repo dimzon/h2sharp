@@ -187,8 +187,11 @@ public class CompareMode
 
             if (ca >= 128 || cb >= 128)
             {
-                if (char.ToUpperInvariant(ca) == char.ToUpperInvariant(cb)
-                    || char.ToLowerInvariant(ca) == char.ToLowerInvariant(cb))
+                // The reference calls Character.toUpperCase/toLowerCase here. JavaCharacter
+                // is their port: char.ToUpperInvariant, for one, leaves the dotted I alone,
+                // while the JDK folds it, and ILIKE with U+0130 is the observable difference.
+                if (JavaCharacter.ToUpperCase(ca) == JavaCharacter.ToUpperCase(cb)
+                    || JavaCharacter.ToLowerCase(ca) == JavaCharacter.ToLowerCase(cb))
                 {
                     return true;
                 }

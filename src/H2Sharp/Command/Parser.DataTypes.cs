@@ -421,7 +421,16 @@ public sealed partial class Parser
 
             if (precision > Constants.MaxNumericPrecision)
             {
-                throw GetInvalidNumericPrecisionException(precision);
+                // The reference clamps an over-large precision in quirks mode or when
+                // TRUNCATE_LARGE_LENGTH is on; otherwise it reports the invalid precision.
+                if (session!.IsQuirksMode() || session.IsTruncateLargeLength())
+                {
+                    precision = Constants.MaxNumericPrecision;
+                }
+                else
+                {
+                    throw GetInvalidNumericPrecisionException(precision);
+                }
             }
 
             if (ReadIf(Token.Comma))

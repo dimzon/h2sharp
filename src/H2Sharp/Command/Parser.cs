@@ -4939,11 +4939,11 @@ public sealed partial class Parser
         Ddl.DropSchema command = new(session);
         command.SetSchemaName(schemaName);
         command.SetIfExists(ifExists);
-        if (IsWord("CASCADE"))
+        if (ReadIfName("CASCADE"))
         {
             command.SetDropAction(Constraints.ConstraintActionType.CASCADE);
         }
-        else if (IsWord("RESTRICT"))
+        else if (ReadIfName("RESTRICT"))
         {
             command.SetDropAction(Constraints.ConstraintActionType.RESTRICT);
         }

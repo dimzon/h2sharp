@@ -732,7 +732,8 @@ public class Schema : DbObject
     /// </summary>
     public virtual bool IsEmpty()
     {
-        return tablesAndViews.IsEmpty && indexes.IsEmpty && constraints.IsEmpty && synonyms.IsEmpty;
+        return tablesAndViews.IsEmpty && indexes.IsEmpty && constraints.IsEmpty && synonyms.IsEmpty
+            && sequences.IsEmpty && domains.IsEmpty && constants.IsEmpty;
     }
 
     /// <summary>

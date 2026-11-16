@@ -15338,3 +15338,31 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * Долг: пользовательские PG_ROLES/PG_USER пусты и id пользователей расходятся с
   эталоном (D-004); сервер PG, CREATE FORCE MATERIALIZED VIEW (эталон отказывает
   50000) и `Query.GetCost long → double` остаются отдельными задачами.
+
+### Спринт 228: дефекты эталонных скриптов — RESTRICT, Java-свёртка регистра, TRUNCATE_LARGE_LENGTH (2026-11-16)
+
+* `ddl/dropSchema.sql` вскрыл, что `DROP SCHEMA ... RESTRICT` не видел синонимы:
+  `Schema.IsEmpty()` не учитывал последовательности, домены и константы, а
+  `DropSchema.update` перечислял только таблицы/домены/последовательности. Теперь
+  все объекты схемы участвуют в отказе, как в эталоне. Парсер `CASCADE`/`RESTRICT`
+  проверял keyword через `IsWord`, но не съедал его; переведён на `ReadIfName`.
+* `datatypes/varchar-ignorecase.sql` выявил расхождение `ILIKE` на заглавной I с точкой
+  (U+0130): порт использовал `char.ToUpperInvariant`/`ToLowerInvariant` там, где
+  эталон вызывает `Character.toUpperCase`/`toLowerCase`. В трёх местах
+  (`CompareMode.EqualsChars`, `StringUtils.RegionMatches`, быстрая проверка в
+  `CompareLike`) теперь используется порт JDK-свёртки `JavaCharacter`. Оракул
+  `LikeOracleTests.JavaCaseFoldingMatchesTheDottedI` закрепляет это.
+* `datatypes/numeric.sql`: `SET TRUNCATE_LARGE_LENGTH TRUE` сохранялся, но не
+  влиял на разбор `NUMERIC(100001)`. как в эталоне, увеличенная точность теперь
+  ограничивается `MaxNumericPrecision` также в quirks-режиме; оракул
+  `DataTypePrecisionOracleTests`.
+* `DdlRestrictionOracleTests` (2 факта) сравнивает отказы RESTRICT для синонима,
+  константы, последовательности, домена и таблицы, а также CASCADE.
+* Остаток скриптов по-прежнему блокируется утверждёнными отклонениями: D-004
+  (CREATE USER в SCRIPT, пользовательские роли), D-002 (TURKISH-коллация),
+  D-029 (SET MODE), D-037 (CREATE ALIAS) — эти скрипты в набор не включаются.
+* Покрытие: **93.99%** строк (83199/88523), ветви 90.33%; +28 строк. Гейт:
+  Core 2846/2847 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 268/268, Data 802/802, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+
