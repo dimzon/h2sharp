@@ -137,6 +137,12 @@ public sealed partial class Database : CastDataProvider
         FrozenDictionary<string, Schemas.Schema>.Empty;
 
     /// <summary>
+    /// The comments of objects that keep theirs in an object of their own, keyed by
+    /// <see cref="Engine.Comment.GetKey"/>.
+    /// </summary>
+    private readonly Dictionary<string, Comment> comments = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// The name of the schema of the metadata views.
     /// </summary>
     public const string InformationSchemaName = "INFORMATION_SCHEMA";
@@ -213,7 +219,7 @@ public sealed partial class Database : CastDataProvider
     /// <c>addDatabaseObject</c>: the object is registered and its meta row is written.
     /// </summary>
     /// <remarks>
-    /// The port knows one such object kind so far, the schema; the other kinds are added by
+    /// The port knows the schema and the comment object so far; the other kinds are added by
     /// their own command-specific paths (a setting by <see cref="AddDatabaseObject(SessionLocal, Setting)"/>).
     /// </remarks>
     /// <param name="session">the session</param>
@@ -221,10 +227,23 @@ public sealed partial class Database : CastDataProvider
     public void AddDatabaseObject(SessionLocal session, DbObject obj)
     {
         ArgumentNullException.ThrowIfNull(obj);
+        if (obj is Comment comment)
+        {
+            if (comment.GetId() > 0 && !starting)
+            {
+                CheckWritingAllowed();
+            }
+
+            AddMeta(session, comment);
+            comments[comment.GetName()!] = comment;
+            ClearQueryCache(comment.GetId());
+            return;
+        }
+
         if (obj is not Schemas.Schema schema)
         {
             throw new TODOException(
-                "Database.addDatabaseObject: only schemas are ported, got type "
+                "Database.addDatabaseObject: this object kind is not ported, got type "
                 + obj.GetTypeId().ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
@@ -236,6 +255,63 @@ public sealed partial class Database : CastDataProvider
         // The reference writes the meta row first and registers the object after it.
         AddMeta(session, schema);
         AddSchema(schema);
+    }
+
+    /// <summary>
+    /// Removes a database object that is not a schema object, as the reference's
+    /// <c>removeDatabaseObject</c>.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="obj">the object</param>
+    public void RemoveDatabaseObject(SessionLocal session, DbObject obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        if (obj is not Comment comment)
+        {
+            throw new TODOException(
+                "Database.removeDatabaseObject: this object kind is not ported, got type "
+                + obj.GetTypeId().ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        CheckWritingAllowed();
+        LockMeta(session);
+        lock (syncRoot)
+        {
+            comment.RemoveChildrenAndResources(session);
+            _ = comments.Remove(comment.GetName()!);
+            RemoveMeta(session, comment.GetId());
+        }
+
+        ClearQueryCache(comment.GetId());
+    }
+
+    /// <summary>
+    /// Finds the comment object of an object, or null.
+    /// </summary>
+    /// <param name="obj">the object</param>
+    /// <returns>the comment, or null</returns>
+    public Comment? FindComment(DbObject obj)
+    {
+        if (obj.GetTypeId() == DbObject.Comment)
+        {
+            return null;
+        }
+
+        return comments.GetValueOrDefault(Comment.GetKey(obj));
+    }
+
+    /// <summary>
+    /// Removes the comment object of an object, when it has one.
+    /// </summary>
+    /// <param name="session">the session</param>
+    /// <param name="obj">the object</param>
+    private void RemoveCommentFor(SessionLocal session, DbObject obj)
+    {
+        Comment? comment = FindComment(obj);
+        if (comment is not null)
+        {
+            RemoveDatabaseObject(session, comment);
+        }
     }
 
     /// <summary>
@@ -259,6 +335,7 @@ public sealed partial class Database : CastDataProvider
             // The name is captured before the children go: removing them invalidates the
             // schema and clears its name, and the reference takes the name at entry too.
             string name = schema.GetName()!;
+            RemoveCommentFor(session, schema);
             schema.RemoveChildrenAndResources(session);
             _ = schemas.Remove(name);
             PublishFrozenSchemas();
@@ -481,6 +558,7 @@ public sealed partial class Database : CastDataProvider
                 break;
         }
 
+        RemoveCommentFor(session, obj);
         RemoveSchemaObject(session, obj.GetId(), () => obj.GetSchema().Remove(obj),
             obj.RemoveChildrenAndResources, () => RemoveMeta(session, obj.GetId()));
     }

@@ -10,11 +10,9 @@
  * or a constraint.
  *
  * A comment lives on the object itself: DbObject for everything but the column, which lives
- * on the column. The catalog views read it from there, which is also what the reference does
- * once its separate comment row is written — information_schema asks the object, not the
- * database. The port has no separate comment row and no meta table to write it into (the
- * catalog reads the live objects), so a comment is set on the object and nothing else happens:
- * there is nowhere else for it to go.
+ * on the column. Tables, columns, indexes and constraints persist it in their own meta row;
+ * a schema, sequence, constant or domain gets a separate Comment object, whose meta row is
+ * the COMMENT ON statement (SetComment.update).
  */
 using System;
 using System.Text;
@@ -61,6 +59,7 @@ public sealed class SetComment : DefineCommand
         Schemas.Schema schema = schemaName is null
             ? session.GetCurrentSchema()
             : database.GetSchema(schemaName);
+        DbObject? commentObject = null;
         switch (objectType)
         {
             case DbObject.TableOrView:
@@ -99,11 +98,19 @@ public sealed class SetComment : DefineCommand
                 }
 
             case DbObject.Schema:
-                database.GetSchema(objectName).SetComment(GetCommentText());
-                break;
+                {
+                    Schemas.Schema target = database.GetSchema(objectName);
+                    target.SetComment(GetCommentText());
+                    commentObject = target;
+                    break;
+                }
             case DbObject.Sequence:
-                schema.GetSequence(objectName).SetComment(GetCommentText());
-                break;
+                {
+                    Schemas.Sequence sequence = schema.GetSequence(objectName);
+                    sequence.SetComment(GetCommentText());
+                    commentObject = sequence;
+                    break;
+                }
             case DbObject.Constraint:
                 {
                     Constraints.Constraint? constraint = schema.FindConstraint(session, objectName);
@@ -125,6 +132,7 @@ public sealed class SetComment : DefineCommand
                     }
 
                     constant.SetComment(GetCommentText());
+                    commentObject = constant;
                     break;
                 }
             case DbObject.FunctionAlias:
@@ -144,10 +152,37 @@ public sealed class SetComment : DefineCommand
                     }
 
                     domain.SetComment(GetCommentText());
+                    commentObject = domain;
                     break;
                 }
             default:
                 throw DbException.Get(Api.ErrorCode.GeneralError1, objectName);
+        }
+
+        if (commentObject is not null)
+        {
+            // The object kinds without a meta row of their own keep the comment in a
+            // separate Comment object (SetComment.update).
+            Comment? comment = database.FindComment(commentObject);
+            string? text = commentObject.GetComment();
+            if (comment is null)
+            {
+                if (text is not null)
+                {
+                    Comment created = new(database, GetObjectId(), commentObject);
+                    created.SetCommentText(text);
+                    database.AddDatabaseObject(session, created);
+                }
+            }
+            else if (text is null)
+            {
+                database.RemoveDatabaseObject(session, comment);
+            }
+            else
+            {
+                comment.SetCommentText(text);
+                database.UpdateMeta(session, comment);
+            }
         }
 
         return 0;
