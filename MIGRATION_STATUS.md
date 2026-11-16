@@ -15395,3 +15395,24 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 268/268, Data 805/805, Engine 9/9, Specs 983/983 (+25 skipped),
   Native 97/97 (+8 skipped).
 
+### Спринт 231: функции MSSQLServer-режима (2026-11-16)
+
+* Портированы `FunctionInfo`, базовый `ModeFunction` (FunctionN, проверка числа
+  параметров, getValue-помощники) и `FunctionsMSSQLServer` — CHARINDEX, GETDATE,
+  ISNULL, LEN, NEWID, NEWSEQUENTIALID и SCOPE_IDENTITY. `ModeFunction.GetFunction`
+  теперь возвращает реальные функции для MSSQLServer; остальные режимы по-прежнему
+  называют недостающую таблицу через TODOException.
+* Парсер в конце `readBuiltinFunctionIf` спрашивает `ModeFunction` и читает
+  параметры через существующий `ReadParameters`; недетерминированные функции
+  выставляют `recompileAlways`.
+* Исправлен рост массива параметров в `OperationN.AddParameter`: от нулевой
+  ёмкости массив не рос, и лишний аргумент давал IndexOutOfRangeException вместо
+  эталонного INVALID_PARAMETER_COUNT_2.
+* `ModeFunctionsOracleTests` (2 факта) сравнивает все функции с JVM. Передан
+  GETDATE(1): из-за роста массива в JVM там получается GENERAL_ERROR, здесь — 7001;
+  оракульный факт оставляет только осмысленные проверки.
+* Покрытие: **94.02%** строк (83388/88688), ветви 90.37%; +124 покрытых строки
+  при +164 строках исходника. Гейт: Core 2858/2859 (известный флейк
+  `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 805/805,
+  Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+

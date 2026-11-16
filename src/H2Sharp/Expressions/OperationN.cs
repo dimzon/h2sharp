@@ -51,14 +51,17 @@ public abstract class OperationN : Expression, IExpressionWithVariableParameters
         int capacity = args.Length;
         if (argsCount >= capacity)
         {
-            Array.Resize(ref args, capacity * 2);
+            // A zero-argument function still has to survive an extra argument long enough for
+            // its own parameter-count check to report the reference's 7001. Growing from zero
+            // to zero would leave an IndexOutOfRangeException on this side instead.
+            Array.Resize(ref args, Math.Max(1, capacity * 2));
         }
 
         args[argsCount++] = param;
     }
 
     /// <inheritdoc/>
-    public void DoneWithParameters()
+    public virtual void DoneWithParameters()
     {
         if (args.Length != argsCount)
         {

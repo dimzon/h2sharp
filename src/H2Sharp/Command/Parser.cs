@@ -7977,7 +7977,21 @@ public sealed partial class Parser
                 return ReadGCDFunction(Expressions.Functions.GCDFunction.Lcm, aggregateSelect);
 
             default:
-                return null;
+                {
+                    Modes.ModeFunction? modeFunction = Modes.ModeFunction.GetFunction(
+                        provider.GetMode(), upperName);
+                    if (modeFunction is null)
+                    {
+                        return null;
+                    }
+
+                    if (!modeFunction.IsDeterministic)
+                    {
+                        recompileAlways = true;
+                    }
+
+                    return ReadParameters(modeFunction, aggregateSelect);
+                }
         }
     }
 
