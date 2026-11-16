@@ -5,9 +5,7 @@
  * Copyright 2026 H2Sharp contributors.
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  *
- * TO_DATE, TO_TIMESTAMP and TO_TIMESTAMP_TZ are listed with the reference's FunctionInfo, but
- * their bodies need ToDateParser/ToDateTokenizer, which are not ported; they throw a TODO that
- * names the missing parser instead of answering with a format of our own.
+ * Emulates Oracle's date parsing through the ported ToDateParser/ToDateTokenizer.
  */
 using System;
 using System.Collections.Generic;
@@ -111,8 +109,9 @@ public sealed class FunctionsOracle : ModeFunction
             AddMonths => DateTimeFunction.DateaddValue(
                 session, DateTimeFunction.Month, v1!.GetInt(), v0!),
             SysGuid => ValueUuid.GetNewRandom(7).ConvertToType(TypeInfo.TypeVarbinary),
-            ToDate or ToTimestamp or ToTimestampTz => throw new TODOException(
-                "FunctionsOracle." + Info.Name + ": ToDateParser and ToDateTokenizer are not ported"),
+            ToDate => ToDateParser.ToDate(session, v0!.GetString()!, v1?.GetString()),
+            ToTimestamp => ToDateParser.ToTimestamp(session, v0!.GetString()!, v1?.GetString()),
+            ToTimestampTz => ToDateParser.ToTimestampTz(session, v0!.GetString()!, v1?.GetString()),
             _ => throw DbException.GetInternalError("type=" + Info.Type),
         };
     }

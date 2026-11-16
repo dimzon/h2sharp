@@ -18,6 +18,41 @@ namespace H2Sharp.Expressions.Functions;
 /// <summary>Oracle-compatible TO_CHAR for date-time values.</summary>
 public sealed class ToCharFunction : FunctionN
 {
+    /// <summary>The Julian epoch, the day before 1 Jan 4713 BC.</summary>
+    public const int JulianEpoch = -2_440_588;
+
+    /// <summary>The index of the month names in <see cref="GetDateNames"/>.</summary>
+    public const int Months = 0;
+
+    /// <summary>The index of the abbreviated month names.</summary>
+    public const int ShortMonths = Months + 1;
+
+    /// <summary>The index of the weekday names.</summary>
+    public const int Weekdays = ShortMonths + 1;
+
+    /// <summary>The index of the abbreviated weekday names.</summary>
+    public const int ShortWeekdays = Weekdays + 1;
+
+    /// <summary>
+    /// The month and weekday names the date parser matches against, the .NET counterpart of
+    /// the reference's DateFormatSymbols read in the default locale. The names are English,
+    /// which is what the reference answers under the oracle's -Duser.language=en; the weekday
+    /// arrays keep the reference's empty first entry, so that index 1 is Sunday.
+    /// </summary>
+    /// <param name="names">one of the constants of this class</param>
+    /// <returns>the names</returns>
+    public static string[] GetDateNames(int names)
+    {
+        System.Globalization.CultureInfo culture = System.Globalization.CultureInfo.InvariantCulture;
+        return names switch
+        {
+            Months => [.. culture.DateTimeFormat.MonthNames[..12]],
+            ShortMonths => [.. culture.DateTimeFormat.AbbreviatedMonthNames[..12]],
+            Weekdays => ["", .. culture.DateTimeFormat.DayNames],
+            ShortWeekdays => ["", .. culture.DateTimeFormat.AbbreviatedDayNames],
+            _ => throw new System.ArgumentOutOfRangeException(nameof(names), names, null),
+        };
+    }
     /// <summary>Creates the function.</summary>
     public ToCharFunction(Expression value, Expression? format, Expression? nls)
         : base([value, format ?? ValueExpression.Null, nls ?? ValueExpression.Null])

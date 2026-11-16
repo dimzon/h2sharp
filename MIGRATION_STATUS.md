@@ -15467,3 +15467,28 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 805/805,
   Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
 
+### Спринт 235: ToDateParser/ToDateTokenizer — Oracle TO_DATE/TO_TIMESTAMP (2026-11-17)
+
+* Портированы эталонные `ToDateParser` (376 строк) и `ToDateTokenizer` (714 строк):
+  все 36 форматов-токенов года/месяца/дня/времени (YYYY, SYYYY, YYY, YY, Y, RR,
+  RRRR, SCC, CC, BC/AD, MONTH, MON, MM, RM, DDD, DD, D, DAY, DY, J, HH24, HH12,
+  HH, MI, SS, SSSSS, FF, TZH, TZM, TZR, TZD, AM/PM, inline-литералы), кэш
+  токенов по первой букве формата и эталонная диагностика «Parsing failed at
+  this point».
+* `FunctionsOracle` теперь выполняет TO_DATE/TO_TIMESTAMP/TO_TIMESTAMP_TZ через
+  парсер; `FunctionsPostgreSQL` — TO_DATE (→ DATE) и TO_TIMESTAMP (→ TIMESTAMPTZ).
+* В `ToCharFunction` добавлены эталонные `getDateNames`-таблицы (месяцы и дни
+  недели, .NET-аналог DateFormatSymbols) и `JULIAN_EPOCH`, которыми пользуется
+  MONTH/MON/DAY/DY/J.
+* Оракул `ModeFunctionsOracleTests.ToDateParsing` (два факта, ~25 утверждений):
+  дефолтный формат, HH24/MI/SS, RM, DDD, J, SYYYY, BC/AD, AM/PM, FF, inline,
+  RR, RRRR, SCC, CC, Y,YYYY, YY, Y, TO_TIMESTAMP_TZ, отказы Q/EE/третий
+  аргумент и PostgreSQL-формы. Регрессия найдена и исправлена: парсер читал
+  текущий год/месяц через несуществующий `GetCurrentTimestamp` — теперь
+  эталонный `CurrentTimestamp()`.
+* Покрытие: **93.81%** строк (84215/89775), ветви 89.98%; +511 покрытых строк
+  при +630 строках исходника (ToCharFunction 100%, ToDateParser 96.6%,
+  ToDateTokenizer 92.5%). Гейт: Core 2864/2865 (известный флейк
+  `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 805/805,
+  Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+

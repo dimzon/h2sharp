@@ -7,8 +7,8 @@
  *
  * The tables that answer "not implemented" in the reference answer exactly as it does. The
  * privilege functions answer TRUE with the same comment the reference carries. PG_GET_USERBYID
- * needs users (D-004) and TO_DATE/TO_TIMESTAMP need ToDateParser/ToDateTokenizer; both call out
- * what is missing instead of answering with an invention.
+ * needs users (D-004) and calls out what is missing; TO_DATE/TO_TIMESTAMP parse through the
+ * ported ToDateParser.
  */
 using System;
 using System.Collections.Generic;
@@ -286,13 +286,14 @@ public sealed class FunctionsPostgreSQL : ModeFunction
             case PgStatGetNumscans:
                 // Not implemented, as in the reference.
                 return ValueInteger.Get(0);
+            case ToDate:
+                return ToDateParser.ToDate(session, v0!.GetString()!, v1!.GetString())
+                    .ConvertToType(TypeInfo.TypeDate, session);
+            case ToTimestamp:
+                return ToDateParser.ToTimestampTz(session, v0!.GetString()!, v1!.GetString());
             case PgGetUserbyid:
                 throw new TODOException(
                     "FunctionsOracle.PG_GET_USERBYID: users and roles are not ported (D-004)");
-            case ToDate:
-            case ToTimestamp:
-                throw new TODOException(
-                    "FunctionsOracle." + Info.Name + ": ToDateParser and ToDateTokenizer are not ported");
             default:
                 throw DbException.GetInternalError("type=" + Info.Type);
         }

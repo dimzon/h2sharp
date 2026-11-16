@@ -106,6 +106,54 @@ public sealed class ModeFunctionsOracleTests : ParserCoverageOracleBase
     }
 
     [JavaOracleFact]
+    public void ToDateParsing()
+    {
+        AssertSameAsReferenceInMode("mode_todate_oracle", "Oracle",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('2017-04-21', 'YYYY-MM-DD')), "
+                + "EXTRACT(MONTH FROM TO_DATE('2017-04-21', 'YYYY-MM-DD')), "
+                + "EXTRACT(DAY FROM TO_DATE('2017-04-21', 'YYYY-MM-DD'))",
+            "SELECT EXTRACT(MONTH FROM TO_DATE('2020-01-31 12:30:45', 'YYYY-MM-DD HH24:MI:SS')), "
+                + "EXTRACT(DAY FROM TO_DATE('2020-01-31 12:30:45', 'YYYY-MM-DD HH24:MI:SS')), "
+                + "EXTRACT(HOUR FROM TO_DATE('2020-01-31 12:30:45', 'YYYY-MM-DD HH24:MI:SS')), "
+                + "EXTRACT(MINUTE FROM TO_DATE('2020-01-31 12:30:45', 'YYYY-MM-DD HH24:MI:SS')), "
+                + "EXTRACT(SECOND FROM TO_DATE('2020-01-31 12:30:45', 'YYYY-MM-DD HH24:MI:SS'))",
+            "SELECT EXTRACT(MONTH FROM TO_DATE('21-APR-2017')), "
+                + "EXTRACT(DAY FROM TO_DATE('21-APR-2017'))",
+            "SELECT EXTRACT(MONTH FROM TO_TIMESTAMP('2017-04-21 05:06:07')), "
+                + "EXTRACT(HOUR FROM TO_TIMESTAMP('2017-04-21 05:06:07'))",
+            "SELECT EXTRACT(MONTH FROM TO_DATE('2020 091', 'YYYY DDD')), "
+                + "EXTRACT(DAY FROM TO_DATE('2020 091', 'YYYY DDD'))",
+            "SELECT EXTRACT(DAY FROM TO_DATE('2459304', 'J'))",
+            "SELECT EXTRACT(MONTH FROM TO_DATE('15', 'RM'))",
+            "SELECT EXTRACT(MONTH FROM TO_DATE('2020-02-29', 'SYYYY-MM-DD'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('BC 2020-02-29', 'BC SYYYY-MM-DD'))",
+            "SELECT EXTRACT(HOUR FROM TO_TIMESTAMP('2017-04-21 11:06:07 PM', "
+                + "'YYYY-MM-DD HH12:MI:SS AM'))",
+            "SELECT EXTRACT(SECOND FROM TO_TIMESTAMP('2017-04-21 05:06:07.123', "
+                + "'YYYY-MM-DD HH24:MI:SS.FF'))",
+            "SELECT EXTRACT(DAY FROM TO_DATE('2020\"T\"04\"T\"21', 'YYYY\"T\"MM\"T\"DD'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('20', 'RR'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('49', 'RRRR'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('CC2020-01-01', 'SCC-YYYY-MM-DD'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('2020-01-01', 'CC-YYYY-MM-DD'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('62020-01-01', 'Y,YYYY-MM-DD'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('20', 'YY'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('2', 'Y'))",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('2020-01-01', 'YYYY-MM-DD'))",
+            "SELECT EXTRACT(HOUR FROM TO_TIMESTAMP_TZ('2017-04-21 05:06:07', "
+                + "'YYYY-MM-DD HH24:MI:SS'))",
+            "TO_DATE('2017-04-21', 'YYYY-Q-MM')",
+            "TO_DATE('2017-04-21', 'YYYY-EE-MM')",
+            "TO_DATE('2017-04-21', 'YYYY-MM-DD', 'x')");
+
+        AssertSameAsReferenceInMode("mode_todate_pg", "PostgreSQL",
+            "SELECT EXTRACT(YEAR FROM TO_DATE('2017-04-21', 'YYYY-MM-DD')), "
+                + "EXTRACT(DAY FROM TO_DATE('2017-04-21', 'YYYY-MM-DD'))",
+            "SELECT EXTRACT(MONTH FROM TO_TIMESTAMP('2017-04-21 05:06:07')), "
+                + "EXTRACT(HOUR FROM TO_TIMESTAMP('2017-04-21 05:06:07'))");
+    }
+
+    [JavaOracleFact]
     public void WrongArgumentCountsAreRefused()
     {
         AssertSameAsReferenceInMode("mode_mssql_args", "MSSQLServer",
