@@ -107,6 +107,41 @@ public static class PgServer
         _ => PgTypeUnknown,
     };
 
+    /// <summary>
+    /// Formats a PostgreSQL type identifier as its name.
+    /// </summary>
+    /// <param name="pgType">the identifier</param>
+    /// <returns>the name, <c>"-"</c> for the void type and <c>"???"</c> for an unknown one</returns>
+    public static string FormatType(int pgType) => pgType switch
+    {
+        0 => "-",
+        PgTypeBool => Value.GetTypeName(Value.Boolean),
+        PgTypeBytea => Value.GetTypeName(Value.Varbinary),
+        18 => "char",
+        19 => "name",
+        PgTypeInt8 => Value.GetTypeName(Value.Bigint),
+        PgTypeInt2 => Value.GetTypeName(Value.Smallint),
+        22 => "int2vector",
+        PgTypeInt4 => Value.GetTypeName(Value.Integer),
+        24 => "regproc",
+        PgTypeText => Value.GetTypeName(Value.Clob),
+        PgTypeFloat4 => Value.GetTypeName(Value.Real),
+        PgTypeFloat8 => Value.GetTypeName(Value.Double),
+        PgTypeInt2Array => "smallint[]",
+        PgTypeInt4Array => "integer[]",
+        PgTypeVarcharArray => "character varying[]",
+        PgTypeBpchar => Value.GetTypeName(Value.Char),
+        PgTypeVarchar => Value.GetTypeName(Value.Varchar),
+        PgTypeDate => Value.GetTypeName(Value.Date),
+        PgTypeTime => Value.GetTypeName(Value.Time),
+        PgTypeTimetz => Value.GetTypeName(Value.TimeTz),
+        PgTypeTimestamp => Value.GetTypeName(Value.Timestamp),
+        PgTypeTimestamptz => Value.GetTypeName(Value.TimestampTz),
+        PgTypeNumeric => Value.GetTypeName(Value.Numeric),
+        2205 => "regclass",
+        _ => "???",
+    };
+
     private static int ComponentType(TypeInfo? type) => type?.GetValueType() switch
     {
         Value.Smallint => PgTypeInt2Array,

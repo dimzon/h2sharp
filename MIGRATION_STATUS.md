@@ -15447,3 +15447,23 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 805/805,
   Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
 
+### Спринт 234: функции PostgreSQL-режима (2026-11-16)
+
+* Портирован `FunctionsPostgreSQL`: CURRENT_DATABASE, CURRTID2, FORMAT_TYPE,
+  HAS_*_PRIVILEGE и PG_TABLE_IS_VISIBLE (эталон отвечает TRUE с пометкой
+  «not implemented»), LASTVAL, VERSION, OBJ_DESCRIPTION/PG_GET_EXPR (null,
+  как в эталоне), PG_ENCODING_TO_CHAR, PG_GET_INDEXDEF, PG_POSTMASTER_START_TIME,
+  PG_RELATION_SIZE/PG_TOTAL_RELATION_SIZE, SET_CONFIG, ARRAY_TO_STRING,
+  PG_STAT_GET_NUMSCANS, GEN_RANDOM_UUID. PG_GET_USERBYID и TO_DATE/TO_TIMESTAMP
+  называют недостающее (пользователи D-004; ToDateParser) через TODOException.
+* В `PgServer` добавлена эталонная `formatType` — обратная таблица типов PG.
+* Исправлен `ARRAY_TO_STRING`: разделитель идёт между сохранёнными значениями
+  (как StringJoiner эталона), а не между элементами массива.
+* `ModeFunctionsOracleTests.PostgreSqlFunctions` (оракул, 16 строк вывода);
+  `EdgeClusterCoverageTests2` обновлён — MySQL и PostgreSQL теперь отвечают
+  «нет функции», TODO остаётся для HSQLDB.
+* Покрытие: **93.90%** строк (83704/89145), ветви 90.07%; +145 покрытых строк
+  при +241 строках исходника. Гейт: Core 2863/2864 (известный флейк
+  `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 805/805,
+  Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+

@@ -83,6 +83,29 @@ public sealed class ModeFunctionsOracleTests : ParserCoverageOracleBase
     }
 
     [JavaOracleFact]
+    public void PostgreSqlFunctions()
+    {
+        AssertSameAsReferenceInMode("mode_pg_functions", "PostgreSQL",
+            "SELECT CURRENT_DATABASE()",
+            "SELECT SUBSTRING(VERSION(), 1, 10)",
+            "CREATE TABLE T(ID INT IDENTITY)",
+            "CREATE SEQUENCE S",
+            "SELECT NEXT VALUE FOR S",
+            "SELECT LASTVAL()",
+            "SELECT FORMAT_TYPE(1043)",
+            "SELECT FORMAT_TYPE(0)",
+            "SELECT FORMAT_TYPE(16)",
+            "SELECT PG_ENCODING_TO_CHAR(6)",
+            "SELECT PG_ENCODING_TO_CHAR(99)",
+            "SELECT ARRAY_TO_STRING(ARRAY[1, NULL, 3], ',')",
+            "SELECT ARRAY_TO_STRING(ARRAY[1, NULL, 3], ',', 'N')",
+            "SELECT HAS_TABLE_PRIVILEGE('T', 'SELECT')",
+            "SELECT PG_STAT_GET_NUMSCANS(1)",
+            "SELECT CURRTID2(1, 2)",
+            "SELECT CAST(GEN_RANDOM_UUID() AS VARCHAR) LIKE '____-____-____-____-____'");
+    }
+
+    [JavaOracleFact]
     public void WrongArgumentCountsAreRefused()
     {
         AssertSameAsReferenceInMode("mode_mssql_args", "MSSQLServer",
