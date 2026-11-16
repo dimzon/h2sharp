@@ -806,11 +806,11 @@ connection.Open();
 // SELECT DOUBLE_IT(3) → 6 ; SELECT PREFIX('a') → 'x:a'
 ```
 
-Доступны `RegisterUdf` арности 0–4 с обычными `Func<...>` (без собственных delegate-типов),
+Доступны `RegisterUdf` арности 0–8 с обычными `Func<...>` (без собственных delegate-типов),
 `RegisterAggregate(name, IH2AggregateProvider)`, `RegisterHashAlgorithm(name, Func<HashAlgorithm>)`,
 `RegisterRandomGenerator(Func<long?, Random>)`, `RegisterUuidGenerator(Func<int, Guid>)`.
 
-### Табличные UDF и CSVREAD
+### Табличные UDF, CSVREAD и CSVWRITE
 
 Функция, которая используется в `FROM`, регистрируется так же — до `Open()`:
 
@@ -823,28 +823,40 @@ connection.Open();
 // SELECT * FROM RANGE_TO(3) → 1, 2, 3
 ```
 
-`RegisterTableUdf` есть для арности 0–3. Функция сама отвечает списком колонок
-(`H2TableUdfColumn`: SQL-имя и CLR-тип) и строками `IEnumerable<object?[]>`;
-колонки запрашиваются при подготовке оператора, строки читаются при выполнении.
-Если функция недетерминирована (по умолчанию), оператор помечается как
-`recompileAlways`, поэтому изменённый вход виден при повторном выполнении.
+`RegisterTableUdf` есть для арности 0–7 (скалярные `RegisterUdf` — 0–8). Функция
+сама отвечает списком колонок (`H2TableUdfColumn`: SQL-имя и CLR-тип) и строками
+`IEnumerable<object?[]>`; колонки запрашиваются при подготовке оператора, строки
+читаются при выполнении. Если функция недетерминирована (по умолчанию), оператор
+помечается как `recompileAlways`, поэтому изменённый вход виден при повторном
+выполнении.
 
-`CSVREAD` — табличная UDF, зарегистрированная по умолчанию; её SQL-форма и правила
-чтения совпадают с эталоном: заголовок (или список колонок вторым аргументом),
-кавычки/удвоение кавычек, `NULL`-строка, опции (`fieldSeparator`, `fieldDelimiter`,
-`escape`, `lineComment`, `null`, `charset`, `preserveWhitespace`, `quotedNulls`,
-`caseSensitiveColumnNames`) и позиционные разделители. Своя регистрация с тем же
-именем и арностью заменяет реализацию по умолчанию:
+`CSVREAD`/`CSVWRITE` — **не функции ядра**, а опциональный пакет
+`H2Sharp.CsvTools` на CsvHelper (SQL-форма и имена опций эталонные):
+
+```csharp
+using H2Sharp.CsvTools;
+((IH2Extensions)connection).UseCsvTools();
+connection.Open();
+```
 
 ```sql
 SELECT * FROM CSVREAD('data.csv');
 SELECT ID, NAME FROM CSVREAD('data.csv', 'ID,NAME');
 SELECT * FROM CSVREAD('data.csv', NULL, 'fieldSeparator=;');
-SELECT * FROM CSVREAD('data.csv', NULL, NULL, ';', '"', '\', 'NULL');
+CALL CSVWRITE('out.csv', 'SELECT * FROM T ORDER BY ID');
+CALL CSVWRITE('out.csv', 'SELECT * FROM T', 'fieldSeparator=; null=NULL');
 ```
 
-`CSVWRITE` и `org.h2.tools.Csv` как публичный Java-совместимый API не переносились;
-CSVREAD реализован как .NET-функция по правилам чтения эталонного `Csv`.
+CSVWRITE выполняет запрос в транзакции вызывающего оператора: видит незакоммиченные
+строки и не фиксирует их. Для этого функция берёт `H2Database.CurrentSessionConnection`
+— заимствованное соединение текущей сессии, доступное только внутри вызова UDF.
+Оно не может начать/зафиксировать/откатить транзакцию, перепривязаться или выполнить
+нетранзакционный оператор; после возврата из функции оно закрыто.
+
+Без пакета `FROM CSVREAD(...)` отвечает `FUNCTION_ALIAS_NOT_FOUND`, а `CSVWRITE`
+остаётся отказом 50100. CsvHelper — не Java-парсер: пустое поле в кавычках читается
+как NULL вместе с пустым без кавычек, а собственная escape-ручка, отличная от
+кавычки, не поддерживается. Эти расхождения зафиксированы тестами.
 
 Это **не** `CREATE ALIAS`: зарегистрированные функции живут в сессии, не становятся
 объектами схемы и не видны из другого соединения/базы. Пакет `H2Sharp.JavaLegacy`

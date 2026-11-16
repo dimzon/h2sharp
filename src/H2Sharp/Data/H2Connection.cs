@@ -91,6 +91,12 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     /// </summary>
     private bool borrowedSession;
 
+    /// <summary>
+    /// Whether this connection is the session context of a running .NET function: borrowed,
+    /// bound to the calling transaction, and unable to change it.
+    /// </summary>
+    private bool sessionContextConnection;
+
     /// <inheritdoc/>
     Func<DateTimeOffset>? IH2Test.SystemClockProvider
     {
@@ -266,6 +272,25 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         };
         return connection;
     }
+
+    /// <summary>
+    /// Creates the connection a running .NET function sees: a borrowed view of its session
+    /// that is bound to the transaction of the calling statement.
+    /// </summary>
+    /// <param name="session">the session to borrow</param>
+    /// <returns>the context connection</returns>
+    internal static H2Connection BorrowSessionContext(SessionLocal session)
+    {
+        H2Connection connection = BorrowSession(session);
+        connection.sessionContextConnection = true;
+        return connection;
+    }
+
+    /// <summary>
+    /// Whether this connection is the session context of a running .NET function. Such a
+    /// connection runs every statement in the calling transaction and refuses to change it.
+    /// </summary>
+    internal bool IsSessionContextConnection => sessionContextConnection;
 
     /// <summary>
     /// Gets or sets the connection string. Setting it to null or empty is the ADO.NET
@@ -512,6 +537,30 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
     }
 
+    void IH2Extensions.RegisterUdf<T1, T2, T3, T4, T5, TResult>(string name, Func<T1, T2, T3, T4, T5, TResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterUdf<T1, T2, T3, T4, T5, T6, TResult>(string name, Func<T1, T2, T3, T4, T5, T6, TResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterUdf<T1, T2, T3, T4, T5, T6, T7, TResult>(string name, Func<T1, T2, T3, T4, T5, T6, T7, TResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterUdf<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(string name, Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        extensionConfiguration.Add(UdfDefinition.Create(SqlName(name), implementation, deterministic));
+    }
+
     void IH2Extensions.RegisterTableUdf(
         string name, Func<H2TableUdfResult> implementation, bool deterministic)
     {
@@ -546,6 +595,42 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
         ArgumentNullException.ThrowIfNull(implementation);
         extensionConfiguration.AddTableUdf(
             TableUdfDefinition.Create<T1, T2, T3>(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterTableUdf<T1, T2, T3, T4>(
+        string name, Func<T1, T2, T3, T4, H2TableUdfResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        ArgumentNullException.ThrowIfNull(implementation);
+        extensionConfiguration.AddTableUdf(
+            TableUdfDefinition.Create<T1, T2, T3, T4>(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterTableUdf<T1, T2, T3, T4, T5>(
+        string name, Func<T1, T2, T3, T4, T5, H2TableUdfResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        ArgumentNullException.ThrowIfNull(implementation);
+        extensionConfiguration.AddTableUdf(
+            TableUdfDefinition.Create<T1, T2, T3, T4, T5>(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterTableUdf<T1, T2, T3, T4, T5, T6>(
+        string name, Func<T1, T2, T3, T4, T5, T6, H2TableUdfResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        ArgumentNullException.ThrowIfNull(implementation);
+        extensionConfiguration.AddTableUdf(
+            TableUdfDefinition.Create<T1, T2, T3, T4, T5, T6>(SqlName(name), implementation, deterministic));
+    }
+
+    void IH2Extensions.RegisterTableUdf<T1, T2, T3, T4, T5, T6, T7>(
+        string name, Func<T1, T2, T3, T4, T5, T6, T7, H2TableUdfResult> implementation, bool deterministic)
+    {
+        EnsureCanConfigure();
+        ArgumentNullException.ThrowIfNull(implementation);
+        extensionConfiguration.AddTableUdf(
+            TableUdfDefinition.Create<T1, T2, T3, T4, T5, T6, T7>(SqlName(name), implementation, deterministic));
     }
 
     void IH2Extensions.RegisterAggregate(string name, IH2AggregateProvider provider)
@@ -963,6 +1048,12 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
             throw new InvalidOperationException("The connection is not open");
         }
 
+        if (sessionContextConnection)
+        {
+            throw new InvalidOperationException(
+                "The session context connection is bound to the current transaction and cannot begin one");
+        }
+
         if (currentTransaction is not null)
         {
             throw new InvalidOperationException("The connection already has a transaction");
@@ -1004,6 +1095,12 @@ public sealed class H2Connection : DbConnection, IH2Test, IH2Extensions, IH2RawE
     public override void EnlistTransaction(Transaction? transaction)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+
+        if (sessionContextConnection)
+        {
+            throw new InvalidOperationException(
+                "The session context connection is bound to the current transaction and cannot enlist");
+        }
 
         if (transaction is null)
         {

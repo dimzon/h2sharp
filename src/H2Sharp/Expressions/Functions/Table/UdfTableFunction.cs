@@ -8,6 +8,7 @@
  */
 using System;
 using System.Collections.Generic;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Extensions;
 using H2Sharp.Message;
@@ -40,43 +41,48 @@ internal sealed class UdfTableFunction : TableFunction
 
     private ResultInterface Build(SessionLocal session, bool template)
     {
-        Value[] values = new Value[args.Length];
-        for (int i = 0; i < args.Length; i++)
+        // The rows are read inside the call, so the context covers both the columns the
+        // provider answers and the lazy row enumeration below.
+        using (H2Database.EnterSession(session))
         {
-            values[i] = args[i].GetValue(session);
-        }
-
-        H2Sharp.Data.Extensions.H2TableUdfResult data = definition.Invoke(values);
-        int columnCount = data.Columns.Count;
-        Expression[] header = new Expression[columnCount];
-        for (int i = 0; i < columnCount; i++)
-        {
-            H2Sharp.Data.Extensions.H2TableUdfColumn column = data.Columns[i];
-            header[i] = new ExpressionColumn(
-                session.GetDatabase(), new Column(column.Name, ClrValueConverter.GetTypeInfo(column.Type)));
-        }
-
-        LocalResult result = new(session, header, columnCount, columnCount);
-        if (!template)
-        {
-            foreach (object?[] row in data.Rows)
+            Value[] values = new Value[args.Length];
+            for (int i = 0; i < args.Length; i++)
             {
-                if (row.Length != columnCount)
-                {
-                    throw DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
-                }
-
-                Value[] values2 = new Value[columnCount];
-                for (int i = 0; i < columnCount; i++)
-                {
-                    values2[i] = ClrValueConverter.ToValue(row[i]);
-                }
-
-                result.AddRow(values2);
+                values[i] = args[i].GetValue(session);
             }
-        }
 
-        result.Done();
-        return result;
+            H2Sharp.Data.Extensions.H2TableUdfResult data = definition.Invoke(values);
+            int columnCount = data.Columns.Count;
+            Expression[] header = new Expression[columnCount];
+            for (int i = 0; i < columnCount; i++)
+            {
+                H2Sharp.Data.Extensions.H2TableUdfColumn column = data.Columns[i];
+                header[i] = new ExpressionColumn(
+                    session.GetDatabase(), new Column(column.Name, ClrValueConverter.GetTypeInfo(column.Type)));
+            }
+
+            LocalResult result = new(session, header, columnCount, columnCount);
+            if (!template)
+            {
+                foreach (object?[] row in data.Rows)
+                {
+                    if (row.Length != columnCount)
+                    {
+                        throw DbException.Get(Api.ErrorCode.ColumnCountDoesNotMatch);
+                    }
+
+                    Value[] values2 = new Value[columnCount];
+                    for (int i = 0; i < columnCount; i++)
+                    {
+                        values2[i] = ClrValueConverter.ToValue(row[i]);
+                    }
+
+                    result.AddRow(values2);
+                }
+            }
+
+            result.Done();
+            return result;
+        }
     }
 }

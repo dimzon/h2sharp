@@ -23,4 +23,8 @@
     <Compile Include="..\H2Sharp.Tests\DapperJsonFixture.cs" Link="Infrastructure\DapperJsonFixture.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\H2Sharp.CsvTools\H2Sharp.CsvTools.csproj" />
+  </ItemGroup>
+
 </Project>

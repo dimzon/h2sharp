@@ -18,6 +18,7 @@
   </ItemGroup>
   <ItemGroup Label="Optional providers">
     <PackageVersion Include="CryptoHives.Foundation.Security.Cryptography" Version="0.7.37" />
+    <PackageVersion Include="CsvHelper" Version="33.1.0" />
   </ItemGroup>
   <ItemGroup Label="PowerShell">
     <PackageVersion Include="Microsoft.PowerShell.SDK" Version="7.4.6" />

@@ -94,16 +94,15 @@ public sealed class SystemFunctionTests
     }
 
     /// <summary>docs/functions.html:3473 — CSVWRITE ( fileNameString, queryString [, csvOptions [, lineSepString] ] )</summary>
-    [Fact(Skip = "not ported (documented in MIGRATION_STATUS)")]
-    [Trait("Category", "BlockedByPort")]
+    [Fact]
     public void CsvWrite_WritesTheFile() // FUN-3473
     {
-        // Blocked by the port: needs the CALL statement plus CSV writing with file I/O.
         using IDbConnection connection = TestDatabase.Open();
 
-        Assert.Equal(1L, connection.QuerySingle<long>("CALL CSVWRITE('test.csv', 'SELECT 1 AS ID')"));
         Assert.Equal(1L, connection.QuerySingle<long>(
-            "CALL CSVWRITE('test2.csv', 'SELECT 1 AS ID', 'UTF-8,|')"));
+            "CALL CSVWRITE('csv-fun-3473.csv', 'SELECT 1 AS ID')"));
+        Assert.Equal(1L, connection.QuerySingle<long>(
+            "CALL CSVWRITE('csv-fun-3473b.csv', 'SELECT 1 AS ID', 'UTF-8', '|')"));
     }
 
     /// <summary>docs/functions.html:3491 — CURRENT_SCHEMA | SCHEMA()</summary>

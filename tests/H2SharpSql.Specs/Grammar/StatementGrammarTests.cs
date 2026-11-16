@@ -96,8 +96,7 @@ public sealed class StatementGrammarTests
     }
 
     /// <summary>docs/grammar.html:2667 — charsetString [, fieldSepString [, fieldDelimString [, escString [, nullString]]]]</summary>
-    [Fact(Skip = "not ported (documented in MIGRATION_STATUS)")]
-    [Trait("Category", "BlockedByPort")]
+    [Fact]
     public void CsvOptions_PositionalForm_IsAccepted() // GRM-2667
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -106,14 +105,13 @@ public sealed class StatementGrammarTests
         _ = connection.Execute("INSERT INTO TEST(ID) VALUES (2)");
 
         int written = connection.ExecuteScalar<int>(
-            "CALL CSVWRITE('test2.csv', 'SELECT * FROM TEST', 'UTF-8,|')");
+            "CALL CSVWRITE('csv-grm-2667.csv', 'SELECT * FROM TEST', 'UTF-8', '|')");
 
         Assert.Equal(2, written);
     }
 
     /// <summary>docs/grammar.html:2668 — | optionString</summary>
-    [Fact(Skip = "not ported (documented in MIGRATION_STATUS)")]
-    [Trait("Category", "BlockedByPort")]
+    [Fact]
     public void CsvOptions_OptionStringForm_IsAccepted() // GRM-2668
     {
         using IDbConnection connection = TestDatabase.Open();
@@ -122,7 +120,8 @@ public sealed class StatementGrammarTests
         _ = connection.Execute("INSERT INTO TEST(ID) VALUES (2)");
 
         int written = connection.ExecuteScalar<int>(
-            "CALL CSVWRITE('test3.csv', 'SELECT * FROM TEST', 'charset=UTF-8 fieldSeparator=|')");
+            "CALL CSVWRITE('csv-grm-2668.csv', 'SELECT * FROM TEST', "
+            + "'charset=UTF-8 fieldSeparator=|')");
 
         Assert.Equal(2, written);
     }

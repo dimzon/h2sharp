@@ -38,6 +38,22 @@ public interface IH2Extensions
     /// <summary>Registers a scalar function with four arguments.</summary>
     void RegisterUdf<T1, T2, T3, T4, TResult>(string name, Func<T1, T2, T3, T4, TResult> implementation, bool deterministic = false);
 
+    /// <summary>Registers a scalar function with five arguments.</summary>
+    void RegisterUdf<T1, T2, T3, T4, T5, TResult>(string name,
+        Func<T1, T2, T3, T4, T5, TResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a scalar function with six arguments.</summary>
+    void RegisterUdf<T1, T2, T3, T4, T5, T6, TResult>(string name,
+        Func<T1, T2, T3, T4, T5, T6, TResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a scalar function with seven arguments.</summary>
+    void RegisterUdf<T1, T2, T3, T4, T5, T6, T7, TResult>(string name,
+        Func<T1, T2, T3, T4, T5, T6, T7, TResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a scalar function with eight arguments.</summary>
+    void RegisterUdf<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(string name,
+        Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult> implementation, bool deterministic = false);
+
     /// <summary>
     /// Registers a table-valued function with no arguments. The function is used in the FROM
     /// position and answers its own columns, so a prepared statement asks it for the column
@@ -53,6 +69,22 @@ public interface IH2Extensions
 
     /// <summary>Registers a table-valued function with three arguments.</summary>
     void RegisterTableUdf<T1, T2, T3>(string name, Func<T1, T2, T3, H2TableUdfResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a table-valued function with four arguments.</summary>
+    void RegisterTableUdf<T1, T2, T3, T4>(string name,
+        Func<T1, T2, T3, T4, H2TableUdfResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a table-valued function with five arguments.</summary>
+    void RegisterTableUdf<T1, T2, T3, T4, T5>(string name,
+        Func<T1, T2, T3, T4, T5, H2TableUdfResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a table-valued function with six arguments.</summary>
+    void RegisterTableUdf<T1, T2, T3, T4, T5, T6>(string name,
+        Func<T1, T2, T3, T4, T5, T6, H2TableUdfResult> implementation, bool deterministic = false);
+
+    /// <summary>Registers a table-valued function with seven arguments.</summary>
+    void RegisterTableUdf<T1, T2, T3, T4, T5, T6, T7>(string name,
+        Func<T1, T2, T3, T4, T5, T6, T7, H2TableUdfResult> implementation, bool deterministic = false);
 
     /// <summary>
     /// Registers a user-defined aggregate provider.

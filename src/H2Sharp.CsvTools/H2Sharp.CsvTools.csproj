@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RootNamespace>H2Sharp.CsvTools</RootNamespace>
+    <AssemblyName>H2Sharp.CsvTools</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <Description>Optional CSVREAD and CSVWRITE functions for H2Sharp, backed by CsvHelper.</Description>
+    <PackageLicenseExpression>MPL-2.0 OR EPL-1.0</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CsvHelper" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\H2Sharp\H2Sharp.csproj" />
+  </ItemGroup>
+
+</Project>

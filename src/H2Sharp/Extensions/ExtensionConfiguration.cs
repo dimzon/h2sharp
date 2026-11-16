@@ -70,6 +70,38 @@ internal sealed class UdfDefinition
         => new(name, 4, [typeof(T1), typeof(T2), typeof(T3), typeof(T4)], ClrValueConverter.GetTypeInfo(typeof(TResult)), deterministic,
             args => Call(name, () => implementation(Arg<T1>(args, 0), Arg<T2>(args, 1), Arg<T3>(args, 2), Arg<T4>(args, 3))));
 
+    internal static UdfDefinition Create<T1, T2, T3, T4, T5, TResult>(
+        string name, Func<T1, T2, T3, T4, T5, TResult> implementation, bool deterministic)
+        => new(name, 5, [typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5)],
+            ClrValueConverter.GetTypeInfo(typeof(TResult)), deterministic,
+            args => Call(name, () => implementation(
+                Arg<T1>(args, 0), Arg<T2>(args, 1), Arg<T3>(args, 2), Arg<T4>(args, 3), Arg<T5>(args, 4))));
+
+    internal static UdfDefinition Create<T1, T2, T3, T4, T5, T6, TResult>(
+        string name, Func<T1, T2, T3, T4, T5, T6, TResult> implementation, bool deterministic)
+        => new(name, 6, [typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6)],
+            ClrValueConverter.GetTypeInfo(typeof(TResult)), deterministic,
+            args => Call(name, () => implementation(
+                Arg<T1>(args, 0), Arg<T2>(args, 1), Arg<T3>(args, 2), Arg<T4>(args, 3),
+                Arg<T5>(args, 4), Arg<T6>(args, 5))));
+
+    internal static UdfDefinition Create<T1, T2, T3, T4, T5, T6, T7, TResult>(
+        string name, Func<T1, T2, T3, T4, T5, T6, T7, TResult> implementation, bool deterministic)
+        => new(name, 7, [typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7)],
+            ClrValueConverter.GetTypeInfo(typeof(TResult)), deterministic,
+            args => Call(name, () => implementation(
+                Arg<T1>(args, 0), Arg<T2>(args, 1), Arg<T3>(args, 2), Arg<T4>(args, 3),
+                Arg<T5>(args, 4), Arg<T6>(args, 5), Arg<T7>(args, 6))));
+
+    internal static UdfDefinition Create<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(
+        string name, Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult> implementation, bool deterministic)
+        => new(name, 8,
+            [typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7), typeof(T8)],
+            ClrValueConverter.GetTypeInfo(typeof(TResult)), deterministic,
+            args => Call(name, () => implementation(
+                Arg<T1>(args, 0), Arg<T2>(args, 1), Arg<T3>(args, 2), Arg<T4>(args, 3),
+                Arg<T5>(args, 4), Arg<T6>(args, 5), Arg<T7>(args, 6), Arg<T8>(args, 7))));
+
     internal static UdfDefinition CreateRaw(
         string name, int arity, TypeInfo resultType, bool deterministic, Func<Value[], Value> implementation)
         => new(name, arity, [], resultType, deterministic, implementation);
@@ -171,6 +203,41 @@ internal sealed class TableUdfDefinition
             args => Call(name, () => implementation(
                 UdfDefinition.Arg<T1>(args, 0), UdfDefinition.Arg<T2>(args, 1),
                 UdfDefinition.Arg<T3>(args, 2))));
+
+    internal static TableUdfDefinition Create<T1, T2, T3, T4>(
+        string name, Func<T1, T2, T3, T4, H2TableUdfResult> implementation, bool deterministic)
+        => new(name, 4, [typeof(T1), typeof(T2), typeof(T3), typeof(T4)], deterministic,
+            args => Call(name, () => implementation(
+                UdfDefinition.Arg<T1>(args, 0), UdfDefinition.Arg<T2>(args, 1),
+                UdfDefinition.Arg<T3>(args, 2), UdfDefinition.Arg<T4>(args, 3))));
+
+    internal static TableUdfDefinition Create<T1, T2, T3, T4, T5>(
+        string name, Func<T1, T2, T3, T4, T5, H2TableUdfResult> implementation, bool deterministic)
+        => new(name, 5, [typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5)], deterministic,
+            args => Call(name, () => implementation(
+                UdfDefinition.Arg<T1>(args, 0), UdfDefinition.Arg<T2>(args, 1),
+                UdfDefinition.Arg<T3>(args, 2), UdfDefinition.Arg<T4>(args, 3),
+                UdfDefinition.Arg<T5>(args, 4))));
+
+    internal static TableUdfDefinition Create<T1, T2, T3, T4, T5, T6>(
+        string name, Func<T1, T2, T3, T4, T5, T6, H2TableUdfResult> implementation, bool deterministic)
+        => new(name, 6, [typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6)],
+            deterministic,
+            args => Call(name, () => implementation(
+                UdfDefinition.Arg<T1>(args, 0), UdfDefinition.Arg<T2>(args, 1),
+                UdfDefinition.Arg<T3>(args, 2), UdfDefinition.Arg<T4>(args, 3),
+                UdfDefinition.Arg<T5>(args, 4), UdfDefinition.Arg<T6>(args, 5))));
+
+    internal static TableUdfDefinition Create<T1, T2, T3, T4, T5, T6, T7>(
+        string name, Func<T1, T2, T3, T4, T5, T6, T7, H2TableUdfResult> implementation, bool deterministic)
+        => new(name, 7,
+            [typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7)],
+            deterministic,
+            args => Call(name, () => implementation(
+                UdfDefinition.Arg<T1>(args, 0), UdfDefinition.Arg<T2>(args, 1),
+                UdfDefinition.Arg<T3>(args, 2), UdfDefinition.Arg<T4>(args, 3),
+                UdfDefinition.Arg<T5>(args, 4), UdfDefinition.Arg<T6>(args, 5),
+                UdfDefinition.Arg<T7>(args, 6))));
 
     internal static TableUdfDefinition CreateRaw(
         string name, int arity, bool deterministic, Func<Value[], H2TableUdfResult> implementation)

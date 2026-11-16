@@ -486,14 +486,26 @@ public sealed class H2Command : DbCommand
                 commandText, parameterCollection, current);
         }
 
-        if (owner.CurrentTransaction is not null && transaction is null)
+        if (owner.IsSessionContextConnection)
         {
-            throw new InvalidOperationException("The connection has an open transaction");
+            if (transaction is not null)
+            {
+                throw new InvalidOperationException(
+                    "The session context connection is bound to the current transaction;"
+                    + " the transaction cannot be changed");
+            }
         }
-
-        if (transaction is not null && !ReferenceEquals(transaction.OwningConnection, owner))
+        else
         {
-            throw new InvalidOperationException("The transaction belongs to another connection");
+            if (owner.CurrentTransaction is not null && transaction is null)
+            {
+                throw new InvalidOperationException("The connection has an open transaction");
+            }
+
+            if (transaction is not null && !ReferenceEquals(transaction.OwningConnection, owner))
+            {
+                throw new InvalidOperationException("The transaction belongs to another connection");
+            }
         }
 
         // The reference executes an empty statement as a no-op (false, update count 0)
@@ -534,6 +546,12 @@ public sealed class H2Command : DbCommand
         {
             throw new InvalidOperationException("The statement is not a runnable command");
         }
+
+        if (owner.IsSessionContextConnection)
+        {
+            CheckSessionContextCommands(containers);
+        }
+
         foreach (Expressions.ParameterInterface engineParameter in containers[0].GetParameters())
         {
             Expressions.Parameter parameter = (Expressions.Parameter)engineParameter;
@@ -562,5 +580,35 @@ public sealed class H2Command : DbCommand
         }
 
         return containers;
+    }
+
+    /// <summary>
+    /// Refuses the statements a session context connection may not run: the ones that would
+    /// change the calling transaction, and the ones that cannot join it.
+    /// </summary>
+    /// <param name="containers">the prepared statements of the command</param>
+    private static void CheckSessionContextCommands(List<Command.CommandContainer> containers)
+    {
+        foreach (Command.CommandContainer container in containers)
+        {
+            int type = container.GetCommandType();
+            if (type is Command.CommandInterface.Begin or Command.CommandInterface.Commit
+                or Command.CommandInterface.Rollback or Command.CommandInterface.Savepoint
+                or Command.CommandInterface.RollbackToSavepoint
+                or Command.CommandInterface.PrepareCommit
+                or Command.CommandInterface.SetAutocommitTrue
+                or Command.CommandInterface.SetAutocommitFalse)
+            {
+                throw new InvalidOperationException(
+                    "The session context connection runs in the current transaction"
+                    + " and cannot change it");
+            }
+
+            if (!container.IsTransactional())
+            {
+                throw new InvalidOperationException(
+                    "The session context connection can only run transactional statements");
+            }
+        }
     }
 }

@@ -28,7 +28,7 @@ public abstract class ParserCoverageOracleBase
     /// </summary>
     /// <param name="dbName">the unique in-memory database name</param>
     /// <param name="statements">the SQL statements</param>
-    protected static void AssertSameAsReference(string dbName, params string[] statements)
+    protected void AssertSameAsReference(string dbName, params string[] statements)
         => Compare(dbName, null, statements);
 
     /// <summary>
@@ -39,8 +39,17 @@ public abstract class ParserCoverageOracleBase
     /// <param name="dbName">the unique in-memory database name</param>
     /// <param name="mode">the compatibility mode</param>
     /// <param name="statements">the SQL statements</param>
-    protected static void AssertSameAsReferenceInMode(string dbName, string mode, params string[] statements)
+    protected void AssertSameAsReferenceInMode(string dbName, string mode, params string[] statements)
         => Compare(dbName, mode, statements);
+
+    /// <summary>
+    /// Configures the port's connection before it is opened; a test that uses an optional
+    /// package registers its functions here.
+    /// </summary>
+    /// <param name="extensions">the extension surface of the closed connection</param>
+    protected virtual void ConfigurePort(IH2Extensions extensions)
+    {
+    }
 
     /// <summary>
     /// Runs the statements on both sides and asserts the answers match line for line, with
@@ -50,7 +59,7 @@ public abstract class ParserCoverageOracleBase
     /// </summary>
     /// <param name="dbName">the unique in-memory database name</param>
     /// <param name="statements">the SQL statements</param>
-    protected static void AssertSameLinesAsReference(string dbName, params string[] statements)
+    protected void AssertSameLinesAsReference(string dbName, params string[] statements)
     {
         List<string> port = FlattenLines(RunPort(dbName, null, statements));
         List<string> java = FlattenLines(RunJava(dbName, null, statements));
@@ -77,7 +86,7 @@ public abstract class ParserCoverageOracleBase
         return lines;
     }
 
-    private static void Compare(string dbName, string? mode, IReadOnlyList<string> statements)
+    private void Compare(string dbName, string? mode, IReadOnlyList<string> statements)
     {
         List<string> port = RunPort(dbName, mode, statements);
         List<string> java = RunJava(dbName, mode, statements);
@@ -86,11 +95,12 @@ public abstract class ParserCoverageOracleBase
             "java:\n  " + string.Join("\n  ", java) + "\nport:\n  " + string.Join("\n  ", port));
     }
 
-    private static List<string> RunPort(string dbName, string? mode, IReadOnlyList<string> statements)
+    private List<string> RunPort(string dbName, string? mode, IReadOnlyList<string> statements)
     {
         string options = mode is null ? string.Empty : $";MODE={mode}";
         using H2Connection connection = new(
             $"Data Source={dbName};IGNORE_UNKNOWN_SETTINGS=TRUE;Storage=Memory{options}");
+        ConfigurePort(connection);
         connection.Open();
         List<string> lines = [];
         foreach (string sql in statements)

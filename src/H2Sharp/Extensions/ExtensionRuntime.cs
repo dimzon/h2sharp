@@ -56,14 +56,7 @@ internal sealed class ExtensionRuntime
             }
         }
 
-        // The default table functions are the reference's built-ins; a registration with the
-        // same name and arity replaces one of them for this connection.
         Dictionary<string, List<TableUdfDefinition>> tableUdfs = new(StringComparer.OrdinalIgnoreCase);
-        foreach (TableUdfDefinition definition in CsvTableUdf.CreateDefinitions())
-        {
-            Add(tableUdfs, definition);
-        }
-
         if (configuration is not null)
         {
             foreach ((_, List<TableUdfDefinition> list) in configuration.TableUdfs)

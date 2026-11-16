@@ -13,20 +13,22 @@ namespace H2SharpSql.Specs.Functions;
 public sealed class TableFunctionTests
 {
     /// <summary>docs/functions.html:4185 — CSVREAD(fileNameString [, columnsString [, csvOptions ] ] )</summary>
-    [Fact(Skip = "not ported (documented in MIGRATION_STATUS)")]
-    [Trait("Category", "BlockedByPort")]
+    [Fact]
     public void CsvRead_ReadsTheWrittenFile() // FUN-4185
     {
         using IDbConnection connection = TestDatabase.Open();
         _ = connection.QuerySingle<long>(
-            "CALL CSVWRITE('test.csv', 'SELECT 1 AS ID UNION ALL SELECT 2 AS ID')");
+            "CALL CSVWRITE('csv-fun-4185.csv', 'SELECT 1 AS ID UNION ALL SELECT 2 AS ID')");
 
-        Assert.Equal(2L, connection.QuerySingle<long>("SELECT COUNT(*) FROM CSVREAD('test.csv')"));
+        Assert.Equal(2L, connection.QuerySingle<long>(
+            "SELECT COUNT(*) FROM CSVREAD('csv-fun-4185.csv')"));
 
         _ = connection.QuerySingle<long>(
-            "CALL CSVWRITE('test2.csv', 'SELECT 1 AS ID', 'charset=UTF-8 fieldSeparator=|')");
+            "CALL CSVWRITE('csv-fun-4185b.csv', 'SELECT 1 AS ID', "
+            + "'charset=UTF-8 fieldSeparator=|')");
         Assert.Equal(1L, connection.QuerySingle<long>(
-            "SELECT COUNT(*) FROM CSVREAD('test2.csv', 'ID', 'charset=UTF-8 fieldSeparator=|')"));
+            "SELECT COUNT(*) FROM CSVREAD('csv-fun-4185b.csv', NULL, "
+            + "'charset=UTF-8 fieldSeparator=|')"));
     }
 
     /// <summary>docs/functions.html:4203 — LINK_SCHEMA (targetSchemaString, driverString, urlString,</summary>

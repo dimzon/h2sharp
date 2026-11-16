@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\H2Sharp.Hashes\H2Sharp.Hashes.csproj" />
     <ProjectReference Include="..\..\src\H2Sharp.Crypto\H2Sharp.Crypto.csproj" />
     <ProjectReference Include="..\..\src\H2Sharp.Extensions\H2Sharp.Extensions.csproj" />
+    <ProjectReference Include="..\..\src\H2Sharp.CsvTools\H2Sharp.CsvTools.csproj" />
   </ItemGroup>
 
 </Project>

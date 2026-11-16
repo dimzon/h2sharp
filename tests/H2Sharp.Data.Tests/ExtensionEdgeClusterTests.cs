@@ -43,6 +43,22 @@ public sealed class ExtensionEdgeClusterTests
         {
         }
 
+        public void RegisterUdf<T1, T2, T3, T4, T5, TResult>(string name, Func<T1, T2, T3, T4, T5, TResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterUdf<T1, T2, T3, T4, T5, T6, TResult>(string name, Func<T1, T2, T3, T4, T5, T6, TResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterUdf<T1, T2, T3, T4, T5, T6, T7, TResult>(string name, Func<T1, T2, T3, T4, T5, T6, T7, TResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterUdf<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(string name, Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult> implementation, bool deterministic = false)
+        {
+        }
+
         public void RegisterTableUdf(string name, Func<H2TableUdfResult> implementation, bool deterministic = false)
         {
         }
@@ -56,6 +72,22 @@ public sealed class ExtensionEdgeClusterTests
         }
 
         public void RegisterTableUdf<T1, T2, T3>(string name, Func<T1, T2, T3, H2TableUdfResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterTableUdf<T1, T2, T3, T4>(string name, Func<T1, T2, T3, T4, H2TableUdfResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterTableUdf<T1, T2, T3, T4, T5>(string name, Func<T1, T2, T3, T4, T5, H2TableUdfResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterTableUdf<T1, T2, T3, T4, T5, T6>(string name, Func<T1, T2, T3, T4, T5, T6, H2TableUdfResult> implementation, bool deterministic = false)
+        {
+        }
+
+        public void RegisterTableUdf<T1, T2, T3, T4, T5, T6, T7>(string name, Func<T1, T2, T3, T4, T5, T6, T7, H2TableUdfResult> implementation, bool deterministic = false)
         {
         }
 

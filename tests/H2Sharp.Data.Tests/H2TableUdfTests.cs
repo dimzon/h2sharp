@@ -8,6 +8,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
+using System.Linq;
 using H2Sharp.Data;
 using H2Sharp.Data.Extensions;
 using Xunit;
@@ -89,18 +90,31 @@ public sealed class H2TableUdfTests
     }
 
     [Fact]
-    public void ARegistrationReplacesTheDefaultCsvread()
+    public void TheDocumentedRangeExampleRuns()
     {
         using H2Connection connection = NewConnection();
-        ((IH2Extensions)connection).RegisterTableUdf<string>("CSVREAD", _ =>
-            new H2TableUdfResult(
-                [new H2TableUdfColumn("X", typeof(string))],
-                new[] { new object?[] { "replaced" } }));
+        ((IH2Extensions)connection).RegisterTableUdf<int>("RANGE_TO",
+            n => new H2TableUdfResult(
+                [new H2TableUdfColumn("N", typeof(int))],
+                Enumerable.Range(1, n).Select(i => new object?[] { i })));
         connection.Open();
 
         using DbCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT X FROM CSVREAD('ignored.csv')";
-        Assert.Equal("replaced", command.ExecuteScalar());
+        command.CommandText = "SELECT SUM(N) FROM RANGE_TO(4)";
+        Assert.Equal(10, Convert.ToInt32(command.ExecuteScalar(),
+            System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void CsvreadWithoutTheOptionalPackageIsNotRegistered()
+    {
+        using H2Connection connection = NewConnection();
+        connection.Open();
+
+        using DbCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT * FROM CSVREAD('ignored.csv')";
+        H2SharpException e = Assert.Throws<H2SharpException>(() => command.ExecuteNonQuery());
+        Assert.Equal(90077, e.H2ErrorCode);
     }
 
     [Fact]

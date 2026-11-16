@@ -3,6 +3,7 @@
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
  */
 using System;
+using H2Sharp.Data;
 using H2Sharp.Engine;
 using H2Sharp.Expressions;
 using H2Sharp.Expressions.Functions;
@@ -34,7 +35,10 @@ internal sealed class ClrFunction : FunctionN
             values[i] = args[i].GetValue(session);
         }
 
-        return definition.Invoke(values);
+        using (H2Database.EnterSession(session))
+        {
+            return definition.Invoke(values);
+        }
     }
 
     /// <inheritdoc/>

@@ -19,6 +19,7 @@
 // as long as a connection to it is open, so a unique name per call is a fresh database.
 using System;
 using System.Data;
+using H2Sharp.CsvTools;
 using H2Sharp.Data;
 using H2Sharp.Crypto;
 using H2Sharp.Hashes;
@@ -44,6 +45,7 @@ internal static class TestDatabase
         ((IH2Extensions)connection).UseJavaLegacy();
         ((IH2Extensions)connection).UseH2Hashes();
         ((IH2Extensions)connection).UseCrypto();
+        ((IH2Extensions)connection).UseCsvTools();
         connection.Open();
         return connection;
     }

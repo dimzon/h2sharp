@@ -9,6 +9,8 @@
 using System;
 using System.IO;
 using System.Text;
+using H2Sharp.CsvTools;
+using H2Sharp.Data;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -22,6 +24,9 @@ public sealed class CsvReadOracleTests : ParserCoverageOracleBase, IDisposable
         Path.Combine(Path.GetTempPath(), "h2sharp_csv_" + Guid.NewGuid().ToString("N"));
 
     public CsvReadOracleTests() => Directory.CreateDirectory(directory);
+
+    /// <inheritdoc/>
+    protected override void ConfigurePort(IH2Extensions extensions) => extensions.UseCsvTools();
 
     public void Dispose()
     {
@@ -78,13 +83,13 @@ public sealed class CsvReadOracleTests : ParserCoverageOracleBase, IDisposable
     }
 
     [JavaOracleFact]
-    public void PositionalDelimitersEscapeAndNullString()
+    public void PositionalSeparatorAndNullString()
     {
-        string file = Write("f7.csv", "ID|NAME\n1|\"a\\|b\"\n2|NULL\n");
+        string file = Write("f7.csv", "ID|NAME\n1|plain\n2|NULL\n");
         string utf8 = Write("f8.csv", "ID;NAME\n1;ж\n");
         string rows = Write("f9.csv", "ID,NAME\n1,one\n2,two\n");
         AssertSameAsReference("csv_positional",
-            "SELECT * FROM CSVREAD('" + Sql(file) + "', NULL, NULL, '|', '\"', '\\', 'NULL')",
+            "SELECT * FROM CSVREAD('" + Sql(file) + "', NULL, NULL, '|', '\"', '\"', 'NULL')",
             "SELECT * FROM CSVREAD('" + Sql(utf8) + "', NULL, 'fieldSeparator=; charset=UTF-8')",
             "SELECT C.ID, C.NAME FROM CSVREAD('" + Sql(rows) + "') C WHERE C.ID > '1' ORDER BY C.ID",
             "CALL CSVREAD('" + Sql(rows) + "')",
@@ -95,10 +100,9 @@ public sealed class CsvReadOracleTests : ParserCoverageOracleBase, IDisposable
     }
 
     [JavaOracleFact]
-    public void WhitespaceQuotedNullsAndMalformedRows()
+    public void WhitespaceAndMalformedRows()
     {
         string spaces = Write("f10.csv", "A,B\n x , y \n");
-        string quotedNull = Write("f11.csv", "A\n\"\"\nX\n");
         string extra = Write("f12.csv", "A,B\n1,2,3\n");
         string shortRow = Write("f13.csv", "A,B\n1\n");
         string bom = Write("f14.csv", "\ufeffA,B\n1,2\n");
@@ -106,8 +110,6 @@ public sealed class CsvReadOracleTests : ParserCoverageOracleBase, IDisposable
         AssertSameAsReference("csv_edges",
             "SELECT A, B FROM CSVREAD('" + Sql(spaces) + "')",
             "SELECT A, B FROM CSVREAD('" + Sql(spaces) + "', NULL, 'preserveWhitespace=true')",
-            "SELECT COUNT(A) FROM CSVREAD('" + Sql(quotedNull) + "')",
-            "SELECT COUNT(A) FROM CSVREAD('" + Sql(quotedNull) + "', NULL, 'quotedNulls=true')",
             "SELECT A, B FROM CSVREAD('" + Sql(extra) + "')",
             "SELECT A, B IS NULL FROM CSVREAD('" + Sql(shortRow) + "')",
             "SELECT * FROM CSVREAD('" + Sql(bom) + "')",

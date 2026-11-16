@@ -143,8 +143,9 @@ ALIAS` (7), `CREATE MATERIALIZED VIEW` (5), `CREATE CONSTANT` (4), оконны�
 `DAY_OF_WEEK()` и регистрация внешнего ключа в `TableConstraintDefinition`.
 
 BlockedByPort (12): коллатор (`SET COLLATION` ×2), `SET PASSWORD`/`SET SALT`,
-CSV/FILE-функции (`CSVWRITE`, `FILE_READ`, `FILE_WRITE`), `MEMORY_FREE`/`MEMORY_USED`,
+`FILE_READ`/`FILE_WRITE`, `MEMORY_FREE`/`MEMORY_USED`,
 `DB_OBJECT_SQL`/`DATA_TYPE_SQL` для домена, `ESTIMATED_ENVELOPE`.
+CSVREAD/CSVWRITE вынесены в опциональный `H2Sharp.CsvTools` (`UseCsvTools()`).
 
 ## Batch A: итог после согласованных R1–R3 и локальной J
 

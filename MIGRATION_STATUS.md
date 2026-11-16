@@ -15194,3 +15194,44 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   (50000); порт отвечает тем же кодом. `PG_CATALOG`/`PG_SETTINGS` (`SHOW ALL`)
   остаётся не перенесённым: нужен `PgCatalogSchema`/`PgCatalogTable`, это
   отдельный перенос.
+
+### Спринт 223: CSVREAD/CSVWRITE вынесены в H2Sharp.CsvTools; контекст сессии (2026-11-16)
+
+* CSV убран из ядра: `src/H2Sharp/Extensions/CsvTableUdf.cs` удалён, seeding
+  default-функций из `ExtensionRuntime` убран. Имена `CSVREAD` в parser/
+  builtin-списках оставлены: без пакета `FROM CSVREAD(...)` даёт эталонный
+  `FUNCTION_ALIAS_NOT_FOUND` (90077), `CSVWRITE` — прежний 50100.
+* Новый опциональный пакет `src/H2Sharp.CsvTools` (по образцу `H2Sharp.Crypto`):
+  `net8.0;net10.0`, `IsPackable`, зависимость `CsvHelper 33.1.0` (central
+  package management). `UseCsvTools()` регистрирует CSVREAD (1–7 аргументов) и
+  CSVWRITE (2–8); свой CSV-парсер не поддерживается — парсинг/запись CsvHelper,
+  маппинг H2-опций (`fieldSeparator`, `fieldDelimiter`, `escape`, `lineComment`,
+  `null`, `charset`, `preserveWhitespace`, `quotedNulls`, `caseSensitiveColumnNames`,
+  `lineSeparator`, `writeColumnHeader`) в `CsvConfiguration`.
+* `H2Database.CurrentSessionConnection` (AsyncLocal, только внутри вызова UDF):
+  лениво создаваемое заимствованное соединение текущей сессии. На время его
+  существования auto-commit выключен; все команды идут в текущей транзакции.
+  Переопределить её нельзя: `BeginTransaction`/`EnlistTransaction` бросают,
+  `COMMIT`/`BEGIN`/`ROLLBACK`/`SAVEPOINT`/`SET AUTOCOMMIT` и нетранзакционные
+  операторы отклоняются, явный `Transaction` не принимается; после возврата из
+  функции соединение закрыто. CSVWRITE выполняет свой запрос через этот контекст,
+  поэтому видит незакоммиченные строки вызывающего оператора и не фиксирует их.
+* Публичный API UDF расширен: табличные `RegisterTableUdf` 4–7, скалярные
+  `RegisterUdf` 5–8 (типизированные `Func<...>`), обновлены тестовые фейки.
+* Тесты: `H2SessionContextTests` (5) — чтение незакоммиченной строки, отказы
+  begin/enlist/commit/set autocommit/DDL/явного Transaction, закрытие после
+  вызова, вложенный контекст; `CsvReadTests` (5) и `CsvWriteTests` (5) —
+  recompile, 90028, CsvHelper-политика пустых полей/пробелов, запись с
+  заголовками из алиасов, nullString/quotedNulls, позиционные аргументы,
+  транзакция+rollback, roundtrip; `CsvReadOracleTests` (6) — общая часть против
+  JVM; `CsvWriteOracleTests` (3) — содержимое файла и count совпадают с эталоном;
+  Specs +4 (`CSVWRITE`/`CSVREAD`/обе формы опций) разблокированы, набор 983/983.
+* Осознанные расхождения CsvHelper зафиксированы в README пакета и тестах:
+  пустое поле в кавычках = NULL как и без кавычек; escape, отличный от кавычки,
+  не комбинируется с quoted-полями; lineComment в CsvHelper строчный;
+  character-level recovery малформированных строк — CsvHelper.
+* Покрытие: **93.90%** строк (82449/87808), ветви 90.23%; ядро 93.93%,
+  новый `H2Sharp.CsvTools` — 86.97% (367/422). Гейт: Core 2831/2832
+  (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore
+  261/261, Data 793/793, Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97
+  (+8 skipped), Category!=BlockedByPort (Native прогнан отдельно, 22,97 мин).
