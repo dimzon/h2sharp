@@ -15366,3 +15366,18 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 268/268, Data 802/802, Engine 9/9, Specs 983/983 (+25 skipped),
   Native 97/97 (+8 skipped).
 
+### Спринт 229: длинный хвост API расширений и ADO.NET (2026-11-16)
+
+* `ExtensionRuntimeSurfaceTests` (2, Data): поиск UDF/табличных UDF по имени и арности,
+  регистронезависимость, пустые ответы для неизвестных имён, нормализация имён хэшей
+  (`sha1` → `SHA-1`, `SHA256` → `SHA-256`) и отказ неизвестного алгоритма.
+* `StoreExceptionConversionTests` (8, Core): все коды `MvStoreException` переводятся
+  в эталонные коды ошибок БД; повреждённый зашифрованный файл даёт отдельный
+  `FILE_ENCRYPTION_ERROR_1`.
+* `H2DataAdapterSurfaceTests` (1, Data): конструктор с select-командой и согласованность
+  типизированных и базовых свойств адаптера.
+* Покрытие: **94.05%** строк (83252/88523), ветви 90.39%; +53 строки. Гейт:
+  Core 2854/2855 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 268/268, Data 805/805, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+
