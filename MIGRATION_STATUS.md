@@ -15767,3 +15767,11 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   Native 97/97 (+8 skipped). Новые тесты и scripts прогонялись отдельно — все зелёные.
 * Остаток до 95% — 526 строк.
 
+### Спринт 258: навигация MVMap и состояние TransactionStore (2026-11-17)
+
+* `MapAndTransactionStoreSurfaceTests` (2): first/last/key-навигация, conditional put/remove/
+  replace, key/entry views, а также открытые транзакции и state-запросы `TransactionStore`.
+  Покрытие не выросло: те же public-ветви уже затронуты существующими тестами карты.
+  Тест оставлен как закрепление контракта навигации.
+* Гейт MvStore 294/294 (с новым тестом 296/296 в точечном прогоне), покрытие 94.43%.
+
