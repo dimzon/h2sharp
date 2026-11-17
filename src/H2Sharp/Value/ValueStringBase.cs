@@ -274,7 +274,7 @@ public abstract class ValueStringBase : Value
     /// error there and would be <c>false</c> here if the platform parser were asked first.
     /// </para>
     /// </remarks>
-    private static bool IsJavaNumber(ReadOnlySpan<char> s)
+    internal static bool IsJavaNumber(ReadOnlySpan<char> s)
     {
         if (MemoryExtensions.Equals(s, "NaN", StringComparison.OrdinalIgnoreCase)
             || MemoryExtensions.Equals(s, "Infinity", StringComparison.OrdinalIgnoreCase)

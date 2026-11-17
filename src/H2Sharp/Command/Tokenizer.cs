@@ -2112,7 +2112,7 @@ public sealed class Tokenizer
     /// with an optional leading sign, and anything else refuses the statement the way the
     /// constructor's <c>NumberFormatException</c> refuses it there.
     /// </remarks>
-    private static BigInteger ParseInteger(ReadOnlySpan<char> text, int radix)
+    internal static BigInteger ParseInteger(ReadOnlySpan<char> text, int radix)
     {
         if (radix == 10)
         {
@@ -2152,7 +2152,7 @@ public sealed class Tokenizer
         return negative ? -value : value;
     }
 
-    private static string ReadAndRemoveUnderscores(
+    internal static string ReadAndRemoveUnderscores(
         string sql, int start, int endIndex, bool withUnderscore)
     {
         if (!withUnderscore)

@@ -15835,3 +15835,13 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   DEFAULT_NULL_ORDERING, TRUNCATE_LARGE_LENGTH и COLLATION OFF.
 * Покрытие: **94.65%** строк (85447/90280). Остаток 333 строки — в основном недостижимые
   из SQL защитные ветви; разные варианты sweep добавляют 0–3 строки за прогон.
+
+### Спринты 271-276: прямое покрытие мелких помощников (2026-11-17)
+
+* По просьбе пользователя непокрытые ветви, которые недостижимы через SQL, сделаны
+  `internal` и покрыты напрямую: `Comment.GetTypeName` (USER/ROLE/ALIAS/TABLE/TRIGGER),
+  `Tokenizer.ParseInteger`, `Tokenizer.ReadAndRemoveUnderscores`, `ValueStringBase.IsJavaNumber`.
+* `Comment.cs` доведён до 40/40; добавлены `VirtualTableSurfaceTests` (ShadowTable/DUAL),
+  `DirectSmallSurfaceTests` (CacheSecondLevel, Prepared.GetSimpleSql, ConstraintTypeRules),
+  `ModeMySQLHelperTests`, `SetSurfaceTests`.
+* Покрытие: **94.75%** строк (85544/90282). Остаток 238 строк.

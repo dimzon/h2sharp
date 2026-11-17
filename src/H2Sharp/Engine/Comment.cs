@@ -80,7 +80,9 @@ public sealed class Comment : DbObject
     /// <summary>The comment text.</summary>
     public string? GetCommentText() => commentText;
 
-    private static string GetTypeName(int type) => type switch
+    // Internal so the type-name mapping itself can be covered directly: USER, ROLE and ALIAS
+    // have no DbObject instances in the port yet, so no SQL path can reach their arms.
+    internal static string GetTypeName(int type) => type switch
     {
         DbObject.Constant => "CONSTANT",
         DbObject.Constraint => "CONSTRAINT",
