@@ -15574,3 +15574,17 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 268/268, Data 807/807, Engine 9/9, Specs 983/983 (+25 skipped),
   Native 97/97 (+8 skipped).
 
+### Спринт 241: утилиты PG-режима и поверхность MetaTable (2026-11-17)
+
+* `PgServerTypeTests` (26): вся эталонная таблица `formatType` PG-кодов типов.
+* Оракул `PostgreSqlUtilityFunctions`: PG_ENCODING_TO_CHAR, PG_GET_EXPR,
+  PG_GET_INDEXDEF, OBJ_DESCRIPTION, PG_STAT_GET_NUMSCANS, PG_TABLE_IS_VISIBLE,
+  SET_CONFIG, CURRENT_DATABASE, PG_POSTMASTER_START_TIME, VERSION, LASTVAL.
+* `MetaTableSurfaceTests`: форма мета-таблицы и отказ всех операций записи,
+  как в эталоне. `CompatibilityDateTimeValueFunctionTests`: SYSDATE/SYSTIMESTAMP,
+  тип, точность до секунд, SQL-рендеринга и недетерминизм.
+* Покрытие: **93.89%** строк (84745/90257), ветви 90.25%; +71 строка. Гейт:
+  Core 2921/2922 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 270/270, Data 807/807, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+

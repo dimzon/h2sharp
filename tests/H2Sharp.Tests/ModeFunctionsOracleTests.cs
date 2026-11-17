@@ -178,6 +178,26 @@ public sealed class ModeFunctionsOracleTests : ParserCoverageOracleBase
     }
 
     [JavaOracleFact]
+    public void PostgreSqlUtilityFunctions()
+    {
+        AssertSameAsReferenceInMode("mode_pg_utility", "PostgreSQL",
+            "SELECT PG_ENCODING_TO_CHAR(0)",
+            "SELECT PG_ENCODING_TO_CHAR(6)",
+            "SELECT PG_ENCODING_TO_CHAR(8)",
+            "SELECT PG_ENCODING_TO_CHAR(99)",
+            "SELECT PG_GET_EXPR('unused', 1)",
+            "SELECT PG_GET_INDEXDEF(999999)",
+            "SELECT OBJ_DESCRIPTION(1, 2)",
+            "SELECT PG_STAT_GET_NUMSCANS(1)",
+            "SELECT PG_TABLE_IS_VISIBLE(1)",
+            "SELECT SET_CONFIG('a', 'b', TRUE)",
+            "SELECT CURRENT_DATABASE() IS NOT NULL",
+            "SELECT PG_POSTMASTER_START_TIME() IS NOT NULL",
+            "SELECT SUBSTRING(VERSION(), 1, 10)",
+            "SELECT LASTVAL()");
+    }
+
+    [JavaOracleFact]
     public void CompatibilityDateTimeValueFunctions()
     {
         // The answers are time-dependent; compare their shapes and their types.
