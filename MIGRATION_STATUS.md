@@ -15617,3 +15617,16 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 270/270, Data 810/810, Engine 9/9, Specs 983/983 (+25 skipped),
   Native 97/97 (+8 skipped).
 
+### Спринт 244: прямой LIKE-матчер и VALUES (2026-11-17)
+
+* `PatternAndValuesSurfaceTests`: прямой `CompareLike.Test` — префикс/суффикс/
+  contains, одиночный wildcard, escape и неверный escape, число подвыражений
+  с escape и без.
+* `TableValueConstructorOracleTests`: `VALUES`, `VALUES ROW`, производная
+  таблица над VALUES, `IN (VALUES …)`, INSERT из нескольких строк — сравнение
+  с JVM.
+* Покрытие: **94.00%** строк (84845/90257), ветви 90.37%; шум между прогонами
+  в пределах трёх строк. Гейт: Core 2928/2929 (известный флейк
+  `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 270/270, Data 810/810,
+  Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+
