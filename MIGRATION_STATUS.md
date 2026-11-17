@@ -15854,3 +15854,13 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * `TimeZoneProvider.FindZone` и `ParseOffset` сделаны internal и покрыты напрямую
   (java-only id, UTC/GMT offset, unknown id, ±HH:MM); `TimeZoneProvider.cs` 282→301.
 * Покрытие: **94.78%** строк (85568/90282). Остаток 214 строк.
+
+### Спринты 282-287: мелкие поверхности выражений и результатов (2026-11-18)
+
+* `ConditionInSetSurfaceTests`, `GeometryUtilsSurfaceTests`, `MaterializedViewSurfaceTests`,
+  `ValueCoreSurfaceTests`, `LocalResultSurfaceTests`, `QuerySurfaceTests`,
+  `BinaryOperationSurfaceTests`.
+* `TimeZoneProvider.FindZone`/`ParseOffset` сделаны internal и покрыты напрямую (уже в спринте 281).
+* Покрытие: **94.81%** строк (85592/90282). Остаток 190 строк.
+* Повторные calibrate-прогоны показывают 0–7 строк за файл; дальнейшее движение к 95%
+  требует десятков таких файлов либо снятия утверждённых отклонений.
