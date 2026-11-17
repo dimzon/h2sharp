@@ -327,6 +327,123 @@ internal static class ScriptRunner
     }
 
     /// <summary>
+    /// Runs a reference script with the listed statement lines removed. The copy keeps every
+    /// other statement and its reference expectation; the removed statements are the parts the
+    /// port cannot execute yet, so the script continues past them instead of being dropped whole.
+    /// </summary>
+    internal static List<string> RunAdapted(string relativePath, ISet<int> skipLines)
+    {
+        try
+        {
+            string path = Path.Combine(ScriptsDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            List<ScriptItem> items = ScriptParser.Parse(File.ReadAllLines(path, Encoding.UTF8))
+                .Where(item => !skipLines.Contains(item.Line))
+                .ToList();
+            return RunItems(items, "script");
+        }
+        catch (Exception e)
+        {
+            return ["script could not run: " + e.GetType().Name + ": " + e.Message];
+        }
+    }
+
+    /// <summary>
+    /// Runs an adapted script one mode section at a time. The mode of each section is selected
+    /// when its database opens (D-029), earlier sections are replayed for their side effects, and
+    /// the listed statement lines are omitted everywhere.
+    /// </summary>
+    internal static List<string> RunAdaptedSegmented(string relativePath, ISet<int> skipLines)
+    {
+        try
+        {
+            string path = Path.Combine(ScriptsDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            string[] source = File.ReadAllLines(path, Encoding.UTF8);
+            List<(string? Mode, List<string> Lines)> sections = [];
+            string? mode = null;
+            List<string> current = [];
+            for (int i = 0; i < source.Length; i++)
+            {
+                string trimmed = source[i].TrimStart();
+                if (trimmed.StartsWith("SET MODE ", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (current.Count > 0)
+                    {
+                        sections.Add((mode, current));
+                    }
+
+                    mode = trimmed["SET MODE ".Length..].Trim().TrimEnd(';', ',', '.');
+                    current = [];
+                    if (i + 1 < source.Length && source[i + 1].TrimStart().StartsWith(">", StringComparison.Ordinal))
+                    {
+                        i++;
+                    }
+
+                    continue;
+                }
+
+                current.Add(source[i]);
+            }
+
+            if (current.Count > 0)
+            {
+                sections.Add((mode, current));
+            }
+
+            List<string> failures = [];
+            List<ScriptItem> prelude = [];
+            foreach ((string? sectionMode, List<string> lines) in sections)
+            {
+                List<ScriptItem> items = ScriptParser.Parse([.. lines])
+                    .Where(item => !skipLines.Contains(item.Line))
+                    .ToList();
+                failures.AddRange(RunWithPrelude(prelude, items, "script",
+                    sectionMode is null ? null : Engine.Mode.GetInstance(sectionMode)));
+                prelude.AddRange(items);
+            }
+
+            return failures;
+        }
+        catch (Exception e)
+        {
+            return ["script could not run: " + e.GetType().Name + ": " + e.Message];
+        }
+    }
+
+    /// <summary>Runs earlier items for effect, then compares the answers of the current ones.</summary>
+    private static List<string> RunWithPrelude(
+        List<ScriptItem> prelude, List<ScriptItem> items, string databaseName, Engine.Mode? mode)
+    {
+        List<string> failures = [];
+        Database database = new(ConnectionInfo.Memory(databaseName, mode));
+        SessionLocal session = new(database, "sa")
+        {
+            RandomGeneratorProvider = seed => new JavaRandom(seed ?? Environment.TickCount64),
+        };
+        try
+        {
+            foreach (ScriptItem item in prelude)
+            {
+                _ = Execute(session, item);
+            }
+
+            foreach (ScriptItem item in items)
+            {
+                string? failure = Execute(session, item);
+                if (failure is not null)
+                {
+                    failures.Add(failure);
+                }
+            }
+        }
+        finally
+        {
+            database.Close();
+        }
+
+        return failures;
+    }
+
+    /// <summary>
     /// Runs script text that is not a file of the reference, for the runner's own tests: the
     /// format is the same, and a failure means the runner and the engine disagree with it.
     /// Such a test asserts nothing about the catalog, so its database keeps a private name.
