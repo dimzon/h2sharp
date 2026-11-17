@@ -7,6 +7,7 @@
  */
 using System.Collections.Generic;
 using H2Sharp.Engine;
+using H2Sharp.Indexes;
 using H2Sharp.Message;
 using H2Sharp.Result;
 using H2Sharp.Schemas;
@@ -56,6 +57,33 @@ public sealed class MetaTableSurfaceTests
         Assert.Throws<H2SharpException>(() => table.CheckSupportAlter());
         Assert.Throws<H2SharpException>(() => table.RemoveChildrenAndResources(null!));
         table.Close();
+        database.Close();
+    }
+
+    [Fact]
+    public void MetaIndexesRefuseWritesAndTheScanCannotUseColumns()
+    {
+        Database database = new(ConnectionInfo.Memory("meta_index_surface"));
+        Schema schema = database.GetSchema("PUBLIC");
+        TestMetaTable table = new(schema, 54321, 7);
+        IndexColumn[] columns = IndexColumn.Wrap(table.GetColumns());
+        MetaIndex scan = new(table, columns, scan: true);
+        MetaIndex byColumn = new(table, columns, scan: false);
+
+        Assert.Equal(-1, scan.GetColumnIndex(table.GetColumn(0)));
+        Assert.False(scan.IsFirstColumn(table.GetColumn(0)));
+        Assert.Equal(0, byColumn.GetColumnIndex(table.GetColumn(0)));
+        Assert.True(byColumn.IsFirstColumn(table.GetColumn(0)));
+        Assert.Equal("meta", scan.GetPlanSql());
+        Assert.Equal(1000, scan.GetRowCount(null!));
+        Assert.False(scan.NeedRebuild());
+        Assert.Null(scan.GetCreateSql());
+        Assert.Throws<H2SharpException>(() => scan.Add(null!, null!));
+        Assert.Throws<H2SharpException>(() => scan.Remove(null!, (Result.Row)null!));
+        Assert.Throws<H2SharpException>(() => scan.Truncate(null!));
+        Assert.Throws<H2SharpException>(() => scan.Remove(null!));
+        Assert.Throws<H2SharpException>(() => scan.CheckRename());
+        scan.Close(null!);
         database.Close();
     }
 }

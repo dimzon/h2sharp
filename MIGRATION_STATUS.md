@@ -15588,3 +15588,17 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 270/270, Data 807/807, Engine 9/9, Specs 983/983 (+25 skipped),
   Native 97/97 (+8 skipped).
 
+### Спринт 242: отказы PG-утилит, MetaIndex и RUNSCRIPT (2026-11-17)
+
+* Оракул `PostgreSqlUtilityFunctionsWithObjects`: CURRTID2, FORMAT_TYPE с кодом и
+  NULL, PG_RELATION_SIZE/PG_TOTAL_RELATION_SIZE по имени и отсутствующему id,
+  TO_TIMESTAMP_TZ, неверное число аргументов PG_GET_INDEXDEF/FORMAT_TYPE.
+* `MetaTableSurfaceTests` дополнен проверкой MetaIndex: scan не использует
+  колонки, обычный индекс их видит, все операции записи и truncate отказаны.
+* `RunScriptTests` дополнен отказами отсутствующего файла (IoException1),
+  COMPRESSION/CIPHER (TODOException с именем непортированной функции).
+* Покрытие: **93.95%** строк (84800/90257), ветви 90.32%; +55 строк. Гейт:
+  Core 2923/2924 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 270/270, Data 808/808, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+

@@ -58,6 +58,25 @@ public sealed class RunScriptTests : IDisposable
     }
 
     [Fact]
+    public void MissingFilesAndUnsupportedOptionsAreRefused()
+    {
+        using H2Connection connection = new("Data Source=runscript_errors;Storage=Memory");
+        connection.Open();
+        using DbCommand command = connection.CreateCommand();
+        command.CommandText = "RUNSCRIPT FROM '" + Path.Combine(
+            Path.GetTempPath(), "h2sharp_no_such_script_" + Guid.NewGuid().ToString("N") + ".sql") + "'";
+        H2SharpException missing = Assert.Throws<H2SharpException>(() => command.ExecuteNonQuery());
+        Assert.Equal(H2Sharp.Api.ErrorCode.IoException1, missing.H2ErrorCode);
+
+        File.WriteAllText(file, "CREATE TABLE T(A INT);");
+        string path = file.Replace("'", "''", StringComparison.Ordinal);
+        command.CommandText = "RUNSCRIPT FROM '" + path + "' COMPRESSION ZIP";
+        Assert.Throws<TODOException>(() => command.ExecuteNonQuery());
+        command.CommandText = "RUNSCRIPT FROM '" + path + "' CIPHER AES PASSWORD 'x'";
+        Assert.Throws<TODOException>(() => command.ExecuteNonQuery());
+    }
+
+    [Fact]
     public void CharsetAndQuirksOptionsAreAccepted()
     {
         File.WriteAllText(file, "CREATE TABLE T(A INT);\n");

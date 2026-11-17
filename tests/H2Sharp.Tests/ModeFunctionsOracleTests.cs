@@ -198,6 +198,23 @@ public sealed class ModeFunctionsOracleTests : ParserCoverageOracleBase
     }
 
     [JavaOracleFact]
+    public void PostgreSqlUtilityFunctionsWithObjects()
+    {
+        AssertSameAsReferenceInMode("mode_pg_utility_objects", "PostgreSQL",
+            "CREATE TABLE T(ID INT PRIMARY KEY, V VARCHAR(20))",
+            "CREATE INDEX I ON T(V)",
+            "SELECT CURRTID2(1, 2)",
+            "SELECT FORMAT_TYPE(1043, 1)",
+            "SELECT FORMAT_TYPE(NULL, 1)",
+            "SELECT PG_RELATION_SIZE('T') IS NOT NULL",
+            "SELECT PG_TOTAL_RELATION_SIZE('T') IS NOT NULL",
+            "SELECT PG_RELATION_SIZE(999999)",
+            "SELECT TO_TIMESTAMP_TZ('2017-04-21 05:06:07', 'YYYY-MM-DD HH24:MI:SS') IS NOT NULL",
+            "SELECT PG_GET_INDEXDEF(1, 2, 3, 4)",
+            "SELECT FORMAT_TYPE()");
+    }
+
+    [JavaOracleFact]
     public void CompatibilityDateTimeValueFunctions()
     {
         // The answers are time-dependent; compare their shapes and their types.
