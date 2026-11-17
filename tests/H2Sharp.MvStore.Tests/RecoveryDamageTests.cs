@@ -154,6 +154,22 @@ public sealed class RecoveryDamageTests : IDisposable
     }
 
     [Fact]
+    public void AnEmptyFileOpensAsAnEmptyStore()
+    {
+        File.WriteAllBytes(file, []);
+        using MVStore store = MVStore.Open(file);
+        Assert.Empty(store.GetMapNames());
+    }
+
+    [Fact]
+    public void AHeaderPointingAtAMissingChunkIsRejected()
+    {
+        WriteHandmadeHeader(("chunk",
+            "chunk:99,block:99,len:100,version:1,pages:1,max:100,map:2,next:0,time:1,root:0,toc:0"));
+        Assert.ThrowsAny<MvStoreException>(() => MVStore.Open(file));
+    }
+
+    [Fact]
     public void DumpReportsAChunkThatClaimsMoreThanTheFileHas()
     {
         BuildStore(2);

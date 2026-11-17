@@ -15643,3 +15643,32 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   Native 97/97 (+8 skipped). Остаток до 95% — ~900 строк, подавляющее большинство
   из них — защитные/коррупционные ветви MVStore и внутренние отказы.
 
+### Спринт 246: пустой файл и заголовок с отсутствующим чанком (2026-11-17)
+
+* `RecoveryDamageTests` дополнен двумя сценариями: пустой файл открывается как
+  пустое хранилище (эталонная ветка «нет заголовка — новая база»), заголовок,
+  указывающий на несуществующий чанк, отвергается.
+* Покрытие: **94.01%** строк (84850/90257), ветви 90.38%; +5 строк. Гейт:
+  Core 2930/2931 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 284/284, Data 810/810, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+
+### Спринт 247: префиксы эталонных скриптов до SET MODE (2026-11-17)
+
+* `ScriptRunner.RunPrefix` читает эталонный скрипт до первой строки `SET MODE`
+  и прогоняет префикс через тот же `RunItems`, что и полный скрипт: режим
+  задаётся `ConnectionInfo` до открытия (D-029), остальное — обычный разбор.
+* `ScriptConformancePrefixTests`: 44 отключённых эталонных скрипта, чей префикс
+  проходит без ошибок, — compatibility/add_months, group_by, strict_and_legacy;
+  datatypes boolean/char/numeric/smallint; ddl alterTableAdd/alterTableAlterColumn/
+  dropIndex/truncateTable; dml delete/insertIgnore/merge/mergeUsing/replace/with/
+  dual; functions aggregate/json_objectagg/listagg, json/json_object, numeric/log,
+  random-uuid; string array-to-string/hextoraw/length/locate/rawtohex/replace/
+  translate; system array-slice/csvread/identity/ifnull/last-insert-id/link-schema/
+  memory-free; timeanddate date_trunc/extract/information_schema; other/sequence;
+  predicates/in; queries/distinct; testScript.
+* Покрытие: **94.06%** строк (84895/90257), ветви 90.49%; +45 строк. Гейт:
+  Core 2973/2974 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 284/284, Data 810/810, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+

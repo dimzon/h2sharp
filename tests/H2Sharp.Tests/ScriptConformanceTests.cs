@@ -354,6 +354,35 @@ internal static class ScriptRunner
     }
 
     /// <summary>
+    /// Runs the part of a reference script before its first SET MODE line. H2 2.5 can change
+    /// the mode mid-script, but D-029 fixes it at open; the prefix is the part the port can
+    /// verify against the reference's own expectations without that switch.
+    /// </summary>
+    internal static List<string> RunPrefix(string relativePath)
+    {
+        try
+        {
+            string path = Path.Combine(ScriptsDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            List<string> lines = [];
+            foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (line.TrimStart().StartsWith("SET MODE ", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                lines.Add(line);
+            }
+
+            return RunItems(ScriptParser.Parse([.. lines]), "script");
+        }
+        catch (Exception e)
+        {
+            return ["script could not run: " + e.GetType().Name + ": " + e.Message];
+        }
+    }
+
+    /// <summary>
     /// Runs a reference script with the compatibility mode chosen when the database opens.
     /// D-029 keeps SET MODE unsupported after open, so the script's own SET MODE lines are
     /// removed: the connection string is what selects the mode for the whole script.
