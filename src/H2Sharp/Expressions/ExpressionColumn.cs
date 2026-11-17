@@ -45,6 +45,12 @@ public sealed class ExpressionColumn : Expression
 
     private Column? column;
 
+    /// <summary>
+    /// Whether the name was quoted, which is what keeps a quoted <c>"TODAY"</c> a column:
+    /// the reference's unquoted-only compatibility fallback reads this flag.
+    /// </summary>
+    private readonly bool quotedName;
+
     private int queryLevel;
 
     /// <summary>
@@ -95,12 +101,15 @@ public sealed class ExpressionColumn : Expression
     /// <param name="schemaName">the schema name, or null</param>
     /// <param name="tableAlias">the table alias</param>
     /// <param name="queryLevel">the query level</param>
-    public ExpressionColumn(string columnName, string? schemaName, string? tableAlias, int queryLevel)
+    /// <param name="quotedName">whether the column name was quoted</param>
+    public ExpressionColumn(string columnName, string? schemaName, string? tableAlias, int queryLevel,
+        bool quotedName = false)
     {
         columnAlias = columnName;
         this.schemaName = schemaName;
         this.tableAlias = tableAlias;
         this.queryLevel = queryLevel;
+        this.quotedName = quotedName;
     }
 
     /// <summary>
@@ -352,6 +361,18 @@ public sealed class ExpressionColumn : Expression
             if (constant is not null)
             {
                 return constant.GetValue();
+            }
+
+            // The reference's optimizeOther: an unquoted, unqualified name may still name one
+            // of the compatibility date-time functions of the mode.
+            if (tableAlias is null && !quotedName && columnAlias is not null)
+            {
+                Expression? compatibility = Modes.ModeFunction.GetCompatibilityDateTimeValueFunction(
+                    session.GetMode(), StringUtils.ToUpperEnglish(columnAlias), -1);
+                if (compatibility is not null)
+                {
+                    return compatibility;
+                }
             }
 
             throw DbException.Get(Api.ErrorCode.ColumnNotFound1, tableAlias is null ? columnAlias : tableAlias + '.' + columnAlias);

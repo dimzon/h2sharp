@@ -90,6 +90,49 @@ public abstract class ModeFunction : FunctionN
     }
 
     /// <summary>
+    /// Returns the compatibility date-time value function with the given name for this mode,
+    /// or null. The reference answers through this dispatch even in Regular mode: TODAY,
+    /// SYSDATE and SYSTIMESTAMP are only read in the modes that list them.
+    /// </summary>
+    /// <param name="mode">the mode</param>
+    /// <param name="name">the uppercase function name</param>
+    /// <param name="scale">the scale, or -1</param>
+    /// <returns>the function, or null</returns>
+    public static Expression? GetCompatibilityDateTimeValueFunction(Mode mode, string name, int scale)
+    {
+        Mode.ModeEnum modeEnum = mode.Enum;
+        switch (name)
+        {
+            case "SYSDATE":
+                if (modeEnum is Mode.ModeEnum.Legacy or Mode.ModeEnum.HsqlDb or Mode.ModeEnum.Oracle)
+                {
+                    return new CompatibilityDateTimeValueFunction(
+                        CompatibilityDateTimeValueFunction.Sysdate, -1);
+                }
+
+                break;
+            case "SYSTIMESTAMP":
+                if (modeEnum is Mode.ModeEnum.Legacy or Mode.ModeEnum.Oracle)
+                {
+                    return new CompatibilityDateTimeValueFunction(
+                        CompatibilityDateTimeValueFunction.Systimestamp, scale);
+                }
+
+                break;
+            case "TODAY":
+                if (modeEnum is Mode.ModeEnum.Legacy or Mode.ModeEnum.HsqlDb)
+                {
+                    return new CurrentDateTimeValueFunction(
+                        CurrentDateTimeValueFunction.CurrentDate, scale);
+                }
+
+                break;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Checks a variable argument count. The reference's default refuses every such function.
     /// </summary>
     /// <param name="len">the number of arguments</param>

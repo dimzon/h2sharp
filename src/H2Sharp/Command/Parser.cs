@@ -7463,13 +7463,17 @@ public sealed partial class Parser
                 throw GetSyntaxError();
             }
 
+            // The reference reads TODAY/SYSDATE/SYSTIMESTAMP as ordinary column names and
+            // lets their optimize path answer with the mode's compatibility function, which
+            // only accepts unquoted names, so the quotedness travels with the reference.
+            bool quotedColumn = Current.IsQuoted;
             string columnName = ReadQueryColumnName(out string? schemaName, out string? tableAlias, out bool isRowId);
             if (isRowId)
             {
                 return Expressions.ExpressionColumn.RowId(schemaName, tableAlias);
             }
 
-            return new Expressions.ExpressionColumn(columnName, schemaName, tableAlias, 0);
+            return new Expressions.ExpressionColumn(columnName, schemaName, tableAlias, 0, quotedColumn);
         }
 
         throw new TODOException("Parser.parseQuerySelect: this expression is not ported");
@@ -8128,12 +8132,35 @@ public sealed partial class Parser
                 return ReadCurrentDateTimeValueFunction(
                     Expressions.Functions.CurrentDateTimeValueFunction.Localtimestamp, hasParen: true);
 
-            // ModeFunction.getCompatibilityDateTimeValueFunction (not ported).
+            // ModeFunction.getCompatibilityDateTimeValueFunction.
             case "TODAY":
+                Expect(Token.CloseParen, ")");
+                return Modes.ModeFunction.GetCompatibilityDateTimeValueFunction(
+                    provider.GetMode(), "TODAY", -1);
             case "SYSDATE":
+                Expect(Token.CloseParen, ")");
+                return Modes.ModeFunction.GetCompatibilityDateTimeValueFunction(
+                    provider.GetMode(), "SYSDATE", -1);
             case "SYSTIMESTAMP":
-                throw new TODOException(
-                    "Parser.readCompatibilityFunction: the mode date-time value functions are not ported");
+                {
+                    int scale = -1;
+                    if (!ReadIf(Token.CloseParen))
+                    {
+                        scale = ReadInt();
+                        if (scale < 0 || scale > Values.ValueTime.MaximumScale)
+                        {
+                            throw DbException.Get(
+                                Api.ErrorCode.InvalidValueScale,
+                                scale.ToString(System.Globalization.CultureInfo.InvariantCulture), "0",
+                                Values.ValueTime.MaximumScale.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        }
+
+                        Expect(Token.CloseParen, ")");
+                    }
+
+                    return Modes.ModeFunction.GetCompatibilityDateTimeValueFunction(
+                        provider.GetMode(), "SYSTIMESTAMP", scale);
+                }
 
             // EXTRACT
             case "DAY":

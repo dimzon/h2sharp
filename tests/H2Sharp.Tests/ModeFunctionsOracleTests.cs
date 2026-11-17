@@ -178,6 +178,30 @@ public sealed class ModeFunctionsOracleTests : ParserCoverageOracleBase
     }
 
     [JavaOracleFact]
+    public void CompatibilityDateTimeValueFunctions()
+    {
+        // The answers are time-dependent; compare their shapes and their types.
+        AssertSameAsReferenceInMode("mode_dt_legacy", "Legacy",
+            "SELECT CAST(TODAY AS VARCHAR) IS NOT NULL",
+            "SELECT LENGTH(CAST(SYSDATE AS VARCHAR)) > 10",
+            "SELECT EXTRACT(YEAR FROM TODAY) > 2000",
+            "SELECT CAST(SYSTIMESTAMP(6) AS VARCHAR) IS NOT NULL",
+            "SELECT SYSTIMESTAMP() IS NOT NULL",
+            "SELECT 1",
+            "SELECT TYPEOF(SYSDATE)",
+            "SELECT TYPEOF(SYSTIMESTAMP)");
+        AssertSameAsReferenceInMode("mode_dt_oracle", "Oracle",
+            "SELECT EXTRACT(YEAR FROM SYSDATE) > 2000",
+            "SELECT TYPEOF(SYSDATE)",
+            "SELECT TYPEOF(SYSTIMESTAMP)",
+            "SELECT CAST(SYSTIMESTAMP(3) AS VARCHAR) IS NOT NULL");
+        AssertSameAsReferenceInMode("mode_dt_regular", "Regular",
+            "SELECT TODAY",
+            "SELECT SYSDATE",
+            "SELECT SYSTIMESTAMP");
+    }
+
+    [JavaOracleFact]
     public void WrongArgumentCountsAreRefused()
     {
         AssertSameAsReferenceInMode("mode_mssql_args", "MSSQLServer",

@@ -15508,3 +15508,22 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * Покрытие: **93.87%** строк (84272/89772), ветви 90.03%; +57 покрытых строк при
   +60 строках исходника (ToTokenizer добран до ~94%).
 
+### Спринт 237: совместимые функции текущего времени (2026-11-17)
+
+* Портирован `CompatibilityDateTimeValueFunction` (SYSDATE/SYSTIMESTAMP) и
+  `ModeFunction.GetCompatibilityDateTimeValueFunction` с эталонной диспетчеризацией
+  по режимам: SYSDATE — Legacy/HSQLDB/Oracle, SYSTIMESTAMP — Legacy/Oracle,
+  TODAY — Legacy/HSQLDB (CURRENT_DATE). Парсер читает SYSTIMESTAMP(scale) с
+  эталонной проверкой 0..9.
+* Найдено и исправлено расхождение: в эталоне голое TODAY/SYSDATE/SYSTIMESTAMP
+  разбирается как имя колонки, и `ExpressionColumn.optimizeOther` подменяет его
+  функцией совместимости (только для некавычки и без алиаса таблицы). Порт
+  добавил эталонный фолбэк и флаг quotedName; кавычки не подменяются.
+* `ModeFunctionsOracleTests.CompatibilityDateTimeValueFunctions` (оракул, Legacy/
+  Oracle/Regular) сравнивает форму ответа, типы и коды ошибок. Значения времени
+  в выводе ADO.NET и JDBC.format различаются — сравниваются IS NOT NULL/CAST.
+* Покрытие: **93.85%** строк (84336/89860), ветви 90.05%; +64 строки. Гейт:
+  Core 2866/2867 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 267/268 (флейк `TestTxRegression`, класс отдельно 4/4), Data 805/805,
+  Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+
