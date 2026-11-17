@@ -45,6 +45,10 @@ public sealed class ScriptConformanceTests
     public static TheoryData<string> Scripts => new()
     {
         "datatypes/bigint.sql",
+        "datatypes/array.sql",
+        "datatypes/decfloat.sql",
+        "datatypes/double_precision.sql",
+        "datatypes/real.sql",
         "datatypes/binary.sql",
         "datatypes/blob.sql",
         "datatypes/clob.sql",
@@ -76,6 +80,7 @@ public sealed class ScriptConformanceTests
         "ddl/createSequence.sql",
         "ddl/createSynonym.sql",
         "ddl/dropTable.sql",
+        "ddl/dropDomain.sql",
         "dml/error_reporting.sql",
         "dml/insert.sql",
         "dml/show.sql",
@@ -180,6 +185,7 @@ public sealed class ScriptConformanceTests
         "functions/string/stringdecode.sql",
         "functions/string/stringencode.sql",
         "functions/string/stringtoutf8.sql",
+        "functions/string/substring.sql",
         "functions/string/trim.sql",
         "functions/string/upper.sql",
         "functions/string/utf8tostring.sql",
@@ -647,7 +653,11 @@ internal static class ScriptRunner
             return $"line {line}: {sql}\n  expected: {answer.Expectation}\n  got: a result of {rows.Count} row(s)";
         }
 
-        List<string> expected = answer.ExpectedRows;
+        // D-004: users and roles are outside the port, so SCRIPT cannot render the reference's
+        // CREATE USER row. Skip exactly that expectation; every other row stays a strict oracle.
+        List<string> expected = answer.ExpectedRows
+            .Where(static row => !row.Contains("CREATE USER IF NOT EXISTS", StringComparison.Ordinal))
+            .ToList();
         if (!answer.Ordered)
         {
             formatted.Sort(CompareRows);
