@@ -15870,3 +15870,11 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * `FileChannelSurfaceTests`: все ветви `FileChannelStream.Seek` (Begin/Current/End,
   неверный origin, отрицательная позиция), `SetLength`, `Flush`, `TryLock`.
 * Покрытие: **94.82%** строк (85608/90282). Остаток 174 строки.
+
+### Спринт 292: ветка MODE без ORDER BY (2026-11-18)
+
+* `ModeAggregateBranchTests`: через подкласс `Aggregate` вызван `GetAggregatedValue` без
+  `orderByList`; подтверждено отладочным логом, что данные содержат 1=2 и 2=1 и MODE возвращает 1.
+* Причина, почему SQL в неё не попадал: парсер всегда вызывает `ReadAggregateOrder` для
+  `MODE(expr)`, поэтому `orderByList` не бывает null в SQL-пути.
+* Покрытие: **94.84%** строк (85626/90282); `Aggregate.cs` 1023→1034.
