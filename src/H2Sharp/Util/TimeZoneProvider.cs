@@ -206,7 +206,7 @@ public abstract class TimeZoneProvider
     /// <param name="id">the identifier as written</param>
     /// <returns>the zone</returns>
     /// <exception cref="ArgumentException">if no spelling of the identifier is known</exception>
-    private static TimeZoneInfo FindZone(string id)
+    internal static TimeZoneInfo FindZone(string id)
     {
         try
         {
@@ -249,7 +249,7 @@ public abstract class TimeZoneProvider
     /// </summary>
     /// <param name="text">the text after the sign</param>
     /// <returns>the offset in seconds</returns>
-    private static TimeSpan ParseOffset(string text)
+    internal static TimeSpan ParseOffset(string text)
     {
         int sign = text[0] == '-' ? -1 : 1;
         string digits = text.Replace(":", string.Empty, StringComparison.Ordinal);

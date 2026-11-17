@@ -15845,3 +15845,12 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   `DirectSmallSurfaceTests` (CacheSecondLevel, Prepared.GetSimpleSql, ConstraintTypeRules),
   `ModeMySQLHelperTests`, `SetSurfaceTests`.
 * Покрытие: **94.75%** строк (85544/90282). Остаток 238 строк.
+
+### Спринты 277-281: Prepared, TypeInfo, Index, TimeZoneProvider (2026-11-17)
+
+* `PreparedSurfaceTests`: базовые отказы Prepared и гuard object-id через reflection.
+* `TypeInfoSurfaceTests`: неизвестный тип, precision/scale, numeric widening, ToString.
+* `IndexSurfaceTests`: возможности и отказы storage-less index через DUAL.
+* `TimeZoneProvider.FindZone` и `ParseOffset` сделаны internal и покрыты напрямую
+  (java-only id, UTC/GMT offset, unknown id, ±HH:MM); `TimeZoneProvider.cs` 282→301.
+* Покрытие: **94.78%** строк (85568/90282). Остаток 214 строк.
