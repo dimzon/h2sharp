@@ -15560,3 +15560,17 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   Native 97/97 (+8 skipped). Остаток до 95% — ~1100 строк; доступные ветви
   всё больше защитные/внутренние, прирост на спринт упал до единиц-десятков.
 
+### Спринт 240: конформантные скрипты в режимах подключения (2026-11-17)
+
+* `ScriptRunner.RunInMode` убирает строки `SET MODE ...` из эталонного скрипта
+  и выбирает режим через ConnectionInfo: D-029 оставляет SET MODE неподдержанным
+  после открытия, но режим правильного скрипта можно задать до открытия.
+* `ScriptConformanceModeTests` (11 фактов): add_months (Oracle), boolean/with/
+  json_objectagg/json_object/last-insert-id (MySQL), DB2 dual, listagg (REGULAR),
+  array-to-string/extract (PostgreSQL), replace (Oracle). Все сверены построчно
+  с ожиданиями эталонных скриптов.
+* Покрытие: **93.81%** строк (84674/90257), ветви 90.07%; +27 строк. Гейт:
+  Core 2892/2893 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 268/268, Data 807/807, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+
