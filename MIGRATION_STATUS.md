@@ -15867,6 +15867,6 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 
 ### Спринт 288: seek/SetLength файлового канала (2026-11-18)
 
-* : все ветви  (Begin/Current/End,
-  неверный origin, отрицательная позиция), , , .
+* `FileChannelSurfaceTests`: все ветви `FileChannelStream.Seek` (Begin/Current/End,
+  неверный origin, отрицательная позиция), `SetLength`, `Flush`, `TryLock`.
 * Покрытие: **94.82%** строк (85608/90282). Остаток 174 строки.

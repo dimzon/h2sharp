@@ -8,7 +8,9 @@
  */
 using System;
 using System.Data.Common;
+using H2Sharp.Command.Dml;
 using H2Sharp.Data;
+using H2Sharp.Engine;
 using Xunit;
 
 namespace H2Sharp.Tests;
@@ -59,4 +61,33 @@ public sealed class ParserErrorSurfaceTests
         Refuses("CREATE INDEX I2 ON T(A, A)");
         Refuses("CREATE INDEX I3 ON T(A)");
     }
+    [Fact]
+    public void InsertRefusesAWrongColumnCountAndItsSetCommandStub()
+    {
+        using H2Connection connection = new(
+            "Data Source=insert_errors_" + Guid.NewGuid().ToString("N") + ";Storage=Memory");
+        connection.Open();
+        using (DbCommand create = connection.CreateCommand())
+        {
+            create.CommandText = "CREATE TABLE T(A INT)";
+            create.ExecuteNonQuery();
+        }
+
+        using (DbCommand insert = connection.CreateCommand())
+        {
+            insert.CommandText = "INSERT INTO T(A, B) VALUES (1, 2)";
+            Assert.ThrowsAny<H2SharpException>(() => insert.ExecuteNonQuery());
+        }
+
+        SessionLocal session = new(new Database(ConnectionInfo.Memory("insert_stub")), "sa");
+        try
+        {
+            Assert.Throws<TODOException>(() => new Insert(session).SetCommand(null!));
+        }
+        finally
+        {
+            session.GetDatabase().Close();
+        }
+    }
+
 }
