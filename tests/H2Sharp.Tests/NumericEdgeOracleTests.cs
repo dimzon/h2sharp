@@ -26,6 +26,19 @@ public sealed class NumericEdgeOracleTests : ParserCoverageOracleBase
     }
 
     [JavaOracleFact]
+    public void TwoArgumentMathFunctionsMatchTheReference()
+    {
+        AssertSameAsReference("numeric_math2",
+            "SELECT LOG(2, 8) = 3",
+            "SELECT LOG(10, 100) = 2",
+            "SELECT ROUND(LOG(3, 2), 14)",
+            "SELECT LOG(1, 10)",
+            "SELECT LOG(0, 10)",
+            "SELECT POWER(2, 3) = 8",
+            "SELECT ROUND(ATAN2(1, 1), 14)");
+    }
+
+    [JavaOracleFact]
     public void NumericArithmeticAdjustsPrecisionAndScale()
     {
         AssertSameAsReference("numeric_arithmetic",

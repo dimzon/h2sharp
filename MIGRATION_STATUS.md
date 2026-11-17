@@ -15602,3 +15602,18 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 270/270, Data 808/808, Engine 9/9, Specs 983/983 (+25 skipped),
   Native 97/97 (+8 skipped).
 
+### Спринт 243: типы UDF, двухаргументная математика и ADO-мост (2026-11-17)
+
+* `TypedUdfValueMappingTests` (2): byte[], Guid, DateTime, DateTimeOffset как
+  аргументы типизированных UDF; неподдерживаемый CLR-тип (Uri) называется
+  TODOException внутри ошибки вызова функции.
+* Оракул `TwoArgumentMathFunctionsMatchTheReference`: LOG(base, value), POWER,
+  ATAN2 и отказы LOG(1, …)/LOG(0, …). ADO.NET печатает DOUBLE как `3`, JVM как
+  `3.0`, поэтому сравниваются булевы результаты, а не строки.
+* `AdoBridgeSurfaceTests` (2): SyncTask с canceled/успешным/ faulted work и
+  ResultWithGeneratedKeys с ключами и без них.
+* Покрытие: **94.01%** строк (84848/90257), ветви 90.37%; +48 строк. Гейт:
+  Core 2926/2927 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 270/270, Data 810/810, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+
