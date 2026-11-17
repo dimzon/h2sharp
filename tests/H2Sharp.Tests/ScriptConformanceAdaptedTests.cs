@@ -15,7 +15,7 @@ namespace H2Sharp.Tests;
 [Collection(ScriptCatalogCollection.Name)]
 public sealed class ScriptConformanceAdaptedTests
 {
-    private static readonly Dictionary<string, HashSet<int>> Skips = new()
+    internal static readonly Dictionary<string, HashSet<int>> Skips = new()
     {
         ["information_schema.sql"] = [2, 10, 28, 50, 69, 75, 143, 155],
         ["persistent-only.sql"] = [15],

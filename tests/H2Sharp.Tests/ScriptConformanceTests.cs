@@ -347,6 +347,24 @@ internal static class ScriptRunner
         }
     }
 
+    /// <summary>Adapted script run with one compatibility mode chosen at open (D-029).</summary>
+    internal static List<string> RunAdaptedInMode(
+        string relativePath, string mode, ISet<int> skipLines)
+    {
+        try
+        {
+            string path = Path.Combine(ScriptsDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            List<ScriptItem> items = ScriptParser.Parse(File.ReadAllLines(path, Encoding.UTF8))
+                .Where(item => !skipLines.Contains(item.Line))
+                .ToList();
+            return RunItems(items, "script", Engine.Mode.GetInstance(mode));
+        }
+        catch (Exception e)
+        {
+            return ["script could not run: " + e.GetType().Name + ": " + e.Message];
+        }
+    }
+
     /// <summary>
     /// Runs an adapted script one mode section at a time. The mode of each section is selected
     /// when its database opens (D-029), earlier sections are replayed for their side effects, and
