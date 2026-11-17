@@ -461,6 +461,52 @@ internal static class ScriptRunner
         return failures;
     }
 
+    /// <summary>Runs an adapted script after applying session settings that the script itself does
+    /// not use, so the same statements exercise the parser and value paths of those settings.</summary>
+    internal static List<string> RunAdaptedWithSettings(
+        string relativePath, ISet<int> skipLines, string[] settings)
+    {
+        try
+        {
+            string path = Path.Combine(ScriptsDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            List<ScriptItem> items = ScriptParser.Parse(File.ReadAllLines(path, Encoding.UTF8))
+                .Where(item => !skipLines.Contains(item.Line))
+                .ToList();
+            Database database = new(ConnectionInfo.Memory("script"));
+            SessionLocal session = new(database, "sa")
+            {
+                RandomGeneratorProvider = seed => new JavaRandom(seed ?? Environment.TickCount64),
+            };
+            try
+            {
+                foreach (string setting in settings)
+                {
+                    _ = session.PrepareCommand(setting).ExecuteUpdate(false);
+                }
+
+                List<string> failures = [];
+                foreach (ScriptItem item in items)
+                {
+                    string? failure = Execute(session, item);
+                    if (failure is not null)
+                    {
+                        failures.Add(failure);
+                    }
+                }
+
+                return failures;
+            }
+            finally
+            {
+                database.Close();
+            }
+        }
+        catch (Exception e)
+        {
+            return ["script could not run: " + e.GetType().Name + ": " + e.Message];
+        }
+    }
+
     /// <summary>
     /// Runs script text that is not a file of the reference, for the runner's own tests: the
     /// format is the same, and a failure means the runner and the engine disagree with it.
