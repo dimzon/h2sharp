@@ -353,10 +353,45 @@ internal static class ScriptRunner
         return RunItems(ScriptParser.Parse(File.ReadAllLines(path, Encoding.UTF8)), "script");
     }
 
-    private static List<string> RunItems(List<ScriptItem> items, string databaseName)
+    /// <summary>
+    /// Runs a reference script with the compatibility mode chosen when the database opens.
+    /// D-029 keeps SET MODE unsupported after open, so the script's own SET MODE lines are
+    /// removed: the connection string is what selects the mode for the whole script.
+    /// </summary>
+    internal static List<string> RunInMode(string relativePath, string mode)
+    {
+        try
+        {
+            string path = Path.Combine(ScriptsDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            List<string> lines = [];
+            string[] source = File.ReadAllLines(path, Encoding.UTF8);
+            for (int i = 0; i < source.Length; i++)
+            {
+                if (source[i].TrimStart().StartsWith("SET MODE ", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (i + 1 < source.Length && source[i + 1].TrimStart().StartsWith(">", StringComparison.Ordinal))
+                    {
+                        i++;
+                    }
+
+                    continue;
+                }
+
+                lines.Add(source[i]);
+            }
+
+            return RunItems(ScriptParser.Parse([.. lines]), "script", Engine.Mode.GetInstance(mode));
+        }
+        catch (Exception e)
+        {
+            return ["script could not run: " + e.GetType().Name + ": " + e.Message];
+        }
+    }
+
+    private static List<string> RunItems(List<ScriptItem> items, string databaseName, Engine.Mode? mode = null)
     {
         List<string> failures = [];
-        Database database = new(ConnectionInfo.Memory(databaseName));
+        Database database = new(ConnectionInfo.Memory(databaseName, mode));
         // The reference harness runs on the JVM, so its RAND() sequences are java.util.Random's.
         // The port's default is System.Random (the .NET idiom); the scripts that seed RAND and
         // spell out its values need the ported JDK generator to be the reference's equal.

@@ -15527,3 +15527,21 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 267/268 (флейк `TestTxRegression`, класс отдельно 4/4), Data 805/805,
   Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
 
+### Спринт 238: RUNSCRIPT и ScriptReader (2026-11-17)
+
+* Портированы `ScriptReader` (разделитель скрипта с учётом кавычек, комментариев,
+  вложенных блочных комментариев и dollar-quoted строк), `ScriptBase` (входная
+  часть эталонного базового класса) и `RunScriptCommand`. Парсер читает
+  `RUNSCRIPT FROM 'file'` с опциями COMPRESSION/CIPHER/CHARSET/FROM_1X/
+  QUIRKS_MODE/VARIABLE_BINARY. Шифрование и компрессия называют недостающее
+  через TODOException (D-026 и долг SCRIPT COMPRESSION).
+* Тесты: `ScriptReaderTests` (5 фактов), `RunScriptTests` (2 факта, Data) и
+  `RunScriptOracleTests` (сравнение с JVM на том же файле скрипта).
+* Скрипты, заблокированные D-029 (SET MODE), пробуются с режимом в connection
+  string; из ~40 кандидатов проходит только `listagg.sql` в Oracle-режиме —
+  остальные требуют переключения режима внутри скрипта или имеют свои дефекты.
+* Покрытие: **93.78%** строк (84639/90257), ветви 89.98%; +303 покрытых строки
+  при +397 строках исходника. Гейт: Core 2872/2873 (известный флейк
+  `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 807/807,
+  Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
+

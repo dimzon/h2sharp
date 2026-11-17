@@ -892,6 +892,10 @@ public sealed partial class Parser
         {
             prepared = PrepareScript(current);
         }
+        else if (IsWord("RUNSCRIPT", consume: false))
+        {
+            prepared = PrepareRunScript(current);
+        }
         else if (IsCreateMaterializedView())
         {
             prepared = PrepareCreateMaterializedView(current);
@@ -1696,6 +1700,56 @@ public sealed partial class Parser
         Ddl.AlterView command = new(current);
         command.SetIfExists(ifExists);
         command.SetView(table as Tables.TableView);
+        return command;
+    }
+
+    /// <summary>
+    /// Parses RUNSCRIPT FROM &lt;file&gt; and its options, as the reference's parseRunScript does.
+    /// </summary>
+    /// <param name="current">the session</param>
+    /// <returns>the command</returns>
+    private Prepared PrepareRunScript(SessionLocal current)
+    {
+        ExpectWord("RUNSCRIPT");
+        Dml.RunScriptCommand command = new(current);
+        ExpectWord("FROM");
+        command.SetFileNameExpr(ReadExpression());
+        if (ReadIfName("COMPRESSION"))
+        {
+            command.SetCompressionAlgorithm(ReadIdentifier());
+        }
+
+        if (ReadIfName("CIPHER"))
+        {
+            command.SetCipher(ReadIdentifier());
+            if (ReadIfName("PASSWORD"))
+            {
+                command.SetPassword(ReadExpression());
+            }
+        }
+
+        if (ReadIfName("CHARSET"))
+        {
+            command.SetCharset(ReadString());
+        }
+
+        if (ReadIfName("FROM_1X"))
+        {
+            command.SetFrom1X();
+        }
+        else
+        {
+            if (ReadIfName("QUIRKS_MODE"))
+            {
+                command.SetQuirksMode(true);
+            }
+
+            if (ReadIfName("VARIABLE_BINARY"))
+            {
+                command.SetVariableBinary(true);
+            }
+        }
+
         return command;
     }
 
