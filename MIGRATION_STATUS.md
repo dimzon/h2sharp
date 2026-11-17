@@ -15630,3 +15630,16 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 270/270, Data 810/810,
   Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
 
+### Спринт 245: скалярные значения MVStore и сравнение строк (2026-11-17)
+
+* `ObjectDataTypeTypedElementsTests` дополнен 12 скалярными round-trip (bool,
+  sbyte, short, int, long, float, double, char, string, Guid, BigDecimal,
+  BigInteger) — ветки уже были покрыты массивами, прирост минимален.
+* `ValueDataTypeRowComparisonTests`: сравнение строк по значениям, по направлению
+  сортировки и отсутствие key tie-break без row factory.
+* Покрытие: **94.01%** строк (84851/90257), ветви 90.38%; +6 строк. Гейт:
+  Core 2929/2930 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 282/282, Data 810/810, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped). Остаток до 95% — ~900 строк, подавляющее большинство
+  из них — защитные/коррупционные ветви MVStore и внутренние отказы.
+

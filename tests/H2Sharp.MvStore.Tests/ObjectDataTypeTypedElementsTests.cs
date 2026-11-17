@@ -68,6 +68,31 @@ public sealed class ObjectDataTypeTypedElementsTests
         Assert.Equal(0, new ObjectDataType().Compare(array, read));
     }
 
+    public static TheoryData<object> Scalars() => new()
+    {
+        true,
+        (sbyte)-5,
+        (short)-300,
+        123456,
+        -9876543210L,
+        1.5f,
+        -2.25d,
+        'z',
+        "a string",
+        Guid.Parse("00000000-0000-0000-0000-000000000001"),
+        BigDecimal.Parse("12.34"),
+        BigInteger.MinusOne,
+    };
+
+    [Theory]
+    [MemberData(nameof(Scalars))]
+    public void ScalarValuesRoundTrip(object value)
+    {
+        (object? read, int position) = RoundTrip(value);
+        Assert.Equal(value, read);
+        Assert.True(position > 0);
+    }
+
     [Fact]
     public void ShortByteArrayReadsAsSigned()
     {
