@@ -15778,6 +15778,6 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 
 ### Спринт 259: теги ObjectDataType (2026-11-17)
 
-*  (1): round-trip всех типов, которые хранилище называет тегом:
+* `ObjectDataTypeSurfaceTests` (1): round-trip всех типов, которые хранилище называет тегом:
   null, string, long, int, double, float, bool, Guid, byte[], int[], с контролем позиции чтения.
 * Покрытие не выросло (94.43%): ветви уже затронуты остальными MVStore-тестами.
