@@ -15545,3 +15545,18 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   `OffHeapMemoryGateTests`, класс отдельно 3/3), MvStore 268/268, Data 807/807,
   Engine 9/9, Specs 983/983 (+25 skipped), Native 97/97 (+8 skipped).
 
+### Спринт 239: точечные ветви time zone / spatial / numeric (2026-11-17)
+
+* `TimeZoneProviderTests` (7): Z/UTC, UTC+HH:MM, GMT-HH, UTC-HH:MM, отказ
+  неизвестного идентификатора.
+* `NumericEdgeOracleTests` (2 оракульных факта): PERCENTILE_CONT/DISC по INT,
+  BIGINT, DOUBLE, NUMERIC и FILTER; NUMERIC-арифметика сprecision 38 и разными
+  scale — сравнение с JVM.
+* `SpatialDataTypeSurfaceTests` (2): сравнение по id (включая null) и нулевые
+  границы площади RTree.
+* Покрытие: **93.78%** строк (84647/90257), ветви 89.98%; +8 строк. Гейт:
+  Core 2881/2882 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 270/270, Data 807/807, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped). Остаток до 95% — ~1100 строк; доступные ветви
+  всё больше защитные/внутренние, прирост на спринт упал до единиц-десятков.
+
