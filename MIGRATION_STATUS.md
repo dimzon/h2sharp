@@ -15672,3 +15672,54 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
   MvStore 284/284, Data 810/810, Engine 9/9, Specs 983/983 (+25 skipped),
   Native 97/97 (+8 skipped).
 
+### Спринт 248: поверхности утилит и движка (2026-11-17)
+
+* `UtilitySurfaceTests` (10): weak-value map, forgetful id map, insertion-ordered string map,
+  срез `TextReader`, H2-кодировщик JSON, counting/range streams, `FOR UPDATE`, правила
+  порядка NULL, `FunctionInfo`. Проверены границы: отсутствующий ключ, вытесненный id,
+  конец среза, escape-последовательности и отказ неподдерживаемых операций над stream.
+* `EngineSurfaceTests` (6): порядок создания `MetaRecord` по всем 16 типам, подготовка и
+  выполнение мета-SQL с диагностикой, коллекция ADO-параметров по имени и позиции,
+  разреженная строка, метаданные lazy-результата, зависимости и повторность `CommandList`.
+* Исправлен дефект порта: `Insert.collectDependencies` был заглушкой, хотя в эталоне
+  обходит выражения строк и исходный запрос визитёром зависимостей; порт делает то же
+  с мостом D-011 (таблица не `DbObject`).
+* Покрытие: **94.25%** строк (85098/90294), ветви 90.63%; +203 строки. Гейт Core
+  2989/2990 (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3),
+  MvStore 284/284; остальные наборы — как в спринте 247.
+
+### Спринт 249: поверхности парсера и файлового хранилища (2026-11-17)
+
+* `ParserSurfaceTests` (13): SCRIPT/RUNSCRIPT COMPRESSION и CIPHER, непортированные
+  встроенные функции, `LINK_SCHEMA` и MSSQL `EXECUTE`, временные таблицы, опции
+  последовательностей, `ALTER COLUMN DROP IDENTITY`, ROWID, JSON/GEOMETRY-литералы и
+  домены, синтаксические ошибки, TODAY/SYSDATE без скобок, RUNSCRIPT FROM_1X,
+  SCRIPT CHARSET и TABLE_DISTINCT.
+* `FileStoreSurfaceTests` (3) и `TransactionSurfaceTests` (3): публичная поверхность
+  `IFileStore` (счётчики, заголовок, info, reuse space, кэш, отказы чтения страницы),
+  офлайн-компакция и состояние транзакции (savepoint, prepare/commit, уровень изоляции).
+* Покрытие MvStore выросло на 6 строк; суммарно **94.25%**. Гейт Core 3002/3003
+  (тот же флейк), MvStore 290/290, Data 810/810, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+
+### Спринт 250: отказы парсера и ошибочные формы SQL (2026-11-17)
+
+* `ParserRefusalSurfaceTests` (2): CREATE/DROP USER, CREATE/DROP ROLE, ALTER USER,
+  GRANT/REVOKE называют D-004; INSERT INTO T(A) SET A=1 — синтаксическая ошибка,
+  а INSERT INTO T SET A=1 работает.
+* `ParserErrorOracleTests` (2): 18 неверных SQL-форм, сравненных с JVM по коду ошибки;
+  формы, где порт отвечает TODO вместо кода эталона, оставлены вне списка и являются
+  зафиксированными дефектами (ADD COLUMN, GROUP BY без выражений, пустой MINVALUE).
+* `AggregateEdgeOracleTests` (2): MODE с ties и JSON_OBJECTAGG с NULL-ключом.
+* Покрытие: **94.26%** строк (85098/90280), ветви 90.65%. Гейт: Core 3008/3009
+  (известный флейк `OffHeapMemoryGateTests`, класс отдельно 3/3; воспроизведение
+  выявило и нестабильный oracle-тест JSON_OBJECTAGG, исправленный приведением JSON к VARCHAR),
+  MvStore 290/290, Data 810/810, Engine 9/9, Specs 983/983 (+25 skipped),
+  Native 97/97 (+8 skipped).
+* Проба всех 319 эталонных скриптов показала, что оставшиеся расхождения упираются в
+  утверждённые отклонения: D-004 (CREATE USER/ROLE в 13 скриптах и строка CREATE USER в
+  SCRIPT-выводе ещё 8), D-029 (SET MODE внутри скрипта), .NET-формат TO_CHAR,
+  D-014 (indent XMLNODE), а также непортированные ENCRYPT/DECRYPT/ORA_HASH. Дальнейший
+  прирост покрытия требует либо снятия этих отклонений пользователем, либо точечных
+  fault-injection тестов защитных ветвей MVStore.
+

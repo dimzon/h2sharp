@@ -404,7 +404,35 @@ public sealed class Insert : CommandWithValues, ResultTarget
 
     /// <inheritdoc/>
     public override void CollectDependencies(HashSet<DbObject> dependencies)
-        => throw new TODOException("Insert.collectDependencies: not ported");
+    {
+        // The reference walks the row expressions or the source query with the dependencies
+        // visitor; the visitor collects objects of its own (D-011: a table is not a DbObject),
+        // and the ones that are database objects join this statement's dependencies.
+        HashSet<object> found = [];
+        ExpressionVisitor visitor = ExpressionVisitor.GetDependenciesVisitor(found);
+        if (ValuesExpressionList.Count > 0)
+        {
+            foreach (Expression[] expr in ValuesExpressionList)
+            {
+                foreach (Expression e in expr)
+                {
+                    _ = e.IsEverything(visitor);
+                }
+            }
+        }
+        else
+        {
+            _ = query!.IsEverything(visitor);
+        }
+
+        foreach (object dependency in found)
+        {
+            if (dependency is DbObject dbObject)
+            {
+                _ = dependencies.Add(dbObject);
+            }
+        }
+    }
 
 
 
