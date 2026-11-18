@@ -712,7 +712,7 @@ public class IndexCursor : H2Sharp.Indexes.Cursor
     /// <param name="b">the new bound</param>
     /// <param name="bigger">whether the larger value wins</param>
     /// <returns>the tighter bound</returns>
-    private Values.Value? GetMax(Values.Value? a, Values.Value? b, bool bigger)
+    internal Values.Value? GetMax(Values.Value? a, Values.Value? b, bool bigger)
     {
         if (a is null)
         {

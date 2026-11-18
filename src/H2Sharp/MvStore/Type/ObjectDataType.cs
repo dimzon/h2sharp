@@ -298,9 +298,9 @@ public class ObjectDataType : BasicDataType<object?>
         return current;
     }
 
-    private static bool IsDate(object? obj) => obj is DateTime;
+    internal static bool IsDate(object? obj) => obj is DateTime;
 
-    private static bool IsArray(object? obj) => obj is Array;
+    internal static bool IsArray(object? obj) => obj is Array;
 
     /// <summary>
     /// Serialize an object the Java way, which has no equivalent here and is refused.

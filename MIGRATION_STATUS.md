@@ -15878,3 +15878,33 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
 * Причина, почему SQL в неё не попадал: парсер всегда вызывает `ReadAggregateOrder` для
   `MODE(expr)`, поэтому `orderByList` не бывает null в SQL-пути.
 * Покрытие: **94.84%** строк (85626/90282); `Aggregate.cs` 1023→1034.
+
+### Спринты 289-291: LIKE/insert errors, D-004 refusals (2026-11-18)
+
+* `LikeSurfaceOracleTests`: LIKE/ILIKE/REGEXP с явными escape-символами; `ParserErrorSurfaceTests`
+  и `ParserErrorOracleTests`: отказы парсера; `InsertSurfaceTests`: ошибки вставки.
+* `D004StubSurfaceTests`: три оставшиеся D-004-строки — это отказы, а не недостающий код; вызваны
+  напрямую (`GetColumnPrivileges`, `GetTablePrivileges`, `PG_GET_USERBYID`) с проверкой, что
+  отказ называет отсутствующую функцию.
+* `AggregateEdgeOracleTests`: JSON_OBJECTAGG с CAST в VARCHAR (ADO GetValue возвращает byte[]).
+
+### Спринты 293-294: прямое покрытие функциональных ветвей (2026-11-18)
+
+* По просьбе пользователя непокрытые функциональные (не защитные) ветви сделаны `internal`
+  и покрыты напрямую, где SQL-путь в них не попадает:
+  * `ObjectDataType.IsDate`/`IsArray` internal; `FunctionalUncoveredTests` вызывает их прямо и
+    через подкласс `AutoDetectDataType` (`CreateStorage`, строка 352).
+  * `IndexCursor.GetMax` internal; тот же тест проходит все ветви (a/b null, IS NULL, сравнение
+    через сессию, равные значения).
+  * `Aggregate.GetExtraArguments` (строка 233) подтверждён как покрытый ещё в базовой union.
+  * `MergeUsingRaceTests`: две сессии на одной in-memory базе — первая держит блокировку строки
+    и коммитит новое значение, пока вторая ждёт её в MERGE. Это заставляет
+    `lockAndRecheckCondition` вернуть null: `missedSource` откладывается и в цикле пробивается
+    при следующей строке источника (строки 117-129). Тест самопроверяем: если гонка не
+    состоялась, строка V=1 не вставится и assertion упадёт. Стабилен 5/5 прогонов.
+  * `MergeUsingBranchTests`: оракул MERGE USING с составным ON (индекс по ID шире предиката).
+* Проверено по union всех отчётов: строки ObjectDataType 301/303/352, TableTypes 724/730/735,
+  Aggregate 233 и MergeUsing 117-123 — hits > 0. В базовой union s292 первые семь имели 0 hits.
+* Покрытие union: **94.83%** строк (85616/90282), ветви 91.30%. Число почти не изменилось,
+  потому что семь строк уже входили в знаменатель; ценность — прямое подтверждение и
+  закрепление регрессионными тестами, а не рост процента.
