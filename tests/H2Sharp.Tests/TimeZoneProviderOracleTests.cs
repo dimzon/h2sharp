@@ -53,6 +53,14 @@ public sealed class TimeZoneProviderOracleTests
         "GMT+05:30",
         "GMT+05:30:15",
         "UTC-08:00",
+        // The short ids are where the platform's own zone table disagrees with the JVM
+        // most loudly; these pin the reference's SHORT_IDS answers against both runtimes.
+        "EST",
+        "MST",
+        "HST",
+        "ACT",
+        "CST",
+        "PST",
         "Europe/Moscow",
         "Europe/London",
         "Europe/Belfast",
@@ -225,11 +233,14 @@ public sealed class TimeZoneProviderOracleTests
     }
 
     [Fact]
-    public void ABareAbbreviationKeepsTheNameItWasGiven()
+    public void ABareAbbreviationMeansItsReferenceZone()
     {
+        // The reference asks java.time for "EST" through ZoneId.SHORT_IDS and gets
+        // America/Panama — not the platform's own EST zone and not New York. The answer was
+        // taken from TimeZoneProvider.ofId("EST") on the pinned H2 jar.
         TimeZoneProvider est = TimeZoneProvider.OfId("EST");
 
-        Assert.Equal("EST", est.GetId());
+        Assert.Equal("America/Panama", est.GetId());
         Assert.Equal(-18_000, est.GetTimeZoneOffsetUtc(Summer));
         Assert.Equal(-18_000, est.GetTimeZoneOffsetUtc(Winter));
         Assert.False(est.HasFixedOffset());
@@ -285,6 +296,7 @@ public sealed class TimeZoneProviderOracleTests
                         String[] ids = new String[] {
                             "UTC", "Z", "GMT", "GMT+0", "GMT+3", "GMT-5", "GMT+05:30", "GMT+05:30:15",
                             "UTC-08:00",
+                            "EST", "MST", "HST", "ACT", "CST", "PST",
                             "Europe/Moscow", "Europe/London", "Europe/Belfast", "Europe/Kiev",
                             "Europe/Istanbul",
                             "America/New_York", "America/Los_Angeles", "America/Sao_Paulo",

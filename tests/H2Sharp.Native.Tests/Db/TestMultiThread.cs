@@ -6,7 +6,10 @@
 // Modified (API): JDBC statements/result sets are ADO.NET commands/readers;
 // setAutoCommit(false)+commit is an explicit transaction per row; java.util.concurrent
 // Thread/ExecutorService/Future are .NET tasks, org.h2.util.Task.stop is a
-// CancellationTokenSource, CountDownLatch is CountdownEvent and AtomicBoolean is a
+// CancellationTokenSource used only as a cooperative stop flag: the reference stops tasks
+// after they start, so the token is never passed to Task.Run (that would cancel tasks
+// which have not started yet on a busy machine and make WaitAll throw). CountDownLatch is
+// CountdownEvent and AtomicBoolean is a
 // shared flag set under Interlocked. The reference's DatabaseMetaData.getTables call is
 // the INFORMATION_SCHEMA.TABLES query through the ADO layer; setCharacterStream is a
 // TextReader parameter. The reference's main() entry
@@ -70,7 +73,7 @@ public sealed class TestMultiThread : TestDb
                     stat.CommandText = "drop table test" + x + "_" + j;
                     _ = stat.ExecuteNonQuery();
                 }
-            }, stopped.Token);
+            });
         }
 
         Thread.Sleep(1000);
@@ -102,7 +105,7 @@ public sealed class TestMultiThread : TestDb
                     p2.Parameters[0].Value = new StringReader(new string(new char[10 * 1024]));
                     _ = p2.ExecuteNonQuery();
                 }
-            }, stopped.Token);
+            });
         }
 
         Thread.Sleep(500);
@@ -182,7 +185,7 @@ public sealed class TestMultiThread : TestDb
                         }
                     }
                 }
-            }, stopped.Token);
+            });
         }
 
         int sleep = GetSize(400, 10000);

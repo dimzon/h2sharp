@@ -438,9 +438,54 @@ public sealed class DiskFilePath : FilePath
 /// </summary>
 internal sealed class DiskFileChannel : FileChannel
 {
+    /// <summary>
+    /// Locks held by this process, by canonical file name. java.nio refuses an overlapping
+    /// lock from the same JVM with OverlappingFileLockException; POSIX locks are per-process,
+    /// so the operating system alone does not give that answer on Linux or macOS. The registry
+    /// restores the reference behaviour on every platform.
+    /// </summary>
+    private static readonly object LockGate = new();
+
+    private static readonly HashSet<string> HeldLocks = new(
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
     private readonly FileStream stream;
 
-    internal DiskFileChannel(FileStream stream) => this.stream = stream;
+    private readonly string lockKey;
+
+    private bool holdsLock;
+
+    internal DiskFileChannel(FileStream stream)
+    {
+        this.stream = stream;
+        lockKey = Path.GetFullPath(stream.Name);
+    }
+
+    private bool ClaimLock()
+    {
+        lock (LockGate)
+        {
+            if (!HeldLocks.Add(lockKey))
+            {
+                return false;
+            }
+
+            holdsLock = true;
+            return true;
+        }
+    }
+
+    private void DropLock()
+    {
+        lock (LockGate)
+        {
+            if (holdsLock)
+            {
+                _ = HeldLocks.Remove(lockKey);
+                holdsLock = false;
+            }
+        }
+    }
 
     /// <inheritdoc/>
     public override long Length => stream.Length;
@@ -478,22 +523,29 @@ internal sealed class DiskFileChannel : FileChannel
     /// <inheritdoc/>
     public override bool TryLock()
     {
+        // The in-process registry is the first gate: java.nio refuses a second lock on the
+        // same file in one JVM whatever the operating system's locking semantics are.
+        if (!ClaimLock())
+        {
+            return false;
+        }
+
         if (OperatingSystem.IsMacOS())
         {
-            // FileStream.Lock is not supported on macOS; the lock is not enforced there,
-            // and the open proceeds without it.
+            // FileStream.Lock is not supported on macOS; the registry above is the whole lock.
             return true;
         }
 
         try
         {
-            // The whole file, like java.nio's argument-less tryLock(): a second opener that asks
+            // The whole file, like java.nio's argument-less tryLock(): another process asking
             // for the same range is refused by the operating system.
             stream.Lock(0, long.MaxValue);
             return true;
         }
         catch (IOException)
         {
+            DropLock();
             return false;
         }
     }
@@ -501,6 +553,8 @@ internal sealed class DiskFileChannel : FileChannel
     /// <inheritdoc/>
     public override void ReleaseLock()
     {
+        DropLock();
+
         if (OperatingSystem.IsMacOS())
         {
             return;
@@ -521,6 +575,9 @@ internal sealed class DiskFileChannel : FileChannel
     {
         if (disposing)
         {
+            // Closing a channel releases its lock in java.nio as well, even if no one called
+            // ReleaseLock explicitly.
+            DropLock();
             stream.Dispose();
         }
     }

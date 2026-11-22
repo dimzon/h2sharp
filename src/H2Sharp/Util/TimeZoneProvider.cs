@@ -11,6 +11,7 @@
  */
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace H2Sharp.Util;
@@ -208,6 +209,15 @@ public abstract class TimeZoneProvider
     /// <exception cref="ArgumentException">if no spelling of the identifier is known</exception>
     internal static TimeZoneInfo FindZone(string id)
     {
+        // The reference resolves the short ids through java.time's ZoneId.SHORT_IDS before it
+        // asks the platform: the JVM's table wins even where Windows defines a legacy "EST"
+        // zone or Linux maps "EST" to New York. The answers below were taken from H2's own
+        // TimeZoneProvider.ofId on the pinned jar, not from either platform's zone table.
+        if (JavaShortIds.TryGetValue(id, out string? canonical))
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(canonical);
+        }
+
         try
         {
             return TimeZoneInfo.FindSystemTimeZoneById(id);
@@ -261,6 +271,39 @@ public abstract class TimeZoneProvider
     }
 
     /// <summary>
+    /// java.time's short ids and the IANA zone each one means to the reference. Consulted
+    /// before the framework, so that a platform's own idea of "EST" cannot win over the JVM's.
+    /// </summary>
+    private static readonly Dictionary<string, string> JavaShortIds = new(StringComparer.Ordinal)
+    {
+        ["EST"] = "America/Panama",
+        ["MST"] = "America/Phoenix",
+        ["HST"] = "Pacific/Honolulu",
+        ["ACT"] = "Australia/Darwin",
+        ["AET"] = "Australia/Sydney",
+        ["AGT"] = "America/Argentina/Buenos_Aires",
+        ["ART"] = "Africa/Cairo",
+        ["AST"] = "America/Anchorage",
+        ["BET"] = "America/Sao_Paulo",
+        ["BST"] = "Asia/Dhaka",
+        ["CAT"] = "Africa/Harare",
+        ["CNT"] = "America/St_Johns",
+        ["CST"] = "America/Chicago",
+        ["CTT"] = "Asia/Shanghai",
+        ["EAT"] = "Africa/Addis_Ababa",
+        ["ECT"] = "Europe/Paris",
+        ["IST"] = "Asia/Kolkata",
+        ["JST"] = "Asia/Tokyo",
+        ["MIT"] = "Pacific/Apia",
+        ["NST"] = "Pacific/Auckland",
+        ["PNT"] = "America/Phoenix",
+        ["PLT"] = "Asia/Karachi",
+        ["PRT"] = "America/Puerto_Rico",
+        ["PST"] = "America/Los_Angeles",
+        ["VST"] = "Asia/Ho_Chi_Minh",
+    };
+
+    /// <summary>
     /// Identifiers Java accepts and .NET does not, or that the two spell differently. Only
     /// names where the *same* zone is meant are here; a name that means a different zone in one
     /// of them is not, and must not be.
@@ -308,10 +351,6 @@ public abstract class TimeZoneProvider
         ("Iceland", "Atlantic/Reykjavik"),
         ("Turkey", "Europe/Istanbul"),
         ("Navajo", "America/Denver"),
-        ("EST", "America/New_York"),
-        ("MST", "America/Phoenix"),
-        ("HST", "Pacific/Honolulu"),
-        ("ACT", "Australia/Darwin"),
     ];
 
     /// <summary>
