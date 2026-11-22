@@ -72,6 +72,13 @@ internal static class JavaOracle
     internal static string? ReferenceRoot { get; } = LocateReferenceRoot();
 
     /// <summary>
+    /// Absolute path to the H2Sharp repository, which is a different root: the oracle
+    /// programs and the CSV corpora the differential tests read live here, not in the
+    /// h2database checkout named by <see cref="ReferenceRoot"/>.
+    /// </summary>
+    internal static string? RepositoryRoot { get; } = LocateRepositoryRoot();
+
+    /// <summary>
     /// Path to the built H2 jar in the reference checkout, if present.
     /// </summary>
     internal static string? H2Jar { get; } = LocateH2Jar();
@@ -578,6 +585,23 @@ internal static class JavaOracle
         }
 
         return stdout;
+    }
+
+    private static string? LocateRepositoryRoot()
+    {
+        DirectoryInfo? dir = new(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "tools", "TokenOracle.java"))
+                && Directory.Exists(Path.Combine(dir.FullName, "tests", "H2Sharp.Native.Tests")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return null;
     }
 
     private static string? LocateReferenceRoot()

@@ -118,10 +118,9 @@ public sealed class ParseOracleTests
         // ReferenceRoot is the repository root, which is how the reference checkout is
         // located in the first place, so both the scripts and the oracle source are found
         // relative to it.
-        string scripts = System.IO.Path.Combine(
-            JavaOracle.ReferenceRoot,
-            "reference", "h2", "h2", "src", "test", "org", "h2", "test", "scripts");
-        string oracle = System.IO.Path.Combine(JavaOracle.ReferenceRoot, "tools", "ParseOracle.java");
+        string scripts = ScriptRunner.ScriptsDirectory;
+        string oracle = System.IO.Path.Combine(
+            JavaOracle.RepositoryRoot!, "tools", "ParseOracle.java");
 
         List<string> lines = JavaOracle.OutputLines(
             JavaOracle.RunWithInputs(

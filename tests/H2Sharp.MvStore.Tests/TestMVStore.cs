@@ -32,6 +32,7 @@ using System.Text;
 using System.Threading;
 using H2Sharp.MvStore;
 using H2Sharp.MvStore.Type;
+using H2Sharp.Store.FileSystem;
 using Xunit;
 
 namespace H2Sharp.MvStore.Tests;
@@ -657,10 +658,12 @@ public sealed class TestMVStore : StoreTestBase
             s.Commit();
         }
 
-        using (FileStream holder = new(
-            fileName, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+        // The reference holds the lock through java.nio's FileChannel.tryLock, so the same
+        // channel API must hold it here: a raw FileStream.Lock is invisible to the port's
+        // in-process lock registry, and on Linux POSIX locking would let the store open anyway.
+        using (FileChannel holder = FilePath.Get(fileName).Open("rw"))
         {
-            holder.Lock(0, long.MaxValue);
+            Assert.True(holder.TryLock());
             Assert.Equal(DataUtils.ErrorFileLocked, Assert.Throws<MvStoreException>(
                 () => new MVStore.Builder().FileName(fileName).Open().Close()).GetErrorCode());
             Assert.Equal(DataUtils.ErrorFileLocked, Assert.Throws<MvStoreException>(

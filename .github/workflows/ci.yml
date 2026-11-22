@@ -91,7 +91,10 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          # The oracle's Unicode tables, case mapping and java.time SHORT_IDS are all
+          # JDK-version specific. Pin the same JDK the conformance corpus was recorded on;
+          # a different major makes otherwise correct ports disagree with the reference.
+          java-version: '25'
 
       - uses: actions/setup-python@v5
         with:

@@ -15991,3 +15991,25 @@ Workflow был выключен вручную с октября, послед�
 
 Локально: Release-сборка без предупреждений, целевые тесты зелёные, полный
 прогон H2Sharp.Tests (`Category!=BlockedByPort`) зелёный.
+
+### Conformance на Linux: 13 расхождений после включения oracle (2026-11-23)
+
+После починки `LocateH2Jar` conformance-джоб впервые прогнал все 6782 теста с
+jar — 13 падений. Разобраны:
+
+* 7 oracle-хелперов искали свои `.java`/`.csv` под `ReferenceRoot` (чек-аут
+  h2database), а они лежат в репозитории H2Sharp. Добавлен
+  `JavaOracle.RepositoryRoot` (поиск вверх от бинарников по `tools/TokenOracle.java`
+  и `tests/H2Sharp.Native.Tests`); `ScriptRunner.ScriptsDirectory` используется
+  вместо ручного сложения путей.
+* 5 oracle-тестов (Unicode-классы, регистр, java.time SHORT_IDS, путь `mem:x`)
+  расходились из-за версии JVM: CI собирал эталон под JDK 21, локальные ожидания
+  записаны под JDK 25 (Unicode/case tables и SHORT_IDS меняются между версиями).
+  Версия в workflow зафиксирована на 25.
+* `DiskFilePath.CheckName` применял Windows-правило «colon — это схема» на Linux,
+  где `:` законен в имени файла; теперь проверка drive-letters только на Windows.
+* `TestMVStore.TestFileSystemLock` держал лок через `FileStream.Lock`, невидимый
+  реестру локов порта; тест переведён на `FileChannel.TryLock` — аналог
+  java.nio из эталона.
+
+Локально: targeted 51/51 + MvStore 1/1, сборка без предупреждений.

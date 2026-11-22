@@ -105,7 +105,7 @@ public sealed class TaskAndSessionOracleTests
     [JavaOracleFact]
     public void ScriptErrorNamesMatchTheReferenceReflectionFilter()
     {
-        string path = Path.Combine(JavaOracle.ReferenceRoot!, "tests", "H2Sharp.Native.Tests", "Scripts", "ErrorCodeNames.csv");
+        string path = Path.Combine(JavaOracle.RepositoryRoot!, "tests", "H2Sharp.Native.Tests", "Scripts", "ErrorCodeNames.csv");
         List<string> snapshot = File.ReadAllLines(path).Where(line => line.Length > 0 && line[0] != '#')
             .Select(line => "=" + line).ToList();
         List<string> java = OracleRunner.Run([], """

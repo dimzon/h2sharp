@@ -82,8 +82,11 @@ public sealed class DiskFilePath : FilePath
             root = root[..slash];
         }
 
+        // A colon is a drive separator only on Windows. The reference hands the name to
+        // java.nio, which accepts "mem:x" as an ordinary file name on Linux; rejecting the
+        // same name here made the disk path disagree with the JVM in the conformance run.
         int colon = root.IndexOf(':', StringComparison.Ordinal);
-        if (colon > 1)
+        if (OperatingSystem.IsWindows() && colon > 1)
         {
             throw new ArgumentException($"Not a drive letter: {SystemName}", nameof(Name));
         }

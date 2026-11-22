@@ -402,7 +402,7 @@ public sealed class TokenizerOracleTests
         }
 
         string[] statements = corpus ?? Statements;
-        string oracle = Path.Combine(JavaOracle.ReferenceRoot, "tools", "TokenOracle.java");
+        string oracle = Path.Combine(JavaOracle.RepositoryRoot!, "tools", "TokenOracle.java");
         string statementsFile = Path.Combine(
             Path.GetTempPath(),
             "h2sharp-token-statements-" + Guid.NewGuid().ToString("N") + ".txt");
