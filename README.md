@@ -8,7 +8,7 @@
   <img alt="H2 reference 2.5.x" src="https://img.shields.io/badge/H2%20reference-2.5.x-38bdf8">
   <a href="LICENSE-H2.txt"><img alt="License: MPL-2.0 OR EPL-1.0" src="https://img.shields.io/badge/license-MPL--2.0%20OR%20EPL--1.0-blue"></a>
   <img alt="Status: active port" src="https://img.shields.io/badge/status-active%20port-blue">
-  <img alt="Coverage: about 92% and growing" src="https://img.shields.io/badge/coverage-~92%25%20and%20growing-34d399">
+  <img alt="Coverage: about 94.8% and growing" src="https://img.shields.io/badge/coverage-~94.8%25%20and%20growing-34d399">
 </p>
 
 **H2Sharp** is an embeddable SQL database engine for .NET — a faithful, actively developed port
@@ -24,9 +24,10 @@ written here open in the reference Java H2 2.5.259 — and vice versa.
 > constructed `H2Connection` is a self-contained, single-connection database and does **not**
 > share state — see [Quick start](#quick-start).
 >
-> The port is in active development with roughly **92% line coverage** and growing. Where the
-> reference H2 can do something the port cannot yet, the port throws `TODOException` rather than
-> returning a plausible but wrong answer: a stub that refuses is never a stub that answers.
+> The port is in active development with roughly **94.8% line coverage** and **91.3% branch
+> coverage** (Debug union run, 2026-11-18). Where the reference H2 can do something the port
+> cannot yet, the port throws `TODOException` rather than returning a plausible but wrong
+> answer: a stub that refuses is never a stub that answers.
 
 ## At a glance
 
@@ -36,7 +37,7 @@ written here open in the reference Java H2 2.5.259 — and vice versa.
 | **Target frameworks** | `net8.0`, `net10.0` (SDK pinned in [`global.json`](global.json)) |
 | **Public API** | `H2Sharp.Data` — **`H2DataSource`** / `H2DataSourceBuilder` (entry point), `H2Connection`, `H2Command`, `H2Parameter`, `H2DataReader`, `H2ProviderFactory`, … |
 | **Storage** | in-memory **and** file-based MVStore; files round-trip with reference Java H2 2.5.259 |
-| **Status** | active port · ≈92% line coverage and growing · CI on Windows + Ubuntu |
+| **Status** | active port · ≈94.8% line coverage / 91.3% branches · CI on Windows + Ubuntu |
 | **License** | `MPL-2.0 OR EPL-1.0` (same terms as H2) |
 
 ## Contents
@@ -137,8 +138,10 @@ Named parameters, arrays, JSON and regex semantics are documented in the
 The port covers the SQL surface, the ADO.NET provider (Dapper, `DbBatch`, `DbCommandBuilder`,
 `GetSchema`, typed `DbDataReader`) and the MVStore file engine, with **both** in-memory and
 file-based storage. File databases survive reopening and round-trip with the reference Java
-H2 2.5.259. Line coverage is roughly **92% and growing**; see
-[`docs/COVERAGE_ANALYSIS.md`](docs/COVERAGE_ANALYSIS.md) for the measurement method.
+H2 2.5.259. The latest Debug union run (2026-11-18) reports **94.83% line coverage**
+(85 616/90 282) and **91.30% branch coverage**; per-sprint history is in
+[`MIGRATION_STATUS.md`](MIGRATION_STATUS.md), and the measurement setup — in
+[`docs/COVERAGE_ANALYSIS.md`](docs/COVERAGE_ANALYSIS.md) (an older 2026-11-02 snapshot).
 
 Development is active, and remaining gaps are tracked rather than papered over: where the
 reference H2 can do something the port cannot yet, the port throws `TODOException` instead of
@@ -151,12 +154,12 @@ README, so they can be updated with the code:
 | Document | What it holds |
 |---|---|
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Early phase plan — its status section describes an older snapshot (HEAD `627a7d2`); prefer the working notes and tests for the current state |
-| [`MIGRATION_STATUS.md`](MIGRATION_STATUS.md) | Working notes on what has been ported and why |
+| [`MIGRATION_STATUS.md`](MIGRATION_STATUS.md) | Working notes, per-sprint status and current coverage (94.83% lines / 91.30% branches, 2026-11-18) |
 | [`ADO_NET_TESTS.md`](ADO_NET_TESTS.md) | ADO.NET conformance test suites and their state |
 | [`docs/ADO_NET_GUIDE.md`](docs/ADO_NET_GUIDE.md) | Full ADO.NET provider guide (RU): API, connection strings, parameters, readers, transactions, batches, extensions, gotchas |
 | [`docs/PORTING.md`](docs/PORTING.md) | How the reference checkout and the port relate |
 | [`AGENTS.md`](AGENTS.md) | Rules for porting work in this repository |
-| [`docs/COVERAGE_ANALYSIS.md`](docs/COVERAGE_ANALYSIS.md) | Coverage measurement setup and results |
+| [`docs/COVERAGE_ANALYSIS.md`](docs/COVERAGE_ANALYSIS.md) | Coverage measurement setup; a 2026-11-02 snapshot (85.72% lines) |
 
 ## Related projects
 
