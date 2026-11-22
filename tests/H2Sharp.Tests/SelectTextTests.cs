@@ -726,7 +726,7 @@ public sealed class SelectTextTests
         CompareText("select_text_countdistinctid", "SELECT COUNT(DISTINCT ID) FROM T", ["=4"]);
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void FetchWithTiesKeepsTiedRows()
     {
         // WITH TIES is ported: the second 5 rides along past the fetch of two rows,
@@ -2079,7 +2079,7 @@ public sealed class SelectTextTests
         }
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void GcdAggWaitsForAggregates()
     {
         // GCD_AGG(NAME) must still refuse a VARCHAR argument, now with the jar's 90008.
@@ -2099,7 +2099,7 @@ public sealed class SelectTextTests
         }
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void ListaggOverflowWaitsForTruncate()
     {
         // ON OVERFLOW ERROR is legal. These original rows fit without overflow.

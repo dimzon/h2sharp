@@ -615,7 +615,15 @@ internal static class JavaOracle
             return null;
         }
 
+        // Two roots are possible. Walking up from the test binaries finds the H2Sharp
+        // repository; H2SHARP_REFERENCE_ROOT names the h2database checkout itself, and CI
+        // sets exactly that. The built jar lives in the same checkout either way.
         string targetDir = Path.Combine(ReferenceRoot, "reference", "h2", "h2", "target");
+        if (!Directory.Exists(targetDir))
+        {
+            targetDir = Path.Combine(ReferenceRoot, "h2", "target");
+        }
+
         if (!Directory.Exists(targetDir))
         {
             return null;

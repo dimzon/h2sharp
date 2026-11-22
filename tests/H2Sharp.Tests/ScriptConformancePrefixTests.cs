@@ -63,7 +63,7 @@ public sealed class ScriptConformancePrefixTests
 
     /// <summary>Runs one prefix and compares every answer with the reference expectation.</summary>
     /// <param name="relativePath">the script path in the reference tree</param>
-    [Theory]
+    [ReferenceScriptsTheory]
     [MemberData(nameof(Scripts))]
     public void PrefixMatchesTheReference(string relativePath)
     {

@@ -33,7 +33,7 @@ public sealed class ScriptConformanceModeTests
     /// <summary>Runs one script and compares every answer with the reference's expectation.</summary>
     /// <param name="relativePath">the script path in the reference tree</param>
     /// <param name="mode">the mode to open the database in</param>
-    [Theory]
+    [ReferenceScriptsTheory]
     [MemberData(nameof(Scripts))]
     public void ScriptMatchesTheReference(string relativePath, string mode)
     {

@@ -280,7 +280,7 @@ public sealed class ScriptConformanceTests
         "indexes.sql",
     };
 
-    [Theory]
+    [ReferenceScriptsTheory]
     [MemberData(nameof(Scripts))]
     public void ReferenceScriptRunsAndMatches(string relativePath)
     {
@@ -295,6 +295,27 @@ internal static class ScriptRunner
     private static readonly Lazy<string> DirectoryValue = new(FindScriptsDirectory);
 
     internal static string ScriptsDirectory => DirectoryValue.Value;
+
+    /// <summary>
+    /// Whether the reference's script catalog is checked out. Script tests are oracle checks
+    /// against that catalog and have nothing to compare when it is absent; the attribute below
+    /// skips them in a plain build job instead of failing on a missing directory.
+    /// </summary>
+    internal static bool ScriptsAvailable
+    {
+        get
+        {
+            try
+            {
+                _ = ScriptsDirectory;
+                return true;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return false;
+            }
+        }
+    }
 
     private static string FindScriptsDirectory()
     {

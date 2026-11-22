@@ -73,7 +73,7 @@ public sealed class ScriptConformanceAdaptedTests
         return data;
     }
 
-    [Theory]
+    [ReferenceScriptsTheory]
     [MemberData(nameof(Scripts))]
     public void AdaptedScriptRunsAndMatches(string relativePath)
     {

@@ -34,7 +34,7 @@ public sealed class DapperJsonContractTests
         yield return ["JsonNull", "SELECT JSON 'null'", "null"];
     }
 
-    [Theory]
+    [JavaOracleTheory]
     [MemberData(nameof(Cases))]
     public void AllGetterVariantsMatchTheJar(string name, string sql, string expected)
     {

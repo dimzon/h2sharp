@@ -55,6 +55,37 @@ public sealed class JavaOracleTheoryAttribute : TheoryAttribute
 }
 
 /// <summary>
+/// A script conformance test: it compares the port against the reference's own scripts, so
+/// it has nothing to compare on a machine where that catalog is not checked out. The
+/// conformance job checks it out; a plain build job skips these instead of failing on a
+/// missing directory.
+/// </summary>
+public class ReferenceScriptsFactAttribute : FactAttribute
+{
+    public ReferenceScriptsFactAttribute()
+    {
+        if (!ScriptRunner.ScriptsAvailable)
+        {
+            Skip = "reference script catalog is not checked out";
+        }
+    }
+}
+
+/// <summary>
+/// Theory counterpart of <see cref="ReferenceScriptsFactAttribute"/>.
+/// </summary>
+public sealed class ReferenceScriptsTheoryAttribute : TheoryAttribute
+{
+    public ReferenceScriptsTheoryAttribute()
+    {
+        if (!ScriptRunner.ScriptsAvailable)
+        {
+            Skip = "reference script catalog is not checked out";
+        }
+    }
+}
+
+/// <summary>
 /// A fact that compares against the reference and needs statements to run for it to mean
 /// anything.
 /// </summary>

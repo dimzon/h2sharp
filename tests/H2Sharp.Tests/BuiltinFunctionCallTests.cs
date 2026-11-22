@@ -742,7 +742,7 @@ public sealed class BuiltinFunctionCallTests
         CompareDual("func_row", "SELECT ROW(1), ROW(1, 'a'), ROW()");
     }
 
-    [Fact]
+    [JavaOracleFact]
     public void AggregateOutsideSelectWaitsForReadAggregate()
     {
         SessionLocal session = NewSeededSession(out TransactionStore store);

@@ -15948,3 +15948,46 @@ Specs 979/979 (+25 skipped), Native 97/97 (+8 skipped), Category!=BlockedByPort.
    `R@1 < R@100` было честной монеткой. `ValueUuid.GetNewRandom(7)` переписан
    построчно по эталону (ValueUuid.getNewRandom, версия 7); флейковый скрипт
    стал детерминированным тестом упорядоченности.
+
+### CI: зелёный гейт после включения workflow (2026-11-22/23)
+
+Workflow был выключен вручную с октября, последний прогон был красным. После
+включения и пуша первый прогон (`45072476486`) упал: build-джобы — 537 падений
+каждая, conformance с jar — 12. Причины и исправления:
+
+1. `Category!=BlockedByPort` в CI не применялся: красный список незавершённых
+   возможностей считался частью зелёного гейта. Добавлен в шаги Test обеих ОС и
+   в conformance-шаг.
+
+2. `H2SHARP_REFERENCE_ROOT` в conformance указывает на сам чек-аут h2database,
+   а `LocateH2Jar` искал банку на уровень глубже (от корня репозитория). Из-за
+   этого oracle-тесты в conformance не запускались, а прямые вызовы `OracleRunner`
+   падали с «H2 jar not found». `LocateH2Jar` теперь пробует обе формы корня.
+
+3. Тесты, зависящие от чек-аута эталона, не имели skip-guard'а: 522
+   ScriptConformance-теста падали с «reference script directory was not found»,
+   ещё 15 — с «H2 jar not found». Добавлены атрибуты `ReferenceScriptsFact`/
+   `ReferenceScriptsTheory` (проверяют каталог скриптов) и `JavaOracleFact`/
+   `JavaOracleTheory` на Directly-dependent тесты (DapperJsonContractTests,
+   SelectTextTests, BuiltinFunctionCallTests). В conformance-джобе чек-аут и jar
+   есть — тесты там запускаются.
+
+4. Настоящие дефекты, найденные только на Linux/Release:
+   * `FileSystemTests.ASecondLockOnTheSameFileIsRefused` и
+     `TestMVStore.TestFileSystemLock`: POSIX-локи по процессу, поэтому второй
+     канал в том же процессе получал лок, чего java.nio не позволяет.
+     `DiskFileChannel` ведёт реестр удерживаемых локов по каноническому имени
+     файла (снимается в `ReleaseLock` и при закрытии канала).
+   * `TimeZoneProviderOracleTests.ABareAbbreviationKeepsTheNameItWasGiven` —
+     ожидание «EST» было записано по поведению Windows, а не по эталону. Оракул
+     (`TimeZoneProvider.ofId("EST")` на зафиксированном jar) отвечает
+     `America/Panama`; добавлен table коротких id по java.time SHORT_IDS,
+     проверенная оракулом (EST/MST/HST/ACT/CST/PST и др.), и расширен corpus
+     оракульного теста.
+   * `Native.Tests.Db.TestMultiThread` — `Task.Run(..., stopped.Token)` отменял
+     задачи, не успевшие стартовать на медленной машине; в эталоне
+     `Task.stop` останавливает только уже работающие задачи. Токен убран из
+     `Task.Run`, циклы сами проверяют флаг.
+
+Локально: Release-сборка без предупреждений, целевые тесты зелёные, полный
+прогон H2Sharp.Tests (`Category!=BlockedByPort`) зелёный.

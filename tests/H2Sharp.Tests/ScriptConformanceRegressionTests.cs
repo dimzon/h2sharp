@@ -266,7 +266,7 @@ public sealed class ScriptConformanceRegressionTests
     /// select item after it is a keyword where a term does not belong, which the reference
     /// answers with the expected-token error (SYNTAX_ERROR_2), not with a missing function.
     /// </summary>
-    [Fact]
+    [ReferenceScriptsFact]
     public void MixedRowLimitClausesAreRefused()
     {
         List<string> failures = ScriptRunner.RunLines(
@@ -295,7 +295,7 @@ public sealed class ScriptConformanceRegressionTests
     /// DUPLICATE_COLUMN_NAME_1, a bare name shared by two tables is AMBIGUOUS_COLUMN_NAME_1 —
     /// and each star of the select list carries its own list (queries/select.sql).
     /// </summary>
-    [Fact]
+    [ReferenceScriptsFact]
     public void WildcardExceptResolvesColumns()
     {
         List<string> failures = ScriptRunner.RunLines(
@@ -338,7 +338,7 @@ public sealed class ScriptConformanceRegressionTests
     /// reference refuses it with FOR_UPDATE_IS_NOT_ALLOWED_IN_DISTINCT_OR_GROUPED_SELECT at
     /// the moment the lock is set (queries/select.sql).
     /// </summary>
-    [Fact]
+    [ReferenceScriptsFact]
     public void ForUpdateIsRefusedOnDistinctOrGroupedSelect()
     {
         List<string> failures = ScriptRunner.RunLines(
@@ -437,7 +437,7 @@ public sealed class ScriptConformanceRegressionTests
     /// of rows a view answers would change with the reader (issues #4406/#4409,
     /// ddl/createView.sql). A view may also have no columns at all.
     /// </summary>
-    [Fact]
+    [ReferenceScriptsFact]
     public void ViewsFollowTheReaderAndRefuseNonConstantRows()
     {
         List<string> failures = ScriptRunner.RunLines(
@@ -536,7 +536,7 @@ public sealed class ScriptConformanceRegressionTests
     /// columns rendered as ROW (...); a multi-row VALUES is refused only when its value is
     /// read, not when its plan is printed (queries/select.sql, lines 1082-1107).
     /// </summary>
-    [Fact]
+    [ReferenceScriptsFact]
     public void ScalarValueSubqueriesUseTheReferencePlans()
     {
         List<string> failures = ScriptRunner.RunLines(
@@ -627,7 +627,7 @@ public sealed class ScriptConformanceRegressionTests
     /// the digit pairs and a character like '~' fell out of the odd-last-digit branch
     /// uncaught (datatypes/varbinary.sql).
     /// </summary>
-    [Fact]
+    [ReferenceScriptsFact]
     public void HexLiteralsRefuseDigitsPastTheDecodeTable()
     {
         List<string> failures = ScriptRunner.RunLines(
@@ -659,7 +659,7 @@ public sealed class ScriptConformanceRegressionTests
     /// parameter: both defects kept functions/aggregate/listagg.sql from matching the
     /// reference (its own remaining difference there is SET MODE Oracle, D-029).
     /// </summary>
-    [Fact]
+    [ReferenceScriptsFact]
     public void ListaggNamesItsOrderingAndAcceptsAParameterSeparator()
     {
         List<string> failures = ScriptRunner.RunLines(

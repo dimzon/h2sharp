@@ -203,7 +203,7 @@ public sealed class ScriptConformanceModeSweepTests
         return data;
     }
 
-    [Theory]
+    [ReferenceScriptsTheory]
     [MemberData(nameof(Scripts))]
     public void AdaptedScriptMatchesInMode(string relativePath, string mode)
     {
