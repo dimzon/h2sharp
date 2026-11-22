@@ -56,11 +56,11 @@ public sealed class ValueUuid : Value
     /// A new UUID from the pseudo random number generator.
     /// </summary>
     /// <remarks>
-    /// Version 4 is two random halves. Version 7 is the time in milliseconds in the top half and a
-    /// counter in what is left of it, so that the values come out in order and still are random.
-    /// The value depends on the clock and on the random generator of the runtime, so nothing about
-    /// it is compared with the reference; what is compared is its shape, which the version and the
-    /// variant are a part of.
+    /// Version 4 is two random halves. Version 7 carries the time: the top half is the time in
+    /// milliseconds with a sub-millisecond counter from the clock's nanos in what is left of it,
+    /// so two values made within the same millisecond still come out in order. The value depends
+    /// on the clock and on the random generator of the runtime, so its bytes are not compared
+    /// with the reference; what is compared is its shape and its ordering.
     /// </remarks>
     /// <param name="version">the version, which is 4 or 7</param>
     /// <returns>the new value</returns>
@@ -72,18 +72,20 @@ public sealed class ValueUuid : Value
                 return Get(Guid.NewGuid());
 
             case 7:
-#if NET9_0_OR_GREATER
-                return Get(Guid.CreateVersion7());
-#else
-                {
-                    long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    long randomA = MathUtils.SecureRandomLong() & 0xFFFL;
-                    long high = (timestamp << 16) | (7L << 12) | randomA;
-                    long low = MathUtils.SecureRandomLong();
-                    low = (low & 0x3FFF_FFFF_FFFF_FFFFL) | unchecked((long)0x8000_0000_0000_0000UL);
-                    return new ValueUuid(high, low);
-                }
-#endif
+            {
+                // The reference's ValueUuid.getNewRandom(7), line by line: the nanos of the
+                // instant become a sub-millisecond counter in the low bits of the top half, so
+                // that two values generated microseconds apart order by time, not by chance.
+                long ticks = DateTime.UtcNow.Ticks - TicksAtUnixEpoch;
+                long epochSecond = ticks / TimeSpan.TicksPerSecond;
+                long nanos = ticks % TimeSpan.TicksPerSecond * 100;
+                long sub = nanos % 1_000_000 * 2_000 / 488_281;
+                long high = (epochSecond * 1_000L + nanos / 1_000_000 << 16) | sub;
+                long low = MathUtils.SecureRandomLong();
+                high = (high & ~0xf000L) | (7L << 12);
+                low = (low & 0x3FFF_FFFF_FFFF_FFFFL) | unchecked((long)0x8000_0000_0000_0000UL);
+                return new ValueUuid(high, low);
+            }
 
             default:
                 throw DbException.GetInvalidValueException("RANDOM_UUID version", version);
