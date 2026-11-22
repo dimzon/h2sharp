@@ -481,12 +481,23 @@ public sealed class FileSystemTests : IDisposable
     [Fact]
     public void AnUnknownSchemeFallsBackToTheDiskAndIsThenRefused()
     {
-        // The reference does not refuse a scheme it does not know — it hands the path to the disk, the
-        // way it hands a path with no scheme at all. The disk then refuses the name, because the text
-        // before the colon is not one letter and so cannot be a drive. Which file system got the path
-        // is visible in what it says about it.
-        Assert.ThrowsAny<ArgumentException>(() => FilePath.Get("nosuchscheme:/tmp/x"));
-        Assert.ThrowsAny<ArgumentException>(() => FilePath.Get("nosuchscheme:x"));
+        // The reference does not refuse a scheme it does not know — it hands the path to the disk.
+        // What the disk then says about the colon is the operating system's business: on Windows a
+        // colon is a drive separator and a multi-letter drive is refused; on Linux it is an
+        // ordinary character in a file name and java.nio accepts the path. The oracle corpus
+        // checks the same paths against the JVM on both systems.
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.ThrowsAny<ArgumentException>(() => FilePath.Get("nosuchscheme:/tmp/x"));
+            Assert.ThrowsAny<ArgumentException>(() => FilePath.Get("nosuchscheme:x"));
+        }
+        else
+        {
+            Assert.Equal("file", FilePath.Get("nosuchscheme:/tmp/x").GetScheme());
+            Assert.Equal("nosuchscheme:/tmp/x", FilePath.Get("nosuchscheme:/tmp/x").Name);
+            Assert.Equal("file", FilePath.Get("nosuchscheme:x").GetScheme());
+            Assert.Equal("nosuchscheme:x", FilePath.Get("nosuchscheme:x").Name);
+        }
 
         // A name with no colon at all is the disk's, with nothing to refuse.
         Assert.Equal("file", FilePath.Get("zzz").GetScheme());
@@ -523,8 +534,17 @@ public sealed class FileSystemTests : IDisposable
 
         // "mem" is not a scheme of this file system and is not a scheme of the reference's either:
         // it is how an in-memory database is written, and that is the database's word. So it falls
-        // through to the disk, where a colon in a file name is a refusal rather than a file.
-        Assert.ThrowsAny<ArgumentException>(() => FilePath.Get("mem:x.h2.db"));
+        // through to the disk. The disk refuses the colon on Windows and accepts it on Linux, as
+        // the reference's java.nio does on each system.
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.ThrowsAny<ArgumentException>(() => FilePath.Get("mem:x.h2.db"));
+        }
+        else
+        {
+            Assert.Equal("file", FilePath.Get("mem:x.h2.db").GetScheme());
+            Assert.Equal("mem:x.h2.db", FilePath.Get("mem:x.h2.db").Name);
+        }
     }
 
     [Fact]

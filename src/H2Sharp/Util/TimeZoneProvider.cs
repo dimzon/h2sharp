@@ -188,7 +188,12 @@ public abstract class TimeZoneProvider
             return found;
         }
 
-        TimeZoneProvider provider = new WithTimeZone(FindZone(id));
+        // java.time keeps some legacy link's own name; .NET canonicalizes it to the same
+        // rules under a different name. The oracle corpus pins exactly which aliases the
+        // reference preserves, so only those keep the name they were asked for.
+        TimeZoneProvider provider = new WithTimeZone(
+            FindZone(id),
+            JavaIdsKeptAsAliases.Contains(id) ? id : null);
         cache ??= new ConcurrentDictionary<string, TimeZoneProvider>(StringComparer.Ordinal);
         cache[id] = provider;
         return provider;
@@ -269,6 +274,15 @@ public abstract class TimeZoneProvider
             : 0;
         return TimeSpan.FromSeconds(sign * ((hours * 3_600) + (minutes * 60)));
     }
+
+    /// <summary>
+    /// Legacy names the JVM keeps in <c>getTimeZoneId</c> even though .NET resolves them to
+    /// a canonical name for the same rules. The oracle corpus decides membership.
+    /// </summary>
+    private static readonly HashSet<string> JavaIdsKeptAsAliases = new(StringComparer.Ordinal)
+    {
+        "Europe/Kiev",
+    };
 
     /// <summary>
     /// java.time's short ids and the IANA zone each one means to the reference. Consulted
@@ -505,9 +519,21 @@ public abstract class TimeZoneProvider
 
         private readonly TimeZoneInfo zoneId;
 
+        /// <summary>
+        /// The name the reference answers with, when it differs from the framework's canonical
+        /// name for the same rules. The rules always come from <c>zoneId</c>.
+        /// </summary>
+        private readonly string? answerId;
+
         internal WithTimeZone(TimeZoneInfo timeZone)
+            : this(timeZone, null)
+        {
+        }
+
+        internal WithTimeZone(TimeZoneInfo timeZone, string? answerId)
         {
             zoneId = timeZone;
+            this.answerId = answerId;
         }
 
         /// <inheritdoc/>
@@ -550,7 +576,7 @@ public abstract class TimeZoneProvider
         }
 
         /// <inheritdoc/>
-        public override string GetId() => zoneId.Id;
+        public override string GetId() => answerId ?? zoneId.Id;
 
         /// <inheritdoc/>
         public override string GetShortId(long epochSeconds)

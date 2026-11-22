@@ -266,6 +266,9 @@ public static class JavaCharacter
         '\u1C89' => '\u1C8A',
         '\uA7CB' => '\u0264',
         '\uA7CC' => '\uA7CD',
+        // The ICU data .NET uses on Linux lowercases U+A7CE to U+A7CF; the JDK leaves it
+        // unchanged. On Windows the framework already agrees, so the override is harmless there.
+        '\uA7CE' => '\uA7CE',
         '\uA7DA' => '\uA7DB',
         '\uA7DC' => '\u019B',
         _ => char.ToLowerInvariant(c),
