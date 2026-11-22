@@ -282,6 +282,7 @@ public abstract class TimeZoneProvider
     private static readonly HashSet<string> JavaIdsKeptAsAliases = new(StringComparer.Ordinal)
     {
         "Europe/Kiev",
+        "America/Godthab",
     };
 
     /// <summary>

@@ -256,7 +256,7 @@ public sealed class JavaCharacterOracleTests
             .ToList();
 
         Assert.Single(java);
-        Assert.True(java[0] == PackedCase(), DescribeFirstCaseDifference(java[0], PackedCase()));
+        Assert.True(java[0] == PackedCase(), DescribeCaseDifferences(java[0], PackedCase()));
     }
 
     /// <summary>
@@ -279,9 +279,16 @@ public sealed class JavaCharacterOracleTests
         return packed.ToString();
     }
 
-    private static string DescribeFirstCaseDifference(string java, string csharp)
+    /// <summary>
+    /// All the differing code points, up to a reporting cap. A single difference used to
+    /// hide the rest behind another 20-minute CI run; now one run names every override
+    /// the JDK's tables need on this platform.
+    /// </summary>
+    private static string DescribeCaseDifferences(string java, string csharp)
     {
         int shared = Math.Min(java.Length, csharp.Length);
+        StringBuilder report = new();
+        int reported = 0;
         for (int codePoint = 0; codePoint <= 0xFFFF; codePoint++)
         {
             if (codePoint >= 0xD800 && codePoint <= 0xDFFF)
@@ -298,12 +305,21 @@ public sealed class JavaCharacterOracleTests
 
             if (java[i] != csharp[i] || java[i + 1] != csharp[i + 1])
             {
-                return $"U+{codePoint:X4}: java upper {java[i]:x4} lower {java[i + 1]:x4}, "
-                    + $"port upper {csharp[i]:x4} lower {csharp[i + 1]:x4}";
+                if (reported == 16)
+                {
+                    _ = report.AppendLine("... further differences omitted");
+                    break;
+                }
+
+                _ = report.AppendLine($"U+{codePoint:X4}: java upper {java[i]:x4} "
+                    + $"lower {java[i + 1]:x4}, port upper {csharp[i]:x4} lower {csharp[i + 1]:x4}");
+                reported++;
             }
         }
 
-        return $"lengths differ: java {java.Length}, port {csharp.Length}";
+        return reported == 0
+            ? $"lengths differ: java {java.Length}, port {csharp.Length}"
+            : report.ToString();
     }
 
     private static string Decode(string hex)

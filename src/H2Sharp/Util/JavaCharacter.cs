@@ -247,6 +247,9 @@ public static class JavaCharacter
         '\u0264' => '\uA7CB',
         '\u1C8A' => '\u1C89',
         '\uA7CD' => '\uA7CC',
+        // ICU on Linux uppercases U+A7CF to U+A7CE; the JDK leaves it as it is. Windows
+        // already agrees, so this is a no-op there.
+        '\uA7CF' => '\uA7CF',
         '\uA7DB' => '\uA7DA',
         _ => char.ToUpperInvariant(c),
     };

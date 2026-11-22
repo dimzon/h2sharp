@@ -101,10 +101,18 @@ public sealed class TimeZoneProviderOracleTests
         List<string> csharp = [.. Ids.Select(Describe)];
 
         Assert.Equal(java.Count, csharp.Count);
+        // Collect every difference: a first mismatch used to hide the rest behind another
+        // 20-minute conformance run, and the legacy aliases need the same treatment.
+        List<string> differences = [];
         for (int i = 0; i < java.Count; i++)
         {
-            Assert.True(java[i] == csharp[i], $"line {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+            if (java[i] != csharp[i])
+            {
+                differences.Add($"line {i}:\n  java:   {java[i]}\n  csharp: {csharp[i]}");
+            }
         }
+
+        Assert.True(differences.Count == 0, string.Join("\n", differences));
     }
 
     /// <summary>
