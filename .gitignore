@@ -41,3 +41,6 @@ __pycache__/
 /te.txt
 /tmp*.txt
 /TestResults/
+
+## ZCode session plans and local state
+.zcode/
