@@ -97,6 +97,11 @@ public sealed class FileStoreFailurePortTests : IDisposable
         store.CloseAndDeleteSilently();
     }
 
+    // The reference gates both checks below behind Java assertions (FileStore.ASSERT, set by
+    // `assert a = true`), and the port carries them behind DEBUG (FileStore.Length) for the same
+    // reason. With assertions off — a Release build, like the JVM without -ea — the path does not
+    // exist at all, so neither do these facts.
+#if DEBUG
     [Fact]
     public void ALengthMismatchIsAnInternalError()
     {
@@ -120,6 +125,7 @@ public sealed class FileStoreFailurePortTests : IDisposable
         H2SharpException e = Assert.Throws<H2SharpException>(() => _ = store.Length());
         Assert.Contains("failfs:/lenquery.db", e.Message);
     }
+#endif
 
     private sealed class RecordingDataHandler : DataHandler
     {
@@ -167,9 +173,13 @@ public sealed class FileStoreFailurePortTests : IDisposable
 
         public bool FailOnDispose;
 
+        // The store consults the channel's length only behind its DEBUG cross-check (the
+        // reference's ASSERT path), so these two injections exist only when that path does.
+#if DEBUG
         public bool FailOnLength;
 
         public bool WrongLength;
+#endif
 
         internal readonly Dictionary<string, byte[]> files = new();
 
@@ -281,6 +291,7 @@ public sealed class FileStoreFailurePortTests : IDisposable
             {
                 get
                 {
+#if DEBUG
                     if (fileSystem.FailOnLength)
                     {
                         throw Fail();
@@ -293,6 +304,9 @@ public sealed class FileStoreFailurePortTests : IDisposable
                     }
 
                     return length;
+#else
+                    return data.Length;
+#endif
                 }
             }
 

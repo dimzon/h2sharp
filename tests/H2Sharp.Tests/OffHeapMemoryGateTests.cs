@@ -19,6 +19,7 @@ using Xunit;
 
 namespace H2Sharp.Tests;
 
+[Collection(OffHeapMemoryGateCollection.Name)]
 public sealed class OffHeapMemoryGateTests
 {
     [Fact]
@@ -35,25 +36,43 @@ public sealed class OffHeapMemoryGateTests
                     create.ExecuteNonQuery();
                 }
 
-                // Warm up (JIT, pools, caches).
+                // Warm up (JIT, pools, caches) and take the level this store settles at.
                 WriteBatches(connection, 10);
+                long warmupMax = MaxLiveOverBatches(connection, 10);
 
                 // Many chunk writes: the native write buffers (SP-29) must stay bounded
-                // (pool cap + in-flight), not grow per chunk.
-                long maxLive = 0;
-                for (int b = 0; b < 60; b++)
-                {
-                    WriteBatches(connection, 1);
-                    maxLive = Math.Max(maxLive, WriteBuffer.LiveAllocations);
-                }
+                // (pool cap + in-flight), not grow per chunk. The bound is relative to the
+                // store's own settled level: the counter is process-global, and tests that ran
+                // before left behind buffers of stores they never closed, so an absolute
+                // number says something about the suite's scheduling, not about this store.
+                long firstMax = MaxLiveOverBatches(connection, 30);
+                long secondMax = MaxLiveOverBatches(connection, 30);
 
-                Assert.InRange(maxLive, 0, 16);
+                // A structural per-chunk leak grows the live set with more work; pool
+                // retention and in-flight buffers do not.
+                Assert.InRange(secondMax, 0, Math.Max(warmupMax, firstMax) + 4);
             }
         }
         finally
         {
             DeleteDatabase(path);
         }
+    }
+
+    /// <summary>
+    /// Runs the given number of single batches, sampling the live allocation counter after
+    /// each, and returns the highest value seen.
+    /// </summary>
+    private static long MaxLiveOverBatches(H2Connection connection, int batches)
+    {
+        long max = WriteBuffer.LiveAllocations;
+        for (int b = 0; b < batches; b++)
+        {
+            WriteBatches(connection, 1);
+            max = Math.Max(max, WriteBuffer.LiveAllocations);
+        }
+
+        return max;
     }
 
     [Fact]
