@@ -16066,3 +16066,16 @@ EF Core-провайдер на JN-миграции `Alter_sequence_all_settings
 119/119 миграционных тестов провайдера с трейтом `BlockedByPort` проходят на 0.1.44-alpha.1.
 Оракульный тест `SequenceOracleTests.Alter_without_cycle_keeps_the_cycle_rule` сверяет поведение
 с JVM построчно: каталог, START_VALUE, CYCLE_OPTION и 값 после переполнения.
+
+### ExecuteReader: cumulative affected rows for a mixed batch (2026-11-23)
+
+`AffectedCountModificationCommandBatch` читает число затронутых строк из
+`DbDataReader.RecordsAffected`. После исправления смешанного пакета ридер вставал на первый
+result set, но терял update counts ведущих операций: `RecordsAffected` был -1, и EF не
+поднимал `DbUpdateConcurrencyException`, когда `UPDATE`/`DELETE` не нашли строку с устаревшим
+токеном concurrency.
+
+`H2Command.ExecuteDbDataReader` теперь суммирует update counts всех операций до первого
+result set и передаёт сумму в `H2DataReader`; `NextResult` добавляет counts хвостовых update'ов.
+Обновлены три теста `H2BatchReaderTests`, включая случай `UPDATE ... WHERE ID = 99` с нулём
+совпадений. Это ADO-поведение, благоприятное для EF; оракул JVM здесь не нужен.

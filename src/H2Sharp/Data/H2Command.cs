@@ -279,7 +279,7 @@ public sealed class H2Command : DbCommand
             firstQuery = 1;
             while (firstQuery < containers.Count && !containers[firstQuery].IsQuery())
             {
-                _ = containers[firstQuery].ExecuteUpdate(false);
+                count += containers[firstQuery].ExecuteUpdate(false).GetUpdateCount();
                 firstQuery++;
             }
         }
@@ -323,7 +323,7 @@ public sealed class H2Command : DbCommand
                 connection?.Close();
             }
         };
-        reader = new H2DataReader(result, onClose, remaining, maxrows, formats);
+        reader = new H2DataReader(result, onClose, remaining, maxrows, formats, count);
 
         openReaders++;
         return reader;

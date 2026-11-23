@@ -48,7 +48,7 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
 
     private bool closed;
 
-    private readonly long recordsAffected;
+    private long recordsAffected;
 
     /// <summary>
     /// Creates a reader over the result.
@@ -58,19 +58,21 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
     /// <param name="remaining">the statements after the first, for NextResult</param>
     /// <param name="maxrows">the row limit each result set runs with</param>
     /// <param name="formats">the connection's value projection, or null for the defaults</param>
+    /// <param name="recordsAffected">the update counts skipped before this result set, or -1</param>
     internal H2DataReader(
         Result.ResultInterface result,
         Action? onClose = null,
         List<Command.CommandContainer>? remaining = null,
         long maxrows = -1,
-        H2DataFormatOptions? formats = null)
+        H2DataFormatOptions? formats = null,
+        long recordsAffected = -1)
     {
         this.result = result;
         this.onClose = onClose;
         this.remaining = remaining ?? [];
         this.maxrows = maxrows;
         this.formats = formats ?? H2DataFormatOptions.Default;
-        recordsAffected = -1;
+        this.recordsAffected = recordsAffected;
     }
 
     /// <summary>
@@ -143,7 +145,12 @@ public sealed class H2DataReader : DbDataReader, IDbColumnSchemaGenerator
             current = null;
             if (!next.IsQuery())
             {
-                _ = next.ExecuteUpdate(false);
+                var affected = next.ExecuteUpdate(false).GetUpdateCount();
+                if (recordsAffected >= 0)
+                {
+                    recordsAffected += affected;
+                }
+
                 continue;
             }
 

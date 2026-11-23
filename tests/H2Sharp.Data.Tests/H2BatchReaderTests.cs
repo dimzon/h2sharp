@@ -29,7 +29,7 @@ public sealed class H2BatchReaderTests
             // The INSERT's update count is skipped, as JDBC's execute/getMoreResults does:
             // the reader opens on the SELECT, and its row is available immediately.
             Assert.Equal(1, reader.FieldCount);
-            Assert.Equal(-1, reader.RecordsAffected);
+            Assert.Equal(1, reader.RecordsAffected);
             Assert.True(reader.Read());
             Assert.Equal(1, reader.GetInt32(0));
             Assert.False(reader.NextResult());
@@ -53,6 +53,8 @@ public sealed class H2BatchReaderTests
         {
             // Like JDBC's getMoreResults, the reader skips update counts to the first
             // result set: the two updates already ran, and the SELECT is the first result.
+            // ADO.NET still reports their counts cumulatively for EF's affected-count batch.
+            Assert.Equal(2, reader.RecordsAffected);
             Assert.True(reader.Read());
             Assert.Equal(1, reader.GetInt32(0));
             Assert.False(reader.NextResult());
@@ -62,6 +64,25 @@ public sealed class H2BatchReaderTests
         Assert.Equal(
             "Children of Dune",
             connection.QuerySingle<string>("SELECT TITLE FROM BOOK WHERE ID = 1"));
+    }
+
+    [Fact]
+    public void RecordsAffectedIncludesUpdatesThatMatchedNoRows()
+    {
+        using H2Connection connection = Open();
+        Execute(connection, "CREATE TABLE BOOK(ID INT PRIMARY KEY, TITLE VARCHAR(50))");
+
+        using DbCommand command = connection.CreateCommand();
+        command.CommandText =
+            "INSERT INTO BOOK(ID, TITLE) VALUES (1, 'Dune');"
+            + " UPDATE BOOK SET TITLE = 'Children of Dune' WHERE ID = 99;"
+            + " SELECT COUNT(*) FROM BOOK";
+        using (DbDataReader reader = command.ExecuteReader())
+        {
+            Assert.Equal(1, reader.RecordsAffected);
+            Assert.True(reader.Read());
+            Assert.Equal(1, reader.GetInt32(0));
+        }
     }
 
     private static void Execute(H2Connection connection, string sql)
