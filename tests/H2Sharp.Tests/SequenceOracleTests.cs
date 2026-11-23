@@ -143,6 +143,32 @@ public sealed class SequenceOracleTests
     }
 
     /// <summary>
+    /// ALTER SEQUENCE without CYCLE keeps the rule set when the sequence was created.
+    /// A missing option is not NO CYCLE: only CREATE SEQUENCE falls back to that.
+    /// </summary>
+    [JavaOracleFact]
+    public void Alter_without_cycle_keeps_the_cycle_rule()
+    {
+        string catalogue = "SELECT SEQUENCE_NAME, START_VALUE, CYCLE_OPTION "
+            + "FROM INFORMATION_SCHEMA.SEQUENCES WHERE SEQUENCE_NAME = 'SEQ_CYCLE'";
+        string[] statements =
+        [
+            "CREATE SEQUENCE SEQ_CYCLE START WITH 1 MAXVALUE 3 CYCLE",
+            catalogue,
+            "ALTER SEQUENCE SEQ_CYCLE START WITH 1",
+            catalogue,
+            "SELECT NEXT VALUE FOR SEQ_CYCLE",
+            "SELECT NEXT VALUE FOR SEQ_CYCLE",
+            "SELECT NEXT VALUE FOR SEQ_CYCLE",
+            "SELECT NEXT VALUE FOR SEQ_CYCLE",
+            "ALTER SEQUENCE SEQ_CYCLE NO CYCLE",
+            catalogue,
+        ];
+
+        AssertSame(RunJava(statements), RunPort(statements));
+    }
+
+    /// <summary>
     /// The changes of the identity column, the same on both sides.
     /// </summary>
     [JavaOracleFact]
