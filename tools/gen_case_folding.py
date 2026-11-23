@@ -134,6 +134,17 @@ def build(rows: list[tuple[int, list[int]]]) -> list[str]:
     ]
 
 
+# These code points are pinned by hand in Util/JavaCharacter.cs: the .NET invariant
+# casing tables differ between host platforms and .NET patch versions, so a generated
+# table built here would not be reproducible on a different machine. Keep them out of
+# the generated table; JavaCharacter is where the JVM's answer is fixed for all hosts.
+HANDLED_IN_JAVA_CHARACTER = {
+    0x0130, 0x0131, 0x019B, 0x0264, 0x1C89, 0x1C8A,
+    0xA7CB, 0xA7CC, 0xA7CD, 0xA7CE, 0xA7CF,
+    0xA7D2, 0xA7D3, 0xA7D4, 0xA7D5, 0xA7DA, 0xA7DB, 0xA7DC,
+}
+
+
 def main() -> int:
     if len(sys.argv) != 3:
         print(__doc__, file=sys.stderr)
@@ -164,6 +175,12 @@ def main() -> int:
     lower_rows: list[tuple[int, list[int]]] = []
     for code_point, (full_upper, full_lower) in java.items():
         inv_upper, inv_lower = dotnet.get(code_point, ([code_point], [code_point]))
+        if code_point in HANDLED_IN_JAVA_CHARACTER:
+            # The host's invariant tables disagree about these code points, so pretend
+            # .NET leaves them alone: the JVM's full mapping then always goes into the
+            # table, on Windows and Linux alike. The override is harmless where the
+            # framework already agrees, and JavaCharacter pins the same answers.
+            inv_upper = inv_lower = [code_point]
         if full_upper != inv_upper:
             upper_rows.append((code_point, full_upper))
         if full_lower != inv_lower:
