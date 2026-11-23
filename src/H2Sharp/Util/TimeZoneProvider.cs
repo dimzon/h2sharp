@@ -597,7 +597,7 @@ public abstract class TimeZoneProvider
                 : zoneId.StandardName;
 
         /// <inheritdoc/>
-        public override string ToString() => "TimeZoneProvider " + zoneId.Id;
+        public override string ToString() => "TimeZoneProvider " + GetId();
 
         /// <summary>
         /// Returns a year within the range -999,999,999..999,999,999 for the given year.
