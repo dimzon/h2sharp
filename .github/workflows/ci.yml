@@ -91,10 +91,11 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          # The oracle's Unicode tables, case mapping and java.time SHORT_IDS are all
-          # JDK-version specific. Pin the same JDK the conformance corpus was recorded on;
-          # a different major makes otherwise correct ports disagree with the reference.
-          java-version: '25'
+          # The oracle's Unicode tables, case mapping and java.time SHORT_IDS are JDK-version
+          # specific down to the patch: 25.0.5 dropped case-folding entries that 25.0.4 still
+          # has, and tools/regen.py --check fails on the difference. Pin the exact build the
+          # generated tables and the corpus were recorded on.
+          java-version: '25.0.4+7'
 
       - uses: actions/setup-python@v5
         with:
