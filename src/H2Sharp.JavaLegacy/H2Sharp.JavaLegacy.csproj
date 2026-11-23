@@ -7,7 +7,19 @@
     <IsPackable>true</IsPackable>
     <Description>Optional Java-compatibility helpers for H2Sharp.</Description>
     <PackageLicenseExpression>MPL-2.0 OR EPL-1.0</PackageLicenseExpression>
+    <Authors>The H2Sharp contributors</Authors>
+    <Copyright>Copyright 2026 The H2Sharp contributors</Copyright>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>assets/h2sharp-icon-512.png</PackageIcon>
+    <PackageProjectUrl>https://github.com/dimzon/h2sharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/dimzon/h2sharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\assets\h2sharp-icon-512.png" Pack="true" PackagePath="assets\" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\H2Sharp\H2Sharp.csproj" />

@@ -62,11 +62,18 @@ jobs:
           global-json-file: global.json
 
       - name: Pack
-        run: >
-          dotnet pack src/H2Sharp/H2Sharp.csproj
-          --configuration Release
-          --property:PackageOutputPath="$PWD/artifacts/packages"
-          -p:ContinuousIntegrationBuild=true
+        run: |
+          set -euo pipefail
+          for project in src/H2Sharp/H2Sharp.csproj \
+                         src/H2Sharp.Crypto/H2Sharp.Crypto.csproj \
+                         src/H2Sharp.Extensions/H2Sharp.Extensions.csproj \
+                         src/H2Sharp.CsvTools/H2Sharp.CsvTools.csproj \
+                         src/H2Sharp.Hashes/H2Sharp.Hashes.csproj \
+                         src/H2Sharp.JavaLegacy/H2Sharp.JavaLegacy.csproj; do
+            dotnet pack "$project" --configuration Release \
+              --property:PackageOutputPath="$PWD/artifacts/packages" \
+              -p:ContinuousIntegrationBuild=true
+          done
 
       # The package is what the Entity Framework Core provider would take, once the engine
       # is on a feed: it carries the strong name the provider's InternalsVisibleTo names.
