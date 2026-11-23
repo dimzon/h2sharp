@@ -24,7 +24,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DST = ROOT / "src" / "H2Sharp" / "Util" / "CaseFolding.cs"
 
-HEADER = '''/*
+HEADER = '''using System.Collections.Frozen;
+/*
  * Copyright 2026 H2Sharp contributors.
  * Ported from none (new file for H2Sharp).
  * Licensed under the MPL 2.0 or the EPL 1.0 (see LICENSE-H2.txt).
@@ -63,23 +64,25 @@ internal static class CaseFolding
     /// Maps a code point to its full uppercase expansion, when it differs from the
     /// invariant mapping.
     /// </summary>
-    internal static readonly Dictionary<int, string> UpperTable = new()
+    internal static readonly FrozenDictionary<int, string> UpperTable =
+        new Dictionary<int, string>
     {
 '''
 
-LOWER_MARKER = '''    };
+LOWER_MARKER = '''    }.ToFrozenDictionary();
 
     /// <summary>
     /// Maps a code point to its full lowercase expansion, when it differs from the
     /// invariant mapping.
     /// </summary>
-    internal static readonly Dictionary<int, string> LowerTable = new()
+    internal static readonly FrozenDictionary<int, string> LowerTable =
+        new Dictionary<int, string>
     {
 '''
 
 TAIL = '''
 
-    };
+    }.ToFrozenDictionary();
 
     /// <summary>
     /// Returns the uppercase expansion of a code point, or null when the invariant
