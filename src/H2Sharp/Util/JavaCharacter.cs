@@ -250,6 +250,10 @@ public static class JavaCharacter
         // ICU on Linux uppercases U+A7CF to U+A7CE; the JDK leaves it as it is. Windows
         // already agrees, so this is a no-op there.
         '\uA7CF' => '\uA7CF',
+        // The JDK keeps U+A7D3 and U+A7D5 distinct from their partners; ICU on Linux
+        // folds them together. Both overrides are no-ops on Windows.
+        '\uA7D3' => '\uA7D3',
+        '\uA7D5' => '\uA7D5',
         '\uA7DB' => '\uA7DA',
         _ => char.ToUpperInvariant(c),
     };
@@ -272,6 +276,10 @@ public static class JavaCharacter
         // The ICU data .NET uses on Linux lowercases U+A7CE to U+A7CF; the JDK leaves it
         // unchanged. On Windows the framework already agrees, so the override is harmless there.
         '\uA7CE' => '\uA7CE',
+        // ICU on Linux lowercases these two capitals to their partners; the JDK keeps
+        // each one as its own lower case too.
+        '\uA7D2' => '\uA7D2',
+        '\uA7D4' => '\uA7D4',
         '\uA7DA' => '\uA7DB',
         '\uA7DC' => '\u019B',
         _ => char.ToLowerInvariant(c),

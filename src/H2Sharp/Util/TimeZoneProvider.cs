@@ -283,6 +283,17 @@ public abstract class TimeZoneProvider
     {
         "Europe/Kiev",
         "America/Godthab",
+        // The oracle corpus pins each of these: the JVM keeps the legacy spelling while
+        // .NET resolves it to the canonical name for the same rules.
+        "Asia/Calcutta",
+        "Asia/Katmandu",
+        "Asia/Rangoon",
+        "Asia/Saigon",
+        "Australia/ACT",
+        "Israel",
+        "Japan",
+        "Iran",
+        "Singapore",
     };
 
     /// <summary>
