@@ -12,6 +12,8 @@
     <Copyright>Copyright 2026 The H2Sharp contributors</Copyright>
     <PackageLicenseExpression>MPL-2.0 OR EPL-1.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- The file itself is packed below, under assets/, next to the readme it illustrates. -->
+    <PackageIcon>assets/h2sharp-icon-512.png</PackageIcon>
     <PackageProjectUrl>https://github.com/dimzon/h2sharp</PackageProjectUrl>
     <RepositoryUrl>https://github.com/dimzon/h2sharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
