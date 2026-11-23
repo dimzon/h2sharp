@@ -58,7 +58,12 @@
     PackageLicenseExpression are only true if the files are in it.
   -->
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" />
+    <!--
+      NuGet renders README as Markdown without GitHub's HTML support: the repository README's
+      <p>/<img> banners and [!IMPORTANT] alerts show up as raw text on nuget.org. Package a
+      plain-Markdown variant with absolute links instead; GitHub keeps its own README.
+    -->
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\PACKAGE_README.md" Pack="true" PackagePath="\README.md" />
     <None Include="$(MSBuildThisFileDirectory)..\..\LICENSE-H2.txt" Pack="true" PackagePath="\" />
     <None Include="$(MSBuildThisFileDirectory)..\..\NOTICE.md" Pack="true" PackagePath="\" />
     <!-- README.md refers to assets/ by relative path; ship them so the NuGet readme renders too. -->
