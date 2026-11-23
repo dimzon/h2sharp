@@ -26,9 +26,12 @@ public sealed class H2BatchReaderTests
             "INSERT INTO BOOK(ID, TITLE) VALUES (1, 'Dune'); SELECT COUNT(*) FROM BOOK";
         using (DbDataReader reader = command.ExecuteReader())
         {
-            Assert.Equal(0, reader.FieldCount);
-            Assert.Equal(1, reader.RecordsAffected);
-            Assert.False(reader.Read());
+            // The INSERT's update count is skipped, as JDBC's execute/getMoreResults does:
+            // the reader opens on the SELECT, and its row is available immediately.
+            Assert.Equal(1, reader.FieldCount);
+            Assert.Equal(-1, reader.RecordsAffected);
+            Assert.True(reader.Read());
+            Assert.Equal(1, reader.GetInt32(0));
             Assert.False(reader.NextResult());
         }
 
@@ -48,7 +51,10 @@ public sealed class H2BatchReaderTests
             + " SELECT COUNT(*) FROM BOOK";
         using (DbDataReader reader = command.ExecuteReader())
         {
-            Assert.Equal(1, reader.RecordsAffected);
+            // Like JDBC's getMoreResults, the reader skips update counts to the first
+            // result set: the two updates already ran, and the SELECT is the first result.
+            Assert.True(reader.Read());
+            Assert.Equal(1, reader.GetInt32(0));
             Assert.False(reader.NextResult());
         }
 

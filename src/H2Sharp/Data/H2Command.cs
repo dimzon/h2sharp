@@ -268,41 +268,62 @@ public sealed class H2Command : DbCommand
         List<Command.CommandContainer> containers = PrepareEngines(out Command.CommandList? lazyRemaining);
         H2DataFormatOptions formats = connection!.DataFormat;
         H2DataReader reader;
+        int firstQuery = 0;
+        long count = -1;
         if (!containers[0].IsQuery())
         {
-            long count = containers[0].ExecuteUpdate(false).GetUpdateCount();
-            RunRemaining(containers);
+            // A batch starts with an update. JDBC skips its update count and every other
+            // update count until the first result set, and so must the reader here: EF Core's
+            // affected-count batch relies on the reader being positioned at that result set.
+            count = containers[0].ExecuteUpdate(false).GetUpdateCount();
+            firstQuery = 1;
+            while (firstQuery < containers.Count && !containers[firstQuery].IsQuery())
+            {
+                _ = containers[firstQuery].ExecuteUpdate(false);
+                firstQuery++;
+            }
+        }
+
+        long maxrows = (behavior & CommandBehavior.SingleRow) != 0 ? 1
+            : (behavior & CommandBehavior.SchemaOnly) != 0 ? 0 : -1;
+        bool hasQuery = firstQuery < containers.Count && containers[firstQuery].IsQuery();
+        bool moreSets = ((behavior & (CommandBehavior.SingleRow
+            | CommandBehavior.SingleResult | CommandBehavior.SchemaOnly)) == 0)
+            && hasQuery;
+
+        Result.ResultInterface? result = hasQuery
+            ? containers[firstQuery].ExecuteQuery(maxrows, 0, false)
+            : null;
+        if (result is null)
+        {
+            // No result set to hand over: the tail still runs for effect, with each query
+            // read out rather than sent to Prepared.Update.
+            RunRemaining(containers, firstQuery + 1);
             lazyRemaining?.ExecuteRemaining();
             lazyRemaining?.Close();
-
             reader = new H2DataReader(count, formats);
             // An update result has no rows and no result set to close; it must not keep
             // the command marked as having an open reader (H2 Statement does not either).
             return reader;
         }
-        else
+
+        // The result sets after the first are run by H2DataReader.NextResult, not here:
+        // queuing them up front would execute side effects the caller never reads.
+        lazyRemaining?.ExecuteRemaining();
+        List<Command.CommandContainer> remaining = moreSets
+            ? containers.GetRange(firstQuery + 1, containers.Count - firstQuery - 1)
+            : [];
+        Action onClose = () =>
         {
-            long maxrows = (behavior & CommandBehavior.SingleRow) != 0 ? 1
-                : (behavior & CommandBehavior.SchemaOnly) != 0 ? 0 : -1;
-            Result.ResultInterface result = containers[0].ExecuteQuery(maxrows, 0, false);
-            lazyRemaining?.ExecuteRemaining();
-            bool moreSets = ((behavior & (CommandBehavior.SingleRow
-                | CommandBehavior.SingleResult | CommandBehavior.SchemaOnly)) == 0)
-                && containers.Count > 1;
-            List<Command.CommandContainer> remaining =
-                moreSets ? containers.GetRange(1, containers.Count - 1) : [];
-            Action onClose = () =>
+            CloseContainers(containers);
+            lazyRemaining?.Close();
+            openReaders--;
+            if ((behavior & CommandBehavior.CloseConnection) != 0)
             {
-                CloseContainers(containers);
-                lazyRemaining?.Close();
-                openReaders--;
-                if ((behavior & CommandBehavior.CloseConnection) != 0)
-                {
-                    connection?.Close();
-                }
-            };
-            reader = new H2DataReader(result, onClose, remaining, maxrows, formats);
-        }
+                connection?.Close();
+            }
+        };
+        reader = new H2DataReader(result, onClose, remaining, maxrows, formats);
 
         openReaders++;
         return reader;
@@ -407,9 +428,13 @@ public sealed class H2Command : DbCommand
     /// Runs every container after the first for effect: a query drains, an update counts.
     /// </summary>
     /// <param name="containers">the containers of one execution</param>
-    private static void RunRemaining(List<Command.CommandContainer> containers)
+    /// <summary>
+    /// Executes every container from <paramref name="start"/> on for effect: updates run as
+    /// updates, queries run and are read out so no tail reaches Prepared.Update.
+    /// </summary>
+    private static void RunRemaining(List<Command.CommandContainer> containers, int start = 1)
     {
-        for (int i = 1; i < containers.Count; i++)
+        for (int i = start; i < containers.Count; i++)
         {
             Command.CommandContainer container = containers[i];
             if (container.IsQuery())

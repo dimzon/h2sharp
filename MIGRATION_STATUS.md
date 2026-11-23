@@ -16029,3 +16029,22 @@ jar — 13 падений. Разобраны:
   которое должен вернуть эталон, вместе с правилами канонической зоны.
 
 Локально: targeted 50/50 + MvStore 1/1, сборка без предупреждений.
+
+### ExecuteReader: пооператорные результаты смешанного пакета (2026-11-23)
+
+EF Core-провайдер держит `AffectedCountModificationCommandBatch` и ожидает, что
+`ExecuteReader` встанет на первый result set пакета, пропустив update counts
+(как JDBC `execute`/`getMoreResults`). Батч сида F1 начинается с обычного
+`INSERT`, затем идут `SELECT ... FROM FINAL TABLE`, и старый путь
+`ExecuteDbDataReader` выполнял хвост через `RunRemaining` и возвращал один
+результат с числом от первого оператора. EF видел 0 строк и падал
+`DbUpdateConcurrencyException` на 3820 тестах провайдера.
+
+`H2Command.ExecuteDbDataReader` теперь пропускает ведущие не-запросы, ставит
+ридер на первый result set и отдаёт остальные контейнеры в `H2DataReader`
+для `NextResult` (какquery-first ветка уже делала). Обновлены два теста
+`H2BatchReaderTests`, фиксировавших старое поведение.
+
+Локально: H2Sharp.Tests 6782/6782, H2Sharp.Data.Tests 814/814; красный набор
+провайдера 4147 падений → 453 (3981 тест проходит). Остальные падения — другие
+пробелы движка (DDL, конверсии), уже не батч.
