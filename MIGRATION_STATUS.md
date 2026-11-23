@@ -16064,3 +16064,5 @@ EF Core-провайдер на JN-миграции `Alter_sequence_all_settings
 
 Локально: H2Sharp.Tests 6782/6782, H2Sharp.Data.Tests 814/814, остальные проекты зелёные;
 119/119 миграционных тестов провайдера с трейтом `BlockedByPort` проходят на 0.1.44-alpha.1.
+Оракульный тест `SequenceOracleTests.Alter_without_cycle_keeps_the_cycle_rule` сверяет поведение
+с JVM построчно: каталог, START_VALUE, CYCLE_OPTION и 값 после переполнения.
