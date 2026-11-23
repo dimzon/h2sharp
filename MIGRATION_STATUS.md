@@ -16048,3 +16048,19 @@ EF Core-провайдер держит `AffectedCountModificationCommandBatch` 
 Локально: H2Sharp.Tests 6782/6782, H2Sharp.Data.Tests 814/814; красный набор
 провайдера 4147 падений → 453 (3981 тест проходит). Остальные падения — другие
 пробелы движка (DDL, конверсии), уже не батч.
+
+### SequenceOptions: unset CYCLE must not reset an existing sequence (2026-11-23)
+
+EF Core-провайдер на JN-миграции `Alter_sequence_all_settings` получал `CYCLE_OPTION = NO`
+после `ALTER SEQUENCE "foo" START WITH -3; ALTER SEQUENCE "foo" RESTART;`, хотя первая
+операция ставила `CYCLE`. Оракул (`h2-2.5.259-SNAPSHOT.jar`) подтвердил: повторное
+`ALTER SEQUENCE` без `CYCLE` сохраняет правило цикла.
+
+Причина в порте: `SequenceOptions.cycle` инициализировался `NO_CYCLE`, тогда как в
+`org.h2.command.ddl.SequenceOptions` поле не задано. `Sequence.Modify` получал явный
+`NO_CYCLE` и перезаписывал правило. Поле стало `Cycle?`, `GetCycle()` возвращает null,
+а конструктор `Sequence` по-прежнему подставляет `NO_CYCLE` для новой последовательности.
+Это не новое API и не отступление: подписи и поведение повторяют эталон.
+
+Локально: H2Sharp.Tests 6782/6782, H2Sharp.Data.Tests 814/814, остальные проекты зелёные;
+119/119 миграционных тестов провайдера с трейтом `BlockedByPort` проходят на 0.1.44-alpha.1.

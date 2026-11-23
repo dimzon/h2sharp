@@ -103,7 +103,7 @@ public sealed class Sequence : SchemaObject
         minValue = min ?? GetDefaultMinValue(start, increment, bounds);
         maxValue = max ?? GetDefaultMaxValue(start, increment, bounds);
         startValue = start ?? (increment >= 0 ? minValue : maxValue);
-        cycle = options.GetCycle();
+        cycle = options.GetCycle() ?? Cycle.NO_CYCLE;
         long? writtenCacheSize = options.GetCacheSize(session);
         bool mayAdjustCacheSize = writtenCacheSize is null;
         cacheSize = writtenCacheSize ?? DefaultCacheSize;

@@ -56,7 +56,9 @@ public class SequenceOptions
 
     private Expression? cacheSize;
 
-    private Sequence.Cycle cycle = Sequence.Cycle.NO_CYCLE;
+    // The reference leaves this unset so that ALTER SEQUENCE without CYCLE keeps the
+    // existing rule; only a new sequence falls back to NO_CYCLE.
+    private Sequence.Cycle? cycle;
 
     private readonly Sequence? oldSequence;
 
@@ -324,7 +326,7 @@ public class SequenceOptions
 
     /// <summary>Gets the cycle rule.</summary>
     /// <returns>the cycle rule</returns>
-    public Sequence.Cycle GetCycle() => cycle;
+    public Sequence.Cycle? GetCycle() => cycle;
 
     /// <summary>Sets the cycle rule.</summary>
     /// <param name="cycle">the cycle rule</param>
