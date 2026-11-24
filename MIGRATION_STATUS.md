@@ -16079,3 +16079,17 @@ result set, но терял update counts ведущих операций: `Reco
 result set и передаёт сумму в `H2DataReader`; `NextResult` добавляет counts хвостовых update'ов.
 Обновлены три теста `H2BatchReaderTests`, включая случай `UPDATE ... WHERE ID = 99` с нулём
 совпадений. Это ADO-поведение, благоприятное для EF; оракул JVM здесь не нужен.
+
+### ADO: byte[] с DbType.Byte — это ARRAY, а не BINARY (24 ноября 2026)
+
+EF-провайдер отдаёт параметр `List<byte>` как `byte[]` с `DbType.Byte`, потому что element
+mapping байта — smallint. `H2ValueMapper` видел `byte[]` раньше, чем DbType, и отправлял
+`VARBINARY`; запрос `"s"."Byte" = ANY(?)` падал с `Data conversion error converting
+"SMALLINT, BINARY VARYING"`.
+
+Теперь `byte[]` с `DbType.Byte` идёт через `ToArrayValue` (SQL ARRAY of SMALLINT), а
+`DbType.Binary` по-прежнему остаётся `VARBINARY`. Тест
+`H2CommandParametersTests.ByteArrayDeclaredAsByteIsAnArrayNotBinary` проверяет оба пути:
+`20 = ANY(?)` с `byte[] {20}` и `DbType.Byte` возвращает 1.
+
+Локально: H2Sharp.Data.Tests 816/816.

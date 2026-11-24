@@ -88,7 +88,12 @@ internal static class H2ValueMapper
             decimal m => ValueNumeric.Get(FromDecimal(m)),
             char c => ValueChar.Get(c.ToString()),
             string s => ValueVarchar.Get(s, provider),
-            byte[] bytes => ValueVarbinary.Get(bytes),
+            // A byte[] parameter declared as DbType.Byte comes from an array mapping (byte
+            // is the element type): it is an SQL ARRAY of SMALLINT, not a binary string.
+            // The byte[] mapping declares DbType.Binary and keeps the binary reading.
+            byte[] bytes => dbType == DbType.Byte
+                ? ToArrayValue(bytes, null, provider)
+                : ValueVarbinary.Get(bytes),
             // Approved ADO.NET adaptation: STJ values explicitly mean JSON documents,
             // like JDBC setObject(value, H2Type.JSON), not VARCHAR JSON-string scalars.
             JsonDocument document => ValueJson.FromJson(document.RootElement.GetRawText()),
